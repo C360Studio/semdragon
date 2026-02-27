@@ -2,6 +2,7 @@ package semdragons
 
 import (
 	"context"
+	"log/slog"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type ProgressionManager struct {
 	storage  *Storage
 	xpEngine XPEngine
 	events   *EventPublisher
+	logger   *slog.Logger
 }
 
 // NewProgressionManager creates a new progression manager.
@@ -30,7 +32,14 @@ func NewProgressionManager(storage *Storage, xpEngine XPEngine, events *EventPub
 		storage:  storage,
 		xpEngine: xpEngine,
 		events:   events,
+		logger:   slog.Default(),
 	}
+}
+
+// WithLogger sets a custom logger for the progression manager.
+func (pm *ProgressionManager) WithLogger(l *slog.Logger) *ProgressionManager {
+	pm.logger = l
+	return pm
 }
 
 // ProgressionContext contains everything needed for progression processing.
@@ -163,10 +172,9 @@ func (pm *ProgressionManager) ProcessSuccess(ctx context.Context, pctx Progressi
 func (pm *ProgressionManager) ProcessFailure(ctx context.Context, pctx ProgressionContext) (*ProgressionResult, error) {
 	agentInstance := ExtractInstance(string(pctx.AgentID))
 
-	// Reset streak on failure
+	// Reset streak on failure - not critical, will be reset on next success anyway
 	if err := pm.storage.ResetAgentStreak(ctx, agentInstance); err != nil {
-		// Log but continue - streak reset is not critical for failure processing
-		// The streak will be reset on next success anyway
+		pm.logger.Debug("failed to reset agent streak", "agent", pctx.AgentID, "error", err)
 	}
 
 	// Variables to capture during atomic update

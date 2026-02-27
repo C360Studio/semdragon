@@ -1,9 +1,15 @@
+// Package semdragons provides an agentic workflow coordination framework
+// modeled as a tabletop RPG, built on semstreams for observability.
+// Work items are quests, agents are adventurers who earn XP and level up,
+// quality reviews are boss battles, and trust is derived from demonstrated
+// competence rather than declared roles.
 package semdragons
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -29,6 +35,7 @@ type NATSQuestBoard struct {
 	events      *EventPublisher
 	evaluator   BattleEvaluator
 	progression *ProgressionManager
+	logger      *slog.Logger
 }
 
 // NATSQuestBoardOption configures a NATSQuestBoard.
@@ -52,6 +59,13 @@ func WithProgression(pm *ProgressionManager) NATSQuestBoardOption {
 func WithXPEngine(xp XPEngine) NATSQuestBoardOption {
 	return func(b *NATSQuestBoard) {
 		b.progression = NewProgressionManager(b.storage, xp, b.events)
+	}
+}
+
+// WithLogger sets a custom logger for debug output.
+func WithLogger(l *slog.Logger) NATSQuestBoardOption {
+	return func(b *NATSQuestBoard) {
+		b.logger = l
 	}
 }
 
@@ -81,6 +95,9 @@ func NewNATSQuestBoard(ctx context.Context, client *natsclient.Client, config Bo
 	if board.progression == nil {
 		board.progression = NewProgressionManager(storage, NewDefaultXPEngine(), events)
 	}
+	if board.logger == nil {
+		board.logger = slog.Default()
+	}
 
 	return board, nil
 }
@@ -105,6 +122,9 @@ func NewNATSQuestBoardWithStorage(client *natsclient.Client, storage *Storage, o
 	}
 	if board.progression == nil {
 		board.progression = NewProgressionManager(storage, NewDefaultXPEngine(), events)
+	}
+	if board.logger == nil {
+		board.logger = slog.Default()
 	}
 
 	return board
@@ -158,20 +178,20 @@ func (b *NATSQuestBoard) PostQuest(ctx context.Context, quest Quest) (*Quest, er
 		return nil, errs.Wrap(err, "QuestBoard", "PostQuest", "add to posted index")
 	}
 
-	// Add to guild priority index if applicable
+	// Add to guild priority index if applicable - best effort, doesn't affect quest posting
 	if quest.GuildPriority != nil {
 		guildInstance := ExtractInstance(string(*quest.GuildPriority))
 		if err := b.storage.AddGuildQuestIndex(ctx, guildInstance, instance); err != nil {
-			// Log but don't fail
+			b.logger.Debug("failed to add guild quest index", "quest", quest.ID, "guild", *quest.GuildPriority, "error", err)
 		}
 	}
 
-	// Emit event
+	// Emit event - best effort, quest is already posted
 	if err := b.events.PublishQuestPosted(ctx, QuestPostedPayload{
 		Quest:    quest,
 		PostedAt: quest.PostedAt,
 	}); err != nil {
-		// Log but don't fail - quest is posted
+		b.logger.Debug("failed to publish quest posted event", "quest", quest.ID, "error", err)
 	}
 
 	return &quest, nil
@@ -611,9 +631,10 @@ func (b *NATSQuestBoard) SubmitResult(ctx context.Context, questID QuestID, resu
 		id := battle.ID
 		battleID = &id
 
+		// Store battle state - best effort, evaluation can proceed without persistence
 		battleInstance := ExtractInstance(string(battle.ID))
 		if err := b.storage.PutBattle(ctx, battleInstance, battle); err != nil {
-			// Log but continue
+			b.logger.Debug("failed to store battle state", "battle", battle.ID, "error", err)
 		}
 
 		b.events.PublishBattleStarted(ctx, BattleStartedPayload{
@@ -727,10 +748,10 @@ func (b *NATSQuestBoard) CompleteQuest(ctx context.Context, questID QuestID, ver
 				Duration:     duration,
 				IsGuildQuest: isGuildQuest,
 			}
+			// Process progression - quest completion succeeds regardless of progression errors
 			progResult, progErr := b.progression.ProcessSuccess(ctx, pctx)
 			if progErr != nil {
-				// Log error but don't fail quest completion
-				// Quest is already completed, progression failure is secondary
+				b.logger.Debug("failed to process progression award", "quest", questID, "agent", agentID, "error", progErr)
 			}
 			// Update verdict with actual XP awarded from progression
 			if progResult != nil && progResult.Award != nil {
@@ -804,7 +825,7 @@ func (b *NATSQuestBoard) FailQuest(ctx context.Context, questID QuestID, reason 
 		agentInstance := ExtractInstance(string(agentID))
 		b.storage.RemoveAgentQuestIndex(ctx, agentInstance, questInstance)
 
-		// Process progression penalty on failure (not on repost)
+		// Process progression penalty - quest failure succeeds regardless of progression errors
 		if b.progression != nil && !reposted {
 			pctx := ProgressionContext{
 				Quest:    updatedQuest,
@@ -812,8 +833,7 @@ func (b *NATSQuestBoard) FailQuest(ctx context.Context, questID QuestID, reason 
 				FailType: FailureSoft,
 			}
 			if _, err := b.progression.ProcessFailure(ctx, pctx); err != nil {
-				// Log error but don't fail quest failure recording
-				// Quest status is already updated, progression failure is secondary
+				b.logger.Debug("failed to process progression penalty", "quest", questID, "agent", agentID, "error", err)
 			}
 		}
 	}

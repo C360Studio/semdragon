@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/c360studio/semstreams/natsclient"
@@ -33,6 +34,7 @@ import (
 type Storage struct {
 	kv     *natsclient.KVStore
 	config *BoardConfig
+	logger *slog.Logger
 }
 
 // NewStorage creates storage with an existing KV store.
@@ -40,7 +42,14 @@ func NewStorage(kv *natsclient.KVStore, config *BoardConfig) *Storage {
 	return &Storage{
 		kv:     kv,
 		config: config,
+		logger: slog.Default(),
 	}
+}
+
+// WithLogger sets a custom logger for the storage.
+func (s *Storage) WithLogger(l *slog.Logger) *Storage {
+	s.logger = l
+	return s
 }
 
 // CreateStorage creates a new storage instance, creating the KV bucket if needed.
@@ -419,8 +428,9 @@ func (s *Storage) ListQuestsByStatus(ctx context.Context, status QuestStatus) ([
 
 // MoveQuestStatus moves a quest from one status index to another.
 func (s *Storage) MoveQuestStatus(ctx context.Context, questInstance string, from, to QuestStatus) error {
+	// Remove from old index - may fail for various reasons, but doesn't block status transition
 	if err := s.RemoveQuestStatusIndex(ctx, from, questInstance); err != nil {
-		// Log but continue - may not exist
+		s.logger.Debug("failed to remove quest from old status index", "quest", questInstance, "from", from, "error", err)
 	}
 	return s.AddQuestStatusIndex(ctx, to, questInstance)
 }
