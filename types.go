@@ -15,21 +15,35 @@ import (
 // Agent - An autonomous worker that claims and executes quests
 // -----------------------------------------------------------------------------
 
+// AgentID uniquely identifies an agent in the system.
 type AgentID string
+
+// GuildID uniquely identifies a guild.
 type GuildID string
+
+// QuestID uniquely identifies a quest on the board.
 type QuestID string
+
+// PartyID uniquely identifies a party of agents.
 type PartyID string
+
+// BattleID uniquely identifies a boss battle (review session).
 type BattleID string
 
 // AgentStatus represents the current state of an agent in the system.
 type AgentStatus string
 
 const (
-	AgentIdle     AgentStatus = "idle"      // Available to claim quests
-	AgentOnQuest  AgentStatus = "on_quest"  // Currently executing a quest
-	AgentInBattle AgentStatus = "in_battle" // Facing a boss battle (review)
-	AgentCooldown AgentStatus = "cooldown"  // Dead/failed - cooling down before retry
-	AgentRetired  AgentStatus = "retired"   // Permadeath - catastrophic failure
+	// AgentIdle indicates the agent is available to claim quests.
+	AgentIdle AgentStatus = "idle"
+	// AgentOnQuest indicates the agent is currently executing a quest.
+	AgentOnQuest AgentStatus = "on_quest"
+	// AgentInBattle indicates the agent is facing a boss battle (review).
+	AgentInBattle AgentStatus = "in_battle"
+	// AgentCooldown indicates the agent failed and is cooling down before retry.
+	AgentCooldown AgentStatus = "cooldown"
+	// AgentRetired indicates permadeath from catastrophic failure.
+	AgentRetired AgentStatus = "retired"
 )
 
 // Agent represents an autonomous worker in the semdragons system.
@@ -76,14 +90,15 @@ type AgentConfig struct {
 	Metadata    map[string]string `json:"metadata"`     // Arbitrary config
 }
 
+// AgentStats tracks lifetime performance metrics for an agent.
 type AgentStats struct {
 	QuestsCompleted  int     `json:"quests_completed"`
 	QuestsFailed     int     `json:"quests_failed"`
 	BossesDefeated   int     `json:"bosses_defeated"`
 	BossesFailed     int     `json:"bosses_failed"`
 	TotalXPEarned    int64   `json:"total_xp_earned"`
-	AvgQualityScore  float64 `json:"avg_quality_score"`  // 0.0-1.0
-	AvgEfficiency    float64 `json:"avg_efficiency"`      // Time vs estimate
+	AvgQualityScore  float64 `json:"avg_quality_score"`
+	AvgEfficiency    float64 `json:"avg_efficiency"`
 	PartiesLed       int     `json:"parties_led"`
 	QuestsDecomposed int     `json:"quests_decomposed"`
 }
@@ -91,6 +106,7 @@ type AgentStats struct {
 // SkillTag represents a domain of competence.
 type SkillTag string
 
+// Skill tags for common agent competencies.
 const (
 	SkillCodeGen       SkillTag = "code_generation"
 	SkillCodeReview    SkillTag = "code_review"
@@ -100,23 +116,30 @@ const (
 	SkillPlanning      SkillTag = "planning"
 	SkillCustomerComms SkillTag = "customer_communications"
 	SkillAnalysis      SkillTag = "analysis"
-	// Extend as needed - these should be domain-specific
 )
 
 // -----------------------------------------------------------------------------
 // Trust Tiers - What agents are allowed to do based on level
 // -----------------------------------------------------------------------------
 
+// TrustTier represents an agent's trust level derived from their level.
 type TrustTier int
 
+// Trust tier constants defining capability gates.
 const (
-	TierApprentice TrustTier = iota // Level 1-5:   Read-only, summarize, simple transforms
-	TierJourneyman                   // Level 6-10:  Can call tools, make API requests
-	TierExpert                       // Level 11-15: Can spend money, modify state, write to prod
-	TierMaster                       // Level 16-18: Can supervise agents, decompose quests, lead parties
-	TierGrandmaster                  // Level 19-20: Can act as DM delegate, create quests, manage guilds
+	// TierApprentice is for levels 1-5: read-only, summarize, simple transforms.
+	TierApprentice TrustTier = iota
+	// TierJourneyman is for levels 6-10: can call tools, make API requests.
+	TierJourneyman
+	// TierExpert is for levels 11-15: can spend money, modify state, write to prod.
+	TierExpert
+	// TierMaster is for levels 16-18: can supervise agents, decompose quests, lead parties.
+	TierMaster
+	// TierGrandmaster is for levels 19-20: can act as DM delegate, create quests, manage guilds.
+	TierGrandmaster
 )
 
+// TierFromLevel returns the trust tier for a given agent level.
 func TierFromLevel(level int) TrustTier {
 	switch {
 	case level <= 5:
@@ -143,6 +166,7 @@ type TierPermissions struct {
 	MaxConcurrent     int // Max concurrent quests
 }
 
+// TierPerms maps each trust tier to its allowed permissions.
 var TierPerms = map[TrustTier]TierPermissions{
 	TierApprentice: {
 		CanClaimQuestTier: DifficultyTrivial,
@@ -177,42 +201,61 @@ var TierPerms = map[TrustTier]TierPermissions{
 // Tools / Equipment - What agents have access to
 // -----------------------------------------------------------------------------
 
+// Tool represents a capability an agent can use.
 type Tool struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	MinTier     TrustTier `json:"min_tier"`     // Minimum tier to equip
-	Category    string    `json:"category"`      // "read", "write", "execute", "financial"
-	Dangerous   bool      `json:"dangerous"`     // Requires extra review when used
-	Config      map[string]interface{} `json:"config"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	MinTier     TrustTier      `json:"min_tier"`
+	Category    string         `json:"category"`
+	Dangerous   bool           `json:"dangerous"`
+	Config      map[string]any `json:"config"`
 }
 
 // -----------------------------------------------------------------------------
 // Quest - A unit of work posted to the quest board
 // -----------------------------------------------------------------------------
 
+// QuestStatus represents the lifecycle state of a quest.
 type QuestStatus string
 
+// Quest status constants.
 const (
-	QuestPosted     QuestStatus = "posted"      // On the board, unclaimed
-	QuestClaimed    QuestStatus = "claimed"      // Claimed by an agent/party
-	QuestInProgress QuestStatus = "in_progress"  // Actively being worked
-	QuestInReview   QuestStatus = "in_review"    // Boss battle phase
-	QuestCompleted  QuestStatus = "completed"    // Done and reviewed
-	QuestFailed     QuestStatus = "failed"       // Failed - may be re-posted
-	QuestEscalated  QuestStatus = "escalated"    // TPK - needs higher-level attention
-	QuestCancelled  QuestStatus = "cancelled"    // Withdrawn
+	// QuestPosted indicates the quest is on the board, unclaimed.
+	QuestPosted QuestStatus = "posted"
+	// QuestClaimed indicates the quest is claimed by an agent/party.
+	QuestClaimed QuestStatus = "claimed"
+	// QuestInProgress indicates the quest is actively being worked.
+	QuestInProgress QuestStatus = "in_progress"
+	// QuestInReview indicates the quest is in boss battle (review) phase.
+	QuestInReview QuestStatus = "in_review"
+	// QuestCompleted indicates the quest is done and reviewed.
+	QuestCompleted QuestStatus = "completed"
+	// QuestFailed indicates the quest failed and may be re-posted.
+	QuestFailed QuestStatus = "failed"
+	// QuestEscalated indicates TPK - needs higher-level attention.
+	QuestEscalated QuestStatus = "escalated"
+	// QuestCancelled indicates the quest was withdrawn.
+	QuestCancelled QuestStatus = "cancelled"
 )
 
+// QuestDifficulty represents the challenge level of a quest.
 type QuestDifficulty int
 
+// Quest difficulty constants.
 const (
-	DifficultyTrivial   QuestDifficulty = iota // Level 1-5 agents
-	DifficultyEasy                              // Level 3-7
-	DifficultyModerate                          // Level 6-10
-	DifficultyHard                              // Level 10-14
-	DifficultyEpic                              // Level 14-18
-	DifficultyLegendary                         // Level 18-20, or party required
+	// DifficultyTrivial is for level 1-5 agents.
+	DifficultyTrivial QuestDifficulty = iota
+	// DifficultyEasy is for level 3-7 agents.
+	DifficultyEasy
+	// DifficultyModerate is for level 6-10 agents.
+	DifficultyModerate
+	// DifficultyHard is for level 10-14 agents.
+	DifficultyHard
+	// DifficultyEpic is for level 14-18 agents.
+	DifficultyEpic
+	// DifficultyLegendary is for level 18-20 agents or requires a party.
+	DifficultyLegendary
 )
 
 // Quest represents a unit of work on the quest board.
@@ -236,8 +279,8 @@ type Quest struct {
 	GuildXP   int64 `json:"guild_xp"`    // XP toward guild reputation
 
 	// Execution context - the actual work
-	Input       interface{}       `json:"input"`        // Quest payload
-	Output      interface{}       `json:"output"`       // Result when completed
+	Input       any       `json:"input"`        // Quest payload
+	Output      any       `json:"output"`       // Result when completed
 	Constraints QuestConstraints  `json:"constraints"`
 
 	// Quest chain / decomposition
@@ -266,89 +309,108 @@ type Quest struct {
 	TrajectoryID string `json:"trajectory_id"` // semstreams trajectory reference
 }
 
+// QuestConstraints defines limits and requirements for quest execution.
 type QuestConstraints struct {
 	MaxDuration   time.Duration `json:"max_duration"`
-	MaxCost       float64       `json:"max_cost"`        // Budget limit (API calls, etc.)
+	MaxCost       float64       `json:"max_cost"`
 	MaxTokens     int           `json:"max_tokens"`
-	RequireReview bool          `json:"require_review"`   // Must face boss battle
-	ReviewLevel   ReviewLevel   `json:"review_level"`     // How tough the boss battle is
+	RequireReview bool          `json:"require_review"`
+	ReviewLevel   ReviewLevel   `json:"review_level"`
 }
 
 // -----------------------------------------------------------------------------
 // Boss Battle - Quality gates disguised as encounters
 // -----------------------------------------------------------------------------
 
+// ReviewLevel indicates the rigor of the boss battle review.
 type ReviewLevel int
 
+// Review level constants.
 const (
-	ReviewAuto     ReviewLevel = iota // Automated checks only (the goblin)
-	ReviewStandard                     // LLM-as-judge review (the ogre)
-	ReviewStrict                       // Multi-judge panel (the dragon)
-	ReviewHuman                        // Human reviewer required (the DM themselves)
+	// ReviewAuto uses automated checks only (the goblin).
+	ReviewAuto ReviewLevel = iota
+	// ReviewStandard uses LLM-as-judge review (the ogre).
+	ReviewStandard
+	// ReviewStrict uses a multi-judge panel (the dragon).
+	ReviewStrict
+	// ReviewHuman requires a human reviewer (the DM themselves).
+	ReviewHuman
 )
 
+// BossBattle represents a quality gate review session.
 type BossBattle struct {
-	ID        BattleID    `json:"id"`
-	QuestID   QuestID     `json:"quest_id"`
-	AgentID   AgentID     `json:"agent_id"`
-	Level     ReviewLevel `json:"level"`
+	ID        BattleID     `json:"id"`
+	QuestID   QuestID      `json:"quest_id"`
+	AgentID   AgentID      `json:"agent_id"`
+	Level     ReviewLevel  `json:"level"`
 	Status    BattleStatus `json:"status"`
 
-	// The review itself
-	Criteria  []ReviewCriterion `json:"criteria"`
-	Results   []ReviewResult    `json:"results,omitempty"`
-	Verdict   *BattleVerdict    `json:"verdict,omitempty"`
-
-	// Judges
-	Judges    []Judge           `json:"judges"`
-
-	StartedAt   time.Time  `json:"started_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	Criteria    []ReviewCriterion `json:"criteria"`
+	Results     []ReviewResult    `json:"results,omitempty"`
+	Verdict     *BattleVerdict    `json:"verdict,omitempty"`
+	Judges      []Judge           `json:"judges"`
+	StartedAt   time.Time         `json:"started_at"`
+	CompletedAt *time.Time        `json:"completed_at,omitempty"`
 }
 
+// BattleStatus represents the state of a boss battle.
 type BattleStatus string
 
+// Battle status constants.
 const (
-	BattleActive    BattleStatus = "active"
-	BattleVictory   BattleStatus = "victory"    // Passed review
-	BattleDefeat    BattleStatus = "defeat"     // Failed review
-	BattleRetreat   BattleStatus = "retreat"    // Agent requested re-do
+	// BattleActive indicates the battle is in progress.
+	BattleActive BattleStatus = "active"
+	// BattleVictory indicates the agent passed review.
+	BattleVictory BattleStatus = "victory"
+	// BattleDefeat indicates the agent failed review.
+	BattleDefeat BattleStatus = "defeat"
+	// BattleRetreat indicates the agent requested a re-do.
+	BattleRetreat BattleStatus = "retreat"
 )
 
+// BattleVerdict holds the outcome of a boss battle.
 type BattleVerdict struct {
 	Passed       bool    `json:"passed"`
-	QualityScore float64 `json:"quality_score"` // 0.0-1.0
+	QualityScore float64 `json:"quality_score"`
 	XPAwarded    int64   `json:"xp_awarded"`
-	XPPenalty    int64   `json:"xp_penalty"`    // Deducted on failure
-	Feedback     string  `json:"feedback"`      // What to improve
-	LevelChange  int     `json:"level_change"`  // +1, 0, or -1
+	XPPenalty    int64   `json:"xp_penalty"`
+	Feedback     string  `json:"feedback"`
+	LevelChange  int     `json:"level_change"`
 }
 
+// ReviewCriterion defines a single evaluation criterion for a boss battle.
 type ReviewCriterion struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
-	Weight      float64 `json:"weight"`       // How much this matters (0.0-1.0)
-	Threshold   float64 `json:"threshold"`    // Min score to pass (0.0-1.0)
+	Weight      float64 `json:"weight"`
+	Threshold   float64 `json:"threshold"`
 }
 
+// ReviewResult holds a judge's evaluation of a single criterion.
 type ReviewResult struct {
 	CriterionName string  `json:"criterion_name"`
-	Score         float64 `json:"score"`       // 0.0-1.0
+	Score         float64 `json:"score"`
 	Passed        bool    `json:"passed"`
 	Reasoning     string  `json:"reasoning"`
 	JudgeID       string  `json:"judge_id"`
 }
 
+// Judge represents an evaluator for boss battles.
 type Judge struct {
-	ID       string    `json:"id"`
-	Type     JudgeType `json:"type"`
-	Config   map[string]interface{} `json:"config"`
+	ID     string         `json:"id"`
+	Type   JudgeType      `json:"type"`
+	Config map[string]any `json:"config"`
 }
 
+// JudgeType indicates the kind of judge (automated, LLM, or human).
 type JudgeType string
 
+// Judge type constants.
 const (
-	JudgeAutomated JudgeType = "automated"  // Rule-based checks
-	JudgeLLM       JudgeType = "llm"        // LLM-as-judge
-	JudgeHuman     JudgeType = "human"      // Human reviewer
+	// JudgeAutomated uses rule-based checks.
+	JudgeAutomated JudgeType = "automated"
+	// JudgeLLM uses LLM-as-judge evaluation.
+	JudgeLLM JudgeType = "llm"
+	// JudgeHuman requires a human reviewer.
+	JudgeHuman JudgeType = "human"
 )
