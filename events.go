@@ -20,25 +20,36 @@ import (
 // Subjects use vocabulary predicate constants as the NATS subject pattern.
 
 var (
-	// Quest lifecycle subjects
-	SubjectQuestPosted    = natsclient.NewSubject[QuestPostedPayload](PredicateQuestPosted)
-	SubjectQuestClaimed   = natsclient.NewSubject[QuestClaimedPayload](PredicateQuestClaimed)
-	SubjectQuestStarted   = natsclient.NewSubject[QuestStartedPayload](PredicateQuestStarted)
+	// SubjectQuestPosted is the typed subject for quest.lifecycle.posted events.
+	SubjectQuestPosted = natsclient.NewSubject[QuestPostedPayload](PredicateQuestPosted)
+	// SubjectQuestClaimed is the typed subject for quest.lifecycle.claimed events.
+	SubjectQuestClaimed = natsclient.NewSubject[QuestClaimedPayload](PredicateQuestClaimed)
+	// SubjectQuestStarted is the typed subject for quest.lifecycle.started events.
+	SubjectQuestStarted = natsclient.NewSubject[QuestStartedPayload](PredicateQuestStarted)
+	// SubjectQuestSubmitted is the typed subject for quest.lifecycle.submitted events.
 	SubjectQuestSubmitted = natsclient.NewSubject[QuestSubmittedPayload](PredicateQuestSubmitted)
+	// SubjectQuestCompleted is the typed subject for quest.lifecycle.completed events.
 	SubjectQuestCompleted = natsclient.NewSubject[QuestCompletedPayload](PredicateQuestCompleted)
-	SubjectQuestFailed    = natsclient.NewSubject[QuestFailedPayload](PredicateQuestFailed)
+	// SubjectQuestFailed is the typed subject for quest.lifecycle.failed events.
+	SubjectQuestFailed = natsclient.NewSubject[QuestFailedPayload](PredicateQuestFailed)
+	// SubjectQuestEscalated is the typed subject for quest.lifecycle.escalated events.
 	SubjectQuestEscalated = natsclient.NewSubject[QuestEscalatedPayload](PredicateQuestEscalated)
+	// SubjectQuestAbandoned is the typed subject for quest.lifecycle.abandoned events.
 	SubjectQuestAbandoned = natsclient.NewSubject[QuestAbandonedPayload](PredicateQuestAbandoned)
 
-	// Boss battle subjects
+	// SubjectBattleStarted is the typed subject for battle.review.started events.
 	SubjectBattleStarted = natsclient.NewSubject[BattleStartedPayload](PredicateBattleStarted)
+	// SubjectBattleVerdict is the typed subject for battle.review.verdict events.
 	SubjectBattleVerdict = natsclient.NewSubject[BattleVerdictPayload](PredicateBattleVerdict)
 
-	// Agent progression subjects
-	SubjectAgentXP        = natsclient.NewSubject[AgentXPPayload](PredicateAgentXP)
-	SubjectAgentLevelUp   = natsclient.NewSubject[AgentLevelPayload](PredicateAgentLevelUp)
+	// SubjectAgentXP is the typed subject for agent.progression.xp events.
+	SubjectAgentXP = natsclient.NewSubject[AgentXPPayload](PredicateAgentXP)
+	// SubjectAgentLevelUp is the typed subject for agent.progression.levelup events.
+	SubjectAgentLevelUp = natsclient.NewSubject[AgentLevelPayload](PredicateAgentLevelUp)
+	// SubjectAgentLevelDown is the typed subject for agent.progression.leveldown events.
 	SubjectAgentLevelDown = natsclient.NewSubject[AgentLevelPayload](PredicateAgentLevelDown)
-	SubjectAgentCooldown  = natsclient.NewSubject[AgentCooldownPayload](PredicateAgentCooldown)
+	// SubjectAgentCooldown is the typed subject for agent.progression.cooldown events.
+	SubjectAgentCooldown = natsclient.NewSubject[AgentCooldownPayload](PredicateAgentCooldown)
 )
 
 // --- Payload Types ---
@@ -50,6 +61,7 @@ type QuestPostedPayload struct {
 	PostedBy string    `json:"posted_by,omitempty"` // DM or system identifier
 }
 
+// Validate checks that required fields are present.
 func (p *QuestPostedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -68,6 +80,7 @@ type QuestClaimedPayload struct {
 	ClaimedAt time.Time `json:"claimed_at"`
 }
 
+// Validate checks that required fields are present.
 func (p *QuestClaimedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -89,6 +102,7 @@ type QuestStartedPayload struct {
 	StartedAt time.Time `json:"started_at"`
 }
 
+// Validate checks that required fields are present.
 func (p *QuestStartedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -108,6 +122,7 @@ type QuestSubmittedPayload struct {
 	BattleID    *BattleID `json:"battle_id,omitempty"` // Set if review triggered
 }
 
+// Validate checks that required fields are present.
 func (p *QuestSubmittedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -128,6 +143,7 @@ type QuestCompletedPayload struct {
 	Duration    time.Duration `json:"duration"`
 }
 
+// Validate checks that required fields are present.
 func (p *QuestCompletedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -150,6 +166,7 @@ type QuestFailedPayload struct {
 	Reposted bool        `json:"reposted"`
 }
 
+// Validate checks that required fields are present.
 func (p *QuestFailedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -173,6 +190,7 @@ type QuestEscalatedPayload struct {
 	Attempts    int       `json:"attempts"`
 }
 
+// Validate checks that required fields are present.
 func (p *QuestEscalatedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -195,6 +213,7 @@ type QuestAbandonedPayload struct {
 	AbandonedAt time.Time `json:"abandoned_at"`
 }
 
+// Validate checks that required fields are present.
 func (p *QuestAbandonedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -215,6 +234,7 @@ type BattleStartedPayload struct {
 	StartedAt time.Time  `json:"started_at"`
 }
 
+// Validate checks that required fields are present.
 func (p *BattleStartedPayload) Validate() error {
 	if p.Battle.ID == "" {
 		return errors.New("battle_id required")
@@ -236,6 +256,7 @@ type BattleVerdictPayload struct {
 	EndedAt time.Time     `json:"ended_at"`
 }
 
+// Validate checks that required fields are present.
 func (p *BattleVerdictPayload) Validate() error {
 	if p.Battle.ID == "" {
 		return errors.New("battle_id required")
@@ -393,6 +414,7 @@ type AgentXPPayload struct {
 	Timestamp   time.Time `json:"timestamp"`
 }
 
+// Validate checks that required fields are present.
 func (p *AgentXPPayload) Validate() error {
 	if p.AgentID == "" {
 		return errors.New("agent_id required")
@@ -419,6 +441,7 @@ type AgentLevelPayload struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// Validate checks that required fields are present.
 func (p *AgentLevelPayload) Validate() error {
 	if p.AgentID == "" {
 		return errors.New("agent_id required")
@@ -439,6 +462,7 @@ type AgentCooldownPayload struct {
 	Timestamp     time.Time     `json:"timestamp"`
 }
 
+// Validate checks that required fields are present.
 func (p *AgentCooldownPayload) Validate() error {
 	if p.AgentID == "" {
 		return errors.New("agent_id required")

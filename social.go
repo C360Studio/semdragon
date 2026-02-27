@@ -8,21 +8,30 @@ import (
 // PARTY - A temporary group formed to tackle a quest
 // =============================================================================
 
+// PartyStatus represents the current state of a party.
 type PartyStatus string
 
 const (
-	PartyForming   PartyStatus = "forming"    // Recruiting members
-	PartyActive    PartyStatus = "active"     // On a quest
-	PartyDisbanded PartyStatus = "disbanded"  // Quest complete or failed
+	// PartyForming indicates the party is recruiting members.
+	PartyForming PartyStatus = "forming"
+	// PartyActive indicates the party is on a quest.
+	PartyActive PartyStatus = "active"
+	// PartyDisbanded indicates the quest is complete or failed.
+	PartyDisbanded PartyStatus = "disbanded"
 )
 
+// PartyRole represents a member's role within a party.
 type PartyRole string
 
 const (
-	RoleLead     PartyRole = "lead"      // Decomposes quest, coordinates, faces the boss
-	RoleExecutor PartyRole = "executor"  // Does the actual sub-quest work
-	RoleReviewer PartyRole = "reviewer"  // Internal QA before boss battle
-	RoleScout    PartyRole = "scout"     // Research, context gathering, recon
+	// RoleLead decomposes quest, coordinates, and faces the boss.
+	RoleLead PartyRole = "lead"
+	// RoleExecutor does the actual sub-quest work.
+	RoleExecutor PartyRole = "executor"
+	// RoleReviewer provides internal QA before boss battle.
+	RoleReviewer PartyRole = "reviewer"
+	// RoleScout handles research, context gathering, and recon.
+	RoleScout PartyRole = "scout"
 )
 
 // Party is a temporary group of agents formed to tackle a quest together.
@@ -43,13 +52,14 @@ type Party struct {
 	SharedContext []ContextItem      `json:"shared_context"` // Party-wide knowledge
 
 	// Results
-	SubResults map[QuestID]interface{} `json:"sub_results,omitempty"` // Collected sub-quest outputs
-	RollupResult interface{}            `json:"rollup_result,omitempty"` // Lead's combined result
+	SubResults map[QuestID]any `json:"sub_results,omitempty"` // Collected sub-quest outputs
+	RollupResult any            `json:"rollup_result,omitempty"` // Lead's combined result
 
 	FormedAt    time.Time  `json:"formed_at"`
 	DisbandedAt *time.Time `json:"disbanded_at,omitempty"`
 }
 
+// PartyMember represents an agent's membership in a party.
 type PartyMember struct {
 	AgentID AgentID   `json:"agent_id"`
 	Role    PartyRole `json:"role"`
@@ -57,9 +67,10 @@ type PartyMember struct {
 	JoinedAt time.Time `json:"joined_at"`
 }
 
+// ContextItem represents a piece of shared knowledge in a party.
 type ContextItem struct {
 	Key       string      `json:"key"`
-	Value     interface{} `json:"value"`
+	Value     any `json:"value"`
 	AddedBy   AgentID     `json:"added_by"`
 	AddedAt   time.Time   `json:"added_at"`
 }
@@ -68,21 +79,30 @@ type ContextItem struct {
 // GUILD - Persistent specialization clusters
 // =============================================================================
 
+// GuildStatus represents the current state of a guild.
 type GuildStatus string
 
 const (
-	GuildActive   GuildStatus = "active"
+	// GuildActive indicates the guild is actively accepting quests.
+	GuildActive GuildStatus = "active"
+	// GuildInactive indicates the guild is not accepting quests.
 	GuildInactive GuildStatus = "inactive"
 )
 
+// GuildRank represents a member's rank within a guild.
 type GuildRank string
 
 const (
-	GuildRankInitiate  GuildRank = "initiate"   // Just joined, proving themselves
-	GuildRankMember    GuildRank = "member"     // Established contributor
-	GuildRankVeteran   GuildRank = "veteran"    // Proven track record
-	GuildRankOfficer   GuildRank = "officer"    // Can recruit, manage guild quests
-	GuildRankMaster    GuildRank = "guildmaster" // Leads the guild
+	// GuildRankInitiate indicates a new member proving themselves.
+	GuildRankInitiate GuildRank = "initiate"
+	// GuildRankMember indicates an established contributor.
+	GuildRankMember GuildRank = "member"
+	// GuildRankVeteran indicates a member with proven track record.
+	GuildRankVeteran GuildRank = "veteran"
+	// GuildRankOfficer can recruit and manage guild quests.
+	GuildRankOfficer GuildRank = "officer"
+	// GuildRankMaster leads the guild.
+	GuildRankMaster GuildRank = "guildmaster"
 )
 
 // Guild is a persistent group of agents that specialize in a domain.
@@ -119,6 +139,7 @@ type Guild struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// GuildMember represents an agent's membership in a guild.
 type GuildMember struct {
 	AgentID  AgentID   `json:"agent_id"`
 	Rank     GuildRank `json:"rank"`
@@ -126,10 +147,11 @@ type GuildMember struct {
 	JoinedAt time.Time `json:"joined_at"`
 }
 
+// LibraryEntry represents a shared resource in a guild's library.
 type LibraryEntry struct {
 	ID          string      `json:"id"`
 	Title       string      `json:"title"`
-	Content     interface{} `json:"content"`     // Prompt templates, patterns, examples
+	Content     any `json:"content"`     // Prompt templates, patterns, examples
 	Category    string      `json:"category"`    // "template", "pattern", "example", "context"
 	AddedBy     AgentID     `json:"added_by"`
 	UseCount    int         `json:"use_count"`   // How often it's been referenced

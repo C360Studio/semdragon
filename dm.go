@@ -59,7 +59,7 @@ type DungeonMaster interface {
 	HandleEscalation(ctx context.Context, questID QuestID) (*EscalationResult, error)
 
 	// HandleBossBattle runs or delegates a boss battle for a completed quest.
-	HandleBossBattle(ctx context.Context, questID QuestID, submission interface{}) (*BossBattle, error)
+	HandleBossBattle(ctx context.Context, questID QuestID, submission any) (*BossBattle, error)
 
 	// --- Observation ---
 
@@ -74,12 +74,17 @@ type DungeonMaster interface {
 type DMMode string
 
 const (
-	DMFullAuto   DMMode = "full_auto"   // LLM makes all decisions
-	DMAssisted   DMMode = "assisted"    // LLM proposes, human approves critical decisions
-	DMSupervised DMMode = "supervised"  // Human makes key decisions, LLM handles routine
-	DMManual     DMMode = "manual"      // Human DM with LLM as advisor only
+	// DMFullAuto indicates the LLM makes all decisions.
+	DMFullAuto DMMode = "full_auto"
+	// DMAssisted indicates the LLM proposes, human approves critical decisions.
+	DMAssisted DMMode = "assisted"
+	// DMSupervised indicates humans make key decisions, LLM handles routine.
+	DMSupervised DMMode = "supervised"
+	// DMManual indicates human DM with LLM as advisor only.
+	DMManual DMMode = "manual"
 )
 
+// SessionConfig holds configuration for a DM session.
 type SessionConfig struct {
 	Mode           DMMode            `json:"mode"`
 	Name           string            `json:"name"`
@@ -91,6 +96,7 @@ type SessionConfig struct {
 	Metadata       map[string]string `json:"metadata"`
 }
 
+// Session represents an active DM session.
 type Session struct {
 	ID          string        `json:"id"`
 	Config      SessionConfig `json:"config"`
@@ -98,6 +104,7 @@ type Session struct {
 	Active      bool          `json:"active"`
 }
 
+// SessionSummary contains aggregate statistics for a completed session.
 type SessionSummary struct {
 	SessionID       string  `json:"session_id"`
 	QuestsCompleted int     `json:"quests_completed"`
@@ -111,6 +118,7 @@ type SessionSummary struct {
 	Deaths          int     `json:"deaths"`
 }
 
+// QuestHints provides optional guidance for quest creation.
 type QuestHints struct {
 	SuggestedDifficulty *QuestDifficulty `json:"suggested_difficulty,omitempty"`
 	SuggestedSkills     []SkillTag       `json:"suggested_skills,omitempty"`
@@ -120,31 +128,44 @@ type QuestHints struct {
 	Deadline            string           `json:"deadline,omitempty"`
 }
 
+// PartyStrategy determines how a party is composed.
 type PartyStrategy string
 
 const (
-	PartyStrategyBalanced   PartyStrategy = "balanced"    // Mix of skills
-	PartyStrategySpecialist PartyStrategy = "specialist"  // All same guild
-	PartyStrategyMentor     PartyStrategy = "mentor"      // High-level lead + apprentices
-	PartyStrategyMinimal    PartyStrategy = "minimal"     // Smallest viable party
+	// PartyStrategyBalanced uses a mix of skills.
+	PartyStrategyBalanced PartyStrategy = "balanced"
+	// PartyStrategySpecialist uses all members from the same guild.
+	PartyStrategySpecialist PartyStrategy = "specialist"
+	// PartyStrategyMentor pairs a high-level lead with apprentices.
+	PartyStrategyMentor PartyStrategy = "mentor"
+	// PartyStrategyMinimal uses the smallest viable party.
+	PartyStrategyMinimal PartyStrategy = "minimal"
 )
 
+// Intervention represents a DM action on an ongoing quest.
 type Intervention struct {
 	Type    InterventionType `json:"type"`
 	Reason  string           `json:"reason"`
-	Payload interface{}      `json:"payload,omitempty"`
+	Payload any              `json:"payload,omitempty"`
 }
 
+// InterventionType categorizes the kind of DM intervention.
 type InterventionType string
 
 const (
-	InterventionAssist    InterventionType = "assist"     // Give the agent a hint
-	InterventionRedirect  InterventionType = "redirect"   // Change approach
-	InterventionTakeover  InterventionType = "takeover"   // DM finishes it
-	InterventionAbort     InterventionType = "abort"      // Kill the quest
-	InterventionAugment   InterventionType = "augment"    // Add resources/tools
+	// InterventionAssist gives the agent a hint.
+	InterventionAssist InterventionType = "assist"
+	// InterventionRedirect changes the approach.
+	InterventionRedirect InterventionType = "redirect"
+	// InterventionTakeover has the DM finish the quest.
+	InterventionTakeover InterventionType = "takeover"
+	// InterventionAbort kills the quest.
+	InterventionAbort InterventionType = "abort"
+	// InterventionAugment adds resources or tools.
+	InterventionAugment InterventionType = "augment"
 )
 
+// EscalationResult describes how an escalated quest was resolved.
 type EscalationResult struct {
 	QuestID     QuestID `json:"quest_id"`
 	Resolution  string  `json:"resolution"`   // "reassigned", "completed_by_dm", "cancelled"
@@ -152,6 +173,7 @@ type EscalationResult struct {
 	DMCompleted bool    `json:"dm_completed"` // DM did it themselves
 }
 
+// AgentEvaluation contains a performance assessment of an agent.
 type AgentEvaluation struct {
 	AgentID          AgentID  `json:"agent_id"`
 	CurrentLevel     int      `json:"current_level"`
@@ -165,6 +187,7 @@ type AgentEvaluation struct {
 // WORLD STATE - Everything the DM can see
 // =============================================================================
 
+// WorldState contains the complete state of the game world.
 type WorldState struct {
 	Agents   []Agent   `json:"agents"`
 	Quests   []Quest   `json:"quests"`
@@ -174,6 +197,7 @@ type WorldState struct {
 	Stats    WorldStats   `json:"stats"`
 }
 
+// WorldStats contains aggregate statistics about the game world.
 type WorldStats struct {
 	ActiveAgents    int     `json:"active_agents"`
 	IdleAgents      int     `json:"idle_agents"`
@@ -191,48 +215,68 @@ type WorldStats struct {
 // GAME EVENTS - The event stream (maps to semstreams)
 // =============================================================================
 
+// GameEventType categorizes events in the game event stream.
 type GameEventType string
 
 const (
-	// Quest lifecycle
-	EventQuestPosted    GameEventType = "quest.posted"
-	EventQuestClaimed   GameEventType = "quest.claimed"
-	EventQuestStarted   GameEventType = "quest.started"
+	// EventQuestPosted indicates a quest was posted to the board.
+	EventQuestPosted GameEventType = "quest.posted"
+	// EventQuestClaimed indicates a quest was claimed by an agent.
+	EventQuestClaimed GameEventType = "quest.claimed"
+	// EventQuestStarted indicates work began on a quest.
+	EventQuestStarted GameEventType = "quest.started"
+	// EventQuestCompleted indicates a quest was completed successfully.
 	EventQuestCompleted GameEventType = "quest.completed"
-	EventQuestFailed    GameEventType = "quest.failed"
+	// EventQuestFailed indicates a quest failed.
+	EventQuestFailed GameEventType = "quest.failed"
+	// EventQuestEscalated indicates a quest was escalated.
 	EventQuestEscalated GameEventType = "quest.escalated"
 
-	// Agent lifecycle
-	EventAgentRecruited  GameEventType = "agent.recruited"
-	EventAgentLevelUp    GameEventType = "agent.level_up"
-	EventAgentLevelDown  GameEventType = "agent.level_down"
-	EventAgentDeath      GameEventType = "agent.death"       // Cooldown triggered
-	EventAgentPermadeath GameEventType = "agent.permadeath"  // Retired permanently
-	EventAgentRevived    GameEventType = "agent.revived"     // Back from cooldown
+	// EventAgentRecruited indicates a new agent joined.
+	EventAgentRecruited GameEventType = "agent.recruited"
+	// EventAgentLevelUp indicates an agent leveled up.
+	EventAgentLevelUp GameEventType = "agent.level_up"
+	// EventAgentLevelDown indicates an agent leveled down.
+	EventAgentLevelDown GameEventType = "agent.level_down"
+	// EventAgentDeath indicates a cooldown was triggered.
+	EventAgentDeath GameEventType = "agent.death"
+	// EventAgentPermadeath indicates permanent retirement.
+	EventAgentPermadeath GameEventType = "agent.permadeath"
+	// EventAgentRevived indicates an agent returned from cooldown.
+	EventAgentRevived GameEventType = "agent.revived"
 
-	// Battle lifecycle
-	EventBattleStarted  GameEventType = "battle.started"
-	EventBattleVictory  GameEventType = "battle.victory"
-	EventBattleDefeat   GameEventType = "battle.defeat"
+	// EventBattleStarted indicates a boss battle began.
+	EventBattleStarted GameEventType = "battle.started"
+	// EventBattleVictory indicates the agent won the battle.
+	EventBattleVictory GameEventType = "battle.victory"
+	// EventBattleDefeat indicates the agent lost the battle.
+	EventBattleDefeat GameEventType = "battle.defeat"
 
-	// Social
-	EventPartyFormed    GameEventType = "party.formed"
+	// EventPartyFormed indicates a party was created.
+	EventPartyFormed GameEventType = "party.formed"
+	// EventPartyDisbanded indicates a party was dissolved.
 	EventPartyDisbanded GameEventType = "party.disbanded"
-	EventGuildCreated   GameEventType = "guild.created"
-	EventGuildJoined    GameEventType = "guild.joined"
+	// EventGuildCreated indicates a guild was created.
+	EventGuildCreated GameEventType = "guild.created"
+	// EventGuildJoined indicates an agent joined a guild.
+	EventGuildJoined GameEventType = "guild.joined"
 
-	// DM actions
-	EventDMIntervention  GameEventType = "dm.intervention"
-	EventDMEscalation    GameEventType = "dm.escalation"
-	EventDMSessionStart  GameEventType = "dm.session_start"
-	EventDMSessionEnd    GameEventType = "dm.session_end"
+	// EventDMIntervention indicates the DM intervened.
+	EventDMIntervention GameEventType = "dm.intervention"
+	// EventDMEscalation indicates the DM handled an escalation.
+	EventDMEscalation GameEventType = "dm.escalation"
+	// EventDMSessionStart indicates a session started.
+	EventDMSessionStart GameEventType = "dm.session_start"
+	// EventDMSessionEnd indicates a session ended.
+	EventDMSessionEnd GameEventType = "dm.session_end"
 )
 
+// GameEvent represents an event in the game event stream.
 type GameEvent struct {
-	Type      GameEventType      `json:"type"`
-	Timestamp int64              `json:"timestamp"` // Unix millis
-	SessionID string             `json:"session_id"`
-	Data      interface{}        `json:"data"`
+	Type      GameEventType `json:"type"`
+	Timestamp int64         `json:"timestamp"` // Unix millis
+	SessionID string        `json:"session_id"`
+	Data      any           `json:"data"`
 
 	// References for easy filtering
 	QuestID  *QuestID  `json:"quest_id,omitempty"`
@@ -246,6 +290,7 @@ type GameEvent struct {
 	SpanID       string `json:"span_id"`
 }
 
+// EventFilter specifies criteria for filtering game events.
 type EventFilter struct {
 	Types    []GameEventType `json:"types,omitempty"`
 	QuestID  *QuestID        `json:"quest_id,omitempty"`

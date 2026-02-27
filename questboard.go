@@ -47,7 +47,7 @@ type QuestBoard interface {
 
 	// SubmitResult submits the output of a quest for review.
 	// Triggers a boss battle if the quest requires review.
-	SubmitResult(ctx context.Context, questID QuestID, result interface{}) (*BossBattle, error)
+	SubmitResult(ctx context.Context, questID QuestID, result any) (*BossBattle, error)
 
 	// --- Lifecycle ---
 
@@ -69,6 +69,7 @@ type QuestBoard interface {
 	BoardStats(ctx context.Context) (*BoardStats, error)
 }
 
+// QuestFilter specifies criteria for filtering available quests.
 type QuestFilter struct {
 	Skills       []SkillTag      `json:"skills,omitempty"`
 	MinDifficulty *QuestDifficulty `json:"min_difficulty,omitempty"`
@@ -78,6 +79,7 @@ type QuestFilter struct {
 	Limit        int              `json:"limit"`
 }
 
+// BoardStats contains aggregate statistics for the quest board.
 type BoardStats struct {
 	TotalPosted     int            `json:"total_posted"`
 	TotalClaimed    int            `json:"total_claimed"`
@@ -96,10 +98,12 @@ type BoardStats struct {
 // Because we already learned that fluent builders are nice.
 // =============================================================================
 
+// QuestBuilder provides a fluent API for creating quests.
 type QuestBuilder struct {
 	quest Quest
 }
 
+// NewQuest creates a new QuestBuilder with the given title.
 func NewQuest(title string) *QuestBuilder {
 	return &QuestBuilder{
 		quest: Quest{
@@ -115,88 +119,105 @@ func NewQuest(title string) *QuestBuilder {
 	}
 }
 
+// Description sets the quest description.
 func (b *QuestBuilder) Description(desc string) *QuestBuilder {
 	b.quest.Description = desc
 	return b
 }
 
+// Difficulty sets the quest difficulty and derives minimum tier.
 func (b *QuestBuilder) Difficulty(d QuestDifficulty) *QuestBuilder {
 	b.quest.Difficulty = d
 	b.quest.MinTier = TierFromDifficulty(d)
 	return b
 }
 
+// RequireSkills adds required skills to the quest.
 func (b *QuestBuilder) RequireSkills(skills ...SkillTag) *QuestBuilder {
 	b.quest.RequiredSkills = append(b.quest.RequiredSkills, skills...)
 	return b
 }
 
+// RequireTools adds required tool IDs to the quest.
 func (b *QuestBuilder) RequireTools(tools ...string) *QuestBuilder {
 	b.quest.RequiredTools = append(b.quest.RequiredTools, tools...)
 	return b
 }
 
+// RequireParty marks the quest as requiring a party with minimum size.
 func (b *QuestBuilder) RequireParty(minSize int) *QuestBuilder {
 	b.quest.PartyRequired = true
 	b.quest.MinPartySize = minSize
 	return b
 }
 
+// XP sets the base XP reward for the quest.
 func (b *QuestBuilder) XP(base int64) *QuestBuilder {
 	b.quest.BaseXP = base
 	return b
 }
 
+// BonusXP sets bonus XP for exceptional performance.
 func (b *QuestBuilder) BonusXP(bonus int64) *QuestBuilder {
 	b.quest.BonusXP = bonus
 	return b
 }
 
-func (b *QuestBuilder) WithInput(input interface{}) *QuestBuilder {
+// WithInput sets the quest input payload.
+func (b *QuestBuilder) WithInput(input any) *QuestBuilder {
 	b.quest.Input = input
 	return b
 }
 
+// MaxDuration sets the maximum allowed time for quest completion.
 func (b *QuestBuilder) MaxDuration(d time.Duration) *QuestBuilder {
 	b.quest.Constraints.MaxDuration = d
 	return b
 }
 
+// MaxCost sets the maximum allowed cost for quest execution.
 func (b *QuestBuilder) MaxCost(cost float64) *QuestBuilder {
 	b.quest.Constraints.MaxCost = cost
 	return b
 }
 
+// ReviewAs sets the review level for the quest.
 func (b *QuestBuilder) ReviewAs(level ReviewLevel) *QuestBuilder {
 	b.quest.Constraints.ReviewLevel = level
 	return b
 }
 
+// NoReview disables the review requirement for the quest.
 func (b *QuestBuilder) NoReview() *QuestBuilder {
 	b.quest.Constraints.RequireReview = false
 	return b
 }
 
+// Deadline sets the deadline for quest completion.
 func (b *QuestBuilder) Deadline(t time.Time) *QuestBuilder {
 	b.quest.Deadline = &t
 	return b
 }
 
+// MaxRetries sets the maximum number of retry attempts.
 func (b *QuestBuilder) MaxRetries(n int) *QuestBuilder {
 	b.quest.MaxAttempts = n
 	return b
 }
 
+// GuildPriority sets which guild gets priority for this quest.
 func (b *QuestBuilder) GuildPriority(guildID GuildID) *QuestBuilder {
 	b.quest.GuildPriority = &guildID
 	return b
 }
 
+// AsSubQuestOf marks this quest as a sub-quest of another.
 func (b *QuestBuilder) AsSubQuestOf(parentID QuestID) *QuestBuilder {
 	b.quest.ParentQuest = &parentID
 	return b
 }
 
+// Build constructs and returns the quest.
 func (b *QuestBuilder) Build() Quest {
 	if b.quest.BaseXP == 0 {
 		b.quest.BaseXP = DefaultXPForDifficulty(b.quest.Difficulty)
@@ -206,6 +227,7 @@ func (b *QuestBuilder) Build() Quest {
 
 // --- Helpers ---
 
+// TierFromDifficulty returns the minimum trust tier for a difficulty level.
 func TierFromDifficulty(d QuestDifficulty) TrustTier {
 	switch {
 	case d <= DifficultyEasy:
@@ -221,6 +243,7 @@ func TierFromDifficulty(d QuestDifficulty) TrustTier {
 	}
 }
 
+// DefaultXPForDifficulty returns the default base XP for a difficulty level.
 func DefaultXPForDifficulty(d QuestDifficulty) int64 {
 	xpTable := map[QuestDifficulty]int64{
 		DifficultyTrivial:   25,

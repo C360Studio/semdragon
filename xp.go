@@ -44,17 +44,19 @@ type XPContext struct {
 	Attempt      int           `json:"attempt"`       // Which attempt (1st, 2nd, etc.)
 }
 
+// XPAward holds the breakdown of XP earned from a quest completion.
 type XPAward struct {
-	BaseXP       int64   `json:"base_xp"`
-	QualityBonus int64   `json:"quality_bonus"`
-	SpeedBonus   int64   `json:"speed_bonus"`
-	StreakBonus  int64   `json:"streak_bonus"`
-	GuildBonus   int64   `json:"guild_bonus"`
-	AttemptPenalty int64 `json:"attempt_penalty"` // Reduced XP for retries
-	TotalXP      int64   `json:"total_xp"`
-	Breakdown    string  `json:"breakdown"`       // Human-readable explanation
+	BaseXP         int64  `json:"base_xp"`
+	QualityBonus   int64  `json:"quality_bonus"`
+	SpeedBonus     int64  `json:"speed_bonus"`
+	StreakBonus    int64  `json:"streak_bonus"`
+	GuildBonus     int64  `json:"guild_bonus"`
+	AttemptPenalty int64  `json:"attempt_penalty"`
+	TotalXP        int64  `json:"total_xp"`
+	Breakdown      string `json:"breakdown"`
 }
 
+// PenaltyContext contains information needed to calculate XP penalties.
 type PenaltyContext struct {
 	Quest       Quest       `json:"quest"`
 	Agent       Agent       `json:"agent"`
@@ -62,30 +64,38 @@ type PenaltyContext struct {
 	Attempt     int         `json:"attempt"`
 }
 
+// FailureType categorizes quest failures for penalty calculation.
 type FailureType string
 
+// Failure type constants.
 const (
-	FailureSoft        FailureType = "soft"        // Bad output, can retry
-	FailureTimeout     FailureType = "timeout"     // Took too long
-	FailureAbandon     FailureType = "abandon"     // Agent gave up
-	FailureCatastrophic FailureType = "catastrophic" // Data loss, security breach, etc.
+	// FailureSoft indicates bad output that can be retried.
+	FailureSoft FailureType = "soft"
+	// FailureTimeout indicates the quest took too long.
+	FailureTimeout FailureType = "timeout"
+	// FailureAbandon indicates the agent gave up.
+	FailureAbandon FailureType = "abandon"
+	// FailureCatastrophic indicates data loss, security breach, etc.
+	FailureCatastrophic FailureType = "catastrophic"
 )
 
+// XPPenalty holds the consequences of a quest failure.
 type XPPenalty struct {
-	XPLost      int64       `json:"xp_lost"`
+	XPLost      int64         `json:"xp_lost"`
 	CooldownDur time.Duration `json:"cooldown_duration"`
-	LevelLoss   bool        `json:"level_loss"`
-	Permadeath  bool        `json:"permadeath"` // Only for catastrophic
-	Reason      string      `json:"reason"`
+	LevelLoss   bool          `json:"level_loss"`
+	Permadeath  bool          `json:"permadeath"`
+	Reason      string        `json:"reason"`
 }
 
+// LevelEvent records a level change for an agent.
 type LevelEvent struct {
 	AgentID   AgentID   `json:"agent_id"`
 	OldLevel  int       `json:"old_level"`
 	NewLevel  int       `json:"new_level"`
 	OldTier   TrustTier `json:"old_tier"`
 	NewTier   TrustTier `json:"new_tier"`
-	Direction string    `json:"direction"` // "up", "down", "none"
+	Direction string    `json:"direction"`
 	XPCurrent int64     `json:"xp_current"`
 	XPNeeded  int64     `json:"xp_needed"`
 }
@@ -94,17 +104,18 @@ type LevelEvent struct {
 // DEFAULT XP ENGINE - A reasonable starting implementation
 // =============================================================================
 
+// DefaultXPEngine is the standard XP calculation implementation with tunable parameters.
 type DefaultXPEngine struct {
-	// Tuning knobs
-	QualityMultiplier  float64 // How much quality matters (default: 2.0)
-	SpeedMultiplier    float64 // How much speed matters (default: 0.5)
-	StreakMultiplier    float64 // Streak bonus per consecutive success (default: 0.1)
-	GuildBonusRate     float64 // Guild quest bonus (default: 0.15)
-	RetryPenaltyRate   float64 // XP reduction per retry attempt (default: 0.25)
-	FailurePenaltyRate float64 // XP lost on failure as fraction of base (default: 0.5)
-	LevelDownThreshold int     // Consecutive failures before level loss (default: 3)
+	QualityMultiplier  float64
+	SpeedMultiplier    float64
+	StreakMultiplier   float64
+	GuildBonusRate     float64
+	RetryPenaltyRate   float64
+	FailurePenaltyRate float64
+	LevelDownThreshold int
 }
 
+// NewDefaultXPEngine creates an XP engine with sensible defaults.
 func NewDefaultXPEngine() *DefaultXPEngine {
 	return &DefaultXPEngine{
 		QualityMultiplier:  2.0,
@@ -117,6 +128,7 @@ func NewDefaultXPEngine() *DefaultXPEngine {
 	}
 }
 
+// CalculateXP computes XP earned from a quest completion with all bonuses.
 func (e *DefaultXPEngine) CalculateXP(ctx XPContext) XPAward {
 	base := ctx.Quest.BaseXP
 
@@ -160,6 +172,7 @@ func (e *DefaultXPEngine) CalculateXP(ctx XPContext) XPAward {
 	}
 }
 
+// CalculatePenalty computes XP loss and cooldown based on failure type.
 func (e *DefaultXPEngine) CalculatePenalty(ctx PenaltyContext) XPPenalty {
 	base := ctx.Quest.BaseXP
 
@@ -196,6 +209,7 @@ func (e *DefaultXPEngine) CalculatePenalty(ctx PenaltyContext) XPPenalty {
 	}
 }
 
+// ApplyXP adds or removes XP from an agent and handles level transitions.
 func (e *DefaultXPEngine) ApplyXP(agent *Agent, delta int64) LevelEvent {
 	event := LevelEvent{
 		AgentID:   agent.ID,
@@ -238,6 +252,7 @@ func (e *DefaultXPEngine) XPToNextLevel(currentLevel int) int64 {
 	return int64(100.0 * math.Pow(float64(currentLevel), 1.5))
 }
 
+// CheckLevelDown determines if an agent should lose a level due to poor performance.
 func (e *DefaultXPEngine) CheckLevelDown(agent *Agent) *LevelEvent {
 	// If agent has N consecutive failures (tracked externally), drop a level
 	// This is called by the DM, not automatically
