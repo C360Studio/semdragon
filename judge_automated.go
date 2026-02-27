@@ -73,8 +73,10 @@ func (j *AutomatedJudge) Evaluate(ctx context.Context, input JudgeInput) (*Judge
 // FormatChecker validates that output exists and has expected structure.
 type FormatChecker struct{}
 
+// Name returns the checker identifier.
 func (c *FormatChecker) Name() string { return "format" }
 
+// Check validates output format and structure.
 func (c *FormatChecker) Check(_ context.Context, input JudgeInput) (float64, string, error) {
 	if input.Output == nil {
 		return 0.0, "Output is nil", nil
@@ -116,8 +118,10 @@ func (c *FormatChecker) Check(_ context.Context, input JudgeInput) (float64, str
 // CompletenessChecker validates that required fields are present.
 type CompletenessChecker struct{}
 
+// Name returns the checker identifier.
 func (c *CompletenessChecker) Name() string { return "completeness" }
 
+// Check validates that required fields are populated.
 func (c *CompletenessChecker) Check(_ context.Context, input JudgeInput) (float64, string, error) {
 	if input.Output == nil {
 		return 0.0, "Output is nil - cannot check completeness", nil
@@ -179,8 +183,10 @@ func (c *CompletenessChecker) Check(_ context.Context, input JudgeInput) (float6
 // NonEmptyChecker validates that output contains meaningful content.
 type NonEmptyChecker struct{}
 
+// Name returns the checker identifier.
 func (c *NonEmptyChecker) Name() string { return "non_empty" }
 
+// Check validates that output contains non-empty content.
 func (c *NonEmptyChecker) Check(_ context.Context, input JudgeInput) (float64, string, error) {
 	if input.Output == nil {
 		return 0.0, "Output is nil", nil
@@ -254,8 +260,10 @@ func (c *NonEmptyChecker) Check(_ context.Context, input JudgeInput) (float64, s
 // In practice, this would need domain-specific logic or LLM evaluation.
 type CorrectnessChecker struct{}
 
+// Name returns the checker identifier.
 func (c *CorrectnessChecker) Name() string { return "correctness" }
 
+// Check validates output correctness (limited to format validation).
 func (c *CorrectnessChecker) Check(_ context.Context, input JudgeInput) (float64, string, error) {
 	// Automated correctness checking is limited
 	// We can only verify format/structure, not semantic correctness
@@ -278,8 +286,10 @@ func (c *CorrectnessChecker) Check(_ context.Context, input JudgeInput) (float64
 // QualityChecker provides a basic quality check.
 type QualityChecker struct{}
 
+// Name returns the checker identifier.
 func (c *QualityChecker) Name() string { return "quality" }
 
+// Check assesses output quality using basic metrics.
 func (c *QualityChecker) Check(_ context.Context, input JudgeInput) (float64, string, error) {
 	// Quality is subjective - automated check can only look at basic metrics
 	if input.Output == nil {
@@ -310,8 +320,10 @@ func (c *QualityChecker) Check(_ context.Context, input JudgeInput) (float64, st
 // RobustnessChecker provides a basic robustness check.
 type RobustnessChecker struct{}
 
+// Name returns the checker identifier.
 func (c *RobustnessChecker) Name() string { return "robustness" }
 
+// Check assesses output robustness (requires LLM evaluation for accuracy).
 func (c *RobustnessChecker) Check(_ context.Context, input JudgeInput) (float64, string, error) {
 	// Robustness (edge case handling) is difficult to check automatically
 	// This would require test cases or LLM evaluation
@@ -326,8 +338,10 @@ func (c *RobustnessChecker) Check(_ context.Context, input JudgeInput) (float64,
 // CreativityChecker provides a basic creativity check.
 type CreativityChecker struct{}
 
+// Name returns the checker identifier.
 func (c *CreativityChecker) Name() string { return "creativity" }
 
+// Check assesses output creativity (requires human evaluation for accuracy).
 func (c *CreativityChecker) Check(_ context.Context, input JudgeInput) (float64, string, error) {
 	// Creativity is highly subjective - automated check can't assess this
 	if input.Output == nil {
