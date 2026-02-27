@@ -123,6 +123,11 @@ func (s *Storage) StatsKey() string {
 	return "stats.board"
 }
 
+// AgentStreakKey returns the key for an agent's success streak.
+func (s *Storage) AgentStreakKey(instance string) string {
+	return fmt.Sprintf("streak.agent.%s", instance)
+}
+
 // --- Quest Operations ---
 
 // GetQuest loads a quest by instance ID.
@@ -207,6 +212,24 @@ func (s *Storage) PutAgent(ctx context.Context, instance string, agent *Agent) e
 		return errs.Wrap(err, "Storage", "PutAgent", "put")
 	}
 	return nil
+}
+
+// UpdateAgent atomically updates an agent using a modifier function.
+func (s *Storage) UpdateAgent(ctx context.Context, instance string, fn func(*Agent) error) error {
+	key := s.AgentKey(instance)
+	return s.kv.UpdateWithRetry(ctx, key, func(current []byte) ([]byte, error) {
+		if len(current) == 0 {
+			return nil, fmt.Errorf("agent not found: %s", instance)
+		}
+		var agent Agent
+		if err := json.Unmarshal(current, &agent); err != nil {
+			return nil, err
+		}
+		if err := fn(&agent); err != nil {
+			return nil, err
+		}
+		return json.Marshal(&agent)
+	})
 }
 
 // --- Party Operations ---
@@ -478,4 +501,65 @@ func (s *Storage) PutBoardStats(ctx context.Context, stats *BoardStats) error {
 		return errs.Wrap(err, "Storage", "PutBoardStats", "put")
 	}
 	return nil
+}
+
+// --- Agent Streak Operations ---
+// Streak tracking for consecutive successes/failures.
+
+// GetAgentStreak returns the consecutive success count for an agent.
+func (s *Storage) GetAgentStreak(ctx context.Context, instance string) (int, error) {
+	key := s.AgentStreakKey(instance)
+	entry, err := s.kv.Get(ctx, key)
+	if err != nil {
+		if natsclient.IsKVNotFoundError(err) {
+			return 0, nil // No streak recorded yet
+		}
+		return 0, errs.Wrap(err, "Storage", "GetAgentStreak", "get")
+	}
+
+	var streak int
+	if err := json.Unmarshal(entry.Value, &streak); err != nil {
+		return 0, errs.Wrap(err, "Storage", "GetAgentStreak", "unmarshal")
+	}
+	return streak, nil
+}
+
+// SetAgentStreak sets the consecutive success count for an agent.
+func (s *Storage) SetAgentStreak(ctx context.Context, instance string, streak int) error {
+	key := s.AgentStreakKey(instance)
+	data, err := json.Marshal(streak)
+	if err != nil {
+		return errs.Wrap(err, "Storage", "SetAgentStreak", "marshal")
+	}
+	_, err = s.kv.Put(ctx, key, data)
+	if err != nil {
+		return errs.Wrap(err, "Storage", "SetAgentStreak", "put")
+	}
+	return nil
+}
+
+// IncrementAgentStreak atomically increments and returns the new streak value.
+func (s *Storage) IncrementAgentStreak(ctx context.Context, instance string) (int, error) {
+	key := s.AgentStreakKey(instance)
+	var newStreak int
+
+	err := s.kv.UpdateWithRetry(ctx, key, func(current []byte) ([]byte, error) {
+		var streak int
+		if len(current) > 0 {
+			if err := json.Unmarshal(current, &streak); err != nil {
+				return nil, err
+			}
+		}
+		newStreak = streak + 1
+		return json.Marshal(newStreak)
+	})
+	if err != nil {
+		return 0, errs.Wrap(err, "Storage", "IncrementAgentStreak", "update")
+	}
+	return newStreak, nil
+}
+
+// ResetAgentStreak resets the streak to zero.
+func (s *Storage) ResetAgentStreak(ctx context.Context, instance string) error {
+	return s.SetAgentStreak(ctx, instance, 0)
 }

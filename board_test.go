@@ -102,6 +102,8 @@ func TestQuestLifecycle(t *testing.T) {
 	}
 
 	// 5. Submit result (triggers boss battle since review is enabled)
+	// With auto-evaluation enabled, the evaluator runs immediately and
+	// completes the quest if evaluation passes
 	result := map[string]string{"analysis": "complete"}
 	battle, err := board.SubmitResult(ctx, posted.ID, result)
 	if err != nil {
@@ -111,29 +113,14 @@ func TestQuestLifecycle(t *testing.T) {
 	if battle == nil {
 		t.Error("expected boss battle to be created")
 	}
-	if battle != nil && battle.Status != BattleActive {
-		t.Errorf("expected battle status %s, got %s", BattleActive, battle.Status)
+
+	// With ReviewAuto and valid output, the evaluator completes immediately
+	// Battle status should be victory (auto-evaluation passed)
+	if battle != nil && battle.Status != BattleVictory {
+		t.Errorf("expected battle status %s, got %s", BattleVictory, battle.Status)
 	}
 
-	submitted, err := board.GetQuest(ctx, posted.ID)
-	if err != nil {
-		t.Fatalf("GetQuest failed: %v", err)
-	}
-	if submitted.Status != QuestInReview {
-		t.Errorf("expected status %s, got %s", QuestInReview, submitted.Status)
-	}
-
-	// 6. Complete the quest (after review)
-	verdict := BattleVerdict{
-		Passed:       true,
-		QualityScore: 0.85,
-		XPAwarded:    150,
-		Feedback:     "Good work!",
-	}
-	if err := board.CompleteQuest(ctx, posted.ID, verdict); err != nil {
-		t.Fatalf("CompleteQuest failed: %v", err)
-	}
-
+	// Quest should be completed (auto-evaluation passed and completed the quest)
 	completed, err := board.GetQuest(ctx, posted.ID)
 	if err != nil {
 		t.Fatalf("GetQuest failed: %v", err)

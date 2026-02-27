@@ -33,6 +33,12 @@ var (
 	// Boss battle subjects
 	SubjectBattleStarted = natsclient.NewSubject[BattleStartedPayload](PredicateBattleStarted)
 	SubjectBattleVerdict = natsclient.NewSubject[BattleVerdictPayload](PredicateBattleVerdict)
+
+	// Agent progression subjects
+	SubjectAgentXP        = natsclient.NewSubject[AgentXPPayload](PredicateAgentXP)
+	SubjectAgentLevelUp   = natsclient.NewSubject[AgentLevelPayload](PredicateAgentLevelUp)
+	SubjectAgentLevelDown = natsclient.NewSubject[AgentLevelPayload](PredicateAgentLevelDown)
+	SubjectAgentCooldown  = natsclient.NewSubject[AgentCooldownPayload](PredicateAgentCooldown)
 )
 
 // --- Payload Types ---
@@ -333,4 +339,112 @@ func (ep *EventPublisher) PublishBattleVerdict(ctx context.Context, payload Batt
 		return err
 	}
 	return SubjectBattleVerdict.Publish(ctx, ep.client, payload)
+}
+
+// --- Agent Progression Events ---
+
+// PublishAgentXP publishes an agent.progression.xp event.
+func (ep *EventPublisher) PublishAgentXP(ctx context.Context, payload AgentXPPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectAgentXP.Publish(ctx, ep.client, payload)
+}
+
+// PublishAgentLevelUp publishes an agent.progression.levelup event.
+func (ep *EventPublisher) PublishAgentLevelUp(ctx context.Context, payload AgentLevelPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectAgentLevelUp.Publish(ctx, ep.client, payload)
+}
+
+// PublishAgentLevelDown publishes an agent.progression.leveldown event.
+func (ep *EventPublisher) PublishAgentLevelDown(ctx context.Context, payload AgentLevelPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectAgentLevelDown.Publish(ctx, ep.client, payload)
+}
+
+// PublishAgentCooldown publishes an agent.progression.cooldown event.
+func (ep *EventPublisher) PublishAgentCooldown(ctx context.Context, payload AgentCooldownPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectAgentCooldown.Publish(ctx, ep.client, payload)
+}
+
+// =============================================================================
+// AGENT PROGRESSION PAYLOADS
+// =============================================================================
+
+// AgentXPPayload contains data for agent.progression.xp events.
+type AgentXPPayload struct {
+	AgentID     AgentID   `json:"agent_id"`
+	QuestID     QuestID   `json:"quest_id"`
+	Award       *XPAward  `json:"award,omitempty"`   // Set on success
+	Penalty     *XPPenalty `json:"penalty,omitempty"` // Set on failure
+	XPDelta     int64     `json:"xp_delta"`
+	XPBefore    int64     `json:"xp_before"`
+	XPAfter     int64     `json:"xp_after"`
+	LevelBefore int       `json:"level_before"`
+	LevelAfter  int       `json:"level_after"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+func (p *AgentXPPayload) Validate() error {
+	if p.AgentID == "" {
+		return errors.New("agent_id required")
+	}
+	if p.QuestID == "" {
+		return errors.New("quest_id required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// AgentLevelPayload contains data for agent.progression.levelup/leveldown events.
+type AgentLevelPayload struct {
+	AgentID   AgentID   `json:"agent_id"`
+	QuestID   QuestID   `json:"quest_id"`
+	OldLevel  int       `json:"old_level"`
+	NewLevel  int       `json:"new_level"`
+	OldTier   TrustTier `json:"old_tier"`
+	NewTier   TrustTier `json:"new_tier"`
+	XPCurrent int64     `json:"xp_current"`
+	XPToLevel int64     `json:"xp_to_level"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+func (p *AgentLevelPayload) Validate() error {
+	if p.AgentID == "" {
+		return errors.New("agent_id required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// AgentCooldownPayload contains data for agent.progression.cooldown events.
+type AgentCooldownPayload struct {
+	AgentID       AgentID       `json:"agent_id"`
+	QuestID       QuestID       `json:"quest_id"`
+	FailType      FailureType   `json:"fail_type"`
+	CooldownUntil time.Time     `json:"cooldown_until"`
+	Duration      time.Duration `json:"duration"`
+	Timestamp     time.Time     `json:"timestamp"`
+}
+
+func (p *AgentCooldownPayload) Validate() error {
+	if p.AgentID == "" {
+		return errors.New("agent_id required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
 }

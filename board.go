@@ -23,14 +23,37 @@ import (
 
 // NATSQuestBoard implements QuestBoard using NATS JetStream.
 type NATSQuestBoard struct {
-	client  *natsclient.Client
-	config  *BoardConfig
-	storage *Storage
-	events  *EventPublisher
+	client      *natsclient.Client
+	config      *BoardConfig
+	storage     *Storage
+	events      *EventPublisher
+	evaluator   BattleEvaluator
+	progression *ProgressionManager
 }
 
 // NATSQuestBoardOption configures a NATSQuestBoard.
 type NATSQuestBoardOption func(*NATSQuestBoard)
+
+// WithEvaluator sets a custom battle evaluator.
+func WithEvaluator(e BattleEvaluator) NATSQuestBoardOption {
+	return func(b *NATSQuestBoard) {
+		b.evaluator = e
+	}
+}
+
+// WithProgression sets a custom progression manager.
+func WithProgression(pm *ProgressionManager) NATSQuestBoardOption {
+	return func(b *NATSQuestBoard) {
+		b.progression = pm
+	}
+}
+
+// WithXPEngine sets up progression with the given XP engine.
+func WithXPEngine(xp XPEngine) NATSQuestBoardOption {
+	return func(b *NATSQuestBoard) {
+		b.progression = NewProgressionManager(b.storage, xp, b.events)
+	}
+}
 
 // NewNATSQuestBoard creates a new QuestBoard backed by NATS JetStream.
 func NewNATSQuestBoard(ctx context.Context, client *natsclient.Client, config BoardConfig, opts ...NATSQuestBoardOption) (*NATSQuestBoard, error) {
@@ -39,15 +62,24 @@ func NewNATSQuestBoard(ctx context.Context, client *natsclient.Client, config Bo
 		return nil, errs.Wrap(err, "NATSQuestBoard", "New", "create storage")
 	}
 
+	events := NewEventPublisher(client)
 	board := &NATSQuestBoard{
 		client:  client,
 		config:  &config,
 		storage: storage,
-		events:  NewEventPublisher(client),
+		events:  events,
 	}
 
 	for _, opt := range opts {
 		opt(board)
+	}
+
+	// Set up defaults if not configured via options
+	if board.evaluator == nil {
+		board.evaluator = NewDefaultBattleEvaluator()
+	}
+	if board.progression == nil {
+		board.progression = NewProgressionManager(storage, NewDefaultXPEngine(), events)
 	}
 
 	return board, nil
@@ -55,15 +87,24 @@ func NewNATSQuestBoard(ctx context.Context, client *natsclient.Client, config Bo
 
 // NewNATSQuestBoardWithStorage creates a QuestBoard with pre-existing storage.
 func NewNATSQuestBoardWithStorage(client *natsclient.Client, storage *Storage, opts ...NATSQuestBoardOption) *NATSQuestBoard {
+	events := NewEventPublisher(client)
 	board := &NATSQuestBoard{
 		client:  client,
 		config:  storage.Config(),
 		storage: storage,
-		events:  NewEventPublisher(client),
+		events:  events,
 	}
 
 	for _, opt := range opts {
 		opt(board)
+	}
+
+	// Set up defaults if not configured via options
+	if board.evaluator == nil {
+		board.evaluator = NewDefaultBattleEvaluator()
+	}
+	if board.progression == nil {
+		board.progression = NewProgressionManager(storage, NewDefaultXPEngine(), events)
 	}
 
 	return board
@@ -580,6 +621,41 @@ func (b *NATSQuestBoard) SubmitResult(ctx context.Context, questID QuestID, resu
 			Quest:     updatedQuest,
 			StartedAt: battle.StartedAt,
 		})
+
+		// Run evaluator if available
+		if b.evaluator != nil {
+			evalResult, evalErr := b.evaluator.Evaluate(ctx, battle, &updatedQuest, result)
+			if evalErr == nil && !evalResult.Pending {
+				// Update battle with results
+				battle.Results = evalResult.Results
+				battle.Verdict = &evalResult.Verdict
+				if evalResult.Verdict.Passed {
+					battle.Status = BattleVictory
+				} else {
+					battle.Status = BattleDefeat
+				}
+				now := time.Now()
+				battle.CompletedAt = &now
+
+				// Persist updated battle
+				b.storage.PutBattle(ctx, battleInstance, battle)
+
+				// Publish verdict
+				b.events.PublishBattleVerdict(ctx, BattleVerdictPayload{
+					Battle:  *battle,
+					Quest:   updatedQuest,
+					Verdict: evalResult.Verdict,
+					EndedAt: now,
+				})
+
+				// Complete or fail the quest based on verdict
+				if evalResult.Verdict.Passed {
+					b.CompleteQuest(ctx, questID, evalResult.Verdict)
+				} else {
+					b.FailQuest(ctx, questID, evalResult.Verdict.Feedback)
+				}
+			}
+		}
 	}
 
 	b.events.PublishQuestSubmitted(ctx, QuestSubmittedPayload{
@@ -640,6 +716,27 @@ func (b *NATSQuestBoard) CompleteQuest(ctx context.Context, questID QuestID, ver
 	if agentID != "" {
 		agentInstance := ExtractInstance(string(agentID))
 		b.storage.RemoveAgentQuestIndex(ctx, agentInstance, questInstance)
+
+		// Process progression on success
+		if b.progression != nil {
+			isGuildQuest := updatedQuest.GuildPriority != nil
+			pctx := ProgressionContext{
+				Quest:        updatedQuest,
+				AgentID:      agentID,
+				Verdict:      verdict,
+				Duration:     duration,
+				IsGuildQuest: isGuildQuest,
+			}
+			progResult, progErr := b.progression.ProcessSuccess(ctx, pctx)
+			if progErr != nil {
+				// Log error but don't fail quest completion
+				// Quest is already completed, progression failure is secondary
+			}
+			// Update verdict with actual XP awarded from progression
+			if progResult != nil && progResult.Award != nil {
+				verdict.XPAwarded = progResult.Award.TotalXP
+			}
+		}
 	}
 
 	b.events.PublishQuestCompleted(ctx, QuestCompletedPayload{
@@ -706,6 +803,19 @@ func (b *NATSQuestBoard) FailQuest(ctx context.Context, questID QuestID, reason 
 	if agentID != "" {
 		agentInstance := ExtractInstance(string(agentID))
 		b.storage.RemoveAgentQuestIndex(ctx, agentInstance, questInstance)
+
+		// Process progression penalty on failure (not on repost)
+		if b.progression != nil && !reposted {
+			pctx := ProgressionContext{
+				Quest:    updatedQuest,
+				AgentID:  agentID,
+				FailType: FailureSoft,
+			}
+			if _, err := b.progression.ProcessFailure(ctx, pctx); err != nil {
+				// Log error but don't fail quest failure recording
+				// Quest status is already updated, progression failure is secondary
+			}
+		}
 	}
 
 	b.events.PublishQuestFailed(ctx, QuestFailedPayload{
