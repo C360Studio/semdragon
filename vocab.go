@@ -118,6 +118,32 @@ const (
 	PredicateGuildDemoted = "guild.membership.demoted"
 )
 
+// --- DM Session Predicates ---
+
+const (
+	// PredicateSessionStart - DM session started.
+	PredicateSessionStart = "dm.session.start"
+
+	// PredicateSessionEnd - DM session ended.
+	PredicateSessionEnd = "dm.session.end"
+
+	// PredicateDMIntervention - DM intervened in a quest.
+	PredicateDMIntervention = "dm.action.intervention"
+
+	// PredicateDMEscalation - DM handled an escalation.
+	PredicateDMEscalation = "dm.action.escalation"
+)
+
+// --- Approval Predicates ---
+
+const (
+	// PredicateApprovalRequested - Approval request pending.
+	PredicateApprovalRequested = "approval.request.pending"
+
+	// PredicateApprovalResolved - Approval request resolved.
+	PredicateApprovalResolved = "approval.request.resolved"
+)
+
 // RegisterVocabulary registers all semdragons predicates with the vocabulary system.
 // Call this during application initialization.
 func RegisterVocabulary() {
@@ -245,5 +271,33 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateGuildDemoted,
 		vocabulary.WithDescription("Agent demoted in guild rank"),
 		vocabulary.WithDataType("GuildRankPayload"),
+	)
+
+	// DM session predicates
+	vocabulary.Register(PredicateSessionStart,
+		vocabulary.WithDescription("DM session started"),
+		vocabulary.WithDataType("SessionStartPayload"),
+	)
+	vocabulary.Register(PredicateSessionEnd,
+		vocabulary.WithDescription("DM session ended"),
+		vocabulary.WithDataType("SessionEndPayload"),
+	)
+	vocabulary.Register(PredicateDMIntervention,
+		vocabulary.WithDescription("DM intervened in a quest"),
+		vocabulary.WithDataType("InterventionPayload"),
+	)
+	vocabulary.Register(PredicateDMEscalation,
+		vocabulary.WithDescription("DM handled an escalation"),
+		vocabulary.WithDataType("EscalationPayload"),
+	)
+
+	// Approval predicates
+	vocabulary.Register(PredicateApprovalRequested,
+		vocabulary.WithDescription("Approval request pending human decision"),
+		vocabulary.WithDataType("ApprovalRequest"),
+	)
+	vocabulary.Register(PredicateApprovalResolved,
+		vocabulary.WithDescription("Approval request resolved"),
+		vocabulary.WithDataType("ApprovalResponse"),
 	)
 }

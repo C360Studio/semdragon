@@ -271,6 +271,15 @@ quest := NewQuest("title").
 
 **Context-First**: All I/O operations take `context.Context` as first parameter
 
+**Unused Parameters (`_`)**: Never silence linter warnings by blindly using `_` for unused parameters. This is lazy and breaks lifecycle control. Instead:
+- **If it's context**: You almost certainly need it. Add cancellation checks in loops, pass it to called functions, or use it for timeouts.
+- **If it's a callback parameter**: Use it to extract data (e.g., parse `msg.Subject` or `msg.Data`).
+- **If truly unused**: Add a comment explaining WHY it's not needed (e.g., "Mock uses in-memory lookup - no context needed for synchronous local access").
+- **If reserved for future use**: Document the intent (e.g., "TODO: Use strategy to adjust scoring when implemented").
+
+Bad: `func foo(_ context.Context)` - Silences linter without thought
+Good: Check `ctx.Done()` in loops, use for timeouts, pass to callees
+
 **Interfaces Over Implementations**: Core domain defined as interfaces with multiple possible backends
 
 ## Skills
