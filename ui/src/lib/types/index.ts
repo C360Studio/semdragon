@@ -73,6 +73,7 @@ export interface AgentStats {
 	bosses_defeated: number;
 	bosses_failed: number;
 	total_xp_earned: number;
+	total_xp_spent: number;
 	avg_quality_score: number;
 	avg_efficiency: number;
 	parties_led: number;
@@ -425,7 +426,10 @@ export type GameEventType =
 	| 'dm.intervention'
 	| 'dm.escalation'
 	| 'dm.session_start'
-	| 'dm.session_end';
+	| 'dm.session_end'
+	| 'store.item.purchased'
+	| 'store.consumable.used'
+	| 'agent.inventory.updated';
 
 export interface GameEvent {
 	type: GameEventType;
@@ -494,4 +498,109 @@ export interface SessionSummary {
 	level_ups: number;
 	level_downs: number;
 	deaths: number;
+}
+
+// =============================================================================
+// STORE
+// =============================================================================
+
+export type ItemType = 'tool' | 'consumable';
+
+export type PurchaseType = 'permanent' | 'rental';
+
+export type ConsumableType =
+	| 'retry_token'
+	| 'cooldown_skip'
+	| 'xp_boost'
+	| 'quality_shield'
+	| 'insight_scroll';
+
+export const ConsumableTypeNames: Record<ConsumableType, string> = {
+	retry_token: 'Retry Token',
+	cooldown_skip: 'Cooldown Skip',
+	xp_boost: 'XP Boost',
+	quality_shield: 'Quality Shield',
+	insight_scroll: 'Insight Scroll'
+};
+
+export const ConsumableTypeDescriptions: Record<ConsumableType, string> = {
+	retry_token: 'Retry a failed quest without penalty',
+	cooldown_skip: 'Clear cooldown immediately',
+	xp_boost: 'Earn 2x XP on your next quest',
+	quality_shield: 'Ignore one failed review criterion',
+	insight_scroll: 'See difficulty hints before claiming'
+};
+
+export interface ConsumableEffect {
+	type: ConsumableType;
+	magnitude?: number;
+	duration?: number;
+	metadata?: Record<string, unknown>;
+}
+
+export interface StoreItem {
+	id: string;
+	name: string;
+	description: string;
+	item_type: ItemType;
+	purchase_type: PurchaseType;
+	xp_cost: number;
+	rental_uses?: number;
+	min_tier: TrustTier;
+	min_level?: number;
+	tool_id?: string;
+	effect?: ConsumableEffect;
+	in_stock: boolean;
+	guild_discount?: number;
+}
+
+export interface OwnedItem {
+	item_id: string;
+	item_name: string;
+	purchase_type: PurchaseType;
+	purchased_at: string;
+	xp_spent: number;
+	uses_remaining?: number;
+}
+
+export interface AgentInventory {
+	agent_id: AgentID;
+	owned_tools: Record<string, OwnedItem>;
+	consumables: Record<string, number>;
+	total_spent: number;
+}
+
+export interface ActiveEffect {
+	consumable_id: string;
+	effect: ConsumableEffect;
+	activated_at: string;
+	quests_remaining: number;
+	quest_id?: QuestID;
+}
+
+export interface PurchaseRequest {
+	agent_id: AgentID;
+	item_id: string;
+}
+
+export interface PurchaseResponse {
+	success: boolean;
+	item: StoreItem;
+	xp_spent: number;
+	xp_remaining: number;
+	inventory: AgentInventory;
+	error?: string;
+}
+
+export interface UseConsumableRequest {
+	agent_id: AgentID;
+	consumable_id: string;
+	quest_id?: QuestID;
+}
+
+export interface UseConsumableResponse {
+	success: boolean;
+	remaining: number;
+	active_effects: ActiveEffect[];
+	error?: string;
 }

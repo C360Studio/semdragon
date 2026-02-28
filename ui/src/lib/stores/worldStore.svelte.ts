@@ -17,7 +17,10 @@ import type {
 	BossBattle,
 	BattleID,
 	WorldStats,
-	GameEvent
+	GameEvent,
+	StoreItem,
+	AgentInventory,
+	ActiveEffect
 } from '$types';
 
 // =============================================================================
@@ -73,6 +76,12 @@ let selectedAgentId = $state<AgentID | null>(null);
 let selectedQuestId = $state<QuestID | null>(null);
 let selectedBattleId = $state<BattleID | null>(null);
 
+// Store state
+let storeItems = $state<Map<string, StoreItem>>(new Map());
+let inventories = $state<Map<AgentID, AgentInventory>>(new Map());
+let activeEffects = $state<Map<AgentID, ActiveEffect[]>>(new Map());
+let selectedStoreItemId = $state<string | null>(null);
+
 // =============================================================================
 // DERIVED STATE
 // =============================================================================
@@ -102,6 +111,52 @@ const retiredAgents = $derived(agentList.filter((a) => a.status === 'retired'));
 
 // Active battles
 const activeBattles = $derived(battleList.filter((b) => b.status === 'active'));
+
+// Tier distribution for agent breakdown
+const tierDistribution = $derived(() => {
+	const tiers = [
+		{ tier: 0 as const, name: 'Apprentice', count: 0 },
+		{ tier: 1 as const, name: 'Journeyman', count: 0 },
+		{ tier: 2 as const, name: 'Expert', count: 0 },
+		{ tier: 3 as const, name: 'Master', count: 0 },
+		{ tier: 4 as const, name: 'Grandmaster', count: 0 }
+	];
+
+	for (const agent of agentList) {
+		if (agent.tier >= 0 && agent.tier <= 4) {
+			tiers[agent.tier].count++;
+		}
+	}
+
+	const total = agentList.length || 1; // Avoid division by zero
+	return tiers.map(t => ({
+		...t,
+		percentage: (t.count / total) * 100
+	}));
+});
+
+// Total XP earned across all agents
+const totalXpEarned = $derived(
+	agentList.reduce((sum, agent) => sum + agent.stats.total_xp_earned, 0)
+);
+
+// Boss battle win/loss stats
+const battleStats = $derived(() => {
+	const won = battleList.filter(b => b.status === 'victory').length;
+	const lost = battleList.filter(b => b.status === 'defeat').length;
+	const total = won + lost;
+	return {
+		won,
+		lost,
+		winRate: total > 0 ? (won / total) * 100 : 0
+	};
+});
+
+// Store derived state
+const storeItemList = $derived(Array.from(storeItems.values()));
+const selectedStoreItem = $derived(selectedStoreItemId ? storeItems.get(selectedStoreItemId) : null);
+const toolItems = $derived(storeItemList.filter((item) => item.item_type === 'tool'));
+const consumableItems = $derived(storeItemList.filter((item) => item.item_type === 'consumable'));
 
 // =============================================================================
 // ACTIONS
@@ -174,6 +229,35 @@ function updateStats(newStats: WorldStats) {
 	stats = newStats;
 }
 
+// Store actions
+function selectStoreItem(id: string | null) {
+	selectedStoreItemId = id;
+}
+
+function setStoreItems(items: StoreItem[]) {
+	storeItems = new Map(items.map((item) => [item.id, item]));
+}
+
+function updateStoreItem(item: StoreItem) {
+	storeItems = new Map(storeItems).set(item.id, item);
+}
+
+function setInventory(inventory: AgentInventory) {
+	inventories = new Map(inventories).set(inventory.agent_id, inventory);
+}
+
+function getInventory(agentId: AgentID): AgentInventory | undefined {
+	return inventories.get(agentId);
+}
+
+function setActiveEffects(agentId: AgentID, effects: ActiveEffect[]) {
+	activeEffects = new Map(activeEffects).set(agentId, effects);
+}
+
+function getActiveEffects(agentId: AgentID): ActiveEffect[] {
+	return activeEffects.get(agentId) ?? [];
+}
+
 // Add a new event to the recent events list
 function addEvent(event: GameEvent) {
 	recentEvents = [event, ...recentEvents].slice(0, MAX_RECENT_EVENTS);
@@ -208,6 +292,10 @@ function reset() {
 	selectedAgentId = null;
 	selectedQuestId = null;
 	selectedBattleId = null;
+	storeItems = new Map();
+	inventories = new Map();
+	activeEffects = new Map();
+	selectedStoreItemId = null;
 	error = null;
 }
 
@@ -233,7 +321,11 @@ export function createWorldStore() {
 		error: null as string | null,
 		selectedAgentId: null as AgentID | null,
 		selectedQuestId: null as QuestID | null,
-		selectedBattleId: null as BattleID | null
+		selectedBattleId: null as BattleID | null,
+		storeItems: new Map<string, StoreItem>(),
+		inventories: new Map<AgentID, AgentInventory>(),
+		activeEffects: new Map<AgentID, ActiveEffect[]>(),
+		selectedStoreItemId: null as string | null
 	};
 
 	return {
@@ -258,6 +350,33 @@ export function createWorldStore() {
 		get partyList() { return Array.from(state.parties.values()); },
 		get guildList() { return Array.from(state.guilds.values()); },
 		get battleList() { return Array.from(state.battles.values()); },
+		get tierDistribution() {
+			const agentList = Array.from(state.agents.values());
+			const tiers = [
+				{ tier: 0 as const, name: 'Apprentice', count: 0 },
+				{ tier: 1 as const, name: 'Journeyman', count: 0 },
+				{ tier: 2 as const, name: 'Expert', count: 0 },
+				{ tier: 3 as const, name: 'Master', count: 0 },
+				{ tier: 4 as const, name: 'Grandmaster', count: 0 }
+			];
+			for (const agent of agentList) {
+				if (agent.tier >= 0 && agent.tier <= 4) {
+					tiers[agent.tier].count++;
+				}
+			}
+			const total = agentList.length || 1;
+			return tiers.map(t => ({ ...t, percentage: (t.count / total) * 100 }));
+		},
+		get totalXpEarned() {
+			return Array.from(state.agents.values()).reduce((sum, agent) => sum + agent.stats.total_xp_earned, 0);
+		},
+		get battleStats() {
+			const battles = Array.from(state.battles.values());
+			const won = battles.filter(b => b.status === 'victory').length;
+			const lost = battles.filter(b => b.status === 'defeat').length;
+			const total = won + lost;
+			return { won, lost, winRate: total > 0 ? (won / total) * 100 : 0 };
+		},
 
 		setLoading(value: boolean) { state.loading = value; },
 		setError(message: string | null) { state.error = message; },
@@ -304,8 +423,30 @@ export function createWorldStore() {
 			state.selectedAgentId = null;
 			state.selectedQuestId = null;
 			state.selectedBattleId = null;
+			state.storeItems.clear();
+			state.inventories.clear();
+			state.activeEffects.clear();
+			state.selectedStoreItemId = null;
 			state.error = null;
-		}
+		},
+
+		// Store methods
+		get storeItems() { return state.storeItems; },
+		get storeItemList() { return Array.from(state.storeItems.values()); },
+		get selectedStoreItemId() { return state.selectedStoreItemId; },
+		get selectedStoreItem() { return state.selectedStoreItemId ? state.storeItems.get(state.selectedStoreItemId) : undefined; },
+		get inventories() { return state.inventories; },
+		get activeEffects() { return state.activeEffects; },
+
+		selectStoreItem(id: string | null) { state.selectedStoreItemId = id; },
+		setStoreItems(items: StoreItem[]) {
+			state.storeItems = new Map(items.map((item) => [item.id, item]));
+		},
+		updateStoreItem(item: StoreItem) { state.storeItems.set(item.id, item); },
+		setInventory(inventory: AgentInventory) { state.inventories.set(inventory.agent_id, inventory); },
+		getInventory(agentId: AgentID) { return state.inventories.get(agentId); },
+		setActiveEffects(agentId: AgentID, effects: ActiveEffect[]) { state.activeEffects.set(agentId, effects); },
+		getActiveEffects(agentId: AgentID) { return state.activeEffects.get(agentId) ?? []; }
 	};
 }
 
@@ -409,6 +550,43 @@ export const worldStore = {
 		return activeBattles;
 	},
 
+	// Dashboard derived state
+	get tierDistribution() {
+		return tierDistribution();
+	},
+	get totalXpEarned() {
+		return totalXpEarned;
+	},
+	get battleStats() {
+		return battleStats();
+	},
+
+	// Store state
+	get storeItems() {
+		return storeItems;
+	},
+	get storeItemList() {
+		return storeItemList;
+	},
+	get toolItems() {
+		return toolItems;
+	},
+	get consumableItems() {
+		return consumableItems;
+	},
+	get inventories() {
+		return inventories;
+	},
+	get activeEffects() {
+		return activeEffects;
+	},
+	get selectedStoreItemId() {
+		return selectedStoreItemId;
+	},
+	get selectedStoreItem() {
+		return selectedStoreItem;
+	},
+
 	// Actions
 	setLoading,
 	setError,
@@ -427,5 +605,14 @@ export const worldStore = {
 	updateStats,
 	addEvent,
 	setWorldState,
-	reset
+	reset,
+
+	// Store actions
+	selectStoreItem,
+	setStoreItems,
+	updateStoreItem,
+	setInventory,
+	getInventory,
+	setActiveEffects,
+	getActiveEffects
 };

@@ -14,7 +14,14 @@ import type {
 	WorldState,
 	QuestHints,
 	Intervention,
-	AgentConfig
+	AgentConfig,
+	StoreItem,
+	AgentInventory,
+	PurchaseRequest,
+	PurchaseResponse,
+	UseConsumableRequest,
+	UseConsumableResponse,
+	ActiveEffect
 } from '$types';
 
 // =============================================================================
@@ -182,6 +189,38 @@ export async function intervene(questId: QuestID, intervention: Intervention): P
 }
 
 // =============================================================================
+// STORE
+// =============================================================================
+
+export async function getStoreItems(agentId: AgentID): Promise<StoreItem[]> {
+	return fetchJson<StoreItem[]>(`/store?agent_id=${agentId}`);
+}
+
+export async function getStoreItem(itemId: string): Promise<StoreItem> {
+	return fetchJson<StoreItem>(`/store/${itemId}`);
+}
+
+export async function getInventory(agentId: AgentID): Promise<AgentInventory> {
+	return fetchJson<AgentInventory>(`/agents/${agentId}/inventory`);
+}
+
+export async function purchase(request: PurchaseRequest): Promise<PurchaseResponse> {
+	return postJson<PurchaseResponse>('/store/purchase', request);
+}
+
+export async function useConsumable(request: UseConsumableRequest): Promise<UseConsumableResponse> {
+	// Only send necessary fields - agent_id is already in the URL path
+	return postJson<UseConsumableResponse>(`/agents/${request.agent_id}/inventory/use`, {
+		consumable_id: request.consumable_id,
+		quest_id: request.quest_id
+	});
+}
+
+export async function getActiveEffects(agentId: AgentID): Promise<ActiveEffect[]> {
+	return fetchJson<ActiveEffect[]>(`/agents/${agentId}/effects`);
+}
+
+// =============================================================================
 // HEALTH
 // =============================================================================
 
@@ -208,5 +247,11 @@ export const api = {
 	getTrajectory,
 	sendDMChat,
 	intervene,
+	getStoreItems,
+	getStoreItem,
+	getInventory,
+	purchase,
+	useConsumable,
+	getActiveEffects,
 	healthCheck
 };

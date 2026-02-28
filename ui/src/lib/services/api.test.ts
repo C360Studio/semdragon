@@ -18,6 +18,7 @@ function createAgentStats(): AgentStats {
 		bosses_defeated: 5,
 		bosses_failed: 0,
 		total_xp_earned: 1000,
+		total_xp_spent: 0,
 		avg_quality_score: 0.85,
 		avg_efficiency: 0.9,
 		parties_led: 2,
