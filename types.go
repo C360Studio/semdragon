@@ -62,8 +62,11 @@ type Agent struct {
 	// Capabilities & Trust
 	Tier      TrustTier   `json:"tier"`      // Derived from level
 	Equipment []Tool      `json:"equipment"` // Tools this agent can use
-	Skills    []SkillTag  `json:"skills"`    // What this agent is good at
+	Skills    []SkillTag  `json:"skills,omitempty"`    // DEPRECATED: Use SkillProficiencies instead
 	Guilds    []GuildID   `json:"guilds"`    // Guild memberships
+
+	// Skill Proficiencies - tracks mastery level for each skill
+	SkillProficiencies map[SkillTag]SkillProficiency `json:"skill_proficiencies"`
 
 	// State
 	CurrentQuest  *QuestID   `json:"current_quest,omitempty"`
@@ -76,8 +79,84 @@ type Agent struct {
 	// Backing config - what actually powers this agent
 	Config AgentConfig `json:"config"`
 
+	// NPC flag - true for bootstrap/trainer NPCs that phase out when real agents are ready
+	IsNPC bool `json:"is_npc,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// HasSkill returns true if the agent has the specified skill (at any proficiency level).
+func (a *Agent) HasSkill(skill SkillTag) bool {
+	if a.SkillProficiencies != nil {
+		_, exists := a.SkillProficiencies[skill]
+		return exists
+	}
+	// Fall back to legacy Skills slice for backward compatibility
+	for _, s := range a.Skills {
+		if s == skill {
+			return true
+		}
+	}
+	return false
+}
+
+// GetProficiency returns the proficiency for a skill.
+// Returns a zero-value SkillProficiency if the agent doesn't have the skill.
+func (a *Agent) GetProficiency(skill SkillTag) SkillProficiency {
+	if a.SkillProficiencies != nil {
+		if prof, exists := a.SkillProficiencies[skill]; exists {
+			return prof
+		}
+	}
+	return SkillProficiency{}
+}
+
+// GetSkillTags returns all skills the agent has (from both new and legacy fields).
+func (a *Agent) GetSkillTags() []SkillTag {
+	if a.SkillProficiencies != nil && len(a.SkillProficiencies) > 0 {
+		skills := make([]SkillTag, 0, len(a.SkillProficiencies))
+		for skill := range a.SkillProficiencies {
+			skills = append(skills, skill)
+		}
+		return skills
+	}
+	return a.Skills
+}
+
+// MigrateSkills converts legacy Skills slice to SkillProficiencies map.
+// Each skill is initialized at Novice level with zero progress.
+// This is idempotent - calling it multiple times has no effect if already migrated.
+func (a *Agent) MigrateSkills() {
+	if a.SkillProficiencies == nil {
+		a.SkillProficiencies = make(map[SkillTag]SkillProficiency)
+	}
+	for _, skill := range a.Skills {
+		if _, exists := a.SkillProficiencies[skill]; !exists {
+			a.SkillProficiencies[skill] = SkillProficiency{
+				Level:      ProficiencyNovice,
+				Progress:   0,
+				TotalXP:    0,
+				QuestsUsed: 0,
+			}
+		}
+	}
+}
+
+// AddSkill adds a new skill to the agent at Novice level.
+// If the skill already exists, this is a no-op.
+func (a *Agent) AddSkill(skill SkillTag) {
+	if a.SkillProficiencies == nil {
+		a.SkillProficiencies = make(map[SkillTag]SkillProficiency)
+	}
+	if _, exists := a.SkillProficiencies[skill]; !exists {
+		a.SkillProficiencies[skill] = SkillProficiency{
+			Level:      ProficiencyNovice,
+			Progress:   0,
+			TotalXP:    0,
+			QuestsUsed: 0,
+		}
+	}
 }
 
 // AgentConfig holds the actual implementation details behind the RPG facade.
@@ -117,7 +196,59 @@ const (
 	SkillPlanning      SkillTag = "planning"
 	SkillCustomerComms SkillTag = "customer_communications"
 	SkillAnalysis      SkillTag = "analysis"
+	SkillTraining      SkillTag = "training" // Can lead training parties as mentor
 )
+
+// -----------------------------------------------------------------------------
+// Skill Proficiency - Skills have levels that improve through use
+// -----------------------------------------------------------------------------
+
+// ProficiencyLevel represents mastery level of a skill (1-5).
+type ProficiencyLevel int
+
+const (
+	// ProficiencyNovice is basic familiarity (default starting level).
+	ProficiencyNovice ProficiencyLevel = 1
+	// ProficiencyApprentice is developing competence.
+	ProficiencyApprentice ProficiencyLevel = 2
+	// ProficiencyJourneyman is solid working knowledge.
+	ProficiencyJourneyman ProficiencyLevel = 3
+	// ProficiencyExpert is high mastery.
+	ProficiencyExpert ProficiencyLevel = 4
+	// ProficiencyMaster is peak proficiency.
+	ProficiencyMaster ProficiencyLevel = 5
+)
+
+// ProficiencyLevelNames maps levels to human-readable names.
+var ProficiencyLevelNames = map[ProficiencyLevel]string{
+	ProficiencyNovice:     "Novice",
+	ProficiencyApprentice: "Apprentice",
+	ProficiencyJourneyman: "Journeyman",
+	ProficiencyExpert:     "Expert",
+	ProficiencyMaster:     "Master",
+}
+
+// SkillProficiency tracks an agent's mastery of a specific skill.
+type SkillProficiency struct {
+	Level      ProficiencyLevel `json:"level"`
+	Progress   int              `json:"progress"`      // 0-99 points toward next level
+	TotalXP    int64            `json:"total_xp"`      // Lifetime XP earned using this skill
+	QuestsUsed int              `json:"quests_used"`   // Number of quests using this skill
+	LastUsed   *time.Time       `json:"last_used,omitempty"`
+}
+
+// ProgressPercent returns progress as a percentage (0-100).
+func (sp SkillProficiency) ProgressPercent() float64 {
+	if sp.Level >= ProficiencyMaster {
+		return 100.0
+	}
+	return float64(sp.Progress)
+}
+
+// CanLevelUp returns true if progress is sufficient for level up.
+func (sp SkillProficiency) CanLevelUp() bool {
+	return sp.Progress >= 100 && sp.Level < ProficiencyMaster
+}
 
 // -----------------------------------------------------------------------------
 // Trust Tiers - What agents are allowed to do based on level

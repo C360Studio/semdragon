@@ -20,6 +20,22 @@ func newTestAgent(id string, level int, skills ...SkillTag) Agent {
 	}
 }
 
+// newTestAgentWithProficiency creates an agent with specific proficiency levels.
+func newTestAgentWithProficiency(id string, level int, skills map[SkillTag]ProficiencyLevel) Agent {
+	proficiencies := make(map[SkillTag]SkillProficiency)
+	for skill, profLevel := range skills {
+		proficiencies[skill] = SkillProficiency{Level: profLevel}
+	}
+	return Agent{
+		ID:                 AgentID(id),
+		Name:               id,
+		Level:              level,
+		Tier:               TierFromLevel(level),
+		Status:             AgentIdle,
+		SkillProficiencies: proficiencies,
+	}
+}
+
 func newTestQuest(id string, difficulty QuestDifficulty, skills ...SkillTag) Quest {
 	return Quest{
 		ID:             QuestID(id),
@@ -99,23 +115,30 @@ func TestRuleSeparation_ClaimedBySelf(t *testing.T) {
 
 func TestRuleAffinity_PerfectMatch(t *testing.T) {
 	engine := NewDefaultBoidEngine()
-	agent := newTestAgent("agent1", 10, SkillAnalysis, SkillCodeGen)
+	// Agent with Master (5) proficiency in all required skills = perfect match
+	agent := newTestAgentWithProficiency("agent1", 10, map[SkillTag]ProficiencyLevel{
+		SkillAnalysis: ProficiencyMaster,
+		SkillCodeGen:  ProficiencyMaster,
+	})
 	quest := newTestQuest("quest1", DifficultyModerate, SkillAnalysis, SkillCodeGen)
 
 	score := engine.ruleAffinity(agent, quest)
 	if score != 1.0 {
-		t.Errorf("expected 1.0 for perfect match, got %f", score)
+		t.Errorf("expected 1.0 for perfect match with Master proficiency, got %f", score)
 	}
 }
 
 func TestRuleAffinity_PartialMatch(t *testing.T) {
 	engine := NewDefaultBoidEngine()
-	agent := newTestAgent("agent1", 10, SkillAnalysis)
+	// Agent with Master proficiency in 1 of 2 required skills = 50% match
+	agent := newTestAgentWithProficiency("agent1", 10, map[SkillTag]ProficiencyLevel{
+		SkillAnalysis: ProficiencyMaster,
+	})
 	quest := newTestQuest("quest1", DifficultyModerate, SkillAnalysis, SkillCodeGen)
 
 	score := engine.ruleAffinity(agent, quest)
 	if score != 0.5 {
-		t.Errorf("expected 0.5 for 1/2 match, got %f", score)
+		t.Errorf("expected 0.5 for 1/2 match with Master proficiency, got %f", score)
 	}
 }
 

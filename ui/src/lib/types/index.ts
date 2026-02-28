@@ -65,7 +65,30 @@ export type SkillTag =
 	| 'research'
 	| 'planning'
 	| 'customer_communications'
-	| 'analysis';
+	| 'analysis'
+	| 'training';
+
+// =============================================================================
+// SKILL PROFICIENCY
+// =============================================================================
+
+export type ProficiencyLevel = 1 | 2 | 3 | 4 | 5;
+
+export const ProficiencyLevelNames: Record<ProficiencyLevel, string> = {
+	1: 'Novice',
+	2: 'Apprentice',
+	3: 'Journeyman',
+	4: 'Expert',
+	5: 'Master'
+};
+
+export interface SkillProficiency {
+	level: ProficiencyLevel;
+	progress: number; // 0-99 points toward next level
+	total_xp: number;
+	quests_used: number;
+	last_used?: string; // ISO date string
+}
 
 export interface AgentStats {
 	quests_completed: number;
@@ -109,13 +132,15 @@ export interface Agent {
 	death_count: number;
 	tier: TrustTier;
 	equipment: Tool[];
-	skills: SkillTag[];
+	skills: SkillTag[]; // DEPRECATED: Use skill_proficiencies instead
+	skill_proficiencies?: Record<SkillTag, SkillProficiency>; // Optional for backward compatibility
 	guilds: GuildID[];
 	current_quest?: QuestID;
 	current_party?: PartyID;
 	cooldown_until?: string; // ISO date string
 	stats: AgentStats;
 	config: AgentConfig;
+	is_npc?: boolean; // True for bootstrap/trainer NPCs
 	created_at: string;
 	updated_at: string;
 }
@@ -603,4 +628,73 @@ export interface UseConsumableResponse {
 	remaining: number;
 	active_effects: ActiveEffect[];
 	error?: string;
+}
+
+// =============================================================================
+// CHARACTER SHEET
+// =============================================================================
+
+export interface SkillBar {
+	skill: SkillTag;
+	skill_name: string;
+	level: ProficiencyLevel;
+	level_name: string;
+	progress: number;
+	progress_percent: number;
+	total_xp: number;
+	quests_used: number;
+	is_max_level: boolean;
+}
+
+export interface DerivedStats {
+	avg_proficiency: number;
+	strongest_skill?: SkillTag;
+	weakest_skill?: SkillTag;
+	quest_success_rate: number;
+	battle_win_rate: number;
+	total_skills: number;
+	master_skills: number;
+	xp_efficiency: number;
+}
+
+export interface CharacterSheetMembership {
+	guild_id: GuildID;
+	guild_name: string;
+	rank: GuildRank;
+	guild_xp: number;
+	joined_at: string;
+}
+
+export interface EquippedItem {
+	tool_id: string;
+	tool_name: string;
+	description: string;
+	category: string;
+	is_dangerous: boolean;
+	is_rental: boolean;
+	uses_left?: number;
+}
+
+export interface CharacterSheet {
+	agent: Agent;
+	skill_bars: SkillBar[];
+	derived_stats: DerivedStats;
+	memberships: CharacterSheetMembership[];
+	equipment: EquippedItem[];
+	inventory?: AgentInventory;
+}
+
+// =============================================================================
+// SKILL PROGRESSION EVENTS
+// =============================================================================
+
+export interface SkillImprovementResult {
+	skill: SkillTag;
+	points_earned: number;
+	old_level: ProficiencyLevel;
+	new_level: ProficiencyLevel;
+	old_progress: number;
+	new_progress: number;
+	leveled_up: boolean;
+	at_max_level: boolean;
 }

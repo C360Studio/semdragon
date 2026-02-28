@@ -20,20 +20,28 @@ import (
 
 // ProgressionManager handles XP awards, penalties, and level transitions.
 type ProgressionManager struct {
-	storage  *Storage
-	xpEngine XPEngine
-	events   *EventPublisher
-	logger   *slog.Logger
+	storage     *Storage
+	xpEngine    XPEngine
+	skillEngine *SkillProgressionEngine
+	events      *EventPublisher
+	logger      *slog.Logger
 }
 
 // NewProgressionManager creates a new progression manager.
 func NewProgressionManager(storage *Storage, xpEngine XPEngine, events *EventPublisher) *ProgressionManager {
 	return &ProgressionManager{
-		storage:  storage,
-		xpEngine: xpEngine,
-		events:   events,
-		logger:   slog.Default(),
+		storage:     storage,
+		xpEngine:    xpEngine,
+		skillEngine: NewSkillProgressionEngine(),
+		events:      events,
+		logger:      slog.Default(),
 	}
+}
+
+// WithSkillEngine sets a custom skill progression engine.
+func (pm *ProgressionManager) WithSkillEngine(se *SkillProgressionEngine) *ProgressionManager {
+	pm.skillEngine = se
+	return pm
 }
 
 // WithLogger sets a custom logger for the progression manager.
@@ -44,24 +52,26 @@ func (pm *ProgressionManager) WithLogger(l *slog.Logger) *ProgressionManager {
 
 // ProgressionContext contains everything needed for progression processing.
 type ProgressionContext struct {
-	Quest      Quest         `json:"quest"`
-	AgentID    AgentID       `json:"agent_id"`
-	Verdict    BattleVerdict `json:"verdict"`
-	Duration   time.Duration `json:"duration"`
-	FailType   FailureType   `json:"fail_type,omitempty"`
-	IsGuildQuest bool        `json:"is_guild_quest"`
+	Quest        Quest         `json:"quest"`
+	AgentID      AgentID       `json:"agent_id"`
+	Verdict      BattleVerdict `json:"verdict"`
+	Duration     time.Duration `json:"duration"`
+	FailType     FailureType   `json:"fail_type,omitempty"`
+	IsGuildQuest bool          `json:"is_guild_quest"`
+	IsMentored   bool          `json:"is_mentored"` // True if agent was in a mentored training party
 }
 
 // ProgressionResult holds the outcome of progression processing.
 type ProgressionResult struct {
-	Award       *XPAward    `json:"award,omitempty"`
-	Penalty     *XPPenalty  `json:"penalty,omitempty"`
-	LevelEvent  *LevelEvent `json:"level_event,omitempty"`
-	XPBefore    int64       `json:"xp_before"`
-	XPAfter     int64       `json:"xp_after"`
-	LevelBefore int         `json:"level_before"`
-	LevelAfter  int         `json:"level_after"`
-	Streak      int         `json:"streak"`
+	Award             *XPAward                 `json:"award,omitempty"`
+	Penalty           *XPPenalty               `json:"penalty,omitempty"`
+	LevelEvent        *LevelEvent              `json:"level_event,omitempty"`
+	SkillImprovements []SkillImprovementResult `json:"skill_improvements,omitempty"`
+	XPBefore          int64                    `json:"xp_before"`
+	XPAfter           int64                    `json:"xp_after"`
+	LevelBefore       int                      `json:"level_before"`
+	LevelAfter        int                      `json:"level_after"`
+	Streak            int                      `json:"streak"`
 }
 
 // ProcessSuccess handles XP award and level up on quest success.
@@ -76,13 +86,14 @@ func (pm *ProgressionManager) ProcessSuccess(ctx context.Context, pctx Progressi
 
 	// Variables to capture during atomic update
 	var (
-		award       XPAward
-		levelEvent  LevelEvent
-		xpBefore    int64
-		levelBefore int
-		xpAfter     int64
-		levelAfter  int
-		xpToLevel   int64
+		award             XPAward
+		levelEvent        LevelEvent
+		skillImprovements []SkillImprovementResult
+		xpBefore          int64
+		levelBefore       int
+		xpAfter           int64
+		levelAfter        int
+		xpToLevel         int64
 	)
 
 	// Atomically update agent state
@@ -108,6 +119,18 @@ func (pm *ProgressionManager) ProcessSuccess(ctx context.Context, pctx Progressi
 		// Apply XP (mutates agent)
 		levelEvent = pm.xpEngine.ApplyXP(agent, award.TotalXP)
 
+		// Process skill improvements if engine is available
+		if pm.skillEngine != nil && len(pctx.Quest.RequiredSkills) > 0 {
+			skillCtx := SkillProgressionContext{
+				Agent:      agent,
+				Quest:      &pctx.Quest,
+				Quality:    pctx.Verdict.QualityScore,
+				Duration:   pctx.Duration,
+				IsMentored: pctx.IsMentored,
+			}
+			skillImprovements = pm.skillEngine.ProcessQuestCompletion(skillCtx)
+		}
+
 		// Update agent stats
 		agent.Stats.QuestsCompleted++
 		agent.Stats.BossesDefeated++
@@ -126,12 +149,13 @@ func (pm *ProgressionManager) ProcessSuccess(ctx context.Context, pctx Progressi
 	}
 
 	result := &ProgressionResult{
-		Award:       &award,
-		XPBefore:    xpBefore,
-		XPAfter:     xpAfter,
-		LevelBefore: levelBefore,
-		LevelAfter:  levelAfter,
-		Streak:      streak,
+		Award:             &award,
+		SkillImprovements: skillImprovements,
+		XPBefore:          xpBefore,
+		XPAfter:           xpAfter,
+		LevelBefore:       levelBefore,
+		LevelAfter:        levelAfter,
+		Streak:            streak,
 	}
 
 	// Emit XP event
@@ -162,6 +186,30 @@ func (pm *ProgressionManager) ProcessSuccess(ctx context.Context, pctx Progressi
 				XPToLevel: xpToLevel,
 				Timestamp: time.Now(),
 			})
+		}
+
+		// Emit skill progression events
+		if len(skillImprovements) > 0 {
+			pm.events.PublishSkillProgression(ctx, SkillProgressionPayload{
+				AgentID:   pctx.AgentID,
+				QuestID:   pctx.Quest.ID,
+				Results:   skillImprovements,
+				Timestamp: time.Now(),
+			})
+
+			// Emit individual skill level up events
+			for _, improvement := range skillImprovements {
+				if improvement.LeveledUp {
+					pm.events.PublishSkillLevelUp(ctx, SkillLevelUpPayload{
+						AgentID:   pctx.AgentID,
+						QuestID:   pctx.Quest.ID,
+						Skill:     improvement.Skill,
+						OldLevel:  improvement.OldLevel,
+						NewLevel:  improvement.NewLevel,
+						Timestamp: time.Now(),
+					})
+				}
+			}
 		}
 	}
 

@@ -55,6 +55,33 @@ var (
 	SubjectGuildSuggested = natsclient.NewSubject[GuildSuggestedPayload](PredicateGuildSuggested)
 	// SubjectGuildAutoJoined is the typed subject for guild.formation.autojoined events.
 	SubjectGuildAutoJoined = natsclient.NewSubject[GuildAutoJoinedPayload](PredicateGuildAutoJoined)
+
+	// SubjectSkillProgression is the typed subject for skill.progression.improved events.
+	SubjectSkillProgression = natsclient.NewSubject[SkillProgressionPayload](PredicateSkillImproved)
+	// SubjectSkillLevelUp is the typed subject for skill.progression.levelup events.
+	SubjectSkillLevelUp = natsclient.NewSubject[SkillLevelUpPayload](PredicateSkillLevelUp)
+	// SubjectMentorBonus is the typed subject for skill.progression.mentorbonus events.
+	SubjectMentorBonus = natsclient.NewSubject[MentorBonusPayload](PredicateMentorBonus)
+
+	// Party coordination subjects
+	// SubjectPartyQuestDecomposed is the typed subject for party.coordination.decomposed events.
+	SubjectPartyQuestDecomposed = natsclient.NewSubject[PartyQuestDecomposedPayload](PredicatePartyQuestDecomposed)
+	// SubjectPartyTaskAssigned is the typed subject for party.coordination.assigned events.
+	SubjectPartyTaskAssigned = natsclient.NewSubject[PartyTaskAssignedPayload](PredicatePartyTaskAssigned)
+	// SubjectPartyContextShared is the typed subject for party.coordination.contextshared events.
+	SubjectPartyContextShared = natsclient.NewSubject[PartyContextSharedPayload](PredicatePartyContextShared)
+	// SubjectPartyGuidanceIssued is the typed subject for party.coordination.guidance events.
+	SubjectPartyGuidanceIssued = natsclient.NewSubject[PartyGuidanceIssuedPayload](PredicatePartyGuidanceIssued)
+	// SubjectPartyProgressReported is the typed subject for party.coordination.progress events.
+	SubjectPartyProgressReported = natsclient.NewSubject[PartyProgressReportedPayload](PredicatePartyProgressReported)
+	// SubjectPartyHelpRequested is the typed subject for party.coordination.helprequest events.
+	SubjectPartyHelpRequested = natsclient.NewSubject[PartyHelpRequestedPayload](PredicatePartyHelpRequested)
+	// SubjectPartyResultSubmitted is the typed subject for party.coordination.resultsubmitted events.
+	SubjectPartyResultSubmitted = natsclient.NewSubject[PartyResultSubmittedPayload](PredicatePartyResultSubmitted)
+	// SubjectPartyRollupStarted is the typed subject for party.coordination.rollupstarted events.
+	SubjectPartyRollupStarted = natsclient.NewSubject[PartyRollupStartedPayload](PredicatePartyRollupStarted)
+	// SubjectPartyRollupCompleted is the typed subject for party.coordination.rollupcompleted events.
+	SubjectPartyRollupCompleted = natsclient.NewSubject[PartyRollupCompletedPayload](PredicatePartyRollupCompleted)
 )
 
 // --- Payload Types ---
@@ -427,6 +454,106 @@ func (ep *EventPublisher) PublishGuildAutoJoined(ctx context.Context, payload Gu
 	return SubjectGuildAutoJoined.Publish(ctx, ep.client, payload)
 }
 
+// --- Skill Progression Events ---
+
+// PublishSkillProgression publishes a skill.progression.improved event.
+func (ep *EventPublisher) PublishSkillProgression(ctx context.Context, payload SkillProgressionPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectSkillProgression.Publish(ctx, ep.client, payload)
+}
+
+// PublishSkillLevelUp publishes a skill.progression.levelup event.
+func (ep *EventPublisher) PublishSkillLevelUp(ctx context.Context, payload SkillLevelUpPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectSkillLevelUp.Publish(ctx, ep.client, payload)
+}
+
+// PublishMentorBonus publishes a skill.progression.mentorbonus event.
+func (ep *EventPublisher) PublishMentorBonus(ctx context.Context, payload MentorBonusPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectMentorBonus.Publish(ctx, ep.client, payload)
+}
+
+// --- Party Coordination Events ---
+
+// PublishPartyQuestDecomposed publishes a party.coordination.decomposed event.
+func (ep *EventPublisher) PublishPartyQuestDecomposed(ctx context.Context, payload PartyQuestDecomposedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectPartyQuestDecomposed.Publish(ctx, ep.client, payload)
+}
+
+// PublishPartyTaskAssigned publishes a party.coordination.assigned event.
+func (ep *EventPublisher) PublishPartyTaskAssigned(ctx context.Context, payload PartyTaskAssignedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectPartyTaskAssigned.Publish(ctx, ep.client, payload)
+}
+
+// PublishPartyContextShared publishes a party.coordination.contextshared event.
+func (ep *EventPublisher) PublishPartyContextShared(ctx context.Context, payload PartyContextSharedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectPartyContextShared.Publish(ctx, ep.client, payload)
+}
+
+// PublishPartyGuidanceIssued publishes a party.coordination.guidance event.
+func (ep *EventPublisher) PublishPartyGuidanceIssued(ctx context.Context, payload PartyGuidanceIssuedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectPartyGuidanceIssued.Publish(ctx, ep.client, payload)
+}
+
+// PublishPartyProgressReported publishes a party.coordination.progress event.
+func (ep *EventPublisher) PublishPartyProgressReported(ctx context.Context, payload PartyProgressReportedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectPartyProgressReported.Publish(ctx, ep.client, payload)
+}
+
+// PublishPartyHelpRequested publishes a party.coordination.helprequest event.
+func (ep *EventPublisher) PublishPartyHelpRequested(ctx context.Context, payload PartyHelpRequestedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectPartyHelpRequested.Publish(ctx, ep.client, payload)
+}
+
+// PublishPartyResultSubmitted publishes a party.coordination.resultsubmitted event.
+func (ep *EventPublisher) PublishPartyResultSubmitted(ctx context.Context, payload PartyResultSubmittedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectPartyResultSubmitted.Publish(ctx, ep.client, payload)
+}
+
+// PublishPartyRollupStarted publishes a party.coordination.rollupstarted event.
+func (ep *EventPublisher) PublishPartyRollupStarted(ctx context.Context, payload PartyRollupStartedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectPartyRollupStarted.Publish(ctx, ep.client, payload)
+}
+
+// PublishPartyRollupCompleted publishes a party.coordination.rollupcompleted event.
+func (ep *EventPublisher) PublishPartyRollupCompleted(ctx context.Context, payload PartyRollupCompletedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectPartyRollupCompleted.Publish(ctx, ep.client, payload)
+}
+
 // =============================================================================
 // AGENT PROGRESSION PAYLOADS
 // =============================================================================
@@ -573,6 +700,300 @@ func (p *GuildAutoJoinedPayload) Validate() error {
 	}
 	if p.JoinedAt.IsZero() {
 		return errors.New("joined_at required")
+	}
+	return nil
+}
+
+// =============================================================================
+// PARTY COORDINATION PAYLOADS
+// =============================================================================
+// Communication events between party leads and members for quest coordination.
+// Lead → Members: Decomposed, Assigned, ContextShared, Guidance
+// Members → Lead: Progress, HelpRequest, ResultSubmitted
+// Rollup: RollupStarted, RollupCompleted
+// =============================================================================
+
+// --- Lead → Members Payloads ---
+
+// PartyQuestDecomposedPayload contains data for party.coordination.decomposed events.
+// Emitted when a party lead breaks down the parent quest into sub-quests.
+type PartyQuestDecomposedPayload struct {
+	PartyID     PartyID   `json:"party_id"`
+	LeadID      AgentID   `json:"lead_id"`
+	ParentQuest QuestID   `json:"parent_quest"`
+	SubQuests   []QuestID `json:"sub_quests"`
+	Strategy    string    `json:"strategy"` // How lead approached decomposition
+	Timestamp   time.Time `json:"timestamp"`
+	Trace       TraceInfo `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *PartyQuestDecomposedPayload) Validate() error {
+	if p.PartyID == "" {
+		return errors.New("party_id required")
+	}
+	if p.LeadID == "" {
+		return errors.New("lead_id required")
+	}
+	if p.ParentQuest == "" {
+		return errors.New("parent_quest required")
+	}
+	if len(p.SubQuests) == 0 {
+		return errors.New("sub_quests required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// PartyTaskAssignedPayload contains data for party.coordination.assigned events.
+// Emitted when a party lead assigns a sub-quest to a member.
+type PartyTaskAssignedPayload struct {
+	PartyID      PartyID   `json:"party_id"`
+	LeadID       AgentID   `json:"lead_id"`
+	AssignedTo   AgentID   `json:"assigned_to"`
+	SubQuestID   QuestID   `json:"sub_quest_id"`
+	Rationale    string    `json:"rationale"`               // Why this member
+	Dependencies []QuestID `json:"dependencies,omitempty"`  // Wait for these first
+	Guidance     string    `json:"guidance,omitempty"`      // Initial hints
+	Timestamp    time.Time `json:"timestamp"`
+	Trace        TraceInfo `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *PartyTaskAssignedPayload) Validate() error {
+	if p.PartyID == "" {
+		return errors.New("party_id required")
+	}
+	if p.LeadID == "" {
+		return errors.New("lead_id required")
+	}
+	if p.AssignedTo == "" {
+		return errors.New("assigned_to required")
+	}
+	if p.SubQuestID == "" {
+		return errors.New("sub_quest_id required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// PartyGuidanceIssuedPayload contains data for party.coordination.guidance events.
+// Emitted when a party lead provides guidance to a struggling member.
+type PartyGuidanceIssuedPayload struct {
+	PartyID      PartyID   `json:"party_id"`
+	LeadID       AgentID   `json:"lead_id"`
+	TargetMember AgentID   `json:"target_member"`
+	SubQuestID   QuestID   `json:"sub_quest_id"`
+	GuidanceType string    `json:"guidance_type"` // hint, redirect, resource
+	Guidance     string    `json:"guidance"`
+	Timestamp    time.Time `json:"timestamp"`
+	Trace        TraceInfo `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *PartyGuidanceIssuedPayload) Validate() error {
+	if p.PartyID == "" {
+		return errors.New("party_id required")
+	}
+	if p.LeadID == "" {
+		return errors.New("lead_id required")
+	}
+	if p.TargetMember == "" {
+		return errors.New("target_member required")
+	}
+	if p.Guidance == "" {
+		return errors.New("guidance required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// --- Members → Lead Payloads ---
+
+// PartyProgressReportedPayload contains data for party.coordination.progress events.
+// Emitted when a party member reports progress on their sub-quest.
+type PartyProgressReportedPayload struct {
+	PartyID         PartyID   `json:"party_id"`
+	MemberID        AgentID   `json:"member_id"`
+	SubQuestID      QuestID   `json:"sub_quest_id"`
+	ProgressPercent int       `json:"progress_percent"` // 0-100
+	Status          string    `json:"status"`           // on_track, blocked, ahead, behind
+	Message         string    `json:"message,omitempty"`
+	Timestamp       time.Time `json:"timestamp"`
+	Trace           TraceInfo `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *PartyProgressReportedPayload) Validate() error {
+	if p.PartyID == "" {
+		return errors.New("party_id required")
+	}
+	if p.MemberID == "" {
+		return errors.New("member_id required")
+	}
+	if p.SubQuestID == "" {
+		return errors.New("sub_quest_id required")
+	}
+	if p.Status == "" {
+		return errors.New("status required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// PartyHelpRequestedPayload contains data for party.coordination.helprequest events.
+// Emitted when a party member needs help from the lead.
+type PartyHelpRequestedPayload struct {
+	PartyID     PartyID   `json:"party_id"`
+	MemberID    AgentID   `json:"member_id"`
+	SubQuestID  QuestID   `json:"sub_quest_id"`
+	IssueType   string    `json:"issue_type"`   // blocker, confusion, skill_gap
+	Description string    `json:"description"`
+	Urgency     string    `json:"urgency"`      // low, medium, high, critical
+	Timestamp   time.Time `json:"timestamp"`
+	Trace       TraceInfo `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *PartyHelpRequestedPayload) Validate() error {
+	if p.PartyID == "" {
+		return errors.New("party_id required")
+	}
+	if p.MemberID == "" {
+		return errors.New("member_id required")
+	}
+	if p.SubQuestID == "" {
+		return errors.New("sub_quest_id required")
+	}
+	if p.Description == "" {
+		return errors.New("description required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// PartyResultSubmittedPayload contains data for party.coordination.resultsubmitted events.
+// Emitted when a party member submits their sub-quest result to the lead.
+type PartyResultSubmittedPayload struct {
+	PartyID      PartyID   `json:"party_id"`
+	MemberID     AgentID   `json:"member_id"`
+	SubQuestID   QuestID   `json:"sub_quest_id"`
+	Result       any       `json:"result"`
+	QualityScore float64   `json:"quality_score,omitempty"` // Self-assessed or from pre-review
+	Timestamp    time.Time `json:"timestamp"`
+	Trace        TraceInfo `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *PartyResultSubmittedPayload) Validate() error {
+	if p.PartyID == "" {
+		return errors.New("party_id required")
+	}
+	if p.MemberID == "" {
+		return errors.New("member_id required")
+	}
+	if p.SubQuestID == "" {
+		return errors.New("sub_quest_id required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// --- Shared / Rollup Payloads ---
+
+// PartyContextSharedPayload contains data for party.coordination.contextshared events.
+// Emitted when context/insight is shared with the party.
+type PartyContextSharedPayload struct {
+	PartyID     PartyID     `json:"party_id"`
+	SharedBy    AgentID     `json:"shared_by"`
+	ContextItem ContextItem `json:"context_item"`
+	Relevance   []QuestID   `json:"relevance,omitempty"` // Which sub-quests this affects
+	Timestamp   time.Time   `json:"timestamp"`
+	Trace       TraceInfo   `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *PartyContextSharedPayload) Validate() error {
+	if p.PartyID == "" {
+		return errors.New("party_id required")
+	}
+	if p.SharedBy == "" {
+		return errors.New("shared_by required")
+	}
+	if p.ContextItem.Key == "" {
+		return errors.New("context_item.key required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// PartyRollupStartedPayload contains data for party.coordination.rollupstarted events.
+// Emitted when the party lead begins combining sub-results.
+type PartyRollupStartedPayload struct {
+	PartyID         PartyID   `json:"party_id"`
+	LeadID          AgentID   `json:"lead_id"`
+	ParentQuestID   QuestID   `json:"parent_quest_id"`
+	SubResultsCount int       `json:"sub_results_count"`
+	Timestamp       time.Time `json:"timestamp"`
+	Trace           TraceInfo `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *PartyRollupStartedPayload) Validate() error {
+	if p.PartyID == "" {
+		return errors.New("party_id required")
+	}
+	if p.LeadID == "" {
+		return errors.New("lead_id required")
+	}
+	if p.ParentQuestID == "" {
+		return errors.New("parent_quest_id required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// PartyRollupCompletedPayload contains data for party.coordination.rollupcompleted events.
+// Emitted when the party lead completes the rollup, ready for boss battle.
+type PartyRollupCompletedPayload struct {
+	PartyID        PartyID             `json:"party_id"`
+	LeadID         AgentID             `json:"lead_id"`
+	ParentQuestID  QuestID             `json:"parent_quest_id"`
+	RollupResult   any                 `json:"rollup_result"`
+	MemberContrib  map[AgentID]float64 `json:"member_contributions,omitempty"` // Contribution scores
+	Timestamp      time.Time           `json:"timestamp"`
+	Trace          TraceInfo           `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *PartyRollupCompletedPayload) Validate() error {
+	if p.PartyID == "" {
+		return errors.New("party_id required")
+	}
+	if p.LeadID == "" {
+		return errors.New("lead_id required")
+	}
+	if p.ParentQuestID == "" {
+		return errors.New("parent_quest_id required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
 	}
 	return nil
 }

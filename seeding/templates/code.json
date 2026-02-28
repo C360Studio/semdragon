@@ -1,0 +1,114 @@
+{
+  "domain": "code",
+  "description": "Software development training quests",
+  "quests": [
+    {
+      "id": "code-trivial-classify",
+      "title": "Classify Code Snippet",
+      "description": "Identify the programming language and purpose of the given code.",
+      "difficulty": 0,
+      "skills": ["analysis"],
+      "input": {
+        "code": "func add(a, b int) int { return a + b }",
+        "task": "Identify the language and describe what this code does."
+      },
+      "criteria": ["correct_language", "accurate_description"]
+    },
+    {
+      "id": "code-trivial-syntax",
+      "title": "Fix Syntax Error",
+      "description": "Find and fix the syntax error in the given code.",
+      "difficulty": 0,
+      "skills": ["code_review"],
+      "input": {
+        "code": "function greet(name) {\n  console.log('Hello, ' + name\n}",
+        "task": "Find and fix the syntax error in this JavaScript code."
+      },
+      "criteria": ["error_identified", "fix_correct"]
+    },
+    {
+      "id": "code-easy-unittest",
+      "title": "Write Unit Test",
+      "description": "Write a unit test for the given function.",
+      "difficulty": 1,
+      "skills": ["code_generation"],
+      "input": {
+        "function": "func Reverse(s string) string {\n  runes := []rune(s)\n  for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {\n    runes[i], runes[j] = runes[j], runes[i]\n  }\n  return string(runes)\n}",
+        "task": "Write comprehensive unit tests for this Go function."
+      },
+      "criteria": ["tests_compile", "covers_edge_cases", "assertions_correct"]
+    },
+    {
+      "id": "code-easy-document",
+      "title": "Document Function",
+      "description": "Write clear documentation for the given function.",
+      "difficulty": 1,
+      "skills": ["analysis", "summarization"],
+      "input": {
+        "code": "def merge_sorted(a, b):\n    result = []\n    i = j = 0\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result",
+        "task": "Write a clear docstring explaining what this function does, its parameters, and return value."
+      },
+      "criteria": ["describes_purpose", "documents_params", "documents_return"]
+    },
+    {
+      "id": "code-moderate-refactor",
+      "title": "Refactor for Clarity",
+      "description": "Improve code readability without changing functionality.",
+      "difficulty": 2,
+      "skills": ["code_generation", "code_review"],
+      "input": {
+        "code": "func f(x int) int { if x == 0 { return 1 } else { return x * f(x-1) } }",
+        "task": "Refactor this function to be more readable. Add proper naming, formatting, and consider error handling."
+      },
+      "criteria": ["correctness", "readability", "naming", "comments"]
+    },
+    {
+      "id": "code-moderate-implement",
+      "title": "Implement Interface",
+      "description": "Implement a function matching the given interface.",
+      "difficulty": 2,
+      "skills": ["code_generation", "analysis"],
+      "input": {
+        "interface": "// LRUCache implements a Least Recently Used cache\ntype LRUCache interface {\n  Get(key string) (value any, found bool)\n  Put(key string, value any)\n  Len() int\n}",
+        "task": "Implement the LRUCache interface with a configurable capacity."
+      },
+      "criteria": ["compiles", "implements_interface", "correct_behavior", "handles_capacity"]
+    },
+    {
+      "id": "code-hard-optimize",
+      "title": "Optimize for Performance",
+      "description": "Improve performance of the given code while maintaining correctness.",
+      "difficulty": 3,
+      "skills": ["code_generation", "code_review", "analysis"],
+      "input": {
+        "code": "func findDuplicates(nums []int) []int {\n  var dups []int\n  for i := 0; i < len(nums); i++ {\n    for j := i+1; j < len(nums); j++ {\n      if nums[i] == nums[j] {\n        found := false\n        for _, d := range dups {\n          if d == nums[i] {\n            found = true\n            break\n          }\n        }\n        if !found {\n          dups = append(dups, nums[i])\n        }\n      }\n    }\n  }\n  return dups\n}",
+        "task": "Optimize this O(n³) duplicate finder to better time complexity while maintaining correctness."
+      },
+      "criteria": ["correctness", "measurable_improvement", "code_quality", "explains_optimization"]
+    },
+    {
+      "id": "code-hard-debug",
+      "title": "Debug Complex Issue",
+      "description": "Find and fix a subtle bug in concurrent code.",
+      "difficulty": 3,
+      "skills": ["code_review", "analysis"],
+      "input": {
+        "code": "func processItems(items []Item, workers int) []Result {\n  results := make([]Result, len(items))\n  var wg sync.WaitGroup\n  \n  for i, item := range items {\n    wg.Add(1)\n    go func() {\n      defer wg.Done()\n      results[i] = processItem(item)\n    }()\n  }\n  \n  wg.Wait()\n  return results\n}",
+        "task": "This concurrent code has a bug. Find it, explain the issue, and provide a corrected version."
+      },
+      "criteria": ["bug_identified", "explanation_clear", "fix_correct", "concurrency_safe"]
+    },
+    {
+      "id": "code-epic-design",
+      "title": "Design System Component",
+      "description": "Design and implement a significant system component.",
+      "difficulty": 4,
+      "skills": ["code_generation", "planning", "analysis"],
+      "input": {
+        "requirements": "Design a rate limiter that:\n1. Limits requests per user to N per minute\n2. Uses sliding window algorithm\n3. Is thread-safe\n4. Has O(1) time complexity for rate checking\n5. Supports multiple rate limit tiers",
+        "task": "Design and implement this rate limiter with tests."
+      },
+      "criteria": ["meets_requirements", "correct_algorithm", "thread_safe", "well_tested", "documented"]
+    }
+  ]
+}

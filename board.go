@@ -1045,7 +1045,7 @@ func (b *NATSQuestBoard) validateAgentCanClaim(agent *Agent, quest *Quest) error
 	if len(quest.RequiredSkills) > 0 {
 		hasSkill := false
 		for _, required := range quest.RequiredSkills {
-			if slices.Contains(agent.Skills, required) {
+			if agent.HasSkill(required) {
 				hasSkill = true
 				break
 			}

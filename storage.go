@@ -672,3 +672,231 @@ func (s *Storage) UpdateGuild(ctx context.Context, instance string, fn func(*Gui
 		return json.Marshal(&guild)
 	})
 }
+
+// UpdateParty atomically updates a party using a modifier function.
+func (s *Storage) UpdateParty(ctx context.Context, instance string, fn func(*Party) error) error {
+	key := s.PartyKey(instance)
+	return s.kv.UpdateWithRetry(ctx, key, func(current []byte) ([]byte, error) {
+		if len(current) == 0 {
+			return nil, fmt.Errorf("party not found: %s", instance)
+		}
+		var party Party
+		if err := json.Unmarshal(current, &party); err != nil {
+			return nil, err
+		}
+		if err := fn(&party); err != nil {
+			return nil, err
+		}
+		return json.Marshal(&party)
+	})
+}
+
+// =============================================================================
+// PARTY COORDINATION STATE
+// =============================================================================
+// These methods manage coordination state for party quests, including
+// sub-quest assignments, shared context, results collection, and rollups.
+//
+// Key patterns:
+//   party.subquestmap.{party_id}               - Assignment mapping
+//   party.context.{party_id}                   - SharedContext array
+//   party.results.{party_id}.{sub_quest_id}    - Individual sub-results
+//   party.rollup.{party_id}                    - Final rollup result
+// =============================================================================
+
+// PartySubQuestMapKey returns the key for a party's sub-quest assignment map.
+func (s *Storage) PartySubQuestMapKey(partyInstance string) string {
+	return fmt.Sprintf("party.subquestmap.%s", partyInstance)
+}
+
+// PartyContextKey returns the key for a party's shared context.
+func (s *Storage) PartyContextKey(partyInstance string) string {
+	return fmt.Sprintf("party.context.%s", partyInstance)
+}
+
+// PartySubResultKey returns the key for a specific sub-quest result.
+func (s *Storage) PartySubResultKey(partyInstance, subQuestInstance string) string {
+	return fmt.Sprintf("party.results.%s.%s", partyInstance, subQuestInstance)
+}
+
+// PartyRollupKey returns the key for a party's rollup result.
+func (s *Storage) PartyRollupKey(partyInstance string) string {
+	return fmt.Sprintf("party.rollup.%s", partyInstance)
+}
+
+// UpdatePartySubQuestMap stores the sub-quest to agent assignment mapping.
+func (s *Storage) UpdatePartySubQuestMap(ctx context.Context, partyID PartyID, subQuestMap map[QuestID]AgentID) error {
+	instance := ExtractInstance(string(partyID))
+	key := s.PartySubQuestMapKey(instance)
+	data, err := json.Marshal(subQuestMap)
+	if err != nil {
+		return errs.Wrap(err, "Storage", "UpdatePartySubQuestMap", "marshal")
+	}
+	_, err = s.kv.Put(ctx, key, data)
+	if err != nil {
+		return errs.Wrap(err, "Storage", "UpdatePartySubQuestMap", "put")
+	}
+	return nil
+}
+
+// GetPartySubQuestMap retrieves the sub-quest to agent assignment mapping.
+func (s *Storage) GetPartySubQuestMap(ctx context.Context, partyID PartyID) (map[QuestID]AgentID, error) {
+	instance := ExtractInstance(string(partyID))
+	key := s.PartySubQuestMapKey(instance)
+	entry, err := s.kv.Get(ctx, key)
+	if err != nil {
+		if natsclient.IsKVNotFoundError(err) {
+			return make(map[QuestID]AgentID), nil
+		}
+		return nil, errs.Wrap(err, "Storage", "GetPartySubQuestMap", "get")
+	}
+
+	var subQuestMap map[QuestID]AgentID
+	if err := json.Unmarshal(entry.Value, &subQuestMap); err != nil {
+		return nil, errs.Wrap(err, "Storage", "GetPartySubQuestMap", "unmarshal")
+	}
+	return subQuestMap, nil
+}
+
+// AddPartyContext appends a context item to the party's shared context.
+func (s *Storage) AddPartyContext(ctx context.Context, partyID PartyID, item ContextItem) error {
+	instance := ExtractInstance(string(partyID))
+	key := s.PartyContextKey(instance)
+
+	return s.kv.UpdateWithRetry(ctx, key, func(current []byte) ([]byte, error) {
+		var contexts []ContextItem
+		if len(current) > 0 {
+			if err := json.Unmarshal(current, &contexts); err != nil {
+				return nil, err
+			}
+		}
+		contexts = append(contexts, item)
+		return json.Marshal(contexts)
+	})
+}
+
+// GetPartyContext retrieves all shared context items for a party.
+func (s *Storage) GetPartyContext(ctx context.Context, partyID PartyID) ([]ContextItem, error) {
+	instance := ExtractInstance(string(partyID))
+	key := s.PartyContextKey(instance)
+	entry, err := s.kv.Get(ctx, key)
+	if err != nil {
+		if natsclient.IsKVNotFoundError(err) {
+			return []ContextItem{}, nil
+		}
+		return nil, errs.Wrap(err, "Storage", "GetPartyContext", "get")
+	}
+
+	var contexts []ContextItem
+	if err := json.Unmarshal(entry.Value, &contexts); err != nil {
+		return nil, errs.Wrap(err, "Storage", "GetPartyContext", "unmarshal")
+	}
+	return contexts, nil
+}
+
+// UpdatePartySubResults stores a sub-quest result from a party member.
+func (s *Storage) UpdatePartySubResults(ctx context.Context, partyID PartyID, subQuestID QuestID, result any) error {
+	partyInstance := ExtractInstance(string(partyID))
+	subQuestInstance := ExtractInstance(string(subQuestID))
+	key := s.PartySubResultKey(partyInstance, subQuestInstance)
+	data, err := json.Marshal(result)
+	if err != nil {
+		return errs.Wrap(err, "Storage", "UpdatePartySubResults", "marshal")
+	}
+	_, err = s.kv.Put(ctx, key, data)
+	if err != nil {
+		return errs.Wrap(err, "Storage", "UpdatePartySubResults", "put")
+	}
+	return nil
+}
+
+// GetPartySubResult retrieves a specific sub-quest result.
+func (s *Storage) GetPartySubResult(ctx context.Context, partyID PartyID, subQuestID QuestID) (any, error) {
+	partyInstance := ExtractInstance(string(partyID))
+	subQuestInstance := ExtractInstance(string(subQuestID))
+	key := s.PartySubResultKey(partyInstance, subQuestInstance)
+	entry, err := s.kv.Get(ctx, key)
+	if err != nil {
+		if natsclient.IsKVNotFoundError(err) {
+			return nil, fmt.Errorf("sub-result not found: %s", subQuestID)
+		}
+		return nil, errs.Wrap(err, "Storage", "GetPartySubResult", "get")
+	}
+
+	var result any
+	if err := json.Unmarshal(entry.Value, &result); err != nil {
+		return nil, errs.Wrap(err, "Storage", "GetPartySubResult", "unmarshal")
+	}
+	return result, nil
+}
+
+// GetPartySubResults retrieves all sub-quest results for a party.
+func (s *Storage) GetPartySubResults(ctx context.Context, partyID PartyID) (map[QuestID]any, error) {
+	partyInstance := ExtractInstance(string(partyID))
+	prefix := fmt.Sprintf("party.results.%s.", partyInstance)
+	keys, err := s.ListIndexKeys(ctx, prefix)
+	if err != nil {
+		return nil, errs.Wrap(err, "Storage", "GetPartySubResults", "list keys")
+	}
+
+	results := make(map[QuestID]any)
+	for _, key := range keys {
+		// Extract sub-quest instance from key: party.results.{party}.{subquest}
+		subQuestInstance := strings.TrimPrefix(key, prefix)
+		if subQuestInstance == "" {
+			continue
+		}
+
+		entry, err := s.kv.Get(ctx, key)
+		if err != nil {
+			s.logger.Debug("failed to load sub-result", "key", key, "error", err)
+			continue
+		}
+
+		var result any
+		if err := json.Unmarshal(entry.Value, &result); err != nil {
+			s.logger.Debug("failed to unmarshal sub-result", "key", key, "error", err)
+			continue
+		}
+
+		// Reconstruct the QuestID from the instance
+		questID := QuestID(s.config.QuestEntityID(subQuestInstance))
+		results[questID] = result
+	}
+
+	return results, nil
+}
+
+// UpdatePartyRollupResult stores the party lead's rollup result.
+func (s *Storage) UpdatePartyRollupResult(ctx context.Context, partyID PartyID, rollupResult any) error {
+	instance := ExtractInstance(string(partyID))
+	key := s.PartyRollupKey(instance)
+	data, err := json.Marshal(rollupResult)
+	if err != nil {
+		return errs.Wrap(err, "Storage", "UpdatePartyRollupResult", "marshal")
+	}
+	_, err = s.kv.Put(ctx, key, data)
+	if err != nil {
+		return errs.Wrap(err, "Storage", "UpdatePartyRollupResult", "put")
+	}
+	return nil
+}
+
+// GetPartyRollupResult retrieves the party's rollup result.
+func (s *Storage) GetPartyRollupResult(ctx context.Context, partyID PartyID) (any, error) {
+	instance := ExtractInstance(string(partyID))
+	key := s.PartyRollupKey(instance)
+	entry, err := s.kv.Get(ctx, key)
+	if err != nil {
+		if natsclient.IsKVNotFoundError(err) {
+			return nil, fmt.Errorf("rollup not found: %s", partyID)
+		}
+		return nil, errs.Wrap(err, "Storage", "GetPartyRollupResult", "get")
+	}
+
+	var result any
+	if err := json.Unmarshal(entry.Value, &result); err != nil {
+		return nil, errs.Wrap(err, "Storage", "GetPartyRollupResult", "unmarshal")
+	}
+	return result, nil
+}

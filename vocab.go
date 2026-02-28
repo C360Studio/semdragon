@@ -83,6 +83,44 @@ const (
 	PredicateAgentReady = "agent.progression.ready"
 )
 
+// --- Skill Progression Predicates ---
+
+const (
+	// PredicateSkillImproved - Skill proficiency improved from quest use.
+	PredicateSkillImproved = "skill.progression.improved"
+
+	// PredicateSkillLevelUp - Skill reached a new proficiency level.
+	PredicateSkillLevelUp = "skill.progression.levelup"
+
+	// PredicateMentorBonus - Mentor earned XP for trainee improvement.
+	PredicateMentorBonus = "skill.progression.mentorbonus"
+)
+
+// --- Seeding Predicates ---
+
+const (
+	// PredicateSeedingStarted - Environment seeding began.
+	PredicateSeedingStarted = "seeding.lifecycle.started"
+
+	// PredicateSeedingCompleted - Environment seeding finished.
+	PredicateSeedingCompleted = "seeding.lifecycle.completed"
+
+	// PredicateArenaRoundStarted - Training arena round began.
+	PredicateArenaRoundStarted = "seeding.arena.roundstarted"
+
+	// PredicateArenaRoundCompleted - Training arena round finished.
+	PredicateArenaRoundCompleted = "seeding.arena.roundcompleted"
+
+	// PredicateRosterAgentCreated - Roster seeding created an agent.
+	PredicateRosterAgentCreated = "seeding.roster.agentcreated"
+
+	// PredicateNPCSpawned - Bootstrap NPC spawned for training.
+	PredicateNPCSpawned = "seeding.npc.spawned"
+
+	// PredicateNPCRetired - Bootstrap NPC retired (replaced by real mentor).
+	PredicateNPCRetired = "seeding.npc.retired"
+)
+
 // --- Party Predicates ---
 
 const (
@@ -97,6 +135,38 @@ const (
 
 	// PredicatePartyLeft - Agent left a party.
 	PredicatePartyLeft = "party.membership.left"
+)
+
+// --- Party Coordination Predicates ---
+// Communication events between party leads and members for quest coordination.
+
+const (
+	// PredicatePartyQuestDecomposed - Lead broke down quest into sub-quests.
+	PredicatePartyQuestDecomposed = "party.coordination.decomposed"
+
+	// PredicatePartyTaskAssigned - Lead assigned sub-quest to member.
+	PredicatePartyTaskAssigned = "party.coordination.assigned"
+
+	// PredicatePartyContextShared - Context shared with party.
+	PredicatePartyContextShared = "party.coordination.contextshared"
+
+	// PredicatePartyGuidanceIssued - Lead guided member.
+	PredicatePartyGuidanceIssued = "party.coordination.guidance"
+
+	// PredicatePartyProgressReported - Member reported status.
+	PredicatePartyProgressReported = "party.coordination.progress"
+
+	// PredicatePartyHelpRequested - Member needs help.
+	PredicatePartyHelpRequested = "party.coordination.helprequest"
+
+	// PredicatePartyResultSubmitted - Member submitted result.
+	PredicatePartyResultSubmitted = "party.coordination.resultsubmitted"
+
+	// PredicatePartyRollupStarted - Lead combining results.
+	PredicatePartyRollupStarted = "party.coordination.rollupstarted"
+
+	// PredicatePartyRollupCompleted - Rollup ready for boss battle.
+	PredicatePartyRollupCompleted = "party.coordination.rollupcompleted"
 )
 
 // --- Guild Predicates ---
@@ -268,6 +338,50 @@ func RegisterVocabulary() {
 		vocabulary.WithDataType("AgentReadyPayload"),
 	)
 
+	// Skill progression predicates
+	vocabulary.Register(PredicateSkillImproved,
+		vocabulary.WithDescription("Skill proficiency improved from quest use"),
+		vocabulary.WithDataType("SkillProgressionPayload"),
+	)
+	vocabulary.Register(PredicateSkillLevelUp,
+		vocabulary.WithDescription("Skill reached a new proficiency level"),
+		vocabulary.WithDataType("SkillLevelUpPayload"),
+	)
+	vocabulary.Register(PredicateMentorBonus,
+		vocabulary.WithDescription("Mentor earned XP for trainee improvement"),
+		vocabulary.WithDataType("MentorBonusPayload"),
+	)
+
+	// Seeding predicates
+	vocabulary.Register(PredicateSeedingStarted,
+		vocabulary.WithDescription("Environment seeding began"),
+		vocabulary.WithDataType("SeedingStartedPayload"),
+	)
+	vocabulary.Register(PredicateSeedingCompleted,
+		vocabulary.WithDescription("Environment seeding finished"),
+		vocabulary.WithDataType("SeedingCompletedPayload"),
+	)
+	vocabulary.Register(PredicateArenaRoundStarted,
+		vocabulary.WithDescription("Training arena round began"),
+		vocabulary.WithDataType("ArenaRoundPayload"),
+	)
+	vocabulary.Register(PredicateArenaRoundCompleted,
+		vocabulary.WithDescription("Training arena round finished"),
+		vocabulary.WithDataType("ArenaRoundPayload"),
+	)
+	vocabulary.Register(PredicateRosterAgentCreated,
+		vocabulary.WithDescription("Roster seeding created an agent"),
+		vocabulary.WithDataType("RosterAgentPayload"),
+	)
+	vocabulary.Register(PredicateNPCSpawned,
+		vocabulary.WithDescription("Bootstrap NPC spawned for training"),
+		vocabulary.WithDataType("NPCLifecyclePayload"),
+	)
+	vocabulary.Register(PredicateNPCRetired,
+		vocabulary.WithDescription("Bootstrap NPC retired, replaced by real mentor"),
+		vocabulary.WithDataType("NPCLifecyclePayload"),
+	)
+
 	// Party predicates
 	vocabulary.Register(PredicatePartyFormed,
 		vocabulary.WithDescription("Party formed for a quest"),
@@ -284,6 +398,44 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicatePartyLeft,
 		vocabulary.WithDescription("Agent left a party"),
 		vocabulary.WithDataType("PartyMemberPayload"),
+	)
+
+	// Party coordination predicates
+	vocabulary.Register(PredicatePartyQuestDecomposed,
+		vocabulary.WithDescription("Lead decomposed quest into sub-quests for party"),
+		vocabulary.WithDataType("PartyQuestDecomposedPayload"),
+	)
+	vocabulary.Register(PredicatePartyTaskAssigned,
+		vocabulary.WithDescription("Lead assigned sub-quest to party member"),
+		vocabulary.WithDataType("PartyTaskAssignedPayload"),
+	)
+	vocabulary.Register(PredicatePartyContextShared,
+		vocabulary.WithDescription("Context/insight shared with party"),
+		vocabulary.WithDataType("PartyContextSharedPayload"),
+	)
+	vocabulary.Register(PredicatePartyGuidanceIssued,
+		vocabulary.WithDescription("Lead issued guidance to party member"),
+		vocabulary.WithDataType("PartyGuidanceIssuedPayload"),
+	)
+	vocabulary.Register(PredicatePartyProgressReported,
+		vocabulary.WithDescription("Member reported progress to lead"),
+		vocabulary.WithDataType("PartyProgressReportedPayload"),
+	)
+	vocabulary.Register(PredicatePartyHelpRequested,
+		vocabulary.WithDescription("Member requested help from lead"),
+		vocabulary.WithDataType("PartyHelpRequestedPayload"),
+	)
+	vocabulary.Register(PredicatePartyResultSubmitted,
+		vocabulary.WithDescription("Member submitted sub-quest result to lead"),
+		vocabulary.WithDataType("PartyResultSubmittedPayload"),
+	)
+	vocabulary.Register(PredicatePartyRollupStarted,
+		vocabulary.WithDescription("Lead began combining sub-results"),
+		vocabulary.WithDataType("PartyRollupStartedPayload"),
+	)
+	vocabulary.Register(PredicatePartyRollupCompleted,
+		vocabulary.WithDescription("Lead completed rollup, ready for boss battle"),
+		vocabulary.WithDataType("PartyRollupCompletedPayload"),
 	)
 
 	// Guild predicates

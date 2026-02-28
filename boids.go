@@ -142,13 +142,14 @@ func NewDefaultBoidEngine() *DefaultBoidEngine {
 // "Neighbors" in this context means agents with overlapping capabilities,
 // not spatial proximity.
 func (e *DefaultBoidEngine) findNeighbors(agent Agent, allAgents []Agent) []Agent {
-	if len(agent.Skills) == 0 {
+	agentSkills := agent.GetSkillTags()
+	if len(agentSkills) == 0 {
 		return nil
 	}
 
-	agentSkills := make(map[SkillTag]bool, len(agent.Skills))
-	for _, skill := range agent.Skills {
-		agentSkills[skill] = true
+	skillSet := make(map[SkillTag]bool, len(agentSkills))
+	for _, skill := range agentSkills {
+		skillSet[skill] = true
 	}
 
 	var neighbors []Agent
@@ -156,8 +157,8 @@ func (e *DefaultBoidEngine) findNeighbors(agent Agent, allAgents []Agent) []Agen
 		if other.ID == agent.ID {
 			continue
 		}
-		for _, skill := range other.Skills {
-			if agentSkills[skill] {
+		for _, skill := range other.GetSkillTags() {
+			if skillSet[skill] {
 				neighbors = append(neighbors, other)
 				break
 			}
@@ -201,26 +202,48 @@ func (e *DefaultBoidEngine) ruleSeparation(agent Agent, quest Quest) float64 {
 	return -1 // Claimed by another agent
 }
 
-// ruleAffinity returns skill match ratio between agent and quest.
-// Returns matching_skills / required_skills (0 to 1).
+// ruleAffinity returns skill match score weighted by proficiency level.
+// Higher proficiency = stronger attraction to matching quests.
+// Returns weighted_score / max_possible_score (0 to 1).
+//
+// Scoring: L1=1pt, L2=2pts, L3=3pts, L4=4pts, L5=5pts
+// An Expert (L4) in code_generation is 4x more attracted than a Novice.
 func (e *DefaultBoidEngine) ruleAffinity(agent Agent, quest Quest) float64 {
 	if len(quest.RequiredSkills) == 0 {
 		return 1.0 // No skills required = perfect match
 	}
 
-	agentSkills := make(map[SkillTag]bool, len(agent.Skills))
-	for _, skill := range agent.Skills {
-		agentSkills[skill] = true
-	}
+	// Use proficiency-aware skill lookup
+	var weightedScore float64
+	var maxPossibleScore float64
 
-	matching := 0
 	for _, required := range quest.RequiredSkills {
-		if agentSkills[required] {
-			matching++
+		// Max possible is Master (5) for each skill
+		maxPossibleScore += float64(ProficiencyMaster)
+
+		// Check proficiency map first (new system)
+		if agent.SkillProficiencies != nil {
+			if prof, exists := agent.SkillProficiencies[required]; exists {
+				// Weight by proficiency level (1-5)
+				weightedScore += float64(prof.Level)
+				continue
+			}
+		}
+
+		// Fall back to legacy Skills slice (treat as Novice level)
+		for _, skill := range agent.Skills {
+			if skill == required {
+				weightedScore += float64(ProficiencyNovice)
+				break
+			}
 		}
 	}
 
-	return float64(matching) / float64(len(quest.RequiredSkills))
+	if maxPossibleScore == 0 {
+		return 1.0
+	}
+
+	return weightedScore / maxPossibleScore
 }
 
 // ruleCaution returns a penalty for quests above the agent's tier.
