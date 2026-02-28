@@ -573,3 +573,94 @@ func (s *Storage) IncrementAgentStreak(ctx context.Context, instance string) (in
 func (s *Storage) ResetAgentStreak(ctx context.Context, instance string) error {
 	return s.SetAgentStreak(ctx, instance, 0)
 }
+
+// --- Guild Skill Index Operations ---
+// Index guilds by primary skill for fast lookup during auto-recruit.
+
+// GuildSkillIndexKey returns the key for a guild's skill index entry.
+func (s *Storage) GuildSkillIndexKey(skill SkillTag, guildInstance string) string {
+	return fmt.Sprintf("idx.guild.skill.%s.%s", skill, guildInstance)
+}
+
+// AddGuildSkillIndex adds a guild to a skill index.
+func (s *Storage) AddGuildSkillIndex(ctx context.Context, skill SkillTag, guildInstance string) error {
+	key := s.GuildSkillIndexKey(skill, guildInstance)
+	return s.AddToIndex(ctx, key)
+}
+
+// RemoveGuildSkillIndex removes a guild from a skill index.
+func (s *Storage) RemoveGuildSkillIndex(ctx context.Context, skill SkillTag, guildInstance string) error {
+	key := s.GuildSkillIndexKey(skill, guildInstance)
+	return s.RemoveFromIndex(ctx, key)
+}
+
+// ListGuildsBySkill returns guild instance IDs that specialize in a given skill.
+func (s *Storage) ListGuildsBySkill(ctx context.Context, skill SkillTag) ([]string, error) {
+	prefix := fmt.Sprintf("idx.guild.skill.%s.", skill)
+	return s.ListIndexInstances(ctx, prefix)
+}
+
+// ListAllAgents returns all agent instances from storage.
+func (s *Storage) ListAllAgents(ctx context.Context) ([]*Agent, error) {
+	keys, err := s.ListIndexKeys(ctx, "agent.")
+	if err != nil {
+		return nil, err
+	}
+
+	agents := make([]*Agent, 0, len(keys))
+	for _, key := range keys {
+		// Extract instance from key: "agent.{instance}"
+		instance := strings.TrimPrefix(key, "agent.")
+		if instance == "" || strings.HasPrefix(instance, "idx.") {
+			continue // Skip non-agent keys
+		}
+		agent, err := s.GetAgent(ctx, instance)
+		if err != nil {
+			s.logger.Debug("failed to load agent", "instance", instance, "error", err)
+			continue
+		}
+		agents = append(agents, agent)
+	}
+	return agents, nil
+}
+
+// ListAllGuilds returns all guild instances from storage.
+func (s *Storage) ListAllGuilds(ctx context.Context) ([]*Guild, error) {
+	keys, err := s.ListIndexKeys(ctx, "guild.")
+	if err != nil {
+		return nil, err
+	}
+
+	guilds := make([]*Guild, 0, len(keys))
+	for _, key := range keys {
+		instance := strings.TrimPrefix(key, "guild.")
+		if instance == "" || strings.HasPrefix(instance, "idx.") {
+			continue
+		}
+		guild, err := s.GetGuild(ctx, instance)
+		if err != nil {
+			s.logger.Debug("failed to load guild", "instance", instance, "error", err)
+			continue
+		}
+		guilds = append(guilds, guild)
+	}
+	return guilds, nil
+}
+
+// UpdateGuild atomically updates a guild using a modifier function.
+func (s *Storage) UpdateGuild(ctx context.Context, instance string, fn func(*Guild) error) error {
+	key := s.GuildKey(instance)
+	return s.kv.UpdateWithRetry(ctx, key, func(current []byte) ([]byte, error) {
+		if len(current) == 0 {
+			return nil, fmt.Errorf("guild not found: %s", instance)
+		}
+		var guild Guild
+		if err := json.Unmarshal(current, &guild); err != nil {
+			return nil, err
+		}
+		if err := fn(&guild); err != nil {
+			return nil, err
+		}
+		return json.Marshal(&guild)
+	})
+}

@@ -50,6 +50,11 @@ var (
 	SubjectAgentLevelDown = natsclient.NewSubject[AgentLevelPayload](PredicateAgentLevelDown)
 	// SubjectAgentCooldown is the typed subject for agent.progression.cooldown events.
 	SubjectAgentCooldown = natsclient.NewSubject[AgentCooldownPayload](PredicateAgentCooldown)
+
+	// SubjectGuildSuggested is the typed subject for guild.formation.suggested events.
+	SubjectGuildSuggested = natsclient.NewSubject[GuildSuggestedPayload](PredicateGuildSuggested)
+	// SubjectGuildAutoJoined is the typed subject for guild.formation.autojoined events.
+	SubjectGuildAutoJoined = natsclient.NewSubject[GuildAutoJoinedPayload](PredicateGuildAutoJoined)
 )
 
 // --- Payload Types ---
@@ -406,6 +411,22 @@ func (ep *EventPublisher) PublishAgentCooldown(ctx context.Context, payload Agen
 	return SubjectAgentCooldown.Publish(ctx, ep.client, payload)
 }
 
+// PublishGuildSuggested publishes a guild.formation.suggested event.
+func (ep *EventPublisher) PublishGuildSuggested(ctx context.Context, payload GuildSuggestedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectGuildSuggested.Publish(ctx, ep.client, payload)
+}
+
+// PublishGuildAutoJoined publishes a guild.formation.autojoined event.
+func (ep *EventPublisher) PublishGuildAutoJoined(ctx context.Context, payload GuildAutoJoinedPayload) error {
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	return SubjectGuildAutoJoined.Publish(ctx, ep.client, payload)
+}
+
 // =============================================================================
 // AGENT PROGRESSION PAYLOADS
 // =============================================================================
@@ -482,6 +503,75 @@ func (p *AgentCooldownPayload) Validate() error {
 	}
 	if p.Timestamp.IsZero() {
 		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// =============================================================================
+// GUILD FORMATION PAYLOADS
+// =============================================================================
+
+// GuildSuggestion represents a proposed guild from skill clustering.
+type GuildSuggestion struct {
+	PrimarySkill    SkillTag   `json:"primary_skill"`
+	SecondarySkills []SkillTag `json:"secondary_skills,omitempty"`
+	AgentIDs        []AgentID  `json:"agent_ids"`
+	ClusterStrength float64    `json:"cluster_strength"` // 0-1, average Jaccard similarity
+	MinLevel        int        `json:"min_level"`
+	SuggestedName   string     `json:"suggested_name"`
+}
+
+// GuildMatch indicates an agent qualifies for a guild.
+type GuildMatch struct {
+	GuildID       GuildID    `json:"guild_id"`
+	AgentID       AgentID    `json:"agent_id"`
+	MatchScore    float64    `json:"match_score"` // 0-1, skill overlap
+	SkillsMatched []SkillTag `json:"skills_matched"`
+	CanAutoJoin   bool       `json:"can_auto_join"` // Guild.AutoRecruit == true
+}
+
+// GuildSuggestedPayload contains data for guild.formation.suggested events.
+type GuildSuggestedPayload struct {
+	Suggestion GuildSuggestion `json:"suggestion"`
+	ApprovalID string          `json:"approval_id,omitempty"` // For DM approval workflow
+	Timestamp  time.Time       `json:"timestamp"`
+	Trace      TraceInfo       `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *GuildSuggestedPayload) Validate() error {
+	if p.Suggestion.PrimarySkill == "" {
+		return errors.New("primary_skill required")
+	}
+	if len(p.Suggestion.AgentIDs) == 0 {
+		return errors.New("agent_ids required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// GuildAutoJoinedPayload contains data for guild.formation.autojoined events.
+type GuildAutoJoinedPayload struct {
+	AgentID  AgentID   `json:"agent_id"`
+	GuildID  GuildID   `json:"guild_id"`
+	Rank     GuildRank `json:"rank"`
+	JoinedAt time.Time `json:"joined_at"`
+	Reason   string    `json:"reason,omitempty"` // Why auto-join triggered
+	Trace    TraceInfo `json:"trace,omitempty"`
+}
+
+// Validate checks that required fields are present.
+func (p *GuildAutoJoinedPayload) Validate() error {
+	if p.AgentID == "" {
+		return errors.New("agent_id required")
+	}
+	if p.GuildID == "" {
+		return errors.New("guild_id required")
+	}
+	if p.JoinedAt.IsZero() {
+		return errors.New("joined_at required")
 	}
 	return nil
 }

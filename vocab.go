@@ -118,6 +118,16 @@ const (
 	PredicateGuildDemoted = "guild.membership.demoted"
 )
 
+// --- Guild Formation Predicates ---
+
+const (
+	// PredicateGuildSuggested - Skill cluster detected, guild formation suggested.
+	PredicateGuildSuggested = "guild.formation.suggested"
+
+	// PredicateGuildAutoJoined - Agent auto-recruited into a guild.
+	PredicateGuildAutoJoined = "guild.formation.autojoined"
+)
+
 // --- DM Session Predicates ---
 
 const (
@@ -271,6 +281,16 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateGuildDemoted,
 		vocabulary.WithDescription("Agent demoted in guild rank"),
 		vocabulary.WithDataType("GuildRankPayload"),
+	)
+
+	// Guild formation predicates
+	vocabulary.Register(PredicateGuildSuggested,
+		vocabulary.WithDescription("Skill cluster detected, guild formation suggested"),
+		vocabulary.WithDataType("GuildSuggestedPayload"),
+	)
+	vocabulary.Register(PredicateGuildAutoJoined,
+		vocabulary.WithDescription("Agent auto-recruited into a guild"),
+		vocabulary.WithDataType("GuildAutoJoinedPayload"),
 	)
 
 	// DM session predicates

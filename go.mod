@@ -5,6 +5,7 @@ go 1.25.3
 require (
 	github.com/c360studio/semstreams v0.0.0
 	github.com/nats-io/nats.go v1.48.0
+	golang.org/x/text v0.34.0
 )
 
 require (
@@ -76,7 +77,6 @@ require (
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	google.golang.org/grpc v1.79.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
