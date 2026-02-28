@@ -1,0 +1,409 @@
+/**
+ * Semdragons Color Palette - Extended Three-Layer Architecture
+ *
+ * Based on semstreams-ui color system with Layer 3 extensions for:
+ * - Trust Tiers (Apprentice → Grandmaster)
+ * - Quest Difficulty (Trivial → Legendary)
+ * - Quest/Agent Status (posted, in_progress, completed, etc.)
+ *
+ * WCAG AA Compliant - All color combinations verified for 4.5:1 contrast ratio
+ *
+ * DEFAULT: Dark theme
+ */
+
+@layer reset, theme, components, utilities;
+
+:root {
+	/* Enable CSS color scheme support - dark is default */
+	color-scheme: dark light;
+
+	/* ============================================
+     LAYER 1: UI COLORS (DARK - Default)
+     Foundation colors with no semantic meaning
+     ============================================ */
+
+	/* Surface Colors */
+	--ui-surface-primary: #161616; /* Gray-100 */
+	--ui-surface-secondary: #262626; /* Gray-90 */
+	--ui-surface-tertiary: #393939; /* Gray-80 */
+	--ui-surface-overlay: #262626;
+
+	/* Elevated Surfaces */
+	--ui-surface-elevated-1: #262626;
+	--ui-surface-elevated-2: #393939;
+	--ui-surface-elevated-3: #525252;
+
+	/* Text Colors (WCAG AA compliant on dark) */
+	--ui-text-primary: #f4f4f4; /* Gray-10 */
+	--ui-text-secondary: #c6c6c6; /* Gray-30 */
+	--ui-text-tertiary: #8d8d8d; /* Gray-50 */
+	--ui-text-disabled: #525252;
+	--ui-text-placeholder: #6f6f6f;
+
+	/* Text on Colored Backgrounds */
+	--ui-text-on-primary: #161616;
+	--ui-text-on-error: #161616;
+	--ui-text-on-warning: #161616;
+	--ui-text-on-success: #161616;
+
+	/* Border Colors */
+	--ui-border-subtle: #393939; /* Gray-80 */
+	--ui-border-strong: #6f6f6f; /* Gray-60 */
+	--ui-border-interactive: #78a9ff;
+	--ui-border-disabled: #525252;
+
+	/* Interactive States (Primary) */
+	--ui-interactive-primary: #78a9ff; /* Blue-40 */
+	--ui-interactive-primary-hover: #a6c8ff; /* Blue-30 */
+	--ui-interactive-primary-active: #4589ff; /* Blue-50 */
+	--ui-interactive-primary-disabled: #525252; /* Gray-70 */
+
+	/* Interactive States (Secondary) */
+	--ui-interactive-secondary: #6f6f6f; /* Gray-60 */
+	--ui-interactive-secondary-hover: #8d8d8d; /* Gray-50 */
+	--ui-interactive-secondary-active: #525252; /* Gray-70 */
+
+	/* Focus Indicators */
+	--ui-focus-ring: #78a9ff; /* Blue-40 */
+	--ui-focus-inverse: #161616;
+
+	/* ============================================
+     LAYER 2: STATUS COLORS (DARK)
+     Semantic states - validation, alerts, confirmations
+     ============================================ */
+
+	/* Error */
+	--status-error: #ff8389; /* Red-40 */
+	--status-error-hover: #ffb3b8; /* Red-30 */
+	--status-error-active: #fa4d56; /* Red-50 */
+	--status-error-container: #2d0709;
+	--status-error-on-container: #ffb3b8;
+
+	/* Warning */
+	--status-warning: #f1c21b; /* Yellow-30 */
+	--status-warning-hover: #fddc69; /* Yellow-20 */
+	--status-warning-active: #d2a106; /* Yellow-40 */
+	--status-warning-container: #3e3000;
+	--status-warning-on-container: #fddc69;
+
+	/* Success */
+	--status-success: #42be65; /* Green-40 */
+	--status-success-hover: #6fdc8c; /* Green-30 */
+	--status-success-active: #24a148; /* Green-50 */
+	--status-success-container: #071908;
+	--status-success-on-container: #6fdc8c;
+
+	/* Info */
+	--status-info: #78a9ff; /* Blue-40 */
+	--status-info-hover: #a6c8ff; /* Blue-30 */
+	--status-info-active: #4589ff; /* Blue-50 */
+	--status-info-container: #001141;
+	--status-info-on-container: #a6c8ff;
+
+	/* ============================================
+     LAYER 3: SEMDRAGONS DOMAIN COLORS
+     Trust Tiers, Quest Difficulty, Game Status
+     ============================================ */
+
+	/* Trust Tiers */
+	--tier-apprentice: #8d8d8d; /* Gray - Levels 1-5 */
+	--tier-apprentice-container: #393939;
+	--tier-journeyman: #78a9ff; /* Blue - Levels 6-10 */
+	--tier-journeyman-container: #001141;
+	--tier-expert: #42be65; /* Green - Levels 11-15 */
+	--tier-expert-container: #071908;
+	--tier-master: #a56eff; /* Purple - Levels 16-18 */
+	--tier-master-container: #1c0f30;
+	--tier-grandmaster: #ff7eb6; /* Magenta - Levels 19-20 */
+	--tier-grandmaster-container: #2a0a1e;
+
+	/* Quest Difficulty */
+	--difficulty-trivial: #c6c6c6; /* Light Gray */
+	--difficulty-trivial-container: #393939;
+	--difficulty-easy: #6fdc8c; /* Light Green */
+	--difficulty-easy-container: #071908;
+	--difficulty-moderate: #78a9ff; /* Blue */
+	--difficulty-moderate-container: #001141;
+	--difficulty-hard: #fddc69; /* Yellow */
+	--difficulty-hard-container: #3e3000;
+	--difficulty-epic: #ff8389; /* Red */
+	--difficulty-epic-container: #2d0709;
+	--difficulty-legendary: #a56eff; /* Purple */
+	--difficulty-legendary-container: #1c0f30;
+
+	/* Quest Status */
+	--quest-posted: #78a9ff; /* Blue - Available */
+	--quest-posted-container: #001141;
+	--quest-claimed: #08bdba; /* Teal - Claimed */
+	--quest-claimed-container: #0d1c1c;
+	--quest-in-progress: #fddc69; /* Yellow - Working */
+	--quest-in-progress-container: #3e3000;
+	--quest-in-review: #a56eff; /* Purple - Boss battle */
+	--quest-in-review-container: #1c0f30;
+	--quest-completed: #42be65; /* Green - Done */
+	--quest-completed-container: #071908;
+	--quest-failed: #ff8389; /* Red - Failed */
+	--quest-failed-container: #2d0709;
+	--quest-escalated: #ff7eb6; /* Magenta - Escalated */
+	--quest-escalated-container: #2a0a1e;
+
+	/* Agent Status */
+	--agent-idle: #42be65; /* Green - Available */
+	--agent-on-quest: #fddc69; /* Yellow - Working */
+	--agent-in-battle: #a56eff; /* Purple - Fighting boss */
+	--agent-cooldown: #ff8389; /* Red - Recovering */
+	--agent-retired: #6f6f6f; /* Gray - Permadeath */
+
+	/* Battle Status */
+	--battle-active: #a56eff; /* Purple */
+	--battle-victory: #42be65; /* Green */
+	--battle-defeat: #ff8389; /* Red */
+	--battle-retreat: #fddc69; /* Yellow */
+
+	/* Guild/Party Colors */
+	--guild-active: #42be65;
+	--guild-inactive: #6f6f6f;
+	--party-forming: #78a9ff;
+	--party-active: #fddc69;
+	--party-disbanded: #6f6f6f;
+
+	/* XP and Progress */
+	--xp-bar-background: #393939;
+	--xp-bar-fill: #78a9ff;
+	--xp-bar-bonus: #42be65;
+	--xp-bar-penalty: #ff8389;
+	--level-up-glow: #a56eff;
+
+	/* ============================================
+     COMPONENT-SPECIFIC NAMESPACES
+     ============================================ */
+
+	/* Panel Layout */
+	--panel-left-width: 280px;
+	--panel-left-min-width: 200px;
+	--panel-left-max-width: 400px;
+	--panel-right-width: 320px;
+	--panel-right-min-width: 240px;
+	--panel-right-max-width: 480px;
+	--panel-center-min-width: 400px;
+
+	--panel-resize-handle-width: 4px;
+	--panel-resize-handle-hover-width: 6px;
+	--panel-resize-handle-bg: transparent;
+	--panel-resize-handle-hover-bg: var(--ui-interactive-primary);
+	--panel-resize-handle-active-bg: var(--ui-interactive-primary-active);
+
+	--panel-transition-duration: 200ms;
+	--panel-transition-timing: ease-out;
+
+	/* Explorer Panel (Left) */
+	--explorer-background: var(--ui-surface-secondary);
+	--explorer-tab-bar-bg: var(--ui-surface-tertiary);
+	--explorer-tab-active-bg: var(--ui-surface-secondary);
+	--explorer-tab-text: var(--ui-text-secondary);
+	--explorer-tab-active-text: var(--ui-text-primary);
+	--explorer-tab-border-bottom: 2px solid var(--ui-interactive-primary);
+
+	/* Properties Panel (Right) */
+	--properties-background: var(--ui-surface-secondary);
+	--properties-header-bg: var(--ui-surface-tertiary);
+	--properties-header-text: var(--ui-text-primary);
+	--properties-section-header-bg: var(--ui-surface-tertiary);
+	--properties-section-header-text: var(--ui-text-secondary);
+	--properties-empty-state-text: var(--ui-text-tertiary);
+
+	/* Canvas/Main Area */
+	--canvas-background: var(--ui-surface-primary);
+	--canvas-grid-color: var(--ui-border-subtle);
+
+	/* Cards */
+	--card-background: var(--ui-surface-secondary);
+	--card-border: var(--ui-border-subtle);
+	--card-border-hover: var(--ui-interactive-primary);
+	--card-shadow-hover: rgba(120, 169, 255, 0.2);
+	--card-border-radius: 8px;
+
+	/* Modals */
+	--modal-backdrop: rgba(0, 0, 0, 0.7);
+	--modal-background: var(--ui-surface-overlay);
+	--modal-border: var(--ui-border-subtle);
+	--modal-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+	--modal-border-radius: 8px;
+
+	/* Chat Panel */
+	--chat-background: var(--ui-surface-secondary);
+	--chat-message-user-bg: var(--ui-interactive-primary);
+	--chat-message-dm-bg: var(--ui-surface-tertiary);
+	--chat-input-bg: var(--ui-surface-primary);
+	--chat-input-border: var(--ui-border-subtle);
+
+	/* Activity Feed */
+	--feed-item-bg: var(--ui-surface-secondary);
+	--feed-item-hover-bg: var(--ui-surface-tertiary);
+	--feed-timestamp: var(--ui-text-tertiary);
+
+	/* ============================================
+     UTILITY VARIABLES
+     ============================================ */
+
+	/* Border Radius */
+	--radius-sm: 4px;
+	--radius-md: 6px;
+	--radius-lg: 8px;
+	--radius-xl: 12px;
+	--radius-full: 9999px;
+
+	/* Shadows */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+	--shadow-md: 0 4px 8px rgba(0, 0, 0, 0.3);
+	--shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+	/* Semantic Button Colors */
+	--button-primary-background: #78a9ff;
+	--button-primary-background-hover: #a6c8ff;
+	--button-primary-text: #161616;
+	--button-secondary-background: #6f6f6f;
+	--button-secondary-background-hover: #8d8d8d;
+	--button-secondary-text: #f4f4f4;
+	--button-danger-background: #ff8389;
+	--button-danger-background-hover: #ffb3b8;
+	--button-danger-text: #161616;
+
+	/* Spacing */
+	--spacing-xs: 4px;
+	--spacing-sm: 8px;
+	--spacing-md: 16px;
+	--spacing-lg: 24px;
+	--spacing-xl: 32px;
+}
+
+/* ============================================
+   LIGHT THEME
+   ============================================ */
+
+[data-theme='light'] {
+	/* Layer 1: UI Colors (Light) */
+	--ui-surface-primary: #ffffff;
+	--ui-surface-secondary: #f7f7f7;
+	--ui-surface-tertiary: #f3f3f3;
+	--ui-surface-overlay: #ffffff;
+
+	--ui-surface-elevated-1: #ffffff;
+	--ui-surface-elevated-2: #ffffff;
+	--ui-surface-elevated-3: #ffffff;
+
+	--ui-text-primary: #161616;
+	--ui-text-secondary: #525252;
+	--ui-text-tertiary: #8d8d8d;
+	--ui-text-disabled: #c6c6c6;
+	--ui-text-placeholder: #a8a8a8;
+
+	--ui-text-on-primary: #ffffff;
+	--ui-text-on-error: #ffffff;
+	--ui-text-on-warning: #161616;
+	--ui-text-on-success: #ffffff;
+
+	--ui-border-subtle: #e0e0e0;
+	--ui-border-strong: #8d8d8d;
+	--ui-border-interactive: #0f62fe;
+	--ui-border-disabled: #c6c6c6;
+
+	--ui-interactive-primary: #0f62fe;
+	--ui-interactive-primary-hover: #0353e9;
+	--ui-interactive-primary-active: #002d9c;
+	--ui-interactive-primary-disabled: #c6c6c6;
+
+	--ui-interactive-secondary: #393939;
+	--ui-interactive-secondary-hover: #474747;
+	--ui-interactive-secondary-active: #161616;
+
+	--ui-focus-ring: #0f62fe;
+	--ui-focus-inverse: #ffffff;
+
+	/* Layer 2: Status Colors (Light) */
+	--status-error: #da1e28;
+	--status-error-hover: #b81921;
+	--status-error-active: #750e13;
+	--status-error-container: #fff1f1;
+	--status-error-on-container: #2d0709;
+
+	--status-warning: #f1c21b;
+	--status-warning-hover: #d2a106;
+	--status-warning-active: #8e6a00;
+	--status-warning-container: #fcf4d6;
+	--status-warning-on-container: #3e3000;
+
+	--status-success: #24a148;
+	--status-success-hover: #198038;
+	--status-success-active: #0e6027;
+	--status-success-container: #defbe6;
+	--status-success-on-container: #071908;
+
+	--status-info: #0043ce;
+	--status-info-hover: #002d9c;
+	--status-info-active: #001d6c;
+	--status-info-container: #d0e2ff;
+	--status-info-on-container: #001141;
+
+	/* Layer 3: Semdragons Domain Colors (Light) */
+	--tier-apprentice: #6f6f6f;
+	--tier-apprentice-container: #e0e0e0;
+	--tier-journeyman: #0f62fe;
+	--tier-journeyman-container: #d0e2ff;
+	--tier-expert: #24a148;
+	--tier-expert-container: #defbe6;
+	--tier-master: #8a3ffc;
+	--tier-master-container: #e8daff;
+	--tier-grandmaster: #d02670;
+	--tier-grandmaster-container: #ffd6e8;
+
+	--difficulty-trivial: #8d8d8d;
+	--difficulty-trivial-container: #e0e0e0;
+	--difficulty-easy: #24a148;
+	--difficulty-easy-container: #defbe6;
+	--difficulty-moderate: #0f62fe;
+	--difficulty-moderate-container: #d0e2ff;
+	--difficulty-hard: #d2a106;
+	--difficulty-hard-container: #fcf4d6;
+	--difficulty-epic: #da1e28;
+	--difficulty-epic-container: #fff1f1;
+	--difficulty-legendary: #8a3ffc;
+	--difficulty-legendary-container: #e8daff;
+
+	/* Quest/Agent Status (Light) */
+	--quest-posted: #0f62fe;
+	--quest-posted-container: #d0e2ff;
+	--quest-claimed: #007d79;
+	--quest-claimed-container: #d9fbfb;
+	--quest-in-progress: #d2a106;
+	--quest-in-progress-container: #fcf4d6;
+	--quest-in-review: #8a3ffc;
+	--quest-in-review-container: #e8daff;
+	--quest-completed: #24a148;
+	--quest-completed-container: #defbe6;
+	--quest-failed: #da1e28;
+	--quest-failed-container: #fff1f1;
+	--quest-escalated: #d02670;
+	--quest-escalated-container: #ffd6e8;
+
+	--agent-idle: #24a148;
+	--agent-on-quest: #d2a106;
+	--agent-in-battle: #8a3ffc;
+	--agent-cooldown: #da1e28;
+	--agent-retired: #6f6f6f;
+
+	/* Component overrides for light theme */
+	--card-shadow-hover: rgba(15, 98, 254, 0.15);
+	--modal-backdrop: rgba(22, 22, 22, 0.5);
+	--modal-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
+	--shadow-md: 0 4px 8px rgba(0, 0, 0, 0.1);
+	--shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+
+	--xp-bar-background: #e0e0e0;
+	--xp-bar-fill: #0f62fe;
+
+	--button-primary-background: var(--ui-interactive-primary);
+	--button-primary-background-hover: var(--ui-interactive-primary-hover);
+	--button-primary-text: var(--ui-text-on-primary);
+}

@@ -1,0 +1,47 @@
+services:
+  nats:
+    image: nats:2.10
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: ["--js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: ui/Dockerfile.backend
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      NATS_URL: nats://nats:4222
+      HTTP_PORT: "8080"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    depends_on:
+      - backend
+    environment:
+      PUBLIC_API_URL: http://backend:8080
+      PUBLIC_WS_URL: ws://backend:8080/events
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./src:/app/src:ro
+      - ./static:/app/static:ro
+    stdin_open: true
+    tty: true
