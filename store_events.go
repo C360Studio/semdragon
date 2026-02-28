@@ -43,10 +43,10 @@ var (
 
 // StoreItemListedPayload contains data for store.item.listed events.
 type StoreItemListedPayload struct {
-	Item      StoreItem `json:"item"`
-	ListedBy  string    `json:"listed_by,omitempty"` // Admin or system identifier
-	ListedAt  time.Time `json:"listed_at"`
-	Trace     TraceInfo `json:"trace,omitempty"`
+	Item     StoreItem `json:"item"`
+	ListedBy string    `json:"listed_by,omitempty"` // Admin or system identifier
+	ListedAt time.Time `json:"listed_at"`
+	Trace    TraceInfo `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -147,7 +147,7 @@ type ConsumableUsedPayload struct {
 	AgentID      AgentID          `json:"agent_id"`
 	ConsumableID string           `json:"consumable_id"`
 	Effect       ConsumableEffect `json:"effect"`
-	Remaining    int              `json:"remaining"`     // How many of this consumable left
+	Remaining    int              `json:"remaining"`          // How many of this consumable left
 	QuestID      *QuestID         `json:"quest_id,omitempty"` // If used on specific quest
 	Timestamp    time.Time        `json:"timestamp"`
 	Trace        TraceInfo        `json:"trace,omitempty"`
@@ -197,14 +197,14 @@ func (p *ConsumableExpiredPayload) Validate() error {
 
 // InventoryUpdatedPayload contains data for agent.inventory.updated events.
 type InventoryUpdatedPayload struct {
-	AgentID     AgentID   `json:"agent_id"`
-	ChangeType  string    `json:"change_type"` // "purchase", "use", "expire", "grant"
-	ItemID      string    `json:"item_id"`
-	ItemName    string    `json:"item_name,omitempty"`
-	Quantity    int       `json:"quantity"` // Change in quantity (negative for removals)
-	TotalSpent  int64     `json:"total_spent"`
-	Timestamp   time.Time `json:"timestamp"`
-	Trace       TraceInfo `json:"trace,omitempty"`
+	AgentID    AgentID   `json:"agent_id"`
+	ChangeType string    `json:"change_type"` // "purchase", "use", "expire", "grant"
+	ItemID     string    `json:"item_id"`
+	ItemName   string    `json:"item_name,omitempty"`
+	Quantity   int       `json:"quantity"` // Change in quantity (negative for removals)
+	TotalSpent int64     `json:"total_spent"`
+	Timestamp  time.Time `json:"timestamp"`
+	Trace      TraceInfo `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.

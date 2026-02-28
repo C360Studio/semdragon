@@ -109,8 +109,8 @@ func (r *NATSApprovalRouter) RequestApproval(ctx context.Context, req ApprovalRe
 	// Create request message with metadata including reply subject
 	// We include reply subject in the payload since we're using pub/sub pattern
 	requestData := struct {
-		Request     ApprovalRequest `json:"request"`
-		ReplyTo     string          `json:"reply_to"`
+		Request ApprovalRequest `json:"request"`
+		ReplyTo string          `json:"reply_to"`
 	}{
 		Request: req,
 		ReplyTo: replySubject,

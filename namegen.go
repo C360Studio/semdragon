@@ -102,11 +102,11 @@ func (g *NameGenerator) prefixesForSkills(skills []SkillTag) []string {
 // suffixesForTier returns name suffixes themed to trust tier.
 func (g *NameGenerator) suffixesForTier(tier TrustTier) []string {
 	tierSuffixes := map[TrustTier][]string{
-		TierApprentice:   {"spark", "flame", "seed", "wisp", "shade", "drift", "breeze"},
-		TierJourneyman:   {"walker", "blade", "weaver", "crafter", "seeker", "runner", "binder"},
-		TierExpert:       {"master", "forger", "keeper", "warden", "striker", "shaper", "wright"},
-		TierMaster:       {"lord", "sage", "crown", "prime", "arch", "grand", "high"},
-		TierGrandmaster:  {"eternal", "sovereign", "ancient", "mythic", "legend", "titan", "oracle"},
+		TierApprentice:  {"spark", "flame", "seed", "wisp", "shade", "drift", "breeze"},
+		TierJourneyman:  {"walker", "blade", "weaver", "crafter", "seeker", "runner", "binder"},
+		TierExpert:      {"master", "forger", "keeper", "warden", "striker", "shaper", "wright"},
+		TierMaster:      {"lord", "sage", "crown", "prime", "arch", "grand", "high"},
+		TierGrandmaster: {"eternal", "sovereign", "ancient", "mythic", "legend", "titan", "oracle"},
 	}
 
 	if suffixes, ok := tierSuffixes[tier]; ok {

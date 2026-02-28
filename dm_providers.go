@@ -77,7 +77,7 @@ type EscalationAttempt struct {
 
 // EscalationDecision describes how to resolve an escalated quest.
 type EscalationDecision struct {
-	Resolution   string   `json:"resolution"`    // "reassign", "decompose", "complete_by_dm", "cancel"
+	Resolution   string   `json:"resolution"` // "reassign", "decompose", "complete_by_dm", "cancel"
 	NewPartyID   *PartyID `json:"new_party_id,omitempty"`
 	SubQuests    []Quest  `json:"sub_quests,omitempty"` // If decomposing
 	DMCompletion any      `json:"dm_completion,omitempty"`

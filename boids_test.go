@@ -181,7 +181,7 @@ func TestRuleCaution_MeetsTier(t *testing.T) {
 
 func TestRuleCaution_ExceedsTier(t *testing.T) {
 	engine := NewDefaultBoidEngine()
-	agent := newTestAgent("agent1", 17, SkillAnalysis)   // Master tier
+	agent := newTestAgent("agent1", 17, SkillAnalysis)  // Master tier
 	quest := newTestQuest("quest1", DifficultyModerate) // Requires Journeyman
 
 	score := engine.ruleCaution(agent, quest)
@@ -216,7 +216,7 @@ func TestRuleCaution_TwoTiersBelow(t *testing.T) {
 
 func TestRuleCaution_CappedAtMinusOne(t *testing.T) {
 	engine := NewDefaultBoidEngine()
-	agent := newTestAgent("agent1", 1, SkillAnalysis)      // Apprentice
+	agent := newTestAgent("agent1", 1, SkillAnalysis)    // Apprentice
 	quest := newTestQuest("quest1", DifficultyLegendary) // Requires Grandmaster
 
 	score := engine.ruleCaution(agent, quest)
@@ -609,7 +609,7 @@ func TestComputeAttractionsWithContext_AppliesHunger(t *testing.T) {
 
 	now := time.Now()
 	idleInfo := map[AgentID]AgentIdleInfo{
-		hungryAgent.ID: {IdleSince: now.Add(-1 * time.Hour)},  // Very hungry
+		hungryAgent.ID: {IdleSince: now.Add(-1 * time.Hour)},   // Very hungry
 		freshAgent.ID:  {IdleSince: now.Add(-1 * time.Minute)}, // Just started
 	}
 

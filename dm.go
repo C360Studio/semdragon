@@ -98,10 +98,10 @@ type SessionConfig struct {
 
 // Session represents an active DM session.
 type Session struct {
-	ID          string        `json:"id"`
-	Config      SessionConfig `json:"config"`
-	WorldState  *WorldState   `json:"world_state"`
-	Active      bool          `json:"active"`
+	ID         string        `json:"id"`
+	Config     SessionConfig `json:"config"`
+	WorldState *WorldState   `json:"world_state"`
+	Active     bool          `json:"active"`
 }
 
 // SessionSummary contains aggregate statistics for a completed session.
@@ -167,10 +167,10 @@ const (
 
 // EscalationResult describes how an escalated quest was resolved.
 type EscalationResult struct {
-	QuestID     QuestID `json:"quest_id"`
-	Resolution  string  `json:"resolution"`   // "reassigned", "completed_by_dm", "cancelled"
+	QuestID     QuestID  `json:"quest_id"`
+	Resolution  string   `json:"resolution"` // "reassigned", "completed_by_dm", "cancelled"
 	NewPartyID  *PartyID `json:"new_party_id,omitempty"`
-	DMCompleted bool    `json:"dm_completed"` // DM did it themselves
+	DMCompleted bool     `json:"dm_completed"` // DM did it themselves
 }
 
 // AgentEvaluation contains a performance assessment of an agent.
@@ -189,26 +189,26 @@ type AgentEvaluation struct {
 
 // WorldState contains the complete state of the game world.
 type WorldState struct {
-	Agents   []Agent   `json:"agents"`
-	Quests   []Quest   `json:"quests"`
-	Parties  []Party   `json:"parties"`
-	Guilds   []Guild   `json:"guilds"`
-	Battles  []BossBattle `json:"battles"`
-	Stats    WorldStats   `json:"stats"`
+	Agents  []Agent      `json:"agents"`
+	Quests  []Quest      `json:"quests"`
+	Parties []Party      `json:"parties"`
+	Guilds  []Guild      `json:"guilds"`
+	Battles []BossBattle `json:"battles"`
+	Stats   WorldStats   `json:"stats"`
 }
 
 // WorldStats contains aggregate statistics about the game world.
 type WorldStats struct {
-	ActiveAgents    int     `json:"active_agents"`
-	IdleAgents      int     `json:"idle_agents"`
-	CooldownAgents  int     `json:"cooldown_agents"`
-	RetiredAgents   int     `json:"retired_agents"`
-	OpenQuests      int     `json:"open_quests"`
-	ActiveQuests    int     `json:"active_quests"`
-	CompletionRate  float64 `json:"completion_rate"`
-	AvgQuality      float64 `json:"avg_quality"`
-	ActiveParties   int     `json:"active_parties"`
-	ActiveGuilds    int     `json:"active_guilds"`
+	ActiveAgents   int     `json:"active_agents"`
+	IdleAgents     int     `json:"idle_agents"`
+	CooldownAgents int     `json:"cooldown_agents"`
+	RetiredAgents  int     `json:"retired_agents"`
+	OpenQuests     int     `json:"open_quests"`
+	ActiveQuests   int     `json:"active_quests"`
+	CompletionRate float64 `json:"completion_rate"`
+	AvgQuality     float64 `json:"avg_quality"`
+	ActiveParties  int     `json:"active_parties"`
+	ActiveGuilds   int     `json:"active_guilds"`
 }
 
 // =============================================================================
@@ -292,8 +292,8 @@ type GameEvent struct {
 
 // EventFilter specifies criteria for filtering game events.
 type EventFilter struct {
-	Types    []GameEventType `json:"types,omitempty"`
-	QuestID  *QuestID        `json:"quest_id,omitempty"`
-	AgentID  *AgentID        `json:"agent_id,omitempty"`
-	GuildID  *GuildID        `json:"guild_id,omitempty"`
+	Types   []GameEventType `json:"types,omitempty"`
+	QuestID *QuestID        `json:"quest_id,omitempty"`
+	AgentID *AgentID        `json:"agent_id,omitempty"`
+	GuildID *GuildID        `json:"guild_id,omitempty"`
 }

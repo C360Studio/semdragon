@@ -52,22 +52,22 @@ func NewSkillProgressionEngine() *SkillProgressionEngine {
 
 // SkillImprovementResult holds the outcome of skill progression for one skill.
 type SkillImprovementResult struct {
-	Skill         SkillTag         `json:"skill"`
-	PointsEarned  int              `json:"points_earned"`
-	OldLevel      ProficiencyLevel `json:"old_level"`
-	NewLevel      ProficiencyLevel `json:"new_level"`
-	OldProgress   int              `json:"old_progress"`
-	NewProgress   int              `json:"new_progress"`
-	LeveledUp     bool             `json:"leveled_up"`
-	AtMaxLevel    bool             `json:"at_max_level"`
+	Skill        SkillTag         `json:"skill"`
+	PointsEarned int              `json:"points_earned"`
+	OldLevel     ProficiencyLevel `json:"old_level"`
+	NewLevel     ProficiencyLevel `json:"new_level"`
+	OldProgress  int              `json:"old_progress"`
+	NewProgress  int              `json:"new_progress"`
+	LeveledUp    bool             `json:"leveled_up"`
+	AtMaxLevel   bool             `json:"at_max_level"`
 }
 
 // SkillProgressionContext contains everything needed to calculate skill improvement.
 type SkillProgressionContext struct {
 	Agent      *Agent        `json:"agent"`
 	Quest      *Quest        `json:"quest"`
-	Quality    float64       `json:"quality"`    // 0.0 - 1.0 quality score from battle
-	Duration   time.Duration `json:"duration"`   // How long the quest took
+	Quality    float64       `json:"quality"`     // 0.0 - 1.0 quality score from battle
+	Duration   time.Duration `json:"duration"`    // How long the quest took
 	IsMentored bool          `json:"is_mentored"` // True if agent was in a mentored party
 }
 

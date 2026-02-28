@@ -86,7 +86,7 @@ type StoreItem struct {
 
 // ConsumableEffect defines what a consumable does when used.
 type ConsumableEffect struct {
-	Type      ConsumableType         `json:"type"`               // retry_token, cooldown_skip, xp_boost, quality_shield
+	Type      ConsumableType         `json:"type"`                // retry_token, cooldown_skip, xp_boost, quality_shield
 	Magnitude float64                `json:"magnitude,omitempty"` // e.g., 2.0 for 2x XP boost
 	Duration  int                    `json:"duration,omitempty"`  // Number of quests it applies to
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
@@ -111,9 +111,9 @@ type OwnedItem struct {
 // AgentInventory tracks what an agent owns.
 type AgentInventory struct {
 	AgentID     AgentID              `json:"agent_id"`
-	OwnedTools  map[string]OwnedItem `json:"owned_tools"`  // tool_id -> ownership
-	Consumables map[string]int       `json:"consumables"`  // consumable_id -> quantity
-	TotalSpent  int64                `json:"total_spent"`  // Lifetime XP spent in store
+	OwnedTools  map[string]OwnedItem `json:"owned_tools"` // tool_id -> ownership
+	Consumables map[string]int       `json:"consumables"` // consumable_id -> quantity
+	TotalSpent  int64                `json:"total_spent"` // Lifetime XP spent in store
 }
 
 // NewAgentInventory creates an empty inventory for an agent.
@@ -157,7 +157,7 @@ type ActiveEffect struct {
 	ConsumableID    string           `json:"consumable_id"`
 	Effect          ConsumableEffect `json:"effect"`
 	ActivatedAt     time.Time        `json:"activated_at"`
-	QuestsRemaining int              `json:"quests_remaining"` // How many quests until expired
+	QuestsRemaining int              `json:"quests_remaining"`   // How many quests until expired
 	QuestID         *QuestID         `json:"quest_id,omitempty"` // If applied to specific quest
 }
 
@@ -233,10 +233,10 @@ type StoreItemBuilder struct {
 func NewStoreItem(id, name string) *StoreItemBuilder {
 	return &StoreItemBuilder{
 		item: StoreItem{
-			ID:       id,
-			Name:     name,
-			InStock:  true,
-			MinTier:  TierApprentice,
+			ID:      id,
+			Name:    name,
+			InStock: true,
+			MinTier: TierApprentice,
 		},
 	}
 }
@@ -320,8 +320,8 @@ func DefaultConsumables() []StoreItem {
 		NewStoreItem("retry_token", "Retry Token").
 			Description("Retry a failed quest without suffering the failure penalty").
 			AsConsumable(ConsumableEffect{
-				Type:      ConsumableRetryToken,
-				Duration:  1,
+				Type:     ConsumableRetryToken,
+				Duration: 1,
 			}).
 			Cost(50).
 			RequireTier(TierApprentice).
@@ -330,7 +330,7 @@ func DefaultConsumables() []StoreItem {
 		NewStoreItem("cooldown_skip", "Cooldown Skip").
 			Description("Clear cooldown immediately and get back to questing").
 			AsConsumable(ConsumableEffect{
-				Type:      ConsumableCooldownSkip,
+				Type: ConsumableCooldownSkip,
 			}).
 			Cost(75).
 			RequireTier(TierApprentice).
@@ -350,8 +350,8 @@ func DefaultConsumables() []StoreItem {
 		NewStoreItem("quality_shield", "Quality Shield").
 			Description("Ignore one failed review criterion during boss battle").
 			AsConsumable(ConsumableEffect{
-				Type:      ConsumableQualityShield,
-				Duration:  1,
+				Type:     ConsumableQualityShield,
+				Duration: 1,
 			}).
 			Cost(150).
 			RequireTier(TierJourneyman).
@@ -360,8 +360,8 @@ func DefaultConsumables() []StoreItem {
 		NewStoreItem("insight_scroll", "Insight Scroll").
 			Description("See detailed difficulty hints before claiming a quest").
 			AsConsumable(ConsumableEffect{
-				Type:      ConsumableInsightScroll,
-				Duration:  3,
+				Type:     ConsumableInsightScroll,
+				Duration: 3,
 			}).
 			Cost(50).
 			RequireTier(TierApprentice).

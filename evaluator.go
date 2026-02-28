@@ -200,12 +200,12 @@ func (e *DefaultBattleEvaluator) buildFeedback(results []ReviewResult) string {
 
 // EvaluationContext holds everything needed for progression after evaluation.
 type EvaluationContext struct {
-	Quest      Quest           `json:"quest"`
-	Agent      Agent           `json:"agent"`
-	Battle     BossBattle      `json:"battle"`
-	Verdict    BattleVerdict   `json:"verdict"`
-	Duration   time.Duration   `json:"duration"`
-	Streak     int             `json:"streak"`
+	Quest        Quest         `json:"quest"`
+	Agent        Agent         `json:"agent"`
+	Battle       BossBattle    `json:"battle"`
+	Verdict      BattleVerdict `json:"verdict"`
+	Duration     time.Duration `json:"duration"`
+	Streak       int           `json:"streak"`
 	IsGuildQuest bool          `json:"is_guild_quest"`
 }
 

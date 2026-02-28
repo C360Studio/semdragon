@@ -27,7 +27,7 @@ type Seeder struct {
 
 // Result holds the outcome of a seeding operation.
 type Result struct {
-	Mode            Mode    `json:"mode"`
+	Mode            Mode           `json:"mode"`
 	Success         bool           `json:"success"`
 	AgentsCreated   int            `json:"agents_created"`
 	AgentsSkipped   int            `json:"agents_skipped"` // Idempotent skips

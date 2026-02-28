@@ -15,13 +15,13 @@ import (
 
 // QuestTemplate defines a training quest that can be instantiated.
 type QuestTemplate struct {
-	ID          string                  `json:"id"`
-	Title       string                  `json:"title"`
-	Description string                  `json:"description"`
+	ID          string                     `json:"id"`
+	Title       string                     `json:"title"`
+	Description string                     `json:"description"`
 	Difficulty  semdragons.QuestDifficulty `json:"difficulty"`
-	Skills      []semdragons.SkillTag   `json:"skills"`
-	Input       any                     `json:"input"`
-	Criteria    []string                `json:"criteria"`
+	Skills      []semdragons.SkillTag      `json:"skills"`
+	Input       any                        `json:"input"`
+	Criteria    []string                   `json:"criteria"`
 }
 
 // ToQuest converts a template to a Quest instance.

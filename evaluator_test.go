@@ -130,7 +130,7 @@ func TestEvaluator_WeightedAverage(t *testing.T) {
 		QuestID: "test-quest",
 		Level:   ReviewAuto,
 		Criteria: []ReviewCriterion{
-			{Name: "format", Weight: 0.8, Threshold: 0.9},      // Will pass (1.0)
+			{Name: "format", Weight: 0.8, Threshold: 0.9},       // Will pass (1.0)
 			{Name: "completeness", Weight: 0.2, Threshold: 0.9}, // Will pass (1.0)
 		},
 		Judges: []Judge{
@@ -195,7 +195,7 @@ func TestEvaluator_PartialCriterionFailure(t *testing.T) {
 		QuestID: "test-quest",
 		Level:   ReviewAuto,
 		Criteria: []ReviewCriterion{
-			{Name: "format", Weight: 0.5, Threshold: 0.9},   // Will pass (1.0 > 0.9)
+			{Name: "format", Weight: 0.5, Threshold: 0.9},    // Will pass (1.0 > 0.9)
 			{Name: "non_empty", Weight: 0.5, Threshold: 0.9}, // Will fail (0.5 < 0.9 for short string)
 		},
 		Judges: []Judge{

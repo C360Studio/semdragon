@@ -26,11 +26,11 @@ func TestCalculateXP_GuildBonusByRank(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		rank           GuildRank
-		isGuildQuest   bool
-		expectedBonus  int64
-		expectedRate   float64
+		name          string
+		rank          GuildRank
+		isGuildQuest  bool
+		expectedBonus int64
+		expectedRate  float64
 	}{
 		{
 			name:          "non-guild quest gets no bonus",
@@ -122,8 +122,8 @@ func TestGuildRank_GuildBonusRate(t *testing.T) {
 		{GuildRankVeteran, 0.18},
 		{GuildRankOfficer, 0.20},
 		{GuildRankMaster, 0.25},
-		{"unknown", 0.10},    // Unknown defaults to initiate
-		{"", 0.10},           // Empty defaults to initiate
+		{"unknown", 0.10}, // Unknown defaults to initiate
+		{"", 0.10},        // Empty defaults to initiate
 	}
 
 	for _, tt := range tests {

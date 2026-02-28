@@ -33,13 +33,13 @@ type BoidRules struct {
 	CohesionWeight   float64 `json:"cohesion_weight"`   // Move toward skill-matched quest clusters (default: 0.6)
 
 	// Agent-specific rules
-	HungerWeight     float64 `json:"hunger_weight"`     // Idle time increases urgency (default: 1.2)
-	AffinityWeight   float64 `json:"affinity_weight"`   // Skill/guild match preference (default: 1.5)
-	CautionWeight    float64 `json:"caution_weight"`    // Avoid over-leveled quests (default: 0.9)
+	HungerWeight   float64 `json:"hunger_weight"`   // Idle time increases urgency (default: 1.2)
+	AffinityWeight float64 `json:"affinity_weight"` // Skill/guild match preference (default: 1.5)
+	CautionWeight  float64 `json:"caution_weight"`  // Avoid over-leveled quests (default: 0.9)
 
 	// Tuning
-	NeighborRadius   int     `json:"neighbor_radius"`   // How many "nearby" agents to consider
-	UpdateInterval   int     `json:"update_interval_ms"` // How often to recalculate (ms)
+	NeighborRadius int `json:"neighbor_radius"`    // How many "nearby" agents to consider
+	UpdateInterval int `json:"update_interval_ms"` // How often to recalculate (ms)
 }
 
 // DefaultBoidRules returns the default boid rule weights.

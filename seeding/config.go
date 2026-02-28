@@ -24,7 +24,7 @@ const (
 
 // Config is the top-level seeding configuration.
 type Config struct {
-	Mode       Mode   `json:"mode"`
+	Mode       Mode          `json:"mode"`
 	DryRun     bool          `json:"dry_run"`    // Log actions without executing
 	Idempotent bool          `json:"idempotent"` // Skip existing agents by name
 	Arena      *ArenaConfig  `json:"arena,omitempty"`
