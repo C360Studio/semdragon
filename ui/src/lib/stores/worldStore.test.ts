@@ -374,6 +374,214 @@ describe('worldStore', () => {
 		});
 	});
 
+	describe('dashboard derived states', () => {
+		describe('tierDistribution', () => {
+			it('calculates tier distribution with correct percentages', () => {
+				store.setWorldState({
+					agents: [
+						createTestAgent({ id: agentId('agent-1'), level: 3, tier: 0 }), // Apprentice
+						createTestAgent({ id: agentId('agent-2'), level: 7, tier: 1 }), // Journeyman
+						createTestAgent({ id: agentId('agent-3'), level: 8, tier: 1 }), // Journeyman
+						createTestAgent({ id: agentId('agent-4'), level: 12, tier: 2 }) // Expert
+					],
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [],
+					stats: defaultStats
+				});
+
+				const distribution = store.tierDistribution;
+				expect(distribution).toHaveLength(5);
+				expect(distribution[0].count).toBe(1); // Apprentice: 1
+				expect(distribution[0].name).toBe('Apprentice');
+				expect(distribution[1].count).toBe(2); // Journeyman: 2
+				expect(distribution[1].name).toBe('Journeyman');
+				expect(distribution[2].count).toBe(1); // Expert: 1
+				expect(distribution[0].percentage).toBe(25);
+				expect(distribution[1].percentage).toBe(50);
+				expect(distribution[2].percentage).toBe(25);
+			});
+
+			it('handles empty agent list without division by zero', () => {
+				store.setWorldState({
+					agents: [],
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [],
+					stats: defaultStats
+				});
+
+				const distribution = store.tierDistribution;
+				expect(distribution).toHaveLength(5);
+				distribution.forEach((tier) => {
+					expect(tier.count).toBe(0);
+					expect(tier.percentage).toBe(0);
+				});
+			});
+
+			it('includes all five tiers even when some are empty', () => {
+				store.setWorldState({
+					agents: [createTestAgent({ id: agentId('agent-1'), level: 19, tier: 4 })], // Grandmaster only
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [],
+					stats: defaultStats
+				});
+
+				const distribution = store.tierDistribution;
+				expect(distribution).toHaveLength(5);
+				expect(distribution[4].name).toBe('Grandmaster');
+				expect(distribution[4].count).toBe(1);
+				expect(distribution[4].percentage).toBe(100);
+				// Other tiers should be 0
+				expect(distribution[0].count).toBe(0);
+				expect(distribution[1].count).toBe(0);
+				expect(distribution[2].count).toBe(0);
+				expect(distribution[3].count).toBe(0);
+			});
+		});
+
+		describe('totalXpEarned', () => {
+			it('sums total XP across all agents', () => {
+				store.setWorldState({
+					agents: [
+						createTestAgent({
+							id: agentId('agent-1'),
+							stats: {
+								quests_completed: 10,
+								quests_failed: 1,
+								bosses_defeated: 5,
+								bosses_failed: 0,
+								total_xp_earned: 1000,
+								total_xp_spent: 0,
+								avg_quality_score: 0.85,
+								avg_efficiency: 0.9,
+								parties_led: 2,
+								quests_decomposed: 3
+							}
+						}),
+						createTestAgent({
+							id: agentId('agent-2'),
+							stats: {
+								quests_completed: 20,
+								quests_failed: 2,
+								bosses_defeated: 10,
+								bosses_failed: 1,
+								total_xp_earned: 2500,
+								total_xp_spent: 100,
+								avg_quality_score: 0.9,
+								avg_efficiency: 0.85,
+								parties_led: 5,
+								quests_decomposed: 7
+							}
+						})
+					],
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [],
+					stats: defaultStats
+				});
+
+				expect(store.totalXpEarned).toBe(3500);
+			});
+
+			it('returns 0 for empty agent list', () => {
+				store.setWorldState({
+					agents: [],
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [],
+					stats: defaultStats
+				});
+
+				expect(store.totalXpEarned).toBe(0);
+			});
+		});
+
+		describe('battleStats', () => {
+			it('calculates win rate correctly', () => {
+				store.setWorldState({
+					agents: [],
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [
+						createTestBattle({ id: battleId('b1'), status: 'victory' }),
+						createTestBattle({ id: battleId('b2'), status: 'victory' }),
+						createTestBattle({ id: battleId('b3'), status: 'victory' }),
+						createTestBattle({ id: battleId('b4'), status: 'defeat' })
+					],
+					stats: defaultStats
+				});
+
+				const stats = store.battleStats;
+				expect(stats.won).toBe(3);
+				expect(stats.lost).toBe(1);
+				expect(stats.winRate).toBe(75);
+			});
+
+			it('handles no battles without division by zero', () => {
+				store.setWorldState({
+					agents: [],
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [],
+					stats: defaultStats
+				});
+
+				const stats = store.battleStats;
+				expect(stats.won).toBe(0);
+				expect(stats.lost).toBe(0);
+				expect(stats.winRate).toBe(0);
+			});
+
+			it('ignores active and retreat battles when calculating win rate', () => {
+				store.setWorldState({
+					agents: [],
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [
+						createTestBattle({ id: battleId('b1'), status: 'active' }),
+						createTestBattle({ id: battleId('b2'), status: 'retreat' }),
+						createTestBattle({ id: battleId('b3'), status: 'victory' })
+					],
+					stats: defaultStats
+				});
+
+				const stats = store.battleStats;
+				expect(stats.won).toBe(1);
+				expect(stats.lost).toBe(0);
+				expect(stats.winRate).toBe(100);
+			});
+
+			it('calculates 50% win rate correctly', () => {
+				store.setWorldState({
+					agents: [],
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [
+						createTestBattle({ id: battleId('b1'), status: 'victory' }),
+						createTestBattle({ id: battleId('b2'), status: 'defeat' })
+					],
+					stats: defaultStats
+				});
+
+				const stats = store.battleStats;
+				expect(stats.won).toBe(1);
+				expect(stats.lost).toBe(1);
+				expect(stats.winRate).toBe(50);
+			});
+		});
+	});
+
 	describe('derived lists', () => {
 		it('provides sorted agent list', () => {
 			store.setWorldState({

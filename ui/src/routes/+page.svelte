@@ -146,7 +146,7 @@
 	{/snippet}
 
 	{#snippet centerPanel()}
-		<div class="dashboard">
+		<main class="dashboard" aria-label="Dashboard overview">
 			<header class="dashboard-header">
 				<h1>The DM's Scrying Pool</h1>
 				<div class="header-actions">
@@ -206,8 +206,8 @@
 				</div>
 
 				<!-- Agent Distribution -->
-				<section class="dashboard-section">
-					<h2>Agent Distribution by Tier</h2>
+				<section class="dashboard-section" aria-labelledby="tier-heading">
+					<h2 id="tier-heading">Agent Distribution by Tier</h2>
 					<div class="tier-bars">
 						{#each worldStore.tierDistribution as tier}
 							<div class="tier-row">
@@ -226,8 +226,8 @@
 				</section>
 
 				<!-- Active Quests -->
-				<section class="dashboard-section">
-					<h2>Active Quests</h2>
+				<section class="dashboard-section" aria-labelledby="quests-heading">
+					<h2 id="quests-heading">Active Quests</h2>
 					<div class="quest-summary">
 						{#each worldStore.activeQuests.slice(0, 5) as quest}
 							<a href="/quests/{quest.id}" class="quest-row">
@@ -235,14 +235,14 @@
 								<span class="quest-status" data-status={quest.status}>{quest.status}</span>
 							</a>
 						{:else}
-							<p class="empty-state">No active quests</p>
+							<p class="empty-state" role="status">No active quests</p>
 						{/each}
 					</div>
 				</section>
 
 				<!-- Active Battles -->
-				<section class="dashboard-section">
-					<h2>Active Battles</h2>
+				<section class="dashboard-section" aria-labelledby="battles-heading">
+					<h2 id="battles-heading">Active Battles</h2>
 					<div class="battle-summary">
 						{#each worldStore.activeBattles.slice(0, 5) as battle}
 							<a href="/battles/{battle.id}" class="battle-row">
@@ -250,14 +250,14 @@
 								<span class="battle-status" data-status={battle.status}>{battle.status}</span>
 							</a>
 						{:else}
-							<p class="empty-state">No active battles</p>
+							<p class="empty-state" role="status">No active battles</p>
 						{/each}
 					</div>
 				</section>
 
 				<!-- Guild Activity -->
-				<section class="dashboard-section">
-					<h2>Guild Activity</h2>
+				<section class="dashboard-section" aria-labelledby="guilds-heading">
+					<h2 id="guilds-heading">Guild Activity</h2>
 					<div class="guild-summary">
 						{#each worldStore.guildList.slice(0, 5) as guild}
 							<a href="/guilds/{guild.id}" class="guild-row">
@@ -266,14 +266,14 @@
 								<span class="guild-reputation">{(guild.reputation * 100).toFixed(0)}%</span>
 							</a>
 						{:else}
-							<p class="empty-state">No guilds formed</p>
+							<p class="empty-state" role="status">No guilds formed</p>
 						{/each}
 					</div>
 				</section>
 
 				<!-- Active Parties -->
-				<section class="dashboard-section">
-					<h2>Active Parties</h2>
+				<section class="dashboard-section" aria-labelledby="parties-heading">
+					<h2 id="parties-heading">Active Parties</h2>
 					<div class="party-summary">
 						{#each worldStore.partyList.filter((p) => p.status === 'active') as party}
 							<div class="party-row">
@@ -282,12 +282,12 @@
 								<span class="party-size">{party.members.length} agents</span>
 							</div>
 						{:else}
-							<p class="empty-state">No active parties</p>
+							<p class="empty-state" role="status">No active parties</p>
 						{/each}
 					</div>
 				</section>
 			{/if}
-		</div>
+		</main>
 	{/snippet}
 
 	{#snippet rightPanel()}
@@ -679,6 +679,13 @@
 	.guild-row:hover {
 		border-color: var(--ui-border-interactive);
 		text-decoration: none;
+	}
+
+	.quest-row:focus-visible,
+	.battle-row:focus-visible,
+	.guild-row:focus-visible {
+		outline: 2px solid var(--ui-interactive-primary);
+		outline-offset: 2px;
 	}
 
 	.quest-title,
