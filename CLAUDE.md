@@ -243,7 +243,7 @@ make test-integration  # Run integration tests only (requires Docker)
 make test-all       # Run all tests (unit + integration)
 make test-one TEST=TestName  # Run specific unit test
 make test-one-integration TEST=TestName  # Run specific integration test
-make lint           # Run golangci-lint
+make lint           # Run revive + go vet
 make check          # Full check: fmt, tidy, lint, test-all
 make coverage       # Generate coverage report (includes integration)
 ```

@@ -32,7 +32,8 @@ test-one-integration:
 
 # Run linter
 lint:
-	golangci-lint run
+	revive -config revive.toml -formatter friendly ./...
+	go vet ./...
 
 # Format code
 fmt:
