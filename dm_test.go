@@ -1,3 +1,5 @@
+//go:build integration
+
 package semdragons
 
 import (
@@ -578,8 +580,8 @@ func TestWorldState_FilteredQueries(t *testing.T) {
 	ctx := context.Background()
 
 	// Create agents with different levels/tiers
-	createTestAgent(t, storage, 3, []SkillTag{SkillCodeGen}) // Apprentice
-	createTestAgent(t, storage, 8, []SkillTag{SkillCodeGen}) // Journeyman
+	createTestAgent(t, storage, 3, []SkillTag{SkillCodeGen})                 // Apprentice
+	createTestAgent(t, storage, 8, []SkillTag{SkillCodeGen})                 // Journeyman
 	createTestAgent(t, storage, 12, []SkillTag{SkillCodeGen, SkillAnalysis}) // Expert
 
 	// Test GetAgentsByTier

@@ -1,3 +1,5 @@
+//go:build integration
+
 package semdragons
 
 import (
@@ -845,4 +847,3 @@ func TestSubQuestTrajectoryInheritance(t *testing.T) {
 			parentTC.SpanID, subTC.ParentSpanID)
 	}
 }
-

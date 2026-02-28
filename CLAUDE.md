@@ -238,12 +238,29 @@ Design documentation in `/docs/DESIGN.md`.
 
 ```bash
 make build          # Build all packages
-make test           # Run all tests
-make test-one TEST=TestName  # Run specific test
+make test           # Run unit tests only (fast, no Docker)
+make test-integration  # Run integration tests only (requires Docker)
+make test-all       # Run all tests (unit + integration)
+make test-one TEST=TestName  # Run specific unit test
+make test-one-integration TEST=TestName  # Run specific integration test
 make lint           # Run golangci-lint
-make check          # Full check: fmt, tidy, lint, test
-make coverage       # Generate coverage report
+make check          # Full check: fmt, tidy, lint, test-all
+make coverage       # Generate coverage report (includes integration)
 ```
+
+### Test Categories
+
+Tests are separated using Go build tags for faster feedback loops:
+
+| Category | Tag | Docker Required | Files |
+|----------|-----|-----------------|-------|
+| **Unit** | (none) | No | `evaluator_test.go`, `boids_test.go`, `trajectory_test.go`, `skill_progression_test.go`, `judge_test.go` |
+| **Integration** | `//go:build integration` | Yes (NATS) | `store_test.go`, `board_test.go`, `party_coordination_test.go`, `progression_test.go`, `guild_formation_test.go`, `namegen_test.go`, `dm_test.go` |
+
+**During development**: Use `make test` for fast iteration (unit tests only).
+**Before committing**: Use `make test-all` to run the full suite.
+
+Integration tests use `natsclient.NewTestClient(t, natsclient.WithKV())` which spins up NATS via testcontainers.
 
 Module: `github.com/c360studio/semdragons`
 Depends on: `github.com/c360studio/semstreams`
