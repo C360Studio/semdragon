@@ -343,7 +343,7 @@ func (p *DefaultLLMProvider) getClient(capability string) (*agenticmodel.Client,
 
 func (p *DefaultLLMProvider) parseQuestDecision(content string, hints QuestHints) (*QuestDecision, error) {
 	// Extract JSON from response (might be wrapped in markdown code blocks)
-	jsonStr := extractJSON(content)
+	jsonStr := ExtractJSONFromLLMResponse(content)
 
 	var raw struct {
 		Difficulty     int      `json:"difficulty"`
@@ -356,8 +356,38 @@ func (p *DefaultLLMProvider) parseQuestDecision(content string, hints QuestHints
 	}
 
 	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
-		// Fall back to hints if parsing fails
+		LogLLMParseFailure("quest_decision", err, content, jsonStr)
 		return p.defaultQuestDecision(hints), nil
+	}
+
+	// Validate and clamp difficulty (0-5)
+	difficulty := raw.Difficulty
+	if difficulty < 0 {
+		difficulty = 0
+	}
+	if difficulty > 5 {
+		difficulty = 5
+	}
+
+	// Validate and clamp review level (0-3)
+	reviewLevel := raw.ReviewLevel
+	if reviewLevel < 0 {
+		reviewLevel = 0
+	}
+	if reviewLevel > 3 {
+		reviewLevel = 3
+	}
+
+	// Validate base XP (must be positive)
+	baseXP := raw.BaseXP
+	if baseXP <= 0 {
+		baseXP = DefaultXPForDifficulty(QuestDifficulty(difficulty))
+	}
+
+	// Validate min party size
+	minPartySize := raw.MinPartySize
+	if minPartySize < 0 {
+		minPartySize = 0
 	}
 
 	// Convert skill strings to SkillTags
@@ -367,12 +397,12 @@ func (p *DefaultLLMProvider) parseQuestDecision(content string, hints QuestHints
 	}
 
 	return &QuestDecision{
-		Difficulty:     QuestDifficulty(raw.Difficulty),
+		Difficulty:     QuestDifficulty(difficulty),
 		RequiredSkills: skills,
-		BaseXP:         raw.BaseXP,
-		ReviewLevel:    ReviewLevel(raw.ReviewLevel),
+		BaseXP:         baseXP,
+		ReviewLevel:    ReviewLevel(reviewLevel),
 		PartyRequired:  raw.PartyRequired,
-		MinPartySize:   raw.MinPartySize,
+		MinPartySize:   minPartySize,
 		Reasoning:      raw.Reasoning,
 		GuildPriority:  hints.PreferGuild,
 	}, nil
@@ -402,7 +432,7 @@ func (p *DefaultLLMProvider) defaultQuestDecision(hints QuestHints) *QuestDecisi
 }
 
 func (p *DefaultLLMProvider) parseDecompositionReview(content string, subQuests []Quest) (*DecompositionReview, error) {
-	jsonStr := extractJSON(content)
+	jsonStr := ExtractJSONFromLLMResponse(content)
 
 	var raw struct {
 		Approved   bool   `json:"approved"`
@@ -411,6 +441,7 @@ func (p *DefaultLLMProvider) parseDecompositionReview(content string, subQuests 
 	}
 
 	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+		LogLLMParseFailure("decomposition_review", err, content, jsonStr)
 		// Default to approval if parsing fails
 		return &DecompositionReview{
 			Approved:  true,
@@ -428,7 +459,7 @@ func (p *DefaultLLMProvider) parseDecompositionReview(content string, subQuests 
 }
 
 func (p *DefaultLLMProvider) parseAgentEvaluation(content string, agent Agent) (*AgentEvaluation, error) {
-	jsonStr := extractJSON(content)
+	jsonStr := ExtractJSONFromLLMResponse(content)
 
 	var raw struct {
 		RecommendedLevel int      `json:"recommended_level"`
@@ -438,6 +469,7 @@ func (p *DefaultLLMProvider) parseAgentEvaluation(content string, agent Agent) (
 	}
 
 	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+		LogLLMParseFailure("agent_evaluation", err, content, jsonStr)
 		// Default to maintain current level
 		return &AgentEvaluation{
 			AgentID:          agent.ID,
@@ -447,18 +479,36 @@ func (p *DefaultLLMProvider) parseAgentEvaluation(content string, agent Agent) (
 		}, nil
 	}
 
+	// Validate and clamp recommended level (1-20)
+	recommendedLevel := raw.RecommendedLevel
+	if recommendedLevel < 1 {
+		recommendedLevel = 1
+	}
+	if recommendedLevel > 20 {
+		recommendedLevel = 20
+	}
+
+	// Validate recommendation value
+	validRecommendations := map[string]bool{
+		"promote": true, "maintain": true, "demote": true, "retire": true,
+	}
+	recommendation := raw.Recommendation
+	if !validRecommendations[recommendation] {
+		recommendation = "maintain"
+	}
+
 	return &AgentEvaluation{
 		AgentID:          agent.ID,
 		CurrentLevel:     agent.Level,
-		RecommendedLevel: raw.RecommendedLevel,
+		RecommendedLevel: recommendedLevel,
 		Strengths:        raw.Strengths,
 		Weaknesses:       raw.Weaknesses,
-		Recommendation:   raw.Recommendation,
+		Recommendation:   recommendation,
 	}, nil
 }
 
 func (p *DefaultLLMProvider) parseIntervention(content string) (*Intervention, error) {
-	jsonStr := extractJSON(content)
+	jsonStr := ExtractJSONFromLLMResponse(content)
 
 	var raw struct {
 		Type    string `json:"type"`
@@ -467,6 +517,7 @@ func (p *DefaultLLMProvider) parseIntervention(content string) (*Intervention, e
 	}
 
 	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+		LogLLMParseFailure("intervention", err, content, jsonStr)
 		// Default to assist
 		return &Intervention{
 			Type:   InterventionAssist,
@@ -496,7 +547,7 @@ func (p *DefaultLLMProvider) parseIntervention(content string) (*Intervention, e
 }
 
 func (p *DefaultLLMProvider) parseEscalationDecision(content string) (*EscalationDecision, error) {
-	jsonStr := extractJSON(content)
+	jsonStr := ExtractJSONFromLLMResponse(content)
 
 	var raw struct {
 		Resolution string `json:"resolution"`
@@ -504,6 +555,7 @@ func (p *DefaultLLMProvider) parseEscalationDecision(content string) (*Escalatio
 	}
 
 	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+		LogLLMParseFailure("escalation_decision", err, content, jsonStr)
 		// Default to reassign
 		return &EscalationDecision{
 			Resolution: "reassign",
@@ -511,51 +563,18 @@ func (p *DefaultLLMProvider) parseEscalationDecision(content string) (*Escalatio
 		}, nil
 	}
 
+	// Validate resolution value
+	validResolutions := map[string]bool{
+		"reassign": true, "decompose": true, "complete_by_dm": true, "cancel": true,
+	}
+	resolution := raw.Resolution
+	if !validResolutions[resolution] {
+		resolution = "reassign"
+	}
+
 	return &EscalationDecision{
-		Resolution: raw.Resolution,
+		Resolution: resolution,
 		Reasoning:  raw.Reasoning,
 	}, nil
 }
 
-// extractJSON attempts to extract JSON from a response that may be wrapped in markdown.
-func extractJSON(s string) string {
-	s = strings.TrimSpace(s)
-
-	// Try to find JSON in code blocks
-	if start := strings.Index(s, "```json"); start != -1 {
-		start += 7
-		if end := strings.Index(s[start:], "```"); end != -1 {
-			return strings.TrimSpace(s[start : start+end])
-		}
-	}
-
-	// Try to find JSON in generic code blocks
-	if start := strings.Index(s, "```"); start != -1 {
-		start += 3
-		// Skip language identifier if present
-		if newline := strings.Index(s[start:], "\n"); newline != -1 {
-			start += newline + 1
-		}
-		if end := strings.Index(s[start:], "```"); end != -1 {
-			return strings.TrimSpace(s[start : start+end])
-		}
-	}
-
-	// Try to find raw JSON (starts with {)
-	if start := strings.Index(s, "{"); start != -1 {
-		// Find matching closing brace
-		depth := 0
-		for i := start; i < len(s); i++ {
-			if s[i] == '{' {
-				depth++
-			} else if s[i] == '}' {
-				depth--
-				if depth == 0 {
-					return s[start : i+1]
-				}
-			}
-		}
-	}
-
-	return s
-}

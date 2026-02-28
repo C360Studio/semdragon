@@ -160,7 +160,7 @@ func (j *LLMJudge) buildUserPrompt(input JudgeInput) string {
 
 func (j *LLMJudge) parseEvaluationResponse(content string, threshold float64) (*JudgeOutput, error) {
 	// Extract JSON from response
-	jsonStr := extractJudgeJSON(content)
+	jsonStr := ExtractJSONFromLLMResponse(content)
 
 	var raw struct {
 		Score     float64 `json:"score"`
@@ -169,11 +169,12 @@ func (j *LLMJudge) parseEvaluationResponse(content string, threshold float64) (*
 	}
 
 	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+		LogLLMParseFailure("llm_judge_evaluation", err, content, jsonStr)
 		// Try to extract score from text if JSON parsing fails
 		return &JudgeOutput{
 			Score:     0.5,
 			Passed:    false,
-			Reasoning: fmt.Sprintf("Failed to parse LLM response as JSON: %v\nRaw response: %s", err, truncateString(content, 500)),
+			Reasoning: fmt.Sprintf("Failed to parse LLM response as JSON: %v\nRaw response: %s", err, TruncateForLog(content, 500)),
 			Pending:   false,
 		}, nil
 	}
@@ -216,55 +217,6 @@ func formatOutput(output any) string {
 
 	// Fall back to fmt
 	return fmt.Sprintf("%v", output)
-}
-
-// extractJudgeJSON extracts JSON from the LLM response.
-func extractJudgeJSON(s string) string {
-	s = strings.TrimSpace(s)
-
-	// Try to find JSON in code blocks
-	if start := strings.Index(s, "```json"); start != -1 {
-		start += 7
-		if end := strings.Index(s[start:], "```"); end != -1 {
-			return strings.TrimSpace(s[start : start+end])
-		}
-	}
-
-	// Try to find JSON in generic code blocks
-	if start := strings.Index(s, "```"); start != -1 {
-		start += 3
-		// Skip language identifier if present
-		if newline := strings.Index(s[start:], "\n"); newline != -1 {
-			start += newline + 1
-		}
-		if end := strings.Index(s[start:], "```"); end != -1 {
-			return strings.TrimSpace(s[start : start+end])
-		}
-	}
-
-	// Try to find raw JSON
-	if start := strings.Index(s, "{"); start != -1 {
-		depth := 0
-		for i := start; i < len(s); i++ {
-			if s[i] == '{' {
-				depth++
-			} else if s[i] == '}' {
-				depth--
-				if depth == 0 {
-					return s[start : i+1]
-				}
-			}
-		}
-	}
-
-	return s
-}
-
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
 }
 
 // LLMJudgeConfig holds configuration for LLM evaluation.

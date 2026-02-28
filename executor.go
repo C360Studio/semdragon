@@ -26,6 +26,12 @@ type AgentExecutor interface {
 	Execute(ctx context.Context, agent *Agent, quest *Quest) (*ExecutionResult, error)
 }
 
+// Compile-time interface compliance checks.
+var (
+	_ AgentExecutor = (*DefaultExecutor)(nil)
+	_ AgentExecutor = (*MockExecutor)(nil)
+)
+
 // ExecutionStatus represents the outcome of an execution attempt.
 type ExecutionStatus string
 
@@ -41,6 +47,10 @@ const (
 	// StatusFailed indicates execution failed with an error.
 	StatusFailed ExecutionStatus = "failed"
 )
+
+// maxMessagesInContext limits the conversation size to prevent memory issues.
+// When exceeded, older messages are truncated (keeping system message).
+const maxMessagesInContext = 100
 
 // ExecutionResult holds the outcome of agent execution.
 type ExecutionResult struct {
@@ -231,6 +241,12 @@ func (e *DefaultExecutor) Execute(ctx context.Context, agent *Agent, quest *Ques
 		}
 
 		result.Trajectory = append(result.Trajectory, step)
+
+		// Truncate messages if too many (keep system message + recent messages)
+		if len(messages) > maxMessagesInContext {
+			// Keep first message (system) + last N messages
+			messages = append(messages[:1], messages[len(messages)-maxMessagesInContext+1:]...)
+		}
 
 		// Check token budget
 		if result.TokenUsage.Total() > e.maxTokens {
