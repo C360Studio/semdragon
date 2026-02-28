@@ -13,12 +13,12 @@ import (
 
 // NameGenerator creates unique character names for agents.
 type NameGenerator struct {
-	storage *Storage
+	graph *GraphClient
 }
 
 // NewNameGenerator creates a new name generator.
-func NewNameGenerator(storage *Storage) *NameGenerator {
-	return &NameGenerator{storage: storage}
+func NewNameGenerator(graph *GraphClient) *NameGenerator {
+	return &NameGenerator{graph: graph}
 }
 
 // GenerateName creates a unique character name based on agent skills and traits.
@@ -44,14 +44,15 @@ func (g *NameGenerator) GenerateName(ctx context.Context, agent *Agent) (string,
 
 // isNameUnique checks if a display name is already taken.
 func (g *NameGenerator) isNameUnique(ctx context.Context, name string) (bool, error) {
-	agents, err := g.storage.ListAllAgents(ctx)
+	entities, err := g.graph.ListAgentsByPrefix(ctx, 1000)
 	if err != nil {
 		return false, err
 	}
 
 	nameLower := strings.ToLower(name)
-	for _, agent := range agents {
-		if strings.ToLower(agent.DisplayName) == nameLower {
+	for _, entity := range entities {
+		agent := AgentFromEntityState(&entity)
+		if agent != nil && strings.ToLower(agent.DisplayName) == nameLower {
 			return false, nil
 		}
 	}

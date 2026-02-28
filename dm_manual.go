@@ -37,7 +37,7 @@ func NewManualDungeonMaster(cfg ManualDMConfig) *ManualDungeonMaster {
 	dm := &ManualDungeonMaster{
 		BaseDungeonMaster: base,
 		approvalRouter:    cfg.ApprovalRouter,
-		partyEngine:       NewPartyFormationEngine(base.boids, base.storage),
+		partyEngine:       NewPartyFormationEngine(base.boids, base.graph, base.config),
 	}
 
 	// Use mock router if none provided
@@ -185,9 +185,9 @@ func (dm *ManualDungeonMaster) RecruitAgent(ctx context.Context, config AgentCon
 		UpdatedAt: time.Now(),
 	}
 
-	// Store agent
-	if err := dm.storage.PutAgent(ctx, instance, agent); err != nil {
-		return nil, fmt.Errorf("store agent: %w", err)
+	// Emit agent to graph
+	if err := dm.graph.EmitEntity(ctx, agent, "agent.recruited"); err != nil {
+		return nil, fmt.Errorf("emit agent: %w", err)
 	}
 
 	dm.logger.Info("agent recruited",
@@ -204,11 +204,11 @@ func (dm *ManualDungeonMaster) RetireAgent(ctx context.Context, agentID AgentID,
 	sessionID := dm.getActiveSessionID()
 
 	// Load agent for approval context
-	instance := ExtractInstance(string(agentID))
-	agent, err := dm.storage.GetAgent(ctx, instance)
+	entity, err := dm.graph.GetAgent(ctx, agentID)
 	if err != nil {
 		return fmt.Errorf("load agent: %w", err)
 	}
+	agent := AgentFromEntityState(entity)
 
 	// Create approval request
 	req := ApprovalRequest{
@@ -235,20 +235,19 @@ func (dm *ManualDungeonMaster) RetireAgent(ctx context.Context, agentID AgentID,
 	}
 
 	// Retire the agent
-	return dm.storage.UpdateAgent(ctx, instance, func(a *Agent) error {
-		a.Status = AgentRetired
-		a.UpdatedAt = time.Now()
-		return nil
-	})
+	agent.Status = AgentRetired
+	agent.UpdatedAt = time.Now()
+
+	return dm.graph.EmitEntityUpdate(ctx, agent, "agent.retired")
 }
 
 // EvaluateAgent runs an ad-hoc assessment of an agent's performance.
 func (dm *ManualDungeonMaster) EvaluateAgent(ctx context.Context, agentID AgentID) (*AgentEvaluation, error) {
-	instance := ExtractInstance(string(agentID))
-	agent, err := dm.storage.GetAgent(ctx, instance)
+	entity, err := dm.graph.GetAgent(ctx, agentID)
 	if err != nil {
 		return nil, fmt.Errorf("load agent: %w", err)
 	}
+	agent := AgentFromEntityState(entity)
 
 	// Compute evaluation based on stats
 	eval := &AgentEvaluation{
@@ -336,10 +335,9 @@ func (dm *ManualDungeonMaster) FormParty(ctx context.Context, questID QuestID, s
 		return nil, fmt.Errorf("form party: %w", err)
 	}
 
-	// Store party
-	partyInstance := ExtractInstance(string(party.ID))
-	if err := dm.storage.PutParty(ctx, partyInstance, party); err != nil {
-		return nil, fmt.Errorf("store party: %w", err)
+	// Emit party to graph
+	if err := dm.graph.EmitEntity(ctx, party, "party.formed"); err != nil {
+		return nil, fmt.Errorf("emit party: %w", err)
 	}
 
 	dm.logger.Info("party formed",
@@ -452,13 +450,15 @@ func (dm *ManualDungeonMaster) HandleEscalation(ctx context.Context, questID Que
 		result.DMCompleted = true
 
 	case "cancel":
-		// Cancel the quest
-		questInstance := ExtractInstance(string(questID))
-		if err := dm.storage.UpdateQuest(ctx, questInstance, func(q *Quest) error {
-			q.Status = QuestCancelled
-			return nil
-		}); err != nil {
-			return nil, fmt.Errorf("cancel quest: %w", err)
+		// Cancel the quest - load, modify, and emit
+		entity, err := dm.graph.GetQuest(ctx, questID)
+		if err != nil {
+			return nil, fmt.Errorf("load quest for cancel: %w", err)
+		}
+		q := QuestFromEntityState(entity)
+		q.Status = QuestCancelled
+		if err := dm.graph.EmitEntityUpdate(ctx, q, "quest.cancelled"); err != nil {
+			return nil, fmt.Errorf("emit quest update: %w", err)
 		}
 		result.Resolution = "cancelled"
 	}

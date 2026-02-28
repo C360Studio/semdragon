@@ -2,6 +2,8 @@ package semdragons
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/c360studio/semstreams/natsclient"
@@ -32,16 +34,18 @@ import (
 // PartyCoordinator provides event-driven coordination for party quests.
 type PartyCoordinator struct {
 	client  *natsclient.Client
-	storage *Storage
+	graph   *GraphClient
+	config  *BoardConfig
 	events  *EventPublisher
 	partyID PartyID
 }
 
 // NewPartyCoordinator creates a coordinator for a specific party.
-func NewPartyCoordinator(client *natsclient.Client, storage *Storage, partyID PartyID) *PartyCoordinator {
+func NewPartyCoordinator(client *natsclient.Client, graph *GraphClient, config *BoardConfig, partyID PartyID) *PartyCoordinator {
 	return &PartyCoordinator{
 		client:  client,
-		storage: storage,
+		graph:   graph,
+		config:  config,
 		events:  NewEventPublisher(client),
 		partyID: partyID,
 	}
@@ -50,6 +54,173 @@ func NewPartyCoordinator(client *natsclient.Client, storage *Storage, partyID Pa
 // PartyID returns the party this coordinator is managing.
 func (pc *PartyCoordinator) PartyID() PartyID {
 	return pc.partyID
+}
+
+// =============================================================================
+// KV HELPERS - Private methods for party coordination state
+// =============================================================================
+
+// kvKey generates a KV key for party coordination data.
+func (pc *PartyCoordinator) kvKey(suffix string) string {
+	return fmt.Sprintf("party.coord.%s.%s", pc.partyID, suffix)
+}
+
+// getSubQuestMap retrieves the sub-quest to agent assignment map.
+func (pc *PartyCoordinator) getSubQuestMap(ctx context.Context) (map[QuestID]AgentID, error) {
+	bucket, err := pc.client.GetKeyValueBucket(ctx, pc.config.BucketName())
+	if err != nil {
+		return nil, err
+	}
+
+	entry, err := bucket.Get(ctx, pc.kvKey("subquests"))
+	if err != nil {
+		// Not found means empty map
+		return make(map[QuestID]AgentID), nil
+	}
+
+	var result map[QuestID]AgentID
+	if err := json.Unmarshal(entry.Value(), &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// putSubQuestMap stores the sub-quest to agent assignment map.
+func (pc *PartyCoordinator) putSubQuestMap(ctx context.Context, subQuestMap map[QuestID]AgentID) error {
+	bucket, err := pc.client.GetKeyValueBucket(ctx, pc.config.BucketName())
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(subQuestMap)
+	if err != nil {
+		return err
+	}
+
+	_, err = bucket.Put(ctx, pc.kvKey("subquests"), data)
+	return err
+}
+
+// addContext appends a context item to the party's shared context.
+func (pc *PartyCoordinator) addContext(ctx context.Context, item ContextItem) error {
+	existing, err := pc.getContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	existing = append(existing, item)
+
+	bucket, err := pc.client.GetKeyValueBucket(ctx, pc.config.BucketName())
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(existing)
+	if err != nil {
+		return err
+	}
+
+	_, err = bucket.Put(ctx, pc.kvKey("context"), data)
+	return err
+}
+
+// getContext retrieves all shared context items.
+func (pc *PartyCoordinator) getContext(ctx context.Context) ([]ContextItem, error) {
+	bucket, err := pc.client.GetKeyValueBucket(ctx, pc.config.BucketName())
+	if err != nil {
+		return nil, err
+	}
+
+	entry, err := bucket.Get(ctx, pc.kvKey("context"))
+	if err != nil {
+		// Not found means empty slice
+		return []ContextItem{}, nil
+	}
+
+	var result []ContextItem
+	if err := json.Unmarshal(entry.Value(), &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// getSubResults retrieves submitted sub-quest results.
+func (pc *PartyCoordinator) getSubResults(ctx context.Context) (map[QuestID]any, error) {
+	bucket, err := pc.client.GetKeyValueBucket(ctx, pc.config.BucketName())
+	if err != nil {
+		return nil, err
+	}
+
+	entry, err := bucket.Get(ctx, pc.kvKey("results"))
+	if err != nil {
+		// Not found means empty map
+		return make(map[QuestID]any), nil
+	}
+
+	var result map[QuestID]any
+	if err := json.Unmarshal(entry.Value(), &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// putSubResult stores a single sub-quest result.
+func (pc *PartyCoordinator) putSubResult(ctx context.Context, questID QuestID, result any) error {
+	existing, err := pc.getSubResults(ctx)
+	if err != nil {
+		return err
+	}
+
+	existing[questID] = result
+
+	bucket, err := pc.client.GetKeyValueBucket(ctx, pc.config.BucketName())
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(existing)
+	if err != nil {
+		return err
+	}
+
+	_, err = bucket.Put(ctx, pc.kvKey("results"), data)
+	return err
+}
+
+// getRollupResult retrieves the rollup result.
+func (pc *PartyCoordinator) getRollupResult(ctx context.Context) (any, error) {
+	bucket, err := pc.client.GetKeyValueBucket(ctx, pc.config.BucketName())
+	if err != nil {
+		return nil, err
+	}
+
+	entry, err := bucket.Get(ctx, pc.kvKey("rollup"))
+	if err != nil {
+		// Not found means no rollup yet
+		return nil, nil
+	}
+
+	var result any
+	if err := json.Unmarshal(entry.Value(), &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// putRollupResult stores the rollup result.
+func (pc *PartyCoordinator) putRollupResult(ctx context.Context, result any) error {
+	bucket, err := pc.client.GetKeyValueBucket(ctx, pc.config.BucketName())
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+
+	_, err = bucket.Put(ctx, pc.kvKey("rollup"), data)
+	return err
 }
 
 // =============================================================================
@@ -70,7 +241,7 @@ func (pc *PartyCoordinator) DecomposeQuest(
 	for _, sq := range subQuests {
 		subQuestMap[sq] = "" // Unassigned
 	}
-	if err := pc.storage.UpdatePartySubQuestMap(ctx, pc.partyID, subQuestMap); err != nil {
+	if err := pc.putSubQuestMap(ctx, subQuestMap); err != nil {
 		return errs.Wrap(err, "PartyCoordinator", "DecomposeQuest", "update sub-quest map")
 	}
 
@@ -96,12 +267,12 @@ func (pc *PartyCoordinator) AssignTask(
 	guidance string,
 ) error {
 	// Update the sub-quest map
-	subQuestMap, err := pc.storage.GetPartySubQuestMap(ctx, pc.partyID)
+	subQuestMap, err := pc.getSubQuestMap(ctx)
 	if err != nil {
 		return errs.Wrap(err, "PartyCoordinator", "AssignTask", "get sub-quest map")
 	}
 	subQuestMap[subQuestID] = assignedTo
-	if err := pc.storage.UpdatePartySubQuestMap(ctx, pc.partyID, subQuestMap); err != nil {
+	if err := pc.putSubQuestMap(ctx, subQuestMap); err != nil {
 		return errs.Wrap(err, "PartyCoordinator", "AssignTask", "update sub-quest map")
 	}
 
@@ -146,7 +317,7 @@ func (pc *PartyCoordinator) ShareContext(
 	relevance []QuestID,
 ) error {
 	// Store context in party state
-	if err := pc.storage.AddPartyContext(ctx, pc.partyID, item); err != nil {
+	if err := pc.addContext(ctx, item); err != nil {
 		return errs.Wrap(err, "PartyCoordinator", "ShareContext", "add context")
 	}
 
@@ -167,7 +338,7 @@ func (pc *PartyCoordinator) StartRollup(
 	parentQuestID QuestID,
 ) error {
 	// Get count of collected results
-	results, err := pc.storage.GetPartySubResults(ctx, pc.partyID)
+	results, err := pc.getSubResults(ctx)
 	if err != nil {
 		return errs.Wrap(err, "PartyCoordinator", "StartRollup", "get sub-results")
 	}
@@ -190,7 +361,7 @@ func (pc *PartyCoordinator) CompleteRollup(
 	memberContributions map[AgentID]float64,
 ) error {
 	// Store rollup result
-	if err := pc.storage.UpdatePartyRollupResult(ctx, pc.partyID, rollupResult); err != nil {
+	if err := pc.putRollupResult(ctx, rollupResult); err != nil {
 		return errs.Wrap(err, "PartyCoordinator", "CompleteRollup", "store rollup")
 	}
 
@@ -257,7 +428,7 @@ func (pc *PartyCoordinator) SubmitResult(
 	qualityScore float64,
 ) error {
 	// Store the result
-	if err := pc.storage.UpdatePartySubResults(ctx, pc.partyID, subQuestID, result); err != nil {
+	if err := pc.putSubResult(ctx, subQuestID, result); err != nil {
 		return errs.Wrap(err, "PartyCoordinator", "SubmitResult", "store result")
 	}
 
@@ -513,32 +684,32 @@ func (pc *PartyCoordinator) SubscribeToResultSubmissions(
 
 // GetAssignments returns the current sub-quest assignments.
 func (pc *PartyCoordinator) GetAssignments(ctx context.Context) (map[QuestID]AgentID, error) {
-	return pc.storage.GetPartySubQuestMap(ctx, pc.partyID)
+	return pc.getSubQuestMap(ctx)
 }
 
 // GetSharedContext returns all shared context items.
 func (pc *PartyCoordinator) GetSharedContext(ctx context.Context) ([]ContextItem, error) {
-	return pc.storage.GetPartyContext(ctx, pc.partyID)
+	return pc.getContext(ctx)
 }
 
 // GetCollectedResults returns all submitted sub-quest results.
 func (pc *PartyCoordinator) GetCollectedResults(ctx context.Context) (map[QuestID]any, error) {
-	return pc.storage.GetPartySubResults(ctx, pc.partyID)
+	return pc.getSubResults(ctx)
 }
 
 // GetRollupResult returns the final rollup result, if available.
 func (pc *PartyCoordinator) GetRollupResult(ctx context.Context) (any, error) {
-	return pc.storage.GetPartyRollupResult(ctx, pc.partyID)
+	return pc.getRollupResult(ctx)
 }
 
 // AreAllResultsCollected checks if all assigned sub-quests have submitted results.
 func (pc *PartyCoordinator) AreAllResultsCollected(ctx context.Context) (bool, error) {
-	assignments, err := pc.storage.GetPartySubQuestMap(ctx, pc.partyID)
+	assignments, err := pc.getSubQuestMap(ctx)
 	if err != nil {
 		return false, errs.Wrap(err, "PartyCoordinator", "AreAllResultsCollected", "get assignments")
 	}
 
-	results, err := pc.storage.GetPartySubResults(ctx, pc.partyID)
+	results, err := pc.getSubResults(ctx)
 	if err != nil {
 		return false, errs.Wrap(err, "PartyCoordinator", "AreAllResultsCollected", "get results")
 	}

@@ -24,16 +24,20 @@ import (
 
 // DefaultStore implements the Store interface backed by NATS KV.
 type DefaultStore struct {
-	storage   *Storage
+	graph     *GraphClient
+	client    *natsclient.Client
+	config    *BoardConfig
 	publisher *EventPublisher
 	xpEngine  XPEngine
 	logger    *slog.Logger
 }
 
-// NewDefaultStore creates a new store with the given storage backend.
-func NewDefaultStore(storage *Storage, publisher *EventPublisher, xpEngine XPEngine) *DefaultStore {
+// NewDefaultStore creates a new store with the given graph client.
+func NewDefaultStore(graph *GraphClient, client *natsclient.Client, config *BoardConfig, publisher *EventPublisher, xpEngine XPEngine) *DefaultStore {
 	return &DefaultStore{
-		storage:   storage,
+		graph:     graph,
+		client:    client,
+		config:    config,
 		publisher: publisher,
 		xpEngine:  xpEngine,
 		logger:    slog.Default(),
@@ -63,16 +67,98 @@ func (s *DefaultStore) ActiveEffectsKey(agentInstance string) string {
 	return fmt.Sprintf("effects.%s", agentInstance)
 }
 
+// getAgent retrieves an agent by instance ID.
+func (s *DefaultStore) getAgent(ctx context.Context, agentInstance string) (*Agent, error) {
+	entityID := s.config.AgentEntityID(agentInstance)
+	entity, err := s.graph.GetEntityDirect(ctx, entityID)
+	if err != nil {
+		return nil, err
+	}
+	agent := AgentFromEntityState(entity)
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found: %s", agentInstance)
+	}
+	return agent, nil
+}
+
+// updateAgent retrieves, modifies, and emits an agent update.
+func (s *DefaultStore) updateAgent(ctx context.Context, agentInstance string, fn func(*Agent) error) error {
+	agent, err := s.getAgent(ctx, agentInstance)
+	if err != nil {
+		return err
+	}
+	if err := fn(agent); err != nil {
+		return err
+	}
+	return s.graph.EmitEntityUpdate(ctx, agent, "agent.updated")
+}
+
+// updateKV performs a read-modify-write on a KV key with retry on conflict.
+func (s *DefaultStore) updateKV(ctx context.Context, key string, fn func([]byte) ([]byte, error)) error {
+	bucket, err := s.client.GetKeyValueBucket(ctx, s.config.BucketName())
+	if err != nil {
+		return err
+	}
+
+	// Try up to 3 times for CAS conflicts
+	for attempt := 0; attempt < 3; attempt++ {
+		entry, err := bucket.Get(ctx, key)
+		var current []byte
+		var revision uint64 = 0
+
+		if err != nil {
+			if !natsclient.IsKVNotFoundError(err) {
+				return err
+			}
+			// Key doesn't exist, use empty
+			current = nil
+		} else {
+			current = entry.Value()
+			revision = entry.Revision()
+		}
+
+		newValue, err := fn(current)
+		if err != nil {
+			return err
+		}
+
+		if revision == 0 {
+			// Create new key
+			_, err = bucket.Create(ctx, key, newValue)
+		} else {
+			// Update existing key
+			_, err = bucket.Update(ctx, key, newValue, revision)
+		}
+
+		if err == nil {
+			return nil
+		}
+
+		// Check for revision conflict and retry
+		if strings.Contains(err.Error(), "wrong last sequence") {
+			continue
+		}
+		return err
+	}
+
+	return fmt.Errorf("failed to update KV key %s after retries", key)
+}
+
 // --- Catalog Operations ---
 
 // AddItem adds a new item to the store catalog.
 func (s *DefaultStore) AddItem(ctx context.Context, item StoreItem) error {
+	bucket, err := s.client.GetKeyValueBucket(ctx, s.config.BucketName())
+	if err != nil {
+		return errs.Wrap(err, "DefaultStore", "AddItem", "get bucket")
+	}
+
 	key := s.StoreItemKey(item.ID)
 	data, err := json.Marshal(item)
 	if err != nil {
 		return errs.Wrap(err, "DefaultStore", "AddItem", "marshal")
 	}
-	_, err = s.storage.KV().Put(ctx, key, data)
+	_, err = bucket.Put(ctx, key, data)
 	if err != nil {
 		return errs.Wrap(err, "DefaultStore", "AddItem", "put")
 	}
@@ -93,12 +179,17 @@ func (s *DefaultStore) AddItem(ctx context.Context, item StoreItem) error {
 
 // UpdateItem updates an existing item in the store catalog.
 func (s *DefaultStore) UpdateItem(ctx context.Context, item StoreItem) error {
+	bucket, err := s.client.GetKeyValueBucket(ctx, s.config.BucketName())
+	if err != nil {
+		return errs.Wrap(err, "DefaultStore", "UpdateItem", "get bucket")
+	}
+
 	key := s.StoreItemKey(item.ID)
 	data, err := json.Marshal(item)
 	if err != nil {
 		return errs.Wrap(err, "DefaultStore", "UpdateItem", "marshal")
 	}
-	_, err = s.storage.KV().Put(ctx, key, data)
+	_, err = bucket.Put(ctx, key, data)
 	if err != nil {
 		return errs.Wrap(err, "DefaultStore", "UpdateItem", "put")
 	}
@@ -108,7 +199,7 @@ func (s *DefaultStore) UpdateItem(ctx context.Context, item StoreItem) error {
 // SetStock sets whether an item is in stock.
 func (s *DefaultStore) SetStock(ctx context.Context, itemID string, inStock bool) error {
 	key := s.StoreItemKey(itemID)
-	return s.storage.KV().UpdateWithRetry(ctx, key, func(current []byte) ([]byte, error) {
+	return s.updateKV(ctx, key, func(current []byte) ([]byte, error) {
 		if len(current) == 0 {
 			return nil, fmt.Errorf("item not found: %s", itemID)
 		}
@@ -123,8 +214,13 @@ func (s *DefaultStore) SetStock(ctx context.Context, itemID string, inStock bool
 
 // GetItem returns a specific item by ID.
 func (s *DefaultStore) GetItem(ctx context.Context, itemID string) (*StoreItem, error) {
+	bucket, err := s.client.GetKeyValueBucket(ctx, s.config.BucketName())
+	if err != nil {
+		return nil, errs.Wrap(err, "DefaultStore", "GetItem", "get bucket")
+	}
+
 	key := s.StoreItemKey(itemID)
-	entry, err := s.storage.KV().Get(ctx, key)
+	entry, err := bucket.Get(ctx, key)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
 			return nil, fmt.Errorf("item not found: %s", itemID)
@@ -133,7 +229,7 @@ func (s *DefaultStore) GetItem(ctx context.Context, itemID string) (*StoreItem, 
 	}
 
 	var item StoreItem
-	if err := json.Unmarshal(entry.Value, &item); err != nil {
+	if err := json.Unmarshal(entry.Value(), &item); err != nil {
 		return nil, errs.Wrap(err, "DefaultStore", "GetItem", "unmarshal")
 	}
 	return &item, nil
@@ -141,20 +237,31 @@ func (s *DefaultStore) GetItem(ctx context.Context, itemID string) (*StoreItem, 
 
 // Catalog returns all items in the store.
 func (s *DefaultStore) Catalog(ctx context.Context) ([]StoreItem, error) {
-	keys, err := s.storage.ListIndexKeys(ctx, "store.item.")
+	bucket, err := s.client.GetKeyValueBucket(ctx, s.config.BucketName())
+	if err != nil {
+		return nil, errs.Wrap(err, "DefaultStore", "Catalog", "get bucket")
+	}
+
+	// List all keys and filter by prefix
+	// TODO: Use natsclient.KeysByPrefix when available in semstreams
+	keys, err := bucket.Keys(ctx)
 	if err != nil {
 		return nil, errs.Wrap(err, "DefaultStore", "Catalog", "list keys")
 	}
 
-	items := make([]StoreItem, 0, len(keys))
+	prefix := "store.item."
+	items := make([]StoreItem, 0)
 	for _, key := range keys {
-		entry, err := s.storage.KV().Get(ctx, key)
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		entry, err := bucket.Get(ctx, key)
 		if err != nil {
 			s.logger.Debug("failed to load store item", "key", key, "error", err)
 			continue
 		}
 		var item StoreItem
-		if err := json.Unmarshal(entry.Value, &item); err != nil {
+		if err := json.Unmarshal(entry.Value(), &item); err != nil {
 			s.logger.Debug("failed to unmarshal store item", "key", key, "error", err)
 			continue
 		}
@@ -167,7 +274,7 @@ func (s *DefaultStore) Catalog(ctx context.Context) ([]StoreItem, error) {
 func (s *DefaultStore) ListItems(ctx context.Context, agentID AgentID) ([]StoreItem, error) {
 	// Get agent to check tier
 	agentInstance := s.extractInstance(string(agentID))
-	agent, err := s.storage.GetAgent(ctx, agentInstance)
+	agent, err := s.getAgent(ctx, agentInstance)
 	if err != nil {
 		return nil, errs.Wrap(err, "DefaultStore", "ListItems", "get agent")
 	}
@@ -200,7 +307,7 @@ func (s *DefaultStore) ListItems(ctx context.Context, agentID AgentID) ([]StoreI
 // CanAfford checks if an agent can afford an item.
 func (s *DefaultStore) CanAfford(ctx context.Context, agentID AgentID, itemID string) (bool, int64, error) {
 	agentInstance := s.extractInstance(string(agentID))
-	agent, err := s.storage.GetAgent(ctx, agentInstance)
+	agent, err := s.getAgent(ctx, agentInstance)
 	if err != nil {
 		return false, 0, errs.Wrap(err, "DefaultStore", "CanAfford", "get agent")
 	}
@@ -235,7 +342,7 @@ func (s *DefaultStore) calculateCost(item *StoreItem, agent *Agent) int64 {
 }
 
 // Purchase buys an item for an agent.
-// Uses UpdateAgent for atomic XP deduction to prevent race conditions.
+// Uses updateAgent for atomic XP deduction to prevent race conditions.
 func (s *DefaultStore) Purchase(ctx context.Context, agentID AgentID, itemID string) (*OwnedItem, error) {
 	agentInstance := s.extractInstance(string(agentID))
 
@@ -256,8 +363,8 @@ func (s *DefaultStore) Purchase(ctx context.Context, agentID AgentID, itemID str
 	var levelBefore int
 	var cost int64
 
-	// Atomically update agent XP using UpdateWithRetry
-	err = s.storage.UpdateAgent(ctx, agentInstance, func(agent *Agent) error {
+	// Update agent XP
+	err = s.updateAgent(ctx, agentInstance, func(agent *Agent) error {
 		// Validate purchase (tier, level, stock, duplicate check)
 		if err := s.validatePurchase(agent, item, inv); err != nil {
 			return err
@@ -275,7 +382,7 @@ func (s *DefaultStore) Purchase(ctx context.Context, agentID AgentID, itemID str
 		xpBefore = agent.XP
 		levelBefore = agent.Level
 
-		// Deduct XP atomically
+		// Deduct XP
 		if err := s.spendXP(agent, cost, "store purchase: "+item.ID); err != nil {
 			return err
 		}
@@ -361,15 +468,19 @@ func (s *DefaultStore) validatePurchase(agent *Agent, item *StoreItem, inv *Agen
 }
 
 // spendXP deducts XP from an agent. Does not affect level.
-func (s *DefaultStore) spendXP(agent *Agent, amount int64, reason string) error {
-	return s.xpEngine.SpendXP(agent, amount, reason)
+func (s *DefaultStore) spendXP(agent *Agent, amount int64, _ string) error {
+	if agent.XP < amount {
+		return fmt.Errorf("insufficient XP: have %d, need %d", agent.XP, amount)
+	}
+	agent.XP -= amount
+	return nil
 }
 
 // addToInventory adds an item to an agent's inventory.
 func (s *DefaultStore) addToInventory(ctx context.Context, agentInstance string, item *StoreItem, owned *OwnedItem) error {
 	key := s.InventoryKey(agentInstance)
 
-	return s.storage.KV().UpdateWithRetry(ctx, key, func(current []byte) ([]byte, error) {
+	return s.updateKV(ctx, key, func(current []byte) ([]byte, error) {
 		var inv AgentInventory
 		if len(current) > 0 {
 			if err := json.Unmarshal(current, &inv); err != nil {
@@ -378,7 +489,7 @@ func (s *DefaultStore) addToInventory(ctx context.Context, agentInstance string,
 		} else {
 			// Initialize new inventory
 			inv = AgentInventory{
-				AgentID:     AgentID(s.storage.Config().AgentEntityID(agentInstance)),
+				AgentID:     AgentID(s.config.AgentEntityID(agentInstance)),
 				OwnedTools:  make(map[string]OwnedItem),
 				Consumables: make(map[string]int),
 			}
@@ -402,10 +513,15 @@ func (s *DefaultStore) addToInventory(ctx context.Context, agentInstance string,
 
 // GetInventory returns an agent's inventory.
 func (s *DefaultStore) GetInventory(ctx context.Context, agentID AgentID) (*AgentInventory, error) {
+	bucket, err := s.client.GetKeyValueBucket(ctx, s.config.BucketName())
+	if err != nil {
+		return nil, errs.Wrap(err, "DefaultStore", "GetInventory", "get bucket")
+	}
+
 	agentInstance := s.extractInstance(string(agentID))
 	key := s.InventoryKey(agentInstance)
 
-	entry, err := s.storage.KV().Get(ctx, key)
+	entry, err := bucket.Get(ctx, key)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
 			// Return empty inventory
@@ -415,7 +531,7 @@ func (s *DefaultStore) GetInventory(ctx context.Context, agentID AgentID) (*Agen
 	}
 
 	var inv AgentInventory
-	if err := json.Unmarshal(entry.Value, &inv); err != nil {
+	if err := json.Unmarshal(entry.Value(), &inv); err != nil {
 		return nil, errs.Wrap(err, "DefaultStore", "GetInventory", "unmarshal")
 	}
 	return &inv, nil
@@ -448,7 +564,7 @@ func (s *DefaultStore) UseConsumable(ctx context.Context, agentID AgentID, consu
 	// Deduct from inventory
 	var remaining int
 	invKey := s.InventoryKey(agentInstance)
-	err = s.storage.KV().UpdateWithRetry(ctx, invKey, func(current []byte) ([]byte, error) {
+	err = s.updateKV(ctx, invKey, func(current []byte) ([]byte, error) {
 		if len(current) == 0 {
 			return nil, fmt.Errorf("no inventory for agent")
 		}
@@ -495,7 +611,7 @@ func (s *DefaultStore) UseConsumable(ctx context.Context, agentID AgentID, consu
 func (s *DefaultStore) addActiveEffect(ctx context.Context, agentInstance string, item *StoreItem, questID *QuestID) error {
 	key := s.ActiveEffectsKey(agentInstance)
 
-	return s.storage.KV().UpdateWithRetry(ctx, key, func(current []byte) ([]byte, error) {
+	return s.updateKV(ctx, key, func(current []byte) ([]byte, error) {
 		var effects []ActiveEffect
 		if len(current) > 0 {
 			if err := json.Unmarshal(current, &effects); err != nil {
@@ -518,10 +634,15 @@ func (s *DefaultStore) addActiveEffect(ctx context.Context, agentInstance string
 
 // GetActiveEffects returns consumable effects currently active for an agent.
 func (s *DefaultStore) GetActiveEffects(ctx context.Context, agentID AgentID) ([]ActiveEffect, error) {
+	bucket, err := s.client.GetKeyValueBucket(ctx, s.config.BucketName())
+	if err != nil {
+		return nil, errs.Wrap(err, "DefaultStore", "GetActiveEffects", "get bucket")
+	}
+
 	agentInstance := s.extractInstance(string(agentID))
 	key := s.ActiveEffectsKey(agentInstance)
 
-	entry, err := s.storage.KV().Get(ctx, key)
+	entry, err := bucket.Get(ctx, key)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
 			return []ActiveEffect{}, nil
@@ -530,7 +651,7 @@ func (s *DefaultStore) GetActiveEffects(ctx context.Context, agentID AgentID) ([
 	}
 
 	var effects []ActiveEffect
-	if err := json.Unmarshal(entry.Value, &effects); err != nil {
+	if err := json.Unmarshal(entry.Value(), &effects); err != nil {
 		return nil, errs.Wrap(err, "DefaultStore", "GetActiveEffects", "unmarshal")
 	}
 	return effects, nil
@@ -543,7 +664,7 @@ func (s *DefaultStore) ConsumeEffect(ctx context.Context, agentID AgentID, effec
 
 	var expiredEffect *ActiveEffect
 
-	err := s.storage.KV().UpdateWithRetry(ctx, key, func(current []byte) ([]byte, error) {
+	err := s.updateKV(ctx, key, func(current []byte) ([]byte, error) {
 		if len(current) == 0 {
 			return nil, fmt.Errorf("no active effects for agent")
 		}

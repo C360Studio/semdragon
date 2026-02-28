@@ -31,17 +31,15 @@ import (
 
 // NATSApprovalRouter implements ApprovalRouter using NATS.
 type NATSApprovalRouter struct {
-	client  *natsclient.Client
-	storage *Storage
-	config  *BoardConfig
+	client *natsclient.Client
+	config *BoardConfig
 }
 
 // NewNATSApprovalRouter creates a new NATS-based approval router.
-func NewNATSApprovalRouter(client *natsclient.Client, storage *Storage) *NATSApprovalRouter {
+func NewNATSApprovalRouter(client *natsclient.Client, config *BoardConfig) *NATSApprovalRouter {
 	return &NATSApprovalRouter{
-		client:  client,
-		storage: storage,
-		config:  storage.Config(),
+		client: client,
+		config: config,
 	}
 }
 
@@ -194,20 +192,28 @@ func (r *NATSApprovalRouter) GetPendingApprovals(ctx context.Context, sessionID 
 	sessionInstance := ExtractInstance(sessionID)
 	prefix := fmt.Sprintf("approval.pending.%s.", sessionInstance)
 
-	keys, err := r.storage.ListIndexKeys(ctx, prefix)
+	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
 	if err != nil {
-		return nil, fmt.Errorf("list pending approvals: %w", err)
+		return nil, fmt.Errorf("get KV bucket: %w", err)
+	}
+
+	keys, err := bucket.Keys(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list keys: %w", err)
 	}
 
 	var pending []ApprovalRequest
 	for _, key := range keys {
-		entry, err := r.storage.KV().Get(ctx, key)
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		entry, err := bucket.Get(ctx, key)
 		if err != nil {
 			continue
 		}
 
 		var req ApprovalRequest
-		if err := json.Unmarshal(entry.Value, &req); err != nil {
+		if err := json.Unmarshal(entry.Value(), &req); err != nil {
 			continue
 		}
 		pending = append(pending, req)
@@ -224,9 +230,14 @@ func (r *NATSApprovalRouter) RespondToApproval(ctx context.Context, sessionID, a
 	sessionInstance := ExtractInstance(sessionID)
 	pendingKey := r.approvalPendingKey(sessionInstance, approvalID)
 
+	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
+	if err != nil {
+		return fmt.Errorf("get KV bucket: %w", err)
+	}
+
 	// Atomically delete the pending key - this prevents duplicate responses
 	// If another responder already deleted it, this will fail
-	if err := r.storage.KV().Delete(ctx, pendingKey); err != nil {
+	if err := bucket.Delete(ctx, pendingKey); err != nil {
 		return fmt.Errorf("approval not found or already responded: %s", approvalID)
 	}
 
@@ -265,16 +276,26 @@ func (r *NATSApprovalRouter) storePendingApproval(ctx context.Context, sessionIn
 	if err != nil {
 		return err
 	}
-	_, err = r.storage.KV().Put(ctx, key, data)
+	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
+	if err != nil {
+		return err
+	}
+	_, err = bucket.Put(ctx, key, data)
 	return err
 }
 
 // resolveApproval moves an approval from pending to resolved state.
 // Logs errors but does not fail - approval resolution is best-effort storage.
 func (r *NATSApprovalRouter) resolveApproval(ctx context.Context, sessionInstance, approvalID string, resp *ApprovalResponse) {
+	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
+	if err != nil {
+		slog.Warn("failed to get KV bucket for approval resolution", "error", err)
+		return
+	}
+
 	// Delete pending key
 	pendingKey := r.approvalPendingKey(sessionInstance, approvalID)
-	if err := r.storage.KV().Delete(ctx, pendingKey); err != nil {
+	if err := bucket.Delete(ctx, pendingKey); err != nil {
 		slog.Warn("failed to delete pending approval key", "key", pendingKey, "error", err)
 	}
 
@@ -291,7 +312,11 @@ func (r *NATSApprovalRouter) storeResolvedApproval(ctx context.Context, sessionI
 	if err != nil {
 		return fmt.Errorf("marshal resolved approval: %w", err)
 	}
-	if _, err := r.storage.KV().Put(ctx, resolvedKey, data); err != nil {
+	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
+	if err != nil {
+		return fmt.Errorf("get KV bucket: %w", err)
+	}
+	if _, err := bucket.Put(ctx, resolvedKey, data); err != nil {
 		return fmt.Errorf("put resolved approval: %w", err)
 	}
 	return nil
@@ -456,6 +481,11 @@ func (r *NATSApprovalRouter) WaitForPendingApprovals(ctx context.Context, sessio
 	sessionInstance := ExtractInstance(sessionID)
 	prefix := fmt.Sprintf("approval.pending.%s.", sessionInstance)
 
+	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
+	if err != nil {
+		return fmt.Errorf("get KV bucket: %w", err)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -463,12 +493,20 @@ func (r *NATSApprovalRouter) WaitForPendingApprovals(ctx context.Context, sessio
 		default:
 		}
 
-		keys, err := r.storage.ListIndexKeys(ctx, prefix)
+		keys, err := bucket.Keys(ctx)
 		if err != nil {
 			return err
 		}
 
-		if len(keys) == 0 {
+		// Count keys matching prefix
+		count := 0
+		for _, key := range keys {
+			if strings.HasPrefix(key, prefix) {
+				count++
+			}
+		}
+
+		if count == 0 {
 			return nil
 		}
 
@@ -482,13 +520,18 @@ func (r *NATSApprovalRouter) GetResolvedApproval(ctx context.Context, sessionID,
 	sessionInstance := ExtractInstance(sessionID)
 	key := r.approvalResolvedKey(sessionInstance, approvalID)
 
-	entry, err := r.storage.KV().Get(ctx, key)
+	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
+	if err != nil {
+		return nil, fmt.Errorf("get KV bucket: %w", err)
+	}
+
+	entry, err := bucket.Get(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("approval not found: %s", approvalID)
 	}
 
 	var resp ApprovalResponse
-	if err := json.Unmarshal(entry.Value, &resp); err != nil {
+	if err := json.Unmarshal(entry.Value(), &resp); err != nil {
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
@@ -500,7 +543,12 @@ func (r *NATSApprovalRouter) ListResolvedApprovals(ctx context.Context, sessionI
 	sessionInstance := ExtractInstance(sessionID)
 	prefix := fmt.Sprintf("approval.resolved.%s.", sessionInstance)
 
-	keys, err := r.storage.KV().Keys(ctx)
+	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
+	if err != nil {
+		return nil, fmt.Errorf("get KV bucket: %w", err)
+	}
+
+	keys, err := bucket.Keys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -508,13 +556,13 @@ func (r *NATSApprovalRouter) ListResolvedApprovals(ctx context.Context, sessionI
 	var resolved []ApprovalResponse
 	for _, key := range keys {
 		if strings.HasPrefix(key, prefix) {
-			entry, err := r.storage.KV().Get(ctx, key)
+			entry, err := bucket.Get(ctx, key)
 			if err != nil {
 				continue
 			}
 
 			var resp ApprovalResponse
-			if err := json.Unmarshal(entry.Value, &resp); err != nil {
+			if err := json.Unmarshal(entry.Value(), &resp); err != nil {
 				continue
 			}
 			resolved = append(resolved, resp)

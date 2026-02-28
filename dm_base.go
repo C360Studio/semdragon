@@ -28,11 +28,11 @@ import (
 
 // BaseDungeonMaster provides shared infrastructure for all DM implementations.
 type BaseDungeonMaster struct {
-	board       *NATSQuestBoard
+	board       QuestBoard
 	boids       *DefaultBoidEngine
 	evaluator   BattleEvaluator
 	progression *ProgressionManager
-	storage     *Storage
+	graph       *GraphClient
 	events      *EventPublisher
 	client      *natsclient.Client
 	config      *BoardConfig
@@ -46,7 +46,9 @@ type BaseDungeonMaster struct {
 // BaseDMConfig holds configuration for creating a BaseDungeonMaster.
 type BaseDMConfig struct {
 	Client      *natsclient.Client
-	Board       *NATSQuestBoard
+	Board       QuestBoard
+	Graph       *GraphClient
+	BoardConfig *BoardConfig
 	Boids       *DefaultBoidEngine
 	Evaluator   BattleEvaluator
 	Progression *ProgressionManager
@@ -54,13 +56,19 @@ type BaseDMConfig struct {
 }
 
 // NewBaseDungeonMaster creates a new BaseDungeonMaster.
-// Panics if required config fields (Board, Client) are nil.
+// Panics if required config fields (Board, Client, Graph, BoardConfig) are nil.
 func NewBaseDungeonMaster(cfg BaseDMConfig) *BaseDungeonMaster {
 	if cfg.Board == nil {
 		panic("BaseDMConfig.Board is required")
 	}
 	if cfg.Client == nil {
 		panic("BaseDMConfig.Client is required")
+	}
+	if cfg.Graph == nil {
+		panic("BaseDMConfig.Graph is required")
+	}
+	if cfg.BoardConfig == nil {
+		panic("BaseDMConfig.BoardConfig is required")
 	}
 
 	dm := &BaseDungeonMaster{
@@ -69,9 +77,9 @@ func NewBaseDungeonMaster(cfg BaseDMConfig) *BaseDungeonMaster {
 		boids:       cfg.Boids,
 		evaluator:   cfg.Evaluator,
 		progression: cfg.Progression,
-		storage:     cfg.Board.Storage(),
+		graph:       cfg.Graph,
 		events:      NewEventPublisher(cfg.Client),
-		config:      cfg.Board.Config(),
+		config:      cfg.BoardConfig,
 		logger:      cfg.Logger,
 		sessions:    make(map[string]*Session),
 	}
@@ -91,7 +99,7 @@ func NewBaseDungeonMaster(cfg BaseDMConfig) *BaseDungeonMaster {
 }
 
 // Board returns the underlying quest board.
-func (dm *BaseDungeonMaster) Board() *NATSQuestBoard {
+func (dm *BaseDungeonMaster) Board() QuestBoard {
 	return dm.board
 }
 
@@ -110,9 +118,9 @@ func (dm *BaseDungeonMaster) Progression() *ProgressionManager {
 	return dm.progression
 }
 
-// Storage returns the underlying storage.
-func (dm *BaseDungeonMaster) Storage() *Storage {
-	return dm.storage
+// Graph returns the graph client.
+func (dm *BaseDungeonMaster) Graph() *GraphClient {
+	return dm.graph
 }
 
 // =============================================================================
@@ -135,7 +143,7 @@ func (dm *BaseDungeonMaster) StartSession(ctx context.Context, config SessionCon
 		Active: true,
 	}
 
-	// Store session in KV
+	// Store session in KV via graph client
 	if err := dm.putSession(ctx, instance, session); err != nil {
 		return nil, fmt.Errorf("failed to store session: %w", err)
 	}
@@ -238,19 +246,27 @@ func (dm *BaseDungeonMaster) putSession(ctx context.Context, instance string, se
 	if err != nil {
 		return fmt.Errorf("marshal session: %w", err)
 	}
-	_, err = dm.storage.KV().Put(ctx, key, data)
+	bucket, err := dm.client.GetKeyValueBucket(ctx, dm.config.BucketName())
+	if err != nil {
+		return fmt.Errorf("get bucket: %w", err)
+	}
+	_, err = bucket.Put(ctx, key, data)
 	return err
 }
 
 func (dm *BaseDungeonMaster) getSession(ctx context.Context, instance string) (*Session, error) {
 	key := dm.SessionKey(instance)
-	entry, err := dm.storage.KV().Get(ctx, key)
+	bucket, err := dm.client.GetKeyValueBucket(ctx, dm.config.BucketName())
+	if err != nil {
+		return nil, fmt.Errorf("get bucket: %w", err)
+	}
+	entry, err := bucket.Get(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("get session: %w", err)
 	}
 
 	var session Session
-	if err := json.Unmarshal(entry.Value, &session); err != nil {
+	if err := json.Unmarshal(entry.Value(), &session); err != nil {
 		return nil, fmt.Errorf("unmarshal session: %w", err)
 	}
 	return &session, nil
@@ -273,7 +289,7 @@ func (dm *BaseDungeonMaster) computeSessionSummary(ctx context.Context, sessionI
 		summary.QuestsEscalated = stats.TotalEscalated
 	}
 
-	// Count active agents
+	// Count active agents from graph
 	agents, err := dm.loadAllAgents(ctx)
 	if err == nil {
 		for _, agent := range agents {
@@ -284,13 +300,24 @@ func (dm *BaseDungeonMaster) computeSessionSummary(ctx context.Context, sessionI
 		}
 	}
 
-	// Session-scoped tracking of level changes and deaths is deferred.
-	// Current implementation aggregates lifetime stats from agents.
-	// Per-session tracking would require event sourcing with session correlation,
-	// which adds complexity without immediate use case. When needed, implement
-	// by subscribing to agent.progression events filtered by session time range.
-
 	return summary
+}
+
+// loadAllAgents retrieves all agents from the graph system.
+func (dm *BaseDungeonMaster) loadAllAgents(ctx context.Context) ([]*Agent, error) {
+	entities, err := dm.graph.ListAgentsByPrefix(ctx, 1000)
+	if err != nil {
+		return nil, err
+	}
+
+	agents := make([]*Agent, 0, len(entities))
+	for _, entity := range entities {
+		agent := AgentFromEntityState(&entity)
+		if agent != nil {
+			agents = append(agents, agent)
+		}
+	}
+	return agents, nil
 }
 
 // =============================================================================
@@ -373,13 +400,13 @@ func containsBattleEventTypes(types []GameEventType) bool {
 	return false
 }
 
-func (dm *BaseDungeonMaster) subscribeQuestEvents(ctx context.Context, events chan<- GameEvent, filter EventFilter) {
-	dm.logger.Debug("subscribing to quest events", "filter", filter)
+func (dm *BaseDungeonMaster) subscribeQuestEvents(ctx context.Context, events chan<- GameEvent, _ EventFilter) {
+	dm.logger.Debug("subscribing to quest events")
 
 	const questLifecyclePrefix = "quest.lifecycle."
 	subject := questLifecyclePrefix + ">"
 
-	sub, err := dm.board.client.Subscribe(ctx, subject, func(_ context.Context, msg *nats.Msg) {
+	sub, err := dm.client.Subscribe(ctx, subject, func(_ context.Context, msg *nats.Msg) {
 		select {
 		case <-ctx.Done():
 			return
@@ -428,13 +455,13 @@ func (dm *BaseDungeonMaster) subscribeQuestEvents(ctx context.Context, events ch
 	}()
 }
 
-func (dm *BaseDungeonMaster) subscribeAgentEvents(ctx context.Context, events chan<- GameEvent, filter EventFilter) {
-	dm.logger.Debug("subscribing to agent events", "filter", filter)
+func (dm *BaseDungeonMaster) subscribeAgentEvents(ctx context.Context, events chan<- GameEvent, _ EventFilter) {
+	dm.logger.Debug("subscribing to agent events")
 
 	const agentProgressionPrefix = "agent.progression."
 	subject := agentProgressionPrefix + ">"
 
-	sub, err := dm.board.client.Subscribe(ctx, subject, func(_ context.Context, msg *nats.Msg) {
+	sub, err := dm.client.Subscribe(ctx, subject, func(_ context.Context, msg *nats.Msg) {
 		select {
 		case <-ctx.Done():
 			return
@@ -478,13 +505,13 @@ func (dm *BaseDungeonMaster) subscribeAgentEvents(ctx context.Context, events ch
 	}()
 }
 
-func (dm *BaseDungeonMaster) subscribeBattleEvents(ctx context.Context, events chan<- GameEvent, filter EventFilter) {
-	dm.logger.Debug("subscribing to battle events", "filter", filter)
+func (dm *BaseDungeonMaster) subscribeBattleEvents(ctx context.Context, events chan<- GameEvent, _ EventFilter) {
+	dm.logger.Debug("subscribing to battle events")
 
 	const battleReviewPrefix = "battle.review."
 	subject := battleReviewPrefix + ">"
 
-	sub, err := dm.board.client.Subscribe(ctx, subject, func(_ context.Context, msg *nats.Msg) {
+	sub, err := dm.client.Subscribe(ctx, subject, func(_ context.Context, msg *nats.Msg) {
 		select {
 		case <-ctx.Done():
 			return

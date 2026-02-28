@@ -25,65 +25,19 @@ import (
 // Implements Discoverable + LifecycleComponent interfaces.
 // Subscribes to quest.lifecycle.completed and battle.review.victory events.
 // Calculates XP awards and emits agent.progression.* events.
+//
+// File organization:
+// - component.go: Core Component struct, interfaces, lifecycle
+// - config.go: Config struct, defaults, validation
+// - handler.go: Event handlers and XP processing methods
+// - register.go: Factory and registry registration
 // =============================================================================
-
-// Config holds the component configuration.
-type Config struct {
-	// BoardConfig contains org, platform, board for entity IDs and bucket naming.
-	Org      string `json:"org" schema:"type:string,description:Organization namespace"`
-	Platform string `json:"platform" schema:"type:string,description:Platform/environment name"`
-	Board    string `json:"board" schema:"type:string,description:Quest board name"`
-
-	// XP calculation multipliers
-	QualityMultiplier  float64 `json:"quality_multiplier" schema:"type:float,description:Quality bonus multiplier"`
-	SpeedMultiplier    float64 `json:"speed_multiplier" schema:"type:float,description:Speed bonus multiplier"`
-	StreakMultiplier   float64 `json:"streak_multiplier" schema:"type:float,description:Streak bonus multiplier"`
-	RetryPenaltyRate   float64 `json:"retry_penalty_rate" schema:"type:float,description:XP penalty per retry attempt"`
-	FailurePenaltyRate float64 `json:"failure_penalty_rate" schema:"type:float,description:XP penalty for failures"`
-	LevelDownThreshold int     `json:"level_down_threshold" schema:"type:int,description:Consecutive failures for demotion"`
-}
-
-// DefaultConfig returns a configuration with sensible defaults.
-func DefaultConfig() Config {
-	return Config{
-		Org:                "default",
-		Platform:           "local",
-		Board:              "main",
-		QualityMultiplier:  2.0,
-		SpeedMultiplier:    0.5,
-		StreakMultiplier:   0.1,
-		RetryPenaltyRate:   0.25,
-		FailurePenaltyRate: 0.5,
-		LevelDownThreshold: 3,
-	}
-}
-
-// ToBoardConfig converts component config to semdragons BoardConfig.
-func (c *Config) ToBoardConfig() *semdragons.BoardConfig {
-	return &semdragons.BoardConfig{
-		Org:      c.Org,
-		Platform: c.Platform,
-		Board:    c.Board,
-	}
-}
-
-// ToXPEngine creates the underlying XP engine with configured parameters.
-func (c *Config) ToXPEngine() *semdragons.DefaultXPEngine {
-	return &semdragons.DefaultXPEngine{
-		QualityMultiplier:  c.QualityMultiplier,
-		SpeedMultiplier:    c.SpeedMultiplier,
-		StreakMultiplier:   c.StreakMultiplier,
-		RetryPenaltyRate:   c.RetryPenaltyRate,
-		FailurePenaltyRate: c.FailurePenaltyRate,
-		LevelDownThreshold: c.LevelDownThreshold,
-	}
-}
 
 // Component implements the XPEngine as a semstreams processor.
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
-	storage     *semdragons.Storage
+	graph       *semdragons.GraphClient
 	events      *semdragons.EventPublisher
 	xpEngine    semdragons.XPEngine
 	logger      *slog.Logger
@@ -91,9 +45,6 @@ type Component struct {
 
 	// Subscriptions
 	completedSub *natsclient.Subscription
-	// Note: Battle verdict handling could be added in the future via:
-	// victorySub *natsclient.Subscription - for battle.review.victory events
-	// defeatSub *natsclient.Subscription - for battle.review.defeat events
 
 	// Internal state
 	running  atomic.Bool
@@ -330,12 +281,10 @@ func (c *Component) Start(ctx context.Context) error {
 		return errors.New("component already running")
 	}
 
-	// Create storage (KV bucket)
-	storage, err := semdragons.CreateStorage(ctx, c.deps.NATSClient, c.boardConfig)
-	if err != nil {
-		return errs.Wrap(err, "XPEngine", "Start", "create storage")
+	// Create graph client
+	if err := c.createGraphClient(ctx); err != nil {
+		return err
 	}
-	c.storage = storage
 
 	// Create event publisher
 	c.events = semdragons.NewEventPublisher(c.deps.NATSClient)
@@ -383,214 +332,3 @@ func (c *Component) Stop(_ time.Duration) error {
 
 	return nil
 }
-
-// =============================================================================
-// EVENT HANDLERS
-// =============================================================================
-
-// handleQuestCompleted processes quest completion events and awards XP.
-// The typed Subject.Subscribe handles unmarshaling, so we receive the payload directly.
-func (c *Component) handleQuestCompleted(ctx context.Context, payload semdragons.QuestCompletedPayload) error {
-	if !c.running.Load() {
-		return nil
-	}
-
-	c.lastActivity.Store(time.Now())
-	c.messagesProcessed.Add(1)
-
-	// Skip if no agent (shouldn't happen, but be defensive)
-	if payload.AgentID == "" {
-		return nil
-	}
-
-	// Load agent
-	agentInstance := semdragons.ExtractInstance(string(payload.AgentID))
-	agent, err := c.storage.GetAgent(ctx, agentInstance)
-	if err != nil {
-		c.errorsCount.Add(1)
-		c.logger.Error("failed to load agent", "agent", payload.AgentID, "error", err)
-		return nil // Don't return error to avoid NATS redelivery for data issues
-	}
-
-	// Get streak
-	streak, _ := c.storage.GetAgentStreak(ctx, agentInstance)
-	streak++ // Increment for this success
-
-	// Determine if this is a guild quest
-	isGuildQuest := payload.Quest.GuildPriority != nil
-	var guildRank semdragons.GuildRank
-	if isGuildQuest && len(agent.Guilds) > 0 {
-		// Get rank in the priority guild
-		guildInstance := semdragons.ExtractInstance(string(*payload.Quest.GuildPriority))
-		guild, guildErr := c.storage.GetGuild(ctx, guildInstance)
-		if guildErr == nil {
-			for _, m := range guild.Members {
-				if m.AgentID == payload.AgentID {
-					guildRank = m.Rank
-					break
-				}
-			}
-		}
-	}
-
-	// Build XP context
-	xpCtx := semdragons.XPContext{
-		Quest:        payload.Quest,
-		Agent:        *agent,
-		BattleResult: payload.Verdict,
-		Duration:     payload.Duration,
-		Streak:       streak,
-		IsGuildQuest: isGuildQuest,
-		GuildRank:    guildRank,
-		Attempt:      payload.Quest.Attempts,
-	}
-
-	// Calculate XP
-	award := c.xpEngine.CalculateXP(xpCtx)
-
-	// Apply XP
-	xpBefore := agent.XP
-	levelBefore := agent.Level
-	levelEvent := c.xpEngine.ApplyXP(agent, award.TotalXP)
-
-	// Update streak
-	c.storage.SetAgentStreak(ctx, agentInstance, streak)
-
-	// Persist agent
-	if err := c.storage.PutAgent(ctx, agentInstance, agent); err != nil {
-		c.errorsCount.Add(1)
-		c.logger.Error("failed to save agent", "agent", payload.AgentID, "error", err)
-		return nil // Don't return error to avoid NATS redelivery for data issues
-	}
-
-	// Emit XP event
-	c.events.PublishAgentXP(ctx, semdragons.AgentXPPayload{
-		AgentID:     payload.AgentID,
-		QuestID:     payload.Quest.ID,
-		Award:       &award,
-		XPDelta:     award.TotalXP,
-		XPBefore:    xpBefore,
-		XPAfter:     agent.XP,
-		LevelBefore: levelBefore,
-		LevelAfter:  agent.Level,
-		Timestamp:   time.Now(),
-		Trace:       payload.Trace,
-	})
-
-	// Emit level up event if applicable
-	if levelEvent.Direction == "up" {
-		c.events.PublishAgentLevelUp(ctx, semdragons.AgentLevelPayload{
-			AgentID:   payload.AgentID,
-			QuestID:   payload.Quest.ID,
-			OldLevel:  levelEvent.OldLevel,
-			NewLevel:  levelEvent.NewLevel,
-			OldTier:   levelEvent.OldTier,
-			NewTier:   levelEvent.NewTier,
-			XPCurrent: agent.XP,
-			XPToLevel: agent.XPToLevel,
-			Timestamp: time.Now(),
-			Trace:     payload.Trace,
-		})
-	}
-
-	c.logger.Debug("processed quest completion",
-		"agent", payload.AgentID,
-		"quest", payload.Quest.ID,
-		"xp_awarded", award.TotalXP,
-		"new_level", agent.Level)
-
-	return nil
-}
-
-// ProcessFailure handles quest failure events and applies XP penalties.
-func (c *Component) ProcessFailure(ctx context.Context, agentID semdragons.AgentID, quest semdragons.Quest, failType semdragons.FailureType) (*semdragons.XPPenalty, error) {
-	if !c.running.Load() {
-		return nil, errors.New("component not running")
-	}
-
-	c.lastActivity.Store(time.Now())
-	c.messagesProcessed.Add(1)
-
-	// Load agent
-	agentInstance := semdragons.ExtractInstance(string(agentID))
-	agent, err := c.storage.GetAgent(ctx, agentInstance)
-	if err != nil {
-		c.errorsCount.Add(1)
-		return nil, errs.Wrap(err, "XPEngine", "ProcessFailure", "load agent")
-	}
-
-	// Build penalty context
-	penaltyCtx := semdragons.PenaltyContext{
-		Quest:       quest,
-		Agent:       *agent,
-		FailureType: failType,
-		Attempt:     quest.Attempts,
-	}
-
-	// Calculate penalty
-	penalty := c.xpEngine.CalculatePenalty(penaltyCtx)
-
-	// Apply penalty
-	xpBefore := agent.XP
-	levelBefore := agent.Level
-	c.xpEngine.ApplyXP(agent, -penalty.XPLost)
-
-	// Apply cooldown
-	if penalty.CooldownDur > 0 {
-		cooldownUntil := time.Now().Add(penalty.CooldownDur)
-		agent.CooldownUntil = &cooldownUntil
-	}
-
-	// Reset streak
-	c.storage.ResetAgentStreak(ctx, agentInstance)
-
-	// Handle permadeath
-	if penalty.Permadeath {
-		agent.Status = semdragons.AgentRetired
-		agent.DeathCount++
-	}
-
-	// Persist agent
-	if err := c.storage.PutAgent(ctx, agentInstance, agent); err != nil {
-		c.errorsCount.Add(1)
-		return nil, errs.Wrap(err, "XPEngine", "ProcessFailure", "save agent")
-	}
-
-	// Emit XP event
-	c.events.PublishAgentXP(ctx, semdragons.AgentXPPayload{
-		AgentID:     agentID,
-		QuestID:     quest.ID,
-		Penalty:     &penalty,
-		XPDelta:     -penalty.XPLost,
-		XPBefore:    xpBefore,
-		XPAfter:     agent.XP,
-		LevelBefore: levelBefore,
-		LevelAfter:  agent.Level,
-		Timestamp:   time.Now(),
-	})
-
-	// Emit cooldown event if applicable
-	if penalty.CooldownDur > 0 {
-		c.events.PublishAgentCooldown(ctx, semdragons.AgentCooldownPayload{
-			AgentID:       agentID,
-			QuestID:       quest.ID,
-			FailType:      failType,
-			CooldownUntil: *agent.CooldownUntil,
-			Duration:      penalty.CooldownDur,
-			Timestamp:     time.Now(),
-		})
-	}
-
-	return &penalty, nil
-}
-
-// CalculateXP exposes the underlying XP calculation for external use.
-func (c *Component) CalculateXP(ctx semdragons.XPContext) semdragons.XPAward {
-	return c.xpEngine.CalculateXP(ctx)
-}
-
-// Storage returns the underlying storage for external access.
-func (c *Component) Storage() *semdragons.Storage {
-	return c.storage
-}
-

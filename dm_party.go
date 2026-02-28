@@ -21,17 +21,17 @@ import (
 
 // PartyFormationEngine handles party composition using boid-based attractions.
 type PartyFormationEngine struct {
-	boids   *DefaultBoidEngine
-	storage *Storage
-	config  *BoardConfig
+	boids  *DefaultBoidEngine
+	graph  *GraphClient
+	config *BoardConfig
 }
 
 // NewPartyFormationEngine creates a new party formation engine.
-func NewPartyFormationEngine(boids *DefaultBoidEngine, storage *Storage) *PartyFormationEngine {
+func NewPartyFormationEngine(boids *DefaultBoidEngine, graph *GraphClient, config *BoardConfig) *PartyFormationEngine {
 	return &PartyFormationEngine{
-		boids:   boids,
-		storage: storage,
-		config:  storage.Config(),
+		boids:  boids,
+		graph:  graph,
+		config: config,
 	}
 }
 

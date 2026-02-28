@@ -24,70 +24,11 @@ import (
 // Wraps the GuildFormationEngine to provide guild management as a component.
 // =============================================================================
 
-// Config holds the component configuration.
-type Config struct {
-	// BoardConfig contains org, platform, board for entity IDs and bucket naming.
-	Org      string `json:"org" schema:"type:string,description:Organization namespace"`
-	Platform string `json:"platform" schema:"type:string,description:Platform/environment name"`
-	Board    string `json:"board" schema:"type:string,description:Quest board name"`
-
-	// Guild formation settings
-	MinFounderLevel     int     `json:"min_founder_level" schema:"type:int,description:Minimum level to found guild"`
-	FoundingXPCost      int64   `json:"founding_xp_cost" schema:"type:int,description:XP cost to found guild"`
-	DefaultMaxMembers   int     `json:"default_max_members" schema:"type:int,description:Default max members per guild"`
-	MinClusterSize      int     `json:"min_cluster_size" schema:"type:int,description:Minimum agents for cluster suggestion"`
-	MinClusterStrength  float64 `json:"min_cluster_strength" schema:"type:float,description:Minimum Jaccard similarity for clusters"`
-	MinAgentLevel       int     `json:"min_agent_level" schema:"type:int,description:Minimum agent level for guild consideration"`
-	RequireQualityScore float64 `json:"require_quality_score" schema:"type:float,description:Minimum avg quality score"`
-	TotalSkillCount     int     `json:"total_skill_count" schema:"type:int,description:Total skills for diversity calculation"`
-}
-
-// DefaultConfig returns a configuration with sensible defaults.
-func DefaultConfig() Config {
-	defaults := semdragons.DefaultFormationConfig()
-	return Config{
-		Org:                 "default",
-		Platform:            "local",
-		Board:               "main",
-		MinFounderLevel:     defaults.MinFounderLevel,
-		FoundingXPCost:      defaults.FoundingXPCost,
-		DefaultMaxMembers:   defaults.DefaultMaxMembers,
-		MinClusterSize:      defaults.MinClusterSize,
-		MinClusterStrength:  defaults.MinClusterStrength,
-		MinAgentLevel:       defaults.MinAgentLevel,
-		RequireQualityScore: defaults.RequireQualityScore,
-		TotalSkillCount:     defaults.TotalSkillCount,
-	}
-}
-
-// ToBoardConfig converts component config to semdragons BoardConfig.
-func (c *Config) ToBoardConfig() *semdragons.BoardConfig {
-	return &semdragons.BoardConfig{
-		Org:      c.Org,
-		Platform: c.Platform,
-		Board:    c.Board,
-	}
-}
-
-// ToFormationConfig converts component config to semdragons GuildFormationConfig.
-func (c *Config) ToFormationConfig() semdragons.GuildFormationConfig {
-	return semdragons.GuildFormationConfig{
-		MinFounderLevel:     c.MinFounderLevel,
-		FoundingXPCost:      c.FoundingXPCost,
-		DefaultMaxMembers:   c.DefaultMaxMembers,
-		MinClusterSize:      c.MinClusterSize,
-		MinClusterStrength:  c.MinClusterStrength,
-		MinAgentLevel:       c.MinAgentLevel,
-		RequireQualityScore: c.RequireQualityScore,
-		TotalSkillCount:     c.TotalSkillCount,
-	}
-}
-
 // Component implements GuildFormation as a semstreams processor.
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
-	storage     *semdragons.Storage
+	graph       *semdragons.GraphClient
 	events      *semdragons.EventPublisher
 	engine      *semdragons.DefaultGuildFormationEngine
 	logger      *slog.Logger
@@ -294,19 +235,17 @@ func (c *Component) Start(ctx context.Context) error {
 		return errors.New("component already running")
 	}
 
-	// Create storage (KV bucket)
-	storage, err := semdragons.CreateStorage(ctx, c.deps.NATSClient, c.boardConfig)
-	if err != nil {
-		return errs.Wrap(err, "GuildFormation", "Start", "create storage")
+	// Create graph client
+	if err := c.createGraphClient(ctx); err != nil {
+		return errs.Wrap(err, "GuildFormation", "Start", "create graph client")
 	}
-	c.storage = storage
 
 	// Create event publisher
 	c.events = semdragons.NewEventPublisher(c.deps.NATSClient)
 
 	// Create formation engine
 	formationConfig := c.config.ToFormationConfig()
-	c.engine = semdragons.NewGuildFormationEngine(c.storage, c.events, formationConfig)
+	c.engine = semdragons.NewGuildFormationEngine(c.graph, c.events, formationConfig)
 	c.engine.WithLogger(c.logger)
 
 	c.startTime = time.Now()
@@ -338,141 +277,8 @@ func (c *Component) Stop(_ time.Duration) error {
 	return nil
 }
 
-// =============================================================================
-// GUILD OPERATIONS (delegated to engine)
-// =============================================================================
-
-// FoundGuild creates a new guild.
-func (c *Component) FoundGuild(ctx context.Context, founderID semdragons.AgentID, name, culture string) (*semdragons.Guild, error) {
-	if !c.running.Load() {
-		return nil, errors.New("component not running")
-	}
-
-	c.lastActivity.Store(time.Now())
-
-	guild, err := c.engine.FoundGuild(ctx, founderID, name, culture)
-	if err != nil {
-		c.errorsCount.Add(1)
-		return nil, err
-	}
-
-	c.guildsCreated.Add(1)
-	return guild, nil
-}
-
-// InviteToGuild sends an invitation to an agent.
-func (c *Component) InviteToGuild(ctx context.Context, inviterID semdragons.AgentID, guildID semdragons.GuildID, inviteeID semdragons.AgentID) error {
-	if !c.running.Load() {
-		return errors.New("component not running")
-	}
-
-	c.lastActivity.Store(time.Now())
-
-	if err := c.engine.InviteToGuild(ctx, inviterID, guildID, inviteeID); err != nil {
-		c.errorsCount.Add(1)
-		return err
-	}
-
-	c.membersAdded.Add(1)
+// createGraphClient creates the graph client for the component.
+func (c *Component) createGraphClient(_ context.Context) error {
+	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 	return nil
-}
-
-// LeaveGuild removes an agent from a guild.
-func (c *Component) LeaveGuild(ctx context.Context, agentID semdragons.AgentID, guildID semdragons.GuildID) error {
-	if !c.running.Load() {
-		return errors.New("component not running")
-	}
-
-	c.lastActivity.Store(time.Now())
-
-	if err := c.engine.LeaveGuild(ctx, agentID, guildID); err != nil {
-		c.errorsCount.Add(1)
-		return err
-	}
-
-	return nil
-}
-
-// PromoteMember promotes a guild member.
-func (c *Component) PromoteMember(ctx context.Context, promoterID semdragons.AgentID, guildID semdragons.GuildID, memberID semdragons.AgentID, newRank semdragons.GuildRank) error {
-	if !c.running.Load() {
-		return errors.New("component not running")
-	}
-
-	c.lastActivity.Store(time.Now())
-
-	if err := c.engine.PromoteMember(ctx, promoterID, guildID, memberID, newRank); err != nil {
-		c.errorsCount.Add(1)
-		return err
-	}
-
-	return nil
-}
-
-// DetectSkillClusters suggests potential guild formations.
-func (c *Component) DetectSkillClusters(ctx context.Context) ([]semdragons.GuildSuggestion, error) {
-	if !c.running.Load() {
-		return nil, errors.New("component not running")
-	}
-
-	c.lastActivity.Store(time.Now())
-
-	// Load all agents
-	agents, err := c.storage.ListAllAgents(ctx)
-	if err != nil {
-		c.errorsCount.Add(1)
-		return nil, err
-	}
-
-	suggestions := c.engine.DetectSkillClusters(ctx, agents)
-	return suggestions, nil
-}
-
-// EvaluateGuildDiversity calculates guild skill coverage.
-func (c *Component) EvaluateGuildDiversity(ctx context.Context, guildID semdragons.GuildID) (*semdragons.GuildDiversityReport, error) {
-	if !c.running.Load() {
-		return nil, errors.New("component not running")
-	}
-
-	c.lastActivity.Store(time.Now())
-
-	report, err := c.engine.EvaluateGuildDiversity(ctx, guildID)
-	if err != nil {
-		c.errorsCount.Add(1)
-		return nil, err
-	}
-
-	return report, nil
-}
-
-// =============================================================================
-// ACCESSORS
-// =============================================================================
-
-// Storage returns the underlying storage for external access.
-func (c *Component) Storage() *semdragons.Storage {
-	return c.storage
-}
-
-// Engine returns the underlying formation engine.
-func (c *Component) Engine() *semdragons.DefaultGuildFormationEngine {
-	return c.engine
-}
-
-// Stats returns guild formation statistics.
-func (c *Component) Stats() GuildStats {
-	return GuildStats{
-		GuildsCreated:   c.guildsCreated.Load(),
-		MembersAdded:    c.membersAdded.Load(),
-		SuggestionsEmit: c.suggestionsEmit.Load(),
-		Errors:          c.errorsCount.Load(),
-	}
-}
-
-// GuildStats holds guild formation statistics.
-type GuildStats struct {
-	GuildsCreated   uint64 `json:"guilds_created"`
-	MembersAdded    uint64 `json:"members_added"`
-	SuggestionsEmit uint64 `json:"suggestions_emit"`
-	Errors          int64  `json:"errors"`
 }

@@ -16,18 +16,18 @@ import (
 
 // RosterSeeder creates agents from roster templates.
 type RosterSeeder struct {
-	storage    *semdragons.Storage
+	graph      *semdragons.GraphClient
 	config     *RosterConfig
 	logger     *slog.Logger
 	onProgress func(ProgressEvent)
 }
 
 // NewRosterSeeder creates a new roster seeder.
-func NewRosterSeeder(storage *semdragons.Storage, config *RosterConfig) *RosterSeeder {
+func NewRosterSeeder(graph *semdragons.GraphClient, config *RosterConfig) *RosterSeeder {
 	return &RosterSeeder{
-		storage: storage,
-		config:  config,
-		logger:  slog.Default(),
+		graph:  graph,
+		config: config,
+		logger: slog.Default(),
 	}
 }
 
@@ -97,7 +97,7 @@ func (r *RosterSeeder) seedGuilds(ctx context.Context, dryRun bool, result *Resu
 			CreatedAt:  now,
 		}
 
-		if err := r.storage.PutGuild(ctx, spec.ID, guild); err != nil {
+		if err := r.graph.EmitEntity(ctx, guild, "guild.created"); err != nil {
 			return fmt.Errorf("failed to create guild %s: %w", spec.ID, err)
 		}
 
@@ -215,13 +215,14 @@ func (r *RosterSeeder) expandNamePattern(pattern string, n int) string {
 func (r *RosterSeeder) findAgentByName(ctx context.Context, name string) (*semdragons.Agent, error) {
 	// List all agents and find by name
 	// This is O(n) but acceptable for seeding operations
-	agents, err := r.storage.ListAllAgents(ctx)
+	entities, err := r.graph.ListAgentsByPrefix(ctx, 100)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, agent := range agents {
-		if agent.Name == name {
+	for _, entity := range entities {
+		agent := semdragons.AgentFromEntityState(&entity)
+		if agent != nil && agent.Name == name {
 			return agent, nil
 		}
 	}
@@ -232,7 +233,7 @@ func (r *RosterSeeder) findAgentByName(ctx context.Context, name string) (*semdr
 // createAgent creates a new agent from the spec.
 func (r *RosterSeeder) createAgent(ctx context.Context, name string, spec AgentSpec) (*semdragons.Agent, error) {
 	instance := semdragons.GenerateInstance()
-	boardConfig := r.storage.Config()
+	boardConfig := r.graph.Config()
 	agentID := semdragons.AgentID(boardConfig.AgentEntityID(instance))
 
 	agent := &semdragons.Agent{
@@ -263,9 +264,9 @@ func (r *RosterSeeder) createAgent(ctx context.Context, name string, spec AgentS
 		}
 	}
 
-	// Store agent
-	if err := r.storage.PutAgent(ctx, instance, agent); err != nil {
-		return nil, fmt.Errorf("failed to store agent: %w", err)
+	// Emit agent to graph
+	if err := r.graph.EmitEntity(ctx, agent, "agent.created"); err != nil {
+		return nil, fmt.Errorf("failed to emit agent: %w", err)
 	}
 
 	return agent, nil
@@ -273,23 +274,32 @@ func (r *RosterSeeder) createAgent(ctx context.Context, name string, spec AgentS
 
 // addAgentToGuild adds an agent to a guild's member list.
 func (r *RosterSeeder) addAgentToGuild(ctx context.Context, agent *semdragons.Agent, guildID string) error {
-	return r.storage.UpdateGuild(ctx, guildID, func(guild *semdragons.Guild) error {
-		// Check if already a member
-		for _, member := range guild.Members {
-			if member.AgentID == agent.ID {
-				return nil
-			}
+	// Get guild from graph
+	entity, err := r.graph.GetGuild(ctx, semdragons.GuildID(guildID))
+	if err != nil {
+		return err
+	}
+	guild := semdragons.GuildFromEntityState(entity)
+	if guild == nil {
+		return fmt.Errorf("guild not found: %s", guildID)
+	}
+
+	// Check if already a member
+	for _, member := range guild.Members {
+		if member.AgentID == agent.ID {
+			return nil
 		}
+	}
 
-		guild.Members = append(guild.Members, semdragons.GuildMember{
-			AgentID:      agent.ID,
-			Rank:         semdragons.GuildRankInitiate,
-			JoinedAt:     time.Now(),
-			Contribution: 0,
-		})
-
-		return nil
+	guild.Members = append(guild.Members, semdragons.GuildMember{
+		AgentID:      agent.ID,
+		Rank:         semdragons.GuildRankInitiate,
+		JoinedAt:     time.Now(),
+		Contribution: 0,
 	})
+
+	// Emit updated guild
+	return r.graph.EmitEntityUpdate(ctx, guild, "guild.member.added")
 }
 
 // =============================================================================

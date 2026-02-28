@@ -2,6 +2,7 @@ package semdragons
 
 import (
 	"context"
+	"fmt"
 	"sort"
 )
 
@@ -69,21 +70,23 @@ type EquippedItem struct {
 
 // CharacterSheetService creates character sheet projections.
 type CharacterSheetService struct {
-	storage *Storage
+	graph *GraphClient
 }
 
 // NewCharacterSheetService creates a new character sheet service.
-func NewCharacterSheetService(storage *Storage) *CharacterSheetService {
-	return &CharacterSheetService{storage: storage}
+func NewCharacterSheetService(graph *GraphClient) *CharacterSheetService {
+	return &CharacterSheetService{graph: graph}
 }
 
 // GetCharacterSheet builds a complete character sheet for an agent.
 func (s *CharacterSheetService) GetCharacterSheet(ctx context.Context, agentID AgentID) (*CharacterSheet, error) {
-	agentInstance := ExtractInstance(string(agentID))
-
-	agent, err := s.storage.GetAgent(ctx, agentInstance)
+	entity, err := s.graph.GetAgent(ctx, agentID)
 	if err != nil {
 		return nil, err
+	}
+	agent := AgentFromEntityState(entity)
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
 	}
 
 	// Build skill bars
@@ -200,9 +203,12 @@ func (s *CharacterSheetService) getGuildMemberships(ctx context.Context, agent *
 	memberships := make([]GuildMembership, 0, len(agent.Guilds))
 
 	for _, guildID := range agent.Guilds {
-		guildInstance := ExtractInstance(string(guildID))
-		guild, err := s.storage.GetGuild(ctx, guildInstance)
+		entity, err := s.graph.GetGuild(ctx, guildID)
 		if err != nil {
+			continue
+		}
+		guild := GuildFromEntityState(entity)
+		if guild == nil {
 			continue
 		}
 
@@ -263,11 +269,13 @@ func skillTagToName(skill SkillTag) string {
 
 // GetSkillSummary returns a brief summary of an agent's skills.
 func (s *CharacterSheetService) GetSkillSummary(ctx context.Context, agentID AgentID) (map[SkillTag]ProficiencyLevel, error) {
-	agentInstance := ExtractInstance(string(agentID))
-
-	agent, err := s.storage.GetAgent(ctx, agentInstance)
+	entity, err := s.graph.GetAgent(ctx, agentID)
 	if err != nil {
 		return nil, err
+	}
+	agent := AgentFromEntityState(entity)
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
 	}
 
 	if agent.SkillProficiencies != nil {

@@ -194,19 +194,19 @@ type GuildDiversityReport struct {
 
 // DefaultGuildFormationEngine implements GuildFormationEngine.
 type DefaultGuildFormationEngine struct {
-	storage *Storage
-	events  *EventPublisher
-	config  GuildFormationConfig
-	logger  *slog.Logger
+	graph  *GraphClient
+	events *EventPublisher
+	config GuildFormationConfig
+	logger *slog.Logger
 }
 
 // NewGuildFormationEngine creates a new formation engine with the given config.
-func NewGuildFormationEngine(storage *Storage, events *EventPublisher, config GuildFormationConfig) *DefaultGuildFormationEngine {
+func NewGuildFormationEngine(graph *GraphClient, events *EventPublisher, config GuildFormationConfig) *DefaultGuildFormationEngine {
 	return &DefaultGuildFormationEngine{
-		storage: storage,
-		events:  events,
-		config:  config,
-		logger:  slog.Default(),
+		graph:  graph,
+		events: events,
+		config: config,
+		logger: slog.Default(),
 	}
 }
 
@@ -225,7 +225,7 @@ func (e *DefaultGuildFormationEngine) WithLogger(l *slog.Logger) *DefaultGuildFo
 //   - Founder must be Expert tier (level 11+)
 //   - Costs 500 XP to found (investment, not free)
 func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID AgentID, name, culture string) (*Guild, error) {
-	if e.storage == nil {
+	if e.graph == nil {
 		return nil, ErrStorageNotConfigured
 	}
 
@@ -237,9 +237,13 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 	}
 
 	// Load founder
-	founder, err := e.storage.GetAgent(ctx, string(founderID))
+	founderEntity, err := e.graph.GetAgent(ctx, founderID)
 	if err != nil {
 		return nil, fmt.Errorf("load founder: %w", err)
+	}
+	founder := AgentFromEntityState(founderEntity)
+	if founder == nil {
+		return nil, fmt.Errorf("founder not found: %s", founderID)
 	}
 
 	// Check level requirement
@@ -260,7 +264,7 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 		return nil, ErrGuildNameRequired
 	}
 
-	// Check context before storage operations
+	// Check context before graph operations
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -271,7 +275,7 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 	now := time.Now()
 	guildInstance := GenerateInstance()
 	guild := &Guild{
-		ID:         GuildID(guildInstance),
+		ID:         GuildID(e.graph.Config().GuildEntityID(guildInstance)),
 		Name:       name,
 		Status:     GuildActive,
 		Founded:    now,
@@ -291,49 +295,43 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 		CreatedAt: now,
 	}
 
-	// Deduct XP from founder and add guild
-	err = e.storage.UpdateAgent(ctx, string(founderID), func(a *Agent) error {
-		a.XP -= e.config.FoundingXPCost
-		a.Guilds = append(a.Guilds, guild.ID)
-		a.UpdatedAt = now
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("deduct XP: %w", err)
+	// Deduct XP from founder and add guild membership
+	founder.XP -= e.config.FoundingXPCost
+	founder.Guilds = append(founder.Guilds, guild.ID)
+	founder.UpdatedAt = now
+
+	// Emit updated founder
+	if err := e.graph.EmitEntityUpdate(ctx, founder, "agent.guild.founded"); err != nil {
+		return nil, fmt.Errorf("update founder: %w", err)
 	}
 
-	// Check context before second storage operation
+	// Check context before emitting guild
 	select {
 	case <-ctx.Done():
-		// Rollback XP deduction
-		_ = e.storage.UpdateAgent(context.Background(), string(founderID), func(a *Agent) error {
-			a.XP += e.config.FoundingXPCost
-			for i, g := range a.Guilds {
-				if g == guild.ID {
-					a.Guilds = append(a.Guilds[:i], a.Guilds[i+1:]...)
-					break
-				}
+		// Rollback founder changes
+		founder.XP += e.config.FoundingXPCost
+		for i, g := range founder.Guilds {
+			if g == guild.ID {
+				founder.Guilds = append(founder.Guilds[:i], founder.Guilds[i+1:]...)
+				break
 			}
-			return nil
-		})
+		}
+		_ = e.graph.EmitEntityUpdate(context.Background(), founder, "agent.guild.founded.rollback")
 		return nil, ctx.Err()
 	default:
 	}
 
-	// Store guild
-	if err := e.storage.PutGuild(ctx, guildInstance, guild); err != nil {
-		// Try to rollback XP deduction
-		rollbackErr := e.storage.UpdateAgent(context.Background(), string(founderID), func(a *Agent) error {
-			a.XP += e.config.FoundingXPCost
-			// Remove guild from list
-			for i, g := range a.Guilds {
-				if g == guild.ID {
-					a.Guilds = append(a.Guilds[:i], a.Guilds[i+1:]...)
-					break
-				}
+	// Emit guild to graph
+	if err := e.graph.EmitEntity(ctx, guild, "guild.founded"); err != nil {
+		// Try to rollback founder changes
+		founder.XP += e.config.FoundingXPCost
+		for i, g := range founder.Guilds {
+			if g == guild.ID {
+				founder.Guilds = append(founder.Guilds[:i], founder.Guilds[i+1:]...)
+				break
 			}
-			return nil
-		})
+		}
+		rollbackErr := e.graph.EmitEntityUpdate(context.Background(), founder, "agent.guild.founded.rollback")
 		if rollbackErr != nil {
 			e.logger.Error("failed to rollback XP after guild creation failure",
 				"founder", founderID,
@@ -345,7 +343,7 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 				RollbackErr:    rollbackErr,
 			}
 		}
-		return nil, fmt.Errorf("store guild: %w", err)
+		return nil, fmt.Errorf("emit guild: %w", err)
 	}
 
 	e.logger.Info("guild founded",
@@ -358,7 +356,7 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 
 // InviteToGuild sends an invitation to an agent. Requires Officer+ rank.
 func (e *DefaultGuildFormationEngine) InviteToGuild(ctx context.Context, inviterID AgentID, guildID GuildID, inviteeID AgentID) error {
-	if e.storage == nil {
+	if e.graph == nil {
 		return ErrStorageNotConfigured
 	}
 
@@ -369,8 +367,7 @@ func (e *DefaultGuildFormationEngine) InviteToGuild(ctx context.Context, inviter
 	default:
 	}
 
-	guildInstance := string(guildID)
-	guild, err := e.storage.GetGuild(ctx, guildInstance)
+	guild, err := e.getGuild(ctx, guildID)
 	if err != nil {
 		return fmt.Errorf("load guild: %w", err)
 	}
@@ -388,7 +385,7 @@ func (e *DefaultGuildFormationEngine) InviteToGuild(ctx context.Context, inviter
 	}
 
 	// Load invitee to verify they exist and meet level requirement
-	invitee, err := e.storage.GetAgent(ctx, string(inviteeID))
+	invitee, err := e.getAgent(ctx, inviteeID)
 	if err != nil {
 		return fmt.Errorf("load invitee: %w", err)
 	}
@@ -398,7 +395,7 @@ func (e *DefaultGuildFormationEngine) InviteToGuild(ctx context.Context, inviter
 			ErrInsufficientLevel, guild.MinLevel, invitee.Level)
 	}
 
-	// Check context before storage operations
+	// Check context before graph operations
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -407,15 +404,14 @@ func (e *DefaultGuildFormationEngine) InviteToGuild(ctx context.Context, inviter
 
 	// For now, invitations are immediate (no pending state).
 	// A full implementation would store GuildInvitation and require acceptance.
-	// Capacity check is done inside addMemberToGuild to avoid TOCTOU race.
-	return e.addMemberToGuild(ctx, guildInstance, inviteeID, "invited by "+string(inviterID))
+	return e.addMemberToGuild(ctx, guild, inviteeID, "invited by "+string(inviterID))
 }
 
 // ApplyToGuild submits an application to join a guild.
 // NOTE: Applications are not currently persisted. This method validates eligibility
 // but returns an error indicating applications need officer approval via InviteToGuild.
 func (e *DefaultGuildFormationEngine) ApplyToGuild(ctx context.Context, applicantID AgentID, guildID GuildID) error {
-	if e.storage == nil {
+	if e.graph == nil {
 		return ErrStorageNotConfigured
 	}
 
@@ -426,8 +422,7 @@ func (e *DefaultGuildFormationEngine) ApplyToGuild(ctx context.Context, applican
 	default:
 	}
 
-	guildInstance := string(guildID)
-	guild, err := e.storage.GetGuild(ctx, guildInstance)
+	guild, err := e.getGuild(ctx, guildID)
 	if err != nil {
 		return fmt.Errorf("load guild: %w", err)
 	}
@@ -443,7 +438,7 @@ func (e *DefaultGuildFormationEngine) ApplyToGuild(ctx context.Context, applican
 	}
 
 	// Load applicant
-	applicant, err := e.storage.GetAgent(ctx, string(applicantID))
+	applicant, err := e.getAgent(ctx, applicantID)
 	if err != nil {
 		return fmt.Errorf("load applicant: %w", err)
 	}
@@ -467,7 +462,7 @@ func (e *DefaultGuildFormationEngine) ApplyToGuild(ctx context.Context, applican
 // Since applications are not persisted, this is equivalent to InviteToGuild
 // but with different audit semantics.
 func (e *DefaultGuildFormationEngine) ApproveApplication(ctx context.Context, approverID AgentID, guildID GuildID, applicantID AgentID) error {
-	if e.storage == nil {
+	if e.graph == nil {
 		return ErrStorageNotConfigured
 	}
 
@@ -478,8 +473,7 @@ func (e *DefaultGuildFormationEngine) ApproveApplication(ctx context.Context, ap
 	default:
 	}
 
-	guildInstance := string(guildID)
-	guild, err := e.storage.GetGuild(ctx, guildInstance)
+	guild, err := e.getGuild(ctx, guildID)
 	if err != nil {
 		return fmt.Errorf("load guild: %w", err)
 	}
@@ -496,20 +490,20 @@ func (e *DefaultGuildFormationEngine) ApproveApplication(ctx context.Context, ap
 		return ErrAlreadyMember
 	}
 
-	// Check context before storage operations
+	// Check context before graph operations
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
 	}
 
-	// Capacity check is done inside addMemberToGuild to avoid TOCTOU race
-	return e.addMemberToGuild(ctx, guildInstance, applicantID, "application approved by "+string(approverID))
+	// Capacity check is done inside addMemberToGuild
+	return e.addMemberToGuild(ctx, guild, applicantID, "application approved by "+string(approverID))
 }
 
 // LeaveGuild removes an agent from a guild.
 func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID AgentID, guildID GuildID) error {
-	if e.storage == nil {
+	if e.graph == nil {
 		return ErrStorageNotConfigured
 	}
 
@@ -520,8 +514,7 @@ func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID Ag
 	default:
 	}
 
-	guildInstance := string(guildID)
-	guild, err := e.storage.GetGuild(ctx, guildInstance)
+	guild, err := e.getGuild(ctx, guildID)
 	if err != nil {
 		return fmt.Errorf("load guild: %w", err)
 	}
@@ -545,28 +538,27 @@ func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID Ag
 		}
 	}
 
-	// Check context before storage operations
+	// Check context before graph operations
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
 	}
 
-	// Remove from guild
-	err = e.storage.UpdateGuild(ctx, guildInstance, func(g *Guild) error {
-		for i, m := range g.Members {
-			if m.AgentID == agentID {
-				g.Members = append(g.Members[:i], g.Members[i+1:]...)
-				return nil
-			}
+	// Remove member from guild
+	for i, m := range guild.Members {
+		if m.AgentID == agentID {
+			guild.Members = append(guild.Members[:i], guild.Members[i+1:]...)
+			break
 		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("remove from guild: %w", err)
 	}
 
-	// Check context before second storage operation
+	// Emit updated guild
+	if err := e.graph.EmitEntityUpdate(ctx, guild, "guild.member.left"); err != nil {
+		return fmt.Errorf("update guild: %w", err)
+	}
+
+	// Check context before second operation
 	select {
 	case <-ctx.Done():
 		// Note: guild membership already removed, but this is acceptable
@@ -576,24 +568,34 @@ func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID Ag
 	}
 
 	// Remove guild from agent
-	err = e.storage.UpdateAgent(ctx, string(agentID), func(a *Agent) error {
-		for i, g := range a.Guilds {
-			if g == guildID {
-				a.Guilds = append(a.Guilds[:i], a.Guilds[i+1:]...)
-				return nil
-			}
-		}
-		return nil
-	})
+	agent, err := e.getAgent(ctx, agentID)
 	if err != nil {
+		e.logger.Error("failed to load agent for guild removal",
+			"agent", agentID,
+			"guild", guildID,
+			"error", err)
+		return &GuildOperationError{
+			Op:             "LeaveGuild",
+			Err:            fmt.Errorf("load agent: %w", err),
+			RollbackFailed: false,
+		}
+	}
+
+	for i, g := range agent.Guilds {
+		if g == guildID {
+			agent.Guilds = append(agent.Guilds[:i], agent.Guilds[i+1:]...)
+			break
+		}
+	}
+
+	if err := e.graph.EmitEntityUpdate(ctx, agent, "agent.guild.left"); err != nil {
 		e.logger.Error("failed to remove guild from agent after leaving (inconsistent state)",
 			"agent", agentID,
 			"guild", guildID,
 			"error", err)
-		// Return error to indicate partial failure
 		return &GuildOperationError{
 			Op:             "LeaveGuild",
-			Err:            fmt.Errorf("remove guild from agent: %w", err),
+			Err:            fmt.Errorf("update agent: %w", err),
 			RollbackFailed: false,
 		}
 	}
@@ -609,7 +611,7 @@ func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID Ag
 // - Guildmaster can promote to any rank including Guildmaster
 // - Officers can promote up to Veteran
 func (e *DefaultGuildFormationEngine) PromoteMember(ctx context.Context, promoterID AgentID, guildID GuildID, memberID AgentID, newRank GuildRank) error {
-	if e.storage == nil {
+	if e.graph == nil {
 		return ErrStorageNotConfigured
 	}
 
@@ -620,8 +622,7 @@ func (e *DefaultGuildFormationEngine) PromoteMember(ctx context.Context, promote
 	default:
 	}
 
-	guildInstance := string(guildID)
-	guild, err := e.storage.GetGuild(ctx, guildInstance)
+	guild, err := e.getGuild(ctx, guildID)
 	if err != nil {
 		return fmt.Errorf("load guild: %w", err)
 	}
@@ -638,7 +639,7 @@ func (e *DefaultGuildFormationEngine) PromoteMember(ctx context.Context, promote
 		return ErrNotMember
 	}
 
-	// Check context before storage operation
+	// Check context before graph operation
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -646,20 +647,24 @@ func (e *DefaultGuildFormationEngine) PromoteMember(ctx context.Context, promote
 	}
 
 	// Update member rank
-	return e.storage.UpdateGuild(ctx, guildInstance, func(g *Guild) error {
-		for i := range g.Members {
-			if g.Members[i].AgentID == memberID {
-				g.Members[i].Rank = newRank
-				return nil
-			}
+	found := false
+	for i := range guild.Members {
+		if guild.Members[i].AgentID == memberID {
+			guild.Members[i].Rank = newRank
+			found = true
+			break
 		}
+	}
+	if !found {
 		return ErrMemberNotFound
-	})
+	}
+
+	return e.graph.EmitEntityUpdate(ctx, guild, "guild.member.promoted")
 }
 
 // EvaluateGuildDiversity calculates how well a guild covers skill combinations.
 func (e *DefaultGuildFormationEngine) EvaluateGuildDiversity(ctx context.Context, guildID GuildID) (*GuildDiversityReport, error) {
-	if e.storage == nil {
+	if e.graph == nil {
 		return nil, ErrStorageNotConfigured
 	}
 
@@ -670,8 +675,7 @@ func (e *DefaultGuildFormationEngine) EvaluateGuildDiversity(ctx context.Context
 	default:
 	}
 
-	guildInstance := string(guildID)
-	guild, err := e.storage.GetGuild(ctx, guildInstance)
+	guild, err := e.getGuild(ctx, guildID)
 	if err != nil {
 		return nil, fmt.Errorf("load guild: %w", err)
 	}
@@ -686,7 +690,7 @@ func (e *DefaultGuildFormationEngine) EvaluateGuildDiversity(ctx context.Context
 		default:
 		}
 
-		agent, err := e.storage.GetAgent(ctx, string(member.AgentID))
+		agent, err := e.getAgent(ctx, member.AgentID)
 		if err != nil {
 			continue
 		}
@@ -746,85 +750,123 @@ func (e *DefaultGuildFormationEngine) EvaluateGuildDiversity(ctx context.Context
 // HELPER METHODS
 // =============================================================================
 
-// addMemberToGuild adds an agent as a new Initiate member.
-// Capacity check is done inside the UpdateGuild callback to avoid TOCTOU race.
-func (e *DefaultGuildFormationEngine) addMemberToGuild(ctx context.Context, guildInstance string, agentID AgentID, reason string) error {
-	now := time.Now()
-	var guildID GuildID
-
-	// Add to guild with capacity check inside callback (atomic)
-	err := e.storage.UpdateGuild(ctx, guildInstance, func(g *Guild) error {
-		// Check capacity atomically
-		if len(g.Members) >= g.MaxMembers {
-			return ErrGuildAtCapacity
-		}
-
-		// Double-check not already member (race condition check)
-		for _, m := range g.Members {
-			if m.AgentID == agentID {
-				return ErrAlreadyMember
-			}
-		}
-
-		g.Members = append(g.Members, GuildMember{
-			AgentID:      agentID,
-			Rank:         GuildRankInitiate,
-			JoinedAt:     now,
-			Contribution: 0,
-		})
-		guildID = g.ID
-		return nil
-	})
+// getGuild retrieves a guild by ID.
+func (e *DefaultGuildFormationEngine) getGuild(ctx context.Context, guildID GuildID) (*Guild, error) {
+	entity, err := e.graph.GetGuild(ctx, guildID)
 	if err != nil {
-		// Return sentinel errors directly without wrapping
-		if errors.Is(err, ErrGuildAtCapacity) || errors.Is(err, ErrAlreadyMember) {
-			return err
-		}
-		return fmt.Errorf("add to guild: %w", err)
+		return nil, err
+	}
+	guild := GuildFromEntityState(entity)
+	if guild == nil {
+		return nil, fmt.Errorf("guild not found: %s", guildID)
+	}
+	return guild, nil
+}
+
+// getAgent retrieves an agent by ID.
+func (e *DefaultGuildFormationEngine) getAgent(ctx context.Context, agentID AgentID) (*Agent, error) {
+	entity, err := e.graph.GetAgent(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	agent := AgentFromEntityState(entity)
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
+	}
+	return agent, nil
+}
+
+// addMemberToGuild adds an agent as a new Initiate member.
+func (e *DefaultGuildFormationEngine) addMemberToGuild(ctx context.Context, guild *Guild, agentID AgentID, reason string) error {
+	now := time.Now()
+
+	// Check capacity
+	if len(guild.Members) >= guild.MaxMembers {
+		return ErrGuildAtCapacity
 	}
 
-	// Check context before second storage operation
+	// Check not already member
+	for _, m := range guild.Members {
+		if m.AgentID == agentID {
+			return ErrAlreadyMember
+		}
+	}
+
+	// Add member to guild
+	guild.Members = append(guild.Members, GuildMember{
+		AgentID:      agentID,
+		Rank:         GuildRankInitiate,
+		JoinedAt:     now,
+		Contribution: 0,
+	})
+
+	// Emit updated guild
+	if err := e.graph.EmitEntityUpdate(ctx, guild, "guild.member.joined"); err != nil {
+		return fmt.Errorf("update guild: %w", err)
+	}
+
+	// Check context before second operation
 	select {
 	case <-ctx.Done():
 		// Rollback guild membership
-		_ = e.storage.UpdateGuild(context.Background(), guildInstance, func(g *Guild) error {
-			for i, m := range g.Members {
-				if m.AgentID == agentID {
-					g.Members = append(g.Members[:i], g.Members[i+1:]...)
-					return nil
-				}
+		for i, m := range guild.Members {
+			if m.AgentID == agentID {
+				guild.Members = append(guild.Members[:i], guild.Members[i+1:]...)
+				break
 			}
-			return nil
-		})
+		}
+		_ = e.graph.EmitEntityUpdate(context.Background(), guild, "guild.member.joined.rollback")
 		return ctx.Err()
 	default:
 	}
 
 	// Add guild to agent
-	err = e.storage.UpdateAgent(ctx, string(agentID), func(a *Agent) error {
-		for _, g := range a.Guilds {
-			if g == guildID {
-				return nil // Already has guild
-			}
-		}
-		a.Guilds = append(a.Guilds, guildID)
-		return nil
-	})
+	agent, err := e.getAgent(ctx, agentID)
 	if err != nil {
 		// Rollback guild membership
-		rollbackErr := e.storage.UpdateGuild(context.Background(), guildInstance, func(g *Guild) error {
-			for i, m := range g.Members {
-				if m.AgentID == agentID {
-					g.Members = append(g.Members[:i], g.Members[i+1:]...)
-					return nil
-				}
+		for i, m := range guild.Members {
+			if m.AgentID == agentID {
+				guild.Members = append(guild.Members[:i], guild.Members[i+1:]...)
+				break
 			}
-			return nil
-		})
+		}
+		rollbackErr := e.graph.EmitEntityUpdate(context.Background(), guild, "guild.member.joined.rollback")
 		if rollbackErr != nil {
 			e.logger.Error("failed to rollback guild membership",
 				"agent", agentID,
-				"guild", guildID,
+				"guild", guild.ID,
+				"error", rollbackErr)
+			return &GuildOperationError{
+				Op:             "AddMember",
+				Err:            fmt.Errorf("load agent: %w", err),
+				RollbackFailed: true,
+				RollbackErr:    rollbackErr,
+			}
+		}
+		return fmt.Errorf("load agent: %w", err)
+	}
+
+	// Check if already has guild
+	for _, g := range agent.Guilds {
+		if g == guild.ID {
+			return nil // Already has guild, no update needed
+		}
+	}
+	agent.Guilds = append(agent.Guilds, guild.ID)
+
+	if err := e.graph.EmitEntityUpdate(ctx, agent, "agent.guild.joined"); err != nil {
+		// Rollback guild membership
+		for i, m := range guild.Members {
+			if m.AgentID == agentID {
+				guild.Members = append(guild.Members[:i], guild.Members[i+1:]...)
+				break
+			}
+		}
+		rollbackErr := e.graph.EmitEntityUpdate(context.Background(), guild, "guild.member.joined.rollback")
+		if rollbackErr != nil {
+			e.logger.Error("failed to rollback guild membership",
+				"agent", agentID,
+				"guild", guild.ID,
 				"error", rollbackErr)
 			return &GuildOperationError{
 				Op:             "AddMember",
@@ -840,7 +882,7 @@ func (e *DefaultGuildFormationEngine) addMemberToGuild(ctx context.Context, guil
 	if e.events != nil {
 		payload := GuildAutoJoinedPayload{
 			AgentID:  agentID,
-			GuildID:  guildID,
+			GuildID:  guild.ID,
 			Rank:     GuildRankInitiate,
 			JoinedAt: now,
 			Reason:   reason,
@@ -848,14 +890,14 @@ func (e *DefaultGuildFormationEngine) addMemberToGuild(ctx context.Context, guil
 		if err := e.events.PublishGuildAutoJoined(ctx, payload); err != nil {
 			e.logger.Debug("failed to publish guild joined event",
 				"agent", agentID,
-				"guild", guildID,
+				"guild", guild.ID,
 				"error", err)
 		}
 	}
 
 	e.logger.Info("agent joined guild",
 		"agent", agentID,
-		"guild", guildID,
+		"guild", guild.ID,
 		"reason", reason)
 
 	return nil

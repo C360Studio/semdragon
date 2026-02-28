@@ -15,10 +15,10 @@ import (
 
 // Seeder orchestrates environment seeding based on configuration.
 type Seeder struct {
-	board   semdragons.QuestBoard
-	storage *semdragons.Storage
-	config  *Config
-	logger  *slog.Logger
+	board  semdragons.QuestBoard
+	graph  *semdragons.GraphClient
+	config *Config
+	logger *slog.Logger
 
 	// Sub-seeders
 	arena  *ArenaSeeder
@@ -50,24 +50,24 @@ type AgentSummary struct {
 }
 
 // NewSeeder creates a new seeder with the given configuration.
-func NewSeeder(board semdragons.QuestBoard, storage *semdragons.Storage, config *Config) (*Seeder, error) {
+func NewSeeder(board semdragons.QuestBoard, graph *semdragons.GraphClient, config *Config) (*Seeder, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
 	s := &Seeder{
-		board:   board,
-		storage: storage,
-		config:  config,
-		logger:  slog.Default(),
+		board:  board,
+		graph:  graph,
+		config: config,
+		logger: slog.Default(),
 	}
 
 	// Initialize appropriate sub-seeder
 	switch config.Mode {
 	case ModeTrainingArena:
-		s.arena = NewArenaSeeder(board, storage, config.Arena)
+		s.arena = NewArenaSeeder(board, graph, config.Arena)
 	case ModeTieredRoster:
-		s.roster = NewRosterSeeder(storage, config.Roster)
+		s.roster = NewRosterSeeder(graph, config.Roster)
 	}
 
 	return s, nil

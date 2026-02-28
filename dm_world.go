@@ -2,7 +2,6 @@ package semdragons
 
 import (
 	"context"
-	"strings"
 )
 
 // =============================================================================
@@ -17,7 +16,7 @@ func (dm *BaseDungeonMaster) WorldState(ctx context.Context) (*WorldState, error
 	agents, err := dm.loadAllAgents(ctx)
 	if err != nil {
 		dm.logger.Warn("failed to load agents for world state", "error", err)
-		agents = []Agent{}
+		agents = []*Agent{}
 	}
 
 	quests, err := dm.loadActiveQuests(ctx)
@@ -46,8 +45,16 @@ func (dm *BaseDungeonMaster) WorldState(ctx context.Context) (*WorldState, error
 
 	stats := dm.computeWorldStats(agents, quests, parties, guilds)
 
+	// Convert agents to values for WorldState
+	agentValues := make([]Agent, 0, len(agents))
+	for _, a := range agents {
+		if a != nil {
+			agentValues = append(agentValues, *a)
+		}
+	}
+
 	return &WorldState{
-		Agents:  agents,
+		Agents:  agentValues,
 		Quests:  quests,
 		Parties: parties,
 		Guilds:  guilds,
@@ -60,52 +67,25 @@ func (dm *BaseDungeonMaster) WorldState(ctx context.Context) (*WorldState, error
 // ENTITY LOADING HELPERS
 // =============================================================================
 
-// loadAllAgents returns all agents from storage.
-func (dm *BaseDungeonMaster) loadAllAgents(ctx context.Context) ([]Agent, error) {
-	keys, err := dm.storage.KV().Keys(ctx)
+// loadActiveQuests returns quests that are not yet completed or cancelled.
+func (dm *BaseDungeonMaster) loadActiveQuests(ctx context.Context) ([]Quest, error) {
+	entities, err := dm.graph.ListQuestsByPrefix(ctx, 1000)
 	if err != nil {
 		return nil, err
 	}
 
-	var agents []Agent
-	for _, key := range keys {
-		if strings.HasPrefix(key, "agent.") && !strings.HasPrefix(key, "agent.streak.") {
-			instance := strings.TrimPrefix(key, "agent.")
-			agent, err := dm.storage.GetAgent(ctx, instance)
-			if err != nil {
-				dm.logger.Debug("failed to load agent", "instance", instance, "error", err)
-				continue
-			}
-			agents = append(agents, *agent)
-		}
-	}
-
-	return agents, nil
-}
-
-// loadActiveQuests returns quests that are not yet completed or cancelled.
-func (dm *BaseDungeonMaster) loadActiveQuests(ctx context.Context) ([]Quest, error) {
-	activeStatuses := []QuestStatus{
-		QuestPosted,
-		QuestClaimed,
-		QuestInProgress,
-		QuestInReview,
-		QuestEscalated,
+	activeStatuses := map[QuestStatus]bool{
+		QuestPosted:     true,
+		QuestClaimed:    true,
+		QuestInProgress: true,
+		QuestInReview:   true,
+		QuestEscalated:  true,
 	}
 
 	var quests []Quest
-	for _, status := range activeStatuses {
-		instances, err := dm.storage.ListQuestsByStatus(ctx, status)
-		if err != nil {
-			continue
-		}
-
-		for _, instance := range instances {
-			quest, err := dm.storage.GetQuest(ctx, instance)
-			if err != nil {
-				dm.logger.Debug("failed to load quest", "instance", instance, "error", err)
-				continue
-			}
+	for _, entity := range entities {
+		quest := QuestFromEntityState(&entity)
+		if quest != nil && activeStatuses[quest.Status] {
 			quests = append(quests, *quest)
 		}
 	}
@@ -115,20 +95,16 @@ func (dm *BaseDungeonMaster) loadActiveQuests(ctx context.Context) ([]Quest, err
 
 // loadActiveParties returns parties that are forming or active.
 func (dm *BaseDungeonMaster) loadActiveParties(ctx context.Context) ([]Party, error) {
-	keys, err := dm.storage.KV().Keys(ctx)
+	prefix := dm.config.TypePrefix(EntityTypeParty)
+	entities, err := dm.graph.QueryByPrefix(ctx, prefix, 1000)
 	if err != nil {
 		return nil, err
 	}
 
 	var parties []Party
-	for _, key := range keys {
-		if strings.HasPrefix(key, "party.") {
-			instance := strings.TrimPrefix(key, "party.")
-			party, err := dm.storage.GetParty(ctx, instance)
-			if err != nil {
-				dm.logger.Debug("failed to load party", "instance", instance, "error", err)
-				continue
-			}
+	for _, entity := range entities {
+		party := PartyFromEntityState(&entity)
+		if party != nil {
 			// Only include forming or active parties
 			if party.Status == PartyForming || party.Status == PartyActive {
 				parties = append(parties, *party)
@@ -139,22 +115,18 @@ func (dm *BaseDungeonMaster) loadActiveParties(ctx context.Context) ([]Party, er
 	return parties, nil
 }
 
-// loadGuilds returns all guilds from storage.
+// loadGuilds returns all guilds from the graph.
 func (dm *BaseDungeonMaster) loadGuilds(ctx context.Context) ([]Guild, error) {
-	keys, err := dm.storage.KV().Keys(ctx)
+	prefix := dm.config.TypePrefix(EntityTypeGuild)
+	entities, err := dm.graph.QueryByPrefix(ctx, prefix, 1000)
 	if err != nil {
 		return nil, err
 	}
 
 	var guilds []Guild
-	for _, key := range keys {
-		if strings.HasPrefix(key, "guild.") {
-			instance := strings.TrimPrefix(key, "guild.")
-			guild, err := dm.storage.GetGuild(ctx, instance)
-			if err != nil {
-				dm.logger.Debug("failed to load guild", "instance", instance, "error", err)
-				continue
-			}
+	for _, entity := range entities {
+		guild := GuildFromEntityState(&entity)
+		if guild != nil {
 			guilds = append(guilds, *guild)
 		}
 	}
@@ -164,24 +136,17 @@ func (dm *BaseDungeonMaster) loadGuilds(ctx context.Context) ([]Guild, error) {
 
 // loadActiveBattles returns boss battles that are still in progress.
 func (dm *BaseDungeonMaster) loadActiveBattles(ctx context.Context) ([]BossBattle, error) {
-	keys, err := dm.storage.KV().Keys(ctx)
+	prefix := dm.config.TypePrefix(EntityTypeBattle)
+	entities, err := dm.graph.QueryByPrefix(ctx, prefix, 1000)
 	if err != nil {
 		return nil, err
 	}
 
 	var battles []BossBattle
-	for _, key := range keys {
-		if strings.HasPrefix(key, "battle.") {
-			instance := strings.TrimPrefix(key, "battle.")
-			battle, err := dm.storage.GetBattle(ctx, instance)
-			if err != nil {
-				dm.logger.Debug("failed to load battle", "instance", instance, "error", err)
-				continue
-			}
-			// Only include active battles
-			if battle.Status == BattleActive {
-				battles = append(battles, *battle)
-			}
+	for _, entity := range entities {
+		battle := BattleFromEntityState(&entity)
+		if battle != nil && battle.Status == BattleActive {
+			battles = append(battles, *battle)
 		}
 	}
 
@@ -193,10 +158,8 @@ func (dm *BaseDungeonMaster) loadActiveBattles(ctx context.Context) ([]BossBattl
 // =============================================================================
 
 // computeWorldStats calculates aggregate statistics from loaded entities.
-// Note: quests parameter contains only active quests, so we count status indices
-// separately to get accurate completion rates.
 func (dm *BaseDungeonMaster) computeWorldStats(
-	agents []Agent,
+	agents []*Agent,
 	quests []Quest,
 	parties []Party,
 	guilds []Guild,
@@ -205,6 +168,9 @@ func (dm *BaseDungeonMaster) computeWorldStats(
 
 	// Agent statistics
 	for _, agent := range agents {
+		if agent == nil {
+			continue
+		}
 		switch agent.Status {
 		case AgentIdle:
 			stats.IdleAgents++
@@ -219,35 +185,32 @@ func (dm *BaseDungeonMaster) computeWorldStats(
 	}
 
 	// Quest statistics - count from active quests
+	var completedCount, failedCount int
 	for _, quest := range quests {
 		switch quest.Status {
 		case QuestPosted:
 			stats.OpenQuests++
 		case QuestClaimed, QuestInProgress, QuestInReview:
 			stats.ActiveQuests++
+		case QuestCompleted:
+			completedCount++
+		case QuestFailed:
+			failedCount++
 		}
 	}
 
-	// Count completed and failed quests from storage indices for accurate stats
-	ctx := context.Background()
-	completedInstances, _ := dm.storage.ListQuestsByStatus(ctx, QuestCompleted)
-	failedInstances, _ := dm.storage.ListQuestsByStatus(ctx, QuestFailed)
-	cancelledInstances, _ := dm.storage.ListQuestsByStatus(ctx, QuestCancelled)
-
-	completedCount := len(completedInstances)
-	totalCount := len(quests) + completedCount + len(failedInstances) + len(cancelledInstances)
-
 	// Compute completion rate
+	totalCount := len(quests)
 	if totalCount > 0 {
 		stats.CompletionRate = float64(completedCount) / float64(totalCount)
 	}
 
-	// Compute average quality from agent stats (quality is tracked per-agent, not per-quest)
+	// Compute average quality from agent stats
 	if len(agents) > 0 {
 		var totalQuality float64
 		var qualifiedAgents int
 		for _, agent := range agents {
-			if agent.Stats.QuestsCompleted > 0 {
+			if agent != nil && agent.Stats.QuestsCompleted > 0 {
 				totalQuality += agent.Stats.AvgQualityScore
 				qualifiedAgents++
 			}
@@ -277,10 +240,10 @@ func (dm *BaseDungeonMaster) GetIdleAgents(ctx context.Context) ([]Agent, error)
 
 	var idle []Agent
 	for _, agent := range agents {
-		if agent.Status == AgentIdle {
+		if agent != nil && agent.Status == AgentIdle {
 			// Check cooldown
 			if agent.CooldownUntil == nil {
-				idle = append(idle, agent)
+				idle = append(idle, *agent)
 			}
 		}
 	}
@@ -290,21 +253,19 @@ func (dm *BaseDungeonMaster) GetIdleAgents(ctx context.Context) ([]Agent, error)
 
 // GetEscalatedQuests returns all quests that need DM attention.
 func (dm *BaseDungeonMaster) GetEscalatedQuests(ctx context.Context) ([]Quest, error) {
-	instances, err := dm.storage.ListQuestsByStatus(ctx, QuestEscalated)
+	quests, err := dm.loadActiveQuests(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var quests []Quest
-	for _, instance := range instances {
-		quest, err := dm.storage.GetQuest(ctx, instance)
-		if err != nil {
-			continue
+	var escalated []Quest
+	for _, quest := range quests {
+		if quest.Status == QuestEscalated {
+			escalated = append(escalated, quest)
 		}
-		quests = append(quests, *quest)
 	}
 
-	return quests, nil
+	return escalated, nil
 }
 
 // GetPendingBattles returns boss battles awaiting verdict.
@@ -333,8 +294,8 @@ func (dm *BaseDungeonMaster) GetAgentsByTier(ctx context.Context, tier TrustTier
 
 	var filtered []Agent
 	for _, agent := range agents {
-		if agent.Tier == tier {
-			filtered = append(filtered, agent)
+		if agent != nil && agent.Tier == tier {
+			filtered = append(filtered, *agent)
 		}
 	}
 
@@ -350,8 +311,8 @@ func (dm *BaseDungeonMaster) GetAgentsBySkill(ctx context.Context, skill SkillTa
 
 	var filtered []Agent
 	for _, agent := range agents {
-		if agent.HasSkill(skill) {
-			filtered = append(filtered, agent)
+		if agent != nil && agent.HasSkill(skill) {
+			filtered = append(filtered, *agent)
 		}
 	}
 

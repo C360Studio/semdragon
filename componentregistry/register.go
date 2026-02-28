@@ -5,6 +5,9 @@ package componentregistry
 
 import (
 	"github.com/c360studio/semstreams/component"
+	graphindex "github.com/c360studio/semstreams/processor/graph-index"
+	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
+	graphquery "github.com/c360studio/semstreams/processor/graph-query"
 
 	"github.com/c360studio/semdragons/gateway/api"
 	"github.com/c360studio/semdragons/processor/boidengine"
@@ -17,7 +20,22 @@ import (
 // RegisterAll registers all semdragons components with the given registry.
 // This is the main entry point for component registration.
 func RegisterAll(registry *component.Registry) error {
-	// Register all processor components
+	// Register semstreams graph processors FIRST.
+	// These provide entity persistence, indexing, and query capabilities
+	// that semdragons components depend on.
+	graphProcessors := []func(*component.Registry) error{
+		graphingest.Register, // Entity/triple ingestion and storage
+		graphindex.Register,  // Relationship and predicate indexes
+		graphquery.Register,  // Query coordination and PathRAG
+	}
+
+	for _, register := range graphProcessors {
+		if err := register(registry); err != nil {
+			return err
+		}
+	}
+
+	// Register semdragons processor components
 	processors := []func(*component.Registry) error{
 		questboard.Register,
 		xpengine.Register,
@@ -49,6 +67,20 @@ func RegisterAll(registry *component.Registry) error {
 // RegisterProcessors registers only the processor components.
 // Use this if you want to register processors without gateways.
 func RegisterProcessors(registry *component.Registry) error {
+	// Register semstreams graph processors first
+	graphProcessors := []func(*component.Registry) error{
+		graphingest.Register,
+		graphindex.Register,
+		graphquery.Register,
+	}
+
+	for _, register := range graphProcessors {
+		if err := register(registry); err != nil {
+			return err
+		}
+	}
+
+	// Register semdragons processors
 	processors := []func(*component.Registry) error{
 		questboard.Register,
 		xpengine.Register,

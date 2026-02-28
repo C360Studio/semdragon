@@ -25,7 +25,7 @@ import (
 // ArenaSeeder runs progressive training sessions.
 type ArenaSeeder struct {
 	board      semdragons.QuestBoard
-	storage    *semdragons.Storage
+	graph      *semdragons.GraphClient
 	config     *ArenaConfig
 	logger     *slog.Logger
 	onProgress func(ProgressEvent)
@@ -36,12 +36,12 @@ type ArenaSeeder struct {
 }
 
 // NewArenaSeeder creates a new arena seeder.
-func NewArenaSeeder(board semdragons.QuestBoard, storage *semdragons.Storage, config *ArenaConfig) *ArenaSeeder {
+func NewArenaSeeder(board semdragons.QuestBoard, graph *semdragons.GraphClient, config *ArenaConfig) *ArenaSeeder {
 	return &ArenaSeeder{
-		board:   board,
-		storage: storage,
-		config:  config,
-		logger:  slog.Default(),
+		board:  board,
+		graph:  graph,
+		config: config,
+		logger: slog.Default(),
 	}
 }
 
@@ -178,7 +178,7 @@ func (a *ArenaSeeder) createInitialAgents(ctx context.Context, dryRun, idempoten
 // createTrainee creates a new trainee agent at Level 1.
 func (a *ArenaSeeder) createTrainee(ctx context.Context, name string, config semdragons.AgentConfig) (*semdragons.Agent, error) {
 	instance := semdragons.GenerateInstance()
-	boardConfig := a.storage.Config()
+	boardConfig := a.graph.Config()
 	agentID := semdragons.AgentID(boardConfig.AgentEntityID(instance))
 
 	agent := &semdragons.Agent{
@@ -194,9 +194,9 @@ func (a *ArenaSeeder) createTrainee(ctx context.Context, name string, config sem
 	// Initialize empty skill proficiencies (will be populated as training progresses)
 	agent.SkillProficiencies = make(map[semdragons.SkillTag]semdragons.SkillProficiency)
 
-	// Store agent
-	if err := a.storage.PutAgent(ctx, instance, agent); err != nil {
-		return nil, fmt.Errorf("failed to store agent: %w", err)
+	// Emit agent to graph
+	if err := a.graph.EmitEntity(ctx, agent, "agent.created"); err != nil {
+		return nil, fmt.Errorf("failed to emit agent: %w", err)
 	}
 
 	return agent, nil
@@ -204,13 +204,14 @@ func (a *ArenaSeeder) createTrainee(ctx context.Context, name string, config sem
 
 // findAgentByName searches for an existing agent by name.
 func (a *ArenaSeeder) findAgentByName(ctx context.Context, name string) (*semdragons.Agent, error) {
-	agents, err := a.storage.ListAllAgents(ctx)
+	entities, err := a.graph.ListAgentsByPrefix(ctx, 100)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, agent := range agents {
-		if agent.Name == name {
+	for _, entity := range entities {
+		agent := semdragons.AgentFromEntityState(&entity)
+		if agent != nil && agent.Name == name {
 			return agent, nil
 		}
 	}
@@ -241,7 +242,7 @@ func (a *ArenaSeeder) ensureMentorsAvailable(ctx context.Context, result *Result
 
 	// Use roster seeder to create NPC mentors with dedicated mentor config
 	rosterConfig := BootstrapMentorRoster(a.config.BootstrapMentors, a.config.MentorConfig)
-	roster := NewRosterSeeder(a.storage, rosterConfig)
+	roster := NewRosterSeeder(a.graph, rosterConfig)
 	roster.logger = a.logger
 
 	rosterResult, err := roster.Seed(ctx, false, true)
@@ -256,27 +257,24 @@ func (a *ArenaSeeder) ensureMentorsAvailable(ctx context.Context, result *Result
 
 // findAvailableMentors finds agents with training skill who can mentor.
 func (a *ArenaSeeder) findAvailableMentors(ctx context.Context) ([]*semdragons.Agent, error) {
-	agents, err := a.storage.ListAllAgents(ctx)
+	entities, err := a.graph.ListAgentsByPrefix(ctx, 100)
 	if err != nil {
 		return nil, err
 	}
 
 	var mentors []*semdragons.Agent
-	for _, agent := range agents {
-		// Check if has training skill and is Journeyman+
-		if !agent.HasSkill(semdragons.SkillTraining) {
+	for _, entity := range entities {
+		agent := semdragons.AgentFromEntityState(&entity)
+		if agent == nil {
 			continue
 		}
-		if semdragons.TierFromLevel(agent.Level) < semdragons.TierJourneyman {
-			continue
+		// Check if agent has training skill at Journeyman+
+		if prof, ok := agent.SkillProficiencies[semdragons.SkillTraining]; ok {
+			if prof.Level >= semdragons.ProficiencyJourneyman {
+				mentors = append(mentors, agent)
+			}
 		}
-		if agent.Status != semdragons.AgentIdle {
-			continue
-		}
-
-		mentors = append(mentors, agent)
 	}
-
 	return mentors, nil
 }
 
@@ -336,11 +334,13 @@ func (a *ArenaSeeder) runTrainingRounds(ctx context.Context, agents []*semdragon
 	// Update result with final agent states
 	result.Agents = make([]AgentSummary, 0, len(agents))
 	for _, agent := range agents {
-		// Refresh agent state from storage
-		instance := semdragons.ExtractInstance(string(agent.ID))
-		refreshed, err := a.storage.GetAgent(ctx, instance)
-		if err != nil {
-			refreshed = agent
+		// Refresh agent state from graph
+		entity, err := a.graph.GetAgent(ctx, agent.ID)
+		refreshed := agent
+		if err == nil {
+			if r := semdragons.AgentFromEntityState(entity); r != nil {
+				refreshed = r
+			}
 		}
 
 		result.Agents = append(result.Agents, AgentSummary{

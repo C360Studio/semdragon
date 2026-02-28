@@ -21,7 +21,6 @@ import (
 
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/gateway"
-	"github.com/c360studio/semstreams/pkg/errs"
 
 	semdragons "github.com/c360studio/semdragons"
 )
@@ -100,7 +99,7 @@ func (c *Config) ToBoardConfig() *semdragons.BoardConfig {
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
-	storage     *semdragons.Storage
+	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *semdragons.BoardConfig
 
@@ -298,12 +297,8 @@ func (c *Component) Start(ctx context.Context) error {
 		return errors.New("component already running")
 	}
 
-	// Create storage (KV bucket)
-	storage, err := semdragons.CreateStorage(ctx, c.deps.NATSClient, c.boardConfig)
-	if err != nil {
-		return errs.Wrap(err, "API", "Start", "create storage")
-	}
-	c.storage = storage
+	// Create graph client
+	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 
 	c.startTime = time.Now()
 	c.running.Store(true)
@@ -457,23 +452,25 @@ func (c *Component) handleQuests(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		// List quests by status
-		status := r.URL.Query().Get("status")
-		if status == "" {
-			status = string(semdragons.QuestPosted)
-		}
+		// List quests by status (optional filter)
+		statusFilter := r.URL.Query().Get("status")
 
-		instances, err := c.storage.ListQuestsByStatus(ctx, semdragons.QuestStatus(status))
+		// Get all quests using prefix query
+		entities, err := c.graph.ListQuestsByPrefix(ctx, 100)
 		if err != nil {
 			c.errorsCount.Add(1)
 			c.jsonError(w, http.StatusInternalServerError, "failed to list quests")
 			return
 		}
 
-		quests := make([]*semdragons.Quest, 0, len(instances))
-		for _, instance := range instances {
-			quest, err := c.storage.GetQuest(ctx, instance)
-			if err != nil {
+		quests := make([]*semdragons.Quest, 0, len(entities))
+		for i := range entities {
+			quest := semdragons.QuestFromEntityState(&entities[i])
+			if quest == nil {
+				continue
+			}
+			// Filter by status if specified
+			if statusFilter != "" && string(quest.Status) != statusFilter {
 				continue
 			}
 			quests = append(quests, quest)
@@ -509,10 +506,16 @@ func (c *Component) handleQuestByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		quest, err := c.storage.GetQuest(ctx, instance)
+		entity, err := c.graph.GetQuest(ctx, semdragons.QuestID(instance))
 		if err != nil {
 			c.errorsCount.Add(1)
 			c.jsonError(w, http.StatusNotFound, "quest not found")
+			return
+		}
+		quest := semdragons.QuestFromEntityState(entity)
+		if quest == nil {
+			c.errorsCount.Add(1)
+			c.jsonError(w, http.StatusInternalServerError, "failed to reconstruct quest")
 			return
 		}
 		c.jsonResponse(w, http.StatusOK, quest)
@@ -535,12 +538,23 @@ func (c *Component) handleAgents(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		agents, err := c.storage.ListAllAgents(ctx)
+		// Get all agents using prefix query
+		entities, err := c.graph.ListAgentsByPrefix(ctx, 100)
 		if err != nil {
 			c.errorsCount.Add(1)
 			c.jsonError(w, http.StatusInternalServerError, "failed to list agents")
 			return
 		}
+
+		agents := make([]*semdragons.Agent, 0, len(entities))
+		for i := range entities {
+			agent := semdragons.AgentFromEntityState(&entities[i])
+			if agent == nil {
+				continue
+			}
+			agents = append(agents, agent)
+		}
+
 		c.jsonResponse(w, http.StatusOK, agents)
 
 	default:
@@ -571,10 +585,16 @@ func (c *Component) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		agent, err := c.storage.GetAgent(ctx, instance)
+		entity, err := c.graph.GetAgent(ctx, semdragons.AgentID(instance))
 		if err != nil {
 			c.errorsCount.Add(1)
 			c.jsonError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+		agent := semdragons.AgentFromEntityState(entity)
+		if agent == nil {
+			c.errorsCount.Add(1)
+			c.jsonError(w, http.StatusInternalServerError, "failed to reconstruct agent")
 			return
 		}
 		c.jsonResponse(w, http.StatusOK, agent)
@@ -597,12 +617,23 @@ func (c *Component) handleGuilds(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		guilds, err := c.storage.ListAllGuilds(ctx)
+		// Get all guilds using prefix query
+		entities, err := c.graph.ListGuildsByPrefix(ctx, 100)
 		if err != nil {
 			c.errorsCount.Add(1)
 			c.jsonError(w, http.StatusInternalServerError, "failed to list guilds")
 			return
 		}
+
+		guilds := make([]*semdragons.Guild, 0, len(entities))
+		for i := range entities {
+			guild := semdragons.GuildFromEntityState(&entities[i])
+			if guild == nil {
+				continue
+			}
+			guilds = append(guilds, guild)
+		}
+
 		c.jsonResponse(w, http.StatusOK, guilds)
 
 	default:
@@ -633,10 +664,16 @@ func (c *Component) handleGuildByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		guild, err := c.storage.GetGuild(ctx, instance)
+		entity, err := c.graph.GetGuild(ctx, semdragons.GuildID(instance))
 		if err != nil {
 			c.errorsCount.Add(1)
 			c.jsonError(w, http.StatusNotFound, "guild not found")
+			return
+		}
+		guild := semdragons.GuildFromEntityState(entity)
+		if guild == nil {
+			c.errorsCount.Add(1)
+			c.jsonError(w, http.StatusInternalServerError, "failed to reconstruct guild")
 			return
 		}
 		c.jsonResponse(w, http.StatusOK, guild)
@@ -662,10 +699,37 @@ func (c *Component) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := c.storage.GetBoardStats(ctx)
-	if err != nil {
-		// Return empty stats if none exist
-		stats = &semdragons.BoardStats{}
+	// TODO: Implement GetBoardStats once available in GraphClient
+	// For now, compute stats from entity queries
+	stats := &semdragons.BoardStats{
+		ByDifficulty: make(map[semdragons.QuestDifficulty]int),
+		BySkill:      make(map[semdragons.SkillTag]int),
+	}
+
+	// Get quest counts by status
+	questEntities, err := c.graph.ListQuestsByPrefix(ctx, 1000)
+	if err == nil {
+		for i := range questEntities {
+			quest := semdragons.QuestFromEntityState(&questEntities[i])
+			if quest != nil {
+				switch quest.Status {
+				case semdragons.QuestPosted:
+					stats.TotalPosted++
+				case semdragons.QuestClaimed:
+					stats.TotalClaimed++
+				case semdragons.QuestCompleted:
+					stats.TotalCompleted++
+				case semdragons.QuestFailed:
+					stats.TotalFailed++
+				}
+				// Aggregate by difficulty
+				stats.ByDifficulty[quest.Difficulty]++
+				// Aggregate by skills
+				for _, skill := range quest.RequiredSkills {
+					stats.BySkill[skill]++
+				}
+			}
+		}
 	}
 
 	c.jsonResponse(w, http.StatusOK, stats)
@@ -723,9 +787,9 @@ func (c *Component) jsonError(w http.ResponseWriter, status int, message string)
 	})
 }
 
-// Storage returns the underlying storage for external access.
-func (c *Component) Storage() *semdragons.Storage {
-	return c.storage
+// Graph returns the underlying graph client for external access.
+func (c *Component) Graph() *semdragons.GraphClient {
+	return c.graph
 }
 
 // Stats returns API gateway statistics.

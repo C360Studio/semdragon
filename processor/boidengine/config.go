@@ -1,0 +1,107 @@
+package boidengine
+
+import (
+	"errors"
+
+	semdragons "github.com/c360studio/semdragons"
+)
+
+// Config holds the component configuration.
+type Config struct {
+	// BoardConfig contains org, platform, board for entity IDs and bucket naming.
+	Org      string `json:"org" schema:"type:string,description:Organization namespace"`
+	Platform string `json:"platform" schema:"type:string,description:Platform/environment name"`
+	Board    string `json:"board" schema:"type:string,description:Quest board name"`
+
+	// Boid rule weights
+	SeparationWeight float64 `json:"separation_weight" schema:"type:float,description:Avoid quest overlap weight"`
+	AlignmentWeight  float64 `json:"alignment_weight" schema:"type:float,description:Align with peers weight"`
+	CohesionWeight   float64 `json:"cohesion_weight" schema:"type:float,description:Move toward skill clusters weight"`
+	HungerWeight     float64 `json:"hunger_weight" schema:"type:float,description:Idle time urgency weight"`
+	AffinityWeight   float64 `json:"affinity_weight" schema:"type:float,description:Skill/guild match weight"`
+	CautionWeight    float64 `json:"caution_weight" schema:"type:float,description:Avoid over-leveled quests weight"`
+
+	// Timing
+	UpdateIntervalMs int `json:"update_interval_ms" schema:"type:int,description:How often to recompute suggestions"`
+	NeighborRadius   int `json:"neighbor_radius" schema:"type:int,description:How many nearby agents to consider"`
+}
+
+// DefaultConfig returns a configuration with sensible defaults.
+func DefaultConfig() Config {
+	rules := semdragons.DefaultBoidRules()
+	return Config{
+		Org:              "default",
+		Platform:         "local",
+		Board:            "main",
+		SeparationWeight: rules.SeparationWeight,
+		AlignmentWeight:  rules.AlignmentWeight,
+		CohesionWeight:   rules.CohesionWeight,
+		HungerWeight:     rules.HungerWeight,
+		AffinityWeight:   rules.AffinityWeight,
+		CautionWeight:    rules.CautionWeight,
+		UpdateIntervalMs: rules.UpdateInterval,
+		NeighborRadius:   rules.NeighborRadius,
+	}
+}
+
+// ToBoardConfig converts component config to semdragons BoardConfig.
+func (c *Config) ToBoardConfig() *semdragons.BoardConfig {
+	return &semdragons.BoardConfig{
+		Org:      c.Org,
+		Platform: c.Platform,
+		Board:    c.Board,
+	}
+}
+
+// ToBoidRules converts component config to semdragons BoidRules.
+func (c *Config) ToBoidRules() semdragons.BoidRules {
+	return semdragons.BoidRules{
+		SeparationWeight: c.SeparationWeight,
+		AlignmentWeight:  c.AlignmentWeight,
+		CohesionWeight:   c.CohesionWeight,
+		HungerWeight:     c.HungerWeight,
+		AffinityWeight:   c.AffinityWeight,
+		CautionWeight:    c.CautionWeight,
+		NeighborRadius:   c.NeighborRadius,
+		UpdateInterval:   c.UpdateIntervalMs,
+	}
+}
+
+// Validate checks the configuration for required fields and valid values.
+func (c *Config) Validate() error {
+	if c.Org == "" {
+		return errors.New("org is required")
+	}
+	if c.Platform == "" {
+		return errors.New("platform is required")
+	}
+	if c.Board == "" {
+		return errors.New("board is required")
+	}
+	if c.UpdateIntervalMs < 1 {
+		return errors.New("update_interval_ms must be at least 1")
+	}
+	if c.NeighborRadius < 1 {
+		return errors.New("neighbor_radius must be at least 1")
+	}
+	// All weights should be non-negative
+	if c.SeparationWeight < 0 {
+		return errors.New("separation_weight must be non-negative")
+	}
+	if c.AlignmentWeight < 0 {
+		return errors.New("alignment_weight must be non-negative")
+	}
+	if c.CohesionWeight < 0 {
+		return errors.New("cohesion_weight must be non-negative")
+	}
+	if c.HungerWeight < 0 {
+		return errors.New("hunger_weight must be non-negative")
+	}
+	if c.AffinityWeight < 0 {
+		return errors.New("affinity_weight must be non-negative")
+	}
+	if c.CautionWeight < 0 {
+		return errors.New("caution_weight must be non-negative")
+	}
+	return nil
+}
