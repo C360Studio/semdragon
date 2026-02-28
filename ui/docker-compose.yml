@@ -21,6 +21,7 @@ services:
     environment:
       NATS_URL: nats://nats:4222
       HTTP_PORT: "8080"
+      SEED_E2E: "${SEED_E2E:-false}"
     ports:
       - "8080:8080"
     healthcheck:

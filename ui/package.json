@@ -14,10 +14,15 @@
     "test:unit": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@picocss/pico": "^2.1.1",
     "@sveltejs/adapter-auto": "^6.1.0",
     "@sveltejs/adapter-node": "^5.4.0",
@@ -41,7 +46,8 @@
     "svelte-check": "^4.3.2",
     "typescript": "^5.9.2",
     "vite": "^7.1.7",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wait-on": "^8.0.3"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.7.4",
