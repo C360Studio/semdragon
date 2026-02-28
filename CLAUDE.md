@@ -288,6 +288,8 @@ quest := NewQuest("title").
 
 **Context-First**: All I/O operations take `context.Context` as first parameter
 
+**Lint Warnings**: Always fix lint warnings properly—never game them. Warnings exist because they often point to code smells and anti-patterns. If revive flags something, fix the underlying issue rather than suppressing or working around it. When a warning seems wrong for a specific case, add a `//nolint` directive with a comment explaining why.
+
 **Unused Parameters (`_`)**: Never silence linter warnings by blindly using `_` for unused parameters. This is lazy and breaks lifecycle control. Instead:
 - **If it's context**: You almost certainly need it. Add cancellation checks in loops, pass it to called functions, or use it for timeouts.
 - **If it's a callback parameter**: Use it to extract data (e.g., parse `msg.Subject` or `msg.Data`).
