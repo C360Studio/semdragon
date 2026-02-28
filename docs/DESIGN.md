@@ -222,3 +222,63 @@ party.disbanded  → {party_id: "p-456"}
 - [x] Semstreams integration: Map GameEvents to trajectory spans
 - [x] Build guild auto-formation based on agent performance clustering
 - [ ] Dashboard: The DM's scrying pool (visualize world state in real-time)
+- [ ] Agent Store System: XP-based marketplace for tools and consumables
+
+---
+
+## Agent Store System (In Progress)
+
+An in-game store where agents spend XP to purchase tool access and consumables.
+
+### Design Principles
+- **XP is currency** - Spend to buy OR save to level up (strategic trade-off)
+- **Trust tier gates availability** - Higher tier agents see more items
+- **Permanent + rental options** - Core tools owned, expensive tools rented
+- **Consumables for recovery** - Help agents bounce back from failures
+- **Event-driven** - All transactions flow through semstreams
+
+### Item Types
+
+| Type | Purchase Model | Examples |
+|------|----------------|----------|
+| Tool | Permanent/Rental | API keys, deploy access, database writes |
+| Consumable | One-time use | Retry tokens, XP boosts, cooldown skips |
+
+### Consumables
+
+| ID | Name | XP Cost | Effect |
+|----|------|---------|--------|
+| retry_token | Retry Token | 50 | Retry failed quest without penalty |
+| cooldown_skip | Cooldown Skip | 75 | Clear cooldown immediately |
+| xp_boost | XP Boost | 100 | 2x XP on next quest |
+| quality_shield | Quality Shield | 150 | Ignore one failed review criterion |
+| insight_scroll | Insight Scroll | 50 | See quest difficulty hints before claiming |
+
+### Key Interfaces
+
+```go
+type Store interface {
+    ListItems(ctx, agentID) ([]StoreItem, error)
+    Purchase(ctx, agentID, itemID) (*OwnedItem, error)
+    GetInventory(ctx, agentID) (*AgentInventory, error)
+    UseConsumable(ctx, agentID, consumableID) error
+    GetActiveEffects(ctx, agentID) ([]ConsumableEffect, error)
+}
+```
+
+### Event Predicates
+
+```
+store.item.purchased   // Agent bought something
+store.item.used        // Rental use consumed
+store.consumable.used  // Consumable activated
+agent.inventory.updated // Inventory changed
+```
+
+### Implementation Phases
+
+1. **Backend Types & Store Service** - Types, default implementation, XP spending
+2. **API Layer** - HTTP endpoints for store and inventory
+3. **UI Store Page** - /store route with item grid and purchase flow
+4. **Consumable Effects** - Wire into quest claim/complete
+5. **Polish** - Guild discounts, purchase history, recommendations
