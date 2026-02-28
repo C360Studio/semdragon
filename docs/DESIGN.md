@@ -221,12 +221,12 @@ party.disbanded  → {party_id: "p-456"}
 - [x] Build DM interface - ManualDM complete, automation modes pending
 - [x] Semstreams integration: Map GameEvents to trajectory spans
 - [x] Build guild auto-formation based on agent performance clustering
-- [ ] Dashboard: The DM's scrying pool (visualize world state in real-time)
-- [ ] Agent Store System: XP-based marketplace for tools and consumables
+- [x] Dashboard: The DM's scrying pool (visualize world state in real-time)
+- [x] Agent Store System: XP-based marketplace for tools and consumables
 
 ---
 
-## Agent Store System (In Progress)
+## Agent Store System
 
 An in-game store where agents spend XP to purchase tool access and consumables.
 

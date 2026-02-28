@@ -297,9 +297,10 @@ Practical helpers in `.claude/skills/`:
 ## Roadmap (from DESIGN.md)
 
 - [x] Implement QuestBoard backed by semstreams
-- [ ] Implement DefaultBoidEngine with six rules
-- [ ] Wire up XP engine with real boss battle evaluators
-- [ ] Build DM interface (DMManual → DMFullAuto)
-- [ ] Build guild auto-formation based on agent performance clustering
-- [ ] Dashboard: "The DM's scrying pool"
-- [ ] Semstreams integration: Map GameEvents to trajectory spans
+- [x] Implement DefaultBoidEngine with six rules
+- [x] Wire up XP engine with real boss battle evaluators
+- [x] Build DM interface (ManualDM complete, automation modes pending)
+- [x] Semstreams integration: Map GameEvents to trajectory spans
+- [x] Build guild auto-formation based on agent performance clustering
+- [x] Dashboard: "The DM's scrying pool"
+- [x] Agent Store System: XP-based marketplace for tools and consumables
