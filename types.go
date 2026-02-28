@@ -97,6 +97,7 @@ type AgentStats struct {
 	BossesDefeated   int     `json:"bosses_defeated"`
 	BossesFailed     int     `json:"bosses_failed"`
 	TotalXPEarned    int64   `json:"total_xp_earned"`
+	TotalXPSpent     int64   `json:"total_xp_spent"`  // XP spent in store
 	AvgQualityScore  float64 `json:"avg_quality_score"`
 	AvgEfficiency    float64 `json:"avg_efficiency"`
 	PartiesLed       int     `json:"parties_led"`

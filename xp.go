@@ -1,6 +1,7 @@
 package semdragons
 
 import (
+	"fmt"
 	"math"
 	"time"
 )
@@ -30,6 +31,13 @@ type XPEngine interface {
 
 	// CheckLevelDown determines if an agent should lose a level due to poor performance.
 	CheckLevelDown(agent *Agent) *LevelEvent
+
+	// SpendXP deducts XP from an agent for store purchases.
+	// Does NOT affect level - only earning XP triggers level-up checks.
+	SpendXP(agent *Agent, amount int64, reason string) error
+
+	// CanSpend checks if an agent has enough XP to spend.
+	CanSpend(agent *Agent, amount int64) bool
 }
 
 // XPContext contains everything needed to calculate XP for a quest completion.
@@ -282,4 +290,39 @@ func (e *DefaultXPEngine) CheckLevelDown(agent *Agent) *LevelEvent {
 	}
 
 	return nil
+}
+
+// SpendXP deducts XP from an agent for store purchases.
+// Spending XP does NOT affect level - only earning XP triggers level-up checks.
+// Agents can spend down to 0 XP but cannot go negative.
+func (e *DefaultXPEngine) SpendXP(agent *Agent, amount int64, reason string) error {
+	if amount <= 0 {
+		return nil // Nothing to spend
+	}
+	if agent.XP < amount {
+		return &InsufficientXPError{
+			Have:   agent.XP,
+			Need:   amount,
+			Reason: reason,
+		}
+	}
+	agent.XP -= amount
+	agent.Stats.TotalXPSpent += amount // Track lifetime XP spent in store
+	return nil
+}
+
+// CanSpend checks if an agent has enough XP to spend.
+func (e *DefaultXPEngine) CanSpend(agent *Agent, amount int64) bool {
+	return agent.XP >= amount
+}
+
+// InsufficientXPError indicates an agent doesn't have enough XP.
+type InsufficientXPError struct {
+	Have   int64
+	Need   int64
+	Reason string
+}
+
+func (e *InsufficientXPError) Error() string {
+	return fmt.Sprintf("insufficient XP: have %d, need %d for %s", e.Have, e.Need, e.Reason)
 }
