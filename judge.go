@@ -3,6 +3,8 @@ package semdragons
 import (
 	"context"
 	"sync"
+
+	"github.com/c360studio/semstreams/model"
 )
 
 // =============================================================================
@@ -48,11 +50,24 @@ type JudgeRegistry struct {
 }
 
 // NewJudgeRegistry creates a new registry with default judges.
+// The LLM judge uses a stub implementation (no model registry).
+// Use NewJudgeRegistryWithLLM to provide a real model registry.
 func NewJudgeRegistry() *JudgeRegistry {
 	return &JudgeRegistry{
 		judges: map[JudgeType]JudgeEvaluator{
 			JudgeAutomated: NewAutomatedJudge(),
-			JudgeLLM:       NewLLMJudge(),
+			JudgeLLM:       NewLLMJudge(nil), // Stub mode
+			JudgeHuman:     NewHumanJudge(),
+		},
+	}
+}
+
+// NewJudgeRegistryWithLLM creates a registry with a real LLM judge.
+func NewJudgeRegistryWithLLM(registry model.RegistryReader) *JudgeRegistry {
+	return &JudgeRegistry{
+		judges: map[JudgeType]JudgeEvaluator{
+			JudgeAutomated: NewAutomatedJudge(),
+			JudgeLLM:       NewLLMJudge(registry),
 			JudgeHuman:     NewHumanJudge(),
 		},
 	}

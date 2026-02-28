@@ -1,0 +1,62 @@
+{
+  "endpoints": {
+    "claude-4": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5-20250514",
+      "max_tokens": 200000,
+      "supports_tools": true,
+      "tool_format": "anthropic",
+      "api_key_env": "ANTHROPIC_API_KEY"
+    },
+    "gpt-4o": {
+      "provider": "openai",
+      "url": "https://api.openai.com/v1",
+      "model": "gpt-4o",
+      "max_tokens": 128000,
+      "supports_tools": true,
+      "tool_format": "openai",
+      "api_key_env": "OPENAI_API_KEY"
+    },
+    "ollama": {
+      "provider": "ollama",
+      "url": "http://localhost:11434/v1",
+      "model": "llama3.2",
+      "max_tokens": 8192,
+      "supports_tools": false
+    },
+    "ollama-tools": {
+      "provider": "ollama",
+      "url": "http://localhost:11434/v1",
+      "model": "llama3.1",
+      "max_tokens": 131072,
+      "supports_tools": true,
+      "tool_format": "openai"
+    }
+  },
+  "capabilities": {
+    "agent-work": {
+      "description": "Agent quest execution with tool calling",
+      "preferred": ["claude-4", "gpt-4o"],
+      "fallback": ["ollama-tools"],
+      "requires_tools": true
+    },
+    "boss-battle": {
+      "description": "Quest output evaluation by LLM judge",
+      "preferred": ["claude-4"],
+      "fallback": ["gpt-4o", "ollama"]
+    },
+    "quest-design": {
+      "description": "DM quest parameter decisions",
+      "preferred": ["claude-4"],
+      "fallback": ["gpt-4o"]
+    },
+    "agent-eval": {
+      "description": "Agent performance assessment",
+      "preferred": ["claude-4"],
+      "fallback": ["gpt-4o"]
+    }
+  },
+  "defaults": {
+    "model": "claude-4"
+  }
+}

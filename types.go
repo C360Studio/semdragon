@@ -66,10 +66,10 @@ type Agent struct {
 	DeathCount int   `json:"death_count"` // Lifetime deaths - reputation scar
 
 	// Capabilities & Trust
-	Tier      TrustTier   `json:"tier"`      // Derived from level
-	Equipment []Tool      `json:"equipment"` // Tools this agent can use
-	Skills    []SkillTag  `json:"skills,omitempty"`    // DEPRECATED: Use SkillProficiencies instead
-	Guilds    []GuildID   `json:"guilds"`    // Guild memberships
+	Tier      TrustTier  `json:"tier"`             // Derived from level
+	Equipment []Tool     `json:"equipment"`        // Tools this agent can use
+	Skills    []SkillTag `json:"skills,omitempty"` // DEPRECATED: Use SkillProficiencies instead
+	Guilds    []GuildID  `json:"guilds"`           // Guild memberships
 
 	// Skill Proficiencies - tracks mastery level for each skill
 	SkillProficiencies map[SkillTag]SkillProficiency `json:"skill_proficiencies"`
@@ -167,12 +167,12 @@ func (a *Agent) AddSkill(skill SkillTag) {
 
 // AgentConfig holds the actual implementation details behind the RPG facade.
 type AgentConfig struct {
-	Provider    string            `json:"provider"`     // "openai", "anthropic", "local", etc.
-	Model       string            `json:"model"`        // "claude-sonnet-4-5-20250514", "gpt-4o", etc.
-	SystemPrompt string           `json:"system_prompt"`
-	Temperature float64           `json:"temperature"`
-	MaxTokens   int               `json:"max_tokens"`
-	Metadata    map[string]string `json:"metadata"`     // Arbitrary config
+	Provider     string            `json:"provider"` // "openai", "anthropic", "local", etc.
+	Model        string            `json:"model"`    // "claude-sonnet-4-5-20250514", "gpt-4o", etc.
+	SystemPrompt string            `json:"system_prompt"`
+	Temperature  float64           `json:"temperature"`
+	MaxTokens    int               `json:"max_tokens"`
+	Metadata     map[string]string `json:"metadata"` // Arbitrary config
 }
 
 // AgentStats tracks lifetime performance metrics for an agent.
@@ -182,7 +182,7 @@ type AgentStats struct {
 	BossesDefeated   int     `json:"bosses_defeated"`
 	BossesFailed     int     `json:"bosses_failed"`
 	TotalXPEarned    int64   `json:"total_xp_earned"`
-	TotalXPSpent     int64   `json:"total_xp_spent"`  // XP spent in store
+	TotalXPSpent     int64   `json:"total_xp_spent"` // XP spent in store
 	AvgQualityScore  float64 `json:"avg_quality_score"`
 	AvgEfficiency    float64 `json:"avg_efficiency"`
 	PartiesLed       int     `json:"parties_led"`
@@ -283,9 +283,9 @@ var ProficiencyLevelNames = map[ProficiencyLevel]string{
 // SkillProficiency tracks an agent's mastery of a specific skill.
 type SkillProficiency struct {
 	Level      ProficiencyLevel `json:"level"`
-	Progress   int              `json:"progress"`      // 0-99 points toward next level
-	TotalXP    int64            `json:"total_xp"`      // Lifetime XP earned using this skill
-	QuestsUsed int              `json:"quests_used"`   // Number of quests using this skill
+	Progress   int              `json:"progress"`    // 0-99 points toward next level
+	TotalXP    int64            `json:"total_xp"`    // Lifetime XP earned using this skill
+	QuestsUsed int              `json:"quests_used"` // Number of quests using this skill
 	LastUsed   *time.Time       `json:"last_used,omitempty"`
 }
 
@@ -451,30 +451,31 @@ type Quest struct {
 	Difficulty  QuestDifficulty `json:"difficulty"`
 
 	// Requirements
-	RequiredSkills []SkillTag    `json:"required_skills"`
-	RequiredTools  []string      `json:"required_tools"`   // Tool IDs
-	MinTier        TrustTier     `json:"min_tier"`
-	PartyRequired  bool          `json:"party_required"`   // Too big for solo
-	MinPartySize   int           `json:"min_party_size"`
+	RequiredSkills []SkillTag `json:"required_skills"`
+	RequiredTools  []string   `json:"required_tools"` // Tool IDs
+	MinTier        TrustTier  `json:"min_tier"`
+	PartyRequired  bool       `json:"party_required"` // Too big for solo
+	MinPartySize   int        `json:"min_party_size"`
 
 	// Rewards
-	BaseXP    int64 `json:"base_xp"`
-	BonusXP   int64 `json:"bonus_xp"`    // For exceptional quality
-	GuildXP   int64 `json:"guild_xp"`    // XP toward guild reputation
+	BaseXP  int64 `json:"base_xp"`
+	BonusXP int64 `json:"bonus_xp"` // For exceptional quality
+	GuildXP int64 `json:"guild_xp"` // XP toward guild reputation
 
 	// Execution context - the actual work
-	Input       any       `json:"input"`        // Quest payload
-	Output      any       `json:"output"`       // Result when completed
-	Constraints QuestConstraints  `json:"constraints"`
+	Input        any              `json:"input"`  // Quest payload
+	Output       any              `json:"output"` // Result when completed
+	Constraints  QuestConstraints `json:"constraints"`
+	AllowedTools []string         `json:"allowed_tools,omitempty"` // Tool whitelist for execution (empty = all allowed)
 
 	// Quest chain / decomposition
-	ParentQuest   *QuestID   `json:"parent_quest,omitempty"`  // If this is a sub-quest
-	SubQuests     []QuestID  `json:"sub_quests,omitempty"`    // If decomposed
-	DecomposedBy  *AgentID   `json:"decomposed_by,omitempty"` // Party lead who broke it down
+	ParentQuest  *QuestID  `json:"parent_quest,omitempty"`  // If this is a sub-quest
+	SubQuests    []QuestID `json:"sub_quests,omitempty"`    // If decomposed
+	DecomposedBy *AgentID  `json:"decomposed_by,omitempty"` // Party lead who broke it down
 
 	// Assignment
-	ClaimedBy    *AgentID  `json:"claimed_by,omitempty"`
-	PartyID      *PartyID  `json:"party_id,omitempty"`
+	ClaimedBy     *AgentID `json:"claimed_by,omitempty"`
+	PartyID       *PartyID `json:"party_id,omitempty"`
 	GuildPriority *GuildID `json:"guild_priority,omitempty"` // Guild gets first dibs
 
 	// Lifecycle
@@ -523,11 +524,11 @@ const (
 
 // BossBattle represents a quality gate review session.
 type BossBattle struct {
-	ID        BattleID     `json:"id"`
-	QuestID   QuestID      `json:"quest_id"`
-	AgentID   AgentID      `json:"agent_id"`
-	Level     ReviewLevel  `json:"level"`
-	Status    BattleStatus `json:"status"`
+	ID      BattleID     `json:"id"`
+	QuestID QuestID      `json:"quest_id"`
+	AgentID AgentID      `json:"agent_id"`
+	Level   ReviewLevel  `json:"level"`
+	Status  BattleStatus `json:"status"`
 
 	Criteria    []ReviewCriterion `json:"criteria"`
 	Results     []ReviewResult    `json:"results,omitempty"`

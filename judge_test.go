@@ -152,7 +152,7 @@ func TestAutomatedJudge_NonEmptyCheck_EmptyStringFails(t *testing.T) {
 }
 
 func TestLLMJudge_ReturnsPlaceholder(t *testing.T) {
-	judge := NewLLMJudge()
+	judge := NewLLMJudge(nil) // Stub mode
 	ctx := context.Background()
 
 	input := JudgeInput{
@@ -180,7 +180,7 @@ func TestLLMJudge_ReturnsPlaceholder(t *testing.T) {
 }
 
 func TestLLMJudge_NilOutputReturnsZero(t *testing.T) {
-	judge := NewLLMJudge()
+	judge := NewLLMJudge(nil) // Stub mode
 	ctx := context.Background()
 
 	input := JudgeInput{

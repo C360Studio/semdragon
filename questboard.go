@@ -71,25 +71,25 @@ type QuestBoard interface {
 
 // QuestFilter specifies criteria for filtering available quests.
 type QuestFilter struct {
-	Skills       []SkillTag      `json:"skills,omitempty"`
+	Skills        []SkillTag       `json:"skills,omitempty"`
 	MinDifficulty *QuestDifficulty `json:"min_difficulty,omitempty"`
 	MaxDifficulty *QuestDifficulty `json:"max_difficulty,omitempty"`
-	GuildID      *GuildID         `json:"guild_id,omitempty"`
-	PartyOnly    *bool            `json:"party_only,omitempty"`
-	Limit        int              `json:"limit"`
+	GuildID       *GuildID         `json:"guild_id,omitempty"`
+	PartyOnly     *bool            `json:"party_only,omitempty"`
+	Limit         int              `json:"limit"`
 }
 
 // BoardStats contains aggregate statistics for the quest board.
 type BoardStats struct {
-	TotalPosted     int            `json:"total_posted"`
-	TotalClaimed    int            `json:"total_claimed"`
-	TotalInProgress int            `json:"total_in_progress"`
-	TotalCompleted  int            `json:"total_completed"`
-	TotalFailed     int            `json:"total_failed"`
-	TotalEscalated  int            `json:"total_escalated"`
-	ByDifficulty    map[QuestDifficulty]int `json:"by_difficulty"`
-	BySkill         map[SkillTag]int        `json:"by_skill"`
-	AvgCompletionTime time.Duration         `json:"avg_completion_time"`
+	TotalPosted       int                     `json:"total_posted"`
+	TotalClaimed      int                     `json:"total_claimed"`
+	TotalInProgress   int                     `json:"total_in_progress"`
+	TotalCompleted    int                     `json:"total_completed"`
+	TotalFailed       int                     `json:"total_failed"`
+	TotalEscalated    int                     `json:"total_escalated"`
+	ByDifficulty      map[QuestDifficulty]int `json:"by_difficulty"`
+	BySkill           map[SkillTag]int        `json:"by_skill"`
+	AvgCompletionTime time.Duration           `json:"avg_completion_time"`
 }
 
 // =============================================================================
@@ -111,8 +111,8 @@ func NewQuest(title string) *QuestBuilder {
 			Status:   QuestPosted,
 			PostedAt: time.Now(),
 			Constraints: QuestConstraints{
-				RequireReview: true,            // Default: always face the boss
-				ReviewLevel:   ReviewStandard,  // Default: LLM judge
+				RequireReview: true,           // Default: always face the boss
+				ReviewLevel:   ReviewStandard, // Default: LLM judge
 			},
 			MaxAttempts: 3, // Default retries before escalation
 		},
@@ -214,6 +214,13 @@ func (b *QuestBuilder) GuildPriority(guildID GuildID) *QuestBuilder {
 // AsSubQuestOf marks this quest as a sub-quest of another.
 func (b *QuestBuilder) AsSubQuestOf(parentID QuestID) *QuestBuilder {
 	b.quest.ParentQuest = &parentID
+	return b
+}
+
+// AllowTools sets which tools are allowed for this quest.
+// If empty or not set, all tools the agent has access to are allowed.
+func (b *QuestBuilder) AllowTools(tools ...string) *QuestBuilder {
+	b.quest.AllowedTools = append(b.quest.AllowedTools, tools...)
 	return b
 }
 
