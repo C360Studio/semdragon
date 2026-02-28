@@ -79,12 +79,7 @@ func (e *SkillProgressionEngine) ProcessQuestCompletion(ctx SkillProgressionCont
 	}
 
 	// Ensure agent has proficiencies map
-	if ctx.Agent.SkillProficiencies == nil {
-		ctx.Agent.SkillProficiencies = make(map[SkillTag]SkillProficiency)
-	}
-
-	// Migrate legacy skills if needed
-	ctx.Agent.MigrateSkills()
+	ctx.Agent.EnsureSkillProficiencies()
 
 	var results []SkillImprovementResult
 	now := time.Now()

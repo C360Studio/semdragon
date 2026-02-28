@@ -353,16 +353,28 @@ func (e *DefaultExecutor) executeTool(ctx context.Context, call agentic.ToolCall
 	return e.toolRegistry.Execute(ctx, call, quest, agent)
 }
 
-// getMaxTokens returns the max tokens for the request.
-// Endpoint is reserved for future use when we want to cap based on endpoint limits.
-func (e *DefaultExecutor) getMaxTokens(agent *Agent, _ *model.EndpointConfig) int {
-	// Use agent's configured max, or endpoint default, or a reasonable default
+// getMaxTokens returns the max tokens for the request output.
+// Considers agent config, endpoint context window, and reasonable defaults.
+func (e *DefaultExecutor) getMaxTokens(agent *Agent, endpoint *model.EndpointConfig) int {
+	// Use agent's configured max if specified
 	if agent.Config.MaxTokens > 0 {
 		return agent.Config.MaxTokens
 	}
-	// Cap at reasonable output size
-	// TODO: Consider using endpoint.MaxTokens to cap based on model limits
-	return 4096
+
+	// Default output limit
+	defaultOutput := 4096
+
+	// If endpoint specifies a context window, cap output to leave room for input.
+	// Rule of thumb: output should be at most 25% of context window to leave
+	// room for system prompt, conversation history, and tool results.
+	if endpoint != nil && endpoint.MaxTokens > 0 {
+		maxOutput := endpoint.MaxTokens / 4
+		if maxOutput < defaultOutput {
+			return maxOutput
+		}
+	}
+
+	return defaultOutput
 }
 
 // getTemperature returns the temperature for the request.

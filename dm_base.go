@@ -284,8 +284,11 @@ func (dm *BaseDungeonMaster) computeSessionSummary(ctx context.Context, sessionI
 		}
 	}
 
-	// TODO: Track level ups/downs and deaths during session
-	// This would require session-scoped event tracking
+	// Session-scoped tracking of level changes and deaths is deferred.
+	// Current implementation aggregates lifetime stats from agents.
+	// Per-session tracking would require event sourcing with session correlation,
+	// which adds complexity without immediate use case. When needed, implement
+	// by subscribing to agent.progression events filtered by session time range.
 
 	return summary
 }

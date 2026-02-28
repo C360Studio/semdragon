@@ -340,9 +340,12 @@ func TestAgent_SkillMethods(t *testing.T) {
 		}
 	})
 
-	t.Run("HasSkill with legacy skills", func(t *testing.T) {
+	t.Run("HasSkill with proficiencies", func(t *testing.T) {
 		agent := &Agent{
-			Skills: []SkillTag{SkillCodeGen, SkillCodeReview},
+			SkillProficiencies: map[SkillTag]SkillProficiency{
+				SkillCodeGen:    {Level: ProficiencyNovice},
+				SkillCodeReview: {Level: ProficiencyApprentice},
+			},
 		}
 
 		if !agent.HasSkill(SkillCodeGen) {
@@ -371,20 +374,21 @@ func TestAgent_SkillMethods(t *testing.T) {
 		}
 	})
 
-	t.Run("MigrateSkills converts legacy to proficiencies", func(t *testing.T) {
-		agent := &Agent{
-			Skills: []SkillTag{SkillCodeGen, SkillAnalysis},
+	t.Run("EnsureSkillProficiencies initializes map", func(t *testing.T) {
+		agent := &Agent{}
+
+		agent.EnsureSkillProficiencies()
+
+		if agent.SkillProficiencies == nil {
+			t.Error("expected SkillProficiencies to be initialized")
 		}
 
-		agent.MigrateSkills()
+		// Idempotent - calling again shouldn't reset
+		agent.SkillProficiencies[SkillCodeGen] = SkillProficiency{Level: ProficiencyExpert}
+		agent.EnsureSkillProficiencies()
 
-		if len(agent.SkillProficiencies) != 2 {
-			t.Errorf("expected 2 proficiencies, got %d", len(agent.SkillProficiencies))
-		}
-
-		prof := agent.SkillProficiencies[SkillCodeGen]
-		if prof.Level != ProficiencyNovice {
-			t.Errorf("migrated skill should be Novice, got %d", prof.Level)
+		if len(agent.SkillProficiencies) != 1 {
+			t.Errorf("expected 1 proficiency, got %d", len(agent.SkillProficiencies))
 		}
 	})
 

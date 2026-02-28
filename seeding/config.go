@@ -6,6 +6,7 @@ package seeding
 
 import (
 	"github.com/c360studio/semdragons"
+	"github.com/c360studio/semstreams/model"
 )
 
 // =============================================================================
@@ -55,8 +56,17 @@ func (c *Config) Validate() error {
 
 // ArenaConfig configures the training arena seeding mode.
 type ArenaConfig struct {
+	// Registry provides access to LLM endpoints for evaluation.
+	// If nil, the arena judge will use stub evaluation.
+	Registry model.RegistryReader `json:"-"`
+
 	// AgentConfigs are the LLM configurations for agents to create.
 	AgentConfigs []semdragons.AgentConfig `json:"agent_configs"`
+
+	// MentorConfig is the LLM configuration for NPC mentors.
+	// Should use a capable model suitable for guidance/oversight.
+	// If empty, bootstrap mentors will use a default config.
+	MentorConfig semdragons.AgentConfig `json:"mentor_config"`
 
 	// TargetDistribution defines desired final agent levels.
 	TargetDistribution LevelDistribution `json:"target_distribution"`
@@ -72,9 +82,6 @@ type ArenaConfig struct {
 
 	// QuestFile is an optional path to custom quest templates JSON.
 	QuestFile string `json:"quest_file,omitempty"`
-
-	// JudgeConfig is the LLM configuration for the arena judge.
-	JudgeConfig semdragons.AgentConfig `json:"judge_config"`
 
 	// BootstrapMentors is the number of NPC mentors to spawn if no real mentors available.
 	BootstrapMentors int `json:"bootstrap_mentors"`

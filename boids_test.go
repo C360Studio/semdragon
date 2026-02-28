@@ -10,13 +10,17 @@ import (
 // =============================================================================
 
 func newTestAgent(id string, level int, skills ...SkillTag) Agent {
+	proficiencies := make(map[SkillTag]SkillProficiency)
+	for _, skill := range skills {
+		proficiencies[skill] = SkillProficiency{Level: ProficiencyNovice}
+	}
 	return Agent{
-		ID:     AgentID(id),
-		Name:   id,
-		Level:  level,
-		Tier:   TierFromLevel(level),
-		Status: AgentIdle,
-		Skills: skills,
+		ID:                 AgentID(id),
+		Name:               id,
+		Level:              level,
+		Tier:               TierFromLevel(level),
+		Status:             AgentIdle,
+		SkillProficiencies: proficiencies,
 	}
 }
 

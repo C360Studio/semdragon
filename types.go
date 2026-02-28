@@ -66,10 +66,9 @@ type Agent struct {
 	DeathCount int   `json:"death_count"` // Lifetime deaths - reputation scar
 
 	// Capabilities & Trust
-	Tier      TrustTier  `json:"tier"`             // Derived from level
-	Equipment []Tool     `json:"equipment"`        // Tools this agent can use
-	Skills    []SkillTag `json:"skills,omitempty"` // DEPRECATED: Use SkillProficiencies instead
-	Guilds    []GuildID  `json:"guilds"`           // Guild memberships
+	Tier      TrustTier `json:"tier"`      // Derived from level
+	Equipment []Tool    `json:"equipment"` // Tools this agent can use
+	Guilds    []GuildID `json:"guilds"`    // Guild memberships
 
 	// Skill Proficiencies - tracks mastery level for each skill
 	SkillProficiencies map[SkillTag]SkillProficiency `json:"skill_proficiencies"`
@@ -94,17 +93,11 @@ type Agent struct {
 
 // HasSkill returns true if the agent has the specified skill (at any proficiency level).
 func (a *Agent) HasSkill(skill SkillTag) bool {
-	if a.SkillProficiencies != nil {
-		_, exists := a.SkillProficiencies[skill]
-		return exists
+	if a.SkillProficiencies == nil {
+		return false
 	}
-	// Fall back to legacy Skills slice for backward compatibility
-	for _, s := range a.Skills {
-		if s == skill {
-			return true
-		}
-	}
-	return false
+	_, exists := a.SkillProficiencies[skill]
+	return exists
 }
 
 // GetProficiency returns the proficiency for a skill.
@@ -118,34 +111,23 @@ func (a *Agent) GetProficiency(skill SkillTag) SkillProficiency {
 	return SkillProficiency{}
 }
 
-// GetSkillTags returns all skills the agent has (from both new and legacy fields).
+// GetSkillTags returns all skills the agent has.
 func (a *Agent) GetSkillTags() []SkillTag {
-	if a.SkillProficiencies != nil && len(a.SkillProficiencies) > 0 {
-		skills := make([]SkillTag, 0, len(a.SkillProficiencies))
-		for skill := range a.SkillProficiencies {
-			skills = append(skills, skill)
-		}
-		return skills
+	if a.SkillProficiencies == nil {
+		return nil
 	}
-	return a.Skills
+	skills := make([]SkillTag, 0, len(a.SkillProficiencies))
+	for skill := range a.SkillProficiencies {
+		skills = append(skills, skill)
+	}
+	return skills
 }
 
-// MigrateSkills converts legacy Skills slice to SkillProficiencies map.
-// Each skill is initialized at Novice level with zero progress.
-// This is idempotent - calling it multiple times has no effect if already migrated.
-func (a *Agent) MigrateSkills() {
+// EnsureSkillProficiencies initializes the SkillProficiencies map if nil.
+// This is idempotent - calling it multiple times has no effect if already initialized.
+func (a *Agent) EnsureSkillProficiencies() {
 	if a.SkillProficiencies == nil {
 		a.SkillProficiencies = make(map[SkillTag]SkillProficiency)
-	}
-	for _, skill := range a.Skills {
-		if _, exists := a.SkillProficiencies[skill]; !exists {
-			a.SkillProficiencies[skill] = SkillProficiency{
-				Level:      ProficiencyNovice,
-				Progress:   0,
-				TotalXP:    0,
-				QuestsUsed: 0,
-			}
-		}
 	}
 }
 

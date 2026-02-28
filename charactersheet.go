@@ -114,22 +114,7 @@ func (s *CharacterSheetService) GetCharacterSheet(ctx context.Context, agentID A
 // buildSkillBars creates skill bar data from agent proficiencies.
 func (s *CharacterSheetService) buildSkillBars(agent *Agent) []SkillBar {
 	if agent.SkillProficiencies == nil || len(agent.SkillProficiencies) == 0 {
-		// Fall back to legacy skills
-		bars := make([]SkillBar, 0, len(agent.Skills))
-		for _, skill := range agent.Skills {
-			bars = append(bars, SkillBar{
-				Skill:           skill,
-				SkillName:       skillTagToName(skill),
-				Level:           ProficiencyNovice,
-				LevelName:       ProficiencyLevelNames[ProficiencyNovice],
-				Progress:        0,
-				ProgressPercent: 0,
-				TotalXP:         0,
-				QuestsUsed:      0,
-				IsMaxLevel:      false,
-			})
-		}
-		return bars
+		return nil // No skills to display
 	}
 
 	bars := make([]SkillBar, 0, len(agent.SkillProficiencies))
@@ -293,12 +278,8 @@ func (s *CharacterSheetService) GetSkillSummary(ctx context.Context, agentID Age
 		return summary, nil
 	}
 
-	// Fall back to legacy skills
-	summary := make(map[SkillTag]ProficiencyLevel, len(agent.Skills))
-	for _, skill := range agent.Skills {
-		summary[skill] = ProficiencyNovice
-	}
-	return summary, nil
+	// No skills defined
+	return make(map[SkillTag]ProficiencyLevel), nil
 }
 
 // CompareAgents returns a comparison of two agents' character sheets.

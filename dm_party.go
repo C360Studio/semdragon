@@ -100,7 +100,7 @@ func (e *PartyFormationEngine) formBalancedParty(
 	}
 
 	// Remove skills the lead already covers
-	for _, skill := range lead.Skills {
+	for _, skill := range lead.GetSkillTags() {
 		delete(neededSkills, skill)
 	}
 
@@ -109,7 +109,7 @@ func (e *PartyFormationEngine) formBalancedParty(
 		{
 			AgentID:  lead.ID,
 			Role:     RoleLead,
-			Skills:   lead.Skills,
+			Skills:   lead.GetSkillTags(),
 			JoinedAt: time.Now(),
 		},
 	}
@@ -128,7 +128,7 @@ func (e *PartyFormationEngine) formBalancedParty(
 
 		// Check if this agent covers any needed skills
 		coversNeeded := false
-		for _, skill := range agent.Skills {
+		for _, skill := range agent.GetSkillTags() {
 			if neededSkills[skill] {
 				coversNeeded = true
 				delete(neededSkills, skill)
@@ -139,7 +139,7 @@ func (e *PartyFormationEngine) formBalancedParty(
 			members = append(members, PartyMember{
 				AgentID:  agent.ID,
 				Role:     RoleExecutor,
-				Skills:   agent.Skills,
+				Skills:   agent.GetSkillTags(),
 				JoinedAt: time.Now(),
 			})
 		}
@@ -213,7 +213,7 @@ func (e *PartyFormationEngine) formSpecialistParty(
 		{
 			AgentID:  lead.ID,
 			Role:     RoleLead,
-			Skills:   lead.Skills,
+			Skills:   lead.GetSkillTags(),
 			JoinedAt: time.Now(),
 		},
 	}
@@ -228,7 +228,7 @@ func (e *PartyFormationEngine) formSpecialistParty(
 		members = append(members, PartyMember{
 			AgentID:  agent.ID,
 			Role:     RoleExecutor,
-			Skills:   agent.Skills,
+			Skills:   agent.GetSkillTags(),
 			JoinedAt: time.Now(),
 		})
 	}
@@ -296,7 +296,7 @@ func (e *PartyFormationEngine) formMentorParty(
 		{
 			AgentID:  lead.ID,
 			Role:     RoleLead,
-			Skills:   lead.Skills,
+			Skills:   lead.GetSkillTags(),
 			JoinedAt: time.Now(),
 		},
 	}
@@ -306,7 +306,7 @@ func (e *PartyFormationEngine) formMentorParty(
 		members = append(members, PartyMember{
 			AgentID:  apprentices[i].ID,
 			Role:     RoleExecutor,
-			Skills:   apprentices[i].Skills,
+			Skills:   apprentices[i].GetSkillTags(),
 			JoinedAt: time.Now(),
 		})
 	}
@@ -337,7 +337,7 @@ func (e *PartyFormationEngine) formMinimalParty(
 			{
 				AgentID:  lead.ID,
 				Role:     RoleLead,
-				Skills:   lead.Skills,
+				Skills:   lead.GetSkillTags(),
 				JoinedAt: time.Now(),
 			},
 		}
@@ -378,7 +378,7 @@ func (e *PartyFormationEngine) formMinimalParty(
 		{
 			AgentID:  lead.ID,
 			Role:     RoleLead,
-			Skills:   lead.Skills,
+			Skills:   lead.GetSkillTags(),
 			JoinedAt: time.Now(),
 		},
 	}
@@ -387,7 +387,7 @@ func (e *PartyFormationEngine) formMinimalParty(
 		members = append(members, PartyMember{
 			AgentID:  scored[i].agent.ID,
 			Role:     RoleExecutor,
-			Skills:   scored[i].agent.Skills,
+			Skills:   scored[i].agent.GetSkillTags(),
 			JoinedAt: time.Now(),
 		})
 	}
@@ -456,14 +456,18 @@ func (e *PartyFormationEngine) RankAgentsForQuest(
 }
 
 // SuggestPartyMembers returns suggested party members with rankings.
-// The strategy parameter is reserved for future use to tailor suggestions
-// based on formation approach (e.g., prioritize mentors for mentor strategy).
+// The strategy parameter is reserved for future tailoring of suggestions
+// (e.g., prioritize mentors for PartyStrategyMentor). Currently, all strategies
+// use the same boid-based scoring which works well for general party formation.
 func (e *PartyFormationEngine) SuggestPartyMembers(
 	agents []Agent,
 	quest *Quest,
 	strategy PartyStrategy,
 ) ([]PartyMemberSuggestion, error) {
-	// TODO: Use strategy to adjust suggestion scoring when implemented
+	// Strategy-specific scoring deferred until we have concrete requirements.
+	// Current boid-based scoring considers skills, level, and guild affinity
+	// which covers most use cases. The strategy parameter is preserved for
+	// future enhancements like mentor-prioritization or specialist weighting.
 	_ = strategy
 	rules := DefaultBoidRules()
 	attractions := e.boids.ComputeAttractions(agents, []Quest{*quest}, rules)
@@ -481,8 +485,9 @@ func (e *PartyFormationEngine) SuggestPartyMembers(
 
 		// Calculate skill coverage
 		var coveredSkills []SkillTag
+		agentSkills := agent.GetSkillTags()
 		for _, skill := range quest.RequiredSkills {
-			if slices.Contains(agent.Skills, skill) {
+			if slices.Contains(agentSkills, skill) {
 				coveredSkills = append(coveredSkills, skill)
 			}
 		}
@@ -533,14 +538,11 @@ func (e *PartyFormationEngine) recommendRole(agent Agent, perms TierPermissions)
 	if perms.CanLeadParty {
 		return RoleLead
 	}
-	// Check for reviewer skills
-	for _, skill := range agent.Skills {
+	// Check for reviewer or scout skills
+	for _, skill := range agent.GetSkillTags() {
 		if skill == SkillCodeReview {
 			return RoleReviewer
 		}
-	}
-	// Check for research/scout skills
-	for _, skill := range agent.Skills {
 		if skill == SkillResearch {
 			return RoleScout
 		}

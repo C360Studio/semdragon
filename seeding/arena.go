@@ -60,8 +60,8 @@ func (a *ArenaSeeder) Seed(ctx context.Context, dryRun, idempotent bool) (*Resul
 		return result, err
 	}
 
-	// Initialize judge
-	a.judge = NewArenaJudge(a.config.JudgeConfig)
+	// Initialize judge with registry (may be nil for stub evaluation)
+	a.judge = NewArenaJudge(a.config.Registry)
 
 	// Create initial agents
 	agents, err := a.createInitialAgents(ctx, dryRun, idempotent, result)
@@ -239,8 +239,8 @@ func (a *ArenaSeeder) ensureMentorsAvailable(ctx context.Context, result *Result
 
 	a.logger.Info("spawning bootstrap mentor NPCs", "count", a.config.BootstrapMentors)
 
-	// Use roster seeder to create NPC mentors
-	rosterConfig := BootstrapMentorRoster(a.config.BootstrapMentors, a.config.JudgeConfig)
+	// Use roster seeder to create NPC mentors with dedicated mentor config
+	rosterConfig := BootstrapMentorRoster(a.config.BootstrapMentors, a.config.MentorConfig)
 	roster := NewRosterSeeder(a.storage, rosterConfig)
 	roster.logger = a.logger
 

@@ -350,11 +350,8 @@ func (dm *BaseDungeonMaster) GetAgentsBySkill(ctx context.Context, skill SkillTa
 
 	var filtered []Agent
 	for _, agent := range agents {
-		for _, s := range agent.Skills {
-			if s == skill {
-				filtered = append(filtered, agent)
-				break
-			}
+		if agent.HasSkill(skill) {
+			filtered = append(filtered, agent)
 		}
 	}
 
