@@ -49,9 +49,15 @@ const (
 // Agent represents an autonomous worker in the semdragons system.
 // Agents earn XP, level up, join guilds, and claim quests from the board.
 type Agent struct {
-	ID     AgentID     `json:"id"`
-	Name   string      `json:"name"`
-	Status AgentStatus `json:"status"`
+	ID          AgentID     `json:"id"`
+	Name        string      `json:"name"`         // System identifier
+	DisplayName string      `json:"display_name"` // Character name chosen by agent (e.g., "Shadowweaver")
+	Status      AgentStatus `json:"status"`
+
+	// Persona defines the agent's character identity and behavioral style.
+	// IMPORTANT: Persona affects trajectory (how the agent works) but NOT progression
+	// (XP, levels, boss battle outcomes). See AgentPersona documentation.
+	Persona *AgentPersona `json:"persona,omitempty"`
 
 	// Progression
 	Level      int   `json:"level"`       // 1-20, determines trust/capability tier
@@ -198,6 +204,52 @@ const (
 	SkillAnalysis      SkillTag = "analysis"
 	SkillTraining      SkillTag = "training" // Can lead training parties as mentor
 )
+
+// -----------------------------------------------------------------------------
+// Agent Persona - Character identity that shapes behavior, NOT progression
+// -----------------------------------------------------------------------------
+//
+// DESIGN PRINCIPLE: Persona affects TRAJECTORY, not PROGRESSION.
+//
+// Persona influences (trajectory):
+//   - Communication and output style
+//   - Problem-solving approach
+//   - Quest type preferences (soft attraction via boids, not hard gates)
+//   - Party compatibility (complementary personalities)
+//   - Guild culture fit
+//
+// Persona does NOT influence (progression):
+//   - XP calculations
+//   - Boss battle verdicts
+//   - Skill proficiency gains
+//   - Tier capabilities
+//   - Review outcomes
+//   - Level progression
+//
+// This ensures fair competition: agents succeed based on demonstrated
+// competence, not character backstory. A well-written persona makes an
+// agent more interesting, not more powerful.
+
+// AgentPersona defines an agent's character identity and behavioral style.
+type AgentPersona struct {
+	// SystemPrompt is injected into the agent's LLM calls to shape behavior.
+	// Should describe thinking style, communication approach, problem-solving
+	// preferences - NOT claims of capability or expertise.
+	SystemPrompt string `json:"system_prompt"`
+
+	// Backstory provides RPG flavor text and may hint at guild affinity.
+	// Example: "Forged in the data mines of the Analytics Guild..."
+	Backstory string `json:"backstory"`
+
+	// Traits are personality descriptors that affect style, not power.
+	// Examples: "methodical", "creative", "terse", "thorough", "playful"
+	// These may influence party formation (complementary traits work well).
+	Traits []string `json:"traits,omitempty"`
+
+	// Style describes communication preferences.
+	// Examples: "formal", "casual", "technical", "narrative"
+	Style string `json:"style,omitempty"`
+}
 
 // -----------------------------------------------------------------------------
 // Skill Proficiency - Skills have levels that improve through use

@@ -112,6 +112,27 @@ export interface AgentConfig {
 	metadata: Record<string, string>;
 }
 
+/**
+ * AgentPersona defines an agent's character identity and behavioral style.
+ *
+ * DESIGN PRINCIPLE: Persona affects TRAJECTORY, not PROGRESSION.
+ *
+ * Influences (trajectory): communication style, problem-solving approach,
+ * quest preferences, party compatibility, guild culture fit.
+ *
+ * Does NOT influence (progression): XP, boss battles, skill gains, tier gates.
+ */
+export interface AgentPersona {
+	/** Injected into LLM calls to shape behavior - describes thinking/communication style */
+	system_prompt: string;
+	/** RPG flavor text, may hint at guild affinity */
+	backstory: string;
+	/** Personality descriptors (e.g., "methodical", "creative", "terse") */
+	traits?: string[];
+	/** Communication preferences (e.g., "formal", "casual", "technical") */
+	style?: string;
+}
+
 export interface Tool {
 	id: string;
 	name: string;
@@ -125,7 +146,11 @@ export interface Tool {
 export interface Agent {
 	id: AgentID;
 	name: string;
+	/** Character name chosen by agent (e.g., "Shadowweaver", "Ironcode") */
+	display_name?: string;
 	status: AgentStatus;
+	/** Character identity - affects trajectory, NOT progression */
+	persona?: AgentPersona;
 	level: number;
 	xp: number;
 	xp_to_level: number;
