@@ -524,6 +524,7 @@ type GuildSuggestion struct {
 // GuildMatch indicates an agent qualifies for a guild.
 type GuildMatch struct {
 	GuildID       GuildID    `json:"guild_id"`
+	GuildInstance string     `json:"guild_instance"` // Storage instance key (may differ from GuildID)
 	AgentID       AgentID    `json:"agent_id"`
 	MatchScore    float64    `json:"match_score"` // 0-1, skill overlap
 	SkillsMatched []SkillTag `json:"skills_matched"`

@@ -601,6 +601,10 @@ func (s *Storage) ListGuildsBySkill(ctx context.Context, skill SkillTag) ([]stri
 }
 
 // ListAllAgents returns all agent instances from storage.
+//
+// Performance note: This method performs a full key scan followed by N individual
+// Gets. It is intended for batch operations (e.g., periodic guild formation) rather
+// than real-time queries. For large agent populations, consider using indices.
 func (s *Storage) ListAllAgents(ctx context.Context) ([]*Agent, error) {
 	keys, err := s.ListIndexKeys(ctx, "agent.")
 	if err != nil {
@@ -625,6 +629,10 @@ func (s *Storage) ListAllAgents(ctx context.Context) ([]*Agent, error) {
 }
 
 // ListAllGuilds returns all guild instances from storage.
+//
+// Performance note: This method performs a full key scan followed by N individual
+// Gets. It is intended for batch operations rather than real-time queries.
+// For large guild populations, consider using indices.
 func (s *Storage) ListAllGuilds(ctx context.Context) ([]*Guild, error) {
 	keys, err := s.ListIndexKeys(ctx, "guild.")
 	if err != nil {

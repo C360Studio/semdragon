@@ -2,7 +2,9 @@ package semdragons
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +18,10 @@ import (
 // =============================================================================
 // Detects skill clusters among agents and auto-recruits them into guilds.
 // Uses Jaccard similarity for clustering and reactive event-driven auto-recruit.
+//
+// Performance note: DetectSkillClusters is O(n²) for Jaccard calculations.
+// ListAllAgents/ListAllGuilds perform full scans. These methods are intended
+// for batch operations, not real-time queries on large agent populations.
 // =============================================================================
 
 // GuildFormationEngine detects skill clusters and manages auto-recruitment.
@@ -48,11 +54,29 @@ func DefaultFormationConfig() GuildFormationConfig {
 	}
 }
 
+// Validate checks that config values are sensible.
+func (c GuildFormationConfig) Validate() error {
+	if c.MinClusterSize < 1 {
+		return errors.New("MinClusterSize must be at least 1")
+	}
+	if c.MinClusterStrength < 0 || c.MinClusterStrength > 1 {
+		return errors.New("MinClusterStrength must be between 0 and 1")
+	}
+	if c.MinAgentLevel < 1 {
+		return errors.New("MinAgentLevel must be at least 1")
+	}
+	if c.RequireQualityScore < 0 || c.RequireQualityScore > 1 {
+		return errors.New("RequireQualityScore must be between 0 and 1")
+	}
+	return nil
+}
+
 // DefaultGuildFormationEngine implements GuildFormationEngine using Jaccard clustering.
 type DefaultGuildFormationEngine struct {
 	storage *Storage
 	events  *EventPublisher
 	config  GuildFormationConfig
+	logger  *slog.Logger
 }
 
 // NewGuildFormationEngine creates a new formation engine with the given config.
@@ -61,10 +85,18 @@ func NewGuildFormationEngine(storage *Storage, events *EventPublisher, config Gu
 		storage: storage,
 		events:  events,
 		config:  config,
+		logger:  slog.Default(),
 	}
 }
 
+// WithLogger sets a custom logger for the engine.
+func (e *DefaultGuildFormationEngine) WithLogger(l *slog.Logger) *DefaultGuildFormationEngine {
+	e.logger = l
+	return e
+}
+
 // DetectSkillClusters groups agents by primary skill and calculates cluster strength.
+// This method respects context cancellation during expensive computations.
 func (e *DefaultGuildFormationEngine) DetectSkillClusters(ctx context.Context, agents []*Agent) []GuildSuggestion {
 	// Filter eligible agents
 	eligible := e.filterEligibleAgents(agents)
@@ -72,17 +104,25 @@ func (e *DefaultGuildFormationEngine) DetectSkillClusters(ctx context.Context, a
 		return nil
 	}
 
-	// Group by primary skill (most quests completed in that skill)
+	// Group by primary skill (first declared skill in agent's skill list)
 	skillGroups := e.groupByPrimarySkill(eligible)
 
 	var suggestions []GuildSuggestion
 	for skill, group := range skillGroups {
+		// Check for context cancellation between skill groups
+		select {
+		case <-ctx.Done():
+			e.logger.Debug("DetectSkillClusters cancelled", "processed_skills", len(suggestions))
+			return suggestions
+		default:
+		}
+
 		if len(group) < e.config.MinClusterSize {
 			continue
 		}
 
 		// Calculate cluster strength via average pairwise Jaccard similarity
-		strength := e.calculateClusterStrength(group)
+		strength := e.calculateClusterStrength(ctx, group)
 		if strength < e.config.MinClusterStrength {
 			continue
 		}
@@ -131,14 +171,29 @@ func (e *DefaultGuildFormationEngine) EvaluateAgentForGuilds(ctx context.Context
 
 	// For each agent skill, find guilds that specialize in it
 	for _, skill := range agent.Skills {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return matches, ctx.Err()
+		default:
+		}
+
 		guildInstances, err := e.storage.ListGuildsBySkill(ctx, skill)
 		if err != nil {
+			e.logger.Debug("failed to list guilds by skill",
+				"skill", skill,
+				"agent", agent.ID,
+				"error", err)
 			continue
 		}
 
 		for _, instance := range guildInstances {
 			guild, err := e.storage.GetGuild(ctx, instance)
 			if err != nil {
+				e.logger.Debug("failed to load guild",
+					"instance", instance,
+					"skill", skill,
+					"error", err)
 				continue
 			}
 
@@ -161,11 +216,12 @@ func (e *DefaultGuildFormationEngine) EvaluateAgentForGuilds(ctx context.Context
 			matchScore := float64(len(matchedSkills)) / float64(len(guild.Skills))
 
 			matches = append(matches, GuildMatch{
-				GuildID:       guild.ID,
-				AgentID:       agent.ID,
-				MatchScore:    matchScore,
-				SkillsMatched: matchedSkills,
-				CanAutoJoin:   guild.AutoRecruit,
+				GuildID:        guild.ID,
+				GuildInstance:  instance, // Track storage instance separately
+				AgentID:        agent.ID,
+				MatchScore:     matchScore,
+				SkillsMatched:  matchedSkills,
+				CanAutoJoin:    guild.AutoRecruit,
 			})
 		}
 	}
@@ -179,6 +235,7 @@ func (e *DefaultGuildFormationEngine) EvaluateAgentForGuilds(ctx context.Context
 }
 
 // ProcessAutoRecruit handles auto-joining for an agent.
+// Uses compensating transactions: if agent update fails, guild membership is rolled back.
 func (e *DefaultGuildFormationEngine) ProcessAutoRecruit(ctx context.Context, agentID AgentID) ([]GuildID, error) {
 	agent, err := e.storage.GetAgent(ctx, string(agentID))
 	if err != nil {
@@ -196,9 +253,21 @@ func (e *DefaultGuildFormationEngine) ProcessAutoRecruit(ctx context.Context, ag
 			continue
 		}
 
-		// Add agent to guild
-		guildInstance := string(match.GuildID)
+		// Use the storage instance, not the GuildID
+		guildInstance := match.GuildInstance
+		if guildInstance == "" {
+			// Fallback for backwards compatibility
+			guildInstance = string(match.GuildID)
+		}
+
+		// Add agent to guild with duplicate check
 		err := e.storage.UpdateGuild(ctx, guildInstance, func(g *Guild) error {
+			// Check for duplicates inside the atomic update
+			for _, m := range g.Members {
+				if m.AgentID == agentID {
+					return nil // Already a member, no-op
+				}
+			}
 			g.Members = append(g.Members, GuildMember{
 				AgentID:  agentID,
 				Rank:     GuildRankInitiate,
@@ -208,27 +277,64 @@ func (e *DefaultGuildFormationEngine) ProcessAutoRecruit(ctx context.Context, ag
 			return nil
 		})
 		if err != nil {
+			e.logger.Debug("failed to add agent to guild",
+				"agent", agentID,
+				"guild", match.GuildID,
+				"error", err)
 			continue
 		}
 
-		// Add guild to agent
+		// Add guild to agent with duplicate check
 		err = e.storage.UpdateAgent(ctx, string(agentID), func(a *Agent) error {
+			// Check for duplicates
+			for _, g := range a.Guilds {
+				if g == match.GuildID {
+					return nil // Already has guild, no-op
+				}
+			}
 			a.Guilds = append(a.Guilds, match.GuildID)
 			return nil
 		})
 		if err != nil {
+			// Compensating transaction: rollback guild membership
+			e.logger.Debug("failed to update agent guilds, rolling back guild membership",
+				"agent", agentID,
+				"guild", match.GuildID,
+				"error", err)
+
+			rollbackErr := e.storage.UpdateGuild(ctx, guildInstance, func(g *Guild) error {
+				for i, m := range g.Members {
+					if m.AgentID == agentID {
+						g.Members = append(g.Members[:i], g.Members[i+1:]...)
+						return nil
+					}
+				}
+				return nil
+			})
+			if rollbackErr != nil {
+				e.logger.Error("failed to rollback guild membership - inconsistent state",
+					"agent", agentID,
+					"guild", match.GuildID,
+					"rollback_error", rollbackErr)
+			}
 			continue
 		}
 
 		// Emit auto-join event
 		if e.events != nil {
-			_ = e.events.PublishGuildAutoJoined(ctx, GuildAutoJoinedPayload{
+			payload := GuildAutoJoinedPayload{
 				AgentID:  agentID,
 				GuildID:  match.GuildID,
 				Rank:     GuildRankInitiate,
 				JoinedAt: time.Now(),
 				Reason:   fmt.Sprintf("auto-recruit: matched skills %v", match.SkillsMatched),
-			})
+			}
+			if err := e.events.PublishGuildAutoJoined(ctx, payload); err != nil {
+				e.logger.Debug("failed to publish guild auto-joined event",
+					"agent", agentID,
+					"guild", match.GuildID,
+					"error", err)
+			}
 		}
 
 		joined = append(joined, match.GuildID)
@@ -258,7 +364,9 @@ func (e *DefaultGuildFormationEngine) filterEligibleAgents(agents []*Agent) []*A
 	return eligible
 }
 
-// groupByPrimarySkill groups agents by their first skill (assumed primary).
+// groupByPrimarySkill groups agents by their first declared skill.
+// Note: This uses the first skill in the agent's Skills slice as the primary skill,
+// not the skill with the most quests completed. Consider enhancing to use quest history.
 func (e *DefaultGuildFormationEngine) groupByPrimarySkill(agents []*Agent) map[SkillTag][]*Agent {
 	groups := make(map[SkillTag][]*Agent)
 	for _, agent := range agents {
@@ -272,7 +380,8 @@ func (e *DefaultGuildFormationEngine) groupByPrimarySkill(agents []*Agent) map[S
 }
 
 // calculateClusterStrength computes average pairwise Jaccard similarity.
-func (e *DefaultGuildFormationEngine) calculateClusterStrength(agents []*Agent) float64 {
+// Respects context cancellation for large agent sets.
+func (e *DefaultGuildFormationEngine) calculateClusterStrength(ctx context.Context, agents []*Agent) float64 {
 	if len(agents) < 2 {
 		return 0
 	}
@@ -281,6 +390,18 @@ func (e *DefaultGuildFormationEngine) calculateClusterStrength(agents []*Agent) 
 	var pairs int
 
 	for i, agentA := range agents {
+		// Check for context cancellation periodically
+		if i%10 == 0 {
+			select {
+			case <-ctx.Done():
+				if pairs == 0 {
+					return 0
+				}
+				return total / float64(pairs)
+			default:
+			}
+		}
+
 		for _, agentB := range agents[i+1:] {
 			total += JaccardSimilarity(agentA.Skills, agentB.Skills)
 			pairs++
@@ -295,9 +416,14 @@ func (e *DefaultGuildFormationEngine) calculateClusterStrength(agents []*Agent) 
 
 // JaccardSimilarity computes the Jaccard index between two skill sets.
 // Returns intersection / union, ranging from 0 to 1.
+//
+// Special case: Two empty sets return 1.0 (considered identical).
+// This choice means skill-less agents are clustered together, which may or may
+// not be desired. The rationale is that agents with no skills are in the same
+// state and should be treated similarly for clustering purposes.
 func JaccardSimilarity(a, b []SkillTag) float64 {
 	if len(a) == 0 && len(b) == 0 {
-		return 1.0 // Empty sets are identical
+		return 1.0 // Empty sets are identical - see docstring for rationale
 	}
 
 	setA := make(map[SkillTag]struct{}, len(a))
@@ -335,6 +461,8 @@ func JaccardSimilarity(a, b []SkillTag) float64 {
 }
 
 // findSecondarySkills identifies skills shared by most cluster members beyond primary.
+// A skill qualifies as secondary if it appears in at least half the agents (len/2).
+// With integer division: 3 agents requires 1+ occurrence, 5 agents requires 2+.
 func (e *DefaultGuildFormationEngine) findSecondarySkills(agents []*Agent, primary SkillTag) []SkillTag {
 	skillCounts := make(map[SkillTag]int)
 	threshold := len(agents) / 2 // Skill must appear in at least half

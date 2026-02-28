@@ -477,3 +477,289 @@ func TestGuildFormationConfig_Defaults(t *testing.T) {
 		t.Errorf("expected RequireQualityScore=0.5, got %f", config.RequireQualityScore)
 	}
 }
+
+func TestGuildFormationConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  GuildFormationConfig
+		wantErr bool
+	}{
+		{
+			name:    "valid defaults",
+			config:  DefaultFormationConfig(),
+			wantErr: false,
+		},
+		{
+			name: "invalid MinClusterSize",
+			config: GuildFormationConfig{
+				MinClusterSize:      0,
+				MinClusterStrength:  0.5,
+				MinAgentLevel:       3,
+				RequireQualityScore: 0.5,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid MinClusterStrength too high",
+			config: GuildFormationConfig{
+				MinClusterSize:      3,
+				MinClusterStrength:  1.5,
+				MinAgentLevel:       3,
+				RequireQualityScore: 0.5,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid MinClusterStrength negative",
+			config: GuildFormationConfig{
+				MinClusterSize:      3,
+				MinClusterStrength:  -0.1,
+				MinAgentLevel:       3,
+				RequireQualityScore: 0.5,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid MinAgentLevel",
+			config: GuildFormationConfig{
+				MinClusterSize:      3,
+				MinClusterStrength:  0.5,
+				MinAgentLevel:       0,
+				RequireQualityScore: 0.5,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid RequireQualityScore",
+			config: GuildFormationConfig{
+				MinClusterSize:      3,
+				MinClusterStrength:  0.5,
+				MinAgentLevel:       3,
+				RequireQualityScore: 1.5,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDetectSkillClusters_WeakSimilarity(t *testing.T) {
+	config := DefaultFormationConfig()
+	config.MinClusterStrength = 0.7 // High threshold
+	engine := NewGuildFormationEngine(nil, nil, config)
+
+	// Create agents with same primary skill but very different secondary skills
+	// This should result in low Jaccard similarity
+	agents := []*Agent{
+		{
+			ID:     "agent-1",
+			Level:  5,
+			Skills: []SkillTag{SkillCodeGen, SkillResearch, SkillPlanning},
+			Stats:  AgentStats{AvgQualityScore: 0.8},
+		},
+		{
+			ID:     "agent-2",
+			Level:  6,
+			Skills: []SkillTag{SkillCodeGen, SkillDataTransform, SkillAnalysis},
+			Stats:  AgentStats{AvgQualityScore: 0.7},
+		},
+		{
+			ID:     "agent-3",
+			Level:  4,
+			Skills: []SkillTag{SkillCodeGen, SkillCustomerComms, SkillSummarization},
+			Stats:  AgentStats{AvgQualityScore: 0.9},
+		},
+	}
+
+	suggestions := engine.DetectSkillClusters(context.Background(), agents)
+
+	// Should not form a cluster because Jaccard similarity is too low
+	// Each pair shares only code_gen out of 3-4 total skills = ~0.25-0.33 Jaccard
+	if len(suggestions) != 0 {
+		t.Errorf("expected no suggestions due to weak similarity, got %d with strength %f",
+			len(suggestions), suggestions[0].ClusterStrength)
+	}
+}
+
+func TestDetectSkillClusters_ContextCancellation(t *testing.T) {
+	config := DefaultFormationConfig()
+	engine := NewGuildFormationEngine(nil, nil, config)
+
+	// Create enough agents to trigger cancellation check
+	agents := make([]*Agent, 100)
+	for i := range agents {
+		agents[i] = &Agent{
+			ID:     AgentID(string(rune('a' + i%26))),
+			Level:  5,
+			Skills: []SkillTag{SkillCodeGen, SkillCodeReview},
+			Stats:  AgentStats{AvgQualityScore: 0.8},
+		}
+	}
+
+	// Cancel context immediately
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Should return early due to cancellation
+	suggestions := engine.DetectSkillClusters(ctx, agents)
+
+	// May return partial results or empty, but should not panic
+	_ = suggestions
+}
+
+func TestEvaluateAgentForGuilds_TracksGuildInstance(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+
+	config := &BoardConfig{
+		Org:      "test",
+		Platform: "dev",
+		Board:    "instancetest",
+	}
+
+	storage, err := CreateStorage(context.Background(), tc.Client, config)
+	if err != nil {
+		t.Fatalf("CreateStorage failed: %v", err)
+	}
+
+	formConfig := DefaultFormationConfig()
+	engine := NewGuildFormationEngine(storage, nil, formConfig)
+
+	// Create a guild with different ID and instance
+	guildInstance := "coders-instance"
+	guild := &Guild{
+		ID:             "guild-coders-full-id",
+		Name:           "Code Generation Guild",
+		Skills:         []SkillTag{SkillCodeGen},
+		MinLevelToJoin: 3,
+		AutoRecruit:    true,
+		Status:         GuildActive,
+		CreatedAt:      time.Now(),
+	}
+	if err := storage.PutGuild(context.Background(), guildInstance, guild); err != nil {
+		t.Fatalf("PutGuild failed: %v", err)
+	}
+	if err := storage.AddGuildSkillIndex(context.Background(), SkillCodeGen, guildInstance); err != nil {
+		t.Fatalf("AddGuildSkillIndex failed: %v", err)
+	}
+
+	agent := &Agent{
+		ID:     "agent-test",
+		Level:  5,
+		Skills: []SkillTag{SkillCodeGen},
+		Stats:  AgentStats{AvgQualityScore: 0.8},
+	}
+
+	matches, err := engine.EvaluateAgentForGuilds(context.Background(), agent)
+	if err != nil {
+		t.Fatalf("EvaluateAgentForGuilds failed: %v", err)
+	}
+
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+
+	// Verify both GuildID and GuildInstance are tracked
+	match := matches[0]
+	if match.GuildID != "guild-coders-full-id" {
+		t.Errorf("expected GuildID 'guild-coders-full-id', got %s", match.GuildID)
+	}
+	if match.GuildInstance != guildInstance {
+		t.Errorf("expected GuildInstance '%s', got '%s'", guildInstance, match.GuildInstance)
+	}
+}
+
+func TestProcessAutoRecruit_DuplicatePrevention(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+
+	config := &BoardConfig{
+		Org:      "test",
+		Platform: "dev",
+		Board:    "duplicate",
+	}
+
+	storage, err := CreateStorage(context.Background(), tc.Client, config)
+	if err != nil {
+		t.Fatalf("CreateStorage failed: %v", err)
+	}
+
+	formConfig := DefaultFormationConfig()
+	engine := NewGuildFormationEngine(storage, nil, formConfig)
+
+	// Create guild
+	guildInstance := "dup-guild"
+	guild := &Guild{
+		ID:             GuildID(guildInstance),
+		Name:           "Duplicate Test Guild",
+		Skills:         []SkillTag{SkillCodeGen},
+		MinLevelToJoin: 3,
+		AutoRecruit:    true,
+		Status:         GuildActive,
+		Members:        []GuildMember{},
+		CreatedAt:      time.Now(),
+	}
+	if err := storage.PutGuild(context.Background(), guildInstance, guild); err != nil {
+		t.Fatalf("PutGuild failed: %v", err)
+	}
+	if err := storage.AddGuildSkillIndex(context.Background(), SkillCodeGen, guildInstance); err != nil {
+		t.Fatalf("AddGuildSkillIndex failed: %v", err)
+	}
+
+	// Create agent
+	agentInstance := "dup-agent"
+	agent := &Agent{
+		ID:        AgentID(agentInstance),
+		Level:     5,
+		Skills:    []SkillTag{SkillCodeGen},
+		Stats:     AgentStats{AvgQualityScore: 0.8},
+		Guilds:    []GuildID{},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := storage.PutAgent(context.Background(), agentInstance, agent); err != nil {
+		t.Fatalf("PutAgent failed: %v", err)
+	}
+
+	// Process auto-recruit twice
+	joined1, err := engine.ProcessAutoRecruit(context.Background(), AgentID(agentInstance))
+	if err != nil {
+		t.Fatalf("First ProcessAutoRecruit failed: %v", err)
+	}
+	if len(joined1) != 1 {
+		t.Errorf("expected 1 guild joined on first call, got %d", len(joined1))
+	}
+
+	// Second call should not add duplicates
+	joined2, err := engine.ProcessAutoRecruit(context.Background(), AgentID(agentInstance))
+	if err != nil {
+		t.Fatalf("Second ProcessAutoRecruit failed: %v", err)
+	}
+	if len(joined2) != 0 {
+		t.Errorf("expected 0 guilds joined on second call (already member), got %d", len(joined2))
+	}
+
+	// Verify no duplicates in guild members
+	updatedGuild, err := storage.GetGuild(context.Background(), guildInstance)
+	if err != nil {
+		t.Fatalf("GetGuild failed: %v", err)
+	}
+	if len(updatedGuild.Members) != 1 {
+		t.Errorf("expected exactly 1 guild member (no duplicates), got %d", len(updatedGuild.Members))
+	}
+
+	// Verify no duplicates in agent guilds
+	updatedAgent, err := storage.GetAgent(context.Background(), agentInstance)
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	if len(updatedAgent.Guilds) != 1 {
+		t.Errorf("expected exactly 1 agent guild (no duplicates), got %d", len(updatedAgent.Guilds))
+	}
+}
