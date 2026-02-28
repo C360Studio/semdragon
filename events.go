@@ -63,7 +63,6 @@ var (
 	// SubjectMentorBonus is the typed subject for skill.progression.mentorbonus events.
 	SubjectMentorBonus = natsclient.NewSubject[MentorBonusPayload](PredicateMentorBonus)
 
-	// Party coordination subjects
 	// SubjectPartyQuestDecomposed is the typed subject for party.coordination.decomposed events.
 	SubjectPartyQuestDecomposed = natsclient.NewSubject[PartyQuestDecomposedPayload](PredicatePartyQuestDecomposed)
 	// SubjectPartyTaskAssigned is the typed subject for party.coordination.assigned events.
@@ -754,9 +753,9 @@ type PartyTaskAssignedPayload struct {
 	LeadID       AgentID   `json:"lead_id"`
 	AssignedTo   AgentID   `json:"assigned_to"`
 	SubQuestID   QuestID   `json:"sub_quest_id"`
-	Rationale    string    `json:"rationale"`               // Why this member
-	Dependencies []QuestID `json:"dependencies,omitempty"`  // Wait for these first
-	Guidance     string    `json:"guidance,omitempty"`      // Initial hints
+	Rationale    string    `json:"rationale"`              // Why this member
+	Dependencies []QuestID `json:"dependencies,omitempty"` // Wait for these first
+	Guidance     string    `json:"guidance,omitempty"`     // Initial hints
 	Timestamp    time.Time `json:"timestamp"`
 	Trace        TraceInfo `json:"trace,omitempty"`
 }
@@ -855,9 +854,9 @@ type PartyHelpRequestedPayload struct {
 	PartyID     PartyID   `json:"party_id"`
 	MemberID    AgentID   `json:"member_id"`
 	SubQuestID  QuestID   `json:"sub_quest_id"`
-	IssueType   string    `json:"issue_type"`   // blocker, confusion, skill_gap
+	IssueType   string    `json:"issue_type"` // blocker, confusion, skill_gap
 	Description string    `json:"description"`
-	Urgency     string    `json:"urgency"`      // low, medium, high, critical
+	Urgency     string    `json:"urgency"` // low, medium, high, critical
 	Timestamp   time.Time `json:"timestamp"`
 	Trace       TraceInfo `json:"trace,omitempty"`
 }
@@ -972,13 +971,13 @@ func (p *PartyRollupStartedPayload) Validate() error {
 // PartyRollupCompletedPayload contains data for party.coordination.rollupcompleted events.
 // Emitted when the party lead completes the rollup, ready for boss battle.
 type PartyRollupCompletedPayload struct {
-	PartyID        PartyID             `json:"party_id"`
-	LeadID         AgentID             `json:"lead_id"`
-	ParentQuestID  QuestID             `json:"parent_quest_id"`
-	RollupResult   any                 `json:"rollup_result"`
-	MemberContrib  map[AgentID]float64 `json:"member_contributions,omitempty"` // Contribution scores
-	Timestamp      time.Time           `json:"timestamp"`
-	Trace          TraceInfo           `json:"trace,omitempty"`
+	PartyID       PartyID             `json:"party_id"`
+	LeadID        AgentID             `json:"lead_id"`
+	ParentQuestID QuestID             `json:"parent_quest_id"`
+	RollupResult  any                 `json:"rollup_result"`
+	MemberContrib map[AgentID]float64 `json:"member_contributions,omitempty"` // Contribution scores
+	Timestamp     time.Time           `json:"timestamp"`
+	Trace         TraceInfo           `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.

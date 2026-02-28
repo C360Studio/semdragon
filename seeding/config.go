@@ -12,19 +12,19 @@ import (
 // CONFIGURATION TYPES
 // =============================================================================
 
-// SeedingMode determines the seeding strategy.
-type SeedingMode string
+// Mode determines the seeding strategy.
+type Mode string
 
 const (
 	// ModeTrainingArena uses real LLM execution for gradual progression.
-	ModeTrainingArena SeedingMode = "training_arena"
+	ModeTrainingArena Mode = "training_arena"
 	// ModeTieredRoster instantly creates agents at target levels.
-	ModeTieredRoster SeedingMode = "tiered_roster"
+	ModeTieredRoster Mode = "tiered_roster"
 )
 
 // Config is the top-level seeding configuration.
 type Config struct {
-	Mode       SeedingMode   `json:"mode"`
+	Mode       Mode   `json:"mode"`
 	DryRun     bool          `json:"dry_run"`    // Log actions without executing
 	Idempotent bool          `json:"idempotent"` // Skip existing agents by name
 	Arena      *ArenaConfig  `json:"arena,omitempty"`
@@ -213,16 +213,28 @@ type configError string
 
 func (e configError) Error() string { return string(e) }
 
+// Seeding configuration errors.
 const (
-	ErrInvalidMode          = configError("invalid seeding mode")
-	ErrArenaConfigRequired  = configError("arena config required for training_arena mode")
+	// ErrInvalidMode indicates an unknown seeding mode was specified.
+	ErrInvalidMode = configError("invalid seeding mode")
+	// ErrArenaConfigRequired indicates arena config is needed for training_arena mode.
+	ErrArenaConfigRequired = configError("arena config required for training_arena mode")
+	// ErrRosterConfigRequired indicates roster config is needed for tiered_roster mode.
 	ErrRosterConfigRequired = configError("roster config required for tiered_roster mode")
-	ErrNoAgentConfigs       = configError("at least one agent config required")
-	ErrInvalidMaxQuests     = configError("max_training_quests must be positive")
-	ErrNoQuestSource        = configError("quest_domain or quest_file required")
-	ErrNoRosterName         = configError("roster name required")
-	ErrNoAgentSpecs         = configError("at least one agent spec required")
-	ErrNoNamePattern        = configError("name_pattern required")
-	ErrInvalidCount         = configError("count must be positive")
-	ErrInvalidLevel         = configError("level must be between 1 and 20")
+	// ErrNoAgentConfigs indicates no agent configurations were provided.
+	ErrNoAgentConfigs = configError("at least one agent config required")
+	// ErrInvalidMaxQuests indicates max_training_quests was not positive.
+	ErrInvalidMaxQuests = configError("max_training_quests must be positive")
+	// ErrNoQuestSource indicates neither quest_domain nor quest_file was provided.
+	ErrNoQuestSource = configError("quest_domain or quest_file required")
+	// ErrNoRosterName indicates the roster name was empty.
+	ErrNoRosterName = configError("roster name required")
+	// ErrNoAgentSpecs indicates no agent specs were provided in the roster.
+	ErrNoAgentSpecs = configError("at least one agent spec required")
+	// ErrNoNamePattern indicates the agent spec has no name pattern.
+	ErrNoNamePattern = configError("name_pattern required")
+	// ErrInvalidCount indicates the agent count was not positive.
+	ErrInvalidCount = configError("count must be positive")
+	// ErrInvalidLevel indicates the level was outside the valid 1-20 range.
+	ErrInvalidLevel = configError("level must be between 1 and 20")
 )

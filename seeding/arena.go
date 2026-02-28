@@ -357,7 +357,8 @@ func (a *ArenaSeeder) runTrainingRounds(ctx context.Context, agents []*semdragon
 }
 
 // runTrainingQuest executes a single training quest for an agent.
-func (a *ArenaSeeder) runTrainingQuest(ctx context.Context, agent *semdragons.Agent, template *QuestTemplate, result *Result) error {
+// The result parameter will be used for detailed progress tracking in future iterations.
+func (a *ArenaSeeder) runTrainingQuest(ctx context.Context, agent *semdragons.Agent, template *QuestTemplate, _ *Result) error {
 	// Create quest from template
 	quest := template.ToQuest()
 
@@ -399,12 +400,12 @@ func (a *ArenaSeeder) runTrainingQuest(ctx context.Context, agent *semdragons.Ag
 }
 
 // executeQuest runs the actual quest execution.
-// In a real implementation, this would call the LLM.
-func (a *ArenaSeeder) executeQuest(ctx context.Context, agent *semdragons.Agent, template *QuestTemplate) (any, error) {
+// In a real implementation, this would call the LLM with the context.
+func (a *ArenaSeeder) executeQuest(_ context.Context, agent *semdragons.Agent, template *QuestTemplate) (any, error) {
 	// For now, return a simulated result
 	// In production, this would:
 	// 1. Build prompt from template.Input
-	// 2. Call agent's LLM (agent.Config)
+	// 2. Call agent's LLM (agent.Config) with context for cancellation
 	// 3. Return LLM response
 
 	return map[string]any{

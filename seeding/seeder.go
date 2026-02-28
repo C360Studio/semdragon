@@ -27,26 +27,26 @@ type Seeder struct {
 
 // Result holds the outcome of a seeding operation.
 type Result struct {
-	Mode            SeedingMode       `json:"mode"`
-	Success         bool              `json:"success"`
-	AgentsCreated   int               `json:"agents_created"`
-	AgentsSkipped   int               `json:"agents_skipped"` // Idempotent skips
-	GuildsCreated   int               `json:"guilds_created"`
-	NPCsSpawned     int               `json:"npcs_spawned"`
-	QuestsCompleted int               `json:"quests_completed"` // Arena only
-	Errors          []string          `json:"errors,omitempty"`
-	Duration        time.Duration     `json:"duration"`
-	Agents          []AgentSummary    `json:"agents"`
+	Mode            Mode    `json:"mode"`
+	Success         bool           `json:"success"`
+	AgentsCreated   int            `json:"agents_created"`
+	AgentsSkipped   int            `json:"agents_skipped"` // Idempotent skips
+	GuildsCreated   int            `json:"guilds_created"`
+	NPCsSpawned     int            `json:"npcs_spawned"`
+	QuestsCompleted int            `json:"quests_completed"` // Arena only
+	Errors          []string       `json:"errors,omitempty"`
+	Duration        time.Duration  `json:"duration"`
+	Agents          []AgentSummary `json:"agents"`
 }
 
 // AgentSummary provides a brief summary of a seeded agent.
 type AgentSummary struct {
-	ID     semdragons.AgentID `json:"id"`
-	Name   string             `json:"name"`
-	Level  int                `json:"level"`
-	Tier   semdragons.TrustTier `json:"tier"`
+	ID     semdragons.AgentID    `json:"id"`
+	Name   string                `json:"name"`
+	Level  int                   `json:"level"`
+	Tier   semdragons.TrustTier  `json:"tier"`
 	Skills []semdragons.SkillTag `json:"skills"`
-	IsNPC  bool               `json:"is_npc"`
+	IsNPC  bool                  `json:"is_npc"`
 }
 
 // NewSeeder creates a new seeder with the given configuration.
@@ -148,7 +148,7 @@ func (s *Seeder) SeedWithProgress(ctx context.Context, progress func(ProgressEve
 
 // ProgressEvent reports seeding progress.
 type ProgressEvent struct {
-	Phase      string  `json:"phase"`       // "agents", "guilds", "training", "complete"
+	Phase      string  `json:"phase"` // "agents", "guilds", "training", "complete"
 	Current    int     `json:"current"`
 	Total      int     `json:"total"`
 	Percent    float64 `json:"percent"`

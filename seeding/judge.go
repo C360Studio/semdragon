@@ -24,21 +24,25 @@ func NewArenaJudge(config semdragons.AgentConfig) *ArenaJudge {
 
 // JudgeResult holds the evaluation outcome.
 type JudgeResult struct {
-	Passed       bool                `json:"passed"`
-	QualityScore float64             `json:"quality_score"`
-	Feedback     string              `json:"feedback"`
-	Criteria     map[string]bool     `json:"criteria"`
-	Scores       map[string]float64  `json:"scores"`
+	Passed       bool               `json:"passed"`
+	QualityScore float64            `json:"quality_score"`
+	Feedback     string             `json:"feedback"`
+	Criteria     map[string]bool    `json:"criteria"`
+	Scores       map[string]float64 `json:"scores"`
 }
 
 // Evaluate judges a quest result against the template criteria.
-func (j *ArenaJudge) Evaluate(ctx context.Context, template *QuestTemplate, result any) (*JudgeResult, error) {
+// The ctx, template, and result parameters will be used when LLM integration is implemented.
+func (j *ArenaJudge) Evaluate(_ context.Context, template *QuestTemplate, result any) (*JudgeResult, error) {
 	// In a real implementation, this would:
 	// 1. Build an evaluation prompt from template.Criteria
 	// 2. Call the judge LLM with the quest input, expected output, and actual result
 	// 3. Parse the LLM's evaluation into structured scores
 	//
 	// For now, return a simulated passing result for training
+	// TODO: Use template.Criteria and result in LLM evaluation prompt
+	_ = template // Reserved for LLM prompt construction
+	_ = result   // Reserved for LLM evaluation
 
 	return &JudgeResult{
 		Passed:       true,
@@ -50,9 +54,13 @@ func (j *ArenaJudge) Evaluate(ctx context.Context, template *QuestTemplate, resu
 }
 
 // EvaluateWithRubric evaluates using detailed scoring rubrics.
-func (j *ArenaJudge) EvaluateWithRubric(ctx context.Context, quest *semdragons.Quest, result any, rubric []semdragons.ReviewCriterion) (*JudgeResult, error) {
+// The ctx, quest, and result parameters will be used when LLM integration is implemented.
+func (j *ArenaJudge) EvaluateWithRubric(_ context.Context, quest *semdragons.Quest, result any, rubric []semdragons.ReviewCriterion) (*JudgeResult, error) {
 	// Detailed evaluation using provided rubric
 	// Each criterion is scored and aggregated
+	// TODO: Use quest and result in LLM evaluation prompt
+	_ = quest  // Reserved for LLM context
+	_ = result // Reserved for LLM evaluation
 
 	scores := make(map[string]float64)
 	criteria := make(map[string]bool)
