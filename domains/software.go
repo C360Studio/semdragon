@@ -8,14 +8,14 @@ var SoftwareDomain = semdragons.DomainConfig{
 	Name:        "Software Development",
 	Description: "Build, test, and deploy software systems",
 	Skills: []semdragons.DomainSkill{
-		{Tag: "code_gen", Name: "Coding", Description: "Write and generate code"},
-		{Tag: "testing", Name: "Testing", Description: "Write and run tests"},
-		{Tag: "code_review", Name: "Code Review", Description: "Review code quality"},
-		{Tag: "architecture", Name: "Architecture", Description: "System design"},
-		{Tag: "devops", Name: "DevOps", Description: "Deployment and operations"},
-		{Tag: "debugging", Name: "Debugging", Description: "Find and fix bugs"},
-		{Tag: "documentation", Name: "Documentation", Description: "Write technical docs"},
-		{Tag: "planning", Name: "Planning", Description: "Technical planning and estimation"},
+		{Tag: semdragons.SkillCodeGen, Name: "Coding", Description: "Write and generate code"},
+		{Tag: semdragons.SkillCodeReview, Name: "Code Review", Description: "Review code quality"},
+		{Tag: semdragons.SkillDataTransform, Name: "Data Transformation", Description: "Transform and process data"},
+		{Tag: semdragons.SkillPlanning, Name: "Planning", Description: "Technical planning and estimation"},
+		{Tag: semdragons.SkillAnalysis, Name: "Analysis", Description: "Analyze systems and requirements"},
+		{Tag: semdragons.SkillResearch, Name: "Research", Description: "Technical research and investigation"},
+		{Tag: semdragons.SkillSummarization, Name: "Documentation", Description: "Write technical docs and summaries"},
+		{Tag: semdragons.SkillTraining, Name: "Mentoring", Description: "Train and mentor other developers"},
 	},
 	Vocabulary: semdragons.DomainVocabulary{
 		Agent:      "Developer",
@@ -39,4 +39,9 @@ var SoftwareDomain = semdragons.DomainConfig{
 			semdragons.RoleScout:    "Researcher",
 		},
 	},
+}
+
+// SoftwareSkillCount returns the number of skills in the software domain.
+func SoftwareSkillCount() int {
+	return len(SoftwareDomain.Skills)
 }

@@ -4,6 +4,7 @@ package semdragons
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -837,5 +838,432 @@ func TestEvaluateGuildDiversity(t *testing.T) {
 	}
 	if len(report.UniqueSkills) != 4 {
 		t.Errorf("expected 4 unique skills, got %d", len(report.UniqueSkills))
+	}
+}
+
+// =============================================================================
+// SENTINEL ERROR TESTS
+// =============================================================================
+
+func TestFoundGuild_SentinelErrors(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+
+	boardConfig := &BoardConfig{
+		Org:      "test",
+		Platform: "dev",
+		Board:    "sentinel",
+	}
+
+	storage, err := CreateStorage(context.Background(), tc.Client, boardConfig)
+	if err != nil {
+		t.Fatalf("CreateStorage failed: %v", err)
+	}
+
+	formConfig := DefaultFormationConfig()
+	engine := NewGuildFormationEngine(storage, nil, formConfig)
+	now := time.Now()
+
+	t.Run("insufficient level returns ErrInsufficientLevel", func(t *testing.T) {
+		agent := &Agent{
+			ID:        "lowlevel",
+			Name:      "Low Level",
+			Level:     5,
+			XP:        1000,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := storage.PutAgent(context.Background(), "lowlevel", agent); err != nil {
+			t.Fatalf("PutAgent failed: %v", err)
+		}
+
+		_, err := engine.FoundGuild(context.Background(), "lowlevel", "Test Guild", "")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !errors.Is(err, ErrInsufficientLevel) {
+			t.Errorf("expected ErrInsufficientLevel, got: %v", err)
+		}
+	})
+
+	t.Run("insufficient XP returns ErrInsufficientXP", func(t *testing.T) {
+		agent := &Agent{
+			ID:        "poorexpert",
+			Name:      "Poor Expert",
+			Level:     12,
+			XP:        100,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := storage.PutAgent(context.Background(), "poorexpert", agent); err != nil {
+			t.Fatalf("PutAgent failed: %v", err)
+		}
+
+		_, err := engine.FoundGuild(context.Background(), "poorexpert", "Test Guild", "")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !errors.Is(err, ErrInsufficientXP) {
+			t.Errorf("expected ErrInsufficientXP, got: %v", err)
+		}
+	})
+
+	t.Run("empty name returns ErrGuildNameRequired", func(t *testing.T) {
+		agent := &Agent{
+			ID:        "founder",
+			Name:      "Founder",
+			Level:     12,
+			XP:        1000,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := storage.PutAgent(context.Background(), "founder", agent); err != nil {
+			t.Fatalf("PutAgent failed: %v", err)
+		}
+
+		_, err := engine.FoundGuild(context.Background(), "founder", "", "")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !errors.Is(err, ErrGuildNameRequired) {
+			t.Errorf("expected ErrGuildNameRequired, got: %v", err)
+		}
+	})
+}
+
+func TestInviteToGuild_SentinelErrors(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+
+	boardConfig := &BoardConfig{
+		Org:      "test",
+		Platform: "dev",
+		Board:    "invitesentinel",
+	}
+
+	storage, err := CreateStorage(context.Background(), tc.Client, boardConfig)
+	if err != nil {
+		t.Fatalf("CreateStorage failed: %v", err)
+	}
+
+	formConfig := DefaultFormationConfig()
+	engine := NewGuildFormationEngine(storage, nil, formConfig)
+	now := time.Now()
+
+	// Create guild
+	guild := &Guild{
+		ID:         "testguild",
+		Name:       "Test Guild",
+		Status:     GuildActive,
+		Founded:    now,
+		MinLevel:   5,
+		MaxMembers: 2,
+		Members: []GuildMember{
+			{AgentID: "officer", Rank: GuildRankOfficer, JoinedAt: now},
+			{AgentID: "member1", Rank: GuildRankMember, JoinedAt: now},
+		},
+		CreatedAt: now,
+	}
+	if err := storage.PutGuild(context.Background(), "testguild", guild); err != nil {
+		t.Fatalf("PutGuild failed: %v", err)
+	}
+
+	// Create agents
+	officer := &Agent{ID: "officer", Name: "Officer", Level: 10, Guilds: []GuildID{"testguild"}, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "officer", officer)
+
+	member := &Agent{ID: "member1", Name: "Member", Level: 8, Guilds: []GuildID{"testguild"}, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "member1", member)
+
+	lowLevel := &Agent{ID: "lowlevel", Name: "Low Level", Level: 2, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "lowlevel", lowLevel)
+
+	newbie := &Agent{ID: "newbie", Name: "Newbie", Level: 8, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "newbie", newbie)
+
+	t.Run("already member returns ErrAlreadyMember", func(t *testing.T) {
+		err := engine.InviteToGuild(context.Background(), "officer", "testguild", "member1")
+		if !errors.Is(err, ErrAlreadyMember) {
+			t.Errorf("expected ErrAlreadyMember, got: %v", err)
+		}
+	})
+
+	t.Run("insufficient level returns ErrInsufficientLevel", func(t *testing.T) {
+		err := engine.InviteToGuild(context.Background(), "officer", "testguild", "lowlevel")
+		if !errors.Is(err, ErrInsufficientLevel) {
+			t.Errorf("expected ErrInsufficientLevel, got: %v", err)
+		}
+	})
+
+	t.Run("non-officer returns ErrInsufficientRank", func(t *testing.T) {
+		err := engine.InviteToGuild(context.Background(), "member1", "testguild", "newbie")
+		if !errors.Is(err, ErrInsufficientRank) {
+			t.Errorf("expected ErrInsufficientRank, got: %v", err)
+		}
+	})
+
+	t.Run("at capacity returns ErrGuildAtCapacity", func(t *testing.T) {
+		err := engine.InviteToGuild(context.Background(), "officer", "testguild", "newbie")
+		if !errors.Is(err, ErrGuildAtCapacity) {
+			t.Errorf("expected ErrGuildAtCapacity, got: %v", err)
+		}
+	})
+}
+
+func TestApproveApplication(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+
+	boardConfig := &BoardConfig{
+		Org:      "test",
+		Platform: "dev",
+		Board:    "approve",
+	}
+
+	storage, err := CreateStorage(context.Background(), tc.Client, boardConfig)
+	if err != nil {
+		t.Fatalf("CreateStorage failed: %v", err)
+	}
+
+	formConfig := DefaultFormationConfig()
+	engine := NewGuildFormationEngine(storage, nil, formConfig)
+	now := time.Now()
+
+	// Create guild with officer
+	guild := &Guild{
+		ID:         "approveguild",
+		Name:       "Approve Guild",
+		Status:     GuildActive,
+		Founded:    now,
+		MinLevel:   1,
+		MaxMembers: 10,
+		Members: []GuildMember{
+			{AgentID: "officer", Rank: GuildRankOfficer, JoinedAt: now},
+		},
+		CreatedAt: now,
+	}
+	if err := storage.PutGuild(context.Background(), "approveguild", guild); err != nil {
+		t.Fatalf("PutGuild failed: %v", err)
+	}
+
+	officer := &Agent{ID: "officer", Name: "Officer", Level: 10, Guilds: []GuildID{"approveguild"}, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "officer", officer)
+
+	applicant := &Agent{ID: "applicant", Name: "Applicant", Level: 5, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "applicant", applicant)
+
+	// Approve application (even though not persisted)
+	err = engine.ApproveApplication(context.Background(), "officer", "approveguild", "applicant")
+	if err != nil {
+		t.Fatalf("ApproveApplication failed: %v", err)
+	}
+
+	// Verify applicant was added
+	updatedGuild, _ := storage.GetGuild(context.Background(), "approveguild")
+	found := false
+	for _, m := range updatedGuild.Members {
+		if m.AgentID == "applicant" {
+			found = true
+			if m.Rank != GuildRankInitiate {
+				t.Errorf("expected Initiate rank, got %s", m.Rank)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("applicant not found in guild")
+	}
+}
+
+func TestPromoteMember_ToGuildmaster(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+
+	boardConfig := &BoardConfig{
+		Org:      "test",
+		Platform: "dev",
+		Board:    "promotemaster",
+	}
+
+	storage, err := CreateStorage(context.Background(), tc.Client, boardConfig)
+	if err != nil {
+		t.Fatalf("CreateStorage failed: %v", err)
+	}
+
+	formConfig := DefaultFormationConfig()
+	engine := NewGuildFormationEngine(storage, nil, formConfig)
+	now := time.Now()
+
+	// Create guild
+	guild := &Guild{
+		ID:         "masterguild",
+		Name:       "Master Guild",
+		Status:     GuildActive,
+		Founded:    now,
+		MinLevel:   1,
+		MaxMembers: 10,
+		Members: []GuildMember{
+			{AgentID: "gm", Rank: GuildRankMaster, JoinedAt: now},
+			{AgentID: "officer", Rank: GuildRankOfficer, JoinedAt: now},
+		},
+		CreatedAt: now,
+	}
+	if err := storage.PutGuild(context.Background(), "masterguild", guild); err != nil {
+		t.Fatalf("PutGuild failed: %v", err)
+	}
+
+	gm := &Agent{ID: "gm", Name: "Guildmaster", Level: 15, Guilds: []GuildID{"masterguild"}, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "gm", gm)
+
+	officer := &Agent{ID: "officer", Name: "Officer", Level: 12, Guilds: []GuildID{"masterguild"}, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "officer", officer)
+
+	// Guildmaster promotes officer to Guildmaster
+	err = engine.PromoteMember(context.Background(), "gm", "masterguild", "officer", GuildRankMaster)
+	if err != nil {
+		t.Fatalf("PromoteMember failed: %v", err)
+	}
+
+	// Verify
+	updatedGuild, _ := storage.GetGuild(context.Background(), "masterguild")
+	for _, m := range updatedGuild.Members {
+		if m.AgentID == "officer" {
+			if m.Rank != GuildRankMaster {
+				t.Errorf("expected Guildmaster rank, got %s", m.Rank)
+			}
+			break
+		}
+	}
+}
+
+func TestPromoteMember_OfficerCannotPromoteToOfficer(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+
+	boardConfig := &BoardConfig{
+		Org:      "test",
+		Platform: "dev",
+		Board:    "officerlimit",
+	}
+
+	storage, err := CreateStorage(context.Background(), tc.Client, boardConfig)
+	if err != nil {
+		t.Fatalf("CreateStorage failed: %v", err)
+	}
+
+	formConfig := DefaultFormationConfig()
+	engine := NewGuildFormationEngine(storage, nil, formConfig)
+	now := time.Now()
+
+	// Create guild
+	guild := &Guild{
+		ID:         "limitguild",
+		Name:       "Limit Guild",
+		Status:     GuildActive,
+		Founded:    now,
+		MinLevel:   1,
+		MaxMembers: 10,
+		Members: []GuildMember{
+			{AgentID: "officer", Rank: GuildRankOfficer, JoinedAt: now},
+			{AgentID: "member", Rank: GuildRankMember, JoinedAt: now},
+		},
+		CreatedAt: now,
+	}
+	if err := storage.PutGuild(context.Background(), "limitguild", guild); err != nil {
+		t.Fatalf("PutGuild failed: %v", err)
+	}
+
+	officer := &Agent{ID: "officer", Name: "Officer", Level: 10, Guilds: []GuildID{"limitguild"}, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "officer", officer)
+
+	member := &Agent{ID: "member", Name: "Member", Level: 8, Guilds: []GuildID{"limitguild"}, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "member", member)
+
+	// Officer cannot promote to Officer rank
+	err = engine.PromoteMember(context.Background(), "officer", "limitguild", "member", GuildRankOfficer)
+	if err == nil {
+		t.Fatal("expected error when officer promotes to officer")
+	}
+	if !errors.Is(err, ErrInsufficientRank) {
+		t.Errorf("expected ErrInsufficientRank, got: %v", err)
+	}
+
+	// But officer can promote to Veteran
+	err = engine.PromoteMember(context.Background(), "officer", "limitguild", "member", GuildRankVeteran)
+	if err != nil {
+		t.Fatalf("PromoteMember to Veteran failed: %v", err)
+	}
+}
+
+func TestApplyToGuild_ReturnsNotPersisted(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+
+	boardConfig := &BoardConfig{
+		Org:      "test",
+		Platform: "dev",
+		Board:    "apply",
+	}
+
+	storage, err := CreateStorage(context.Background(), tc.Client, boardConfig)
+	if err != nil {
+		t.Fatalf("CreateStorage failed: %v", err)
+	}
+
+	formConfig := DefaultFormationConfig()
+	engine := NewGuildFormationEngine(storage, nil, formConfig)
+	now := time.Now()
+
+	// Create guild
+	guild := &Guild{
+		ID:         "applyguild",
+		Name:       "Apply Guild",
+		Status:     GuildActive,
+		Founded:    now,
+		MinLevel:   1,
+		MaxMembers: 10,
+		Members:    []GuildMember{},
+		CreatedAt:  now,
+	}
+	if err := storage.PutGuild(context.Background(), "applyguild", guild); err != nil {
+		t.Fatalf("PutGuild failed: %v", err)
+	}
+
+	applicant := &Agent{ID: "applicant", Name: "Applicant", Level: 5, CreatedAt: now, UpdatedAt: now}
+	storage.PutAgent(context.Background(), "applicant", applicant)
+
+	// Apply returns ErrApplicationsNotPersisted
+	err = engine.ApplyToGuild(context.Background(), "applicant", "applyguild")
+	if !errors.Is(err, ErrApplicationsNotPersisted) {
+		t.Errorf("expected ErrApplicationsNotPersisted, got: %v", err)
+	}
+}
+
+func TestGuildOperationError_Format(t *testing.T) {
+	// Test error formatting
+	err := &GuildOperationError{
+		Op:             "FoundGuild",
+		Err:            errors.New("storage failed"),
+		RollbackFailed: false,
+	}
+
+	expected := "FoundGuild failed: storage failed"
+	if err.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, err.Error())
+	}
+
+	// Test with rollback failure
+	errWithRollback := &GuildOperationError{
+		Op:             "AddMember",
+		Err:            errors.New("update failed"),
+		RollbackFailed: true,
+		RollbackErr:    errors.New("rollback failed"),
+	}
+
+	expectedWithRollback := "AddMember failed: update failed (rollback also failed: rollback failed)"
+	if errWithRollback.Error() != expectedWithRollback {
+		t.Errorf("expected %q, got %q", expectedWithRollback, errWithRollback.Error())
+	}
+
+	// Test Unwrap
+	if !errors.Is(err, errors.New("storage failed")) {
+		// errors.Is won't match for different error instances, but Unwrap should work
+		if err.Unwrap().Error() != "storage failed" {
+			t.Errorf("Unwrap failed")
+		}
 	}
 }

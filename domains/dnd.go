@@ -3,6 +3,9 @@ package domains
 import "github.com/c360studio/semdragons"
 
 // DnDDomain defines skills and vocabulary for D&D/fantasy settings.
+// NOTE: This domain uses fantasy-specific skill tags that don't map to
+// the core SkillTag constants. This is intentional - different domains
+// can define completely different skill sets.
 var DnDDomain = semdragons.DomainConfig{
 	ID:          semdragons.DomainDnD,
 	Name:        "Dungeons & Dragons",

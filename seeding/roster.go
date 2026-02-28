@@ -79,18 +79,22 @@ func (r *RosterSeeder) seedGuilds(ctx context.Context, dryRun bool, result *Resu
 		}
 
 		now := time.Now()
+		// NOTE: Seeded guilds don't have a FoundedBy since they are system-created.
+		// This distinguishes them from player-founded guilds. The first agent
+		// assigned to the guild could be promoted to Guildmaster if needed.
 		guild := &semdragons.Guild{
 			ID:          semdragons.GuildID(spec.ID),
 			Name:        spec.Name,
 			Description: spec.Description,
 			Status:      semdragons.GuildActive,
 			Founded:     now,
-			Culture:     spec.Culture,
-			Members:     []semdragons.GuildMember{},
-			MinLevel:    spec.MinLevel,
-			MaxMembers:  20,
-			Reputation:  0.5,
-			CreatedAt:   now,
+			// FoundedBy intentionally empty for seeded guilds
+			Culture:    spec.Culture,
+			Members:    []semdragons.GuildMember{},
+			MinLevel:   spec.MinLevel,
+			MaxMembers: 20,
+			Reputation: 0.5,
+			CreatedAt:  now,
 		}
 
 		if err := r.storage.PutGuild(ctx, spec.ID, guild); err != nil {

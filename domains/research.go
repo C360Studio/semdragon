@@ -3,16 +3,19 @@ package domains
 import "github.com/c360studio/semdragons"
 
 // ResearchDomain defines skills and vocabulary for research and analysis.
+// Uses core SkillTag constants where available, with domain-specific
+// skill tags for research-specific capabilities.
 var ResearchDomain = semdragons.DomainConfig{
 	ID:          semdragons.DomainResearch,
 	Name:        "Research & Analysis",
 	Description: "Investigate, analyze, and synthesize information",
 	Skills: []semdragons.DomainSkill{
-		{Tag: "analysis", Name: "Analysis", Description: "Analyze data and find patterns"},
-		{Tag: "research", Name: "Research", Description: "Find and gather information"},
-		{Tag: "synthesis", Name: "Synthesis", Description: "Combine sources into insights"},
+		{Tag: semdragons.SkillAnalysis, Name: "Analysis", Description: "Analyze data and find patterns"},
+		{Tag: semdragons.SkillResearch, Name: "Research", Description: "Find and gather information"},
+		{Tag: semdragons.SkillSummarization, Name: "Synthesis", Description: "Combine sources into insights"},
+		{Tag: semdragons.SkillPlanning, Name: "Study Design", Description: "Plan research methodology"},
+		// Domain-specific skills (not in core constants)
 		{Tag: "fact_check", Name: "Fact Checking", Description: "Verify claims and sources"},
-		{Tag: "writing", Name: "Writing", Description: "Document and communicate findings"},
 		{Tag: "statistics", Name: "Statistics", Description: "Statistical analysis and modeling"},
 		{Tag: "visualization", Name: "Visualization", Description: "Create charts and diagrams"},
 		{Tag: "interviewing", Name: "Interviewing", Description: "Gather information from sources"},
@@ -39,4 +42,9 @@ var ResearchDomain = semdragons.DomainConfig{
 			semdragons.RoleScout:    "Research Assistant",
 		},
 	},
+}
+
+// ResearchSkillCount returns the number of skills in the research domain.
+func ResearchSkillCount() int {
+	return len(ResearchDomain.Skills)
 }

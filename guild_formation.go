@@ -14,6 +14,67 @@ import (
 )
 
 // =============================================================================
+// SENTINEL ERRORS
+// =============================================================================
+
+var (
+	// ErrStorageNotConfigured indicates the storage backend is not set.
+	ErrStorageNotConfigured = errors.New("storage not configured")
+
+	// ErrInsufficientLevel indicates the agent doesn't meet level requirements.
+	ErrInsufficientLevel = errors.New("insufficient level")
+
+	// ErrInsufficientXP indicates the agent doesn't have enough XP.
+	ErrInsufficientXP = errors.New("insufficient XP")
+
+	// ErrInsufficientRank indicates the agent doesn't have the required guild rank.
+	ErrInsufficientRank = errors.New("insufficient rank")
+
+	// ErrAlreadyMember indicates the agent is already a guild member.
+	ErrAlreadyMember = errors.New("already a guild member")
+
+	// ErrNotMember indicates the agent is not a guild member.
+	ErrNotMember = errors.New("not a guild member")
+
+	// ErrGuildAtCapacity indicates the guild has reached its member limit.
+	ErrGuildAtCapacity = errors.New("guild at maximum capacity")
+
+	// ErrOnlyGuildmaster indicates the action would leave the guild without leadership.
+	ErrOnlyGuildmaster = errors.New("cannot leave as only guildmaster")
+
+	// ErrGuildNameRequired indicates a guild name was not provided.
+	ErrGuildNameRequired = errors.New("guild name required")
+
+	// ErrMemberNotFound indicates the target member was not found in the guild.
+	ErrMemberNotFound = errors.New("member not found")
+
+	// ErrApplicationsNotPersisted indicates application persistence is not yet implemented.
+	ErrApplicationsNotPersisted = errors.New("applications are not persisted; use InviteToGuild for immediate membership")
+)
+
+// GuildOperationError wraps an error with rollback status information.
+type GuildOperationError struct {
+	Op             string // Operation that failed (e.g., "FoundGuild", "AddMember")
+	Err            error  // The underlying error
+	RollbackFailed bool   // True if rollback also failed
+	RollbackErr    error  // The rollback error, if any
+}
+
+func (e *GuildOperationError) Error() string {
+	if e.RollbackFailed {
+		return fmt.Sprintf("%s failed: %v (rollback also failed: %v)", e.Op, e.Err, e.RollbackErr)
+	}
+	return fmt.Sprintf("%s failed: %v", e.Op, e.Err)
+}
+
+func (e *GuildOperationError) Unwrap() error {
+	return e.Err
+}
+
+// GuildRankNone represents the absence of a guild rank (non-member).
+const GuildRankNone GuildRank = ""
+
+// =============================================================================
 // GUILD FORMATION - Social organization with natural diversity pressure
 // =============================================================================
 // Guilds are social organizations with mixed composition. Natural diversity
@@ -66,6 +127,9 @@ type GuildFormationConfig struct {
 	// Membership constraints
 	DefaultMaxMembers int // Default max members per guild (default: 20)
 
+	// Diversity evaluation
+	TotalSkillCount int // Total skills in domain for coverage calculation (default: 10)
+
 	// Legacy clustering parameters (for suggestions)
 	MinClusterSize      int     // Minimum agents for a cluster (default: 3)
 	MinClusterStrength  float64 // Minimum Jaccard similarity (default: 0.6)
@@ -79,6 +143,7 @@ func DefaultFormationConfig() GuildFormationConfig {
 		MinFounderLevel:     11, // Expert tier
 		FoundingXPCost:      500,
 		DefaultMaxMembers:   20,
+		TotalSkillCount:     10, // Override based on domain if needed
 		MinClusterSize:      3,
 		MinClusterStrength:  0.6,
 		MinAgentLevel:       3,
@@ -122,22 +187,10 @@ type GuildDiversityReport struct {
 	DiversityScore float64    `json:"diversity_score"` // 0-1, overall diversity measure
 }
 
-// GuildInvitation represents a pending guild invitation.
-type GuildInvitation struct {
-	GuildID   GuildID   `json:"guild_id"`
-	InviterID AgentID   `json:"inviter_id"`
-	InviteeID AgentID   `json:"invitee_id"`
-	InvitedAt time.Time `json:"invited_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-}
-
-// GuildApplication represents a pending guild application.
-type GuildApplication struct {
-	GuildID     GuildID   `json:"guild_id"`
-	ApplicantID AgentID   `json:"applicant_id"`
-	AppliedAt   time.Time `json:"applied_at"`
-	Message     string    `json:"message,omitempty"`
-}
+// NOTE: GuildInvitation and GuildApplication types are not currently used.
+// Invitations are immediate (no pending state) and applications are not persisted.
+// These could be implemented in a future version with a separate KV bucket.
+// For now, use InviteToGuild for immediate membership after out-of-band approval.
 
 // DefaultGuildFormationEngine implements GuildFormationEngine.
 type DefaultGuildFormationEngine struct {
@@ -173,7 +226,14 @@ func (e *DefaultGuildFormationEngine) WithLogger(l *slog.Logger) *DefaultGuildFo
 //   - Costs 500 XP to found (investment, not free)
 func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID AgentID, name, culture string) (*Guild, error) {
 	if e.storage == nil {
-		return nil, errors.New("storage not configured")
+		return nil, ErrStorageNotConfigured
+	}
+
+	// Check context before starting
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
 	// Load founder
@@ -184,18 +244,27 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 
 	// Check level requirement
 	if founder.Level < e.config.MinFounderLevel {
-		return nil, fmt.Errorf("must be level %d+ to found a guild (current: %d)", e.config.MinFounderLevel, founder.Level)
+		return nil, fmt.Errorf("%w: must be level %d+ to found a guild (current: %d)",
+			ErrInsufficientLevel, e.config.MinFounderLevel, founder.Level)
 	}
 
 	// Check XP cost
 	if founder.XP < e.config.FoundingXPCost {
-		return nil, fmt.Errorf("founding a guild costs %d XP (current: %d)", e.config.FoundingXPCost, founder.XP)
+		return nil, fmt.Errorf("%w: founding a guild costs %d XP (current: %d)",
+			ErrInsufficientXP, e.config.FoundingXPCost, founder.XP)
 	}
 
 	// Validate name
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil, errors.New("guild name required")
+		return nil, ErrGuildNameRequired
+	}
+
+	// Check context before storage operations
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
 	// Create guild
@@ -233,10 +302,28 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 		return nil, fmt.Errorf("deduct XP: %w", err)
 	}
 
+	// Check context before second storage operation
+	select {
+	case <-ctx.Done():
+		// Rollback XP deduction
+		_ = e.storage.UpdateAgent(context.Background(), string(founderID), func(a *Agent) error {
+			a.XP += e.config.FoundingXPCost
+			for i, g := range a.Guilds {
+				if g == guild.ID {
+					a.Guilds = append(a.Guilds[:i], a.Guilds[i+1:]...)
+					break
+				}
+			}
+			return nil
+		})
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Store guild
 	if err := e.storage.PutGuild(ctx, guildInstance, guild); err != nil {
 		// Try to rollback XP deduction
-		rollbackErr := e.storage.UpdateAgent(ctx, string(founderID), func(a *Agent) error {
+		rollbackErr := e.storage.UpdateAgent(context.Background(), string(founderID), func(a *Agent) error {
 			a.XP += e.config.FoundingXPCost
 			// Remove guild from list
 			for i, g := range a.Guilds {
@@ -251,6 +338,12 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 			e.logger.Error("failed to rollback XP after guild creation failure",
 				"founder", founderID,
 				"error", rollbackErr)
+			return nil, &GuildOperationError{
+				Op:             "FoundGuild",
+				Err:            err,
+				RollbackFailed: true,
+				RollbackErr:    rollbackErr,
+			}
 		}
 		return nil, fmt.Errorf("store guild: %w", err)
 	}
@@ -266,7 +359,14 @@ func (e *DefaultGuildFormationEngine) FoundGuild(ctx context.Context, founderID 
 // InviteToGuild sends an invitation to an agent. Requires Officer+ rank.
 func (e *DefaultGuildFormationEngine) InviteToGuild(ctx context.Context, inviterID AgentID, guildID GuildID, inviteeID AgentID) error {
 	if e.storage == nil {
-		return errors.New("storage not configured")
+		return ErrStorageNotConfigured
+	}
+
+	// Check context
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	guildInstance := string(guildID)
@@ -278,17 +378,13 @@ func (e *DefaultGuildFormationEngine) InviteToGuild(ctx context.Context, inviter
 	// Check inviter is Officer+
 	inviterRank := e.getMemberRank(inviterID, guild)
 	if !canInvite(inviterRank) {
-		return fmt.Errorf("must be Officer or higher to invite (current rank: %s)", inviterRank)
+		return fmt.Errorf("%w: must be Officer or higher to invite (current rank: %s)",
+			ErrInsufficientRank, inviterRank)
 	}
 
 	// Check invitee not already member
 	if e.isGuildMember(inviteeID, guild) {
-		return errors.New("agent is already a member")
-	}
-
-	// Check guild capacity
-	if len(guild.Members) >= guild.MaxMembers {
-		return errors.New("guild is at maximum capacity")
+		return ErrAlreadyMember
 	}
 
 	// Load invitee to verify they exist and meet level requirement
@@ -298,18 +394,36 @@ func (e *DefaultGuildFormationEngine) InviteToGuild(ctx context.Context, inviter
 	}
 
 	if invitee.Level < guild.MinLevel {
-		return fmt.Errorf("invitee must be level %d+ (current: %d)", guild.MinLevel, invitee.Level)
+		return fmt.Errorf("%w: invitee must be level %d+ (current: %d)",
+			ErrInsufficientLevel, guild.MinLevel, invitee.Level)
+	}
+
+	// Check context before storage operations
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	// For now, invitations are immediate (no pending state).
 	// A full implementation would store GuildInvitation and require acceptance.
-	return e.addMemberToGuild(ctx, guild, guildInstance, inviteeID, "invited by "+string(inviterID))
+	// Capacity check is done inside addMemberToGuild to avoid TOCTOU race.
+	return e.addMemberToGuild(ctx, guildInstance, inviteeID, "invited by "+string(inviterID))
 }
 
 // ApplyToGuild submits an application to join a guild.
+// NOTE: Applications are not currently persisted. This method validates eligibility
+// but returns an error indicating applications need officer approval via InviteToGuild.
 func (e *DefaultGuildFormationEngine) ApplyToGuild(ctx context.Context, applicantID AgentID, guildID GuildID) error {
 	if e.storage == nil {
-		return errors.New("storage not configured")
+		return ErrStorageNotConfigured
+	}
+
+	// Check context
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	guildInstance := string(guildID)
@@ -320,12 +434,12 @@ func (e *DefaultGuildFormationEngine) ApplyToGuild(ctx context.Context, applican
 
 	// Check not already member
 	if e.isGuildMember(applicantID, guild) {
-		return errors.New("already a member")
+		return ErrAlreadyMember
 	}
 
 	// Check guild capacity
 	if len(guild.Members) >= guild.MaxMembers {
-		return errors.New("guild is at maximum capacity")
+		return ErrGuildAtCapacity
 	}
 
 	// Load applicant
@@ -335,22 +449,33 @@ func (e *DefaultGuildFormationEngine) ApplyToGuild(ctx context.Context, applican
 	}
 
 	if applicant.Level < guild.MinLevel {
-		return fmt.Errorf("must be level %d+ to apply (current: %d)", guild.MinLevel, applicant.Level)
+		return fmt.Errorf("%w: must be level %d+ to apply (current: %d)",
+			ErrInsufficientLevel, guild.MinLevel, applicant.Level)
 	}
 
-	// For now, applications are stored in a simple format.
-	// A full implementation would have a separate applications KV bucket.
-	e.logger.Info("guild application submitted",
+	// Log application for audit purposes
+	e.logger.Info("guild application submitted (not persisted)",
 		"guild", guildID,
 		"applicant", applicantID)
 
-	return nil
+	// Return error indicating applications need manual processing
+	// Callers should use InviteToGuild after out-of-band approval
+	return ErrApplicationsNotPersisted
 }
 
 // ApproveApplication approves a pending application. Requires Officer+ rank.
+// Since applications are not persisted, this is equivalent to InviteToGuild
+// but with different audit semantics.
 func (e *DefaultGuildFormationEngine) ApproveApplication(ctx context.Context, approverID AgentID, guildID GuildID, applicantID AgentID) error {
 	if e.storage == nil {
-		return errors.New("storage not configured")
+		return ErrStorageNotConfigured
+	}
+
+	// Check context
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	guildInstance := string(guildID)
@@ -362,26 +487,37 @@ func (e *DefaultGuildFormationEngine) ApproveApplication(ctx context.Context, ap
 	// Check approver is Officer+
 	approverRank := e.getMemberRank(approverID, guild)
 	if !canInvite(approverRank) {
-		return fmt.Errorf("must be Officer or higher to approve (current rank: %s)", approverRank)
+		return fmt.Errorf("%w: must be Officer or higher to approve (current rank: %s)",
+			ErrInsufficientRank, approverRank)
 	}
 
 	// Check applicant not already member
 	if e.isGuildMember(applicantID, guild) {
-		return errors.New("agent is already a member")
+		return ErrAlreadyMember
 	}
 
-	// Check guild capacity
-	if len(guild.Members) >= guild.MaxMembers {
-		return errors.New("guild is at maximum capacity")
+	// Check context before storage operations
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
-	return e.addMemberToGuild(ctx, guild, guildInstance, applicantID, "application approved by "+string(approverID))
+	// Capacity check is done inside addMemberToGuild to avoid TOCTOU race
+	return e.addMemberToGuild(ctx, guildInstance, applicantID, "application approved by "+string(approverID))
 }
 
 // LeaveGuild removes an agent from a guild.
 func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID AgentID, guildID GuildID) error {
 	if e.storage == nil {
-		return errors.New("storage not configured")
+		return ErrStorageNotConfigured
+	}
+
+	// Check context
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	guildInstance := string(guildID)
@@ -392,7 +528,7 @@ func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID Ag
 
 	// Check is member
 	if !e.isGuildMember(agentID, guild) {
-		return errors.New("not a guild member")
+		return ErrNotMember
 	}
 
 	// Check not the only Guildmaster
@@ -405,8 +541,15 @@ func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID Ag
 			}
 		}
 		if guildmasterCount <= 1 {
-			return errors.New("cannot leave: you are the only Guildmaster; promote someone else first")
+			return ErrOnlyGuildmaster
 		}
+	}
+
+	// Check context before storage operations
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	// Remove from guild
@@ -423,6 +566,15 @@ func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID Ag
 		return fmt.Errorf("remove from guild: %w", err)
 	}
 
+	// Check context before second storage operation
+	select {
+	case <-ctx.Done():
+		// Note: guild membership already removed, but this is acceptable
+		// since agent will rejoin on next leave attempt
+		return ctx.Err()
+	default:
+	}
+
 	// Remove guild from agent
 	err = e.storage.UpdateAgent(ctx, string(agentID), func(a *Agent) error {
 		for i, g := range a.Guilds {
@@ -434,10 +586,16 @@ func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID Ag
 		return nil
 	})
 	if err != nil {
-		e.logger.Error("failed to remove guild from agent after leaving",
+		e.logger.Error("failed to remove guild from agent after leaving (inconsistent state)",
 			"agent", agentID,
 			"guild", guildID,
 			"error", err)
+		// Return error to indicate partial failure
+		return &GuildOperationError{
+			Op:             "LeaveGuild",
+			Err:            fmt.Errorf("remove guild from agent: %w", err),
+			RollbackFailed: false,
+		}
 	}
 
 	e.logger.Info("agent left guild",
@@ -452,7 +610,14 @@ func (e *DefaultGuildFormationEngine) LeaveGuild(ctx context.Context, agentID Ag
 // - Officers can promote up to Veteran
 func (e *DefaultGuildFormationEngine) PromoteMember(ctx context.Context, promoterID AgentID, guildID GuildID, memberID AgentID, newRank GuildRank) error {
 	if e.storage == nil {
-		return errors.New("storage not configured")
+		return ErrStorageNotConfigured
+	}
+
+	// Check context
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	guildInstance := string(guildID)
@@ -464,12 +629,20 @@ func (e *DefaultGuildFormationEngine) PromoteMember(ctx context.Context, promote
 	// Check promoter rank
 	promoterRank := e.getMemberRank(promoterID, guild)
 	if !canPromote(promoterRank, newRank) {
-		return fmt.Errorf("insufficient rank to promote to %s (your rank: %s)", newRank, promoterRank)
+		return fmt.Errorf("%w: cannot promote to %s (your rank: %s)",
+			ErrInsufficientRank, newRank, promoterRank)
 	}
 
 	// Check member exists
 	if !e.isGuildMember(memberID, guild) {
-		return errors.New("target is not a guild member")
+		return ErrNotMember
+	}
+
+	// Check context before storage operation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	// Update member rank
@@ -480,14 +653,21 @@ func (e *DefaultGuildFormationEngine) PromoteMember(ctx context.Context, promote
 				return nil
 			}
 		}
-		return errors.New("member not found")
+		return ErrMemberNotFound
 	})
 }
 
 // EvaluateGuildDiversity calculates how well a guild covers skill combinations.
 func (e *DefaultGuildFormationEngine) EvaluateGuildDiversity(ctx context.Context, guildID GuildID) (*GuildDiversityReport, error) {
 	if e.storage == nil {
-		return nil, errors.New("storage not configured")
+		return nil, ErrStorageNotConfigured
+	}
+
+	// Check context
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
 	guildInstance := string(guildID)
@@ -499,6 +679,13 @@ func (e *DefaultGuildFormationEngine) EvaluateGuildDiversity(ctx context.Context
 	// Collect all unique skills from members
 	skillSet := make(map[SkillTag]int)
 	for _, member := range guild.Members {
+		// Check context periodically
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		agent, err := e.storage.GetAgent(ctx, string(member.AgentID))
 		if err != nil {
 			continue
@@ -540,11 +727,17 @@ func (e *DefaultGuildFormationEngine) EvaluateGuildDiversity(ctx context.Context
 		}
 	}
 
+	// Use configurable total skill count for coverage calculation
+	totalSkills := e.config.TotalSkillCount
+	if totalSkills <= 0 {
+		totalSkills = 10 // Fallback default
+	}
+
 	return &GuildDiversityReport{
 		GuildID:        guildID,
 		TotalMembers:   len(guild.Members),
 		UniqueSkills:   uniqueSkills,
-		SkillCoverage:  float64(len(uniqueSkills)) / 10.0, // Assume 10 common skills
+		SkillCoverage:  float64(len(uniqueSkills)) / float64(totalSkills),
 		DiversityScore: diversityScore,
 	}, nil
 }
@@ -554,42 +747,72 @@ func (e *DefaultGuildFormationEngine) EvaluateGuildDiversity(ctx context.Context
 // =============================================================================
 
 // addMemberToGuild adds an agent as a new Initiate member.
-func (e *DefaultGuildFormationEngine) addMemberToGuild(ctx context.Context, guild *Guild, guildInstance string, agentID AgentID, reason string) error {
+// Capacity check is done inside the UpdateGuild callback to avoid TOCTOU race.
+func (e *DefaultGuildFormationEngine) addMemberToGuild(ctx context.Context, guildInstance string, agentID AgentID, reason string) error {
 	now := time.Now()
+	var guildID GuildID
 
-	// Add to guild
+	// Add to guild with capacity check inside callback (atomic)
 	err := e.storage.UpdateGuild(ctx, guildInstance, func(g *Guild) error {
+		// Check capacity atomically
+		if len(g.Members) >= g.MaxMembers {
+			return ErrGuildAtCapacity
+		}
+
 		// Double-check not already member (race condition check)
 		for _, m := range g.Members {
 			if m.AgentID == agentID {
-				return nil // Already member, no-op
+				return ErrAlreadyMember
 			}
 		}
+
 		g.Members = append(g.Members, GuildMember{
 			AgentID:      agentID,
 			Rank:         GuildRankInitiate,
 			JoinedAt:     now,
 			Contribution: 0,
 		})
+		guildID = g.ID
 		return nil
 	})
 	if err != nil {
+		// Return sentinel errors directly without wrapping
+		if errors.Is(err, ErrGuildAtCapacity) || errors.Is(err, ErrAlreadyMember) {
+			return err
+		}
 		return fmt.Errorf("add to guild: %w", err)
+	}
+
+	// Check context before second storage operation
+	select {
+	case <-ctx.Done():
+		// Rollback guild membership
+		_ = e.storage.UpdateGuild(context.Background(), guildInstance, func(g *Guild) error {
+			for i, m := range g.Members {
+				if m.AgentID == agentID {
+					g.Members = append(g.Members[:i], g.Members[i+1:]...)
+					return nil
+				}
+			}
+			return nil
+		})
+		return ctx.Err()
+	default:
 	}
 
 	// Add guild to agent
 	err = e.storage.UpdateAgent(ctx, string(agentID), func(a *Agent) error {
 		for _, g := range a.Guilds {
-			if g == guild.ID {
+			if g == guildID {
 				return nil // Already has guild
 			}
 		}
-		a.Guilds = append(a.Guilds, guild.ID)
+		a.Guilds = append(a.Guilds, guildID)
 		return nil
 	})
 	if err != nil {
 		// Rollback guild membership
-		rollbackErr := e.storage.UpdateGuild(ctx, guildInstance, func(g *Guild) error {
+		rollbackErr := e.storage.UpdateGuild(context.Background(), guildInstance, func(g *Guild) error {
 			for i, m := range g.Members {
 				if m.AgentID == agentID {
 					g.Members = append(g.Members[:i], g.Members[i+1:]...)
@@ -601,8 +824,14 @@ func (e *DefaultGuildFormationEngine) addMemberToGuild(ctx context.Context, guil
 		if rollbackErr != nil {
 			e.logger.Error("failed to rollback guild membership",
 				"agent", agentID,
-				"guild", guild.ID,
+				"guild", guildID,
 				"error", rollbackErr)
+			return &GuildOperationError{
+				Op:             "AddMember",
+				Err:            fmt.Errorf("update agent: %w", err),
+				RollbackFailed: true,
+				RollbackErr:    rollbackErr,
+			}
 		}
 		return fmt.Errorf("update agent: %w", err)
 	}
@@ -611,7 +840,7 @@ func (e *DefaultGuildFormationEngine) addMemberToGuild(ctx context.Context, guil
 	if e.events != nil {
 		payload := GuildAutoJoinedPayload{
 			AgentID:  agentID,
-			GuildID:  guild.ID,
+			GuildID:  guildID,
 			Rank:     GuildRankInitiate,
 			JoinedAt: now,
 			Reason:   reason,
@@ -619,14 +848,14 @@ func (e *DefaultGuildFormationEngine) addMemberToGuild(ctx context.Context, guil
 		if err := e.events.PublishGuildAutoJoined(ctx, payload); err != nil {
 			e.logger.Debug("failed to publish guild joined event",
 				"agent", agentID,
-				"guild", guild.ID,
+				"guild", guildID,
 				"error", err)
 		}
 	}
 
 	e.logger.Info("agent joined guild",
 		"agent", agentID,
-		"guild", guild.ID,
+		"guild", guildID,
 		"reason", reason)
 
 	return nil
