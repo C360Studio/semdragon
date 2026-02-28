@@ -33,6 +33,7 @@ type NATSQuestBoard struct {
 	config      *BoardConfig
 	storage     *Storage
 	events      *EventPublisher
+	traces      *TraceManager
 	evaluator   BattleEvaluator
 	progression *ProgressionManager
 	logger      *slog.Logger
@@ -82,6 +83,7 @@ func NewNATSQuestBoard(ctx context.Context, client *natsclient.Client, config Bo
 		config:  &config,
 		storage: storage,
 		events:  events,
+		traces:  NewTraceManager(),
 	}
 
 	for _, opt := range opts {
@@ -110,6 +112,7 @@ func NewNATSQuestBoardWithStorage(client *natsclient.Client, storage *Storage, o
 		config:  storage.Config(),
 		storage: storage,
 		events:  events,
+		traces:  NewTraceManager(),
 	}
 
 	for _, opt := range opts {
@@ -140,6 +143,11 @@ func (b *NATSQuestBoard) Config() *BoardConfig {
 	return b.config
 }
 
+// Traces returns the trace manager for quest observability.
+func (b *NATSQuestBoard) Traces() *TraceManager {
+	return b.traces
+}
+
 // =============================================================================
 // POSTING
 // =============================================================================
@@ -154,6 +162,17 @@ func (b *NATSQuestBoard) PostQuest(ctx context.Context, quest Quest) (*Quest, er
 
 	// Set full entity ID
 	quest.ID = QuestID(b.config.QuestEntityID(instance))
+
+	// Create trace context for this quest
+	var tc *natsclient.TraceContext
+	if quest.ParentQuest != nil {
+		// Sub-quest: inherit parent's trace
+		tc = b.traces.StartQuestTraceWithParent(quest.ID, *quest.ParentQuest)
+	} else {
+		// Root quest: new trace
+		tc = b.traces.StartQuestTrace(quest.ID)
+	}
+	quest.TrajectoryID = tc.TraceID
 
 	// Set defaults
 	quest.Status = QuestPosted
@@ -186,10 +205,11 @@ func (b *NATSQuestBoard) PostQuest(ctx context.Context, quest Quest) (*Quest, er
 		}
 	}
 
-	// Emit event - best effort, quest is already posted
+	// Emit event with trace context - best effort, quest is already posted
 	if err := b.events.PublishQuestPosted(ctx, QuestPostedPayload{
 		Quest:    quest,
 		PostedAt: quest.PostedAt,
+		Trace:    TraceInfoFromTraceContext(tc),
 	}); err != nil {
 		b.logger.Debug("failed to publish quest posted event", "quest", quest.ID, "error", err)
 	}
@@ -403,12 +423,14 @@ func (b *NATSQuestBoard) ClaimQuest(ctx context.Context, questID QuestID, agentI
 	b.storage.MoveQuestStatus(ctx, questInstance, QuestPosted, QuestClaimed)
 	b.storage.AddAgentQuestIndex(ctx, agentInstance, questInstance)
 
-	// Emit event
+	// Create span for claim event and emit
 	if updatedQuest.ClaimedAt != nil {
+		_, tc := b.traces.NewEventSpan(ctx, questID)
 		b.events.PublishQuestClaimed(ctx, QuestClaimedPayload{
 			Quest:     updatedQuest,
 			AgentID:   agentID,
 			ClaimedAt: *updatedQuest.ClaimedAt,
+			Trace:     TraceInfoFromTraceContext(tc),
 		})
 	}
 
@@ -468,11 +490,14 @@ func (b *NATSQuestBoard) ClaimQuestForParty(ctx context.Context, questID QuestID
 
 	b.storage.MoveQuestStatus(ctx, questInstance, QuestPosted, QuestClaimed)
 
+	// Create span for claim event
+	_, tc := b.traces.NewEventSpan(ctx, questID)
 	b.events.PublishQuestClaimed(ctx, QuestClaimedPayload{
 		Quest:     updatedQuest,
 		AgentID:   party.Lead,
 		PartyID:   &partyID,
 		ClaimedAt: *updatedQuest.ClaimedAt,
+		Trace:     TraceInfoFromTraceContext(tc),
 	})
 
 	return nil
@@ -520,12 +545,15 @@ func (b *NATSQuestBoard) AbandonQuest(ctx context.Context, questID QuestID, reas
 		b.storage.RemoveAgentQuestIndex(ctx, agentInstance, questInstance)
 	}
 
+	// Create span for abandon event
+	_, abandonTC := b.traces.NewEventSpan(ctx, questID)
 	b.events.PublishQuestAbandoned(ctx, QuestAbandonedPayload{
 		Quest:       updatedQuest,
 		AgentID:     agentID,
 		PartyID:     partyID,
 		Reason:      reason,
 		AbandonedAt: time.Now(),
+		Trace:       TraceInfoFromTraceContext(abandonTC),
 	})
 
 	return nil
@@ -568,11 +596,13 @@ func (b *NATSQuestBoard) StartQuest(ctx context.Context, questID QuestID) error 
 	b.storage.MoveQuestStatus(ctx, questInstance, QuestClaimed, QuestInProgress)
 
 	if updatedQuest.StartedAt != nil {
+		_, tc := b.traces.NewEventSpan(ctx, questID)
 		b.events.PublishQuestStarted(ctx, QuestStartedPayload{
 			Quest:     updatedQuest,
 			AgentID:   agentID,
 			PartyID:   partyID,
 			StartedAt: *updatedQuest.StartedAt,
+			Trace:     TraceInfoFromTraceContext(tc),
 		})
 	}
 
@@ -637,10 +667,12 @@ func (b *NATSQuestBoard) SubmitResult(ctx context.Context, questID QuestID, resu
 			b.logger.Debug("failed to store battle state", "battle", battle.ID, "error", err)
 		}
 
+		_, battleTC := b.traces.NewEventSpan(ctx, questID)
 		b.events.PublishBattleStarted(ctx, BattleStartedPayload{
 			Battle:    *battle,
 			Quest:     updatedQuest,
 			StartedAt: battle.StartedAt,
+			Trace:     TraceInfoFromTraceContext(battleTC),
 		})
 
 		// Run evaluator if available
@@ -662,11 +694,13 @@ func (b *NATSQuestBoard) SubmitResult(ctx context.Context, questID QuestID, resu
 				b.storage.PutBattle(ctx, battleInstance, battle)
 
 				// Publish verdict
+				_, verdictTC := b.traces.NewEventSpan(ctx, questID)
 				b.events.PublishBattleVerdict(ctx, BattleVerdictPayload{
 					Battle:  *battle,
 					Quest:   updatedQuest,
 					Verdict: evalResult.Verdict,
 					EndedAt: now,
+					Trace:   TraceInfoFromTraceContext(verdictTC),
 				})
 
 				// Complete or fail the quest based on verdict
@@ -679,13 +713,20 @@ func (b *NATSQuestBoard) SubmitResult(ctx context.Context, questID QuestID, resu
 		}
 	}
 
+	_, submitTC := b.traces.NewEventSpan(ctx, questID)
 	b.events.PublishQuestSubmitted(ctx, QuestSubmittedPayload{
 		Quest:       updatedQuest,
 		AgentID:     agentID,
 		Result:      result,
 		SubmittedAt: time.Now(),
 		BattleID:    battleID,
+		Trace:       TraceInfoFromTraceContext(submitTC),
 	})
+
+	// If quest completed directly (no review), end the trace
+	if !needsReview {
+		b.traces.EndQuestTrace(questID)
+	}
 
 	return battle, nil
 }
@@ -760,6 +801,8 @@ func (b *NATSQuestBoard) CompleteQuest(ctx context.Context, questID QuestID, ver
 		}
 	}
 
+	// Create final span for completion event
+	_, completeTC := b.traces.NewEventSpan(ctx, questID)
 	b.events.PublishQuestCompleted(ctx, QuestCompletedPayload{
 		Quest:       updatedQuest,
 		AgentID:     agentID,
@@ -767,7 +810,11 @@ func (b *NATSQuestBoard) CompleteQuest(ctx context.Context, questID QuestID, ver
 		Verdict:     verdict,
 		CompletedAt: *updatedQuest.CompletedAt,
 		Duration:    duration,
+		Trace:       TraceInfoFromTraceContext(completeTC),
 	})
+
+	// End trace for this quest (terminal state)
+	b.traces.EndQuestTrace(questID)
 
 	return nil
 }
@@ -838,6 +885,8 @@ func (b *NATSQuestBoard) FailQuest(ctx context.Context, questID QuestID, reason 
 		}
 	}
 
+	// Create span for failure event
+	_, failTC := b.traces.NewEventSpan(ctx, questID)
 	b.events.PublishQuestFailed(ctx, QuestFailedPayload{
 		Quest:    updatedQuest,
 		AgentID:  agentID,
@@ -847,7 +896,13 @@ func (b *NATSQuestBoard) FailQuest(ctx context.Context, questID QuestID, reason 
 		FailedAt: time.Now(),
 		Attempt:  updatedQuest.Attempts,
 		Reposted: reposted,
+		Trace:    TraceInfoFromTraceContext(failTC),
 	})
+
+	// End trace if quest reached terminal state (not reposted)
+	if !reposted {
+		b.traces.EndQuestTrace(questID)
+	}
 
 	return nil
 }
@@ -892,6 +947,8 @@ func (b *NATSQuestBoard) EscalateQuest(ctx context.Context, questID QuestID, rea
 		b.storage.RemoveAgentQuestIndex(ctx, agentInstance, questInstance)
 	}
 
+	// Create span for escalation event
+	_, escTC := b.traces.NewEventSpan(ctx, questID)
 	b.events.PublishQuestEscalated(ctx, QuestEscalatedPayload{
 		Quest:       updatedQuest,
 		AgentID:     agentID,
@@ -899,7 +956,11 @@ func (b *NATSQuestBoard) EscalateQuest(ctx context.Context, questID QuestID, rea
 		Reason:      reason,
 		EscalatedAt: time.Now(),
 		Attempts:    updatedQuest.Attempts,
+		Trace:       TraceInfoFromTraceContext(escTC),
 	})
+
+	// End trace for escalated quest (terminal state requiring DM attention)
+	b.traces.EndQuestTrace(questID)
 
 	return nil
 }

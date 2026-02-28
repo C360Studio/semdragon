@@ -59,6 +59,7 @@ type QuestPostedPayload struct {
 	Quest    Quest     `json:"quest"`
 	PostedAt time.Time `json:"posted_at"`
 	PostedBy string    `json:"posted_by,omitempty"` // DM or system identifier
+	Trace    TraceInfo `json:"trace,omitempty"`     // Trace context for observability
 }
 
 // Validate checks that required fields are present.
@@ -78,6 +79,7 @@ type QuestClaimedPayload struct {
 	AgentID   AgentID   `json:"agent_id"`
 	PartyID   *PartyID  `json:"party_id,omitempty"`
 	ClaimedAt time.Time `json:"claimed_at"`
+	Trace     TraceInfo `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -100,6 +102,7 @@ type QuestStartedPayload struct {
 	AgentID   AgentID   `json:"agent_id"`
 	PartyID   *PartyID  `json:"party_id,omitempty"`
 	StartedAt time.Time `json:"started_at"`
+	Trace     TraceInfo `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -120,6 +123,7 @@ type QuestSubmittedPayload struct {
 	Result      any       `json:"result"`
 	SubmittedAt time.Time `json:"submitted_at"`
 	BattleID    *BattleID `json:"battle_id,omitempty"` // Set if review triggered
+	Trace       TraceInfo `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -141,6 +145,7 @@ type QuestCompletedPayload struct {
 	Verdict     BattleVerdict `json:"verdict"`
 	CompletedAt time.Time     `json:"completed_at"`
 	Duration    time.Duration `json:"duration"`
+	Trace       TraceInfo     `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -164,6 +169,7 @@ type QuestFailedPayload struct {
 	FailedAt time.Time   `json:"failed_at"`
 	Attempt  int         `json:"attempt"`
 	Reposted bool        `json:"reposted"`
+	Trace    TraceInfo   `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -188,6 +194,7 @@ type QuestEscalatedPayload struct {
 	Reason      string    `json:"reason"`
 	EscalatedAt time.Time `json:"escalated_at"`
 	Attempts    int       `json:"attempts"`
+	Trace       TraceInfo `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -211,6 +218,7 @@ type QuestAbandonedPayload struct {
 	PartyID     *PartyID  `json:"party_id,omitempty"`
 	Reason      string    `json:"reason"`
 	AbandonedAt time.Time `json:"abandoned_at"`
+	Trace       TraceInfo `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -232,6 +240,7 @@ type BattleStartedPayload struct {
 	Battle    BossBattle `json:"battle"`
 	Quest     Quest      `json:"quest"`
 	StartedAt time.Time  `json:"started_at"`
+	Trace     TraceInfo  `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -254,6 +263,7 @@ type BattleVerdictPayload struct {
 	Quest   Quest         `json:"quest"`
 	Verdict BattleVerdict `json:"verdict"`
 	EndedAt time.Time     `json:"ended_at"`
+	Trace   TraceInfo     `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -402,16 +412,17 @@ func (ep *EventPublisher) PublishAgentCooldown(ctx context.Context, payload Agen
 
 // AgentXPPayload contains data for agent.progression.xp events.
 type AgentXPPayload struct {
-	AgentID     AgentID   `json:"agent_id"`
-	QuestID     QuestID   `json:"quest_id"`
-	Award       *XPAward  `json:"award,omitempty"`   // Set on success
+	AgentID     AgentID    `json:"agent_id"`
+	QuestID     QuestID    `json:"quest_id"`
+	Award       *XPAward   `json:"award,omitempty"`   // Set on success
 	Penalty     *XPPenalty `json:"penalty,omitempty"` // Set on failure
-	XPDelta     int64     `json:"xp_delta"`
-	XPBefore    int64     `json:"xp_before"`
-	XPAfter     int64     `json:"xp_after"`
-	LevelBefore int       `json:"level_before"`
-	LevelAfter  int       `json:"level_after"`
-	Timestamp   time.Time `json:"timestamp"`
+	XPDelta     int64      `json:"xp_delta"`
+	XPBefore    int64      `json:"xp_before"`
+	XPAfter     int64      `json:"xp_after"`
+	LevelBefore int        `json:"level_before"`
+	LevelAfter  int        `json:"level_after"`
+	Timestamp   time.Time  `json:"timestamp"`
+	Trace       TraceInfo  `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -439,6 +450,7 @@ type AgentLevelPayload struct {
 	XPCurrent int64     `json:"xp_current"`
 	XPToLevel int64     `json:"xp_to_level"`
 	Timestamp time.Time `json:"timestamp"`
+	Trace     TraceInfo `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.
@@ -460,6 +472,7 @@ type AgentCooldownPayload struct {
 	CooldownUntil time.Time     `json:"cooldown_until"`
 	Duration      time.Duration `json:"duration"`
 	Timestamp     time.Time     `json:"timestamp"`
+	Trace         TraceInfo     `json:"trace,omitempty"`
 }
 
 // Validate checks that required fields are present.

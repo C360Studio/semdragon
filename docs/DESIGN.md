@@ -215,10 +215,10 @@ party.disbanded  → {party_id: "p-456"}
 
 ## What's Next
 
-- [ ] Implement QuestBoard backed by semstreams
-- [ ] Implement DefaultBoidEngine with the six rules
-- [ ] Wire up XP engine with real boss battle evaluators
-- [ ] Build DM interface - start with DMManual, work toward DMFullAuto
+- [x] Implement QuestBoard backed by semstreams (NATSQuestBoard)
+- [x] Implement DefaultBoidEngine with the six rules
+- [x] Wire up XP engine with real boss battle evaluators
+- [x] Build DM interface - ManualDM complete, automation modes pending
+- [x] Semstreams integration: Map GameEvents to trajectory spans
 - [ ] Build guild auto-formation based on agent performance clustering
 - [ ] Dashboard: The DM's scrying pool (visualize world state in real-time)
-- [ ] Semstreams integration: Map GameEvents to trajectory spans

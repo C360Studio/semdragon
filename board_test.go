@@ -3,7 +3,6 @@ package semdragons
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/c360studio/semstreams/natsclient"
 )
@@ -668,8 +667,182 @@ func TestNoReviewQuestCompletesImmediately(t *testing.T) {
 	}
 }
 
-// Helper functions
+// TestQuestTrajectoryIntegration tests that quests get trajectory IDs
+// and events include trace information.
+func TestQuestTrajectoryIntegration(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	ctx := context.Background()
 
-func ptrTime(t time.Time) *time.Time {
-	return &t
+	config := BoardConfig{
+		Org:      "test",
+		Platform: "unit",
+		Board:    "traces",
+	}
+
+	board, err := NewNATSQuestBoard(ctx, tc.Client, config)
+	if err != nil {
+		t.Fatalf("failed to create board: %v", err)
+	}
+
+	// Verify TraceManager is initialized
+	if board.Traces() == nil {
+		t.Fatal("TraceManager should be initialized")
+	}
+
+	// Create agent
+	agentInstance := GenerateInstance()
+	agent := &Agent{
+		ID:     AgentID(config.AgentEntityID(agentInstance)),
+		Level:  10,
+		Tier:   TierJourneyman,
+		Status: AgentIdle,
+	}
+	if err := board.Storage().PutAgent(ctx, agentInstance, agent); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Post quest - should get trajectory ID
+	quest := NewQuest("Traced Quest").
+		Difficulty(DifficultyModerate).
+		NoReview().
+		Build()
+
+	posted, err := board.PostQuest(ctx, quest)
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	// Verify quest has TrajectoryID
+	if posted.TrajectoryID == "" {
+		t.Error("posted quest should have TrajectoryID")
+	}
+
+	// Verify trace context is stored
+	questTC := board.Traces().GetQuestTrace(posted.ID)
+	if questTC == nil {
+		t.Fatal("quest should have trace context in TraceManager")
+	}
+	if questTC.TraceID != posted.TrajectoryID {
+		t.Errorf("TrajectoryID mismatch: quest has %s, trace context has %s",
+			posted.TrajectoryID, questTC.TraceID)
+	}
+
+	// Verify trace ID format (should be 32 hex chars)
+	if len(posted.TrajectoryID) != 32 {
+		t.Errorf("TrajectoryID should be 32 chars, got %d: %s",
+			len(posted.TrajectoryID), posted.TrajectoryID)
+	}
+
+	// Complete the quest lifecycle
+	if err := board.ClaimQuest(ctx, posted.ID, agent.ID); err != nil {
+		t.Fatalf("ClaimQuest failed: %v", err)
+	}
+	if err := board.StartQuest(ctx, posted.ID); err != nil {
+		t.Fatalf("StartQuest failed: %v", err)
+	}
+
+	// Submit (completes immediately due to NoReview)
+	_, err = board.SubmitResult(ctx, posted.ID, "done")
+	if err != nil {
+		t.Fatalf("SubmitResult failed: %v", err)
+	}
+
+	// Verify trace is cleaned up after completion
+	if tc := board.Traces().GetQuestTrace(posted.ID); tc != nil {
+		t.Error("trace should be cleaned up after quest completion")
+	}
+
+	// Verify active traces count is back to 0
+	if count := board.Traces().ActiveTraces(); count != 0 {
+		t.Errorf("expected 0 active traces after completion, got %d", count)
+	}
 }
+
+// TestSubQuestTrajectoryInheritance tests that sub-quests inherit parent trace
+func TestSubQuestTrajectoryInheritance(t *testing.T) {
+	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	ctx := context.Background()
+
+	config := BoardConfig{
+		Org:      "test",
+		Platform: "unit",
+		Board:    "subtraces",
+	}
+
+	board, err := NewNATSQuestBoard(ctx, tc.Client, config)
+	if err != nil {
+		t.Fatalf("failed to create board: %v", err)
+	}
+
+	// Create a master-level agent that can decompose
+	agentInstance := GenerateInstance()
+	agent := &Agent{
+		ID:     AgentID(config.AgentEntityID(agentInstance)),
+		Level:  16, // Master tier - can decompose
+		Tier:   TierMaster,
+		Status: AgentIdle,
+	}
+	if err := board.Storage().PutAgent(ctx, agentInstance, agent); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Post parent quest
+	parentQuest := NewQuest("Parent Quest").
+		Difficulty(DifficultyEpic).
+		Build()
+
+	parent, err := board.PostQuest(ctx, parentQuest)
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	// Claim parent
+	if err := board.ClaimQuest(ctx, parent.ID, agent.ID); err != nil {
+		t.Fatalf("ClaimQuest failed: %v", err)
+	}
+
+	// Get parent's trace context
+	parentTC := board.Traces().GetQuestTrace(parent.ID)
+	if parentTC == nil {
+		t.Fatal("parent quest should have trace context")
+	}
+
+	// Create and post sub-quests
+	subQuest := NewQuest("Sub Quest 1").
+		Difficulty(DifficultyModerate).
+		Build()
+
+	subQuests, err := board.PostSubQuests(ctx, parent.ID, []Quest{subQuest}, agent.ID)
+	if err != nil {
+		t.Fatalf("PostSubQuests failed: %v", err)
+	}
+
+	if len(subQuests) != 1 {
+		t.Fatalf("expected 1 sub-quest, got %d", len(subQuests))
+	}
+
+	subQ := subQuests[0]
+
+	// Verify sub-quest has trajectory ID
+	if subQ.TrajectoryID == "" {
+		t.Error("sub-quest should have TrajectoryID")
+	}
+
+	// Sub-quest should have same trace ID as parent (same trace, different span)
+	subTC := board.Traces().GetQuestTrace(subQ.ID)
+	if subTC == nil {
+		t.Fatal("sub-quest should have trace context")
+	}
+
+	if subTC.TraceID != parentTC.TraceID {
+		t.Errorf("sub-quest trace ID should match parent: parent=%s, sub=%s",
+			parentTC.TraceID, subTC.TraceID)
+	}
+
+	// Sub-quest's parent span ID should be the parent's span ID
+	if subTC.ParentSpanID != parentTC.SpanID {
+		t.Errorf("sub-quest parent span ID should match parent's span ID: expected=%s, got=%s",
+			parentTC.SpanID, subTC.ParentSpanID)
+	}
+}
+
