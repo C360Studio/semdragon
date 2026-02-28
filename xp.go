@@ -9,7 +9,11 @@ import (
 // =============================================================================
 // XP ENGINE - The evaluation framework wearing a cloak
 // =============================================================================
-// XP = f(quest_difficulty, quality_score, efficiency, streak, guild_bonus)
+// XP = f(quest_difficulty, quality_score, efficiency, streak, guild_rank_bonus)
+//
+// Guild bonus is tiered by rank: Initiate 10% → Member 15% → Veteran 18% →
+// Officer 20% → Guildmaster 25%. This rewards founders and veterans who
+// invested in building the guild.
 //
 // This is the hardest part to get right. The XP function IS your evaluation
 // framework. Get this wrong and agents game the system or stagnate.
@@ -45,11 +49,12 @@ type XPContext struct {
 	Quest        Quest         `json:"quest"`
 	Agent        Agent         `json:"agent"`
 	BattleResult BattleVerdict `json:"battle_result"`
-	Duration     time.Duration `json:"duration"`      // How long it took
-	EstDuration  time.Duration `json:"est_duration"`  // How long it should have taken
-	Streak       int           `json:"streak"`        // Consecutive successes
+	Duration     time.Duration `json:"duration"`     // How long it took
+	EstDuration  time.Duration `json:"est_duration"` // How long it should have taken
+	Streak       int           `json:"streak"`       // Consecutive successes
 	IsGuildQuest bool          `json:"is_guild_quest"`
-	Attempt      int           `json:"attempt"`       // Which attempt (1st, 2nd, etc.)
+	GuildRank    GuildRank     `json:"guild_rank,omitempty"` // Agent's rank in the guild (for bonus calculation)
+	Attempt      int           `json:"attempt"`              // Which attempt (1st, 2nd, etc.)
 }
 
 // XPAward holds the breakdown of XP earned from a quest completion.
@@ -117,7 +122,6 @@ type DefaultXPEngine struct {
 	QualityMultiplier  float64
 	SpeedMultiplier    float64
 	StreakMultiplier   float64
-	GuildBonusRate     float64
 	RetryPenaltyRate   float64
 	FailurePenaltyRate float64
 	LevelDownThreshold int
@@ -128,8 +132,7 @@ func NewDefaultXPEngine() *DefaultXPEngine {
 	return &DefaultXPEngine{
 		QualityMultiplier:  2.0,
 		SpeedMultiplier:    0.5,
-		StreakMultiplier:    0.1,
-		GuildBonusRate:     0.15,
+		StreakMultiplier:   0.1,
 		RetryPenaltyRate:   0.25,
 		FailurePenaltyRate: 0.5,
 		LevelDownThreshold: 3,
@@ -155,10 +158,11 @@ func (e *DefaultXPEngine) CalculateXP(ctx XPContext) XPAward {
 	streakMult := math.Min(float64(ctx.Streak)*e.StreakMultiplier, 1.0)
 	streakBonus := int64(streakMult * float64(base))
 
-	// Guild bonus: flat 15% for guild quests
+	// Guild bonus: tiered by rank (10% initiate → 25% guildmaster)
 	var guildBonus int64
 	if ctx.IsGuildQuest {
-		guildBonus = int64(e.GuildBonusRate * float64(base))
+		bonusRate := ctx.GuildRank.GuildBonusRate()
+		guildBonus = int64(bonusRate * float64(base))
 	}
 
 	// Retry penalty: 25% less per retry attempt

@@ -78,17 +78,19 @@ func (r *RosterSeeder) seedGuilds(ctx context.Context, dryRun bool, result *Resu
 			continue
 		}
 
+		now := time.Now()
 		guild := &semdragons.Guild{
-			ID:             semdragons.GuildID(spec.ID),
-			Name:           spec.Name,
-			Description:    spec.Description,
-			Status:         semdragons.GuildActive,
-			Domain:         spec.Domain,
-			Skills:         spec.Skills,
-			Members:        []semdragons.GuildMember{},
-			AutoRecruit:    spec.AutoRecruit,
-			MinLevelToJoin: spec.MinLevelToJoin,
-			CreatedAt:      time.Now(),
+			ID:          semdragons.GuildID(spec.ID),
+			Name:        spec.Name,
+			Description: spec.Description,
+			Status:      semdragons.GuildActive,
+			Founded:     now,
+			Culture:     spec.Culture,
+			Members:     []semdragons.GuildMember{},
+			MinLevel:    spec.MinLevel,
+			MaxMembers:  20,
+			Reputation:  0.5,
+			CreatedAt:   now,
 		}
 
 		if err := r.storage.PutGuild(ctx, spec.ID, guild); err != nil {
@@ -276,10 +278,10 @@ func (r *RosterSeeder) addAgentToGuild(ctx context.Context, agent *semdragons.Ag
 		}
 
 		guild.Members = append(guild.Members, semdragons.GuildMember{
-			AgentID:  agent.ID,
-			Rank:     semdragons.GuildRankInitiate,
-			GuildXP:  0,
-			JoinedAt: time.Now(),
+			AgentID:      agent.ID,
+			Rank:         semdragons.GuildRankInitiate,
+			JoinedAt:     time.Now(),
+			Contribution: 0,
 		})
 
 		return nil

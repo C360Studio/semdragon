@@ -14,12 +14,12 @@ import (
 
 // CharacterSheet is a complete projection of an agent's state.
 type CharacterSheet struct {
-	Agent        Agent            `json:"agent"`
-	SkillBars    []SkillBar       `json:"skill_bars"`
-	DerivedStats DerivedStats     `json:"derived_stats"`
+	Agent        Agent             `json:"agent"`
+	SkillBars    []SkillBar        `json:"skill_bars"`
+	DerivedStats DerivedStats      `json:"derived_stats"`
 	Memberships  []GuildMembership `json:"memberships"`
-	Equipment    []EquippedItem   `json:"equipment"`
-	Inventory    *AgentInventory  `json:"inventory,omitempty"`
+	Equipment    []EquippedItem    `json:"equipment"`
+	Inventory    *AgentInventory   `json:"inventory,omitempty"`
 }
 
 // SkillBar represents a skill with its proficiency for UI display.
@@ -28,7 +28,7 @@ type SkillBar struct {
 	SkillName       string           `json:"skill_name"`
 	Level           ProficiencyLevel `json:"level"`
 	LevelName       string           `json:"level_name"`
-	Progress        int              `json:"progress"`       // 0-99
+	Progress        int              `json:"progress"` // 0-99
 	ProgressPercent float64          `json:"progress_percent"`
 	TotalXP         int64            `json:"total_xp"`
 	QuestsUsed      int              `json:"quests_used"`
@@ -49,11 +49,11 @@ type DerivedStats struct {
 
 // GuildMembership represents an agent's status in a guild.
 type GuildMembership struct {
-	GuildID    GuildID   `json:"guild_id"`
-	GuildName  string    `json:"guild_name"`
-	Rank       GuildRank `json:"rank"`
-	GuildXP    int64     `json:"guild_xp"`
-	JoinedAt   string    `json:"joined_at"`
+	GuildID      GuildID   `json:"guild_id"`
+	GuildName    string    `json:"guild_name"`
+	Rank         GuildRank `json:"rank"`
+	Contribution float64   `json:"contribution"` // XP contributed via guild quests
+	JoinedAt     string    `json:"joined_at"`
 }
 
 // EquippedItem represents a tool the agent has equipped.
@@ -225,11 +225,11 @@ func (s *CharacterSheetService) getGuildMemberships(ctx context.Context, agent *
 		for _, member := range guild.Members {
 			if member.AgentID == agent.ID {
 				memberships = append(memberships, GuildMembership{
-					GuildID:   guildID,
-					GuildName: guild.Name,
-					Rank:      member.Rank,
-					GuildXP:   member.GuildXP,
-					JoinedAt:  member.JoinedAt.Format("2006-01-02"),
+					GuildID:      guildID,
+					GuildName:    guild.Name,
+					Rank:         member.Rank,
+					Contribution: member.Contribution,
+					JoinedAt:     member.JoinedAt.Format("2006-01-02"),
 				})
 				break
 			}
@@ -314,33 +314,33 @@ func (s *CharacterSheetService) CompareAgents(ctx context.Context, agentA, agent
 	}
 
 	return &AgentComparison{
-		AgentA:      sheetA,
-		AgentB:      sheetB,
-		LevelDiff:   sheetA.Agent.Level - sheetB.Agent.Level,
-		XPDiff:      sheetA.Agent.XP - sheetB.Agent.XP,
-		SkillsAOnly: findUniqueSkills(sheetA.SkillBars, sheetB.SkillBars),
-		SkillsBOnly: findUniqueSkills(sheetB.SkillBars, sheetA.SkillBars),
+		AgentA:       sheetA,
+		AgentB:       sheetB,
+		LevelDiff:    sheetA.Agent.Level - sheetB.Agent.Level,
+		XPDiff:       sheetA.Agent.XP - sheetB.Agent.XP,
+		SkillsAOnly:  findUniqueSkills(sheetA.SkillBars, sheetB.SkillBars),
+		SkillsBOnly:  findUniqueSkills(sheetB.SkillBars, sheetA.SkillBars),
 		CommonSkills: findCommonSkills(sheetA.SkillBars, sheetB.SkillBars),
 	}, nil
 }
 
 // AgentComparison holds comparison data between two agents.
 type AgentComparison struct {
-	AgentA       *CharacterSheet       `json:"agent_a"`
-	AgentB       *CharacterSheet       `json:"agent_b"`
-	LevelDiff    int                   `json:"level_diff"`    // A.Level - B.Level
-	XPDiff       int64                 `json:"xp_diff"`       // A.XP - B.XP
-	SkillsAOnly  []SkillTag            `json:"skills_a_only"`
-	SkillsBOnly  []SkillTag            `json:"skills_b_only"`
-	CommonSkills []SkillComparison     `json:"common_skills"`
+	AgentA       *CharacterSheet   `json:"agent_a"`
+	AgentB       *CharacterSheet   `json:"agent_b"`
+	LevelDiff    int               `json:"level_diff"` // A.Level - B.Level
+	XPDiff       int64             `json:"xp_diff"`    // A.XP - B.XP
+	SkillsAOnly  []SkillTag        `json:"skills_a_only"`
+	SkillsBOnly  []SkillTag        `json:"skills_b_only"`
+	CommonSkills []SkillComparison `json:"common_skills"`
 }
 
 // SkillComparison compares proficiency in a shared skill.
 type SkillComparison struct {
-	Skill       SkillTag         `json:"skill"`
-	LevelA      ProficiencyLevel `json:"level_a"`
-	LevelB      ProficiencyLevel `json:"level_b"`
-	LevelDiff   int              `json:"level_diff"` // A.Level - B.Level
+	Skill     SkillTag         `json:"skill"`
+	LevelA    ProficiencyLevel `json:"level_a"`
+	LevelB    ProficiencyLevel `json:"level_b"`
+	LevelDiff int              `json:"level_diff"` // A.Level - B.Level
 }
 
 func findUniqueSkills(bars []SkillBar, other []SkillBar) []SkillTag {

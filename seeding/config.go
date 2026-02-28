@@ -25,8 +25,8 @@ const (
 // Config is the top-level seeding configuration.
 type Config struct {
 	Mode       SeedingMode   `json:"mode"`
-	DryRun     bool          `json:"dry_run"`     // Log actions without executing
-	Idempotent bool          `json:"idempotent"`  // Skip existing agents by name
+	DryRun     bool          `json:"dry_run"`    // Log actions without executing
+	Idempotent bool          `json:"idempotent"` // Skip existing agents by name
 	Arena      *ArenaConfig  `json:"arena,omitempty"`
 	Roster     *RosterConfig `json:"roster,omitempty"`
 }
@@ -106,11 +106,11 @@ type LevelDistribution struct {
 	MaxLevel int `json:"max_level"` // Optional cap (0 = no cap)
 
 	// Distribution by tier (optional, overrides min/max if set)
-	ApprenticeCount  int `json:"apprentice_count,omitempty"`   // Levels 1-5
-	JourneymanCount  int `json:"journeyman_count,omitempty"`   // Levels 6-10
-	ExpertCount      int `json:"expert_count,omitempty"`       // Levels 11-15
-	MasterCount      int `json:"master_count,omitempty"`       // Levels 16-18
-	GrandmasterCount int `json:"grandmaster_count,omitempty"`  // Levels 19-20
+	ApprenticeCount  int `json:"apprentice_count,omitempty"`  // Levels 1-5
+	JourneymanCount  int `json:"journeyman_count,omitempty"`  // Levels 6-10
+	ExpertCount      int `json:"expert_count,omitempty"`      // Levels 11-15
+	MasterCount      int `json:"master_count,omitempty"`      // Levels 16-18
+	GrandmasterCount int `json:"grandmaster_count,omitempty"` // Levels 19-20
 }
 
 // =============================================================================
@@ -197,17 +197,11 @@ type GuildSpec struct {
 	// Description explains the guild's purpose.
 	Description string `json:"description"`
 
-	// Domain is the guild's area of expertise.
-	Domain string `json:"domain"`
+	// Culture describes the guild's values and approach.
+	Culture string `json:"culture,omitempty"`
 
-	// Skills are the skills associated with this guild.
-	Skills []semdragons.SkillTag `json:"skills"`
-
-	// AutoRecruit enables automatic member recruitment.
-	AutoRecruit bool `json:"auto_recruit"`
-
-	// MinLevelToJoin is the minimum level for joining.
-	MinLevelToJoin int `json:"min_level_to_join"`
+	// MinLevel is the minimum agent level for joining.
+	MinLevel int `json:"min_level"`
 }
 
 // =============================================================================
@@ -220,15 +214,15 @@ type configError string
 func (e configError) Error() string { return string(e) }
 
 const (
-	ErrInvalidMode         = configError("invalid seeding mode")
-	ErrArenaConfigRequired = configError("arena config required for training_arena mode")
+	ErrInvalidMode          = configError("invalid seeding mode")
+	ErrArenaConfigRequired  = configError("arena config required for training_arena mode")
 	ErrRosterConfigRequired = configError("roster config required for tiered_roster mode")
-	ErrNoAgentConfigs      = configError("at least one agent config required")
-	ErrInvalidMaxQuests    = configError("max_training_quests must be positive")
-	ErrNoQuestSource       = configError("quest_domain or quest_file required")
-	ErrNoRosterName        = configError("roster name required")
-	ErrNoAgentSpecs        = configError("at least one agent spec required")
-	ErrNoNamePattern       = configError("name_pattern required")
-	ErrInvalidCount        = configError("count must be positive")
-	ErrInvalidLevel        = configError("level must be between 1 and 20")
+	ErrNoAgentConfigs       = configError("at least one agent config required")
+	ErrInvalidMaxQuests     = configError("max_training_quests must be positive")
+	ErrNoQuestSource        = configError("quest_domain or quest_file required")
+	ErrNoRosterName         = configError("roster name required")
+	ErrNoAgentSpecs         = configError("at least one agent spec required")
+	ErrNoNamePattern        = configError("name_pattern required")
+	ErrInvalidCount         = configError("count must be positive")
+	ErrInvalidLevel         = configError("level must be between 1 and 20")
 )

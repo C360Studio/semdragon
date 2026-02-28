@@ -38,22 +38,22 @@ const (
 // The party lead is responsible for decomposing the quest and rolling up results.
 type Party struct {
 	ID      PartyID     `json:"id"`
-	Name    string      `json:"name"`      // Auto-generated or lead-chosen
+	Name    string      `json:"name"` // Auto-generated or lead-chosen
 	Status  PartyStatus `json:"status"`
-	QuestID QuestID     `json:"quest_id"`  // The quest this party was formed for
+	QuestID QuestID     `json:"quest_id"` // The quest this party was formed for
 
 	// Composition
 	Lead    AgentID       `json:"lead"`
 	Members []PartyMember `json:"members"`
 
 	// Coordination
-	Strategy    string              `json:"strategy"`      // The lead's plan of attack
-	SubQuestMap map[QuestID]AgentID `json:"sub_quest_map"` // Who's doing what
-	SharedContext []ContextItem      `json:"shared_context"` // Party-wide knowledge
+	Strategy      string              `json:"strategy"`       // The lead's plan of attack
+	SubQuestMap   map[QuestID]AgentID `json:"sub_quest_map"`  // Who's doing what
+	SharedContext []ContextItem       `json:"shared_context"` // Party-wide knowledge
 
 	// Results
-	SubResults map[QuestID]any `json:"sub_results,omitempty"` // Collected sub-quest outputs
-	RollupResult any            `json:"rollup_result,omitempty"` // Lead's combined result
+	SubResults   map[QuestID]any `json:"sub_results,omitempty"`   // Collected sub-quest outputs
+	RollupResult any             `json:"rollup_result,omitempty"` // Lead's combined result
 
 	FormedAt    time.Time  `json:"formed_at"`
 	DisbandedAt *time.Time `json:"disbanded_at,omitempty"`
@@ -61,18 +61,18 @@ type Party struct {
 
 // PartyMember represents an agent's membership in a party.
 type PartyMember struct {
-	AgentID AgentID   `json:"agent_id"`
-	Role    PartyRole `json:"role"`
-	Skills  []SkillTag `json:"skills"` // Why they were recruited
-	JoinedAt time.Time `json:"joined_at"`
+	AgentID  AgentID    `json:"agent_id"`
+	Role     PartyRole  `json:"role"`
+	Skills   []SkillTag `json:"skills"` // Why they were recruited
+	JoinedAt time.Time  `json:"joined_at"`
 }
 
 // ContextItem represents a piece of shared knowledge in a party.
 type ContextItem struct {
-	Key       string      `json:"key"`
-	Value     any `json:"value"`
-	AddedBy   AgentID     `json:"added_by"`
-	AddedAt   time.Time   `json:"added_at"`
+	Key     string    `json:"key"`
+	Value   any       `json:"value"`
+	AddedBy AgentID   `json:"added_by"`
+	AddedAt time.Time `json:"added_at"`
 }
 
 // =============================================================================
@@ -105,56 +105,86 @@ const (
 	GuildRankMaster GuildRank = "guildmaster"
 )
 
-// Guild is a persistent group of agents that specialize in a domain.
-// Guilds provide: routing priority, shared knowledge, reputation, and mentorship.
+// GuildBonusRate returns the XP bonus rate for this guild rank.
+// Higher ranks earn more from guild quests as reward for their investment.
+//
+//	Initiate:    10%
+//	Member:      15%
+//	Veteran:     18%
+//	Officer:     20%
+//	Guildmaster: 25%
+func (r GuildRank) GuildBonusRate() float64 {
+	switch r {
+	case GuildRankInitiate:
+		return 0.10
+	case GuildRankMember:
+		return 0.15
+	case GuildRankVeteran:
+		return 0.18
+	case GuildRankOfficer:
+		return 0.20
+	case GuildRankMaster:
+		return 0.25
+	default:
+		return 0.10 // Unknown rank gets initiate rate
+	}
+}
+
+// Guild is a persistent social organization of agents with mixed composition.
+// Guilds provide: party access, quest routing, shared knowledge, reputation, and mentorship.
+// Natural diversity pressure: quests require diverse skills, so homogeneous guilds fail.
 type Guild struct {
 	ID          GuildID     `json:"id"`
-	Name        string      `json:"name"`        // "Data Wranglers", "Code Reviewers", etc.
+	Name        string      `json:"name"` // "Dragon Slayers", "Code Crafters", etc.
 	Description string      `json:"description"`
 	Status      GuildStatus `json:"status"`
 
-	// Specialization
-	Domain       string     `json:"domain"`         // Primary domain
-	Skills       []SkillTag `json:"skills"`         // Skills this guild covers
-	QuestTypes   []string   `json:"quest_types"`    // Types of quests they handle
+	// Social organization (mixed skills/approaches)
+	Members    []GuildMember `json:"members"`
+	MaxMembers int           `json:"max_members"`
+	MinLevel   int           `json:"min_level"` // Minimum agent level to join
 
-	// Membership
-	Members      []GuildMember `json:"members"`
-	MaxMembers   int           `json:"max_members"`
+	// Founding
+	Founded   time.Time `json:"founded"`
+	FoundedBy AgentID   `json:"founded_by"`
 
-	// Reputation - guild-level trust
-	Reputation    float64 `json:"reputation"`      // 0.0-1.0, affects quest priority
+	// Guild culture and identity
+	Culture string `json:"culture"` // "We ship quality code"
+	Motto   string `json:"motto,omitempty"`
+
+	// Earned through collective quest success
+	Reputation    float64 `json:"reputation"` // 0.0-1.0, affects quest priority
 	QuestsHandled int     `json:"quests_handled"`
-	SuccessRate   float64 `json:"success_rate"`    // Completed / (Completed + Failed)
+	SuccessRate   float64 `json:"success_rate"` // Completed / (Completed + Failed)
+	QuestsFailed  int     `json:"quests_failed"`
 
 	// Guild Hall - shared knowledge and resources
-	Library      []LibraryEntry `json:"library"`     // Shared patterns, templates, context
-	SharedTools  []string       `json:"shared_tools"` // Tool IDs available to members
+	Library     []LibraryEntry `json:"library"`      // Shared patterns, templates, context
+	SharedTools []string       `json:"shared_tools"` // Tool IDs available to members
 
-	// Formation rules
-	MinLevelToJoin  int       `json:"min_level_to_join"`
-	RequiredSkills  []SkillTag `json:"required_skills"`  // Must have at least one
-	AutoRecruit     bool       `json:"auto_recruit"`     // Automatically invite qualifying agents
+	// Quest routing (clients trust certain guilds)
+	QuestTypes       []string `json:"quest_types,omitempty"` // Types of quests they handle
+	PreferredClients []string `json:"preferred_clients,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // GuildMember represents an agent's membership in a guild.
 type GuildMember struct {
-	AgentID  AgentID   `json:"agent_id"`
-	Rank     GuildRank `json:"rank"`
-	GuildXP  int64     `json:"guild_xp"`    // XP within this guild specifically
-	JoinedAt time.Time `json:"joined_at"`
+	AgentID      AgentID   `json:"agent_id"`
+	Rank         GuildRank `json:"rank"`
+	JoinedAt     time.Time `json:"joined_at"`
+	Contribution float64   `json:"contribution"` // XP contributed via guild quests
 }
 
 // LibraryEntry represents a shared resource in a guild's library.
 type LibraryEntry struct {
-	ID          string      `json:"id"`
-	Title       string      `json:"title"`
-	Content     any `json:"content"`     // Prompt templates, patterns, examples
-	Category    string      `json:"category"`    // "template", "pattern", "example", "context"
-	AddedBy     AgentID     `json:"added_by"`
-	UseCount    int         `json:"use_count"`   // How often it's been referenced
-	Effectiveness float64  `json:"effectiveness"` // Correlation with quest success when used
-	AddedAt     time.Time   `json:"added_at"`
+	ID            string    `json:"id"`
+	Title         string    `json:"title"`
+	Content       any       `json:"content"`  // Prompt templates, patterns, examples
+	Category      string    `json:"category"` // "template", "pattern", "example", "context"
+	AddedBy       AgentID   `json:"added_by"`
+	UseCount      int       `json:"use_count"`     // How often it's been referenced
+	Effectiveness float64   `json:"effectiveness"` // Correlation with quest success when used
+	AddedAt       time.Time `json:"added_at"`
 }

@@ -33,9 +33,59 @@ const (
 // BoardConfig holds the configuration for a quest board instance.
 // This determines the entity ID prefix and KV bucket name.
 type BoardConfig struct {
-	Org      string // Organization namespace (e.g., "c360")
-	Platform string // Deployment instance (e.g., "prod", "dev")
-	Board    string // Board name (e.g., "board1", "main")
+	Org      string        // Organization namespace (e.g., "c360")
+	Platform string        // Deployment instance (e.g., "prod", "dev")
+	Board    string        // Board name (e.g., "board1", "main")
+	Domain   *DomainConfig // Optional domain skinning (vocabulary, skills)
+}
+
+// Vocab returns a vocabulary term for the configured domain.
+// Falls back to default RPG terminology if no domain is configured.
+func (c *BoardConfig) Vocab(key string) string {
+	if c.Domain == nil {
+		return defaultVocabulary[key]
+	}
+	return c.Domain.Vocabulary.Get(key)
+}
+
+// TierName returns the display name for a trust tier in the configured domain.
+func (c *BoardConfig) TierName(tier TrustTier) string {
+	if c.Domain == nil {
+		switch tier {
+		case TierApprentice:
+			return "Apprentice"
+		case TierJourneyman:
+			return "Journeyman"
+		case TierExpert:
+			return "Expert"
+		case TierMaster:
+			return "Master"
+		case TierGrandmaster:
+			return "Grandmaster"
+		default:
+			return "Unknown"
+		}
+	}
+	return c.Domain.Vocabulary.GetTierName(tier)
+}
+
+// RoleName returns the display name for a party role in the configured domain.
+func (c *BoardConfig) RoleName(role PartyRole) string {
+	if c.Domain == nil {
+		switch role {
+		case RoleLead:
+			return "Lead"
+		case RoleExecutor:
+			return "Executor"
+		case RoleReviewer:
+			return "Reviewer"
+		case RoleScout:
+			return "Scout"
+		default:
+			return string(role)
+		}
+	}
+	return c.Domain.Vocabulary.GetRoleName(role)
 }
 
 // DefaultBoardConfig returns a reasonable default configuration.
