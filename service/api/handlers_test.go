@@ -934,6 +934,618 @@ func TestHandleCreateQuest(t *testing.T) {
 }
 
 // =============================================================================
+// CREATE QUEST WITH REVIEW HINTS TESTS
+// =============================================================================
+
+func TestHandleCreateQuest_ReviewHints(t *testing.T) {
+	boardCfg := &semdragons.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
+
+	tests := []struct {
+		name      string
+		body      map[string]any
+		checkBody func(t *testing.T, body []byte)
+	}{
+		{
+			name: "require_human_review sets constraints",
+			body: map[string]any{
+				"objective": "Review quest",
+				"hints":     map[string]any{"require_human_review": true},
+			},
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if !q.Constraints.RequireReview {
+					t.Error("expected RequireReview to be true")
+				}
+				if q.Constraints.ReviewLevel != semdragons.ReviewStandard {
+					t.Errorf("ReviewLevel: got %d, want %d (ReviewStandard)", q.Constraints.ReviewLevel, semdragons.ReviewStandard)
+				}
+			},
+		},
+		{
+			name: "explicit review_level overrides default",
+			body: map[string]any{
+				"objective": "Strict review quest",
+				"hints":     map[string]any{"require_human_review": true, "review_level": 2},
+			},
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Constraints.ReviewLevel != semdragons.ReviewStrict {
+					t.Errorf("ReviewLevel: got %d, want %d (ReviewStrict)", q.Constraints.ReviewLevel, semdragons.ReviewStrict)
+				}
+			},
+		},
+		{
+			name: "no review hint leaves defaults",
+			body: map[string]any{
+				"objective": "Normal quest",
+			},
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Constraints.RequireReview {
+					t.Error("expected RequireReview to be false")
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &mockGraph{
+				configFn: func() *semdragons.BoardConfig { return boardCfg },
+			}
+			svc := newTestService(g, &mockWorld{})
+
+			bodyBytes, err := json.Marshal(tc.body)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/quests", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			svc.handleCreateQuest(rr, req)
+
+			if rr.Code != http.StatusCreated {
+				t.Fatalf("status: got %d, want 201\nbody: %s", rr.Code, rr.Body.String())
+			}
+			tc.checkBody(t, rr.Body.Bytes())
+		})
+	}
+}
+
+// =============================================================================
+// QUEST LIFECYCLE HANDLER TESTS
+// =============================================================================
+
+func TestHandleClaimQuest(t *testing.T) {
+	postedQuest := sampleQuest()
+	postedQuest.Difficulty = semdragons.DifficultyEasy // Apprentice can claim easy quests
+
+	claimedQuest := sampleQuest()
+	claimedQuest.Status = semdragons.QuestClaimed
+
+	idleAgent := sampleAgent()
+	busyAgent := sampleAgent()
+	busyAgent.Status = semdragons.AgentOnQuest
+
+	lowTierAgent := sampleAgent()
+	lowTierAgent.Tier = semdragons.TierApprentice
+
+	skilledAgent := sampleAgent()
+	skilledAgent.Tier = semdragons.TierExpert
+	skilledAgent.SkillProficiencies = map[semdragons.SkillTag]semdragons.SkillProficiency{
+		semdragons.SkillCodeGen: {Level: 1},
+	}
+
+	tests := []struct {
+		name       string
+		pathID     string
+		body       any
+		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		getAgent   func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "success claims posted quest",
+			pathID: "q1",
+			body:   map[string]any{"agent_id": "a1"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(postedQuest)
+				return &es, nil
+			},
+			getAgent: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				es := makeAgentEntityState(idleAgent)
+				return &es, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Status != semdragons.QuestClaimed {
+					t.Errorf("status: got %q, want claimed", q.Status)
+				}
+			},
+		},
+		{
+			name:       "missing agent_id returns 400",
+			pathID:     "q1",
+			body:       map[string]any{},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "quest not posted returns 409",
+			pathID: "q1",
+			body:   map[string]any{"agent_id": "a1"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(claimedQuest)
+				return &es, nil
+			},
+			wantStatus: http.StatusConflict,
+		},
+		{
+			name:   "agent not idle returns 409",
+			pathID: "q1",
+			body:   map[string]any{"agent_id": "a1"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(postedQuest)
+				return &es, nil
+			},
+			getAgent: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				es := makeAgentEntityState(busyAgent)
+				return &es, nil
+			},
+			wantStatus: http.StatusConflict,
+		},
+		{
+			name:   "agent tier too low returns 403",
+			pathID: "q1",
+			body:   map[string]any{"agent_id": "a1"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				q := sampleQuest()
+				q.Difficulty = semdragons.DifficultyHard // requires TierExpert
+				es := makeQuestEntityState(q)
+				return &es, nil
+			},
+			getAgent: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				es := makeAgentEntityState(lowTierAgent)
+				return &es, nil
+			},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:   "agent missing required skill returns 403",
+			pathID: "q1",
+			body:   map[string]any{"agent_id": "a1"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				q := sampleQuest()
+				q.RequiredSkills = []semdragons.SkillTag{semdragons.SkillAnalysis}
+				es := makeQuestEntityState(q)
+				return &es, nil
+			},
+			getAgent: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				es := makeAgentEntityState(idleAgent)
+				return &es, nil
+			},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "quest not found returns 404",
+			pathID:     "missing",
+			body:       map[string]any{"agent_id": "a1"},
+			wantStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &mockGraph{
+				getQuestFn: tc.getQuest,
+				getAgentFn: tc.getAgent,
+			}
+			svc := newTestService(g, &mockWorld{})
+
+			bodyBytes, _ := json.Marshal(tc.body)
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /quests/{id}/claim", svc.handleClaimQuest)
+
+			req := httptest.NewRequest(http.MethodPost, "/quests/"+tc.pathID+"/claim", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleStartQuest(t *testing.T) {
+	claimedQuest := sampleQuest()
+	claimedQuest.Status = semdragons.QuestClaimed
+
+	postedQuest := sampleQuest()
+
+	tests := []struct {
+		name       string
+		pathID     string
+		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "success starts claimed quest",
+			pathID: "q1",
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(claimedQuest)
+				return &es, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Status != semdragons.QuestInProgress {
+					t.Errorf("status: got %q, want in_progress", q.Status)
+				}
+			},
+		},
+		{
+			name:   "quest not claimed returns 409",
+			pathID: "q1",
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(postedQuest)
+				return &es, nil
+			},
+			wantStatus: http.StatusConflict,
+		},
+		{
+			name:       "quest not found returns 404",
+			pathID:     "missing",
+			wantStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &mockGraph{getQuestFn: tc.getQuest}
+			svc := newTestService(g, &mockWorld{})
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /quests/{id}/start", svc.handleStartQuest)
+
+			req := httptest.NewRequest(http.MethodPost, "/quests/"+tc.pathID+"/start", nil)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleSubmitResult(t *testing.T) {
+	inProgressQuest := sampleQuest()
+	inProgressQuest.Status = semdragons.QuestInProgress
+
+	reviewQuest := sampleQuest()
+	reviewQuest.Status = semdragons.QuestInProgress
+	reviewQuest.Constraints.RequireReview = true
+
+	tests := []struct {
+		name       string
+		pathID     string
+		body       any
+		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		getAgent   func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "submit without review completes quest",
+			pathID: "q1",
+			body:   map[string]any{"output": "result data"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(inProgressQuest)
+				return &es, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Status != semdragons.QuestCompleted {
+					t.Errorf("status: got %q, want completed", q.Status)
+				}
+			},
+		},
+		{
+			name:   "submit with review goes to in_review",
+			pathID: "q1",
+			body:   map[string]any{"output": "result data"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(reviewQuest)
+				return &es, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Status != semdragons.QuestInReview {
+					t.Errorf("status: got %q, want in_review", q.Status)
+				}
+			},
+		},
+		{
+			name:       "quest not found returns 404",
+			pathID:     "missing",
+			body:       map[string]any{"output": "data"},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:   "quest not in_progress returns 409",
+			pathID: "q1",
+			body:   map[string]any{"output": "data"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(sampleQuest()) // status=posted
+				return &es, nil
+			},
+			wantStatus: http.StatusConflict,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &mockGraph{
+				getQuestFn: tc.getQuest,
+				getAgentFn: tc.getAgent,
+			}
+			svc := newTestService(g, &mockWorld{})
+
+			bodyBytes, _ := json.Marshal(tc.body)
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /quests/{id}/submit", svc.handleSubmitResult)
+
+			req := httptest.NewRequest(http.MethodPost, "/quests/"+tc.pathID+"/submit", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleFailQuest(t *testing.T) {
+	inProgressQuest := sampleQuest()
+	inProgressQuest.Status = semdragons.QuestInProgress
+	inProgressQuest.MaxAttempts = 3
+	inProgressQuest.Attempts = 0
+
+	lastAttemptQuest := sampleQuest()
+	lastAttemptQuest.Status = semdragons.QuestInProgress
+	lastAttemptQuest.MaxAttempts = 3
+	lastAttemptQuest.Attempts = 2
+
+	tests := []struct {
+		name       string
+		pathID     string
+		body       any
+		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "fail with retries reposts quest",
+			pathID: "q1",
+			body:   map[string]any{"reason": "timeout"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(inProgressQuest)
+				return &es, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Status != semdragons.QuestPosted {
+					t.Errorf("status: got %q, want posted (repost)", q.Status)
+				}
+				if q.Attempts != 1 {
+					t.Errorf("attempts: got %d, want 1", q.Attempts)
+				}
+			},
+		},
+		{
+			name:   "fail on last attempt permanently fails",
+			pathID: "q1",
+			body:   map[string]any{"reason": "error"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(lastAttemptQuest)
+				return &es, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Status != semdragons.QuestFailed {
+					t.Errorf("status: got %q, want failed", q.Status)
+				}
+				if q.Attempts != 3 {
+					t.Errorf("attempts: got %d, want 3", q.Attempts)
+				}
+			},
+		},
+		{
+			name:   "quest not in_progress returns 409",
+			pathID: "q1",
+			body:   map[string]any{"reason": "test"},
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(sampleQuest()) // posted
+				return &es, nil
+			},
+			wantStatus: http.StatusConflict,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &mockGraph{getQuestFn: tc.getQuest}
+			svc := newTestService(g, &mockWorld{})
+
+			bodyBytes, _ := json.Marshal(tc.body)
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /quests/{id}/fail", svc.handleFailQuest)
+
+			req := httptest.NewRequest(http.MethodPost, "/quests/"+tc.pathID+"/fail", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleAbandonQuest(t *testing.T) {
+	claimedQuest := sampleQuest()
+	claimedQuest.Status = semdragons.QuestClaimed
+
+	tests := []struct {
+		name       string
+		pathID     string
+		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "abandon returns quest to posted",
+			pathID: "q1",
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(claimedQuest)
+				return &es, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Status != semdragons.QuestPosted {
+					t.Errorf("status: got %q, want posted", q.Status)
+				}
+			},
+		},
+		{
+			name:   "abandon posted quest returns 409",
+			pathID: "q1",
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(sampleQuest())
+				return &es, nil
+			},
+			wantStatus: http.StatusConflict,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &mockGraph{getQuestFn: tc.getQuest}
+			svc := newTestService(g, &mockWorld{})
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /quests/{id}/abandon", svc.handleAbandonQuest)
+
+			req := httptest.NewRequest(http.MethodPost, "/quests/"+tc.pathID+"/abandon", bytes.NewReader([]byte(`{}`)))
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleCompleteQuest(t *testing.T) {
+	inReviewQuest := sampleQuest()
+	inReviewQuest.Status = semdragons.QuestInReview
+
+	tests := []struct {
+		name       string
+		pathID     string
+		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "complete in_review quest",
+			pathID: "q1",
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(inReviewQuest)
+				return &es, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var q semdragons.Quest
+				decodeJSON(t, body, &q)
+				if q.Status != semdragons.QuestCompleted {
+					t.Errorf("status: got %q, want completed", q.Status)
+				}
+			},
+		},
+		{
+			name:   "complete posted quest returns 409",
+			pathID: "q1",
+			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(sampleQuest())
+				return &es, nil
+			},
+			wantStatus: http.StatusConflict,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &mockGraph{getQuestFn: tc.getQuest}
+			svc := newTestService(g, &mockWorld{})
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /quests/{id}/complete", svc.handleCompleteQuest)
+
+			req := httptest.NewRequest(http.MethodPost, "/quests/"+tc.pathID+"/complete", nil)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+// =============================================================================
 // RECRUIT AGENT HANDLER TESTS
 // =============================================================================
 

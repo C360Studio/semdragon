@@ -161,6 +161,14 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"quests/{id}", cors(s.handleGetQuest))
 	mux.HandleFunc("POST "+prefix+"quests", cors(requireAuth(apiKey, s.handleCreateQuest)))
 
+	// Quest lifecycle
+	mux.HandleFunc("POST "+prefix+"quests/{id}/claim", cors(requireAuth(apiKey, s.handleClaimQuest)))
+	mux.HandleFunc("POST "+prefix+"quests/{id}/start", cors(requireAuth(apiKey, s.handleStartQuest)))
+	mux.HandleFunc("POST "+prefix+"quests/{id}/submit", cors(requireAuth(apiKey, s.handleSubmitResult)))
+	mux.HandleFunc("POST "+prefix+"quests/{id}/complete", cors(requireAuth(apiKey, s.handleCompleteQuest)))
+	mux.HandleFunc("POST "+prefix+"quests/{id}/fail", cors(requireAuth(apiKey, s.handleFailQuest)))
+	mux.HandleFunc("POST "+prefix+"quests/{id}/abandon", cors(requireAuth(apiKey, s.handleAbandonQuest)))
+
 	// Agents
 	mux.HandleFunc("GET "+prefix+"agents", cors(s.handleListAgents))
 	mux.HandleFunc("GET "+prefix+"agents/{id}/inventory", cors(s.handleGetInventory))

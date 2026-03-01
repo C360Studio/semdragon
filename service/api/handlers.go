@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/nats-io/nats.go/jetstream"
@@ -145,6 +147,7 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 			SuggestedSkills     []string  `json:"suggested_skills,omitempty"`
 			PreferGuild         *string   `json:"prefer_guild,omitempty"`
 			RequireHumanReview  bool      `json:"require_human_review"`
+			ReviewLevel         *int      `json:"review_level,omitempty"`
 			Budget              float64   `json:"budget"`
 			Deadline            string    `json:"deadline,omitempty"`
 		} `json:"hints,omitempty"`
@@ -191,6 +194,14 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 			gid := semdragons.GuildID(*req.Hints.PreferGuild)
 			quest.GuildPriority = &gid
 		}
+		if req.Hints.RequireHumanReview {
+			quest.Constraints.RequireReview = true
+			if req.Hints.ReviewLevel != nil {
+				quest.Constraints.ReviewLevel = semdragons.ReviewLevel(*req.Hints.ReviewLevel)
+			} else {
+				quest.Constraints.ReviewLevel = semdragons.ReviewStandard
+			}
+		}
 	}
 
 	if err := s.graph.EmitEntity(r.Context(), quest, "quest.posted"); err != nil {
@@ -202,6 +213,412 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(quest)
+}
+
+// =============================================================================
+// QUEST LIFECYCLE
+// =============================================================================
+
+func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid quest ID", http.StatusBadRequest)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	var req struct {
+		AgentID string `json:"agent_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.AgentID == "" {
+		s.writeError(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Load quest
+	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
+		return
+	}
+	quest := semdragons.QuestFromEntityState(questEntity)
+	if quest == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if quest.Status != semdragons.QuestPosted {
+		s.writeError(w, "quest is not available for claiming (status: "+string(quest.Status)+")", http.StatusConflict)
+		return
+	}
+
+	// Load agent
+	agentEntity, err := s.graph.GetAgent(ctx, semdragons.AgentID(req.AgentID))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			s.writeError(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		s.writeError(w, "failed to retrieve agent", http.StatusInternalServerError)
+		return
+	}
+	agent := semdragons.AgentFromEntityState(agentEntity)
+	if agent == nil {
+		s.writeError(w, "agent not found", http.StatusNotFound)
+		return
+	}
+
+	// Validate agent state
+	if agent.Status != semdragons.AgentIdle {
+		s.writeError(w, "agent is not idle (status: "+string(agent.Status)+")", http.StatusConflict)
+		return
+	}
+
+	// Validate tier
+	minTier := quest.MinTier
+	if minTier == 0 {
+		minTier = semdragons.TierFromDifficulty(quest.Difficulty)
+	}
+	if agent.Tier < minTier {
+		s.writeError(w, "agent tier too low for this quest", http.StatusForbidden)
+		return
+	}
+
+	// Validate skills
+	for _, skill := range quest.RequiredSkills {
+		if !agent.HasSkill(skill) {
+			s.writeError(w, "agent lacks required skill: "+string(skill), http.StatusForbidden)
+			return
+		}
+	}
+
+	// Claim quest
+	now := time.Now()
+	agentID := agent.ID
+	quest.Status = semdragons.QuestClaimed
+	quest.ClaimedBy = &agentID
+	quest.ClaimedAt = &now
+
+	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.claimed"); err != nil {
+		s.writeError(w, "failed to claim quest", http.StatusInternalServerError)
+		s.logger.Error("Failed to claim quest", "error", err)
+		return
+	}
+
+	// Update agent status
+	questID := quest.ID
+	agent.Status = semdragons.AgentOnQuest
+	agent.CurrentQuest = &questID
+	agent.UpdatedAt = now
+
+	if err := s.graph.EmitEntityUpdate(ctx, agent, "agent.quest_claimed"); err != nil {
+		s.logger.Error("Failed to update agent status after claim", "error", err)
+	}
+
+	s.writeJSON(w, quest)
+}
+
+func (s *Service) handleStartQuest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid quest ID", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
+		return
+	}
+	quest := semdragons.QuestFromEntityState(questEntity)
+	if quest == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if quest.Status != semdragons.QuestClaimed {
+		s.writeError(w, "quest must be claimed before starting (status: "+string(quest.Status)+")", http.StatusConflict)
+		return
+	}
+
+	now := time.Now()
+	quest.Status = semdragons.QuestInProgress
+	quest.StartedAt = &now
+
+	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
+		s.writeError(w, "failed to start quest", http.StatusInternalServerError)
+		s.logger.Error("Failed to start quest", "error", err)
+		return
+	}
+
+	s.writeJSON(w, quest)
+}
+
+func (s *Service) handleSubmitResult(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid quest ID", http.StatusBadRequest)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	var req struct {
+		Output string `json:"output"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
+		return
+	}
+	quest := semdragons.QuestFromEntityState(questEntity)
+	if quest == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if quest.Status != semdragons.QuestInProgress {
+		s.writeError(w, "quest must be in progress to submit (status: "+string(quest.Status)+")", http.StatusConflict)
+		return
+	}
+
+	quest.Output = req.Output
+
+	if quest.Constraints.RequireReview {
+		quest.Status = semdragons.QuestInReview
+	} else {
+		now := time.Now()
+		quest.Status = semdragons.QuestCompleted
+		quest.CompletedAt = &now
+	}
+
+	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.submitted"); err != nil {
+		s.writeError(w, "failed to submit quest result", http.StatusInternalServerError)
+		s.logger.Error("Failed to submit quest result", "error", err)
+		return
+	}
+
+	// If quest completed without review, release the agent
+	if quest.Status == semdragons.QuestCompleted && quest.ClaimedBy != nil {
+		s.releaseAgent(ctx, *quest.ClaimedBy)
+	}
+
+	s.writeJSON(w, quest)
+}
+
+func (s *Service) handleCompleteQuest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid quest ID", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
+		return
+	}
+	quest := semdragons.QuestFromEntityState(questEntity)
+	if quest == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if quest.Status != semdragons.QuestInReview && quest.Status != semdragons.QuestInProgress {
+		s.writeError(w, "quest must be in_review or in_progress to complete (status: "+string(quest.Status)+")", http.StatusConflict)
+		return
+	}
+
+	now := time.Now()
+	quest.Status = semdragons.QuestCompleted
+	quest.CompletedAt = &now
+
+	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.completed"); err != nil {
+		s.writeError(w, "failed to complete quest", http.StatusInternalServerError)
+		s.logger.Error("Failed to complete quest", "error", err)
+		return
+	}
+
+	if quest.ClaimedBy != nil {
+		s.releaseAgent(ctx, *quest.ClaimedBy)
+	}
+
+	s.writeJSON(w, quest)
+}
+
+func (s *Service) handleFailQuest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid quest ID", http.StatusBadRequest)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
+		return
+	}
+	quest := semdragons.QuestFromEntityState(questEntity)
+	if quest == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if quest.Status != semdragons.QuestInProgress && quest.Status != semdragons.QuestInReview {
+		s.writeError(w, "quest must be in_progress or in_review to fail (status: "+string(quest.Status)+")", http.StatusConflict)
+		return
+	}
+
+	// Release agent before reposting/failing
+	if quest.ClaimedBy != nil {
+		s.releaseAgent(ctx, *quest.ClaimedBy)
+	}
+
+	quest.Attempts++
+
+	if quest.MaxAttempts > 0 && quest.Attempts >= quest.MaxAttempts {
+		quest.Status = semdragons.QuestFailed
+	} else {
+		// Repost: reset assignment fields for another attempt
+		quest.Status = semdragons.QuestPosted
+		quest.ClaimedBy = nil
+		quest.ClaimedAt = nil
+		quest.StartedAt = nil
+		quest.Output = nil
+	}
+
+	eventType := "quest.failed"
+	if quest.Status == semdragons.QuestPosted {
+		eventType = "quest.reposted"
+	}
+
+	if err := s.graph.EmitEntityUpdate(ctx, quest, eventType); err != nil {
+		s.writeError(w, "failed to fail quest", http.StatusInternalServerError)
+		s.logger.Error("Failed to fail quest", "error", err)
+		return
+	}
+
+	s.writeJSON(w, quest)
+}
+
+func (s *Service) handleAbandonQuest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid quest ID", http.StatusBadRequest)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	// Body is optional for abandon
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	ctx := r.Context()
+	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
+		return
+	}
+	quest := semdragons.QuestFromEntityState(questEntity)
+	if quest == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if quest.Status != semdragons.QuestClaimed && quest.Status != semdragons.QuestInProgress {
+		s.writeError(w, "quest must be claimed or in_progress to abandon (status: "+string(quest.Status)+")", http.StatusConflict)
+		return
+	}
+
+	// Release agent
+	if quest.ClaimedBy != nil {
+		s.releaseAgent(ctx, *quest.ClaimedBy)
+	}
+
+	// Return quest to board
+	quest.Status = semdragons.QuestPosted
+	quest.ClaimedBy = nil
+	quest.ClaimedAt = nil
+	quest.StartedAt = nil
+	quest.Output = nil
+
+	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.abandoned"); err != nil {
+		s.writeError(w, "failed to abandon quest", http.StatusInternalServerError)
+		s.logger.Error("Failed to abandon quest", "error", err)
+		return
+	}
+
+	s.writeJSON(w, quest)
+}
+
+// releaseAgent sets an agent back to idle and clears their current quest.
+func (s *Service) releaseAgent(ctx context.Context, agentID semdragons.AgentID) {
+	agentEntity, err := s.graph.GetAgent(ctx, agentID)
+	if err != nil {
+		s.logger.Error("Failed to load agent for release", "agent_id", agentID, "error", err)
+		return
+	}
+	agent := semdragons.AgentFromEntityState(agentEntity)
+	if agent == nil {
+		return
+	}
+
+	agent.Status = semdragons.AgentIdle
+	agent.CurrentQuest = nil
+	agent.UpdatedAt = time.Now()
+
+	if err := s.graph.EmitEntityUpdate(ctx, agent, "agent.released"); err != nil {
+		s.logger.Error("Failed to release agent", "agent_id", agentID, "error", err)
+	}
 }
 
 // =============================================================================

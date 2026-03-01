@@ -133,9 +133,13 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
-	// Review level
+	// Review
 	triples = append(triples, message.Triple{
 		Subject: entityID, Predicate: "quest.review.level", Object: int(q.Constraints.ReviewLevel),
+		Source: source, Timestamp: now, Confidence: 1.0,
+	})
+	triples = append(triples, message.Triple{
+		Subject: entityID, Predicate: "quest.review.needs_review", Object: q.Constraints.RequireReview,
 		Source: source, Timestamp: now, Confidence: 1.0,
 	})
 

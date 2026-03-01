@@ -83,6 +83,17 @@ export async function retry<T>(
 }
 
 /**
+ * Extract the short instance ID from a full dotted entity ID.
+ *
+ * The backend returns full entity IDs like "local.dev.game.board1.quest.abc123".
+ * Lifecycle endpoints expect only the instance part ("abc123").
+ */
+export function extractInstance(fullId: string): string {
+	const parts = fullId.split('.');
+	return parts[parts.length - 1];
+}
+
+/**
  * Quest creation payload for test data seeding.
  */
 interface QuestPayload {
@@ -94,12 +105,77 @@ interface QuestPayload {
 }
 
 /**
+ * Typed response shapes for lifecycle API operations.
+ */
+export interface QuestResponse {
+	id: string;
+	objective: string;
+	status: string;
+	agent_id?: string;
+	attempts?: number;
+	completed_at?: string;
+	require_human_review?: boolean;
+	review_level?: number;
+	trajectory_id?: string;
+	[key: string]: unknown;
+}
+
+export interface AgentResponse {
+	id: string;
+	name: string;
+	level: number;
+	tier: number;
+	status: string;
+	xp?: number;
+	skills?: string[];
+	[key: string]: unknown;
+}
+
+export interface BattleResponse {
+	id: string;
+	quest_id: string;
+	status: string;
+	verdict?: string;
+	[key: string]: unknown;
+}
+
+export interface WorldStateResponse {
+	agents?: AgentResponse[];
+	quests?: QuestResponse[];
+	[key: string]: unknown;
+}
+
+/**
+ * Lifecycle API fixture type definition.
+ *
+ * Provides typed helpers for all quest and agent lifecycle operations.
+ * All quest/agent IDs passed to these methods should be the short instance
+ * portion extracted via extractInstance().
+ */
+export interface LifecycleApi {
+	claimQuest: (questId: string, agentId: string) => Promise<Response>;
+	startQuest: (questId: string) => Promise<Response>;
+	submitQuest: (questId: string, output: string) => Promise<Response>;
+	completeQuest: (questId: string) => Promise<Response>;
+	failQuest: (questId: string, reason: string) => Promise<Response>;
+	abandonQuest: (questId: string, reason: string) => Promise<Response>;
+	createQuestWithReview: (objective: string, reviewLevel?: number) => Promise<QuestResponse>;
+	createQuest: (objective: string, difficulty?: number) => Promise<QuestResponse>;
+	recruitAgent: (name: string, skills?: string[]) => Promise<AgentResponse>;
+	getQuest: (questId: string) => Promise<QuestResponse>;
+	getAgent: (agentId: string) => Promise<AgentResponse>;
+	listBattles: () => Promise<BattleResponse[]>;
+	getWorldState: () => Promise<WorldStateResponse>;
+}
+
+/**
  * Extended test fixtures for Semdragons E2E tests.
  *
  * Provides:
  * - Page objects for each major page
  * - SSE helpers for real-time testing
  * - API client for test data seeding
+ * - Lifecycle API for quest and agent state transitions
  */
 export const test = base.extend<{
 	dashboardPage: DashboardPage;
@@ -108,6 +184,7 @@ export const test = base.extend<{
 	sseHelper: SSEHelper;
 	seedQuests: (quests: QuestPayload[]) => Promise<string[]>;
 	apiRequest: APIRequestContext;
+	lifecycleApi: LifecycleApi;
 }>({
 	// Page objects
 	dashboardPage: async ({ page }, use) => {
@@ -174,6 +251,142 @@ export const test = base.extend<{
 		// Cleanup: Cancel any quests we created (if needed)
 		// Note: E2E tests typically run against a fresh environment
 		// so cleanup may not be necessary if using docker-compose down -v
+		void createdQuestIds;
+	},
+
+	// Lifecycle API fixture — all methods operate on short instance IDs
+	lifecycleApi: async ({ playwright }, use) => {
+		const apiContext = await playwright.request.newContext({
+			baseURL: API_URL
+		});
+
+		const api: LifecycleApi = {
+			claimQuest: (questId, agentId) =>
+				fetch(`${API_URL}/game/quests/${questId}/claim`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ agent_id: agentId })
+				}),
+
+			startQuest: (questId) =>
+				fetch(`${API_URL}/game/quests/${questId}/start`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({})
+				}),
+
+			submitQuest: (questId, output) =>
+				fetch(`${API_URL}/game/quests/${questId}/submit`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ output })
+				}),
+
+			completeQuest: (questId) =>
+				fetch(`${API_URL}/game/quests/${questId}/complete`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({})
+				}),
+
+			failQuest: (questId, reason) =>
+				fetch(`${API_URL}/game/quests/${questId}/fail`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ reason })
+				}),
+
+			abandonQuest: (questId, reason) =>
+				fetch(`${API_URL}/game/quests/${questId}/abandon`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ reason })
+				}),
+
+			createQuestWithReview: async (objective, reviewLevel = 1) => {
+				const res = await apiContext.post('/game/quests', {
+					data: {
+						objective,
+						hints: {
+							suggested_difficulty: 2,
+							suggested_skills: [],
+							require_human_review: true,
+							review_level: reviewLevel,
+							budget: 100
+						}
+					}
+				});
+				if (!res.ok()) {
+					throw new Error(`createQuestWithReview failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			createQuest: async (objective, difficulty = 1) => {
+				const res = await apiContext.post('/game/quests', {
+					data: {
+						objective,
+						hints: {
+							suggested_difficulty: difficulty,
+							suggested_skills: [],
+							require_human_review: false,
+							budget: 100
+						}
+					}
+				});
+				if (!res.ok()) {
+					throw new Error(`createQuest failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			recruitAgent: async (name, skills = []) => {
+				const res = await apiContext.post('/game/agents', {
+					data: { name, skills, is_npc: false }
+				});
+				if (!res.ok()) {
+					throw new Error(`recruitAgent failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getQuest: async (questId) => {
+				const res = await apiContext.get(`/game/quests/${questId}`);
+				if (!res.ok()) {
+					throw new Error(`getQuest failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getAgent: async (agentId) => {
+				const res = await apiContext.get(`/game/agents/${agentId}`);
+				if (!res.ok()) {
+					throw new Error(`getAgent failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			listBattles: async () => {
+				const res = await apiContext.get('/game/battles');
+				if (!res.ok()) {
+					throw new Error(`listBattles failed: ${res.status()} ${await res.text()}`);
+				}
+				const data = await res.json();
+				// Handle either array or wrapped response
+				return Array.isArray(data) ? data : (data.battles ?? data.items ?? []);
+			},
+
+			getWorldState: async () => {
+				const res = await apiContext.get('/game/world');
+				if (!res.ok()) {
+					throw new Error(`getWorldState failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			}
+		};
+
+		await use(api);
+		await apiContext.dispose();
 	}
 });
 

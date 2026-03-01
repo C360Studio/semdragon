@@ -323,7 +323,7 @@ func DefaultConsumables() []StoreItem {
 		NewStoreItem("xp_boost", "XP Boost").
 			Description("Earn 2x XP on your next completed quest").
 			AsConsumable(ConsumableEffect{Type: ConsumableXPBoost, Magnitude: 2.0, Duration: 1}).
-			Cost(100).RequireTier(domain.TierJourneyman).Build(),
+			Cost(100).RequireTier(domain.TierJourneyman).GuildDiscount(0.15).Build(),
 
 		NewStoreItem("quality_shield", "Quality Shield").
 			Description("Ignore one failed review criterion during boss battle").
@@ -335,4 +335,41 @@ func DefaultConsumables() []StoreItem {
 			AsConsumable(ConsumableEffect{Type: ConsumableInsightScroll, Duration: 3}).
 			Cost(50).RequireTier(domain.TierApprentice).Build(),
 	}
+}
+
+// DefaultTools returns the standard set of tool items.
+func DefaultTools() []StoreItem {
+	return []StoreItem{
+		NewStoreItem("web_search", "Web Search").
+			Description("Search the web for context during quest execution").
+			AsTool("web_search").Permanent().
+			Cost(50).RequireTier(domain.TierApprentice).Build(),
+
+		NewStoreItem("code_reviewer", "Code Reviewer").
+			Description("Automated code review before boss battle submission").
+			AsTool("code_reviewer").Permanent().
+			Cost(150).RequireTier(domain.TierJourneyman).GuildDiscount(0.10).Build(),
+
+		NewStoreItem("deploy_access", "Deploy Access").
+			Description("Permission to deploy directly to staging environments").
+			AsTool("deploy_access").Permanent().
+			Cost(500).RequireTier(domain.TierExpert).GuildDiscount(0.20).Build(),
+
+		NewStoreItem("context_expander", "Context Expander").
+			Description("Increase context window for complex multi-file quests").
+			AsTool("context_expander").Rental(10).
+			Cost(200).RequireTier(domain.TierJourneyman).Build(),
+
+		NewStoreItem("parallel_executor", "Parallel Executor").
+			Description("Run sub-quests in parallel during party coordination").
+			AsTool("parallel_executor").Permanent().
+			Cost(750).RequireTier(domain.TierExpert).RequireLevel(13).Build(),
+	}
+}
+
+// DefaultCatalog returns the full default store catalog (tools + consumables).
+func DefaultCatalog() []StoreItem {
+	catalog := DefaultTools()
+	catalog = append(catalog, DefaultConsumables()...)
+	return catalog
 }

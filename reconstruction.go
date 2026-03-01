@@ -100,6 +100,8 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 		// Review
 		case "quest.review.level":
 			q.Constraints.ReviewLevel = ReviewLevel(asInt(triple.Object))
+		case "quest.review.needs_review":
+			q.Constraints.RequireReview = asBool(triple.Object)
 
 		// Observability
 		case "quest.observability.trajectory_id":

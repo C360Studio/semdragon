@@ -54,6 +54,14 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 		return fmt.Errorf("seed e2e: seed agents: %w", err)
 	}
 
+	if err := seedQuests(ctx, graph, boardCfg); err != nil {
+		return fmt.Errorf("seed e2e: seed quests: %w", err)
+	}
+
+	if err := seedStore(ctx, graph); err != nil {
+		return fmt.Errorf("seed e2e: seed store: %w", err)
+	}
+
 	slog.Info("E2E seed data written successfully")
 	return nil
 }
@@ -331,6 +339,65 @@ func seedOneAgent(
 	return nil
 }
 
+// seedQuests creates a few quests in various states for E2E lifecycle testing.
+func seedQuests(ctx context.Context, graph *semdragons.GraphClient, boardCfg *semdragons.BoardConfig) error {
+	now := time.Now()
+
+	quests := []*semdragons.Quest{
+		{
+			ID:          semdragons.QuestID(boardCfg.QuestEntityID("e2e-easy")),
+			Title:       "E2E Easy Quest",
+			Description: "A simple quest for lifecycle testing",
+			Status:      semdragons.QuestPosted,
+			Difficulty:  semdragons.DifficultyEasy,
+			BaseXP:      100,
+			MaxAttempts: 3,
+			PostedAt:    now,
+		},
+		{
+			ID:          semdragons.QuestID(boardCfg.QuestEntityID("e2e-review")),
+			Title:       "E2E Review Quest",
+			Description: "A quest that requires boss battle review",
+			Status:      semdragons.QuestPosted,
+			Difficulty:  semdragons.DifficultyModerate,
+			BaseXP:      200,
+			MaxAttempts: 3,
+			PostedAt:    now,
+			Constraints: semdragons.QuestConstraints{
+				RequireReview: true,
+				ReviewLevel:   semdragons.ReviewStandard,
+			},
+		},
+		{
+			ID:          semdragons.QuestID(boardCfg.QuestEntityID("e2e-hard")),
+			Title:       "E2E Hard Quest",
+			Description: "A hard quest requiring expert tier",
+			Status:      semdragons.QuestPosted,
+			Difficulty:  semdragons.DifficultyHard,
+			BaseXP:      500,
+			MaxAttempts: 2,
+			PostedAt:    now,
+			RequiredSkills: []semdragons.SkillTag{
+				semdragons.SkillCodeGen,
+			},
+		},
+	}
+
+	for _, quest := range quests {
+		if err := graph.EmitEntity(ctx, quest, "quest.seeded"); err != nil {
+			return fmt.Errorf("create quest %q: %w", quest.Title, err)
+		}
+
+		slog.Info("Seeded quest",
+			"id", quest.ID,
+			"title", quest.Title,
+			"difficulty", quest.Difficulty,
+			"require_review", quest.Constraints.RequireReview)
+	}
+
+	return nil
+}
+
 // xpAtMidLevel computes XP at the midpoint of the given level.
 // Uses the same exponential curve as the XP engine: 100 * 1.5^(level-1).
 func xpAtMidLevel(level int) int64 {
@@ -350,6 +417,28 @@ func xpAtMidLevel(level int) int64 {
 // Matches the DefaultXPEngine formula: 100 * 1.5^(level-1).
 func xpForLevel(level int) int64 {
 	return int64(100 * math.Pow(1.5, float64(level-1)))
+}
+
+// seedStore writes the default store catalog to KV for UI visibility.
+// The agentstore component also loads DefaultCatalog() into its in-memory sync.Map,
+// but writing to KV lets the world state API and dashboard display store items.
+func seedStore(ctx context.Context, graph *semdragons.GraphClient) error {
+	catalog := agentstore.DefaultCatalog()
+
+	for _, item := range catalog {
+		if err := graph.PutEntityState(ctx, &item, "store.item.seeded"); err != nil {
+			return fmt.Errorf("seed store item %q: %w", item.Name, err)
+		}
+
+		slog.Info("Seeded store item",
+			"id", item.ID,
+			"name", item.Name,
+			"type", item.ItemType,
+			"xp_cost", item.XPCost,
+			"guild_discount", item.GuildDiscount)
+	}
+
+	return nil
 }
 
 // proficiencyForTier maps a trust tier to a reasonable starting proficiency.

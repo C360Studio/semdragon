@@ -234,8 +234,9 @@ func (c *Component) Start(ctx context.Context) error {
 		return errors.New("component already running")
 	}
 
-	// Load default consumables into catalog
-	for _, item := range DefaultConsumables() {
+	// Load default catalog (tools + consumables)
+	for _, item := range DefaultCatalog() {
+		item := item // copy for pointer stability
 		c.catalog.Store(item.ID, &item)
 	}
 

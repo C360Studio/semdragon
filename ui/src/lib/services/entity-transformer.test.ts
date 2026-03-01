@@ -931,6 +931,7 @@ describe('schema contract validation', () => {
 		'quest.observability.trajectory_id': 'trajectory link not yet built',
 		'quest.parent.quest': 'quest hierarchy not yet displayed',
 		'quest.priority.guild': 'guild priority not displayed',
+		'quest.review.needs_review': 'backend constraint not displayed in quest card',
 		'quest.skill.required': 'required_skills populated from separate source',
 		'quest.tool.required': 'required_tools populated from separate source'
 	};

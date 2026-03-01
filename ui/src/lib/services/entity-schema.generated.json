@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-01T20:03:37Z",
+  "generated_at": "2026-03-01T20:45:52Z",
   "entities": {
     "agent": {
       "static": [
@@ -112,6 +112,7 @@
         "quest.lifecycle.posted_at",
         "quest.party.required",
         "quest.review.level",
+        "quest.review.needs_review",
         "quest.status.state",
         "quest.tier.minimum",
         "quest.xp.base"
