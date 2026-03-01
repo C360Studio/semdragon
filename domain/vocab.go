@@ -243,6 +243,16 @@ const (
 	PredicateToolResult = "execution.tool.result"
 )
 
+// --- Agent Autonomy Predicates ---
+
+const (
+	// PredicateAutonomyEvaluated - Heartbeat fired, agent autonomy evaluated.
+	PredicateAutonomyEvaluated = "agent.autonomy.evaluated"
+
+	// PredicateAutonomyIdle - Agent idle with nothing actionable.
+	PredicateAutonomyIdle = "agent.autonomy.idle"
+)
+
 // --- Store Predicates ---
 
 const (
@@ -516,6 +526,16 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateToolResult,
 		vocabulary.WithDescription("Tool result returned during execution"),
 		vocabulary.WithDataType("ToolResultPayload"),
+	)
+
+	// Agent autonomy predicates
+	vocabulary.Register(PredicateAutonomyEvaluated,
+		vocabulary.WithDescription("Heartbeat fired, agent autonomy evaluated"),
+		vocabulary.WithDataType("AutonomyEvaluatedPayload"),
+	)
+	vocabulary.Register(PredicateAutonomyIdle,
+		vocabulary.WithDescription("Agent idle with nothing actionable"),
+		vocabulary.WithDataType("AutonomyIdlePayload"),
 	)
 
 	// Store predicates

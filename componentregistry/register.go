@@ -11,6 +11,7 @@ import (
 
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/autonomy"
 	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semdragons/processor/dmapproval"
@@ -47,6 +48,7 @@ func RegisterAll(registry *component.Registry) error {
 		questboard.Register,
 		agentprogression.Register,
 		agentstore.Register,
+		autonomy.Register,
 		bossbattle.Register,
 		boidengine.Register,
 		executor.Register,
@@ -88,6 +90,7 @@ func RegisterProcessors(registry *component.Registry) error {
 		questboard.Register,
 		agentprogression.Register,
 		agentstore.Register,
+		autonomy.Register,
 		bossbattle.Register,
 		boidengine.Register,
 		executor.Register,
@@ -115,6 +118,7 @@ func ComponentNames() []string {
 		questboard.ComponentName,
 		agentprogression.ComponentName,
 		agentstore.ComponentName,
+		autonomy.ComponentName,
 		bossbattle.ComponentName,
 		boidengine.ComponentName,
 		executor.ComponentName,
@@ -134,6 +138,7 @@ func ProcessorNames() []string {
 		questboard.ComponentName,
 		agentprogression.ComponentName,
 		agentstore.ComponentName,
+		autonomy.ComponentName,
 		bossbattle.ComponentName,
 		boidengine.ComponentName,
 		executor.ComponentName,
