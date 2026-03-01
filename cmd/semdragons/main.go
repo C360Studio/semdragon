@@ -123,6 +123,11 @@ func run() error {
 		return err
 	}
 
+	// 10a. Seed E2E test data when SEED_E2E=true
+	if err := maybeSeedE2E(ctx, cfg, natsClient); err != nil {
+		return err
+	}
+
 	// 11. Run application with signal handling
 	return runWithSignalHandling(ctx, manager, cliCfg.ShutdownTimeout)
 }
@@ -252,6 +257,8 @@ func setupInfrastructure(
 }
 
 // createNATSClient creates a NATS client from config.
+// Optional auth is read from environment variables so credentials never appear
+// in config files or command-line flags.
 func createNATSClient(cfg *config.Config) (*natsclient.Client, error) {
 	natsURLs := "nats://localhost:4222"
 
@@ -263,7 +270,16 @@ func createNATSClient(cfg *config.Config) (*natsclient.Client, error) {
 		natsURLs = strings.Join(cfg.NATS.URLs, ",")
 	}
 
-	return natsclient.NewClient(natsURLs)
+	var opts []natsclient.ClientOption
+
+	if user := os.Getenv("SEMDRAGONS_NATS_USER"); user != "" {
+		opts = append(opts, natsclient.WithCredentials(user, os.Getenv("SEMDRAGONS_NATS_PASS")))
+	}
+	if token := os.Getenv("SEMDRAGONS_NATS_TOKEN"); token != "" {
+		opts = append(opts, natsclient.WithToken(token))
+	}
+
+	return natsclient.NewClient(natsURLs, opts...)
 }
 
 // extractPlatformMeta extracts platform identity from config.

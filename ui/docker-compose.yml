@@ -4,7 +4,10 @@ services:
     ports:
       - "4222:4222"
       - "8222:8222"
-    command: ["--js", "-m", "8222"]
+    command: ["--config", "/etc/nats/nats-server.conf"]
+    volumes:
+      - nats-data:/data
+      - ./nats-server.conf:/etc/nats/nats-server.conf:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
@@ -22,6 +25,7 @@ services:
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
       SEED_E2E: "${SEED_E2E:-false}"
+      SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -40,6 +44,7 @@ services:
         condition: service_healthy
     environment:
       PUBLIC_API_URL: http://backend:8080
+      PUBLIC_SSE_BUCKET: semdragons-local-dev-board1
     ports:
       - "5173:5173"
     volumes:
@@ -47,3 +52,6 @@ services:
       - ./static:/app/static:ro
     stdin_open: true
     tty: true
+
+volumes:
+  nats-data:

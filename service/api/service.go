@@ -29,8 +29,8 @@ type Config struct {
 // Service provides domain REST endpoints for the Semdragons game world.
 type Service struct {
 	*service.BaseService
-	graph  *semdragons.GraphClient
-	world  *dmworldstate.WorldStateAggregator
+	graph  GraphQuerier       // concrete type is *semdragons.GraphClient
+	world  WorldStateProvider // concrete type is *dmworldstate.WorldStateAggregator
 	config Config
 	logger *slog.Logger
 }
@@ -130,12 +130,16 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 		prefix = prefix + "/"
 	}
 
+	// Load API key once — empty string means dev mode (no auth).
+	apiKey := loadAPIKey()
+
 	// CORS middleware — sets headers on all responses for simple requests.
+	// X-API-Key is included so browsers allow the auth header in cross-origin POSTs.
 	cors := func(handler http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
 			handler(w, r)
 		}
 	}
@@ -145,7 +149,7 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("OPTIONS "+prefix+"{path...}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
 		w.WriteHeader(http.StatusNoContent)
 	})
 
@@ -155,16 +159,16 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	// Quests
 	mux.HandleFunc("GET "+prefix+"quests", cors(s.handleListQuests))
 	mux.HandleFunc("GET "+prefix+"quests/{id}", cors(s.handleGetQuest))
-	mux.HandleFunc("POST "+prefix+"quests", cors(s.handleCreateQuest))
+	mux.HandleFunc("POST "+prefix+"quests", cors(requireAuth(apiKey, s.handleCreateQuest)))
 
 	// Agents
 	mux.HandleFunc("GET "+prefix+"agents", cors(s.handleListAgents))
 	mux.HandleFunc("GET "+prefix+"agents/{id}/inventory", cors(s.handleGetInventory))
-	mux.HandleFunc("POST "+prefix+"agents/{id}/inventory/use", cors(s.handleUseConsumable))
+	mux.HandleFunc("POST "+prefix+"agents/{id}/inventory/use", cors(requireAuth(apiKey, s.handleUseConsumable)))
 	mux.HandleFunc("GET "+prefix+"agents/{id}/effects", cors(s.handleGetEffects))
 	mux.HandleFunc("GET "+prefix+"agents/{id}", cors(s.handleGetAgent))
-	mux.HandleFunc("POST "+prefix+"agents/{id}/retire", cors(s.handleRetireAgent))
-	mux.HandleFunc("POST "+prefix+"agents", cors(s.handleRecruitAgent))
+	mux.HandleFunc("POST "+prefix+"agents/{id}/retire", cors(requireAuth(apiKey, s.handleRetireAgent)))
+	mux.HandleFunc("POST "+prefix+"agents", cors(requireAuth(apiKey, s.handleRecruitAgent)))
 
 	// Battles
 	mux.HandleFunc("GET "+prefix+"battles", cors(s.handleListBattles))
@@ -174,13 +178,13 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"trajectories/{id}", cors(s.handleGetTrajectory))
 
 	// DM
-	mux.HandleFunc("POST "+prefix+"dm/chat", cors(s.handleDMChat))
-	mux.HandleFunc("POST "+prefix+"dm/intervene/{questId}", cors(s.handleDMIntervene))
+	mux.HandleFunc("POST "+prefix+"dm/chat", cors(requireAuth(apiKey, s.handleDMChat)))
+	mux.HandleFunc("POST "+prefix+"dm/intervene/{questId}", cors(requireAuth(apiKey, s.handleDMIntervene)))
 
 	// Store
 	mux.HandleFunc("GET "+prefix+"store", cors(s.handleListStore))
 	mux.HandleFunc("GET "+prefix+"store/{id}", cors(s.handleGetStoreItem))
-	mux.HandleFunc("POST "+prefix+"store/purchase", cors(s.handlePurchase))
+	mux.HandleFunc("POST "+prefix+"store/purchase", cors(requireAuth(apiKey, s.handlePurchase)))
 
 	s.logger.Info("Game API HTTP handlers registered", "prefix", prefix)
 }
