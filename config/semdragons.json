@@ -1,0 +1,35 @@
+{
+  "version": "1.0.0",
+  "platform": {
+    "org": "local",
+    "id": "dev",
+    "environment": "development"
+  },
+  "nats": {
+    "urls": ["nats://localhost:4222"]
+  },
+  "services": {
+    "service-manager": {
+      "enabled": true,
+      "config": {
+        "http_port": 8080,
+        "swagger_ui": true,
+        "server_info": {
+          "title": "Semdragons API",
+          "description": "Agentic workflow coordination framework",
+          "version": "0.1.0"
+        }
+      }
+    },
+    "component-manager": {
+      "enabled": true
+    },
+    "semdragons-api": {
+      "enabled": true,
+      "config": {
+        "board": "board1",
+        "max_entities": 1000
+      }
+    }
+  }
+}
