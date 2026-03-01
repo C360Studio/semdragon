@@ -5,7 +5,7 @@ import (
 )
 
 func init() {
-	service.RegisterOpenAPISpec("semdragons-api", semdragonsOpenAPISpec())
+	service.RegisterOpenAPISpec("game", semdragonsOpenAPISpec())
 }
 
 // semdragonsOpenAPISpec returns the OpenAPI specification for domain endpoints.

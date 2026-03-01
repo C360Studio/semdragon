@@ -48,7 +48,7 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 	}
 
 	if deps == nil || deps.NATSClient == nil {
-		return nil, fmt.Errorf("semdragons-api requires NATS client")
+		return nil, fmt.Errorf("game service requires NATS client")
 	}
 
 	// Resolve org/platform from config or platform identity
@@ -72,7 +72,7 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 	if logger == nil {
 		logger = slog.Default()
 	}
-	logger = logger.With("service", "semdragons-api")
+	logger = logger.With("service", "game")
 
 	boardConfig := &semdragons.BoardConfig{
 		Org:      org,
@@ -84,7 +84,7 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 	world := dmworldstate.NewWorldStateAggregator(graph, cfg.MaxEntities, logger)
 
 	baseService := service.NewBaseServiceWithOptions(
-		"semdragons-api",
+		"game",
 		nil,
 		service.WithLogger(logger),
 		service.WithMetrics(deps.MetricsRegistry),
@@ -110,7 +110,7 @@ func (s *Service) Start(ctx context.Context) error {
 		return err
 	}
 
-	s.logger.Info("Semdragons API service started",
+	s.logger.Info("Game API service started",
 		"board", s.config.Board,
 		"max_entities", s.config.MaxEntities)
 	return nil
@@ -118,7 +118,7 @@ func (s *Service) Start(ctx context.Context) error {
 
 // Stop stops the API service.
 func (s *Service) Stop(timeout time.Duration) error {
-	s.logger.Info("Semdragons API service stopping")
+	s.logger.Info("Game API service stopping")
 	return s.BaseService.Stop(timeout)
 }
 
@@ -173,7 +173,7 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"store/{id}", cors(s.handleGetStoreItem))
 	mux.HandleFunc("POST "+prefix+"store/purchase", cors(s.handlePurchase))
 
-	s.logger.Info("Semdragons API HTTP handlers registered", "prefix", prefix)
+	s.logger.Info("Game API HTTP handlers registered", "prefix", prefix)
 }
 
 // OpenAPISpec returns the OpenAPI specification for domain endpoints.

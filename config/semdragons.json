@@ -24,7 +24,7 @@
     "component-manager": {
       "enabled": true
     },
-    "semdragons-api": {
+    "game": {
       "enabled": true,
       "config": {
         "board": "board1",

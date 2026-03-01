@@ -288,8 +288,8 @@ func setupRegistriesAndManager(cfg *config.Config) (*component.Registry, *servic
 	if err := service.RegisterAll(serviceRegistry); err != nil {
 		return nil, nil, fmt.Errorf("register semstreams services: %w", err)
 	}
-	if err := serviceRegistry.Register("semdragons-api", svcapi.New); err != nil {
-		return nil, nil, fmt.Errorf("register semdragons-api: %w", err)
+	if err := serviceRegistry.Register("game", svcapi.New); err != nil {
+		return nil, nil, fmt.Errorf("register game service: %w", err)
 	}
 
 	manager := service.NewServiceManager(serviceRegistry)
