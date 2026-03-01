@@ -6,6 +6,7 @@ import (
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semstreams/component"
 )
 
@@ -15,8 +16,18 @@ import (
 // No Docker required. Run with: go test ./processor/autonomy/...
 // =============================================================================
 
+// newTestComponent creates a minimal Component for unit tests (no NATS/graph).
+func newTestComponent() *Component {
+	cfg := DefaultConfig()
+	return &Component{
+		config:   &cfg,
+		trackers: make(map[string]*agentTracker),
+	}
+}
+
 func TestActionsForState_Idle(t *testing.T) {
-	actions := actionsForState(semdragons.AgentIdle)
+	c := newTestComponent()
+	actions := c.actionsForState(semdragons.AgentIdle)
 	want := []string{"claim_quest", "use_consumable", "shop", "join_guild"}
 
 	if len(actions) != len(want) {
@@ -31,7 +42,8 @@ func TestActionsForState_Idle(t *testing.T) {
 }
 
 func TestActionsForState_OnQuest(t *testing.T) {
-	actions := actionsForState(semdragons.AgentOnQuest)
+	c := newTestComponent()
+	actions := c.actionsForState(semdragons.AgentOnQuest)
 	want := []string{"claim_concurrent", "shop_strategic", "use_consumable", "join_guild"}
 
 	if len(actions) != len(want) {
@@ -46,7 +58,8 @@ func TestActionsForState_OnQuest(t *testing.T) {
 }
 
 func TestActionsForState_InBattle(t *testing.T) {
-	actions := actionsForState(semdragons.AgentInBattle)
+	c := newTestComponent()
+	actions := c.actionsForState(semdragons.AgentInBattle)
 	want := []string{"use_consumable"}
 
 	if len(actions) != len(want) {
@@ -59,7 +72,8 @@ func TestActionsForState_InBattle(t *testing.T) {
 }
 
 func TestActionsForState_Cooldown(t *testing.T) {
-	actions := actionsForState(semdragons.AgentCooldown)
+	c := newTestComponent()
+	actions := c.actionsForState(semdragons.AgentCooldown)
 	want := []string{"use_cooldown_skip", "shop", "join_guild"}
 
 	if len(actions) != len(want) {
@@ -74,21 +88,23 @@ func TestActionsForState_Cooldown(t *testing.T) {
 }
 
 func TestActionsForState_Retired(t *testing.T) {
-	actions := actionsForState(semdragons.AgentRetired)
+	c := newTestComponent()
+	actions := c.actionsForState(semdragons.AgentRetired)
 	if actions != nil {
 		t.Errorf("retired actions: got %v, want nil", actions)
 	}
 }
 
 func TestActionStubs_AllReturnFalse(t *testing.T) {
+	c := newTestComponent()
 	stubs := []action{
-		claimQuestAction(),
-		claimConcurrentAction(),
-		shopAction(),
-		shopStrategicAction(),
-		useConsumableAction(),
-		useCooldownSkipAction(),
-		joinGuildAction(),
+		// claimQuestAction is no longer a stub — skip it
+		c.claimConcurrentAction(),
+		c.shopAction(),
+		c.shopStrategicAction(),
+		c.useConsumableAction(),
+		c.useCooldownSkipAction(),
+		c.joinGuildAction(),
 	}
 
 	agent := &semdragons.Agent{
@@ -102,6 +118,64 @@ func TestActionStubs_AllReturnFalse(t *testing.T) {
 		if stub.shouldExecute(agent, tracker) {
 			t.Errorf("action %q shouldExecute returned true, want false (stub)", stub.name)
 		}
+	}
+}
+
+func TestClaimQuestAction_ShouldExecute_WithSuggestions(t *testing.T) {
+	c := newTestComponent()
+	act := c.claimQuestAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.claim1",
+		Status: semdragons.AgentIdle,
+		Level:  5,
+	}
+	tracker := &agentTracker{
+		agent: agent,
+		suggestions: []boidengine.SuggestedClaim{
+			{QuestID: "test.local.game.board1.quest.q1", Score: 3.0},
+		},
+	}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should return true when idle with suggestions")
+	}
+}
+
+func TestClaimQuestAction_ShouldExecute_NoSuggestions(t *testing.T) {
+	c := newTestComponent()
+	act := c.claimQuestAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.claim2",
+		Status: semdragons.AgentIdle,
+		Level:  5,
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should return false when no suggestions")
+	}
+}
+
+func TestClaimQuestAction_ShouldExecute_NotIdle(t *testing.T) {
+	c := newTestComponent()
+	act := c.claimQuestAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.claim3",
+		Status: semdragons.AgentOnQuest,
+		Level:  5,
+	}
+	tracker := &agentTracker{
+		agent: agent,
+		suggestions: []boidengine.SuggestedClaim{
+			{QuestID: "test.local.game.board1.quest.q1", Score: 3.0},
+		},
+	}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should return false when not idle")
 	}
 }
 
@@ -244,8 +318,8 @@ func TestComponent_InputOutputPorts(t *testing.T) {
 	}
 
 	outputs := comp.OutputPorts()
-	if len(outputs) != 2 {
-		t.Fatalf("OutputPorts: got %d, want 2", len(outputs))
+	if len(outputs) != 3 {
+		t.Fatalf("OutputPorts: got %d, want 3", len(outputs))
 	}
 
 	outputNames := map[string]bool{}
@@ -257,6 +331,9 @@ func TestComponent_InputOutputPorts(t *testing.T) {
 	}
 	if !outputNames["autonomy-idle"] {
 		t.Error("missing output port: autonomy-idle")
+	}
+	if !outputNames["claim-state"] {
+		t.Error("missing output port: claim-state")
 	}
 }
 
@@ -548,7 +625,8 @@ func TestNewFromConfig_NilNATSClient(t *testing.T) {
 // =============================================================================
 
 func TestActionsForState_Unknown(t *testing.T) {
-	actions := actionsForState("some_unknown_status")
+	c := newTestComponent()
+	actions := c.actionsForState("some_unknown_status")
 	if actions != nil {
 		t.Errorf("unknown status actions: got %v, want nil", actions)
 	}

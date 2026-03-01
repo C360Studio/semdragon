@@ -2,6 +2,7 @@ package autonomy
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -39,15 +40,15 @@ func (c *Component) evaluateAutonomy(instance string) {
 	agent := &agentCopy
 	agentStatus := agent.Status
 	idleSince := tracker.idleSince
-	hasSuggestion := tracker.suggestion != nil
+	hasSuggestion := len(tracker.suggestions) > 0
 	currentInterval := tracker.interval
 	// Build a stack-allocated tracker snapshot so action stubs never touch the
 	// live tracker pointer outside the lock.
 	trackerSnapshot := agentTracker{
-		agent:      agent,
-		idleSince:  tracker.idleSince,
-		interval:   tracker.interval,
-		suggestion: tracker.suggestion,
+		agent:       agent,
+		idleSince:   tracker.idleSince,
+		interval:    tracker.interval,
+		suggestions: tracker.suggestions,
 	}
 	c.trackersMu.RUnlock()
 
@@ -66,21 +67,29 @@ func (c *Component) evaluateAutonomy(instance string) {
 	}
 
 	// Get available actions for current state
-	actions := actionsForState(agentStatus)
+	actions := c.actionsForState(agentStatus)
 
 	// Evaluate each action in priority order. Pass &trackerSnapshot (not the
 	// live tracker pointer) so stubs cannot race against concurrent writers.
 	for _, act := range actions {
 		if act.shouldExecute(agent, &trackerSnapshot) {
-			actionTaken = act.name
 			if act.execute != nil {
 				if err := act.execute(ctx, agent, &trackerSnapshot); err != nil {
+					if errors.Is(err, errNoViableClaim) {
+						// All suggestions exhausted — treat as "no action taken"
+						// so the backoff path runs.
+						break
+					}
 					c.errorsCount.Add(1)
 					c.logger.Error("action execution failed",
 						"instance", instance,
 						"action", act.name,
 						"error", err)
+				} else {
+					actionTaken = act.name
 				}
+			} else {
+				actionTaken = act.name
 			}
 			break
 		}
@@ -163,31 +172,31 @@ func (c *Component) checkCooldownExpiry(ctx context.Context, agent *semdragons.A
 
 // actionsForState returns the available actions for a given agent status,
 // ordered by priority. Each status gets a different set per the ADR action matrix.
-func actionsForState(status semdragons.AgentStatus) []action {
+func (c *Component) actionsForState(status semdragons.AgentStatus) []action {
 	switch status {
 	case semdragons.AgentIdle:
 		return []action{
-			claimQuestAction(),
-			useConsumableAction(),
-			shopAction(),
-			joinGuildAction(),
+			c.claimQuestAction(),
+			c.useConsumableAction(),
+			c.shopAction(),
+			c.joinGuildAction(),
 		}
 	case semdragons.AgentOnQuest:
 		return []action{
-			claimConcurrentAction(),
-			shopStrategicAction(),
-			useConsumableAction(),
-			joinGuildAction(),
+			c.claimConcurrentAction(),
+			c.shopStrategicAction(),
+			c.useConsumableAction(),
+			c.joinGuildAction(),
 		}
 	case semdragons.AgentInBattle:
 		return []action{
-			useConsumableAction(),
+			c.useConsumableAction(),
 		}
 	case semdragons.AgentCooldown:
 		return []action{
-			useCooldownSkipAction(),
-			shopAction(),
-			joinGuildAction(),
+			c.useCooldownSkipAction(),
+			c.shopAction(),
+			c.joinGuildAction(),
 		}
 	default:
 		// Retired or unknown

@@ -96,17 +96,22 @@ func (c *Component) handleBoidSuggestion(ctx context.Context, msg *nats.Msg) {
 		return
 	}
 
-	var suggestion boidengine.SuggestedClaim
-	if err := json.Unmarshal(msg.Data, &suggestion); err != nil {
+	var suggestions []boidengine.SuggestedClaim
+	if err := json.Unmarshal(msg.Data, &suggestions); err != nil {
 		c.errorsCount.Add(1)
-		c.logger.Warn("failed to unmarshal boid suggestion", "error", err)
+		c.logger.Warn("failed to unmarshal boid suggestions", "error", err)
 		return
 	}
 
-	// Extract instance from the agent ID in the suggestion
-	instance := semdragons.ExtractInstance(string(suggestion.AgentID))
+	if len(suggestions) == 0 {
+		return
+	}
+
+	// Extract instance from the NATS subject (boid.suggestions.<instance>)
+	// or from the first suggestion's agent ID
+	instance := semdragons.ExtractInstance(string(suggestions[0].AgentID))
 	if instance == "" {
-		c.logger.Warn("boid suggestion has invalid agent ID", "agent_id", suggestion.AgentID)
+		c.logger.Warn("boid suggestion has invalid agent ID", "agent_id", suggestions[0].AgentID)
 		return
 	}
 
@@ -121,11 +126,12 @@ func (c *Component) handleBoidSuggestion(ctx context.Context, msg *nats.Msg) {
 
 	// Only cache suggestions for idle agents
 	if tracker.agent != nil && tracker.agent.Status == semdragons.AgentIdle {
-		tracker.suggestion = &suggestion
+		tracker.suggestions = suggestions
 		c.resetHeartbeatInterval(instance)
-		c.logger.Debug("boid suggestion cached for agent",
+		c.logger.Debug("boid suggestions cached for agent",
 			"instance", instance,
-			"quest_id", suggestion.QuestID,
-			"score", suggestion.Score)
+			"count", len(suggestions),
+			"top_quest", suggestions[0].QuestID,
+			"top_score", suggestions[0].Score)
 	}
 }

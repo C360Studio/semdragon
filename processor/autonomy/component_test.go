@@ -200,24 +200,33 @@ func TestBoidSuggestionCached(t *testing.T) {
 	// Wait for agent to be tracked
 	waitForTracker(t, comp, instance, 3*time.Second)
 
-	// Publish boid suggestion
-	suggestion := boidengine.SuggestedClaim{
-		AgentID:    agentID,
-		QuestID:    "test.integration.game.boidcache.quest.q123",
-		Score:      3.14,
-		Confidence: 0.8,
-		Reason:     "test suggestion",
+	// Publish boid suggestions (ranked list)
+	suggestions := []boidengine.SuggestedClaim{
+		{
+			AgentID:    agentID,
+			QuestID:    "test.integration.game.boidcache.quest.q123",
+			Score:      3.14,
+			Confidence: 0.8,
+			Reason:     "test suggestion rank 1",
+		},
+		{
+			AgentID:    agentID,
+			QuestID:    "test.integration.game.boidcache.quest.q456",
+			Score:      2.0,
+			Confidence: 0.5,
+			Reason:     "test suggestion rank 2",
+		},
 	}
-	data, err := json.Marshal(suggestion)
+	data, err := json.Marshal(suggestions)
 	if err != nil {
-		t.Fatalf("Marshal suggestion: %v", err)
+		t.Fatalf("Marshal suggestions: %v", err)
 	}
 	subject := "boid.suggestions." + instance
 	if err := client.Publish(ctx, subject, data); err != nil {
-		t.Fatalf("Publish suggestion: %v", err)
+		t.Fatalf("Publish suggestions: %v", err)
 	}
 
-	// Wait for suggestion to be cached
+	// Wait for suggestions to be cached
 	deadline := time.After(3 * time.Second)
 	for {
 		select {
@@ -226,14 +235,17 @@ func TestBoidSuggestionCached(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 			comp.trackersMu.RLock()
 			tracker := comp.trackers[instance]
-			hasSuggestion := tracker != nil && tracker.suggestion != nil
+			hasSuggestions := tracker != nil && len(tracker.suggestions) > 0
 			comp.trackersMu.RUnlock()
-			if hasSuggestion {
+			if hasSuggestions {
 				comp.trackersMu.RLock()
-				cached := comp.trackers[instance].suggestion
+				cached := comp.trackers[instance].suggestions
 				comp.trackersMu.RUnlock()
-				if string(cached.QuestID) != string(suggestion.QuestID) {
-					t.Errorf("cached quest = %v, want %v", cached.QuestID, suggestion.QuestID)
+				if len(cached) != 2 {
+					t.Errorf("cached suggestions count = %d, want 2", len(cached))
+				}
+				if string(cached[0].QuestID) != string(suggestions[0].QuestID) {
+					t.Errorf("cached[0].QuestID = %v, want %v", cached[0].QuestID, suggestions[0].QuestID)
 				}
 				return
 			}
@@ -353,6 +365,298 @@ func TestHeartbeatCancelledOnRetire(t *testing.T) {
 				return // Retired agents have no heartbeat timer
 			}
 		}
+	}
+}
+
+// =============================================================================
+// AUTONOMOUS QUEST CLAIM TESTS
+// =============================================================================
+
+func TestAutonomousQuestClaim(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "autoclaim"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create a posted quest
+	questInstance := semdragons.GenerateInstance()
+	questID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
+	quest := &semdragons.Quest{
+		ID:        questID,
+		Title:     "Auto-claim test quest",
+		Status:    semdragons.QuestPosted,
+		PostedAt:  time.Now(),
+		MinTier:   semdragons.TierApprentice,
+		BaseXP:    100,
+	}
+	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
+		t.Fatalf("Failed to create test quest: %v", err)
+	}
+
+	// Create idle agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "autoclaim-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	// Wait for agent to be tracked
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Publish boid suggestion pointing at the quest
+	suggestions := []boidengine.SuggestedClaim{
+		{
+			AgentID:    agentID,
+			QuestID:    questID,
+			Score:      5.0,
+			Confidence: 0.9,
+			Reason:     "test autoclaim suggestion",
+		},
+	}
+	data, err := json.Marshal(suggestions)
+	if err != nil {
+		t.Fatalf("Marshal suggestions: %v", err)
+	}
+	subject := "boid.suggestions." + agentInstance
+	if err := client.Publish(ctx, subject, data); err != nil {
+		t.Fatalf("Publish suggestions: %v", err)
+	}
+
+	// Wait for autonomous claim: quest should become claimed, agent should be on_quest
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for autonomous quest claim")
+		case <-time.After(100 * time.Millisecond):
+			// Check quest status
+			questEntity, err := gc.GetQuest(ctx, domain.QuestID(questID))
+			if err != nil {
+				continue
+			}
+			updatedQuest := semdragons.QuestFromEntityState(questEntity)
+			if updatedQuest == nil || updatedQuest.Status != semdragons.QuestClaimed {
+				continue
+			}
+
+			// Quest is claimed! Verify agent is on_quest
+			agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
+			if err != nil {
+				t.Fatalf("GetAgent failed: %v", err)
+			}
+			updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+			if updatedAgent == nil {
+				t.Fatal("Failed to reconstruct agent")
+			}
+			if updatedAgent.Status != semdragons.AgentOnQuest {
+				t.Errorf("Agent status = %v, want %v", updatedAgent.Status, semdragons.AgentOnQuest)
+			}
+			if updatedAgent.CurrentQuest == nil || *updatedAgent.CurrentQuest != questID {
+				t.Errorf("Agent CurrentQuest = %v, want %v", updatedAgent.CurrentQuest, questID)
+			}
+			if updatedQuest.ClaimedBy == nil || semdragons.AgentID(*updatedQuest.ClaimedBy) != agentID {
+				t.Errorf("Quest ClaimedBy = %v, want %v", updatedQuest.ClaimedBy, agentID)
+			}
+			return
+		}
+	}
+}
+
+func TestAutonomousQuestClaim_FallsThrough(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "fallthrough"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create a stale quest (already claimed — will be skipped)
+	staleInstance := semdragons.GenerateInstance()
+	staleQuestID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(staleInstance))
+	staleAgentID := semdragons.AgentID("some.other.agent")
+	now := time.Now()
+	staleQuest := &semdragons.Quest{
+		ID:        staleQuestID,
+		Title:     "Already claimed quest",
+		Status:    semdragons.QuestClaimed,
+		ClaimedBy: &staleAgentID,
+		ClaimedAt: &now,
+		PostedAt:  now,
+	}
+	if err := gc.PutEntityState(ctx, staleQuest, "quest.claimed"); err != nil {
+		t.Fatalf("Failed to create stale quest: %v", err)
+	}
+
+	// Create a good quest (still posted — will be claimed as fallthrough)
+	goodInstance := semdragons.GenerateInstance()
+	goodQuestID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(goodInstance))
+	goodQuest := &semdragons.Quest{
+		ID:       goodQuestID,
+		Title:    "Good fallthrough quest",
+		Status:   semdragons.QuestPosted,
+		PostedAt: time.Now(),
+		MinTier:  semdragons.TierApprentice,
+		BaseXP:   100,
+	}
+	if err := gc.PutEntityState(ctx, goodQuest, "quest.lifecycle.posted"); err != nil {
+		t.Fatalf("Failed to create good quest: %v", err)
+	}
+
+	// Create idle agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "fallthrough-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	// Wait for agent to be tracked
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Publish boid suggestions: rank 1 = stale, rank 2 = good
+	suggestions := []boidengine.SuggestedClaim{
+		{AgentID: agentID, QuestID: staleQuestID, Score: 5.0, Confidence: 0.9, Reason: "stale top pick"},
+		{AgentID: agentID, QuestID: goodQuestID, Score: 3.0, Confidence: 0.5, Reason: "good fallback"},
+	}
+	data, _ := json.Marshal(suggestions)
+	if err := client.Publish(ctx, "boid.suggestions."+agentInstance, data); err != nil {
+		t.Fatalf("Publish suggestions: %v", err)
+	}
+
+	// Wait for agent to claim the good quest (rank 2 fallthrough)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for fallthrough quest claim")
+		case <-time.After(100 * time.Millisecond):
+			questEntity, err := gc.GetQuest(ctx, domain.QuestID(goodQuestID))
+			if err != nil {
+				continue
+			}
+			updatedQuest := semdragons.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
+				if updatedQuest.ClaimedBy == nil || semdragons.AgentID(*updatedQuest.ClaimedBy) != agentID {
+					t.Errorf("Good quest claimed by wrong agent: %v", updatedQuest.ClaimedBy)
+				}
+				return
+			}
+		}
+	}
+}
+
+func TestAutonomousQuestClaim_AllStale(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "allstale"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create stale quest
+	staleInstance := semdragons.GenerateInstance()
+	staleQuestID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(staleInstance))
+	otherAgent := semdragons.AgentID("other.agent")
+	claimTime := time.Now()
+	staleQuest := &semdragons.Quest{
+		ID:        staleQuestID,
+		Title:     "Already claimed",
+		Status:    semdragons.QuestClaimed,
+		ClaimedBy: &otherAgent,
+		ClaimedAt: &claimTime,
+		PostedAt:  time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, staleQuest, "quest.claimed"); err != nil {
+		t.Fatalf("Failed to create stale quest: %v", err)
+	}
+
+	// Create idle agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "allstale-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Publish suggestion for stale quest only
+	suggestions := []boidengine.SuggestedClaim{
+		{AgentID: agentID, QuestID: staleQuestID, Score: 5.0, Confidence: 0.9, Reason: "only option"},
+	}
+	data, _ := json.Marshal(suggestions)
+	if err := client.Publish(ctx, "boid.suggestions."+agentInstance, data); err != nil {
+		t.Fatalf("Publish suggestions: %v", err)
+	}
+
+	// Wait for a few heartbeats — agent should remain idle (no viable claim)
+	time.Sleep(800 * time.Millisecond)
+
+	agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	if updatedAgent == nil {
+		t.Fatal("Failed to reconstruct agent")
+	}
+	if updatedAgent.Status != semdragons.AgentIdle {
+		t.Errorf("Agent status = %v, want %v (should remain idle when all suggestions stale)",
+			updatedAgent.Status, semdragons.AgentIdle)
 	}
 }
 

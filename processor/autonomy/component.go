@@ -131,6 +131,15 @@ func (c *Component) OutputPorts() []component.Port {
 				Subject: domain.PredicateAutonomyIdle,
 			},
 		},
+		{
+			Name:        "claim-state",
+			Direction:   component.DirectionOutput,
+			Required:    false,
+			Description: "Quest and agent entity state updates from autonomous claims",
+			Config: &component.KVWritePort{
+				Bucket: "",
+			},
+		},
 	}
 }
 

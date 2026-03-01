@@ -26,6 +26,11 @@ type BoidEngine interface {
 	// Uses greedy assignment - highest scoring agent-quest pair first.
 	SuggestClaims(attractions []QuestAttraction) []SuggestedClaim
 
+	// SuggestTopN returns up to n ranked quest suggestions per agent.
+	// Unlike SuggestClaims, quests are NOT removed from the pool —
+	// multiple agents may receive the same quest as a suggestion.
+	SuggestTopN(attractions []QuestAttraction, n int) map[semdragons.AgentID][]SuggestedClaim
+
 	// UpdateRules allows dynamic adjustment of rule weights.
 	UpdateRules(rules BoidRules)
 }
@@ -319,6 +324,59 @@ func (e *DefaultBoidEngine) SuggestClaims(attractions []QuestAttraction) []Sugge
 	}
 
 	return suggestions
+}
+
+// SuggestTopN returns up to n ranked quest suggestions per agent.
+// Quests are not removed from the pool — multiple agents may target the same quest.
+// KV write serialization handles conflicts naturally at claim time.
+func (e *DefaultBoidEngine) SuggestTopN(attractions []QuestAttraction, n int) map[semdragons.AgentID][]SuggestedClaim {
+	if len(attractions) == 0 || n <= 0 {
+		return nil
+	}
+
+	// Group attractions by agent
+	byAgent := make(map[semdragons.AgentID][]QuestAttraction)
+	for _, attr := range attractions {
+		byAgent[attr.AgentID] = append(byAgent[attr.AgentID], attr)
+	}
+
+	result := make(map[semdragons.AgentID][]SuggestedClaim, len(byAgent))
+	for agentID, agentAttrs := range byAgent {
+		// Sort by score descending (attractions may already be sorted globally,
+		// but we need per-agent ordering)
+		sort.Slice(agentAttrs, func(i, j int) bool {
+			return agentAttrs[i].TotalScore > agentAttrs[j].TotalScore
+		})
+
+		// Take top N
+		limit := min(n, len(agentAttrs))
+
+		suggestions := make([]SuggestedClaim, 0, limit)
+		for i := range limit {
+			attr := agentAttrs[i]
+
+			// Confidence: margin between this rank and next-best alternative
+			confidence := 1.0
+			if i == 0 && len(agentAttrs) > 1 && attr.TotalScore > 0 {
+				confidence = (attr.TotalScore - agentAttrs[1].TotalScore) / attr.TotalScore
+			} else if i > 0 && agentAttrs[0].TotalScore > 0 {
+				// Lower-ranked suggestions have lower confidence
+				confidence = attr.TotalScore / agentAttrs[0].TotalScore * 0.5
+			}
+
+			suggestions = append(suggestions, SuggestedClaim{
+				AgentID:    agentID,
+				QuestID:    attr.QuestID,
+				Score:      attr.TotalScore,
+				Confidence: confidence,
+				Reason:     "Ranked boid suggestion",
+			})
+		}
+
+		result[agentID] = suggestions
+	}
+
+	return result
 }
 
 // Ensure DefaultBoidEngine implements BoidEngine.

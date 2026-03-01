@@ -898,42 +898,13 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *Quest {
 }
 
 func (c *Component) validateAgentCanClaim(agent *semdragons.Agent, quest *Quest) error {
-	switch agent.Status {
-	case semdragons.AgentRetired:
-		return errors.New("agent is retired")
-	case semdragons.AgentInBattle:
-		return errors.New("agent is in battle")
-	case semdragons.AgentCooldown:
-		if agent.CooldownUntil != nil && time.Now().Before(*agent.CooldownUntil) {
-			return errors.New("agent on cooldown")
-		}
-		// Expired cooldown — allow (status corrected on claim)
+	// Delegate to shared validation. Questboard Quest fields are domain type
+	// aliases identical to root types, so we construct directly.
+	rootQuest := &semdragons.Quest{
+		Status:         quest.Status,
+		MinTier:        quest.MinTier,
+		PartyRequired:  quest.PartyRequired,
+		RequiredSkills: quest.RequiredSkills,
 	}
-
-	if agent.CurrentQuest != nil {
-		return errors.New("agent already on a quest")
-	}
-
-	if domain.TrustTier(semdragons.TierFromLevel(agent.Level)) < quest.MinTier {
-		return errors.New("agent tier too low")
-	}
-
-	if quest.PartyRequired {
-		return errors.New("quest requires party")
-	}
-
-	if len(quest.RequiredSkills) > 0 {
-		hasSkill := false
-		for _, required := range quest.RequiredSkills {
-			if agent.HasSkill(semdragons.SkillTag(required)) {
-				hasSkill = true
-				break
-			}
-		}
-		if !hasSkill {
-			return errors.New("agent lacks required skills")
-		}
-	}
-
-	return nil
+	return semdragons.ValidateAgentCanClaim(agent, rootQuest)
 }

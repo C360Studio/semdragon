@@ -24,6 +24,9 @@ type Config struct {
 	// Timing
 	UpdateIntervalMs int `json:"update_interval_ms" schema:"type:int,description:How often to recompute suggestions"`
 	NeighborRadius   int `json:"neighbor_radius" schema:"type:int,description:How many nearby agents to consider"`
+
+	// Suggestions
+	MaxSuggestionsPerAgent int `json:"max_suggestions_per_agent" schema:"type:int,description:Max ranked suggestions per agent (default 3)"`
 }
 
 // DefaultConfig returns a configuration with sensible defaults.
@@ -39,8 +42,9 @@ func DefaultConfig() Config {
 		HungerWeight:     rules.HungerWeight,
 		AffinityWeight:   rules.AffinityWeight,
 		CautionWeight:    rules.CautionWeight,
-		UpdateIntervalMs: 1000,
-		NeighborRadius:   rules.NeighborRadius,
+		UpdateIntervalMs:       1000,
+		NeighborRadius:         rules.NeighborRadius,
+		MaxSuggestionsPerAgent: 3,
 	}
 }
 

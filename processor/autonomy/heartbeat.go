@@ -18,11 +18,11 @@ import (
 
 // agentTracker holds per-agent heartbeat state.
 type agentTracker struct {
-	agent      *semdragons.Agent
-	idleSince  time.Time                  // Process-local, not persisted
-	heartbeat  *time.Timer                // Per-agent timer
-	interval   time.Duration              // Current heartbeat interval
-	suggestion *boidengine.SuggestedClaim // Latest boid suggestion (nil if none)
+	agent       *semdragons.Agent
+	idleSince   time.Time                   // Process-local, not persisted
+	heartbeat   *time.Timer                 // Per-agent timer
+	interval    time.Duration               // Current heartbeat interval
+	suggestions []boidengine.SuggestedClaim // Ranked boid suggestions, best first
 }
 
 // resetHeartbeatForAgent creates or updates the heartbeat timer for an agent.
@@ -56,7 +56,7 @@ func (c *Component) resetHeartbeatForAgent(instance string, agent *semdragons.Ag
 
 	// Clear suggestion cache when agent is not idle
 	if agent.Status != semdragons.AgentIdle {
-		tracker.suggestion = nil
+		tracker.suggestions = nil
 	}
 
 	// Retired agents get no heartbeat

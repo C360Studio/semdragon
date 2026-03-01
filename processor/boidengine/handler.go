@@ -360,37 +360,44 @@ func (c *Component) computeAndPublish() {
 		return
 	}
 
-	// Get suggested claims
-	suggestions := c.boidEngine.SuggestClaims(attractions)
-	if len(suggestions) == 0 {
+	// Get ranked suggestions per agent (top N, quests not removed from pool)
+	maxSuggestions := c.config.MaxSuggestionsPerAgent
+	if maxSuggestions <= 0 {
+		maxSuggestions = 3
+	}
+	topN := c.boidEngine.SuggestTopN(attractions, maxSuggestions)
+	if len(topN) == 0 {
 		return
 	}
 
-	c.suggestionsComputed.Add(uint64(len(suggestions)))
-
-	// Publish suggestions (fire and forget for now)
+	// Publish ranked list per agent (fire and forget)
 	ctx := context.Background()
-	for _, suggestion := range suggestions {
-		subject := "boid.suggestions." + semdragons.ExtractInstance(string(suggestion.AgentID))
-		data, err := json.Marshal(suggestion)
+	totalPublished := 0
+	for agentID, suggestions := range topN {
+		subject := "boid.suggestions." + semdragons.ExtractInstance(string(agentID))
+		data, err := json.Marshal(suggestions)
 		if err != nil {
 			c.errorsCount.Add(1)
-			c.logger.Error("failed to marshal suggestion", "error", err)
+			c.logger.Error("failed to marshal suggestions", "agent", agentID, "error", err)
 			continue
 		}
 		if err := c.deps.NATSClient.Publish(ctx, subject, data); err != nil {
 			c.errorsCount.Add(1)
-			c.logger.Error("failed to publish suggestion",
-				"agent", suggestion.AgentID,
-				"quest", suggestion.QuestID,
+			c.logger.Error("failed to publish suggestions",
+				"agent", agentID,
 				"error", err)
+			continue
 		}
+		totalPublished += len(suggestions)
 	}
+
+	c.suggestionsComputed.Add(uint64(totalPublished))
 
 	c.logger.Debug("computed and published suggestions",
 		"agents", len(agents),
 		"quests", len(quests),
-		"suggestions", len(suggestions))
+		"agents_with_suggestions", len(topN),
+		"total_suggestions", totalPublished)
 }
 
 // =============================================================================
