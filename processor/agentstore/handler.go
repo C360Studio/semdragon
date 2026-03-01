@@ -431,6 +431,23 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 		return errs.Wrap(err, "AgentStore", "UseConsumable", "publish consumable used")
 	}
 
+	// Clear cooldown on cooldown_skip consumable
+	if item.Effect.Type == ConsumableCooldownSkip {
+		agentEntity, agentErr := c.graph.GetAgent(ctx, agentID)
+		if agentErr == nil {
+			agent := semdragons.AgentFromEntityState(agentEntity)
+			if agent != nil && agent.Status == semdragons.AgentCooldown {
+				agent.Status = semdragons.AgentIdle
+				agent.CooldownUntil = nil
+				agent.UpdatedAt = now
+				if writeErr := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.idle"); writeErr != nil {
+					c.errorsCount.Add(1)
+					c.logger.Error("failed to clear agent cooldown", "error", writeErr)
+				}
+			}
+		}
+	}
+
 	c.consumablesUsed.Add(1)
 	c.lastActivity.Store(now)
 
