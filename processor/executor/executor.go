@@ -129,10 +129,11 @@ func (e *DefaultExecutor) Execute(ctx context.Context, agent *agentprogression.A
 		LoopID:     loopID,
 	}
 
-	// Resolve endpoint from registry using agent's provider or fallback to capability
+	// Resolve endpoint: agent override → tier+skill → tier → global fallback
 	endpointName := agent.Config.Provider
 	if endpointName == "" {
-		endpointName = e.registry.Resolve("agent-work")
+		capability := e.resolveCapability(agent, quest)
+		endpointName = e.registry.Resolve(capability)
 	}
 	endpoint := e.registry.GetEndpoint(endpointName)
 	if endpoint == nil {
@@ -390,6 +391,35 @@ func (e *DefaultExecutor) getTemperature(agent *agentprogression.Agent) float64 
 		return agent.Config.Temperature
 	}
 	return 0.2 // Reasonable default for task completion
+}
+
+// resolveCapability builds a capability key from agent tier and quest skill.
+// Resolution chain (most specific wins):
+//  1. "agent-work.{tier}.{skill}" — tier-qualified skill capability
+//  2. "agent-work.{tier}"         — tier-level default
+//  3. "agent-work"                — global default
+//
+// Uses GetFallbackChain to detect whether a capability key exists in the registry.
+// GetFallbackChain returns nil for unknown keys, making it a reliable existence check.
+func (e *DefaultExecutor) resolveCapability(agent *agentprogression.Agent, quest *questboard.Quest) string {
+	tier := agent.Tier.String()
+
+	// Try tier + primary skill first
+	if skill := quest.PrimarySkill(); skill != "" {
+		key := fmt.Sprintf("agent-work.%s.%s", tier, string(skill))
+		if chain := e.registry.GetFallbackChain(key); len(chain) > 0 {
+			return key
+		}
+	}
+
+	// Fall back to tier default
+	key := fmt.Sprintf("agent-work.%s", tier)
+	if chain := e.registry.GetFallbackChain(key); len(chain) > 0 {
+		return key
+	}
+
+	// Fall back to global
+	return "agent-work"
 }
 
 // =============================================================================

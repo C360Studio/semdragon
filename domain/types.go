@@ -57,6 +57,26 @@ const (
 	TierGrandmaster                  // TierGrandmaster covers levels 19-20.
 )
 
+// String returns the lowercase name for the trust tier.
+// These names are stable and match model registry capability key segments
+// (e.g., "agent-work.expert" uses tier.String() == "expert").
+func (t TrustTier) String() string {
+	switch t {
+	case TierApprentice:
+		return "apprentice"
+	case TierJourneyman:
+		return "journeyman"
+	case TierExpert:
+		return "expert"
+	case TierMaster:
+		return "master"
+	case TierGrandmaster:
+		return "grandmaster"
+	default:
+		return "apprentice"
+	}
+}
+
 // TierFromLevel returns the trust tier for a given agent level.
 func TierFromLevel(level int) TrustTier {
 	switch {

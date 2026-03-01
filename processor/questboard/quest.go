@@ -74,6 +74,15 @@ type Quest struct {
 	TrajectoryID string `json:"trajectory_id"`
 }
 
+// PrimarySkill returns the first required skill for this quest, or empty if none.
+// Used by the executor to build tier+skill capability keys for model resolution.
+func (q *Quest) PrimarySkill() domain.SkillTag {
+	if len(q.RequiredSkills) > 0 {
+		return q.RequiredSkills[0]
+	}
+	return ""
+}
+
 // BattleVerdict holds the outcome of a boss battle review.
 type BattleVerdict struct {
 	Passed       bool    `json:"passed"`

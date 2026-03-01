@@ -52,12 +52,45 @@ func DefaultModelRegistry() *model.Registry {
 			},
 		},
 		Capabilities: map[string]*model.CapabilityConfig{
+			// Global fallback (unchanged, backwards compatible)
 			"agent-work": {
 				Description:   "Agent quest execution with tool calling",
 				Preferred:     []string{"ollama-tools"},
 				Fallback:      []string{"ollama"},
 				RequiresTools: true,
 			},
+
+			// Tier defaults — all resolve to local Ollama in dev,
+			// but the key structure exercises the resolution chain.
+			"agent-work.apprentice": {
+				Description:   "Apprentice tier: small/fast models",
+				Preferred:     []string{"ollama"},
+				Fallback:      []string{"ollama-tools"},
+				RequiresTools: true,
+			},
+			"agent-work.journeyman": {
+				Description:   "Journeyman tier: mid-tier models",
+				Preferred:     []string{"ollama-tools"},
+				Fallback:      []string{"ollama"},
+				RequiresTools: true,
+			},
+			"agent-work.expert": {
+				Description:   "Expert tier: full models",
+				Preferred:     []string{"ollama-tools"},
+				Fallback:      []string{"ollama"},
+				RequiresTools: true,
+			},
+			"agent-work.master": {
+				Description:   "Master tier: frontier models",
+				Preferred:     []string{"ollama-tools"},
+				RequiresTools: true,
+			},
+			"agent-work.grandmaster": {
+				Description:   "Grandmaster tier: frontier+ models",
+				Preferred:     []string{"ollama-tools"},
+				RequiresTools: true,
+			},
+
 			"boss-battle": {
 				Description: "Quest output evaluation by LLM judge",
 				Preferred:   []string{"ollama"},
@@ -91,10 +124,27 @@ func ProductionModelRegistry() *model.Registry {
 				ToolFormat:    "anthropic",
 				APIKeyEnv:     "ANTHROPIC_API_KEY",
 			},
+			"haiku": {
+				Provider:      "anthropic",
+				Model:         "claude-haiku-4-5-20251001",
+				MaxTokens:     200000,
+				SupportsTools: true,
+				ToolFormat:    "anthropic",
+				APIKeyEnv:     "ANTHROPIC_API_KEY",
+			},
 			"gpt-4o": {
 				Provider:      "openai",
 				URL:           "https://api.openai.com/v1",
 				Model:         "gpt-4o",
+				MaxTokens:     128000,
+				SupportsTools: true,
+				ToolFormat:    "openai",
+				APIKeyEnv:     "OPENAI_API_KEY",
+			},
+			"gpt-mini": {
+				Provider:      "openai",
+				URL:           "https://api.openai.com/v1",
+				Model:         "gpt-4o-mini",
 				MaxTokens:     128000,
 				SupportsTools: true,
 				ToolFormat:    "openai",
@@ -109,12 +159,62 @@ func ProductionModelRegistry() *model.Registry {
 			},
 		},
 		Capabilities: map[string]*model.CapabilityConfig{
+			// Global fallback (unchanged, backwards compatible)
 			"agent-work": {
 				Description:   "Agent quest execution with tool calling",
 				Preferred:     []string{"claude-4", "gpt-4o"},
 				Fallback:      []string{"ollama"},
 				RequiresTools: true,
 			},
+
+			// Tier defaults — tier sets the model budget ceiling
+			"agent-work.apprentice": {
+				Description:   "Apprentice tier: small/fast models",
+				Preferred:     []string{"haiku", "gpt-mini"},
+				Fallback:      []string{"ollama"},
+				RequiresTools: true,
+			},
+			"agent-work.journeyman": {
+				Description:   "Journeyman tier: mid-tier models",
+				Preferred:     []string{"claude-4", "gpt-mini"},
+				Fallback:      []string{"haiku"},
+				RequiresTools: true,
+			},
+			"agent-work.expert": {
+				Description:   "Expert tier: full models",
+				Preferred:     []string{"claude-4", "gpt-4o"},
+				Fallback:      []string{"haiku"},
+				RequiresTools: true,
+			},
+			"agent-work.master": {
+				Description:   "Master tier: frontier models",
+				Preferred:     []string{"claude-4"},
+				Fallback:      []string{"gpt-4o"},
+				RequiresTools: true,
+			},
+			"agent-work.grandmaster": {
+				Description:   "Grandmaster tier: frontier+ models",
+				Preferred:     []string{"claude-4"},
+				RequiresTools: true,
+			},
+
+			// Skill-specific overrides — skill picks model within tier ceiling
+			"agent-work.expert.code_generation": {
+				Description:   "Expert code generation: strong tool use",
+				Preferred:     []string{"claude-4", "gpt-4o"},
+				RequiresTools: true,
+			},
+			"agent-work.expert.summarization": {
+				Description:   "Expert summarization: cheap for simple work",
+				Preferred:     []string{"haiku", "gpt-mini"},
+				RequiresTools: false,
+			},
+			"agent-work.master.summarization": {
+				Description:   "Master summarization: frontier not needed",
+				Preferred:     []string{"haiku"},
+				RequiresTools: false,
+			},
+
 			"boss-battle": {
 				Description: "Quest output evaluation by LLM judge",
 				Preferred:   []string{"claude-4"},
