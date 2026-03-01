@@ -325,29 +325,24 @@ type TierPermissions struct {
 	CanDecomposeQuest bool
 	CanSupervise      bool
 	CanActAsDM        bool
-	MaxConcurrent     int // Max concurrent quests
 }
 
 // tierPerms maps each trust tier to its allowed permissions.
 var tierPerms = map[TrustTier]TierPermissions{
 	TierApprentice: {
 		CanClaimQuestTier: DifficultyTrivial,
-		MaxConcurrent:     1,
 	},
 	TierJourneyman: {
 		CanClaimQuestTier: DifficultyModerate,
-		MaxConcurrent:     2,
 	},
 	TierExpert: {
 		CanClaimQuestTier: DifficultyHard,
-		MaxConcurrent:     3,
 	},
 	TierMaster: {
 		CanClaimQuestTier: DifficultyEpic,
 		CanLeadParty:      true,
 		CanDecomposeQuest: true,
 		CanSupervise:      true,
-		MaxConcurrent:     4,
 	},
 	TierGrandmaster: {
 		CanClaimQuestTier: DifficultyLegendary,
@@ -355,7 +350,6 @@ var tierPerms = map[TrustTier]TierPermissions{
 		CanDecomposeQuest: true,
 		CanSupervise:      true,
 		CanActAsDM:        true,
-		MaxConcurrent:     5,
 	},
 }
 

@@ -44,7 +44,7 @@ func TestActionsForState_Idle(t *testing.T) {
 func TestActionsForState_OnQuest(t *testing.T) {
 	c := newTestComponent()
 	actions := c.actionsForState(semdragons.AgentOnQuest)
-	want := []string{"claim_concurrent", "shop_strategic", "use_consumable", "join_guild"}
+	want := []string{"shop_strategic", "use_consumable", "join_guild"}
 
 	if len(actions) != len(want) {
 		t.Fatalf("on_quest actions: got %d, want %d", len(actions), len(want))
@@ -99,7 +99,6 @@ func TestActionStubs_AllReturnFalse(t *testing.T) {
 	c := newTestComponent()
 	stubs := []action{
 		// claimQuestAction is no longer a stub — skip it
-		c.claimConcurrentAction(),
 		c.shopAction(),
 		c.shopStrategicAction(),
 		c.useConsumableAction(),

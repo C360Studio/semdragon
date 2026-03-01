@@ -173,22 +173,9 @@ Currently, our API handlers manage agent status inline. The ADR adds processor-l
 **Spec updates needed when autonomy lands:**
 
 - `agent-lifecycle.spec.ts`: Add tests for `in_battle` and `cooldown` states
-- `tier-gates.spec.ts`: The 409 "already on quest" test still passes (apprentice MaxConcurrent = 1), but add a test for journeyman concurrent claims
 - `boss-battle.spec.ts`: Verify agent status is `in_battle` during review
 
-#### Level 2: Concurrent Quests (New Capability)
-
-The ADR replaces `CurrentQuest *QuestID` with `ActiveQuestCount int` + `ActiveQuests []QuestID`. The claim validation changes from hard idle gate to `ActiveQuestCount < MaxConcurrent`.
-
-| Tier | MaxConcurrent |
-|------|--------------|
-| Apprentice | 1 |
-| Journeyman | 2 (projected) |
-| Expert+ | 3+ (projected) |
-
-**Impact**: Our `handleClaimQuest` checks `agent.Status != AgentIdle` which is the old gate. When the ADR lands, this must change to `ActiveQuestCount < MaxConcurrent`.
-
-#### Level 3: Autonomous Actions (New E2E Territory)
+#### Level 2: Autonomous Actions (New E2E Territory)
 
 The autonomy processor enables agents to act without API calls — claiming quests from boid suggestions, shopping strategically, using consumables. This is testable via observable predicates:
 
@@ -265,20 +252,6 @@ agent-autonomy.spec.ts:
     3. Verify purchase in inventory
 ```
 
-#### Phase 7: Concurrent Quest E2E Spec (After Autonomy ADR Phase 3)
-
-```
-concurrent-quests.spec.ts:
-  test('journeyman claims second quest while on first')
-    1. Journeyman agent claims quest A → on_quest
-    2. POST claim for quest B → succeeds (ActiveQuestCount 1 < MaxConcurrent 2)
-    3. ActiveQuestCount = 2
-
-  test('apprentice blocked at one concurrent quest')
-    1. Apprentice claims quest A → on_quest
-    2. POST claim for quest B → 409 (ActiveQuestCount 1 >= MaxConcurrent 1)
-```
-
 ### UI Implications
 
 The autonomy ADR and store system together make several UI features meaningful:
@@ -287,7 +260,6 @@ The autonomy ADR and store system together make several UI features meaningful:
 |---------|--------------|----------------------|
 | Agent status display | Always shows "idle" | Real status: idle, on_quest, in_battle, cooldown |
 | Cooldown timer | No cooldown exists | `CooldownUntil` timestamp enables countdown |
-| Concurrent quest badge | Single `CurrentQuest` | `ActiveQuestCount` / `ActiveQuests[]` |
 | Autonomy event feed | No autonomy events | `agent.autonomy.*` predicates via SSE |
 | Store page | Empty/static | Live catalog from seeded data |
 | Agent inventory | Not displayed | Tools + consumables from purchase history |
@@ -313,7 +285,6 @@ The autonomy ADR and store system together make several UI features meaningful:
 
 ### Risks
 
-- **ActiveQuestCount migration**: When the autonomy ADR replaces `CurrentQuest *QuestID` with `ActiveQuests []QuestID`, our `handleClaimQuest` must be updated. The claim validation gate changes from `status != idle` to `activeQuestCount < maxConcurrent`.
 - **Store API injection**: The `agentstore.Component` runs as a processor, not as a library the API service can call directly. Wiring it requires either: (a) passing the component instance to the API service at startup, or (b) reading store state from KV (the entity-centric approach — no component reference needed).
 
 ## References

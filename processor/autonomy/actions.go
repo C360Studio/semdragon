@@ -131,18 +131,8 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Age
 	return errNoViableClaim
 }
 
-// claimConcurrentAction returns a stub for claiming concurrent quests.
-// TODO: Implement in Phase 3 — claim additional quests while on_quest.
-func (c *Component) claimConcurrentAction() action {
-	return action{
-		name:          "claim_concurrent",
-		shouldExecute: func(*semdragons.Agent, *agentTracker) bool { return false },
-		execute:       nil,
-	}
-}
-
 // shopAction returns a stub for browsing/purchasing from the store.
-// TODO: Implement in Phase 4 — browse affordable items, decide to buy.
+// TODO: Implement in Phase 3 — browse affordable items, decide to buy.
 func (c *Component) shopAction() action {
 	return action{
 		name:          "shop",
@@ -152,7 +142,7 @@ func (c *Component) shopAction() action {
 }
 
 // shopStrategicAction returns a stub for strategic purchases while on quest.
-// TODO: Implement in Phase 4 — mid-quest tool/consumable acquisition.
+// TODO: Implement in Phase 3 — mid-quest tool/consumable acquisition.
 func (c *Component) shopStrategicAction() action {
 	return action{
 		name:          "shop_strategic",
@@ -162,7 +152,7 @@ func (c *Component) shopStrategicAction() action {
 }
 
 // useConsumableAction returns a stub for using consumables.
-// TODO: Implement in Phase 4 — activate consumable at optimal moment.
+// TODO: Implement in Phase 3 — activate consumable at optimal moment.
 func (c *Component) useConsumableAction() action {
 	return action{
 		name:          "use_consumable",
@@ -172,7 +162,7 @@ func (c *Component) useConsumableAction() action {
 }
 
 // useCooldownSkipAction returns a stub for using cooldown_skip consumable.
-// TODO: Implement in Phase 4 — skip cooldown if agent owns the consumable.
+// TODO: Implement in Phase 3 — skip cooldown if agent owns the consumable.
 func (c *Component) useCooldownSkipAction() action {
 	return action{
 		name:          "use_cooldown_skip",
@@ -182,7 +172,7 @@ func (c *Component) useCooldownSkipAction() action {
 }
 
 // joinGuildAction returns a stub for joining a guild.
-// TODO: Implement in Phase 5 — evaluate guild suggestions, auto-join.
+// TODO: Implement in Phase 4 — evaluate guild suggestions, auto-join.
 func (c *Component) joinGuildAction() action {
 	return action{
 		name:          "join_guild",

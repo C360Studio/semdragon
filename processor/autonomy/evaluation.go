@@ -183,7 +183,6 @@ func (c *Component) actionsForState(status semdragons.AgentStatus) []action {
 		}
 	case semdragons.AgentOnQuest:
 		return []action{
-			c.claimConcurrentAction(),
 			c.shopStrategicAction(),
 			c.useConsumableAction(),
 			c.joinGuildAction(),
