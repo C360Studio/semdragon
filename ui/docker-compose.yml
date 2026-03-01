@@ -5,6 +5,7 @@ services:
       - "4222:4222"
       - "8222:8222"
     command: ["--js", "-m", "8222"]
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
       interval: 5s
@@ -23,8 +24,9 @@ services:
       SEED_E2E: "${SEED_E2E:-false}"
     ports:
       - "8080:8080"
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -34,7 +36,8 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       PUBLIC_API_URL: http://backend:8080
     ports:

@@ -130,21 +130,24 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 		prefix = prefix + "/"
 	}
 
-	// CORS middleware wrapper
+	// CORS middleware — sets headers on all responses for simple requests.
 	cors := func(handler http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-
 			handler(w, r)
 		}
 	}
+
+	// OPTIONS preflight catch-all — Go 1.22+ method-qualified routes reject
+	// OPTIONS, so we register a blanket handler for the entire prefix.
+	mux.HandleFunc("OPTIONS "+prefix+"{path...}", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	// World state
 	mux.HandleFunc("GET "+prefix+"world", cors(s.handleWorldState))

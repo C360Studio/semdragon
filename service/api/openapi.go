@@ -107,34 +107,40 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					},
 				},
 			},
-			"/agents/{agentId}/inventory": {
+			"/agents/{id}/inventory": {
 				GET: &service.OperationSpec{
 					Summary:     "Get inventory",
 					Description: "Returns an agent's inventory",
 					Tags:        []string{"Store"},
 					Parameters: []service.ParameterSpec{
-						{Name: "agentId", In: "path", Required: true, Description: "Agent ID", Schema: service.Schema{Type: "string"}},
+						{Name: "id", In: "path", Required: true, Description: "Agent ID", Schema: service.Schema{Type: "string"}},
 					},
 					Responses: map[string]service.ResponseSpec{
 						"200": {Description: "Agent inventory", ContentType: "application/json"},
 					},
 				},
 			},
-			"/agents/{agentId}/inventory/use": {
+			"/agents/{id}/inventory/use": {
 				POST: &service.OperationSpec{
 					Summary:     "Use consumable",
 					Description: "Uses a consumable from the agent's inventory",
 					Tags:        []string{"Store"},
+					Parameters: []service.ParameterSpec{
+						{Name: "id", In: "path", Required: true, Description: "Agent ID", Schema: service.Schema{Type: "string"}},
+					},
 					Responses: map[string]service.ResponseSpec{
 						"200": {Description: "Consumable used", ContentType: "application/json"},
 					},
 				},
 			},
-			"/agents/{agentId}/effects": {
+			"/agents/{id}/effects": {
 				GET: &service.OperationSpec{
 					Summary:     "Get active effects",
 					Description: "Returns active consumable effects for an agent",
 					Tags:        []string{"Store"},
+					Parameters: []service.ParameterSpec{
+						{Name: "id", In: "path", Required: true, Description: "Agent ID", Schema: service.Schema{Type: "string"}},
+					},
 					Responses: map[string]service.ResponseSpec{
 						"200": {Description: "Active effects", ContentType: "application/json"},
 					},

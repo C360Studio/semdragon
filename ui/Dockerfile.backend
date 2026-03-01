@@ -5,12 +5,15 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /semdragons ./cmd/semdragons
+ARG VERSION=0.1.0
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o /semdragons ./cmd/semdragons
 
-FROM alpine:latest
+FROM alpine:3.21
 RUN apk --no-cache add ca-certificates wget
+RUN addgroup -S app && adduser -S app -G app
 COPY --from=builder /semdragons /semdragons
 COPY --from=builder /app/config/semdragons.json /etc/semdragons/config.json
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:8080/health || exit 1
+USER app
 CMD ["/semdragons", "--config=/etc/semdragons/config.json"]

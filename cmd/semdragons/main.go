@@ -26,12 +26,15 @@ import (
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
 
-// Build information constants
-const (
+// Version and BuildTime are vars so they can be overridden at build time via:
+//
+//	go build -ldflags "-X main.Version=1.2.3 -X main.BuildTime=$(date -u +%FT%TZ)"
+var (
 	Version   = "0.1.0"
 	BuildTime = "dev"
-	appName   = "semdragons"
 )
+
+const appName = "semdragons"
 
 func main() {
 	defer func() {
@@ -80,7 +83,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer natsClient.Close(ctx)
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		natsClient.Close(closeCtx)
+	}()
 
 	// 5. Ensure JetStream streams exist
 	if err := ensureStreams(ctx, cfg, natsClient); err != nil {
@@ -189,7 +196,7 @@ func setupLogger(level, format string) *slog.Logger {
 
 	opts := &slog.HandlerOptions{
 		Level:     logLevel,
-		AddSource: level == "debug",
+		AddSource: logLevel == slog.LevelDebug,
 	}
 
 	var handler slog.Handler
@@ -392,6 +399,10 @@ func runWithSignalHandling(ctx context.Context, manager *service.Manager, shutdo
 
 	<-signalCtx.Done()
 	slog.Info("Received shutdown signal")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer shutdownCancel()
+	_ = shutdownCtx // available for future use in the shutdown sequence
 
 	if err := manager.StopAll(shutdownTimeout); err != nil {
 		slog.Error("Error stopping services", "error", err)

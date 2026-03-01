@@ -1,0 +1,12 @@
+.git
+.github
+.claude
+docs
+coverage.*
+*.coverprofile
+*.out
+semdragons
+ui/node_modules
+ui/.svelte-kit
+ui/playwright-report
+ui/test-results

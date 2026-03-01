@@ -2,17 +2,47 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
-// isBucketNotFound returns true if the error is because the KV bucket doesn't exist yet.
+const maxRequestBodySize = 1 << 20 // 1 MB
+
+// isBucketNotFound returns true if the error indicates the KV bucket doesn't exist yet.
 // This is normal before components have started and created the entity states bucket.
+// Uses errors.Is first for proper sentinel matching, with string fallback for wrapped errors.
 func isBucketNotFound(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "bucket not found")
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, jetstream.ErrBucketNotFound) {
+		return true
+	}
+	return strings.Contains(err.Error(), "bucket not found")
+}
+
+// isKeyNotFound returns true if the error indicates a KV key does not exist.
+// Uses errors.Is first for proper sentinel matching, with string fallback for wrapped errors.
+func isKeyNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, jetstream.ErrKeyNotFound) {
+		return true
+	}
+	return strings.Contains(err.Error(), "key not found")
+}
+
+// isValidPathID returns true if the id is safe to use as a KV lookup key component.
+// Empty strings, dots, and slashes are rejected: dots collide with the dotted entity-ID
+// notation used in NATS KV keys, and slashes would escape the URL path segment.
+func isValidPathID(id string) bool {
+	return id != "" && !strings.Contains(id, ".") && !strings.Contains(id, "/")
 }
 
 // =============================================================================
@@ -81,9 +111,19 @@ func (s *Service) handleListQuests(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleGetQuest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+
 	entity, err := s.graph.GetQuest(r.Context(), semdragons.QuestID(id))
 	if err != nil {
-		http.NotFound(w, r)
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
+		s.logger.Error("Failed to get quest", "id", id, "error", err)
 		return
 	}
 
@@ -97,6 +137,7 @@ func (s *Service) handleGetQuest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 	var req struct {
 		Objective string `json:"objective"`
 		Hints     *struct {
@@ -135,10 +176,16 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 
 	if req.Hints != nil {
 		if req.Hints.SuggestedDifficulty != nil {
-			quest.Difficulty = semdragons.QuestDifficulty(*req.Hints.SuggestedDifficulty)
+			d := *req.Hints.SuggestedDifficulty
+			// DifficultyTrivial=0 through DifficultyLegendary=5 (iota-based constants)
+			if d < int(semdragons.DifficultyTrivial) || d > int(semdragons.DifficultyLegendary) {
+				s.writeError(w, "difficulty must be between 0 and 5", http.StatusBadRequest)
+				return
+			}
+			quest.Difficulty = semdragons.QuestDifficulty(d)
 		}
-		for _, s := range req.Hints.SuggestedSkills {
-			quest.RequiredSkills = append(quest.RequiredSkills, semdragons.SkillTag(s))
+		for _, skill := range req.Hints.SuggestedSkills {
+			quest.RequiredSkills = append(quest.RequiredSkills, semdragons.SkillTag(skill))
 		}
 		if req.Hints.PreferGuild != nil {
 			gid := semdragons.GuildID(*req.Hints.PreferGuild)
@@ -186,9 +233,19 @@ func (s *Service) handleListAgents(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+
 	entity, err := s.graph.GetAgent(r.Context(), semdragons.AgentID(id))
 	if err != nil {
-		http.NotFound(w, r)
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve agent", http.StatusInternalServerError)
+		s.logger.Error("Failed to get agent", "id", id, "error", err)
 		return
 	}
 
@@ -202,6 +259,7 @@ func (s *Service) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleRecruitAgent(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 	var req struct {
 		Name        string   `json:"name"`
 		DisplayName string   `json:"display_name,omitempty"`
@@ -254,18 +312,19 @@ func (s *Service) handleRecruitAgent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleRetireAgent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-
-	var req struct {
-		Reason string `json:"reason"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, "invalid request body", http.StatusBadRequest)
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
 		return
 	}
 
 	entity, err := s.graph.GetAgent(r.Context(), semdragons.AgentID(id))
 	if err != nil {
-		http.NotFound(w, r)
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve agent", http.StatusInternalServerError)
+		s.logger.Error("Failed to get agent for retire", "id", id, "error", err)
 		return
 	}
 
@@ -315,9 +374,19 @@ func (s *Service) handleListBattles(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleGetBattle(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+
 	entity, err := s.graph.GetBattle(r.Context(), semdragons.BattleID(id))
 	if err != nil {
-		http.NotFound(w, r)
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve battle", http.StatusInternalServerError)
+		s.logger.Error("Failed to get battle", "id", id, "error", err)
 		return
 	}
 
@@ -334,7 +403,12 @@ func (s *Service) handleGetBattle(w http.ResponseWriter, r *http.Request) {
 // TRAJECTORIES
 // =============================================================================
 
-func (s *Service) handleGetTrajectory(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) handleGetTrajectory(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
 	// TODO: Wire trajectory lookup from NATS KV when trajectory service is available
 	s.writeError(w, "trajectory lookup not yet implemented", http.StatusNotImplemented)
 }
@@ -347,7 +421,13 @@ func (s *Service) handleDMChat(w http.ResponseWriter, _ *http.Request) {
 	s.writeError(w, "DM chat not yet implemented", http.StatusNotImplemented)
 }
 
-func (s *Service) handleDMIntervene(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
+	questID := r.PathValue("questId")
+	if !isValidPathID(questID) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+	// TODO: Wire DM intervention when DM component is available
 	s.writeError(w, "DM intervention not yet implemented", http.StatusNotImplemented)
 }
 
@@ -362,7 +442,13 @@ func (s *Service) handleListStore(w http.ResponseWriter, _ *http.Request) {
 	s.writeJSON(w, []any{})
 }
 
-func (s *Service) handleGetStoreItem(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) handleGetStoreItem(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+	// TODO: Wire store item lookup when agent store component is available
 	s.writeError(w, "store item lookup not yet available", http.StatusNotImplemented)
 }
 
@@ -370,15 +456,33 @@ func (s *Service) handlePurchase(w http.ResponseWriter, _ *http.Request) {
 	s.writeError(w, "store purchase not yet available", http.StatusNotImplemented)
 }
 
-func (s *Service) handleGetInventory(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) handleGetInventory(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+	// TODO: Wire inventory lookup when agent store component is available
 	s.writeError(w, "inventory lookup not yet available", http.StatusNotImplemented)
 }
 
-func (s *Service) handleUseConsumable(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+	// TODO: Wire consumable use when agent store component is available
 	s.writeError(w, "consumable use not yet available", http.StatusNotImplemented)
 }
 
-func (s *Service) handleGetEffects(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) handleGetEffects(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+	// TODO: Wire effects lookup when agent store component is available
 	s.writeError(w, "effects lookup not yet available", http.StatusNotImplemented)
 }
 
