@@ -22,6 +22,7 @@ import (
 	"github.com/c360studio/semstreams/service"
 	"github.com/c360studio/semstreams/types"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
@@ -91,6 +92,11 @@ func run() error {
 
 	// 5. Ensure JetStream streams exist
 	if err := ensureStreams(ctx, cfg, natsClient); err != nil {
+		return err
+	}
+
+	// 5a. Ensure board KV bucket exists (writer creates bucket)
+	if err := ensureBoardBucket(ctx, cfg, natsClient); err != nil {
 		return err
 	}
 
@@ -192,6 +198,27 @@ func ensureStreams(ctx context.Context, cfg *config.Config, natsClient *natsclie
 	}
 
 	fmt.Println("OK")
+	return nil
+}
+
+// ensureBoardBucket creates the board-specific KV bucket for entity states.
+// Uses the same get-or-create pattern as graph-ingest for ENTITY_STATES.
+func ensureBoardBucket(ctx context.Context, cfg *config.Config, natsClient *natsclient.Client) error {
+	fmt.Print("Ensuring board KV bucket... ")
+
+	boardCfg, err := extractBoardConfig(cfg)
+	if err != nil {
+		fmt.Println("FAILED")
+		return fmt.Errorf("resolve board config: %w", err)
+	}
+
+	graph := semdragons.NewGraphClient(natsClient, boardCfg)
+	if err := graph.EnsureBucket(ctx); err != nil {
+		fmt.Println("FAILED")
+		return fmt.Errorf("ensure board bucket: %w", err)
+	}
+
+	fmt.Printf("OK (%s)\n", boardCfg.BucketName())
 	return nil
 }
 

@@ -15,14 +15,15 @@ import (
 
 // GraphClient provides access to the semstreams graph system for semdragons components.
 // It wraps the natsclient and provides methods for emitting Graphable entities
-// and reading entity state directly from the ENTITY_STATES KV bucket.
+// and reading entity state directly from the board-specific KV bucket.
 //
 // Design: Components use GraphClient instead of direct storage operations.
-// Entity writes go to the ENTITY_STATES KV bucket, which acts as both the
-// source of truth and the event stream (the NATS KV "Twofer").
+// Entity writes go to the board KV bucket (e.g., "semdragons-local-dev-board1"),
+// which acts as both the source of truth and the event stream (the NATS KV "Twofer").
 type GraphClient struct {
 	nats   *natsclient.Client
 	config *BoardConfig
+	bucket jetstream.KeyValue // cached after EnsureBucket
 }
 
 // NewGraphClient creates a new graph client for interacting with the semstreams graph system.
@@ -36,6 +37,36 @@ func NewGraphClient(nats *natsclient.Client, config *BoardConfig) *GraphClient {
 // Config returns the board configuration.
 func (gc *GraphClient) Config() *BoardConfig {
 	return gc.config
+}
+
+// EnsureBucket creates the board-specific KV bucket if it doesn't exist.
+// Uses CreateKeyValueBucket (get-or-create) so it's idempotent.
+// History is set to 10 per the JetStream tuning guide for entity state audit trails.
+// Call this at startup before any reads or writes.
+func (gc *GraphClient) EnsureBucket(ctx context.Context) error {
+	bucket, err := gc.nats.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
+		Bucket:      gc.config.BucketName(),
+		Description: fmt.Sprintf("Entity states for board %s", gc.config.Board),
+		History:     10,
+	})
+	if err != nil {
+		return fmt.Errorf("ensure bucket %s: %w", gc.config.BucketName(), err)
+	}
+	gc.bucket = bucket
+	return nil
+}
+
+// kvBucket returns the cached bucket or fetches it by name.
+func (gc *GraphClient) kvBucket(ctx context.Context) (jetstream.KeyValue, error) {
+	if gc.bucket != nil {
+		return gc.bucket, nil
+	}
+	bucket, err := gc.nats.GetKeyValueBucket(ctx, gc.config.BucketName())
+	if err != nil {
+		return nil, fmt.Errorf("get bucket %s: %w", gc.config.BucketName(), err)
+	}
+	gc.bucket = bucket
+	return bucket, nil
 }
 
 // =============================================================================
@@ -69,7 +100,7 @@ func (gc *GraphClient) EmitEntity(ctx context.Context, entity graph.Graphable, e
 		return fmt.Errorf("marshal entity state: %w", err)
 	}
 
-	bucket, err := gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
+	bucket, err := gc.kvBucket(ctx)
 	if err != nil {
 		return fmt.Errorf("get entity states bucket: %w", err)
 	}
@@ -93,7 +124,7 @@ func (gc *GraphClient) EmitEntityUpdate(ctx context.Context, entity graph.Grapha
 // GetEntityDirect retrieves an entity directly from the ENTITY_STATES KV bucket.
 // This bypasses the graph-query layer for faster reads when the entity ID is known.
 func (gc *GraphClient) GetEntityDirect(ctx context.Context, entityID string) (*graph.EntityState, error) {
-	bucket, err := gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
+	bucket, err := gc.kvBucket(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get entity states bucket: %w", err)
 	}
@@ -158,7 +189,7 @@ func (gc *GraphClient) ListEntitiesByType(ctx context.Context, entityType string
 		limit = 100
 	}
 
-	bucket, err := gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
+	bucket, err := gc.kvBucket(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get entity states bucket: %w", err)
 	}
@@ -239,7 +270,7 @@ func (gc *GraphClient) PutEntityState(ctx context.Context, entity graph.Graphabl
 		return fmt.Errorf("marshal entity state: %w", err)
 	}
 
-	bucket, err := gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
+	bucket, err := gc.kvBucket(ctx)
 	if err != nil {
 		return fmt.Errorf("get entity states bucket: %w", err)
 	}
@@ -258,7 +289,7 @@ func (gc *GraphClient) PutEntityState(ctx context.Context, entity graph.Graphabl
 //
 // Callers must call watcher.Stop() when done.
 func (gc *GraphClient) WatchEntityType(ctx context.Context, entityType string) (jetstream.KeyWatcher, error) {
-	bucket, err := gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
+	bucket, err := gc.kvBucket(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get entity states bucket: %w", err)
 	}
@@ -277,7 +308,7 @@ func (gc *GraphClient) WatchEntityType(ctx context.Context, entityType string) (
 //
 // Callers must call watcher.Stop() when done.
 func (gc *GraphClient) WatchEntity(ctx context.Context, entityID string) (jetstream.KeyWatcher, error) {
-	bucket, err := gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
+	bucket, err := gc.kvBucket(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get entity states bucket: %w", err)
 	}
@@ -309,10 +340,10 @@ func DecodeEntityState(entry jetstream.KeyValueEntry) (*graph.EntityState, error
 // KV ACCESS FOR NON-ENTITY STATE
 // =============================================================================
 
-// KVBucket returns the ENTITY_STATES KV bucket for watching entity state changes.
+// KVBucket returns the board-specific KV bucket for watching entity state changes.
 // Processors use this for KV Watch operations with TypePrefix-based key patterns.
 func (gc *GraphClient) KVBucket(ctx context.Context) (jetstream.KeyValue, error) {
-	return gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
+	return gc.kvBucket(ctx)
 }
 
 // Client returns the underlying NATS client for advanced operations.
