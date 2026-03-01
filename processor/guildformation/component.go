@@ -1,6 +1,3 @@
-// Package guildformation provides a native semstreams component for guild
-// management and auto-formation suggestions. It wraps the GuildFormationEngine
-// and exposes it as a semstreams component.
 package guildformation
 
 import (
@@ -11,40 +8,43 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/component"
-	"github.com/c360studio/semstreams/pkg/errs"
-
-	semdragons "github.com/c360studio/semdragons"
 )
 
 // =============================================================================
 // COMPONENT - GuildFormation as native semstreams processor
 // =============================================================================
 // Implements Discoverable + LifecycleComponent interfaces.
-// Wraps the GuildFormationEngine to provide guild management as a component.
+// Manages guild creation, membership, and promotions.
+// State is maintained in-memory using sync.Map projections.
 // =============================================================================
 
-// Component implements GuildFormation as a semstreams processor.
+// Component implements the GuildFormation processor as a semstreams component.
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
-	graph       *semdragons.GraphClient
-	events      *semdragons.EventPublisher
-	engine      *semdragons.DefaultGuildFormationEngine
 	logger      *slog.Logger
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
+
+	// Guild state - in-memory projection
+	guilds sync.Map // map[domain.GuildID]*Guild
+
+	// Agent to guild mapping - in-memory projection
+	agentGuilds sync.Map // map[domain.AgentID][]domain.GuildID
 
 	// Internal state
-	running atomic.Bool
-	mu      sync.RWMutex
+	running  atomic.Bool
+	mu       sync.RWMutex
+	stopChan chan struct{}
 
 	// Metrics
-	guildsCreated   atomic.Uint64
-	membersAdded    atomic.Uint64
-	suggestionsEmit atomic.Uint64
-	errorsCount     atomic.Int64
-	lastActivity    atomic.Value // time.Time
-	startTime       time.Time
+	guildsCreated    atomic.Uint64
+	membersJoined    atomic.Uint64
+	promotionsCount  atomic.Uint64
+	errorsCount      atomic.Int64
+	lastActivity     atomic.Value // time.Time
+	startTime        time.Time
 }
 
 // ensure Component implements the required interfaces.
@@ -60,9 +60,9 @@ var (
 // Meta returns basic component information.
 func (c *Component) Meta() component.Metadata {
 	return component.Metadata{
-		Name:        "guildformation",
+		Name:        ComponentName,
 		Type:        "processor",
-		Description: "Guild management and auto-formation suggestions",
+		Description: "Guild formation and membership management",
 		Version:     "1.0.0",
 	}
 }
@@ -71,12 +71,12 @@ func (c *Component) Meta() component.Metadata {
 func (c *Component) InputPorts() []component.Port {
 	return []component.Port{
 		{
-			Name:        "agent-state",
+			Name:        "agent-xp",
 			Direction:   component.DirectionInput,
-			Required:    true,
-			Description: "Agent state for cluster detection",
-			Config: &component.KVWatchPort{
-				Bucket: "", // Set dynamically from config
+			Required:    false,
+			Description: "Agent XP events for auto-formation triggers",
+			Config: &component.NATSPort{
+				Subject: domain.PredicateAgentXP,
 			},
 		},
 	}
@@ -86,30 +86,12 @@ func (c *Component) InputPorts() []component.Port {
 func (c *Component) OutputPorts() []component.Port {
 	return []component.Port{
 		{
-			Name:        "guild-suggested",
-			Direction:   component.DirectionOutput,
-			Required:    false,
-			Description: "Guild formation suggestions",
-			Config: &component.NATSPort{
-				Subject: semdragons.PredicateGuildSuggested,
-			},
-		},
-		{
-			Name:        "guild-joined",
-			Direction:   component.DirectionOutput,
-			Required:    false,
-			Description: "Guild membership events",
-			Config: &component.NATSPort{
-				Subject: semdragons.PredicateGuildAutoJoined,
-			},
-		},
-		{
-			Name:        "guild-state",
+			Name:        "guild-events",
 			Direction:   component.DirectionOutput,
 			Required:    true,
-			Description: "Guild state updates in KV",
-			Config: &component.KVWritePort{
-				Bucket: "", // Set dynamically from config
+			Description: "Guild lifecycle and membership events",
+			Config: &component.NATSPort{
+				Subject: domain.PredicateGuildCreated,
 			},
 		},
 	}
@@ -137,23 +119,23 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Default:     "main",
 				Category:    "basic",
 			},
-			"min_founder_level": {
+			"min_members_for_formation": {
 				Type:        "int",
-				Description: "Minimum level to found guild (default 11)",
-				Default:     11,
-				Category:    "founding",
+				Description: "Minimum members to form a guild",
+				Default:     3,
+				Category:    "guild",
 			},
-			"founding_xp_cost": {
+			"max_guild_size": {
 				Type:        "int",
-				Description: "XP cost to found guild (default 500)",
-				Default:     500,
-				Category:    "founding",
-			},
-			"default_max_members": {
-				Type:        "int",
-				Description: "Default max members per guild (default 20)",
+				Description: "Maximum members per guild",
 				Default:     20,
-				Category:    "membership",
+				Category:    "guild",
+			},
+			"enable_auto_formation": {
+				Type:        "bool",
+				Description: "Enable automatic guild formation from skill clusters",
+				Default:     true,
+				Category:    "guild",
 			},
 		},
 		Required: []string{"org", "platform", "board"},
@@ -194,7 +176,7 @@ func (c *Component) DataFlow() component.FlowMetrics {
 		metrics.LastActivity = lastTime
 	}
 
-	operations := c.guildsCreated.Load() + c.membersAdded.Load()
+	operations := c.guildsCreated.Load() + c.membersJoined.Load() + c.promotionsCount.Load()
 	uptime := time.Since(c.startTime).Seconds()
 	if uptime > 0 {
 		metrics.MessagesPerSecond = float64(operations) / uptime
@@ -222,31 +204,26 @@ func (c *Component) Initialize() error {
 	}
 
 	c.boardConfig = c.config.ToBoardConfig()
+	c.stopChan = make(chan struct{})
 
 	return nil
 }
 
 // Start begins component operation with the given context.
 func (c *Component) Start(ctx context.Context) error {
+	// Check for cancellation before starting
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.running.Load() {
 		return errors.New("component already running")
 	}
-
-	// Create graph client
-	if err := c.createGraphClient(ctx); err != nil {
-		return errs.Wrap(err, "GuildFormation", "Start", "create graph client")
-	}
-
-	// Create event publisher
-	c.events = semdragons.NewEventPublisher(c.deps.NATSClient)
-
-	// Create formation engine
-	formationConfig := c.config.ToFormationConfig()
-	c.engine = semdragons.NewGuildFormationEngine(c.graph, c.events, formationConfig)
-	c.engine.WithLogger(c.logger)
 
 	c.startTime = time.Now()
 	c.running.Store(true)
@@ -261,8 +238,6 @@ func (c *Component) Start(ctx context.Context) error {
 }
 
 // Stop gracefully shuts down the component.
-// The timeout parameter is part of the LifecycleComponent interface but is not
-// used as this component has no background goroutines requiring coordination.
 func (c *Component) Stop(_ time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -271,14 +246,15 @@ func (c *Component) Stop(_ time.Duration) error {
 		return nil
 	}
 
+	close(c.stopChan)
+
 	c.running.Store(false)
 	c.logger.Info("guildformation component stopped")
 
 	return nil
 }
 
-// createGraphClient creates the graph client for the component.
-func (c *Component) createGraphClient(_ context.Context) error {
-	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
-	return nil
+// BoardConfig returns the board configuration.
+func (c *Component) BoardConfig() *domain.BoardConfig {
+	return c.boardConfig
 }

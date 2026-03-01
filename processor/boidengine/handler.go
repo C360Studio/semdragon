@@ -285,7 +285,7 @@ func (c *Component) computeAndPublish() {
 // =============================================================================
 
 // UpdateRules updates the boid rules at runtime.
-func (c *Component) UpdateRules(rules semdragons.BoidRules) {
+func (c *Component) UpdateRules(rules BoidRules) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.rules = rules
@@ -294,14 +294,14 @@ func (c *Component) UpdateRules(rules semdragons.BoidRules) {
 }
 
 // GetRules returns the current boid rules.
-func (c *Component) GetRules() semdragons.BoidRules {
+func (c *Component) GetRules() BoidRules {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.rules
 }
 
 // ComputeAttractionsNow computes attractions immediately without waiting for the periodic loop.
-func (c *Component) ComputeAttractionsNow() []semdragons.QuestAttraction {
+func (c *Component) ComputeAttractionsNow() []QuestAttraction {
 	c.agentsMu.RLock()
 	agents := make([]semdragons.Agent, 0, len(c.agents))
 	for _, agent := range c.agents {
@@ -322,7 +322,7 @@ func (c *Component) ComputeAttractionsNow() []semdragons.QuestAttraction {
 }
 
 // SuggestClaimsNow suggests claims immediately.
-func (c *Component) SuggestClaimsNow() []semdragons.SuggestedClaim {
+func (c *Component) SuggestClaimsNow() []SuggestedClaim {
 	attractions := c.ComputeAttractionsNow()
 	return c.boidEngine.SuggestClaims(attractions)
 }

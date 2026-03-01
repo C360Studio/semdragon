@@ -5,153 +5,347 @@ import (
 	"errors"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semstreams/pkg/errs"
 )
 
 // =============================================================================
-// GUILD OPERATIONS (delegated to engine)
+// GUILD HANDLERS
 // =============================================================================
 
-// FoundGuild creates a new guild.
-func (c *Component) FoundGuild(ctx context.Context, founderID semdragons.AgentID, name, culture string) (*semdragons.Guild, error) {
+// CreateGuild creates a new guild.
+func (c *Component) CreateGuild(ctx context.Context, name string, specializations []domain.SkillTag, founderID domain.AgentID) (*Guild, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
 
-	c.lastActivity.Store(time.Now())
+	now := time.Now()
+	instance := domain.GenerateInstance()
+	guildID := domain.GuildID(c.boardConfig.GuildEntityID(instance))
 
-	guild, err := c.engine.FoundGuild(ctx, founderID, name, culture)
-	if err != nil {
+	guild := &Guild{
+		ID:              guildID,
+		Name:            name,
+		Status:          domain.GuildActive,
+		Specializations: specializations,
+		Guildmaster:     founderID,
+		Members: []GuildMember{
+			{
+				AgentID:  founderID,
+				Rank:     domain.GuildRankMaster,
+				JoinedAt: now,
+			},
+		},
+		FoundedAt: now,
+	}
+
+	// Store guild
+	c.guilds.Store(guildID, guild)
+
+	// Update agent guild mapping
+	c.addAgentGuild(founderID, guildID)
+
+	// Publish guild created event
+	if err := SubjectGuildCreated.Publish(ctx, c.deps.NATSClient, GuildCreatedPayload{
+		Guild:     *guild,
+		FounderID: founderID,
+		Timestamp: now,
+	}); err != nil {
 		c.errorsCount.Add(1)
-		return nil, err
+		return nil, errs.Wrap(err, "GuildFormation", "CreateGuild", "publish guild created")
 	}
 
 	c.guildsCreated.Add(1)
+	c.lastActivity.Store(now)
+
+	c.logger.Info("guild created",
+		"guild_id", guildID,
+		"guild_name", name,
+		"founder", founderID)
+
 	return guild, nil
 }
 
-// InviteToGuild sends an invitation to an agent.
-func (c *Component) InviteToGuild(ctx context.Context, inviterID semdragons.AgentID, guildID semdragons.GuildID, inviteeID semdragons.AgentID) error {
+// GetGuild returns a guild by ID.
+func (c *Component) GetGuild(guildID domain.GuildID) (*Guild, bool) {
+	val, ok := c.guilds.Load(guildID)
+	if !ok {
+		return nil, false
+	}
+	return val.(*Guild), true
+}
+
+// JoinGuild adds an agent to a guild.
+func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agentID domain.AgentID) error {
 	if !c.running.Load() {
 		return errors.New("component not running")
 	}
 
-	c.lastActivity.Store(time.Now())
+	val, ok := c.guilds.Load(guildID)
+	if !ok {
+		return errors.New("guild not found")
+	}
+	guild := val.(*Guild)
 
-	if err := c.engine.InviteToGuild(ctx, inviterID, guildID, inviteeID); err != nil {
-		c.errorsCount.Add(1)
-		return err
+	// Check if already a member
+	if guild.IsMember(agentID) {
+		return errors.New("already a member")
 	}
 
-	c.membersAdded.Add(1)
+	// Check max size
+	if c.config.MaxGuildSize > 0 && guild.MemberCount() >= c.config.MaxGuildSize {
+		return errors.New("guild is full")
+	}
+
+	now := time.Now()
+
+	// Add member
+	guild.Members = append(guild.Members, GuildMember{
+		AgentID:  agentID,
+		Rank:     domain.GuildRankInitiate,
+		JoinedAt: now,
+	})
+
+	// Update agent guild mapping
+	c.addAgentGuild(agentID, guildID)
+
+	// Publish join event
+	if err := SubjectGuildJoined.Publish(ctx, c.deps.NATSClient, GuildJoinedPayload{
+		GuildID:   guildID,
+		GuildName: guild.Name,
+		AgentID:   agentID,
+		Rank:      domain.GuildRankInitiate,
+		Timestamp: now,
+	}); err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "GuildFormation", "JoinGuild", "publish guild joined")
+	}
+
+	c.membersJoined.Add(1)
+	c.lastActivity.Store(now)
+
+	c.logger.Info("agent joined guild",
+		"guild_id", guildID,
+		"agent_id", agentID)
+
 	return nil
 }
 
 // LeaveGuild removes an agent from a guild.
-func (c *Component) LeaveGuild(ctx context.Context, agentID semdragons.AgentID, guildID semdragons.GuildID) error {
+func (c *Component) LeaveGuild(ctx context.Context, guildID domain.GuildID, agentID domain.AgentID, reason string) error {
 	if !c.running.Load() {
 		return errors.New("component not running")
 	}
 
-	c.lastActivity.Store(time.Now())
+	val, ok := c.guilds.Load(guildID)
+	if !ok {
+		return errors.New("guild not found")
+	}
+	guild := val.(*Guild)
 
-	if err := c.engine.LeaveGuild(ctx, agentID, guildID); err != nil {
-		c.errorsCount.Add(1)
-		return err
+	// Check if a member
+	if !guild.IsMember(agentID) {
+		return errors.New("not a member")
 	}
 
-	return nil
-}
-
-// PromoteMember promotes a guild member.
-func (c *Component) PromoteMember(ctx context.Context, promoterID semdragons.AgentID, guildID semdragons.GuildID, memberID semdragons.AgentID, newRank semdragons.GuildRank) error {
-	if !c.running.Load() {
-		return errors.New("component not running")
+	// Cannot leave if guildmaster (must transfer first)
+	if guild.Guildmaster == agentID {
+		return errors.New("guildmaster must transfer leadership before leaving")
 	}
 
-	c.lastActivity.Store(time.Now())
-
-	if err := c.engine.PromoteMember(ctx, promoterID, guildID, memberID, newRank); err != nil {
-		c.errorsCount.Add(1)
-		return err
-	}
-
-	return nil
-}
-
-// DetectSkillClusters suggests potential guild formations.
-func (c *Component) DetectSkillClusters(ctx context.Context) ([]semdragons.GuildSuggestion, error) {
-	if !c.running.Load() {
-		return nil, errors.New("component not running")
-	}
-
-	c.lastActivity.Store(time.Now())
-
-	// Load all agents from graph
-	agentEntities, err := c.graph.ListAgentsByPrefix(ctx, 100)
-	if err != nil {
-		c.errorsCount.Add(1)
-		return nil, err
-	}
-
-	// Reconstruct agents from entity states
-	agents := make([]*semdragons.Agent, 0, len(agentEntities))
-	for _, entity := range agentEntities {
-		agent := semdragons.AgentFromEntityState(&entity)
-		if agent != nil {
-			agents = append(agents, agent)
+	// Remove member
+	newMembers := make([]GuildMember, 0, len(guild.Members)-1)
+	for _, m := range guild.Members {
+		if m.AgentID != agentID {
+			newMembers = append(newMembers, m)
 		}
 	}
+	guild.Members = newMembers
 
-	suggestions := c.engine.DetectSkillClusters(ctx, agents)
-	return suggestions, nil
-}
-
-// EvaluateGuildDiversity calculates guild skill coverage.
-func (c *Component) EvaluateGuildDiversity(ctx context.Context, guildID semdragons.GuildID) (*semdragons.GuildDiversityReport, error) {
-	if !c.running.Load() {
-		return nil, errors.New("component not running")
+	// Remove from officers if applicable
+	newOfficers := make([]domain.AgentID, 0)
+	for _, officer := range guild.Officers {
+		if officer != agentID {
+			newOfficers = append(newOfficers, officer)
+		}
 	}
+	guild.Officers = newOfficers
 
-	c.lastActivity.Store(time.Now())
+	// Update agent guild mapping
+	c.removeAgentGuild(agentID, guildID)
 
-	report, err := c.engine.EvaluateGuildDiversity(ctx, guildID)
-	if err != nil {
+	now := time.Now()
+
+	// Publish leave event
+	if err := SubjectGuildLeft.Publish(ctx, c.deps.NATSClient, GuildLeftPayload{
+		GuildID:   guildID,
+		GuildName: guild.Name,
+		AgentID:   agentID,
+		Reason:    reason,
+		Timestamp: now,
+	}); err != nil {
 		c.errorsCount.Add(1)
-		return nil, err
+		return errs.Wrap(err, "GuildFormation", "LeaveGuild", "publish guild left")
 	}
 
-	return report, nil
+	c.lastActivity.Store(now)
+
+	c.logger.Info("agent left guild",
+		"guild_id", guildID,
+		"agent_id", agentID,
+		"reason", reason)
+
+	return nil
+}
+
+// PromoteMember promotes a guild member to a higher rank.
+func (c *Component) PromoteMember(ctx context.Context, guildID domain.GuildID, agentID domain.AgentID, newRank domain.GuildRank) error {
+	if !c.running.Load() {
+		return errors.New("component not running")
+	}
+
+	val, ok := c.guilds.Load(guildID)
+	if !ok {
+		return errors.New("guild not found")
+	}
+	guild := val.(*Guild)
+
+	member := guild.GetMember(agentID)
+	if member == nil {
+		return errors.New("not a member")
+	}
+
+	oldRank := member.Rank
+	member.Rank = newRank
+
+	// Add to officers if promoted to officer rank
+	if newRank == domain.GuildRankOfficer && !guild.IsOfficer(agentID) {
+		guild.Officers = append(guild.Officers, agentID)
+	}
+
+	now := time.Now()
+
+	// Publish promotion event
+	if err := SubjectGuildPromoted.Publish(ctx, c.deps.NATSClient, GuildPromotedPayload{
+		GuildID:   guildID,
+		GuildName: guild.Name,
+		AgentID:   agentID,
+		OldRank:   oldRank,
+		NewRank:   newRank,
+		Timestamp: now,
+	}); err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "GuildFormation", "PromoteMember", "publish promotion")
+	}
+
+	c.promotionsCount.Add(1)
+	c.lastActivity.Store(now)
+
+	c.logger.Info("member promoted",
+		"guild_id", guildID,
+		"agent_id", agentID,
+		"old_rank", oldRank,
+		"new_rank", newRank)
+
+	return nil
+}
+
+// DisbandGuild disbands a guild.
+func (c *Component) DisbandGuild(ctx context.Context, guildID domain.GuildID, reason string) error {
+	if !c.running.Load() {
+		return errors.New("component not running")
+	}
+
+	val, ok := c.guilds.Load(guildID)
+	if !ok {
+		return errors.New("guild not found")
+	}
+	guild := val.(*Guild)
+
+	now := time.Now()
+	guild.Status = domain.GuildInactive
+	guild.DisbandedAt = &now
+
+	// Remove all agent guild mappings
+	for _, member := range guild.Members {
+		c.removeAgentGuild(member.AgentID, guildID)
+	}
+
+	// Publish disband event
+	if err := SubjectGuildDisbanded.Publish(ctx, c.deps.NATSClient, GuildDisbandedPayload{
+		GuildID:          guildID,
+		GuildName:        guild.Name,
+		Reason:           reason,
+		FinalMemberCount: len(guild.Members),
+		Timestamp:        now,
+	}); err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "GuildFormation", "DisbandGuild", "publish guild disbanded")
+	}
+
+	c.lastActivity.Store(now)
+
+	c.logger.Info("guild disbanded",
+		"guild_id", guildID,
+		"reason", reason,
+		"final_members", len(guild.Members))
+
+	return nil
+}
+
+// GetAgentGuilds returns all guilds an agent belongs to.
+func (c *Component) GetAgentGuilds(agentID domain.AgentID) []domain.GuildID {
+	val, ok := c.agentGuilds.Load(agentID)
+	if !ok {
+		return nil
+	}
+	return val.([]domain.GuildID)
+}
+
+// ListGuilds returns all active guilds.
+func (c *Component) ListGuilds() []*Guild {
+	var guilds []*Guild
+	c.guilds.Range(func(_, value any) bool {
+		guild := value.(*Guild)
+		if guild.Status == domain.GuildActive {
+			guilds = append(guilds, guild)
+		}
+		return true
+	})
+	return guilds
 }
 
 // =============================================================================
-// ACCESSORS
+// INTERNAL HELPERS
 // =============================================================================
 
-// Graph returns the underlying graph client for external access.
-func (c *Component) Graph() *semdragons.GraphClient {
-	return c.graph
-}
-
-// Engine returns the underlying formation engine.
-func (c *Component) Engine() *semdragons.DefaultGuildFormationEngine {
-	return c.engine
-}
-
-// Stats returns guild formation statistics.
-func (c *Component) Stats() GuildStats {
-	return GuildStats{
-		GuildsCreated:   c.guildsCreated.Load(),
-		MembersAdded:    c.membersAdded.Load(),
-		SuggestionsEmit: c.suggestionsEmit.Load(),
-		Errors:          c.errorsCount.Load(),
+// addAgentGuild adds a guild to an agent's guild list.
+func (c *Component) addAgentGuild(agentID domain.AgentID, guildID domain.GuildID) {
+	val, ok := c.agentGuilds.Load(agentID)
+	var guilds []domain.GuildID
+	if ok {
+		guilds = val.([]domain.GuildID)
 	}
+	guilds = append(guilds, guildID)
+	c.agentGuilds.Store(agentID, guilds)
 }
 
-// GuildStats holds guild formation statistics.
-type GuildStats struct {
-	GuildsCreated   uint64 `json:"guilds_created"`
-	MembersAdded    uint64 `json:"members_added"`
-	SuggestionsEmit uint64 `json:"suggestions_emit"`
-	Errors          int64  `json:"errors"`
+// removeAgentGuild removes a guild from an agent's guild list.
+func (c *Component) removeAgentGuild(agentID domain.AgentID, guildID domain.GuildID) {
+	val, ok := c.agentGuilds.Load(agentID)
+	if !ok {
+		return
+	}
+	guilds := val.([]domain.GuildID)
+	newGuilds := make([]domain.GuildID, 0, len(guilds)-1)
+	for _, g := range guilds {
+		if g != guildID {
+			newGuilds = append(newGuilds, g)
+		}
+	}
+	if len(newGuilds) > 0 {
+		c.agentGuilds.Store(agentID, newGuilds)
+	} else {
+		c.agentGuilds.Delete(agentID)
+	}
 }

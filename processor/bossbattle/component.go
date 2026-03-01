@@ -16,7 +16,9 @@ import (
 	"github.com/c360studio/semstreams/pkg/errs"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/util"
+	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
@@ -32,8 +34,7 @@ type Component struct {
 	config      *Config
 	deps        component.Dependencies
 	graph       *semdragons.GraphClient
-	events      *semdragons.EventPublisher
-	evaluator   semdragons.BattleEvaluator
+	evaluator   BattleEvaluator
 	logger      *slog.Logger
 	boardConfig *semdragons.BoardConfig
 
@@ -59,11 +60,9 @@ type Component struct {
 }
 
 // activeBattle tracks an in-progress battle.
-// Note: We only store the cancel function, not the context itself, to avoid
-// holding references to parent contexts that may outlive the battle.
 type activeBattle struct {
-	battle    *semdragons.BossBattle
-	quest     *semdragons.Quest
+	battle    *BossBattle
+	quest     *questboard.Quest
 	output    any
 	startTime time.Time
 	cancel    context.CancelFunc
@@ -98,7 +97,7 @@ func (c *Component) InputPorts() []component.Port {
 			Required:    true,
 			Description: "Quest submission events triggering battles",
 			Config: &component.NATSPort{
-				Subject: semdragons.PredicateQuestSubmitted,
+				Subject: domain.PredicateQuestSubmitted,
 			},
 		},
 	}
@@ -127,7 +126,7 @@ func (c *Component) OutputPorts() []component.Port {
 			Required:    true,
 			Description: "Battle verdict events",
 			Config: &component.NATSPort{
-				Subject: semdragons.PredicateBattleVerdict,
+				Subject: domain.PredicateBattleVerdict,
 			},
 		},
 		{
@@ -256,7 +255,7 @@ func (c *Component) Initialize() error {
 	}
 
 	c.boardConfig = c.config.ToBoardConfig()
-	c.evaluator = semdragons.NewDefaultBattleEvaluator()
+	c.evaluator = NewDefaultBattleEvaluator()
 	c.stopChan = make(chan struct{})
 
 	return nil
@@ -276,12 +275,9 @@ func (c *Component) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Create event publisher
-	c.events = semdragons.NewEventPublisher(c.deps.NATSClient)
-
 	// Subscribe to quest submitted events (triggers battles)
 	if c.config.AutoStartOnSubmit {
-		submittedSub, err := semdragons.SubjectQuestSubmitted.Subscribe(ctx, c.deps.NATSClient, c.handleQuestSubmitted)
+		submittedSub, err := questboard.SubjectQuestSubmitted.Subscribe(ctx, c.deps.NATSClient, c.handleQuestSubmitted)
 		if err != nil {
 			return errs.Wrap(err, "BossBattle", "Start", "subscribe to quest.lifecycle.submitted")
 		}
@@ -302,8 +298,6 @@ func (c *Component) Start(ctx context.Context) error {
 }
 
 // Stop gracefully shuts down the component.
-// The timeout parameter is part of the LifecycleComponent interface but is not
-// currently used as cleanup is synchronous and quick.
 func (c *Component) Stop(_ time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -58,13 +58,14 @@ func Register(registry *component.Registry) error {
 		Schema:      schema,
 		Type:        "processor",
 		Protocol:    "nats",
-		Domain:      "workflow",
-		Description: "Guild management and auto-formation suggestions",
+		Domain:      "social",
+		Description: "Guild formation and membership management",
 		Version:     "1.0.0",
 	})
 }
 
 // NewFromConfig creates a component directly from a Config struct.
+// This is useful for programmatic instantiation without going through the registry.
 func NewFromConfig(config Config, deps component.Dependencies) (*Component, error) {
 	if deps.NATSClient == nil {
 		return nil, errors.New("NATS client required")

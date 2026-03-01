@@ -20,7 +20,7 @@ type CharacterSheet struct {
 	DerivedStats DerivedStats      `json:"derived_stats"`
 	Memberships  []GuildMembership `json:"memberships"`
 	Equipment    []EquippedItem    `json:"equipment"`
-	Inventory    *AgentInventory   `json:"inventory,omitempty"`
+	Inventory    any               `json:"inventory,omitempty"` // *agentstore.AgentInventory, populated separately
 }
 
 // SkillBar represents a skill with its proficiency for UI display.
@@ -102,7 +102,7 @@ func (s *CharacterSheetService) GetCharacterSheet(ctx context.Context, agentID A
 	equipment := s.buildEquipmentList(agent)
 
 	// Inventory is populated separately via store service if available
-	var inventory *AgentInventory
+	var inventory any
 
 	return &CharacterSheet{
 		Agent:        *agent,

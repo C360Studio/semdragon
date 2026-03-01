@@ -36,7 +36,6 @@ type Component struct {
 	config *Config
 	deps   component.Dependencies
 	graph  *semdragons.GraphClient
-	events *semdragons.EventPublisher
 	traces *semdragons.TraceManager
 	logger *slog.Logger
 
@@ -241,6 +240,13 @@ func (c *Component) Initialize() error {
 
 // Start begins component operation with the given context.
 func (c *Component) Start(ctx context.Context) error {
+	// Check for cancellation before starting
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -250,9 +256,6 @@ func (c *Component) Start(ctx context.Context) error {
 
 	// Create graph client for graph system access
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
-
-	// Create event publisher
-	c.events = semdragons.NewEventPublisher(c.deps.NATSClient)
 
 	c.startTime = time.Now()
 	c.running.Store(true)

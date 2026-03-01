@@ -28,7 +28,7 @@ type Config struct {
 
 // DefaultConfig returns a configuration with sensible defaults.
 func DefaultConfig() Config {
-	rules := semdragons.DefaultBoidRules()
+	rules := DefaultBoidRules()
 	return Config{
 		Org:              "default",
 		Platform:         "local",
@@ -39,7 +39,7 @@ func DefaultConfig() Config {
 		HungerWeight:     rules.HungerWeight,
 		AffinityWeight:   rules.AffinityWeight,
 		CautionWeight:    rules.CautionWeight,
-		UpdateIntervalMs: rules.UpdateInterval,
+		UpdateIntervalMs: 1000,
 		NeighborRadius:   rules.NeighborRadius,
 	}
 }
@@ -53,9 +53,9 @@ func (c *Config) ToBoardConfig() *semdragons.BoardConfig {
 	}
 }
 
-// ToBoidRules converts component config to semdragons BoidRules.
-func (c *Config) ToBoidRules() semdragons.BoidRules {
-	return semdragons.BoidRules{
+// ToBoidRules converts component config to local BoidRules.
+func (c *Config) ToBoidRules() BoidRules {
+	return BoidRules{
 		SeparationWeight: c.SeparationWeight,
 		AlignmentWeight:  c.AlignmentWeight,
 		CohesionWeight:   c.CohesionWeight,
@@ -63,7 +63,6 @@ func (c *Config) ToBoidRules() semdragons.BoidRules {
 		AffinityWeight:   c.AffinityWeight,
 		CautionWeight:    c.CautionWeight,
 		NeighborRadius:   c.NeighborRadius,
-		UpdateInterval:   c.UpdateIntervalMs,
 	}
 }
 

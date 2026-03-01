@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/pkg/errs"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
@@ -16,7 +19,7 @@ import (
 // =============================================================================
 
 // handleQuestSubmitted processes quest submission events and starts battles.
-func (c *Component) handleQuestSubmitted(ctx context.Context, payload semdragons.QuestSubmittedPayload) error {
+func (c *Component) handleQuestSubmitted(ctx context.Context, payload questboard.QuestSubmittedPayload) error {
 	if !c.running.Load() {
 		return nil
 	}
@@ -24,8 +27,14 @@ func (c *Component) handleQuestSubmitted(ctx context.Context, payload semdragons
 	c.lastActivity.Store(time.Now())
 
 	// Check if quest requires review
-	if c.config.RequireReviewLevel && payload.Quest.Constraints.ReviewLevel == semdragons.ReviewAuto {
-		c.logger.Debug("skipping battle for quest without review level",
+	if !payload.NeedsReview {
+		c.logger.Debug("skipping battle for quest without review requirement",
+			"quest", payload.Quest.ID)
+		return nil
+	}
+
+	if c.config.RequireReviewLevel && payload.ReviewLevel == domain.ReviewAuto {
+		c.logger.Debug("skipping battle for quest with auto review level",
 			"quest", payload.Quest.ID)
 		return nil
 	}
@@ -52,13 +61,13 @@ func (c *Component) handleQuestSubmitted(ctx context.Context, payload semdragons
 // =============================================================================
 
 // StartBattle initiates a boss battle for a quest.
-func (c *Component) StartBattle(ctx context.Context, quest *semdragons.Quest, output any) (*semdragons.BossBattle, error) {
+func (c *Component) StartBattle(ctx context.Context, quest *questboard.Quest, output any) (*BossBattle, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
 
 	// Generate battle ID
-	battleID := semdragons.BattleID(c.boardConfig.EntityID("battle", c.generateID()))
+	battleID := domain.BattleID(c.boardConfig.EntityID("battle", c.generateID()))
 
 	// Build battle from quest review level
 	battle := c.buildBattle(battleID, quest)
@@ -80,11 +89,13 @@ func (c *Component) StartBattle(ctx context.Context, quest *semdragons.Quest, ou
 	c.activeBattles.Store(battle.ID, ab)
 
 	// Emit battle started event
-	c.events.PublishBattleStarted(ctx, semdragons.BattleStartedPayload{
+	if err := SubjectBattleStarted.Publish(ctx, c.deps.NATSClient, BattleStartedPayload{
 		Battle:    *battle,
 		Quest:     *quest,
 		StartedAt: battle.StartedAt,
-	})
+	}); err != nil {
+		c.logger.Debug("failed to publish battle started event", "battle", battle.ID, "error", err)
+	}
 
 	c.battlesStarted.Add(1)
 
@@ -95,7 +106,7 @@ func (c *Component) StartBattle(ctx context.Context, quest *semdragons.Quest, ou
 }
 
 // buildBattle constructs a BossBattle from quest settings.
-func (c *Component) buildBattle(id semdragons.BattleID, quest *semdragons.Quest) *semdragons.BossBattle {
+func (c *Component) buildBattle(id domain.BattleID, quest *questboard.Quest) *BossBattle {
 	now := time.Now()
 
 	reviewLevel := quest.Constraints.ReviewLevel
@@ -105,17 +116,17 @@ func (c *Component) buildBattle(id semdragons.BattleID, quest *semdragons.Quest)
 	judges := c.defaultJudges(reviewLevel)
 
 	// Get agent ID (handle pointer)
-	var agentID semdragons.AgentID
+	var agentID domain.AgentID
 	if quest.ClaimedBy != nil {
 		agentID = *quest.ClaimedBy
 	}
 
-	return &semdragons.BossBattle{
+	return &BossBattle{
 		ID:        id,
 		QuestID:   quest.ID,
 		AgentID:   agentID,
 		Level:     reviewLevel,
-		Status:    semdragons.BattleActive,
+		Status:    domain.BattleActive,
 		Criteria:  criteria,
 		Judges:    judges,
 		StartedAt: now,
@@ -123,58 +134,58 @@ func (c *Component) buildBattle(id semdragons.BattleID, quest *semdragons.Quest)
 }
 
 // defaultCriteria returns standard review criteria for a level.
-func (c *Component) defaultCriteria(level semdragons.ReviewLevel) []semdragons.ReviewCriterion {
+func (c *Component) defaultCriteria(level domain.ReviewLevel) []domain.ReviewCriterion {
 	switch level {
-	case semdragons.ReviewStrict:
-		return []semdragons.ReviewCriterion{
+	case domain.ReviewStrict:
+		return []domain.ReviewCriterion{
 			{Name: "correctness", Description: "Output is factually correct", Weight: 0.4, Threshold: 0.8},
 			{Name: "completeness", Description: "All requirements addressed", Weight: 0.3, Threshold: 0.8},
 			{Name: "quality", Description: "High quality, production-ready", Weight: 0.2, Threshold: 0.7},
 			{Name: "style", Description: "Follows conventions and best practices", Weight: 0.1, Threshold: 0.6},
 		}
-	case semdragons.ReviewHuman:
-		return []semdragons.ReviewCriterion{
+	case domain.ReviewHuman:
+		return []domain.ReviewCriterion{
 			{Name: "correctness", Description: "Output is factually correct", Weight: 0.3, Threshold: 0.8},
 			{Name: "completeness", Description: "All requirements addressed", Weight: 0.3, Threshold: 0.8},
 			{Name: "quality", Description: "High quality, production-ready", Weight: 0.2, Threshold: 0.7},
 			{Name: "style", Description: "Follows conventions and best practices", Weight: 0.2, Threshold: 0.6},
 		}
-	case semdragons.ReviewStandard:
-		return []semdragons.ReviewCriterion{
+	case domain.ReviewStandard:
+		return []domain.ReviewCriterion{
 			{Name: "correctness", Description: "Output is factually correct", Weight: 0.5, Threshold: 0.7},
 			{Name: "completeness", Description: "Key requirements addressed", Weight: 0.3, Threshold: 0.6},
 			{Name: "quality", Description: "Acceptable quality", Weight: 0.2, Threshold: 0.5},
 		}
 	default: // ReviewAuto
-		return []semdragons.ReviewCriterion{
+		return []domain.ReviewCriterion{
 			{Name: "acceptance", Description: "Output is acceptable", Weight: 1.0, Threshold: 0.5},
 		}
 	}
 }
 
 // defaultJudges returns standard judges for a review level.
-func (c *Component) defaultJudges(level semdragons.ReviewLevel) []semdragons.Judge {
+func (c *Component) defaultJudges(level domain.ReviewLevel) []Judge {
 	switch level {
-	case semdragons.ReviewStrict:
-		return []semdragons.Judge{
-			{ID: "judge-auto", Type: semdragons.JudgeAutomated, Config: map[string]any{}},
-			{ID: "judge-llm-1", Type: semdragons.JudgeLLM, Config: map[string]any{}},
-			{ID: "judge-llm-2", Type: semdragons.JudgeLLM, Config: map[string]any{}},
+	case domain.ReviewStrict:
+		return []Judge{
+			{ID: "judge-auto", Type: domain.JudgeAutomated, Config: map[string]any{}},
+			{ID: "judge-llm-1", Type: domain.JudgeLLM, Config: map[string]any{}},
+			{ID: "judge-llm-2", Type: domain.JudgeLLM, Config: map[string]any{}},
 		}
-	case semdragons.ReviewHuman:
-		return []semdragons.Judge{
-			{ID: "judge-auto", Type: semdragons.JudgeAutomated, Config: map[string]any{}},
-			{ID: "judge-llm-1", Type: semdragons.JudgeLLM, Config: map[string]any{}},
-			{ID: "judge-human", Type: semdragons.JudgeHuman, Config: map[string]any{}},
+	case domain.ReviewHuman:
+		return []Judge{
+			{ID: "judge-auto", Type: domain.JudgeAutomated, Config: map[string]any{}},
+			{ID: "judge-llm-1", Type: domain.JudgeLLM, Config: map[string]any{}},
+			{ID: "judge-human", Type: domain.JudgeHuman, Config: map[string]any{}},
 		}
-	case semdragons.ReviewStandard:
-		return []semdragons.Judge{
-			{ID: "judge-auto", Type: semdragons.JudgeAutomated, Config: map[string]any{}},
-			{ID: "judge-llm-1", Type: semdragons.JudgeLLM, Config: map[string]any{}},
+	case domain.ReviewStandard:
+		return []Judge{
+			{ID: "judge-auto", Type: domain.JudgeAutomated, Config: map[string]any{}},
+			{ID: "judge-llm-1", Type: domain.JudgeLLM, Config: map[string]any{}},
 		}
 	default: // ReviewAuto
-		return []semdragons.Judge{
-			{ID: "judge-auto", Type: semdragons.JudgeAutomated, Config: nil},
+		return []Judge{
+			{ID: "judge-auto", Type: domain.JudgeAutomated, Config: nil},
 		}
 	}
 }
@@ -199,41 +210,36 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 			"error", err)
 
 		// Mark as failed with default verdict (defeat)
-		ab.battle.Status = semdragons.BattleDefeat
-		ab.battle.Verdict = &semdragons.BattleVerdict{
+		ab.battle.Status = domain.BattleDefeat
+		ab.battle.Verdict = &BattleVerdict{
 			Passed:       false,
 			QualityScore: 0,
 			Feedback:     fmt.Sprintf("Evaluation error: %v", err),
 		}
 	} else if result.Pending {
 		// Battle awaiting human review - keep active
-		// The battle stays in Active status until human provides verdict
 		c.logger.Info("battle awaiting human review",
 			"battle", ab.battle.ID,
 			"pending_judge", result.PendingJudge)
-		// Don't complete - leave in active state, don't remove from tracking
 		return
 	} else {
-		// Complete with verdict - use Victory or Defeat based on result
+		// Complete with verdict
 		if result.Verdict.Passed {
-			ab.battle.Status = semdragons.BattleVictory
+			ab.battle.Status = domain.BattleVictory
 		} else {
-			ab.battle.Status = semdragons.BattleDefeat
+			ab.battle.Status = domain.BattleDefeat
 		}
 		ab.battle.Results = result.Results
 		ab.battle.Verdict = &result.Verdict
 	}
 
 	// Persist final battle state (only if component is still running)
-	// After shutdown, we skip persistence to avoid race conditions
 	if c.running.Load() {
-		// Use a short timeout for final persistence since the battle context may be cancelled
 		persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		// Emit update with appropriate event type based on outcome
 		eventType := "battle.completed"
-		if ab.battle.Status == semdragons.BattleVictory {
+		if ab.battle.Status == domain.BattleVictory {
 			eventType = "battle.victory"
-		} else if ab.battle.Status == semdragons.BattleDefeat {
+		} else if ab.battle.Status == domain.BattleDefeat {
 			eventType = "battle.defeat"
 		}
 		if err := c.graph.EmitEntityUpdate(persistCtx, ab.battle, eventType); err != nil {
@@ -245,12 +251,14 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 		cancel()
 
 		// Emit verdict event
-		c.events.PublishBattleVerdict(persistCtx, semdragons.BattleVerdictPayload{
+		if err := SubjectBattleVerdict.Publish(persistCtx, c.deps.NATSClient, BattleVerdictPayload{
 			Battle:  *ab.battle,
 			Quest:   *ab.quest,
 			Verdict: *ab.battle.Verdict,
 			EndedAt: now,
-		})
+		}); err != nil {
+			c.logger.Debug("failed to publish battle verdict event", "battle", ab.battle.ID, "error", err)
+		}
 	} else {
 		c.logger.Debug("skipping battle persistence after shutdown",
 			"battle", ab.battle.ID)
@@ -271,12 +279,12 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 }
 
 // GetBattle retrieves a battle by ID.
-func (c *Component) GetBattle(ctx context.Context, id semdragons.BattleID) (*semdragons.BossBattle, error) {
-	entity, err := c.graph.GetBattle(ctx, id)
+func (c *Component) GetBattle(ctx context.Context, id domain.BattleID) (*BossBattle, error) {
+	entity, err := c.graph.GetBattle(ctx, semdragons.BattleID(id))
 	if err != nil {
 		return nil, err
 	}
-	battle := semdragons.BattleFromEntityState(entity)
+	battle := battleFromEntityState(entity)
 	if battle == nil {
 		return nil, errors.New("invalid battle data")
 	}
@@ -284,8 +292,8 @@ func (c *Component) GetBattle(ctx context.Context, id semdragons.BattleID) (*sem
 }
 
 // ListActiveBattles returns all currently active battles.
-func (c *Component) ListActiveBattles() []*semdragons.BossBattle {
-	var battles []*semdragons.BossBattle
+func (c *Component) ListActiveBattles() []*BossBattle {
+	var battles []*BossBattle
 	c.activeBattles.Range(func(_, value any) bool {
 		if ab, ok := value.(*activeBattle); ok {
 			battles = append(battles, ab.battle)
@@ -343,4 +351,67 @@ func (c *Component) countActiveBattles() int {
 		return true
 	})
 	return count
+}
+
+// battleFromEntityState reconstructs a BossBattle from a graph entity.
+func battleFromEntityState(entity *graph.EntityState) *BossBattle {
+	if entity == nil {
+		return nil
+	}
+	// Delegate to semdragons.BattleFromEntityState and convert
+	semBattle := semdragons.BattleFromEntityState(entity)
+	if semBattle == nil {
+		return nil
+	}
+	// Convert semdragons.BossBattle to local BossBattle
+	battle := &BossBattle{
+		ID:        domain.BattleID(semBattle.ID),
+		QuestID:   domain.QuestID(semBattle.QuestID),
+		AgentID:   domain.AgentID(semBattle.AgentID),
+		Level:     domain.ReviewLevel(semBattle.Level),
+		Status:    domain.BattleStatus(semBattle.Status),
+		StartedAt: semBattle.StartedAt,
+	}
+	if semBattle.CompletedAt != nil {
+		battle.CompletedAt = semBattle.CompletedAt
+	}
+	// Copy criteria
+	for _, c := range semBattle.Criteria {
+		battle.Criteria = append(battle.Criteria, domain.ReviewCriterion{
+			Name:        c.Name,
+			Description: c.Description,
+			Weight:      c.Weight,
+			Threshold:   c.Threshold,
+		})
+	}
+	// Copy judges
+	for _, j := range semBattle.Judges {
+		battle.Judges = append(battle.Judges, Judge{
+			ID:     j.ID,
+			Type:   domain.JudgeType(j.Type),
+			Config: j.Config,
+		})
+	}
+	// Copy results
+	for _, r := range semBattle.Results {
+		battle.Results = append(battle.Results, domain.ReviewResult{
+			CriterionName: r.CriterionName,
+			Score:         r.Score,
+			Passed:        r.Passed,
+			Reasoning:     r.Reasoning,
+			JudgeID:       r.JudgeID,
+		})
+	}
+	// Copy verdict
+	if semBattle.Verdict != nil {
+		battle.Verdict = &BattleVerdict{
+			Passed:       semBattle.Verdict.Passed,
+			QualityScore: semBattle.Verdict.QualityScore,
+			XPAwarded:    semBattle.Verdict.XPAwarded,
+			XPPenalty:    semBattle.Verdict.XPPenalty,
+			Feedback:     semBattle.Verdict.Feedback,
+			LevelChange:  semBattle.Verdict.LevelChange,
+		}
+	}
+	return battle
 }

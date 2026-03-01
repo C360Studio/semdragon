@@ -1,0 +1,337 @@
+// Package domain provides shared primitive types for semdragons.
+// Entity structs (Quest, Agent, etc.) live in their owning processors.
+package domain
+
+import (
+	"time"
+)
+
+// =============================================================================
+// ENTITY ID TYPES
+// =============================================================================
+
+// AgentID uniquely identifies an agent in the system.
+type AgentID string
+
+// GuildID uniquely identifies a guild.
+type GuildID string
+
+// QuestID uniquely identifies a quest on the board.
+type QuestID string
+
+// PartyID uniquely identifies a party of agents.
+type PartyID string
+
+// BattleID uniquely identifies a boss battle (review session).
+type BattleID string
+
+// =============================================================================
+// AGENT PRIMITIVES
+// =============================================================================
+
+// AgentStatus represents the current state of an agent in the system.
+type AgentStatus string
+
+const (
+	AgentIdle     AgentStatus = "idle"
+	AgentOnQuest  AgentStatus = "on_quest"
+	AgentInBattle AgentStatus = "in_battle"
+	AgentCooldown AgentStatus = "cooldown"
+	AgentRetired  AgentStatus = "retired"
+)
+
+// =============================================================================
+// TRUST TIERS
+// =============================================================================
+
+// TrustTier represents an agent's trust level derived from their level.
+type TrustTier int
+
+const (
+	TierApprentice  TrustTier = iota // Levels 1-5
+	TierJourneyman                   // Levels 6-10
+	TierExpert                       // Levels 11-15
+	TierMaster                       // Levels 16-18
+	TierGrandmaster                  // Levels 19-20
+)
+
+// TierFromLevel returns the trust tier for a given agent level.
+func TierFromLevel(level int) TrustTier {
+	switch {
+	case level <= 5:
+		return TierApprentice
+	case level <= 10:
+		return TierJourneyman
+	case level <= 15:
+		return TierExpert
+	case level <= 18:
+		return TierMaster
+	default:
+		return TierGrandmaster
+	}
+}
+
+// =============================================================================
+// SKILL PRIMITIVES
+// =============================================================================
+
+// SkillTag represents a domain of competence.
+type SkillTag string
+
+// Common skill tags.
+const (
+	SkillCodeGen       SkillTag = "code_generation"
+	SkillCodeReview    SkillTag = "code_review"
+	SkillDataTransform SkillTag = "data_transformation"
+	SkillSummarization SkillTag = "summarization"
+	SkillResearch      SkillTag = "research"
+	SkillPlanning      SkillTag = "planning"
+	SkillCustomerComms SkillTag = "customer_communications"
+	SkillAnalysis      SkillTag = "analysis"
+	SkillTraining      SkillTag = "training"
+)
+
+// ProficiencyLevel represents mastery level of a skill (1-5).
+type ProficiencyLevel int
+
+const (
+	ProficiencyNovice     ProficiencyLevel = 1
+	ProficiencyApprentice ProficiencyLevel = 2
+	ProficiencyJourneyman ProficiencyLevel = 3
+	ProficiencyExpert     ProficiencyLevel = 4
+	ProficiencyMaster     ProficiencyLevel = 5
+)
+
+// ProficiencyLevelNames maps levels to human-readable names.
+var ProficiencyLevelNames = map[ProficiencyLevel]string{
+	ProficiencyNovice:     "Novice",
+	ProficiencyApprentice: "Apprentice",
+	ProficiencyJourneyman: "Journeyman",
+	ProficiencyExpert:     "Expert",
+	ProficiencyMaster:     "Master",
+}
+
+// SkillProficiency tracks an agent's mastery of a specific skill.
+type SkillProficiency struct {
+	Level      ProficiencyLevel `json:"level"`
+	Progress   int              `json:"progress"`
+	TotalXP    int64            `json:"total_xp"`
+	QuestsUsed int              `json:"quests_used"`
+	LastUsed   *time.Time       `json:"last_used,omitempty"`
+}
+
+// ProgressPercent returns progress as a percentage (0-100).
+func (sp SkillProficiency) ProgressPercent() float64 {
+	if sp.Level >= ProficiencyMaster {
+		return 100.0
+	}
+	return float64(sp.Progress)
+}
+
+// CanLevelUp returns true if progress is sufficient for level up.
+func (sp SkillProficiency) CanLevelUp() bool {
+	return sp.Progress >= 100 && sp.Level < ProficiencyMaster
+}
+
+// =============================================================================
+// QUEST PRIMITIVES
+// =============================================================================
+
+// QuestStatus represents the lifecycle state of a quest.
+type QuestStatus string
+
+const (
+	QuestPosted     QuestStatus = "posted"
+	QuestClaimed    QuestStatus = "claimed"
+	QuestInProgress QuestStatus = "in_progress"
+	QuestInReview   QuestStatus = "in_review"
+	QuestCompleted  QuestStatus = "completed"
+	QuestFailed     QuestStatus = "failed"
+	QuestEscalated  QuestStatus = "escalated"
+	QuestCancelled  QuestStatus = "cancelled"
+)
+
+// QuestDifficulty represents the challenge level of a quest.
+type QuestDifficulty int
+
+const (
+	DifficultyTrivial   QuestDifficulty = iota // Level 1-5
+	DifficultyEasy                             // Level 3-7
+	DifficultyModerate                         // Level 6-10
+	DifficultyHard                             // Level 10-14
+	DifficultyEpic                             // Level 14-18
+	DifficultyLegendary                        // Level 18-20 or party required
+)
+
+// =============================================================================
+// BOSS BATTLE PRIMITIVES
+// =============================================================================
+
+// ReviewLevel indicates the rigor of the boss battle review.
+type ReviewLevel int
+
+const (
+	ReviewAuto     ReviewLevel = iota // Automated checks only
+	ReviewStandard                    // LLM-as-judge
+	ReviewStrict                      // Multi-judge panel
+	ReviewHuman                       // Human reviewer required
+)
+
+// BattleStatus represents the state of a boss battle.
+type BattleStatus string
+
+const (
+	BattleActive  BattleStatus = "active"
+	BattleVictory BattleStatus = "victory"
+	BattleDefeat  BattleStatus = "defeat"
+	BattleRetreat BattleStatus = "retreat"
+)
+
+// JudgeType indicates the kind of judge.
+type JudgeType string
+
+const (
+	JudgeAutomated JudgeType = "automated"
+	JudgeLLM       JudgeType = "llm"
+	JudgeHuman     JudgeType = "human"
+)
+
+// ReviewCriterion defines a single evaluation criterion.
+type ReviewCriterion struct {
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Weight      float64 `json:"weight"`
+	Threshold   float64 `json:"threshold"`
+}
+
+// ReviewResult holds a judge's evaluation of a single criterion.
+type ReviewResult struct {
+	CriterionName string  `json:"criterion_name"`
+	Score         float64 `json:"score"`
+	Passed        bool    `json:"passed"`
+	Reasoning     string  `json:"reasoning"`
+	JudgeID       string  `json:"judge_id"`
+}
+
+// =============================================================================
+// PARTY PRIMITIVES
+// =============================================================================
+
+// PartyStatus represents the current state of a party.
+type PartyStatus string
+
+const (
+	PartyForming   PartyStatus = "forming"
+	PartyActive    PartyStatus = "active"
+	PartyDisbanded PartyStatus = "disbanded"
+)
+
+// PartyRole represents a member's role within a party.
+type PartyRole string
+
+const (
+	RoleLead     PartyRole = "lead"
+	RoleExecutor PartyRole = "executor"
+	RoleReviewer PartyRole = "reviewer"
+	RoleScout    PartyRole = "scout"
+)
+
+// =============================================================================
+// GUILD PRIMITIVES
+// =============================================================================
+
+// GuildStatus represents the current state of a guild.
+type GuildStatus string
+
+const (
+	GuildActive   GuildStatus = "active"
+	GuildInactive GuildStatus = "inactive"
+)
+
+// GuildRank represents a member's rank within a guild.
+type GuildRank string
+
+const (
+	GuildRankInitiate GuildRank = "initiate"
+	GuildRankMember   GuildRank = "member"
+	GuildRankVeteran  GuildRank = "veteran"
+	GuildRankOfficer  GuildRank = "officer"
+	GuildRankMaster   GuildRank = "guildmaster"
+)
+
+// GuildBonusRate returns the XP bonus rate for this guild rank.
+func (r GuildRank) GuildBonusRate() float64 {
+	switch r {
+	case GuildRankInitiate:
+		return 0.10
+	case GuildRankMember:
+		return 0.15
+	case GuildRankVeteran:
+		return 0.18
+	case GuildRankOfficer:
+		return 0.20
+	case GuildRankMaster:
+		return 0.25
+	default:
+		return 0.10
+	}
+}
+
+// =============================================================================
+// TOOL
+// =============================================================================
+
+// Tool represents a capability an agent can use.
+type Tool struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	MinTier     TrustTier      `json:"min_tier"`
+	Category    string         `json:"category"`
+	Dangerous   bool           `json:"dangerous"`
+	Config      map[string]any `json:"config"`
+}
+
+// =============================================================================
+// XP HELPERS
+// =============================================================================
+
+// DefaultXPForDifficulty returns base XP for quest difficulty.
+func DefaultXPForDifficulty(difficulty QuestDifficulty) int64 {
+	switch difficulty {
+	case DifficultyTrivial:
+		return 10
+	case DifficultyEasy:
+		return 25
+	case DifficultyModerate:
+		return 50
+	case DifficultyHard:
+		return 100
+	case DifficultyEpic:
+		return 200
+	case DifficultyLegendary:
+		return 500
+	default:
+		return 25
+	}
+}
+
+// TierFromDifficulty returns the minimum trust tier for a difficulty level.
+func TierFromDifficulty(difficulty QuestDifficulty) TrustTier {
+	switch difficulty {
+	case DifficultyTrivial:
+		return TierApprentice
+	case DifficultyEasy:
+		return TierApprentice
+	case DifficultyModerate:
+		return TierJourneyman
+	case DifficultyHard:
+		return TierExpert
+	case DifficultyEpic:
+		return TierMaster
+	case DifficultyLegendary:
+		return TierGrandmaster
+	default:
+		return TierApprentice
+	}
+}

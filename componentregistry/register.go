@@ -1,5 +1,5 @@
 // Package componentregistry provides registration for all semdragons components.
-// This is the central point for registering all processor and gateway components
+// This is the central point for registering all processor components
 // with the semstreams component registry.
 package componentregistry
 
@@ -9,12 +9,19 @@ import (
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 	graphquery "github.com/c360studio/semstreams/processor/graph-query"
 
-	"github.com/c360studio/semdragons/gateway/api"
+	"github.com/c360studio/semdragons/processor/agent_progression"
+	"github.com/c360studio/semdragons/processor/agent_store"
 	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semdragons/processor/bossbattle"
+	"github.com/c360studio/semdragons/processor/dm_approval"
+	"github.com/c360studio/semdragons/processor/dm_partyformation"
+	"github.com/c360studio/semdragons/processor/dm_session"
+	"github.com/c360studio/semdragons/processor/dm_worldstate"
+	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/guildformation"
+	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semdragons/processor/questboard"
-	"github.com/c360studio/semdragons/processor/xpengine"
+	"github.com/c360studio/semdragons/processor/seeding"
 )
 
 // RegisterAll registers all semdragons components with the given registry.
@@ -38,24 +45,21 @@ func RegisterAll(registry *component.Registry) error {
 	// Register semdragons processor components
 	processors := []func(*component.Registry) error{
 		questboard.Register,
-		xpengine.Register,
+		agent_progression.Register,
+		agent_store.Register,
 		bossbattle.Register,
 		boidengine.Register,
+		executor.Register,
 		guildformation.Register,
+		partycoord.Register,
+		seeding.Register,
+		dm_session.Register,
+		dm_approval.Register,
+		dm_worldstate.Register,
+		dm_partyformation.Register,
 	}
 
 	for _, register := range processors {
-		if err := register(registry); err != nil {
-			return err
-		}
-	}
-
-	// Register gateway components
-	gateways := []func(*component.Registry) error{
-		api.Register,
-	}
-
-	for _, register := range gateways {
 		if err := register(registry); err != nil {
 			return err
 		}
@@ -65,7 +69,6 @@ func RegisterAll(registry *component.Registry) error {
 }
 
 // RegisterProcessors registers only the processor components.
-// Use this if you want to register processors without gateways.
 func RegisterProcessors(registry *component.Registry) error {
 	// Register semstreams graph processors first
 	graphProcessors := []func(*component.Registry) error{
@@ -83,10 +86,18 @@ func RegisterProcessors(registry *component.Registry) error {
 	// Register semdragons processors
 	processors := []func(*component.Registry) error{
 		questboard.Register,
-		xpengine.Register,
+		agent_progression.Register,
+		agent_store.Register,
 		bossbattle.Register,
 		boidengine.Register,
+		executor.Register,
 		guildformation.Register,
+		partycoord.Register,
+		seeding.Register,
+		dm_session.Register,
+		dm_approval.Register,
+		dm_worldstate.Register,
+		dm_partyformation.Register,
 	}
 
 	for _, register := range processors {
@@ -102,11 +113,18 @@ func RegisterProcessors(registry *component.Registry) error {
 func ComponentNames() []string {
 	return []string{
 		questboard.ComponentName,
-		xpengine.ComponentName,
+		agent_progression.ComponentName,
+		agent_store.ComponentName,
 		bossbattle.ComponentName,
 		boidengine.ComponentName,
+		executor.ComponentName,
 		guildformation.ComponentName,
-		api.ComponentName,
+		partycoord.ComponentName,
+		seeding.ComponentName,
+		dm_session.ComponentName,
+		dm_approval.ComponentName,
+		dm_worldstate.ComponentName,
+		dm_partyformation.ComponentName,
 	}
 }
 
@@ -114,16 +132,17 @@ func ComponentNames() []string {
 func ProcessorNames() []string {
 	return []string{
 		questboard.ComponentName,
-		xpengine.ComponentName,
+		agent_progression.ComponentName,
+		agent_store.ComponentName,
 		bossbattle.ComponentName,
 		boidengine.ComponentName,
+		executor.ComponentName,
 		guildformation.ComponentName,
-	}
-}
-
-// GatewayNames returns the names of gateway components.
-func GatewayNames() []string {
-	return []string{
-		api.ComponentName,
+		partycoord.ComponentName,
+		seeding.ComponentName,
+		dm_session.ComponentName,
+		dm_approval.ComponentName,
+		dm_worldstate.ComponentName,
+		dm_partyformation.ComponentName,
 	}
 }

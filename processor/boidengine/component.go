@@ -31,10 +31,10 @@ type Component struct {
 	config      *Config
 	deps        component.Dependencies
 	graph       *semdragons.GraphClient
-	boidEngine  semdragons.BoidEngine
+	boidEngine  BoidEngine
 	logger      *slog.Logger
 	boardConfig *semdragons.BoardConfig
-	rules       semdragons.BoidRules
+	rules       BoidRules
 
 	// KV watches for real-time state updates
 	agentWatch jetstream.KeyWatcher
@@ -263,7 +263,7 @@ func (c *Component) Initialize() error {
 
 	c.boardConfig = c.config.ToBoardConfig()
 	c.rules = c.config.ToBoidRules()
-	c.boidEngine = semdragons.NewDefaultBoidEngine()
+	c.boidEngine = NewDefaultBoidEngine()
 	c.agents = make(map[string]*semdragons.Agent)
 	c.quests = make(map[string]*semdragons.Quest)
 	c.stopChan = make(chan struct{})
