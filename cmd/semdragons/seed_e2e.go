@@ -14,6 +14,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentstore"
 )
 
 // maybeSeedE2E checks SEED_E2E and, when "true", writes a diverse set of
