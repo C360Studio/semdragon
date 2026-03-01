@@ -121,8 +121,8 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 		return
 	}
 
-	agent := agentFromEntityState(agentEntity)
-	if agent == nil {
+	fullAgent := semdragons.AgentFromEntityState(agentEntity)
+	if fullAgent == nil {
 		c.logger.Error("failed to decode agent from entity state",
 			"agent", agentID,
 			"quest", quest.ID)
@@ -159,7 +159,7 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 	// Build XP context from entity state (replaces fat event pattern)
 	xpCtx := XPContext{
 		Quest:        *quest,
-		Agent:        *agent,
+		Agent:        Agent{Level: fullAgent.Level, XP: fullAgent.XP, XPToLevel: fullAgent.XPToLevel, Tier: fullAgent.Tier},
 		Duration:     quest.Duration,
 		IsGuildQuest: isGuildQuest,
 		GuildRank:    guildRank,
@@ -174,17 +174,27 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 	// Calculate XP - pure function
 	award := c.xpEngine.CalculateXP(xpCtx)
 
-	// Apply XP to a temp agent for level calculation
+	// Apply XP to temp agent for level calculation
 	tempAgent := &Agent{
-		Level:     agent.Level,
-		XP:        agent.XP,
-		XPToLevel: agent.XPToLevel,
-		Tier:      agent.Tier,
+		Level:     fullAgent.Level,
+		XP:        fullAgent.XP,
+		XPToLevel: fullAgent.XPToLevel,
+		Tier:      fullAgent.Tier,
 	}
 	levelEvent := c.xpEngine.ApplyXP(tempAgent, award.TotalXP)
 
-	// Emit XP event via KV (entity-centric — update agent entity state)
-	if err := c.emitAgentXPUpdate(ctx, agentID, quest.ID, &award, nil, tempAgent); err != nil {
+	// Copy XP results back to full agent (read-modify-write preserves all fields)
+	fullAgent.Level = tempAgent.Level
+	fullAgent.XP = tempAgent.XP
+	fullAgent.XPToLevel = tempAgent.XPToLevel
+	fullAgent.Tier = tempAgent.Tier
+	fullAgent.Status = semdragons.AgentIdle
+	fullAgent.CurrentQuest = nil
+	fullAgent.Stats.QuestsCompleted++
+	fullAgent.UpdatedAt = time.Now()
+
+	// Write full agent entity (preserves name, skills, guilds, etc.)
+	if err := c.graph.EmitEntityUpdate(ctx, fullAgent, "agent.progression.xp"); err != nil {
 		c.logger.Error("failed to emit agent XP update", "error", err)
 		c.errorsCount.Add(1)
 	}
@@ -207,7 +217,7 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 		"agent", agentID,
 		"quest", quest.ID,
 		"xp_awarded", award.TotalXP,
-		"new_level", tempAgent.Level)
+		"new_level", fullAgent.Level)
 }
 
 // handleQuestFailedFromKV processes a quest that transitioned to failed.
@@ -245,8 +255,8 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 		return
 	}
 
-	agent := agentFromEntityState(agentEntity)
-	if agent == nil {
+	fullAgent := semdragons.AgentFromEntityState(agentEntity)
+	if fullAgent == nil {
 		c.logger.Error("failed to decode agent from entity state",
 			"agent", agentID,
 			"quest", quest.ID)
@@ -269,8 +279,11 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 
 	// Build penalty context from entity state
 	penaltyCtx := PenaltyContext{
-		Quest:       *quest,
-		Agent:       *agent,
+		Quest: *quest,
+		Agent: Agent{
+			Level: fullAgent.Level, XP: fullAgent.XP, XPToLevel: fullAgent.XPToLevel, Tier: fullAgent.Tier,
+			Stats: AgentStats{QuestsFailed: fullAgent.Stats.QuestsFailed},
+		},
 		FailureType: failType,
 		Attempt:     quest.Attempts,
 	}
@@ -280,15 +293,33 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 
 	// Apply penalty to temp agent
 	tempAgent := &Agent{
-		Level:     agent.Level,
-		XP:        agent.XP,
-		XPToLevel: agent.XPToLevel,
-		Tier:      agent.Tier,
+		Level:     fullAgent.Level,
+		XP:        fullAgent.XP,
+		XPToLevel: fullAgent.XPToLevel,
+		Tier:      fullAgent.Tier,
 	}
 	c.xpEngine.ApplyXP(tempAgent, -penalty.XPLost)
 
-	// Emit XP penalty event via KV (entity-centric)
-	if err := c.emitAgentXPUpdate(ctx, agentID, quest.ID, nil, &penalty, tempAgent); err != nil {
+	// Copy penalty results back to full agent (read-modify-write preserves all fields)
+	fullAgent.Level = tempAgent.Level
+	fullAgent.XP = tempAgent.XP
+	fullAgent.XPToLevel = tempAgent.XPToLevel
+	fullAgent.Tier = tempAgent.Tier
+
+	// Set status based on penalty cooldown
+	if penalty.CooldownDur > 0 {
+		fullAgent.Status = semdragons.AgentCooldown
+		cooldownUntil := time.Now().Add(penalty.CooldownDur)
+		fullAgent.CooldownUntil = &cooldownUntil
+	} else {
+		fullAgent.Status = semdragons.AgentIdle
+	}
+	fullAgent.CurrentQuest = nil
+	fullAgent.Stats.QuestsFailed++
+	fullAgent.UpdatedAt = time.Now()
+
+	// Write full agent entity (preserves name, skills, guilds, etc.)
+	if err := c.graph.EmitEntityUpdate(ctx, fullAgent, "agent.progression.xp"); err != nil {
 		c.logger.Error("failed to emit agent XP penalty", "error", err)
 		c.errorsCount.Add(1)
 	}
@@ -307,31 +338,8 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 	c.logger.Debug("processed quest failure",
 		"agent", agentID,
 		"quest", quest.ID,
-		"xp_lost", penalty.XPLost)
-}
-
-// emitAgentXPUpdate publishes the updated agent XP state to the graph.
-// In the entity-centric model, this is a KV write to ENTITY_STATES.
-func (c *Component) emitAgentXPUpdate(ctx context.Context, agentID domain.AgentID, questID domain.QuestID, award *XPAward, penalty *XPPenalty, agent *Agent) error {
-	// Build XP payload as a Graphable entity for emission
-	payload := &AgentXPPayload{
-		AgentID:    agentID,
-		QuestID:    questID,
-		Award:      award,
-		Penalty:    penalty,
-		XPAfter:    agent.XP,
-		LevelAfter: agent.Level,
-		Timestamp:  time.Now(),
-	}
-
-	if award != nil {
-		payload.XPDelta = award.TotalXP
-	}
-	if penalty != nil {
-		payload.XPDelta = -penalty.XPLost
-	}
-
-	return c.graph.PutEntityState(ctx, payload, "agent.progression.xp")
+		"xp_lost", penalty.XPLost,
+		"new_status", fullAgent.Status)
 }
 
 // =============================================================================
@@ -427,45 +435,6 @@ func questFromEntityStateTriples(entity *semgraph.EntityState) *questboard.Quest
 	}
 
 	return quest
-}
-
-// agentFromEntityState reconstructs an Agent from entity state triples.
-func agentFromEntityState(entity *semgraph.EntityState) *Agent {
-	if entity == nil {
-		return nil
-	}
-
-	agent := &Agent{
-		ID: domain.AgentID(entity.ID),
-	}
-
-	for _, triple := range entity.Triples {
-		switch triple.Predicate {
-		case "agent.progression.level":
-			if v, ok := triple.Object.(float64); ok {
-				agent.Level = int(v)
-			}
-		case "agent.progression.xp.current":
-			if v, ok := triple.Object.(float64); ok {
-				agent.XP = int64(v)
-			}
-		case "agent.progression.xp.to_level":
-			if v, ok := triple.Object.(float64); ok {
-				agent.XPToLevel = int64(v)
-			}
-		case "agent.progression.tier":
-			if v, ok := triple.Object.(float64); ok {
-				agent.Tier = domain.TrustTier(int(v))
-			}
-		}
-	}
-
-	// Derive tier from level if not set
-	if agent.Tier == 0 && agent.Level > 0 {
-		agent.Tier = domain.TierFromLevel(agent.Level)
-	}
-
-	return agent
 }
 
 // =============================================================================
