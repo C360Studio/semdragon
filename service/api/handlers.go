@@ -4,9 +4,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	semdragons "github.com/c360studio/semdragons"
 )
+
+// isBucketNotFound returns true if the error is because the KV bucket doesn't exist yet.
+// This is normal before components have started and created the entity states bucket.
+func isBucketNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "bucket not found")
+}
 
 // =============================================================================
 // WORLD STATE
@@ -29,6 +36,10 @@ func (s *Service) handleWorldState(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handleListQuests(w http.ResponseWriter, r *http.Request) {
 	entities, err := s.graph.ListQuestsByPrefix(r.Context(), s.config.MaxEntities)
 	if err != nil {
+		if isBucketNotFound(err) {
+			s.writeJSON(w, []semdragons.Quest{})
+			return
+		}
 		s.writeError(w, "failed to list quests", http.StatusInternalServerError)
 		s.logger.Error("Failed to list quests", "error", err)
 		return
@@ -153,6 +164,10 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	entities, err := s.graph.ListAgentsByPrefix(r.Context(), s.config.MaxEntities)
 	if err != nil {
+		if isBucketNotFound(err) {
+			s.writeJSON(w, []semdragons.Agent{})
+			return
+		}
 		s.writeError(w, "failed to list agents", http.StatusInternalServerError)
 		s.logger.Error("Failed to list agents", "error", err)
 		return
@@ -278,6 +293,10 @@ func (s *Service) handleRetireAgent(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handleListBattles(w http.ResponseWriter, r *http.Request) {
 	entities, err := s.graph.ListEntitiesByType(r.Context(), semdragons.EntityTypeBattle, s.config.MaxEntities)
 	if err != nil {
+		if isBucketNotFound(err) {
+			s.writeJSON(w, []semdragons.BossBattle{})
+			return
+		}
 		s.writeError(w, "failed to list battles", http.StatusInternalServerError)
 		s.logger.Error("Failed to list battles", "error", err)
 		return

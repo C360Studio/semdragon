@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -124,6 +125,11 @@ func (s *Service) Stop(timeout time.Duration) error {
 
 // RegisterHTTPHandlers registers domain REST endpoints with the HTTP mux.
 func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
+	// Ensure prefix ends with /
+	if !strings.HasSuffix(prefix, "/") {
+		prefix = prefix + "/"
+	}
+
 	// CORS middleware wrapper
 	cors := func(handler http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {

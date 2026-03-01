@@ -3,7 +3,7 @@ module github.com/c360studio/semdragons
 go 1.25.3
 
 require (
-	github.com/c360studio/semstreams v0.0.0-00010101000000-000000000000
+	github.com/c360studio/semstreams v0.0.0-20260301143745-dae0f8d5a68f
 	github.com/nats-io/nats.go v1.48.0
 )
 
@@ -88,5 +88,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/c360studio/semstreams => ../semstreams
