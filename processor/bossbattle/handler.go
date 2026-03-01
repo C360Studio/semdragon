@@ -127,6 +127,22 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 		return
 	}
 
+	// Set agent to in_battle
+	if quest.ClaimedBy != nil {
+		agentEntity, agentErr := c.graph.GetAgent(ctx, domain.AgentID(*quest.ClaimedBy))
+		if agentErr == nil {
+			agent := semdragons.AgentFromEntityState(agentEntity)
+			if agent != nil {
+				agent.Status = semdragons.AgentInBattle
+				agent.UpdatedAt = time.Now()
+				if writeErr := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.in_battle"); writeErr != nil {
+					c.errorsCount.Add(1)
+					c.logger.Error("failed to set agent in_battle", "error", writeErr)
+				}
+			}
+		}
+	}
+
 	c.logger.Debug("started battle for submitted quest",
 		"quest", quest.ID,
 		"battle", battle.ID)
@@ -383,6 +399,37 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				"battle", ab.battle.ID,
 				"error", err)
 		}
+
+		// Bridge battle verdict → quest completion/failure
+		// Safe: no other processor modifies a quest while it's in_review.
+		if ab.quest != nil {
+			if ab.battle.Verdict.Passed {
+				verdictNow := time.Now()
+				ab.quest.Status = domain.QuestCompleted
+				ab.quest.CompletedAt = &verdictNow
+				ab.quest.Verdict = &questboard.BattleVerdict{
+					Passed:       ab.battle.Verdict.Passed,
+					QualityScore: ab.battle.Verdict.QualityScore,
+					XPAwarded:    ab.battle.Verdict.XPAwarded,
+					Feedback:     ab.battle.Verdict.Feedback,
+				}
+				if ab.quest.StartedAt != nil {
+					ab.quest.Duration = verdictNow.Sub(*ab.quest.StartedAt)
+				}
+			} else {
+				ab.quest.Status = domain.QuestFailed
+				ab.quest.FailureReason = ab.battle.Verdict.Feedback
+				ab.quest.FailureType = questboard.FailureQuality
+			}
+			if questErr := c.graph.EmitEntityUpdate(persistCtx, ab.quest, "quest."+string(ab.quest.Status)); questErr != nil {
+				c.errorsCount.Add(1)
+				c.logger.Error("failed to transition quest after battle verdict",
+					"quest", ab.quest.ID,
+					"status", ab.quest.Status,
+					"error", questErr)
+			}
+		}
+
 		cancel()
 	} else {
 		c.logger.Debug("skipping battle persistence after shutdown",
