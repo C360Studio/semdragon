@@ -456,6 +456,7 @@ func (c *Component) Graph() *semdragons.GraphClient {
 }
 
 // createGraphClient creates the graph client for the component.
+// Context is unused: NewGraphClient is a synchronous in-memory constructor.
 func (c *Component) createGraphClient(_ context.Context) error {
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 	return nil

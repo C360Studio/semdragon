@@ -26,8 +26,7 @@ var (
 	_ graph.Graphable = (*GuildDisbandedPayload)(nil)
 )
 
-// --- Typed Subjects ---
-
+// Typed subjects for guild formation and membership events.
 var (
 	SubjectGuildCreated   = natsclient.NewSubject[GuildCreatedPayload](domain.PredicateGuildCreated)
 	SubjectGuildJoined    = natsclient.NewSubject[GuildJoinedPayload](domain.PredicateGuildJoined)

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/agent_progression"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/agentic"
 )
@@ -57,7 +57,7 @@ func (c *Component) RegisterToolWithHandler(
 // Useful for async execution patterns.
 func (c *Component) ExecuteWithCallback(
 	ctx context.Context,
-	agent *agent_progression.Agent,
+	agent *agentprogression.Agent,
 	quest *questboard.Quest,
 	callback func(*ExecutionResult, error),
 ) {
@@ -110,7 +110,7 @@ func (c *Component) ListTools() []RegisteredTool {
 }
 
 // GetToolsForAgent returns tools available to an agent for a quest.
-func (c *Component) GetToolsForAgent(agent *agent_progression.Agent, quest *questboard.Quest) []agentic.ToolDefinition {
+func (c *Component) GetToolsForAgent(agent *agentprogression.Agent, quest *questboard.Quest) []agentic.ToolDefinition {
 	if c.toolRegistry == nil {
 		return nil
 	}

@@ -9,14 +9,14 @@ import (
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 	graphquery "github.com/c360studio/semstreams/processor/graph-query"
 
-	"github.com/c360studio/semdragons/processor/agent_progression"
-	"github.com/c360studio/semdragons/processor/agent_store"
+	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semdragons/processor/bossbattle"
-	"github.com/c360studio/semdragons/processor/dm_approval"
-	"github.com/c360studio/semdragons/processor/dm_partyformation"
-	"github.com/c360studio/semdragons/processor/dm_session"
-	"github.com/c360studio/semdragons/processor/dm_worldstate"
+	"github.com/c360studio/semdragons/processor/dmapproval"
+	"github.com/c360studio/semdragons/processor/dmpartyformation"
+	"github.com/c360studio/semdragons/processor/dmsession"
+	"github.com/c360studio/semdragons/processor/dmworldstate"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semdragons/processor/partycoord"
@@ -45,18 +45,18 @@ func RegisterAll(registry *component.Registry) error {
 	// Register semdragons processor components
 	processors := []func(*component.Registry) error{
 		questboard.Register,
-		agent_progression.Register,
-		agent_store.Register,
+		agentprogression.Register,
+		agentstore.Register,
 		bossbattle.Register,
 		boidengine.Register,
 		executor.Register,
 		guildformation.Register,
 		partycoord.Register,
 		seeding.Register,
-		dm_session.Register,
-		dm_approval.Register,
-		dm_worldstate.Register,
-		dm_partyformation.Register,
+		dmsession.Register,
+		dmapproval.Register,
+		dmworldstate.Register,
+		dmpartyformation.Register,
 	}
 
 	for _, register := range processors {
@@ -86,18 +86,18 @@ func RegisterProcessors(registry *component.Registry) error {
 	// Register semdragons processors
 	processors := []func(*component.Registry) error{
 		questboard.Register,
-		agent_progression.Register,
-		agent_store.Register,
+		agentprogression.Register,
+		agentstore.Register,
 		bossbattle.Register,
 		boidengine.Register,
 		executor.Register,
 		guildformation.Register,
 		partycoord.Register,
 		seeding.Register,
-		dm_session.Register,
-		dm_approval.Register,
-		dm_worldstate.Register,
-		dm_partyformation.Register,
+		dmsession.Register,
+		dmapproval.Register,
+		dmworldstate.Register,
+		dmpartyformation.Register,
 	}
 
 	for _, register := range processors {
@@ -113,18 +113,18 @@ func RegisterProcessors(registry *component.Registry) error {
 func ComponentNames() []string {
 	return []string{
 		questboard.ComponentName,
-		agent_progression.ComponentName,
-		agent_store.ComponentName,
+		agentprogression.ComponentName,
+		agentstore.ComponentName,
 		bossbattle.ComponentName,
 		boidengine.ComponentName,
 		executor.ComponentName,
 		guildformation.ComponentName,
 		partycoord.ComponentName,
 		seeding.ComponentName,
-		dm_session.ComponentName,
-		dm_approval.ComponentName,
-		dm_worldstate.ComponentName,
-		dm_partyformation.ComponentName,
+		dmsession.ComponentName,
+		dmapproval.ComponentName,
+		dmworldstate.ComponentName,
+		dmpartyformation.ComponentName,
 	}
 }
 
@@ -132,17 +132,17 @@ func ComponentNames() []string {
 func ProcessorNames() []string {
 	return []string{
 		questboard.ComponentName,
-		agent_progression.ComponentName,
-		agent_store.ComponentName,
+		agentprogression.ComponentName,
+		agentstore.ComponentName,
 		bossbattle.ComponentName,
 		boidengine.ComponentName,
 		executor.ComponentName,
 		guildformation.ComponentName,
 		partycoord.ComponentName,
 		seeding.ComponentName,
-		dm_session.ComponentName,
-		dm_approval.ComponentName,
-		dm_worldstate.ComponentName,
-		dm_partyformation.ComponentName,
+		dmsession.ComponentName,
+		dmapproval.ComponentName,
+		dmworldstate.ComponentName,
+		dmpartyformation.ComponentName,
 	}
 }

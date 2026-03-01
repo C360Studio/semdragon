@@ -233,6 +233,7 @@ func (c *Component) Start(ctx context.Context) error {
 }
 
 // Stop gracefully shuts down the component.
+// Timeout is unused: shutdown is non-blocking with no background goroutines to wait for.
 func (c *Component) Stop(_ time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

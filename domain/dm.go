@@ -97,8 +97,9 @@ type WorldStats struct {
 // GameEventType categorizes events in the game event stream.
 type GameEventType string
 
+// Game event type values covering quests, agents, battles, parties, guilds, and DM actions.
 const (
-	// Quest events
+	// EventQuestPosted fires when a quest is added to the board.
 	EventQuestPosted    GameEventType = "quest.posted"
 	EventQuestClaimed   GameEventType = "quest.claimed"
 	EventQuestStarted   GameEventType = "quest.started"
@@ -106,7 +107,7 @@ const (
 	EventQuestFailed    GameEventType = "quest.failed"
 	EventQuestEscalated GameEventType = "quest.escalated"
 
-	// Agent events
+	// EventAgentRecruited fires when a new agent joins the roster.
 	EventAgentRecruited  GameEventType = "agent.recruited"
 	EventAgentLevelUp    GameEventType = "agent.level_up"
 	EventAgentLevelDown  GameEventType = "agent.level_down"
@@ -114,20 +115,20 @@ const (
 	EventAgentPermadeath GameEventType = "agent.permadeath"
 	EventAgentRevived    GameEventType = "agent.revived"
 
-	// Battle events
+	// EventBattleStarted fires when a boss battle review begins.
 	EventBattleStarted GameEventType = "battle.started"
 	EventBattleVictory GameEventType = "battle.victory"
 	EventBattleDefeat  GameEventType = "battle.defeat"
 
-	// Party events
+	// EventPartyFormed fires when agents form a party.
 	EventPartyFormed    GameEventType = "party.formed"
 	EventPartyDisbanded GameEventType = "party.disbanded"
 
-	// Guild events
+	// EventGuildCreated fires when a new guild is established.
 	EventGuildCreated GameEventType = "guild.created"
 	EventGuildJoined  GameEventType = "guild.joined"
 
-	// DM events
+	// EventDMIntervention fires when the DM acts on an ongoing quest.
 	EventDMIntervention GameEventType = "dm.intervention"
 	EventDMEscalation   GameEventType = "dm.escalation"
 	EventDMSessionStart GameEventType = "dm.session_start"
@@ -168,6 +169,7 @@ type EventFilter struct {
 // InterventionType categorizes the kind of DM intervention.
 type InterventionType string
 
+// DM intervention kind values.
 const (
 	InterventionAssist   InterventionType = "assist"
 	InterventionRedirect InterventionType = "redirect"
@@ -205,6 +207,7 @@ type EscalationAttempt struct {
 // ApprovalType categorizes the kind of approval being requested.
 type ApprovalType string
 
+// Approval request kind values.
 const (
 	ApprovalQuestCreate        ApprovalType = "quest_create"
 	ApprovalQuestDecomposition ApprovalType = "quest_decomposition"
@@ -265,6 +268,7 @@ type ApprovalFilter struct {
 // PartyStrategy determines how a party is composed.
 type PartyStrategy string
 
+// Party composition strategy values.
 const (
 	PartyStrategyBalanced   PartyStrategy = "balanced"
 	PartyStrategySpecialist PartyStrategy = "specialist"

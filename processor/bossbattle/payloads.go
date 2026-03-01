@@ -28,8 +28,7 @@ var (
 	_ graph.Graphable = (*BattleRetreatPayload)(nil)
 )
 
-// --- Typed Subjects ---
-
+// Typed subjects for boss battle lifecycle events.
 var (
 	SubjectBattleStarted = natsclient.NewSubject[BattleStartedPayload](domain.PredicateBattleStarted)
 	SubjectBattleVerdict = natsclient.NewSubject[BattleVerdictPayload](domain.PredicateBattleVerdict)
@@ -58,8 +57,10 @@ type BattleStartedPayload struct {
 	Trace     TraceInfo        `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *BattleStartedPayload) EntityID() string { return string(p.Battle.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *BattleStartedPayload) Triples() []message.Triple {
 	triples := p.Battle.Triples()
 	source := "bossbattle"
@@ -74,10 +75,12 @@ func (p *BattleStartedPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *BattleStartedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "battle.started", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *BattleStartedPayload) Validate() error {
 	if p.Battle.ID == "" {
 		return errors.New("battle_id required")
@@ -104,8 +107,10 @@ type BattleVerdictPayload struct {
 	Trace   TraceInfo        `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *BattleVerdictPayload) EntityID() string { return string(p.Battle.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *BattleVerdictPayload) Triples() []message.Triple {
 	triples := p.Battle.Triples()
 	source := "bossbattle"
@@ -123,10 +128,12 @@ func (p *BattleVerdictPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *BattleVerdictPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "battle.verdict", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *BattleVerdictPayload) Validate() error {
 	if p.Battle.ID == "" {
 		return errors.New("battle_id required")
@@ -155,8 +162,10 @@ type BattleVictoryPayload struct {
 	Trace       TraceInfo        `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *BattleVictoryPayload) EntityID() string { return string(p.Battle.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *BattleVictoryPayload) Triples() []message.Triple {
 	triples := p.Battle.Triples()
 	source := "bossbattle"
@@ -171,10 +180,12 @@ func (p *BattleVictoryPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *BattleVictoryPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "battle.victory", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *BattleVictoryPayload) Validate() error {
 	if p.Battle.ID == "" {
 		return errors.New("battle_id required")
@@ -201,8 +212,10 @@ type BattleDefeatPayload struct {
 	Trace       TraceInfo        `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *BattleDefeatPayload) EntityID() string { return string(p.Battle.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *BattleDefeatPayload) Triples() []message.Triple {
 	triples := p.Battle.Triples()
 	source := "bossbattle"
@@ -218,10 +231,12 @@ func (p *BattleDefeatPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *BattleDefeatPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "battle.defeat", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *BattleDefeatPayload) Validate() error {
 	if p.Battle.ID == "" {
 		return errors.New("battle_id required")
@@ -245,8 +260,10 @@ type BattleRetreatPayload struct {
 	Trace       TraceInfo        `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *BattleRetreatPayload) EntityID() string { return string(p.Battle.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *BattleRetreatPayload) Triples() []message.Triple {
 	triples := p.Battle.Triples()
 	source := "bossbattle"
@@ -260,10 +277,12 @@ func (p *BattleRetreatPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *BattleRetreatPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "battle.retreat", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *BattleRetreatPayload) Validate() error {
 	if p.Battle.ID == "" {
 		return errors.New("battle_id required")

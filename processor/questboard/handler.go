@@ -167,25 +167,19 @@ func (c *Component) AvailableQuests(ctx context.Context, agentID domain.AgentID,
 		return []Quest{}, nil
 	}
 
-	// Query quests by status predicate from graph
-	questIDs, err := c.graph.QueryByPredicate(ctx, "quest.status.state")
-	if err != nil {
-		return nil, errs.Wrap(err, "QuestBoard", "AvailableQuests", "query quests")
-	}
-
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 50
 	}
 
+	// List all quests directly from KV and filter in-memory
+	entities, err := c.graph.ListEntitiesByType(ctx, "quest", 0)
+	if err != nil {
+		return nil, errs.Wrap(err, "QuestBoard", "AvailableQuests", "list quests")
+	}
+
 	agentTier := semdragons.TierFromLevel(agent.Level)
 	available := make([]Quest, 0, limit)
-
-	// Fetch entities and filter
-	entities, err := c.graph.BatchGet(ctx, questIDs)
-	if err != nil {
-		return nil, errs.Wrap(err, "QuestBoard", "AvailableQuests", "batch get")
-	}
 
 	for _, entity := range entities {
 		if len(available) >= limit {
@@ -356,6 +350,8 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 
 	c.lastActivity.Store(time.Now())
 	c.messagesProcessed.Add(1)
+
+	c.logger.Info("quest abandoned", "quest_id", questID, "reason", reason)
 
 	quest, err := c.getQuestByID(ctx, questID)
 	if err != nil {
@@ -561,6 +557,8 @@ func (c *Component) EscalateQuest(ctx context.Context, questID domain.QuestID, r
 
 	c.lastActivity.Store(time.Now())
 	c.messagesProcessed.Add(1)
+
+	c.logger.Info("quest escalated", "quest_id", questID, "reason", reason)
 
 	quest, err := c.getQuestByID(ctx, questID)
 	if err != nil {
@@ -806,6 +804,10 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *Quest {
 					quest.Verdict = &BattleVerdict{}
 				}
 				quest.Verdict.Feedback = v
+			}
+		case "quest.failure.escalated":
+			if v, ok := triple.Object.(bool); ok {
+				quest.Escalated = v
 			}
 		case "quest.failure.reason":
 			if v, ok := triple.Object.(string); ok {

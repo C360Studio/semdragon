@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/agent_progression"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/agentic"
 )
@@ -35,7 +35,7 @@ const (
 
 // ToolHandler executes a tool and returns the result.
 // The handler receives the tool call arguments and quest/agent context.
-type ToolHandler func(ctx context.Context, call agentic.ToolCall, quest *questboard.Quest, agent *agent_progression.Agent) agentic.ToolResult
+type ToolHandler func(ctx context.Context, call agentic.ToolCall, quest *questboard.Quest, agent *agentprogression.Agent) agentic.ToolResult
 
 // RegisteredTool wraps a tool definition with its handler and access controls.
 type RegisteredTool struct {
@@ -104,7 +104,7 @@ func (r *ToolRegistry) Get(name string) *RegisteredTool {
 // - Quest's AllowedTools list (if specified)
 // - Agent's trust tier
 // - Agent's skills
-func (r *ToolRegistry) GetToolsForQuest(quest *questboard.Quest, agent *agent_progression.Agent) []agentic.ToolDefinition {
+func (r *ToolRegistry) GetToolsForQuest(quest *questboard.Quest, agent *agentprogression.Agent) []agentic.ToolDefinition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -133,7 +133,7 @@ func (r *ToolRegistry) GetToolsForQuest(quest *questboard.Quest, agent *agent_pr
 }
 
 // Execute runs a tool call and returns the result.
-func (r *ToolRegistry) Execute(ctx context.Context, call agentic.ToolCall, quest *questboard.Quest, agent *agent_progression.Agent) agentic.ToolResult {
+func (r *ToolRegistry) Execute(ctx context.Context, call agentic.ToolCall, quest *questboard.Quest, agent *agentprogression.Agent) agentic.ToolResult {
 	r.mu.RLock()
 	tool, ok := r.tools[call.Name]
 	sandboxDir := r.sandboxDir
@@ -175,7 +175,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, call agentic.ToolCall, quest
 }
 
 // agentHasAnySkill returns true if the agent has at least one of the given skills.
-func agentHasAnySkill(agent *agent_progression.Agent, skills []domain.SkillTag) bool {
+func agentHasAnySkill(agent *agentprogression.Agent, skills []domain.SkillTag) bool {
 	for _, skill := range skills {
 		if agent.HasSkill(skill) {
 			return true
@@ -336,7 +336,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 // BUILT-IN TOOL HANDLERS
 // =============================================================================
 
-func readFileHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.Quest, _ *agent_progression.Agent) agentic.ToolResult {
+func readFileHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.Quest, _ *agentprogression.Agent) agentic.ToolResult {
 	// Check for context cancellation
 	select {
 	case <-ctx.Done():
@@ -385,7 +385,7 @@ func readFileHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.Q
 	}
 }
 
-func writeFileHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.Quest, _ *agent_progression.Agent) agentic.ToolResult {
+func writeFileHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.Quest, _ *agentprogression.Agent) agentic.ToolResult {
 	// Check for context cancellation
 	select {
 	case <-ctx.Done():
@@ -451,7 +451,7 @@ func writeFileHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.
 	}
 }
 
-func listDirectoryHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.Quest, _ *agent_progression.Agent) agentic.ToolResult {
+func listDirectoryHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.Quest, _ *agentprogression.Agent) agentic.ToolResult {
 	// Check for context cancellation
 	select {
 	case <-ctx.Done():
@@ -506,7 +506,7 @@ func listDirectoryHandler(ctx context.Context, call agentic.ToolCall, _ *questbo
 	}
 }
 
-func searchTextHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.Quest, _ *agent_progression.Agent) agentic.ToolResult {
+func searchTextHandler(ctx context.Context, call agentic.ToolCall, _ *questboard.Quest, _ *agentprogression.Agent) agentic.ToolResult {
 	// Check for context cancellation
 	select {
 	case <-ctx.Done():

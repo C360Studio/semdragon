@@ -33,10 +33,10 @@ const (
 // BoardConfig holds the configuration for a quest board instance.
 // This determines the entity ID prefix and KV bucket name.
 type BoardConfig struct {
-	Org      string        // Organization namespace (e.g., "c360")
-	Platform string        // Deployment instance (e.g., "prod", "dev")
-	Board    string        // Board name (e.g., "board1", "main")
-	Domain   *DomainConfig // Optional domain skinning (vocabulary, skills)
+	Org      string  // Organization namespace (e.g., "c360")
+	Platform string  // Deployment instance (e.g., "prod", "dev")
+	Board    string  // Board name (e.g., "board1", "main")
+	Domain   *Config // Optional domain skinning (vocabulary, skills)
 }
 
 // Vocab returns a vocabulary term for the configured domain.
@@ -293,39 +293,39 @@ func IsBattleID(id string) bool {
 // (what capabilities agents can develop).
 // =============================================================================
 
-// DomainID uniquely identifies a domain configuration.
-type DomainID string
+// ID uniquely identifies a domain configuration.
+type ID string
 
 // Standard domain IDs.
 const (
-	DomainSoftware DomainID = "software"
-	DomainDnD      DomainID = "dnd"
-	DomainResearch DomainID = "research"
+	DomainSoftware ID = "software"
+	DomainDnD      ID = "dnd"
+	DomainResearch ID = "research"
 )
 
-// DomainConfig holds the configuration for a specific domain.
-type DomainConfig struct {
-	ID          DomainID `json:"id"`   // "software", "dnd", "research"
-	Name        string   `json:"name"` // "Software Development"
-	Description string   `json:"description"`
+// Config holds the configuration for a specific domain.
+type Config struct {
+	ID          ID     `json:"id"`   // "software", "dnd", "research"
+	Name        string `json:"name"` // "Software Development"
+	Description string `json:"description"`
 
 	// Domain-specific skill definitions
-	Skills []DomainSkill `json:"skills"`
+	Skills []Skill `json:"skills"`
 
 	// Vocabulary overrides (RPG terms → domain terms)
-	Vocabulary DomainVocabulary `json:"vocabulary"`
+	Vocabulary Vocabulary `json:"vocabulary"`
 }
 
-// DomainSkill defines a skill available in a domain.
-type DomainSkill struct {
+// Skill defines a skill available in a domain.
+type Skill struct {
 	Tag         SkillTag `json:"tag"`  // Internal identifier
 	Name        string   `json:"name"` // Display name
 	Description string   `json:"description"`
 	Icon        string   `json:"icon,omitempty"`
 }
 
-// DomainVocabulary provides domain-specific terminology overrides.
-type DomainVocabulary struct {
+// Vocabulary provides domain-specific terminology overrides.
+type Vocabulary struct {
 	// Entity names
 	Agent      string `json:"agent"`       // "Developer", "Adventurer"
 	Quest      string `json:"quest"`       // "Task", "Quest"
@@ -357,7 +357,7 @@ var defaultVocabulary = map[string]string{
 }
 
 // Get returns a vocabulary term, falling back to the default if not set.
-func (v *DomainVocabulary) Get(key string) string {
+func (v *Vocabulary) Get(key string) string {
 	switch key {
 	case "agent":
 		if v.Agent != "" {
@@ -392,7 +392,7 @@ func (v *DomainVocabulary) Get(key string) string {
 }
 
 // GetTierName returns the domain-specific name for a trust tier.
-func (v *DomainVocabulary) GetTierName(tier TrustTier) string {
+func (v *Vocabulary) GetTierName(tier TrustTier) string {
 	if v.TierNames != nil {
 		if name, ok := v.TierNames[tier]; ok {
 			return name
@@ -416,7 +416,7 @@ func (v *DomainVocabulary) GetTierName(tier TrustTier) string {
 }
 
 // GetRoleName returns the domain-specific name for a party role.
-func (v *DomainVocabulary) GetRoleName(role PartyRole) string {
+func (v *Vocabulary) GetRoleName(role PartyRole) string {
 	if v.RoleNames != nil {
 		if name, ok := v.RoleNames[role]; ok {
 			return name
@@ -440,7 +440,7 @@ func (v *DomainVocabulary) GetRoleName(role PartyRole) string {
 // --- Domain Validation ---
 
 // HasSkill checks if a skill tag is valid for this domain.
-func (d *DomainConfig) HasSkill(tag SkillTag) bool {
+func (d *Config) HasSkill(tag SkillTag) bool {
 	for _, skill := range d.Skills {
 		if skill.Tag == tag {
 			return true
@@ -450,7 +450,7 @@ func (d *DomainConfig) HasSkill(tag SkillTag) bool {
 }
 
 // GetSkill returns the skill definition for a tag, or nil if not found.
-func (d *DomainConfig) GetSkill(tag SkillTag) *DomainSkill {
+func (d *Config) GetSkill(tag SkillTag) *Skill {
 	for i := range d.Skills {
 		if d.Skills[i].Tag == tag {
 			return &d.Skills[i]
@@ -460,7 +460,7 @@ func (d *DomainConfig) GetSkill(tag SkillTag) *DomainSkill {
 }
 
 // SkillTags returns all skill tags defined for this domain.
-func (d *DomainConfig) SkillTags() []SkillTag {
+func (d *Config) SkillTags() []SkillTag {
 	tags := make([]SkillTag, len(d.Skills))
 	for i, skill := range d.Skills {
 		tags[i] = skill.Tag

@@ -324,28 +324,62 @@ func (gc *GraphClient) GetBattle(ctx context.Context, battleID BattleID) (*graph
 	return gc.GetEntityDirect(ctx, entityID)
 }
 
-// ListQuestsByPrefix retrieves all quests on this board.
+// ListEntitiesByType retrieves all entities of a given type directly from the
+// ENTITY_STATES KV bucket. This reads from the source of truth without requiring
+// the graph-ingest query service to be running.
+func (gc *GraphClient) ListEntitiesByType(ctx context.Context, entityType string, limit int) ([]graph.EntityState, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	bucket, err := gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
+	if err != nil {
+		return nil, fmt.Errorf("get entity states bucket: %w", err)
+	}
+
+	prefix := gc.config.TypePrefix(entityType) + "."
+	keys, err := natsclient.FilteredKeys(ctx, bucket, prefix+">")
+	if err != nil {
+		return nil, fmt.Errorf("list keys for %s: %w", entityType, err)
+	}
+
+	entities := make([]graph.EntityState, 0, len(keys))
+	for i, key := range keys {
+		if i >= limit {
+			break
+		}
+		entry, err := bucket.Get(ctx, key)
+		if err != nil {
+			continue // Key may have been deleted between list and get
+		}
+		var entity graph.EntityState
+		if err := json.Unmarshal(entry.Value(), &entity); err != nil {
+			continue
+		}
+		entities = append(entities, entity)
+	}
+
+	return entities, nil
+}
+
+// ListQuestsByPrefix retrieves all quests on this board from KV.
 func (gc *GraphClient) ListQuestsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	prefix := gc.config.TypePrefix(EntityTypeQuest)
-	return gc.QueryByPrefix(ctx, prefix, limit)
+	return gc.ListEntitiesByType(ctx, EntityTypeQuest, limit)
 }
 
-// ListAgentsByPrefix retrieves all agents on this board.
+// ListAgentsByPrefix retrieves all agents on this board from KV.
 func (gc *GraphClient) ListAgentsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	prefix := gc.config.TypePrefix(EntityTypeAgent)
-	return gc.QueryByPrefix(ctx, prefix, limit)
+	return gc.ListEntitiesByType(ctx, EntityTypeAgent, limit)
 }
 
-// ListGuildsByPrefix retrieves all guilds on this board.
+// ListGuildsByPrefix retrieves all guilds on this board from KV.
 func (gc *GraphClient) ListGuildsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	prefix := gc.config.TypePrefix(EntityTypeGuild)
-	return gc.QueryByPrefix(ctx, prefix, limit)
+	return gc.ListEntitiesByType(ctx, EntityTypeGuild, limit)
 }
 
-// ListPartiesByPrefix retrieves all parties on this board.
+// ListPartiesByPrefix retrieves all parties on this board from KV.
 func (gc *GraphClient) ListPartiesByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	prefix := gc.config.TypePrefix(EntityTypeParty)
-	return gc.QueryByPrefix(ctx, prefix, limit)
+	return gc.ListEntitiesByType(ctx, EntityTypeParty, limit)
 }
 
 // =============================================================================
@@ -449,10 +483,10 @@ func DecodeEntityState(entry jetstream.KeyValueEntry) (*graph.EntityState, error
 // KV ACCESS FOR NON-ENTITY STATE
 // =============================================================================
 
-// KVBucket returns the KV bucket for the board.
-// Used for simple key-value data that doesn't need full entity treatment.
+// KVBucket returns the ENTITY_STATES KV bucket for watching entity state changes.
+// Processors use this for KV Watch operations with TypePrefix-based key patterns.
 func (gc *GraphClient) KVBucket(ctx context.Context) (jetstream.KeyValue, error) {
-	return gc.nats.GetKeyValueBucket(ctx, gc.config.BucketName())
+	return gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
 }
 
 // Client returns the underlying NATS client for advanced operations.

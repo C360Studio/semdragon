@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/c360studio/semdragons/processor/agent_progression"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/model"
@@ -22,7 +22,7 @@ import (
 // AgentExecutor executes quests using an agent's LLM configuration.
 type AgentExecutor interface {
 	// Execute runs the agent on a quest and returns the result.
-	Execute(ctx context.Context, agent *agent_progression.Agent, quest *questboard.Quest) (*ExecutionResult, error)
+	Execute(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error)
 }
 
 // Compile-time interface compliance checks.
@@ -88,25 +88,25 @@ type DefaultExecutor struct {
 	maxTokens    int
 }
 
-// ExecutorOption configures a DefaultExecutor.
-type ExecutorOption func(*DefaultExecutor)
+// Option configures a DefaultExecutor.
+type Option func(*DefaultExecutor)
 
 // WithMaxTurns sets the maximum number of tool-call turns.
-func WithMaxTurns(n int) ExecutorOption {
+func WithMaxTurns(n int) Option {
 	return func(e *DefaultExecutor) {
 		e.maxTurns = n
 	}
 }
 
 // WithMaxTokens sets the token budget for execution.
-func WithMaxTokens(n int) ExecutorOption {
+func WithMaxTokens(n int) Option {
 	return func(e *DefaultExecutor) {
 		e.maxTokens = n
 	}
 }
 
 // NewDefaultExecutor creates an executor using the model registry and tool registry.
-func NewDefaultExecutor(registry model.RegistryReader, tools *ToolRegistry, opts ...ExecutorOption) *DefaultExecutor {
+func NewDefaultExecutor(registry model.RegistryReader, tools *ToolRegistry, opts ...Option) *DefaultExecutor {
 	e := &DefaultExecutor{
 		registry:     registry,
 		toolRegistry: tools,
@@ -120,7 +120,7 @@ func NewDefaultExecutor(registry model.RegistryReader, tools *ToolRegistry, opts
 }
 
 // Execute runs the agent on a quest and returns the result.
-func (e *DefaultExecutor) Execute(ctx context.Context, agent *agent_progression.Agent, quest *questboard.Quest) (*ExecutionResult, error) {
+func (e *DefaultExecutor) Execute(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error) {
 	startTime := time.Now()
 	loopID := fmt.Sprintf("%s-%s-%d", agent.ID, quest.ID, startTime.UnixNano())
 
@@ -270,7 +270,7 @@ func (e *DefaultExecutor) Execute(ctx context.Context, agent *agent_progression.
 }
 
 // buildInitialMessages constructs the initial conversation for a quest.
-func (e *DefaultExecutor) buildInitialMessages(agent *agent_progression.Agent, quest *questboard.Quest) []agentic.ChatMessage {
+func (e *DefaultExecutor) buildInitialMessages(agent *agentprogression.Agent, quest *questboard.Quest) []agentic.ChatMessage {
 	messages := make([]agentic.ChatMessage, 0, 2)
 
 	// System message: agent persona + quest context
@@ -291,7 +291,7 @@ func (e *DefaultExecutor) buildInitialMessages(agent *agent_progression.Agent, q
 }
 
 // buildSystemPrompt constructs the system prompt from agent persona and quest context.
-func (e *DefaultExecutor) buildSystemPrompt(agent *agent_progression.Agent, quest *questboard.Quest) string {
+func (e *DefaultExecutor) buildSystemPrompt(agent *agentprogression.Agent, quest *questboard.Quest) string {
 	var prompt string
 
 	// Start with agent's system prompt if configured
@@ -349,7 +349,7 @@ func (e *DefaultExecutor) buildUserPrompt(quest *questboard.Quest) string {
 }
 
 // executeTool runs a tool call and returns the result.
-func (e *DefaultExecutor) executeTool(ctx context.Context, call agentic.ToolCall, quest *questboard.Quest, agent *agent_progression.Agent) agentic.ToolResult {
+func (e *DefaultExecutor) executeTool(ctx context.Context, call agentic.ToolCall, quest *questboard.Quest, agent *agentprogression.Agent) agentic.ToolResult {
 	if e.toolRegistry == nil {
 		return agentic.ToolResult{
 			CallID: call.ID,
@@ -362,7 +362,7 @@ func (e *DefaultExecutor) executeTool(ctx context.Context, call agentic.ToolCall
 
 // getMaxTokens returns the max tokens for the request output.
 // Considers agent config, endpoint context window, and reasonable defaults.
-func (e *DefaultExecutor) getMaxTokens(agent *agent_progression.Agent, endpoint *model.EndpointConfig) int {
+func (e *DefaultExecutor) getMaxTokens(agent *agentprogression.Agent, endpoint *model.EndpointConfig) int {
 	// Use agent's configured max if specified
 	if agent.Config.MaxTokens > 0 {
 		return agent.Config.MaxTokens
@@ -385,7 +385,7 @@ func (e *DefaultExecutor) getMaxTokens(agent *agent_progression.Agent, endpoint 
 }
 
 // getTemperature returns the temperature for the request.
-func (e *DefaultExecutor) getTemperature(agent *agent_progression.Agent) float64 {
+func (e *DefaultExecutor) getTemperature(agent *agentprogression.Agent) float64 {
 	if agent.Config.Temperature > 0 {
 		return agent.Config.Temperature
 	}
@@ -398,11 +398,11 @@ func (e *DefaultExecutor) getTemperature(agent *agent_progression.Agent) float64
 
 // MockExecutor is a test implementation of AgentExecutor.
 type MockExecutor struct {
-	ExecuteFunc func(ctx context.Context, agent *agent_progression.Agent, quest *questboard.Quest) (*ExecutionResult, error)
+	ExecuteFunc func(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error)
 }
 
 // Execute implements AgentExecutor.
-func (m *MockExecutor) Execute(ctx context.Context, agent *agent_progression.Agent, quest *questboard.Quest) (*ExecutionResult, error) {
+func (m *MockExecutor) Execute(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error) {
 	if m.ExecuteFunc != nil {
 		return m.ExecuteFunc(ctx, agent, quest)
 	}

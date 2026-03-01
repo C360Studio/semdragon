@@ -213,6 +213,14 @@ func (q *Quest) Triples() []message.Triple {
 		)
 	}
 
+	// Escalation
+	if q.Escalated {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.failure.escalated", Object: true,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
 	// Failure info
 	if q.FailureReason != "" {
 		triples = append(triples, message.Triple{

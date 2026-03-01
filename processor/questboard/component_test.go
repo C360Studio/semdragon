@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/natsclient"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -21,7 +22,7 @@ import (
 // =============================================================================
 
 func TestComponent_Lifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -81,7 +82,7 @@ func TestComponent_Lifecycle(t *testing.T) {
 }
 
 func TestComponent_PostQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -89,7 +90,7 @@ func TestComponent_PostQuest(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Post a quest
-	quest := semdragons.Quest{
+	quest := Quest{
 		Title:       "Test Quest",
 		Description: "A test quest for integration testing",
 		Difficulty:  semdragons.DifficultyModerate,
@@ -126,7 +127,7 @@ func TestComponent_PostQuest(t *testing.T) {
 }
 
 func TestComponent_ClaimQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -134,10 +135,10 @@ func TestComponent_ClaimQuest(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create an agent first
-	agent := createTestAgent(t, comp.Storage(), comp.BoardConfig(), "claim-agent", 5)
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "claim-agent", 5)
 
 	// Post a quest
-	quest, err := comp.PostQuest(ctx, semdragons.Quest{
+	quest, err := comp.PostQuest(ctx, Quest{
 		Title:      "Claimable Quest",
 		Difficulty: semdragons.DifficultyTrivial,
 	})
@@ -168,7 +169,7 @@ func TestComponent_ClaimQuest(t *testing.T) {
 }
 
 func TestComponent_QuestLifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -176,10 +177,10 @@ func TestComponent_QuestLifecycle(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create agent
-	agent := createTestAgent(t, comp.Storage(), comp.BoardConfig(), "lifecycle-agent", 5)
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "lifecycle-agent", 5)
 
 	// Post quest
-	quest, err := comp.PostQuest(ctx, semdragons.Quest{
+	quest, err := comp.PostQuest(ctx, Quest{
 		Title:      "Lifecycle Test Quest",
 		Difficulty: semdragons.DifficultyTrivial,
 	})
@@ -209,7 +210,7 @@ func TestComponent_QuestLifecycle(t *testing.T) {
 	t.Log("Started quest")
 
 	// Submit result (no review required)
-	battle, err := comp.SubmitResult(ctx, quest.ID, map[string]any{"result": "success"})
+	err = comp.SubmitResult(ctx, quest.ID, map[string]any{"result": "success"})
 	if err != nil {
 		t.Fatalf("SubmitResult failed: %v", err)
 	}
@@ -219,14 +220,11 @@ func TestComponent_QuestLifecycle(t *testing.T) {
 	if submitted.Status != semdragons.QuestCompleted {
 		t.Errorf("Status = %v, want %v (no review required)", submitted.Status, semdragons.QuestCompleted)
 	}
-	if battle != nil {
-		t.Error("Battle should be nil when RequireReview is false")
-	}
 	t.Log("Quest completed directly (no review)")
 }
 
 func TestComponent_QuestWithReview(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -234,13 +232,13 @@ func TestComponent_QuestWithReview(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create agent with level 7 (TierJourneyman) to be able to claim DifficultyModerate quests
-	agent := createTestAgent(t, comp.Storage(), comp.BoardConfig(), "review-agent", 7)
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "review-agent", 7)
 
 	// Post quest that requires review
-	quest, err := comp.PostQuest(ctx, semdragons.Quest{
+	quest, err := comp.PostQuest(ctx, Quest{
 		Title:      "Review Required Quest",
 		Difficulty: semdragons.DifficultyModerate,
-		Constraints: semdragons.QuestConstraints{
+		Constraints: QuestConstraints{
 			RequireReview: true,
 			ReviewLevel:   semdragons.ReviewStandard,
 		},
@@ -258,30 +256,19 @@ func TestComponent_QuestWithReview(t *testing.T) {
 	}
 
 	// Submit result
-	battle, err := comp.SubmitResult(ctx, quest.ID, map[string]any{"code": "function() {}"})
+	err = comp.SubmitResult(ctx, quest.ID, map[string]any{"code": "function() {}"})
 	if err != nil {
 		t.Fatalf("SubmitResult failed: %v", err)
 	}
 
-	// Should create battle
-	if battle == nil {
-		t.Fatal("Battle should be created when RequireReview is true")
-	}
-	if battle.Status != semdragons.BattleActive {
-		t.Errorf("Battle.Status = %v, want %v", battle.Status, semdragons.BattleActive)
-	}
-	if battle.QuestID != quest.ID {
-		t.Errorf("Battle.QuestID = %v, want %v", battle.QuestID, quest.ID)
-	}
-
-	// Quest should be in review
+	// Quest should be in review (bossbattle processor handles battle creation reactively)
 	inReview, _ := comp.GetQuest(ctx, quest.ID)
 	if inReview.Status != semdragons.QuestInReview {
 		t.Errorf("Status = %v, want %v", inReview.Status, semdragons.QuestInReview)
 	}
 
 	// Complete the quest with a passing verdict
-	verdict := semdragons.BattleVerdict{
+	verdict := BattleVerdict{
 		Passed:       true,
 		QualityScore: 0.85,
 		XPAwarded:    100,
@@ -298,17 +285,17 @@ func TestComponent_QuestWithReview(t *testing.T) {
 }
 
 func TestComponent_FailQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
 	comp := setupComponent(t, client, "failquest")
 	defer comp.Stop(5 * time.Second)
 
-	agent := createTestAgent(t, comp.Storage(), comp.BoardConfig(), "fail-agent", 5)
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "fail-agent", 5)
 
 	// Post quest with max attempts = 2
-	quest, err := comp.PostQuest(ctx, semdragons.Quest{
+	quest, err := comp.PostQuest(ctx, Quest{
 		Title:       "Fail Test Quest",
 		Difficulty:  semdragons.DifficultyTrivial,
 		MaxAttempts: 2,
@@ -354,16 +341,16 @@ func TestComponent_FailQuest(t *testing.T) {
 }
 
 func TestComponent_AbandonQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
 	comp := setupComponent(t, client, "abandon")
 	defer comp.Stop(5 * time.Second)
 
-	agent := createTestAgent(t, comp.Storage(), comp.BoardConfig(), "abandon-agent", 5)
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "abandon-agent", 5)
 
-	quest, err := comp.PostQuest(ctx, semdragons.Quest{
+	quest, err := comp.PostQuest(ctx, Quest{
 		Title:      "Abandon Test Quest",
 		Difficulty: semdragons.DifficultyTrivial,
 	})
@@ -390,7 +377,7 @@ func TestComponent_AbandonQuest(t *testing.T) {
 }
 
 func TestComponent_EscalateQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -398,9 +385,9 @@ func TestComponent_EscalateQuest(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create agent with level 7 (TierJourneyman) to be able to claim DifficultyModerate quests
-	agent := createTestAgent(t, comp.Storage(), comp.BoardConfig(), "escalate-agent", 7)
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "escalate-agent", 7)
 
-	quest, err := comp.PostQuest(ctx, semdragons.Quest{
+	quest, err := comp.PostQuest(ctx, Quest{
 		Title:      "Escalate Test Quest",
 		Difficulty: semdragons.DifficultyModerate,
 	})
@@ -431,7 +418,7 @@ func TestComponent_EscalateQuest(t *testing.T) {
 }
 
 func TestComponent_BoardStats(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -440,7 +427,7 @@ func TestComponent_BoardStats(t *testing.T) {
 
 	// Post some quests
 	for i := 0; i < 3; i++ {
-		_, err := comp.PostQuest(ctx, semdragons.Quest{
+		_, err := comp.PostQuest(ctx, Quest{
 			Title:      "Stats Test Quest",
 			Difficulty: semdragons.DifficultyTrivial,
 		})
@@ -461,7 +448,7 @@ func TestComponent_BoardStats(t *testing.T) {
 }
 
 func TestComponent_AvailableQuests(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -469,11 +456,11 @@ func TestComponent_AvailableQuests(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create agent with specific skills
-	agent := createTestAgentWithSkills(t, comp.Storage(), comp.BoardConfig(), "avail-agent", 5,
+	agent := createTestAgentWithSkills(t, comp.GraphClient(), comp.BoardConfig(), "avail-agent", 5,
 		[]semdragons.SkillTag{semdragons.SkillCodeGen, semdragons.SkillAnalysis})
 
 	// Post quests with different difficulties
-	_, err := comp.PostQuest(ctx, semdragons.Quest{
+	_, err := comp.PostQuest(ctx, Quest{
 		Title:      "Simple Quest",
 		Difficulty: semdragons.DifficultyTrivial,
 	})
@@ -481,7 +468,7 @@ func TestComponent_AvailableQuests(t *testing.T) {
 		t.Fatalf("PostQuest (simple) failed: %v", err)
 	}
 
-	_, err = comp.PostQuest(ctx, semdragons.Quest{
+	_, err = comp.PostQuest(ctx, Quest{
 		Title:      "Epic Quest (too hard)",
 		Difficulty: semdragons.DifficultyEpic, // Requires higher tier
 		MinTier:    semdragons.TierMaster,
@@ -491,7 +478,7 @@ func TestComponent_AvailableQuests(t *testing.T) {
 	}
 
 	// Get available quests for agent
-	available, err := comp.AvailableQuests(ctx, agent.ID, semdragons.QuestFilter{})
+	available, err := comp.AvailableQuests(ctx, agent.ID, QuestFilter{})
 	if err != nil {
 		t.Fatalf("AvailableQuests failed: %v", err)
 	}
@@ -575,6 +562,8 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 	config.Platform = "integration"
 	config.Board = name
 
+	ctx := context.Background()
+
 	comp, err := NewFromConfig(config, deps)
 	if err != nil {
 		t.Fatalf("NewFromConfig failed: %v", err)
@@ -584,7 +573,6 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 		t.Fatalf("Initialize failed: %v", err)
 	}
 
-	ctx := context.Background()
 	if err := comp.Start(ctx); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -592,12 +580,12 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 	return comp
 }
 
-func createTestAgent(t *testing.T, storage *semdragons.Storage, config *semdragons.BoardConfig, name string, level int) *semdragons.Agent {
+func createTestAgent(t *testing.T, storage *semdragons.GraphClient, config *semdragons.BoardConfig, name string, level int) *semdragons.Agent {
 	t.Helper()
 	return createTestAgentWithSkills(t, storage, config, name, level, nil)
 }
 
-func createTestAgentWithSkills(t *testing.T, storage *semdragons.Storage, config *semdragons.BoardConfig, name string, level int, skills []semdragons.SkillTag) *semdragons.Agent {
+func createTestAgentWithSkills(t *testing.T, storage *semdragons.GraphClient, config *semdragons.BoardConfig, name string, level int, skills []semdragons.SkillTag) *semdragons.Agent {
 	t.Helper()
 
 	instance := semdragons.GenerateInstance()
@@ -623,7 +611,7 @@ func createTestAgentWithSkills(t *testing.T, storage *semdragons.Storage, config
 	}
 
 	ctx := context.Background()
-	if err := storage.PutAgent(ctx, instance, agent); err != nil {
+	if err := storage.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 		t.Fatalf("Failed to create test agent: %v", err)
 	}
 

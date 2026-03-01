@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/natsclient"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -21,7 +22,7 @@ import (
 // =============================================================================
 
 func TestComponent_Lifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -146,7 +147,7 @@ func TestComponent_ConfigSchema(t *testing.T) {
 }
 
 func TestComponent_UpdateRules(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 
 	comp := setupComponent(t, client, "rules")
@@ -172,14 +173,14 @@ func TestComponent_UpdateRules(t *testing.T) {
 }
 
 func TestComponent_ComputeAttractionsNow(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
 	comp := setupComponent(t, client, "compute")
 	defer comp.Stop(5 * time.Second)
 
-	storage := comp.Storage()
+	graph := comp.Graph()
 
 	// Create test agents
 	for i := 0; i < 3; i++ {
@@ -191,7 +192,7 @@ func TestComponent_ComputeAttractionsNow(t *testing.T) {
 			Level:  5,
 			Status: semdragons.AgentIdle,
 		}
-		if err := storage.PutAgent(ctx, instance, agent); err != nil {
+		if err := graph.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 			t.Fatalf("Failed to create agent %d: %v", i, err)
 		}
 	}
@@ -205,11 +206,8 @@ func TestComponent_ComputeAttractionsNow(t *testing.T) {
 			Difficulty: semdragons.DifficultyTrivial,
 			Status:     semdragons.QuestPosted,
 		}
-		if err := storage.PutQuest(ctx, instance, quest); err != nil {
+		if err := graph.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
 			t.Fatalf("Failed to create quest %d: %v", i, err)
-		}
-		if err := storage.AddQuestStatusIndex(ctx, semdragons.QuestPosted, instance); err != nil {
-			t.Fatalf("Failed to index quest %d: %v", i, err)
 		}
 	}
 
@@ -224,7 +222,7 @@ func TestComponent_ComputeAttractionsNow(t *testing.T) {
 }
 
 func TestComponent_Stats(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 
 	comp := setupComponent(t, client, "stats")
@@ -258,6 +256,8 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 	config.Platform = "integration"
 	config.Board = name
 
+	ctx := context.Background()
+
 	comp, err := NewFromConfig(config, deps)
 	if err != nil {
 		t.Fatalf("NewFromConfig failed: %v", err)
@@ -267,7 +267,6 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 		t.Fatalf("Initialize failed: %v", err)
 	}
 
-	ctx := context.Background()
 	if err := comp.Start(ctx); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}

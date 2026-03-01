@@ -374,11 +374,11 @@ func RegisterVocabulary() {
 	// Seeding predicates
 	vocabulary.Register(PredicateSeedingStarted,
 		vocabulary.WithDescription("Environment seeding began"),
-		vocabulary.WithDataType("SeedingStartedPayload"),
+		vocabulary.WithDataType("seeding.StartedPayload"),
 	)
 	vocabulary.Register(PredicateSeedingCompleted,
 		vocabulary.WithDescription("Environment seeding finished"),
-		vocabulary.WithDataType("SeedingCompletedPayload"),
+		vocabulary.WithDataType("seeding.CompletedPayload"),
 	)
 	vocabulary.Register(PredicateArenaRoundStarted,
 		vocabulary.WithDescription("Training arena round began"),

@@ -306,12 +306,16 @@ func (c *Component) Start(ctx context.Context) error {
 }
 
 // Stop gracefully shuts down the component.
-func (c *Component) Stop(_ time.Duration) error {
+func (c *Component) Stop(timeout time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if !c.running.Load() {
 		return nil
+	}
+
+	if timeout <= 0 {
+		timeout = 5 * time.Second
 	}
 
 	// Close stop channel
@@ -322,9 +326,13 @@ func (c *Component) Stop(_ time.Duration) error {
 		c.questWatch.Stop()
 	}
 
-	// Wait for watch goroutine to finish
+	// Wait for watch goroutine to finish with timeout
 	if c.watchDoneCh != nil {
-		<-c.watchDoneCh
+		select {
+		case <-c.watchDoneCh:
+		case <-time.After(timeout):
+			c.logger.Warn("stop timed out waiting for KV watcher")
+		}
 	}
 
 	// Cancel all active battles

@@ -27,8 +27,7 @@ var (
 	_ graph.Graphable = (*ToolResultPayload)(nil)
 )
 
-// --- Typed Subjects ---
-
+// Typed subjects for executor lifecycle events.
 var (
 	SubjectExecutionStarted   = natsclient.NewSubject[ExecutionStartedPayload](domain.PredicateExecutionStarted)
 	SubjectExecutionCompleted = natsclient.NewSubject[ExecutionCompletedPayload](domain.PredicateExecutionCompleted)
@@ -64,8 +63,10 @@ type ExecutionStartedPayload struct {
 	Trace      TraceInfo      `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *ExecutionStartedPayload) EntityID() string { return string(p.QuestID) }
 
+// Triples returns semantic triples for this event.
 func (p *ExecutionStartedPayload) Triples() []message.Triple {
 	source := "executor"
 	entityID := string(p.QuestID)
@@ -80,10 +81,12 @@ func (p *ExecutionStartedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *ExecutionStartedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "execution.started", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *ExecutionStartedPayload) Validate() error {
 	if p.QuestID == "" {
 		return errors.New("quest_id required")
@@ -116,8 +119,10 @@ type ExecutionCompletedPayload struct {
 	Trace            TraceInfo       `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *ExecutionCompletedPayload) EntityID() string { return string(p.QuestID) }
 
+// Triples returns semantic triples for this event.
 func (p *ExecutionCompletedPayload) Triples() []message.Triple {
 	source := "executor"
 	entityID := string(p.QuestID)
@@ -133,10 +138,12 @@ func (p *ExecutionCompletedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *ExecutionCompletedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "execution.completed", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *ExecutionCompletedPayload) Validate() error {
 	if p.QuestID == "" {
 		return errors.New("quest_id required")
@@ -168,8 +175,10 @@ type ExecutionFailedPayload struct {
 	Trace          TraceInfo       `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *ExecutionFailedPayload) EntityID() string { return string(p.QuestID) }
 
+// Triples returns semantic triples for this event.
 func (p *ExecutionFailedPayload) Triples() []message.Triple {
 	source := "executor"
 	entityID := string(p.QuestID)
@@ -184,10 +193,12 @@ func (p *ExecutionFailedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *ExecutionFailedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "execution.failed", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *ExecutionFailedPayload) Validate() error {
 	if p.QuestID == "" {
 		return errors.New("quest_id required")
@@ -218,8 +229,10 @@ type ToolCallPayload struct {
 	Trace     TraceInfo      `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *ToolCallPayload) EntityID() string { return string(p.QuestID) }
 
+// Triples returns semantic triples for this event.
 func (p *ToolCallPayload) Triples() []message.Triple {
 	source := "executor"
 	entityID := string(p.QuestID)
@@ -231,10 +244,12 @@ func (p *ToolCallPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *ToolCallPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "execution.tool.call", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *ToolCallPayload) Validate() error {
 	if p.QuestID == "" {
 		return errors.New("quest_id required")
@@ -266,8 +281,10 @@ type ToolResultPayload struct {
 	Trace     TraceInfo      `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *ToolResultPayload) EntityID() string { return string(p.QuestID) }
 
+// Triples returns semantic triples for this event.
 func (p *ToolResultPayload) Triples() []message.Triple {
 	source := "executor"
 	entityID := string(p.QuestID)
@@ -288,10 +305,12 @@ func (p *ToolResultPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *ToolResultPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "execution.tool.result", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *ToolResultPayload) Validate() error {
 	if p.QuestID == "" {
 		return errors.New("quest_id required")

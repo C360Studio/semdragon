@@ -63,6 +63,8 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.Attempts = asInt(triple.Object)
 		case "quest.attempts.max":
 			q.MaxAttempts = asInt(triple.Object)
+		case "quest.failure.escalated":
+			q.Escalated = asBool(triple.Object)
 		case "quest.lifecycle.posted_at":
 			q.PostedAt = asTime(triple.Object)
 		case "quest.lifecycle.claimed_at":

@@ -9,7 +9,7 @@ import (
 // =============================================================================
 
 // DomainID uniquely identifies a domain configuration.
-type DomainID = domain.DomainID
+type DomainID = domain.ID
 
 // Standard domain IDs.
 const (
@@ -19,10 +19,10 @@ const (
 )
 
 // DomainConfig holds the configuration for a specific domain.
-type DomainConfig = domain.DomainConfig
+type DomainConfig = domain.Config
 
 // DomainSkill defines a skill available in a domain.
-type DomainSkill = domain.DomainSkill
+type DomainSkill = domain.Skill
 
 // DomainVocabulary provides domain-specific terminology overrides.
-type DomainVocabulary = domain.DomainVocabulary
+type DomainVocabulary = domain.Vocabulary

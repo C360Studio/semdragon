@@ -30,8 +30,7 @@ var (
 	_ graph.Graphable = (*QuestAbandonedPayload)(nil)
 )
 
-// --- Typed Subjects ---
-
+// Typed subjects for quest lifecycle events.
 var (
 	SubjectQuestPosted    = natsclient.NewSubject[QuestPostedPayload](domain.PredicateQuestPosted)
 	SubjectQuestClaimed   = natsclient.NewSubject[QuestClaimedPayload](domain.PredicateQuestClaimed)
@@ -62,16 +61,20 @@ type QuestPostedPayload struct {
 	Trace    TraceInfo `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *QuestPostedPayload) EntityID() string { return string(p.Quest.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *QuestPostedPayload) Triples() []message.Triple {
 	return questToTriples(&p.Quest, p.PostedAt)
 }
 
+// Schema returns the type schema for this payload.
 func (p *QuestPostedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "quest.posted", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *QuestPostedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -93,8 +96,10 @@ type QuestClaimedPayload struct {
 	Trace     TraceInfo       `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *QuestClaimedPayload) EntityID() string { return string(p.Quest.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *QuestClaimedPayload) Triples() []message.Triple {
 	triples := questToTriples(&p.Quest, p.ClaimedAt)
 	id := string(p.Quest.ID)
@@ -114,10 +119,12 @@ func (p *QuestClaimedPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *QuestClaimedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "quest.claimed", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *QuestClaimedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -142,16 +149,20 @@ type QuestStartedPayload struct {
 	Trace     TraceInfo       `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *QuestStartedPayload) EntityID() string { return string(p.Quest.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *QuestStartedPayload) Triples() []message.Triple {
 	return questToTriples(&p.Quest, p.StartedAt)
 }
 
+// Schema returns the type schema for this payload.
 func (p *QuestStartedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "quest.started", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *QuestStartedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -175,8 +186,10 @@ type QuestSubmittedPayload struct {
 	Trace       TraceInfo          `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *QuestSubmittedPayload) EntityID() string { return string(p.Quest.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *QuestSubmittedPayload) Triples() []message.Triple {
 	triples := questToTriples(&p.Quest, p.SubmittedAt)
 	id := string(p.Quest.ID)
@@ -196,10 +209,12 @@ func (p *QuestSubmittedPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *QuestSubmittedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "quest.submitted", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *QuestSubmittedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -254,8 +269,10 @@ type QuestCompletedPayload struct {
 	Trace        TraceInfo       `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *QuestCompletedPayload) EntityID() string { return string(p.Quest.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *QuestCompletedPayload) Triples() []message.Triple {
 	triples := questToTriples(&p.Quest, p.CompletedAt)
 	id := string(p.Quest.ID)
@@ -270,10 +287,12 @@ func (p *QuestCompletedPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *QuestCompletedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "quest.completed", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *QuestCompletedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -290,9 +309,13 @@ func (p *QuestCompletedPayload) Validate() error {
 type FailureType string
 
 const (
-	FailureQuality   FailureType = "quality"
-	FailureTimeout   FailureType = "timeout"
-	FailureError     FailureType = "error"
+	// FailureQuality indicates the quest output did not meet quality standards.
+	FailureQuality FailureType = "quality"
+	// FailureTimeout indicates the quest exceeded its time limit.
+	FailureTimeout FailureType = "timeout"
+	// FailureError indicates an unexpected error during execution.
+	FailureError FailureType = "error"
+	// FailureAbandoned indicates the agent abandoned the quest.
 	FailureAbandoned FailureType = "abandoned"
 )
 
@@ -311,8 +334,10 @@ type QuestFailedPayload struct {
 	Trace        TraceInfo       `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *QuestFailedPayload) EntityID() string { return string(p.Quest.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *QuestFailedPayload) Triples() []message.Triple {
 	triples := questToTriples(&p.Quest, p.FailedAt)
 	id := string(p.Quest.ID)
@@ -325,10 +350,12 @@ func (p *QuestFailedPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *QuestFailedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "quest.failed", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *QuestFailedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -352,8 +379,10 @@ type QuestEscalatedPayload struct {
 	Trace       TraceInfo       `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *QuestEscalatedPayload) EntityID() string { return string(p.Quest.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *QuestEscalatedPayload) Triples() []message.Triple {
 	triples := questToTriples(&p.Quest, p.EscalatedAt)
 	id := string(p.Quest.ID)
@@ -365,10 +394,12 @@ func (p *QuestEscalatedPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *QuestEscalatedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "quest.escalated", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *QuestEscalatedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")
@@ -391,8 +422,10 @@ type QuestAbandonedPayload struct {
 	Trace       TraceInfo       `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *QuestAbandonedPayload) EntityID() string { return string(p.Quest.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *QuestAbandonedPayload) Triples() []message.Triple {
 	triples := questToTriples(&p.Quest, p.AbandonedAt)
 	id := string(p.Quest.ID)
@@ -404,10 +437,12 @@ func (p *QuestAbandonedPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *QuestAbandonedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "quest.abandoned", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *QuestAbandonedPayload) Validate() error {
 	if p.Quest.ID == "" {
 		return errors.New("quest_id required")

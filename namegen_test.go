@@ -7,25 +7,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/natsclient"
 )
 
-func setupNameGenTestBoard(t *testing.T) (*Storage, func()) {
+func setupNameGenTestBoard(t *testing.T) (*GraphClient, func()) {
 	t.Helper()
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t,
+		natsclient.WithKV(),
+		natsclient.WithKVBuckets(graph.BucketEntityStates),
+	)
 	config := BoardConfig{
 		Org:      "test",
 		Platform: "unit",
 		Board:    "namegen",
 	}
 
-	ctx := context.Background()
-	storage, err := CreateStorage(ctx, tc.Client, &config)
-	if err != nil {
-		t.Fatalf("failed to create storage: %v", err)
-	}
+	gc := NewGraphClient(tc.Client, &config)
 
-	return storage, func() {
+	return gc, func() {
 		tc.Client.Close(context.Background())
 	}
 }
@@ -33,16 +33,18 @@ func setupNameGenTestBoard(t *testing.T) (*Storage, func()) {
 func TestNameGenerator_GenerateName(t *testing.T) {
 	ctx := context.Background()
 
-	storage, cleanup := setupNameGenTestBoard(t)
+	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(storage)
+	gen := NewNameGenerator(graph)
 
 	agent := &Agent{
-		ID:     "test-agent",
-		Name:   "test-agent",
-		Tier:   TierApprentice,
-		Skills: []SkillTag{SkillCodeGen},
+		ID:   "test-agent",
+		Name: "test-agent",
+		Tier: TierApprentice,
+		SkillProficiencies: map[SkillTag]SkillProficiency{
+			SkillCodeGen: {Level: ProficiencyNovice},
+		},
 	}
 
 	name, err := gen.GenerateName(ctx, agent)
@@ -60,10 +62,10 @@ func TestNameGenerator_GenerateName(t *testing.T) {
 func TestNameGenerator_SuggestNames(t *testing.T) {
 	ctx := context.Background()
 
-	storage, cleanup := setupNameGenTestBoard(t)
+	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(storage)
+	gen := NewNameGenerator(graph)
 
 	agent := &Agent{
 		ID:   "test-agent",
@@ -98,10 +100,10 @@ func TestNameGenerator_SuggestNames(t *testing.T) {
 func TestNameGenerator_SetDisplayName(t *testing.T) {
 	ctx := context.Background()
 
-	storage, cleanup := setupNameGenTestBoard(t)
+	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(storage)
+	gen := NewNameGenerator(graph)
 
 	t.Run("valid name", func(t *testing.T) {
 		agent := &Agent{ID: "agent-1", Name: "agent-1"}
@@ -138,15 +140,15 @@ func TestNameGenerator_SetDisplayName(t *testing.T) {
 func TestNameGenerator_Uniqueness(t *testing.T) {
 	ctx := context.Background()
 
-	storage, cleanup := setupNameGenTestBoard(t)
+	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(storage)
+	gen := NewNameGenerator(graph)
 
 	// Create first agent with a display name
 	instance1 := GenerateInstance()
 	agent1 := &Agent{
-		ID:          AgentID(storage.Config().AgentEntityID(instance1)),
+		ID:          AgentID(graph.Config().AgentEntityID(instance1)),
 		Name:        "agent-1",
 		DisplayName: "Codewarden",
 		Status:      AgentIdle,
@@ -155,7 +157,7 @@ func TestNameGenerator_Uniqueness(t *testing.T) {
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
-	if err := storage.PutAgent(ctx, instance1, agent1); err != nil {
+	if err := graph.PutEntityState(ctx, agent1, "agent.identity.created"); err != nil {
 		t.Fatalf("failed to save agent1: %v", err)
 	}
 
@@ -183,22 +185,28 @@ func TestNameGenerator_Uniqueness(t *testing.T) {
 func TestNameGenerator_SkillBasedPrefixes(t *testing.T) {
 	ctx := context.Background()
 
-	storage, cleanup := setupNameGenTestBoard(t)
+	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(storage)
+	gen := NewNameGenerator(graph)
 
 	// Test that different skills produce different name styles
 	codeAgent := &Agent{
-		ID:     "code-agent",
-		Tier:   TierJourneyman,
-		Skills: []SkillTag{SkillCodeGen, SkillCodeReview},
+		ID:   "code-agent",
+		Tier: TierJourneyman,
+		SkillProficiencies: map[SkillTag]SkillProficiency{
+			SkillCodeGen:    {Level: ProficiencyNovice},
+			SkillCodeReview: {Level: ProficiencyNovice},
+		},
 	}
 
 	researchAgent := &Agent{
-		ID:     "research-agent",
-		Tier:   TierJourneyman,
-		Skills: []SkillTag{SkillResearch, SkillAnalysis},
+		ID:   "research-agent",
+		Tier: TierJourneyman,
+		SkillProficiencies: map[SkillTag]SkillProficiency{
+			SkillResearch: {Level: ProficiencyNovice},
+			SkillAnalysis: {Level: ProficiencyNovice},
+		},
 	}
 
 	// Generate multiple names to see the variety

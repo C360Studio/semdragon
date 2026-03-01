@@ -59,15 +59,18 @@ func (c *Component) startKVWatchers(ctx context.Context) error {
 		return err
 	}
 
-	// Watch agent state changes
-	agentWatcher, err := kv.Watch(ctx, "agent.state.>")
+	// Watch agent state changes using entity ID prefix pattern
+	// Keys in ENTITY_STATES follow: org.platform.game.board.type.instance
+	agentPrefix := c.graph.Config().TypePrefix("agent") + ".>"
+	agentWatcher, err := kv.Watch(ctx, agentPrefix)
 	if err != nil {
 		return err
 	}
 	c.agentWatch = agentWatcher
 
-	// Watch quest state changes
-	questWatcher, err := kv.Watch(ctx, "quest.state.>")
+	// Watch quest state changes using entity ID prefix pattern
+	questPrefix := c.graph.Config().TypePrefix("quest") + ".>"
+	questWatcher, err := kv.Watch(ctx, questPrefix)
 	if err != nil {
 		c.agentWatch.Stop()
 		return err
@@ -359,6 +362,7 @@ type BoidStats struct {
 }
 
 // createGraphClient creates the graph client for the component.
+// Context is unused: NewGraphClient is a synchronous in-memory constructor.
 func (c *Component) createGraphClient(_ context.Context) error {
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 	return nil

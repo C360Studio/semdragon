@@ -32,6 +32,7 @@ type BattleID string
 // AgentStatus represents the current state of an agent in the system.
 type AgentStatus string
 
+// Agent status values.
 const (
 	AgentIdle     AgentStatus = "idle"
 	AgentOnQuest  AgentStatus = "on_quest"
@@ -47,12 +48,13 @@ const (
 // TrustTier represents an agent's trust level derived from their level.
 type TrustTier int
 
+// Trust tier levels derived from agent experience.
 const (
-	TierApprentice  TrustTier = iota // Levels 1-5
-	TierJourneyman                   // Levels 6-10
-	TierExpert                       // Levels 11-15
-	TierMaster                       // Levels 16-18
-	TierGrandmaster                  // Levels 19-20
+	TierApprentice  TrustTier = iota // TierApprentice covers levels 1-5.
+	TierJourneyman                   // TierJourneyman covers levels 6-10.
+	TierExpert                       // TierExpert covers levels 11-15.
+	TierMaster                       // TierMaster covers levels 16-18.
+	TierGrandmaster                  // TierGrandmaster covers levels 19-20.
 )
 
 // TierFromLevel returns the trust tier for a given agent level.
@@ -78,7 +80,7 @@ func TierFromLevel(level int) TrustTier {
 // SkillTag represents a domain of competence.
 type SkillTag string
 
-// Common skill tags.
+// Common skill tags used to tag quests and agent capabilities.
 const (
 	SkillCodeGen       SkillTag = "code_generation"
 	SkillCodeReview    SkillTag = "code_review"
@@ -94,6 +96,7 @@ const (
 // ProficiencyLevel represents mastery level of a skill (1-5).
 type ProficiencyLevel int
 
+// Proficiency levels from beginner to mastery.
 const (
 	ProficiencyNovice     ProficiencyLevel = 1
 	ProficiencyApprentice ProficiencyLevel = 2
@@ -145,6 +148,7 @@ func (sp SkillProficiency) CanLevelUp() bool {
 // QuestStatus represents the lifecycle state of a quest.
 type QuestStatus string
 
+// Quest lifecycle status values.
 const (
 	QuestPosted     QuestStatus = "posted"
 	QuestClaimed    QuestStatus = "claimed"
@@ -159,13 +163,14 @@ const (
 // QuestDifficulty represents the challenge level of a quest.
 type QuestDifficulty int
 
+// Quest difficulty tiers matched to agent level ranges.
 const (
-	DifficultyTrivial   QuestDifficulty = iota // Level 1-5
-	DifficultyEasy                             // Level 3-7
-	DifficultyModerate                         // Level 6-10
-	DifficultyHard                             // Level 10-14
-	DifficultyEpic                             // Level 14-18
-	DifficultyLegendary                        // Level 18-20 or party required
+	DifficultyTrivial   QuestDifficulty = iota // DifficultyTrivial suits levels 1-5.
+	DifficultyEasy                             // DifficultyEasy suits levels 3-7.
+	DifficultyModerate                         // DifficultyModerate suits levels 6-10.
+	DifficultyHard                             // DifficultyHard suits levels 10-14.
+	DifficultyEpic                             // DifficultyEpic suits levels 14-18.
+	DifficultyLegendary                        // DifficultyLegendary suits levels 18-20 or requires a party.
 )
 
 // =============================================================================
@@ -175,16 +180,18 @@ const (
 // ReviewLevel indicates the rigor of the boss battle review.
 type ReviewLevel int
 
+// Review rigor levels from automated to human-required.
 const (
-	ReviewAuto     ReviewLevel = iota // Automated checks only
-	ReviewStandard                    // LLM-as-judge
-	ReviewStrict                      // Multi-judge panel
-	ReviewHuman                       // Human reviewer required
+	ReviewAuto     ReviewLevel = iota // ReviewAuto uses automated checks only.
+	ReviewStandard                    // ReviewStandard uses an LLM-as-judge.
+	ReviewStrict                      // ReviewStrict uses a multi-judge panel.
+	ReviewHuman                       // ReviewHuman requires a human reviewer.
 )
 
 // BattleStatus represents the state of a boss battle.
 type BattleStatus string
 
+// Boss battle outcome values.
 const (
 	BattleActive  BattleStatus = "active"
 	BattleVictory BattleStatus = "victory"
@@ -195,6 +202,7 @@ const (
 // JudgeType indicates the kind of judge.
 type JudgeType string
 
+// Judge kind values for boss battle evaluation.
 const (
 	JudgeAutomated JudgeType = "automated"
 	JudgeLLM       JudgeType = "llm"
@@ -225,6 +233,7 @@ type ReviewResult struct {
 // PartyStatus represents the current state of a party.
 type PartyStatus string
 
+// Party lifecycle status values.
 const (
 	PartyForming   PartyStatus = "forming"
 	PartyActive    PartyStatus = "active"
@@ -234,6 +243,7 @@ const (
 // PartyRole represents a member's role within a party.
 type PartyRole string
 
+// Party member role values.
 const (
 	RoleLead     PartyRole = "lead"
 	RoleExecutor PartyRole = "executor"
@@ -248,6 +258,7 @@ const (
 // GuildStatus represents the current state of a guild.
 type GuildStatus string
 
+// Guild lifecycle status values.
 const (
 	GuildActive   GuildStatus = "active"
 	GuildInactive GuildStatus = "inactive"
@@ -256,6 +267,7 @@ const (
 // GuildRank represents a member's rank within a guild.
 type GuildRank string
 
+// Guild member rank values from lowest to highest.
 const (
 	GuildRankInitiate GuildRank = "initiate"
 	GuildRankMember   GuildRank = "member"

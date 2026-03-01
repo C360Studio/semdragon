@@ -46,7 +46,7 @@ func (c *Component) Seed(ctx context.Context) (*Result, error) {
 	c.lastActivity.Store(start)
 
 	// Publish seeding started event
-	if err := SubjectSeedingStarted.Publish(ctx, c.deps.NATSClient, SeedingStartedPayload{
+	if err := SubjectSeedingStarted.Publish(ctx, c.deps.NATSClient, StartedPayload{
 		SessionID: sessionID,
 		Mode:      c.config.Mode,
 		DryRun:    c.config.DryRun,
@@ -83,7 +83,7 @@ func (c *Component) Seed(ctx context.Context) (*Result, error) {
 	result.Duration = time.Since(start)
 
 	// Publish seeding completed event
-	if pubErr := SubjectSeedingCompleted.Publish(ctx, c.deps.NATSClient, SeedingCompletedPayload{
+	if pubErr := SubjectSeedingCompleted.Publish(ctx, c.deps.NATSClient, CompletedPayload{
 		SessionID:     sessionID,
 		Mode:          c.config.Mode,
 		Success:       result.Success,
@@ -341,8 +341,8 @@ func (c *Component) seedArena(ctx context.Context, sessionID string, result *Res
 // =============================================================================
 
 // GetStats returns seeding statistics.
-func (c *Component) GetStats() SeedingStats {
-	return SeedingStats{
+func (c *Component) GetStats() Stats {
+	return Stats{
 		Sessions:     c.seedingSessions.Load(),
 		AgentsSeeded: c.agentsSeeded.Load(),
 		GuildsSeeded: c.guildsSeeded.Load(),
@@ -351,8 +351,8 @@ func (c *Component) GetStats() SeedingStats {
 	}
 }
 
-// SeedingStats holds seeding statistics.
-type SeedingStats struct {
+// Stats holds seeding statistics.
+type Stats struct {
 	Sessions     uint64        `json:"sessions"`
 	AgentsSeeded uint64        `json:"agents_seeded"`
 	GuildsSeeded uint64        `json:"guilds_seeded"`

@@ -20,17 +20,16 @@ import (
 
 // Ensure Graphable implementations
 var (
-	_ graph.Graphable = (*SeedingStartedPayload)(nil)
-	_ graph.Graphable = (*SeedingCompletedPayload)(nil)
+	_ graph.Graphable = (*StartedPayload)(nil)
+	_ graph.Graphable = (*CompletedPayload)(nil)
 	_ graph.Graphable = (*AgentSeededPayload)(nil)
 	_ graph.Graphable = (*GuildSeededPayload)(nil)
 )
 
-// --- Typed Subjects ---
-
+// Typed subjects for seeding lifecycle events.
 var (
-	SubjectSeedingStarted   = natsclient.NewSubject[SeedingStartedPayload]("seeding.lifecycle.started")
-	SubjectSeedingCompleted = natsclient.NewSubject[SeedingCompletedPayload]("seeding.lifecycle.completed")
+	SubjectSeedingStarted   = natsclient.NewSubject[StartedPayload]("seeding.lifecycle.started")
+	SubjectSeedingCompleted = natsclient.NewSubject[CompletedPayload]("seeding.lifecycle.completed")
 	SubjectAgentSeeded      = natsclient.NewSubject[AgentSeededPayload]("seeding.agent.created")
 	SubjectGuildSeeded      = natsclient.NewSubject[GuildSeededPayload]("seeding.guild.created")
 )
@@ -48,8 +47,8 @@ type TraceInfo struct {
 // SEEDING STARTED PAYLOAD
 // =============================================================================
 
-// SeedingStartedPayload is emitted when a seeding operation begins.
-type SeedingStartedPayload struct {
+// StartedPayload is emitted when a seeding operation begins.
+type StartedPayload struct {
 	SessionID string    `json:"session_id"`
 	Mode      Mode      `json:"mode"`
 	DryRun    bool      `json:"dry_run"`
@@ -58,12 +57,12 @@ type SeedingStartedPayload struct {
 }
 
 // EntityID returns the entity ID for this event.
-func (p *SeedingStartedPayload) EntityID() string {
+func (p *StartedPayload) EntityID() string {
 	return "seeding." + p.SessionID
 }
 
 // Triples returns semantic facts about this event.
-func (p *SeedingStartedPayload) Triples() []message.Triple {
+func (p *StartedPayload) Triples() []message.Triple {
 	return []message.Triple{
 		{
 			Subject:    p.EntityID(),
@@ -85,12 +84,12 @@ func (p *SeedingStartedPayload) Triples() []message.Triple {
 }
 
 // Schema returns the type schema for this payload.
-func (p *SeedingStartedPayload) Schema() types.Type {
+func (p *StartedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "seeding.started", Version: "v1"}
 }
 
 // Validate checks the payload for required fields.
-func (p *SeedingStartedPayload) Validate() error {
+func (p *StartedPayload) Validate() error {
 	if p.SessionID == "" {
 		return errors.New("session_id required")
 	}
@@ -101,8 +100,8 @@ func (p *SeedingStartedPayload) Validate() error {
 // SEEDING COMPLETED PAYLOAD
 // =============================================================================
 
-// SeedingCompletedPayload is emitted when a seeding operation completes.
-type SeedingCompletedPayload struct {
+// CompletedPayload is emitted when a seeding operation completes.
+type CompletedPayload struct {
 	SessionID     string        `json:"session_id"`
 	Mode          Mode          `json:"mode"`
 	Success       bool          `json:"success"`
@@ -115,12 +114,12 @@ type SeedingCompletedPayload struct {
 }
 
 // EntityID returns the entity ID for this event.
-func (p *SeedingCompletedPayload) EntityID() string {
+func (p *CompletedPayload) EntityID() string {
 	return "seeding." + p.SessionID
 }
 
 // Triples returns semantic facts about this event.
-func (p *SeedingCompletedPayload) Triples() []message.Triple {
+func (p *CompletedPayload) Triples() []message.Triple {
 	return []message.Triple{
 		{
 			Subject:    p.EntityID(),
@@ -150,12 +149,12 @@ func (p *SeedingCompletedPayload) Triples() []message.Triple {
 }
 
 // Schema returns the type schema for this payload.
-func (p *SeedingCompletedPayload) Schema() types.Type {
+func (p *CompletedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "seeding.completed", Version: "v1"}
 }
 
 // Validate checks the payload for required fields.
-func (p *SeedingCompletedPayload) Validate() error {
+func (p *CompletedPayload) Validate() error {
 	if p.SessionID == "" {
 		return errors.New("session_id required")
 	}

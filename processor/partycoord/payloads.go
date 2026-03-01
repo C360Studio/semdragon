@@ -36,8 +36,7 @@ var (
 	_ graph.Graphable = (*PartyRollupCompletedPayload)(nil)
 )
 
-// --- Typed Subjects ---
-
+// Typed subjects for party coordination events.
 var (
 	SubjectPartyFormed           = natsclient.NewSubject[PartyFormedPayload](domain.PredicatePartyFormed)
 	SubjectPartyDisbanded        = natsclient.NewSubject[PartyDisbandedPayload](domain.PredicatePartyDisbanded)
@@ -72,16 +71,20 @@ type PartyFormedPayload struct {
 	Trace    TraceInfo `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyFormedPayload) EntityID() string { return string(p.Party.ID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyFormedPayload) Triples() []message.Triple {
 	return p.Party.Triples()
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyFormedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.formed", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyFormedPayload) Validate() error {
 	if p.Party.ID == "" {
 		return errors.New("party_id required")
@@ -105,8 +108,10 @@ type PartyDisbandedPayload struct {
 	Trace       TraceInfo      `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyDisbandedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyDisbandedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -118,10 +123,12 @@ func (p *PartyDisbandedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyDisbandedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.disbanded", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyDisbandedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")
@@ -145,8 +152,10 @@ type PartyJoinedPayload struct {
 	Trace    TraceInfo        `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyJoinedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyJoinedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -158,10 +167,12 @@ func (p *PartyJoinedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyJoinedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.joined", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyJoinedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")
@@ -191,8 +202,10 @@ type PartyQuestDecomposedPayload struct {
 	Trace       TraceInfo        `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyQuestDecomposedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyQuestDecomposedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -214,10 +227,12 @@ func (p *PartyQuestDecomposedPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyQuestDecomposedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.decomposed", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyQuestDecomposedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")
@@ -255,8 +270,10 @@ type PartyTaskAssignedPayload struct {
 	Trace        TraceInfo        `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyTaskAssignedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyTaskAssignedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -270,10 +287,12 @@ func (p *PartyTaskAssignedPayload) Triples() []message.Triple {
 	return triples
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyTaskAssignedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.assigned", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyTaskAssignedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")
@@ -310,8 +329,10 @@ type PartyProgressReportedPayload struct {
 	Trace           TraceInfo      `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyProgressReportedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyProgressReportedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -322,10 +343,12 @@ func (p *PartyProgressReportedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyProgressReportedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.progress", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyProgressReportedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")
@@ -362,8 +385,10 @@ type PartyHelpRequestedPayload struct {
 	Trace       TraceInfo      `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyHelpRequestedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyHelpRequestedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -375,10 +400,12 @@ func (p *PartyHelpRequestedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyHelpRequestedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.helprequest", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyHelpRequestedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")
@@ -414,8 +441,10 @@ type PartyResultSubmittedPayload struct {
 	Trace        TraceInfo      `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyResultSubmittedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyResultSubmittedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -426,10 +455,12 @@ func (p *PartyResultSubmittedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyResultSubmittedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.resultsubmitted", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyResultSubmittedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")
@@ -461,8 +492,10 @@ type PartyContextSharedPayload struct {
 	Trace       TraceInfo        `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyContextSharedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyContextSharedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -473,10 +506,12 @@ func (p *PartyContextSharedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyContextSharedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.contextshared", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyContextSharedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")
@@ -508,8 +543,10 @@ type PartyRollupStartedPayload struct {
 	Trace           TraceInfo      `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyRollupStartedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyRollupStartedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -520,10 +557,12 @@ func (p *PartyRollupStartedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyRollupStartedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.rollupstarted", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyRollupStartedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")
@@ -555,8 +594,10 @@ type PartyRollupCompletedPayload struct {
 	Trace         TraceInfo      `json:"trace,omitempty"`
 }
 
+// EntityID returns the entity ID for this event.
 func (p *PartyRollupCompletedPayload) EntityID() string { return string(p.PartyID) }
 
+// Triples returns semantic triples for this event.
 func (p *PartyRollupCompletedPayload) Triples() []message.Triple {
 	source := "partycoord"
 	entityID := string(p.PartyID)
@@ -567,10 +608,12 @@ func (p *PartyRollupCompletedPayload) Triples() []message.Triple {
 	}
 }
 
+// Schema returns the type schema for this payload.
 func (p *PartyRollupCompletedPayload) Schema() types.Type {
 	return types.Type{Domain: "semdragons", Category: "party.rollupcompleted", Version: "v1"}
 }
 
+// Validate checks the payload for required fields.
 func (p *PartyRollupCompletedPayload) Validate() error {
 	if p.PartyID == "" {
 		return errors.New("party_id required")

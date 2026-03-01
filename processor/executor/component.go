@@ -10,7 +10,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/agent_progression"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
@@ -244,7 +244,7 @@ func (c *Component) Start(ctx context.Context) error {
 	}
 
 	// Create executor
-	opts := []ExecutorOption{
+	opts := []Option{
 		WithMaxTurns(c.config.MaxTurns),
 		WithMaxTokens(c.config.MaxTokens),
 	}
@@ -265,6 +265,7 @@ func (c *Component) Start(ctx context.Context) error {
 }
 
 // Stop gracefully shuts down the component.
+// Timeout is unused: shutdown is non-blocking with no background goroutines to wait for.
 func (c *Component) Stop(_ time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -282,6 +283,7 @@ func (c *Component) Stop(_ time.Duration) error {
 }
 
 // createGraphClient creates the graph client for the component.
+// Context is unused: NewGraphClient is a synchronous in-memory constructor.
 func (c *Component) createGraphClient(_ context.Context) error {
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 	return nil
@@ -292,7 +294,7 @@ func (c *Component) createGraphClient(_ context.Context) error {
 // =============================================================================
 
 // Execute runs a quest for an agent and returns the result.
-func (c *Component) Execute(ctx context.Context, agent *agent_progression.Agent, quest *questboard.Quest) (*ExecutionResult, error) {
+func (c *Component) Execute(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}

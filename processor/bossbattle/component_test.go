@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/natsclient"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
@@ -21,7 +23,7 @@ import (
 // =============================================================================
 
 func TestComponent_Lifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -87,16 +89,16 @@ func TestComponent_InputOutputPorts(t *testing.T) {
 		t.Error("Should have input ports defined")
 	}
 
-	// Check for quest-submitted input port
-	hasQuestSubmitted := false
+	// Check for quest-state-watch input port (KV watch for quest state changes)
+	hasQuestStateWatch := false
 	for _, port := range inputs {
-		if port.Name == "quest-submitted" {
-			hasQuestSubmitted = true
+		if port.Name == "quest-state-watch" {
+			hasQuestStateWatch = true
 			break
 		}
 	}
-	if !hasQuestSubmitted {
-		t.Error("Missing quest-submitted input port")
+	if !hasQuestStateWatch {
+		t.Error("Missing quest-state-watch input port")
 	}
 
 	outputs := comp.OutputPorts()
@@ -146,7 +148,7 @@ func TestComponent_ConfigSchema(t *testing.T) {
 }
 
 func TestComponent_StartBattle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -154,12 +156,12 @@ func TestComponent_StartBattle(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create a test quest
-	quest := &semdragons.Quest{
+	quest := &questboard.Quest{
 		ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
 		Title:      "Test Quest",
 		Difficulty: semdragons.DifficultyModerate,
 		BaseXP:     100,
-		Constraints: semdragons.QuestConstraints{
+		Constraints: questboard.QuestConstraints{
 			RequireReview: true,
 			ReviewLevel:   semdragons.ReviewStandard,
 		},
@@ -197,7 +199,7 @@ func TestComponent_StartBattle(t *testing.T) {
 }
 
 func TestComponent_ListActiveBattles(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -211,11 +213,11 @@ func TestComponent_ListActiveBattles(t *testing.T) {
 	}
 
 	// Start a battle
-	quest := &semdragons.Quest{
+	quest := &questboard.Quest{
 		ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
 		Title:      "Test Quest",
 		Difficulty: semdragons.DifficultyModerate,
-		Constraints: semdragons.QuestConstraints{
+		Constraints: questboard.QuestConstraints{
 			RequireReview: true,
 			ReviewLevel:   semdragons.ReviewHuman, // Human review so it stays active
 		},
@@ -234,7 +236,7 @@ func TestComponent_ListActiveBattles(t *testing.T) {
 }
 
 func TestComponent_Stats(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -248,11 +250,11 @@ func TestComponent_Stats(t *testing.T) {
 	}
 
 	// Start a battle
-	quest := &semdragons.Quest{
+	quest := &questboard.Quest{
 		ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
 		Title:      "Test Quest",
 		Difficulty: semdragons.DifficultyModerate,
-		Constraints: semdragons.QuestConstraints{
+		Constraints: questboard.QuestConstraints{
 			RequireReview: true,
 			ReviewLevel:   semdragons.ReviewStandard,
 		},
@@ -286,6 +288,8 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 	config.Platform = "integration"
 	config.Board = name
 
+	ctx := context.Background()
+
 	comp, err := NewFromConfig(config, deps)
 	if err != nil {
 		t.Fatalf("NewFromConfig failed: %v", err)
@@ -295,7 +299,6 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 		t.Fatalf("Initialize failed: %v", err)
 	}
 
-	ctx := context.Background()
 	if err := comp.Start(ctx); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
