@@ -5,9 +5,152 @@ import (
 	"errors"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/pkg/errs"
+	"github.com/nats-io/nats.go/jetstream"
 )
+
+// =============================================================================
+// KV WATCH HANDLER - Entity-centric agent state monitoring
+// =============================================================================
+// Replaces the NATS Subscribe pattern for detecting agent XP changes.
+// "Agent XP changed" is a fact about the world — it lives in KV, not in
+// JetStream request subjects.
+//
+// The watch goroutine caches each agent's last-known XP and logs whenever
+// XP changes unlock new store items.  Purchase and consumable-use flows
+// remain request-driven (callers invoke Purchase / UseConsumable directly).
+// =============================================================================
+
+// processAgentWatchUpdates handles agent entity state changes from KV.
+func (c *Component) processAgentWatchUpdates() {
+	defer close(c.watchDoneCh)
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case entry, ok := <-c.agentWatch.Updates():
+			if !ok {
+				return
+			}
+			if entry == nil {
+				continue // Initial sync complete
+			}
+			c.handleAgentUpdate(entry)
+		}
+	}
+}
+
+// handleAgentUpdate processes an agent entity state change from KV.
+// Keys in the ENTITY_STATES bucket use the full 6-part entity ID format:
+// org.platform.game.board.agent.instance (e.g., test.integration.game.board1.agent.abc123)
+func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
+	if !c.running.Load() {
+		return
+	}
+
+	key := entry.Key()
+	instance := semdragons.ExtractInstance(key)
+	if instance == "" || instance == key {
+		// Key did not contain a dot separator — not a valid entity ID.
+		c.logger.Warn("agent watch entry has unexpected key format", "key", key)
+		return
+	}
+
+	if entry.Operation() == jetstream.KeyValueDelete {
+		c.agentXPCache.Delete(key)
+		c.logger.Debug("agent removed from XP cache", "instance", instance)
+		return
+	}
+
+	// Decode entity state and reconstruct the Agent from its triples.
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		c.logger.Warn("failed to decode agent entity state", "instance", instance, "error", err)
+		return
+	}
+	agent := semdragons.AgentFromEntityState(entityState)
+	if agent == nil {
+		c.logger.Warn("failed to reconstruct agent from entity state", "instance", instance)
+		return
+	}
+
+	// Detect XP changes by diffing against the cached value.
+	prevXP, hadPrev := c.agentXPCache.Load(key)
+	c.agentXPCache.Store(key, agent.XP)
+
+	if !hadPrev {
+		// First time we see this agent — seed the cache, no action needed.
+		return
+	}
+
+	if prevXP.(int64) == agent.XP {
+		return // No XP change, nothing to react to.
+	}
+
+	c.lastActivity.Store(time.Now())
+	c.logger.Debug("agent XP updated",
+		"instance", instance,
+		"xp_before", prevXP.(int64),
+		"xp_after", agent.XP,
+		"level", agent.Level,
+		"tier", agent.Tier)
+
+	// Log newly affordable items so the agent (or a DM) can act on them.
+	c.logNewlyAffordableItems(agent)
+}
+
+// logNewlyAffordableItems logs store items that became affordable after an XP change.
+// This is observability — the actual purchase remains an explicit caller action.
+func (c *Component) logNewlyAffordableItems(agent *semdragons.Agent) {
+	affordable := c.ListItems(agent.Tier)
+	for _, item := range affordable {
+		if agent.XP >= item.XPCost {
+			c.logger.Debug("item now affordable",
+				"agent", agent.ID,
+				"item_id", item.ID,
+				"item_name", item.Name,
+				"xp_cost", item.XPCost,
+				"agent_xp", agent.XP)
+		}
+	}
+}
+
+// AgentXP returns the last-known XP for an agent from the KV cache.
+// Returns 0 and false if the agent has not been observed yet.
+func (c *Component) AgentXP(agentID domain.AgentID) (int64, bool) {
+	// The cache key is the full entity ID stored in the KV bucket.
+	// We need to search by instance suffix since we cache by full key.
+	instance := semdragons.ExtractInstance(string(agentID))
+	var found int64
+	var ok bool
+	c.agentXPCache.Range(func(k, v any) bool {
+		key := k.(string)
+		if semdragons.ExtractInstance(key) == instance {
+			found = v.(int64)
+			ok = true
+			return false // Stop iteration
+		}
+		return true
+	})
+	return found, ok
+}
+
+// AgentXPFromGraph reads the current XP for an agent directly from KV.
+// This is useful when the watch cache may not yet have a value for new agents.
+func (c *Component) AgentXPFromGraph(ctx context.Context, agentID domain.AgentID) (int64, int, error) {
+	entity, err := c.graph.GetAgent(ctx, agentID)
+	if err != nil {
+		return 0, 0, errs.Wrap(err, "agent_store", "AgentXPFromGraph", "get agent")
+	}
+	agent := semdragons.AgentFromEntityState(entity)
+	if agent == nil {
+		return 0, 0, errors.New("agent not found")
+	}
+	return agent.XP, agent.Level, nil
+}
 
 // =============================================================================
 // CATALOG HANDLERS

@@ -181,7 +181,7 @@ func (c *Component) Start(_ context.Context) error {
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 
 	// Create aggregator
-	c.aggregator = NewWorldStateAggregator(c.graph, c.boardConfig, c.config.MaxEntitiesPerQuery, c.logger)
+	c.aggregator = NewWorldStateAggregator(c.graph, c.config.MaxEntitiesPerQuery, c.logger)
 
 	c.startTime = time.Now()
 	c.running.Store(true)

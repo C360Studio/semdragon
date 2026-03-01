@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
-	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/errs"
+	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
@@ -35,16 +35,22 @@ type Component struct {
 	logger      *slog.Logger
 	boardConfig *semdragons.BoardConfig
 
-	// Subscriptions
-	questClaimedSub *natsclient.Subscription
+	// KV watch for quest state changes (facts about the world)
+	questWatch jetstream.KeyWatcher
+
+	// Cached quest state for reactive auto-formation decisions
+	quests   map[string]*semdragons.Quest
+	questsMu sync.RWMutex
 
 	// Party tracking
 	activeParties sync.Map // map[PartyID]*Party
 
 	// Internal state
-	running  atomic.Bool
-	mu       sync.RWMutex
-	stopChan chan struct{}
+	running     atomic.Bool
+	mu          sync.RWMutex
+	stopChan    chan struct{}
+	watchDoneCh chan struct{} // Signals watch goroutine is done
+	stopOnce    sync.Once
 
 	// Metrics
 	partiesFormed    atomic.Uint64
@@ -79,12 +85,12 @@ func (c *Component) Meta() component.Metadata {
 func (c *Component) InputPorts() []component.Port {
 	return []component.Port{
 		{
-			Name:        "quest-claimed",
+			Name:        "quest-state",
 			Direction:   component.DirectionInput,
 			Required:    true,
-			Description: "Quest claimed events that may trigger party formation",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateQuestClaimed,
+			Description: "Quest state from KV — facts about quests (claimed, completed) trigger auto-formation",
+			Config: &component.KVWatchPort{
+				Bucket: "", // Set dynamically from config
 			},
 		},
 	}
@@ -231,7 +237,9 @@ func (c *Component) Initialize() error {
 	}
 
 	c.boardConfig = c.config.ToBoardConfig()
+	c.quests = make(map[string]*semdragons.Quest)
 	c.stopChan = make(chan struct{})
+	c.watchDoneCh = make(chan struct{})
 
 	return nil
 }
@@ -250,6 +258,16 @@ func (c *Component) Start(ctx context.Context) error {
 		return errs.Wrap(err, "PartyCoord", "Start", "create graph client")
 	}
 
+	// Load initial quest state so the cache is populated before watching
+	if err := c.loadInitialQuestState(ctx); err != nil {
+		return errs.Wrap(err, "PartyCoord", "Start", "load initial quest state")
+	}
+
+	// Set up KV watcher to react to quest state changes (facts about the world)
+	if err := c.startQuestWatcher(ctx); err != nil {
+		return errs.Wrap(err, "PartyCoord", "Start", "start quest KV watcher")
+	}
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
@@ -264,8 +282,7 @@ func (c *Component) Start(ctx context.Context) error {
 }
 
 // Stop gracefully shuts down the component.
-// Timeout is unused: shutdown is non-blocking with no background goroutines to wait for.
-func (c *Component) Stop(_ time.Duration) error {
+func (c *Component) Stop(timeout time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -273,12 +290,24 @@ func (c *Component) Stop(_ time.Duration) error {
 		return nil
 	}
 
-	// Close stop channel
-	close(c.stopChan)
+	// Signal stop using sync.Once to prevent double-close panic
+	c.stopOnce.Do(func() {
+		close(c.stopChan)
+	})
 
-	// Unsubscribe from events
-	if c.questClaimedSub != nil {
-		c.questClaimedSub.Unsubscribe()
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	// Stop the KV watcher, which unblocks the watch goroutine
+	c.stopQuestWatcher()
+
+	// Wait for watch goroutine to finish
+	select {
+	case <-c.watchDoneCh:
+		// Clean shutdown
+	case <-time.After(timeout):
+		c.logger.Warn("partycoord stop timed out waiting for KV watcher goroutine")
 	}
 
 	c.running.Store(false)

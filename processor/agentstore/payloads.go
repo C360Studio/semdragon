@@ -22,8 +22,6 @@ import (
 var (
 	_ graph.Graphable = (*StoreItemListedPayload)(nil)
 	_ graph.Graphable = (*StorePurchasePayload)(nil)
-	_ graph.Graphable = (*StoreItemUsedPayload)(nil)
-	_ graph.Graphable = (*StoreItemExpiredPayload)(nil)
 	_ graph.Graphable = (*ConsumableUsedPayload)(nil)
 	_ graph.Graphable = (*ConsumableExpiredPayload)(nil)
 	_ graph.Graphable = (*InventoryUpdatedPayload)(nil)
@@ -33,8 +31,6 @@ var (
 var (
 	SubjectStoreItemListed    = natsclient.NewSubject[StoreItemListedPayload](domain.PredicateStoreItemListed)
 	SubjectStoreItemPurchased = natsclient.NewSubject[StorePurchasePayload](domain.PredicateStoreItemPurchased)
-	SubjectStoreItemUsed      = natsclient.NewSubject[StoreItemUsedPayload](domain.PredicateStoreItemUsed)
-	SubjectStoreItemExpired   = natsclient.NewSubject[StoreItemExpiredPayload](domain.PredicateStoreItemExpired)
 	SubjectConsumableUsed     = natsclient.NewSubject[ConsumableUsedPayload](domain.PredicateConsumableUsed)
 	SubjectConsumableExpired  = natsclient.NewSubject[ConsumableExpiredPayload](domain.PredicateConsumableExpired)
 	SubjectInventoryUpdated   = natsclient.NewSubject[InventoryUpdatedPayload](domain.PredicateInventoryUpdated)
@@ -125,111 +121,6 @@ func (p *StorePurchasePayload) Schema() types.Type {
 
 // Validate checks the payload for required fields.
 func (p *StorePurchasePayload) Validate() error {
-	if p.AgentID == "" {
-		return errors.New("agent_id required")
-	}
-	if p.ItemID == "" {
-		return errors.New("item_id required")
-	}
-	if p.Timestamp.IsZero() {
-		return errors.New("timestamp required")
-	}
-	return nil
-}
-
-// =============================================================================
-// STORE ITEM USED PAYLOAD
-// =============================================================================
-
-// StoreItemUsedPayload contains data for store.item.used events.
-type StoreItemUsedPayload struct {
-	AgentID       domain.AgentID  `json:"agent_id"`
-	ItemID        string          `json:"item_id"`
-	ItemName      string          `json:"item_name"`
-	UsesRemaining int             `json:"uses_remaining"`
-	UsedFor       string          `json:"used_for,omitempty"`
-	QuestID       *domain.QuestID `json:"quest_id,omitempty"`
-	Timestamp     time.Time       `json:"timestamp"`
-	Trace         TraceInfo       `json:"trace,omitempty"`
-}
-
-// EntityID returns the entity ID for this event.
-func (p *StoreItemUsedPayload) EntityID() string { return string(p.AgentID) }
-
-// Triples returns semantic triples for this event.
-func (p *StoreItemUsedPayload) Triples() []message.Triple {
-	source := "agent_store"
-	entityID := string(p.AgentID)
-
-	triples := []message.Triple{
-		{Subject: entityID, Predicate: "agent.item.used", Object: p.ItemID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.item.uses_remaining", Object: p.UsesRemaining, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-	}
-
-	if p.QuestID != nil {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.item.used_for_quest", Object: string(*p.QuestID),
-			Source: source, Timestamp: p.Timestamp, Confidence: 1.0,
-		})
-	}
-
-	return triples
-}
-
-// Schema returns the type schema for this payload.
-func (p *StoreItemUsedPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "store.used", Version: "v1"}
-}
-
-// Validate checks the payload for required fields.
-func (p *StoreItemUsedPayload) Validate() error {
-	if p.AgentID == "" {
-		return errors.New("agent_id required")
-	}
-	if p.ItemID == "" {
-		return errors.New("item_id required")
-	}
-	if p.Timestamp.IsZero() {
-		return errors.New("timestamp required")
-	}
-	return nil
-}
-
-// =============================================================================
-// STORE ITEM EXPIRED PAYLOAD
-// =============================================================================
-
-// StoreItemExpiredPayload contains data for store.item.expired events.
-type StoreItemExpiredPayload struct {
-	AgentID   domain.AgentID `json:"agent_id"`
-	ItemID    string         `json:"item_id"`
-	ItemName  string         `json:"item_name"`
-	Reason    string         `json:"reason"`
-	Timestamp time.Time      `json:"timestamp"`
-	Trace     TraceInfo      `json:"trace,omitempty"`
-}
-
-// EntityID returns the entity ID for this event.
-func (p *StoreItemExpiredPayload) EntityID() string { return string(p.AgentID) }
-
-// Triples returns semantic triples for this event.
-func (p *StoreItemExpiredPayload) Triples() []message.Triple {
-	source := "agent_store"
-	entityID := string(p.AgentID)
-
-	return []message.Triple{
-		{Subject: entityID, Predicate: "agent.item.expired", Object: p.ItemID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.item.expired_reason", Object: p.Reason, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-	}
-}
-
-// Schema returns the type schema for this payload.
-func (p *StoreItemExpiredPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "store.expired", Version: "v1"}
-}
-
-// Validate checks the payload for required fields.
-func (p *StoreItemExpiredPayload) Validate() error {
 	if p.AgentID == "" {
 		return errors.New("agent_id required")
 	}

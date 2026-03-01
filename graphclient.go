@@ -15,11 +15,11 @@ import (
 
 // GraphClient provides access to the semstreams graph system for semdragons components.
 // It wraps the natsclient and provides methods for emitting Graphable entities
-// and querying the graph.
+// and reading entity state directly from the ENTITY_STATES KV bucket.
 //
 // Design: Components use GraphClient instead of direct storage operations.
-// Entities are emitted as events to JetStream, where graph-ingest consumes them
-// and persists EntityState. Queries go through graph-ingest's request handlers.
+// Entity writes go to the ENTITY_STATES KV bucket, which acts as both the
+// source of truth and the event stream (the NATS KV "Twofer").
 type GraphClient struct {
 	nats   *natsclient.Client
 	config *BoardConfig
@@ -42,20 +42,9 @@ func (gc *GraphClient) Config() *BoardConfig {
 // ENTITY EMISSION
 // =============================================================================
 
-// entityPayload wraps a Graphable entity for BaseMessage compatibility.
-// BaseMessage requires a Payload interface, but we want to emit Graphable entities.
-type entityPayload struct {
-	Entity graph.Graphable `json:"entity"`
-}
-
-// MarshalJSON implements json.Marshaler for BaseMessage Payload requirement.
-func (ep entityPayload) MarshalJSON() ([]byte, error) {
-	return json.Marshal(ep.Entity)
-}
-
 // EmitEntity publishes a Graphable entity to the graph system.
-// Writes entity state to KV (for watchers) and publishes to JetStream (for audit trail).
-// KV watchers are notified immediately, enabling the entity-centric reactive pattern.
+// Writes entity state to the ENTITY_STATES KV bucket. KV watchers are notified
+// immediately, enabling the entity-centric reactive pattern.
 //
 // Example:
 //
@@ -80,19 +69,12 @@ func (gc *GraphClient) EmitEntity(ctx context.Context, entity graph.Graphable, e
 		return fmt.Errorf("marshal entity state: %w", err)
 	}
 
-	// Write to KV for entity-centric watchers (primary path)
 	bucket, err := gc.nats.GetKeyValueBucket(ctx, graph.BucketEntityStates)
 	if err != nil {
 		return fmt.Errorf("get entity states bucket: %w", err)
 	}
 	if _, err := bucket.Put(ctx, entity.EntityID(), data); err != nil {
 		return fmt.Errorf("put entity state: %w", err)
-	}
-
-	// Also publish to JetStream for audit trail and graph-ingest compatibility
-	subject := fmt.Sprintf("entity.%s", eventType)
-	if err := gc.nats.PublishToStream(ctx, subject, data); err != nil {
-		_ = err // KV is the primary write path; stream publish failure is non-fatal
 	}
 
 	return nil
@@ -102,162 +84,6 @@ func (gc *GraphClient) EmitEntity(ctx context.Context, entity graph.Graphable, e
 // This is used when an entity's state changes (e.g., quest claimed, agent leveled up).
 func (gc *GraphClient) EmitEntityUpdate(ctx context.Context, entity graph.Graphable, eventType string) error {
 	return gc.EmitEntity(ctx, entity, eventType)
-}
-
-// =============================================================================
-// ENTITY QUERIES
-// =============================================================================
-
-// entityQueryRequest is the request format for graph.ingest.query.entity
-type entityQueryRequest struct {
-	ID string `json:"id"`
-}
-
-// entityQueryResponse is the response format from graph.ingest.query.entity
-type entityQueryResponse struct {
-	Entity *graph.EntityState `json:"entity"`
-	Error  string             `json:"error,omitempty"`
-}
-
-// GetEntity retrieves an entity by its full 6-part entity ID.
-// Returns nil if the entity is not found.
-func (gc *GraphClient) GetEntity(ctx context.Context, entityID string) (*graph.EntityState, error) {
-	req := entityQueryRequest{ID: entityID}
-	reqData, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	respData, err := gc.nats.Request(ctx, "graph.ingest.query.entity", reqData, 5*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("query entity: %w", err)
-	}
-
-	var resp entityQueryResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal response: %w", err)
-	}
-
-	if resp.Error != "" {
-		return nil, fmt.Errorf("query error: %s", resp.Error)
-	}
-
-	return resp.Entity, nil
-}
-
-// batchQueryRequest is the request format for graph.ingest.query.batch
-type batchQueryRequest struct {
-	IDs []string `json:"ids"`
-}
-
-// batchQueryResponse is the response format from graph.ingest.query.batch
-type batchQueryResponse struct {
-	Entities []graph.EntityState `json:"entities"`
-	Error    string              `json:"error,omitempty"`
-}
-
-// BatchGet retrieves multiple entities by their entity IDs.
-// Returns only the entities that were found.
-func (gc *GraphClient) BatchGet(ctx context.Context, ids []string) ([]graph.EntityState, error) {
-	if len(ids) == 0 {
-		return []graph.EntityState{}, nil
-	}
-
-	req := batchQueryRequest{IDs: ids}
-	reqData, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	respData, err := gc.nats.Request(ctx, "graph.ingest.query.batch", reqData, 10*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("batch query: %w", err)
-	}
-
-	var resp batchQueryResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal response: %w", err)
-	}
-
-	if resp.Error != "" {
-		return nil, fmt.Errorf("query error: %s", resp.Error)
-	}
-
-	return resp.Entities, nil
-}
-
-// prefixQueryRequest is the request format for graph.ingest.query.prefix
-type prefixQueryRequest struct {
-	Prefix string `json:"prefix"`
-	Limit  int    `json:"limit,omitempty"`
-}
-
-// prefixQueryResponse is the response format from graph.ingest.query.prefix
-type prefixQueryResponse struct {
-	Entities []graph.EntityState `json:"entities"`
-	Error    string              `json:"error,omitempty"`
-}
-
-// QueryByPrefix retrieves all entities matching an entity ID prefix.
-// This enables hierarchical queries like "all quests on board1":
-//
-//	entities, err := gc.QueryByPrefix(ctx, "c360.prod.game.board1.quest", 100)
-func (gc *GraphClient) QueryByPrefix(ctx context.Context, prefix string, limit int) ([]graph.EntityState, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-
-	req := prefixQueryRequest{Prefix: prefix, Limit: limit}
-	reqData, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	respData, err := gc.nats.Request(ctx, "graph.ingest.query.prefix", reqData, 10*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("prefix query: %w", err)
-	}
-
-	var resp prefixQueryResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal response: %w", err)
-	}
-
-	if resp.Error != "" {
-		return nil, fmt.Errorf("query error: %s", resp.Error)
-	}
-
-	return resp.Entities, nil
-}
-
-// =============================================================================
-// PREDICATE INDEX QUERIES
-// =============================================================================
-
-// QueryByPredicate retrieves entity IDs that have a specific predicate.
-// This uses the PREDICATE_INDEX KV bucket maintained by graph-index.
-//
-// Example: Find all entities with quest.status.state predicate:
-//
-//	ids, err := gc.QueryByPredicate(ctx, "quest.status.state")
-func (gc *GraphClient) QueryByPredicate(ctx context.Context, predicate string) ([]string, error) {
-	bucket, err := gc.nats.GetKeyValueBucket(ctx, graph.BucketPredicateIndex)
-	if err != nil {
-		return nil, fmt.Errorf("get predicate index bucket: %w", err)
-	}
-
-	entry, err := bucket.Get(ctx, predicate)
-	if err != nil {
-		// Key not found means no entities have this predicate
-		return []string{}, nil
-	}
-
-	var ids []string
-	if err := json.Unmarshal(entry.Value(), &ids); err != nil {
-		return nil, fmt.Errorf("unmarshal predicate index: %w", err)
-	}
-
-	return ids, nil
 }
 
 // =============================================================================

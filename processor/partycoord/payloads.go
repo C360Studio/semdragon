@@ -28,27 +28,21 @@ var (
 	_ graph.Graphable = (*PartyJoinedPayload)(nil)
 	_ graph.Graphable = (*PartyQuestDecomposedPayload)(nil)
 	_ graph.Graphable = (*PartyTaskAssignedPayload)(nil)
-	_ graph.Graphable = (*PartyProgressReportedPayload)(nil)
-	_ graph.Graphable = (*PartyHelpRequestedPayload)(nil)
 	_ graph.Graphable = (*PartyResultSubmittedPayload)(nil)
-	_ graph.Graphable = (*PartyContextSharedPayload)(nil)
 	_ graph.Graphable = (*PartyRollupStartedPayload)(nil)
 	_ graph.Graphable = (*PartyRollupCompletedPayload)(nil)
 )
 
 // Typed subjects for party coordination events.
 var (
-	SubjectPartyFormed           = natsclient.NewSubject[PartyFormedPayload](domain.PredicatePartyFormed)
-	SubjectPartyDisbanded        = natsclient.NewSubject[PartyDisbandedPayload](domain.PredicatePartyDisbanded)
-	SubjectPartyJoined           = natsclient.NewSubject[PartyJoinedPayload](domain.PredicatePartyJoined)
-	SubjectPartyQuestDecomposed  = natsclient.NewSubject[PartyQuestDecomposedPayload](domain.PredicatePartyQuestDecomposed)
-	SubjectPartyTaskAssigned     = natsclient.NewSubject[PartyTaskAssignedPayload](domain.PredicatePartyTaskAssigned)
-	SubjectPartyProgressReported = natsclient.NewSubject[PartyProgressReportedPayload](domain.PredicatePartyProgressReported)
-	SubjectPartyHelpRequested    = natsclient.NewSubject[PartyHelpRequestedPayload](domain.PredicatePartyHelpRequested)
-	SubjectPartyResultSubmitted  = natsclient.NewSubject[PartyResultSubmittedPayload](domain.PredicatePartyResultSubmitted)
-	SubjectPartyContextShared    = natsclient.NewSubject[PartyContextSharedPayload](domain.PredicatePartyContextShared)
-	SubjectPartyRollupStarted    = natsclient.NewSubject[PartyRollupStartedPayload](domain.PredicatePartyRollupStarted)
-	SubjectPartyRollupCompleted  = natsclient.NewSubject[PartyRollupCompletedPayload](domain.PredicatePartyRollupCompleted)
+	SubjectPartyFormed          = natsclient.NewSubject[PartyFormedPayload](domain.PredicatePartyFormed)
+	SubjectPartyDisbanded       = natsclient.NewSubject[PartyDisbandedPayload](domain.PredicatePartyDisbanded)
+	SubjectPartyJoined          = natsclient.NewSubject[PartyJoinedPayload](domain.PredicatePartyJoined)
+	SubjectPartyQuestDecomposed = natsclient.NewSubject[PartyQuestDecomposedPayload](domain.PredicatePartyQuestDecomposed)
+	SubjectPartyTaskAssigned    = natsclient.NewSubject[PartyTaskAssignedPayload](domain.PredicatePartyTaskAssigned)
+	SubjectPartyResultSubmitted = natsclient.NewSubject[PartyResultSubmittedPayload](domain.PredicatePartyResultSubmitted)
+	SubjectPartyRollupStarted   = natsclient.NewSubject[PartyRollupStartedPayload](domain.PredicatePartyRollupStarted)
+	SubjectPartyRollupCompleted = natsclient.NewSubject[PartyRollupCompletedPayload](domain.PredicatePartyRollupCompleted)
 )
 
 // --- TraceInfo for observability ---
@@ -313,119 +307,6 @@ func (p *PartyTaskAssignedPayload) Validate() error {
 }
 
 // =============================================================================
-// PARTY PROGRESS REPORTED PAYLOAD
-// =============================================================================
-
-// PartyProgressReportedPayload contains data for party.coordination.progress events.
-// Emitted when a party member reports progress on their sub-quest.
-type PartyProgressReportedPayload struct {
-	PartyID         domain.PartyID `json:"party_id"`
-	MemberID        domain.AgentID `json:"member_id"`
-	SubQuestID      domain.QuestID `json:"sub_quest_id"`
-	ProgressPercent int            `json:"progress_percent"` // 0-100
-	Status          string         `json:"status"`           // on_track, blocked, ahead, behind
-	Message         string         `json:"message,omitempty"`
-	Timestamp       time.Time      `json:"timestamp"`
-	Trace           TraceInfo      `json:"trace,omitempty"`
-}
-
-// EntityID returns the entity ID for this event.
-func (p *PartyProgressReportedPayload) EntityID() string { return string(p.PartyID) }
-
-// Triples returns semantic triples for this event.
-func (p *PartyProgressReportedPayload) Triples() []message.Triple {
-	source := "partycoord"
-	entityID := string(p.PartyID)
-
-	return []message.Triple{
-		{Subject: entityID, Predicate: "party.progress." + string(p.SubQuestID) + ".percent", Object: p.ProgressPercent, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "party.progress." + string(p.SubQuestID) + ".status", Object: p.Status, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-	}
-}
-
-// Schema returns the type schema for this payload.
-func (p *PartyProgressReportedPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "party.progress", Version: "v1"}
-}
-
-// Validate checks the payload for required fields.
-func (p *PartyProgressReportedPayload) Validate() error {
-	if p.PartyID == "" {
-		return errors.New("party_id required")
-	}
-	if p.MemberID == "" {
-		return errors.New("member_id required")
-	}
-	if p.SubQuestID == "" {
-		return errors.New("sub_quest_id required")
-	}
-	if p.Status == "" {
-		return errors.New("status required")
-	}
-	if p.Timestamp.IsZero() {
-		return errors.New("timestamp required")
-	}
-	return nil
-}
-
-// =============================================================================
-// PARTY HELP REQUESTED PAYLOAD
-// =============================================================================
-
-// PartyHelpRequestedPayload contains data for party.coordination.helprequest events.
-// Emitted when a party member needs help from the lead.
-type PartyHelpRequestedPayload struct {
-	PartyID     domain.PartyID `json:"party_id"`
-	MemberID    domain.AgentID `json:"member_id"`
-	SubQuestID  domain.QuestID `json:"sub_quest_id"`
-	IssueType   string         `json:"issue_type"` // blocker, confusion, skill_gap
-	Description string         `json:"description"`
-	Urgency     string         `json:"urgency"` // low, medium, high, critical
-	Timestamp   time.Time      `json:"timestamp"`
-	Trace       TraceInfo      `json:"trace,omitempty"`
-}
-
-// EntityID returns the entity ID for this event.
-func (p *PartyHelpRequestedPayload) EntityID() string { return string(p.PartyID) }
-
-// Triples returns semantic triples for this event.
-func (p *PartyHelpRequestedPayload) Triples() []message.Triple {
-	source := "partycoord"
-	entityID := string(p.PartyID)
-
-	return []message.Triple{
-		{Subject: entityID, Predicate: "party.help.requested_by", Object: string(p.MemberID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "party.help.issue_type", Object: p.IssueType, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "party.help.urgency", Object: p.Urgency, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-	}
-}
-
-// Schema returns the type schema for this payload.
-func (p *PartyHelpRequestedPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "party.helprequest", Version: "v1"}
-}
-
-// Validate checks the payload for required fields.
-func (p *PartyHelpRequestedPayload) Validate() error {
-	if p.PartyID == "" {
-		return errors.New("party_id required")
-	}
-	if p.MemberID == "" {
-		return errors.New("member_id required")
-	}
-	if p.SubQuestID == "" {
-		return errors.New("sub_quest_id required")
-	}
-	if p.Description == "" {
-		return errors.New("description required")
-	}
-	if p.Timestamp.IsZero() {
-		return errors.New("timestamp required")
-	}
-	return nil
-}
-
-// =============================================================================
 // PARTY RESULT SUBMITTED PAYLOAD
 // =============================================================================
 
@@ -470,57 +351,6 @@ func (p *PartyResultSubmittedPayload) Validate() error {
 	}
 	if p.SubQuestID == "" {
 		return errors.New("sub_quest_id required")
-	}
-	if p.Timestamp.IsZero() {
-		return errors.New("timestamp required")
-	}
-	return nil
-}
-
-// =============================================================================
-// PARTY CONTEXT SHARED PAYLOAD
-// =============================================================================
-
-// PartyContextSharedPayload contains data for party.coordination.contextshared events.
-// Emitted when context/insight is shared with the party.
-type PartyContextSharedPayload struct {
-	PartyID     domain.PartyID   `json:"party_id"`
-	SharedBy    domain.AgentID   `json:"shared_by"`
-	ContextItem ContextItem      `json:"context_item"`
-	Relevance   []domain.QuestID `json:"relevance,omitempty"` // Which sub-quests this affects
-	Timestamp   time.Time        `json:"timestamp"`
-	Trace       TraceInfo        `json:"trace,omitempty"`
-}
-
-// EntityID returns the entity ID for this event.
-func (p *PartyContextSharedPayload) EntityID() string { return string(p.PartyID) }
-
-// Triples returns semantic triples for this event.
-func (p *PartyContextSharedPayload) Triples() []message.Triple {
-	source := "partycoord"
-	entityID := string(p.PartyID)
-
-	return []message.Triple{
-		{Subject: entityID, Predicate: "party.context." + p.ContextItem.Key, Object: string(p.SharedBy), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "party.context.count", Object: 1, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-	}
-}
-
-// Schema returns the type schema for this payload.
-func (p *PartyContextSharedPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "party.contextshared", Version: "v1"}
-}
-
-// Validate checks the payload for required fields.
-func (p *PartyContextSharedPayload) Validate() error {
-	if p.PartyID == "" {
-		return errors.New("party_id required")
-	}
-	if p.SharedBy == "" {
-		return errors.New("shared_by required")
-	}
-	if p.ContextItem.Key == "" {
-		return errors.New("context_item.key required")
 	}
 	if p.Timestamp.IsZero() {
 		return errors.New("timestamp required")

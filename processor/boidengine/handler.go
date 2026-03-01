@@ -125,13 +125,16 @@ func (c *Component) processWatchUpdates() {
 }
 
 // handleAgentUpdate processes an agent state change from KV.
+// Keys in the ENTITY_STATES bucket use the full 6-part entity ID format:
+// org.platform.game.board.agent.instance (e.g., test.integration.game.board1.agent.abc123)
 func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
-	// Extract instance from key (format: agent.state.{instance})
 	key := entry.Key()
-	if len(key) <= len("agent.state.") {
+	instance := semdragons.ExtractInstance(key)
+	if instance == "" || instance == key {
+		// Key did not contain a dot separator — not a valid entity ID.
+		c.logger.Warn("agent watch entry has unexpected key format", "key", key)
 		return
 	}
-	instance := key[len("agent.state."):]
 
 	if entry.Operation() == jetstream.KeyValueDelete {
 		c.agentsMu.Lock()
@@ -141,28 +144,36 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	// Parse agent data
-	var agent semdragons.Agent
-	if err := json.Unmarshal(entry.Value(), &agent); err != nil {
-		c.logger.Warn("failed to unmarshal agent update", "instance", instance, "error", err)
+	// Decode entity state and reconstruct the Agent from its triples.
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		c.logger.Warn("failed to decode agent entity state", "instance", instance, "error", err)
+		return
+	}
+	agent := semdragons.AgentFromEntityState(entityState)
+	if agent == nil {
+		c.logger.Warn("failed to reconstruct agent from entity state", "instance", instance)
 		return
 	}
 
 	c.agentsMu.Lock()
-	c.agents[instance] = &agent
+	c.agents[instance] = agent
 	c.agentsMu.Unlock()
 
 	c.logger.Debug("agent cache updated", "instance", instance, "status", agent.Status)
 }
 
 // handleQuestUpdate processes a quest state change from KV.
+// Keys in the ENTITY_STATES bucket use the full 6-part entity ID format:
+// org.platform.game.board.quest.instance (e.g., test.integration.game.board1.quest.abc123)
 func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
-	// Extract instance from key (format: quest.state.{instance})
 	key := entry.Key()
-	if len(key) <= len("quest.state.") {
+	instance := semdragons.ExtractInstance(key)
+	if instance == "" || instance == key {
+		// Key did not contain a dot separator — not a valid entity ID.
+		c.logger.Warn("quest watch entry has unexpected key format", "key", key)
 		return
 	}
-	instance := key[len("quest.state."):]
 
 	if entry.Operation() == jetstream.KeyValueDelete {
 		c.questsMu.Lock()
@@ -172,19 +183,24 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	// Parse quest data
-	var quest semdragons.Quest
-	if err := json.Unmarshal(entry.Value(), &quest); err != nil {
-		c.logger.Warn("failed to unmarshal quest update", "instance", instance, "error", err)
+	// Decode entity state and reconstruct the Quest from its triples.
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		c.logger.Warn("failed to decode quest entity state", "instance", instance, "error", err)
+		return
+	}
+	quest := semdragons.QuestFromEntityState(entityState)
+	if quest == nil {
+		c.logger.Warn("failed to reconstruct quest from entity state", "instance", instance)
 		return
 	}
 
 	c.questsMu.Lock()
-	// Only track posted quests for boid calculations
+	// Only track posted quests for boid calculations.
 	if quest.Status == semdragons.QuestPosted {
-		c.quests[instance] = &quest
+		c.quests[instance] = quest
 	} else {
-		// Remove non-posted quests from cache
+		// Remove non-posted quests from cache.
 		delete(c.quests, instance)
 	}
 	c.questsMu.Unlock()

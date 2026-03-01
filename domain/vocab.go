@@ -274,57 +274,44 @@ func RegisterVocabulary() {
 	// Quest lifecycle predicates
 	vocabulary.Register(PredicateQuestPosted,
 		vocabulary.WithDescription("Quest added to board, available for claiming"),
-		vocabulary.WithDataType("QuestPostedPayload"),
 	)
 	vocabulary.Register(PredicateQuestClaimed,
 		vocabulary.WithDescription("Agent or party claimed a quest"),
-		vocabulary.WithDataType("QuestClaimedPayload"),
 	)
 	vocabulary.Register(PredicateQuestStarted,
 		vocabulary.WithDescription("Work began on a quest"),
-		vocabulary.WithDataType("QuestStartedPayload"),
 	)
 	vocabulary.Register(PredicateQuestSubmitted,
 		vocabulary.WithDescription("Result submitted for review"),
-		vocabulary.WithDataType("QuestSubmittedPayload"),
 	)
 	vocabulary.Register(PredicateQuestCompleted,
 		vocabulary.WithDescription("Quest finished successfully"),
-		vocabulary.WithDataType("QuestCompletedPayload"),
 	)
 	vocabulary.Register(PredicateQuestFailed,
 		vocabulary.WithDescription("Quest failed, may be re-posted"),
-		vocabulary.WithDataType("QuestFailedPayload"),
 	)
 	vocabulary.Register(PredicateQuestEscalated,
 		vocabulary.WithDescription("Quest escalated for higher-level attention"),
-		vocabulary.WithDataType("QuestEscalatedPayload"),
 	)
 	vocabulary.Register(PredicateQuestAbandoned,
 		vocabulary.WithDescription("Agent abandoned a quest"),
-		vocabulary.WithDataType("QuestAbandonedPayload"),
 	)
 	vocabulary.Register(PredicateQuestDecomposed,
 		vocabulary.WithDescription("Quest broken into sub-quests by party lead"),
-		vocabulary.WithDataType("QuestDecomposedPayload"),
 	)
 
 	// Boss battle predicates
 	vocabulary.Register(PredicateBattleStarted,
 		vocabulary.WithDescription("Boss battle (quality review) began"),
-		vocabulary.WithDataType("BattleStartedPayload"),
 	)
 	vocabulary.Register(PredicateBattleVerdict,
 		vocabulary.WithDescription("Review verdict rendered"),
-		vocabulary.WithDataType("BattleVerdictPayload"),
 	)
 	vocabulary.Register(PredicateBattleVictory,
 		vocabulary.WithDescription("Agent passed the review"),
-		vocabulary.WithDataType("BattleVictoryPayload"),
 	)
 	vocabulary.Register(PredicateBattleDefeat,
 		vocabulary.WithDescription("Agent failed the review"),
-		vocabulary.WithDataType("BattleDefeatPayload"),
 	)
 	vocabulary.Register(PredicateBattleRetreat,
 		vocabulary.WithDescription("Agent requested re-do of submission"),
@@ -338,23 +325,18 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicateAgentLevelUp,
 		vocabulary.WithDescription("Agent leveled up"),
-		vocabulary.WithDataType("AgentLevelPayload"),
 	)
 	vocabulary.Register(PredicateAgentLevelDown,
 		vocabulary.WithDescription("Agent leveled down due to poor performance"),
-		vocabulary.WithDataType("AgentLevelPayload"),
 	)
 	vocabulary.Register(PredicateAgentDeath,
 		vocabulary.WithDescription("Agent permadeath from catastrophic failure"),
-		vocabulary.WithDataType("AgentDeathPayload"),
 	)
 	vocabulary.Register(PredicateAgentCooldown,
 		vocabulary.WithDescription("Agent entered cooldown after failure"),
-		vocabulary.WithDataType("AgentCooldownPayload"),
 	)
 	vocabulary.Register(PredicateAgentReady,
 		vocabulary.WithDescription("Agent cooldown ended, ready for quests"),
-		vocabulary.WithDataType("AgentReadyPayload"),
 	)
 
 	// Skill progression predicates
@@ -430,7 +412,6 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicatePartyContextShared,
 		vocabulary.WithDescription("Context/insight shared with party"),
-		vocabulary.WithDataType("PartyContextSharedPayload"),
 	)
 	vocabulary.Register(PredicatePartyGuidanceIssued,
 		vocabulary.WithDescription("Lead issued guidance to party member"),
@@ -438,11 +419,9 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicatePartyProgressReported,
 		vocabulary.WithDescription("Member reported progress to lead"),
-		vocabulary.WithDataType("PartyProgressReportedPayload"),
 	)
 	vocabulary.Register(PredicatePartyHelpRequested,
 		vocabulary.WithDescription("Member requested help from lead"),
-		vocabulary.WithDataType("PartyHelpRequestedPayload"),
 	)
 	vocabulary.Register(PredicatePartyResultSubmitted,
 		vocabulary.WithDescription("Member submitted sub-quest result to lead"),
@@ -550,11 +529,9 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicateStoreItemUsed,
 		vocabulary.WithDescription("Rental item use consumed"),
-		vocabulary.WithDataType("StoreItemUsedPayload"),
 	)
 	vocabulary.Register(PredicateStoreItemExpired,
 		vocabulary.WithDescription("Rental item ran out of uses"),
-		vocabulary.WithDataType("StoreItemExpiredPayload"),
 	)
 	vocabulary.Register(PredicateConsumableUsed,
 		vocabulary.WithDescription("Consumable item activated"),

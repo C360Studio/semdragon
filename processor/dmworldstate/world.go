@@ -17,13 +17,12 @@ import (
 // WorldStateAggregator provides world state aggregation.
 type WorldStateAggregator struct {
 	graph       *semdragons.GraphClient
-	boardConfig *semdragons.BoardConfig
 	maxEntities int
 	logger      *slog.Logger
 }
 
 // NewWorldStateAggregator creates a new world state aggregator.
-func NewWorldStateAggregator(graph *semdragons.GraphClient, boardConfig *semdragons.BoardConfig, maxEntities int, logger *slog.Logger) *WorldStateAggregator {
+func NewWorldStateAggregator(graph *semdragons.GraphClient, maxEntities int, logger *slog.Logger) *WorldStateAggregator {
 	if maxEntities <= 0 {
 		maxEntities = 1000
 	}
@@ -32,7 +31,6 @@ func NewWorldStateAggregator(graph *semdragons.GraphClient, boardConfig *semdrag
 	}
 	return &WorldStateAggregator{
 		graph:       graph,
-		boardConfig: boardConfig,
 		maxEntities: maxEntities,
 		logger:      logger,
 	}
@@ -156,8 +154,7 @@ func (w *WorldStateAggregator) loadActiveQuests(ctx context.Context) ([]semdrago
 }
 
 func (w *WorldStateAggregator) loadActiveParties(ctx context.Context) ([]semdragons.Party, error) {
-	prefix := w.boardConfig.TypePrefix(semdragons.EntityTypeParty)
-	entities, err := w.graph.QueryByPrefix(ctx, prefix, w.maxEntities)
+	entities, err := w.graph.ListPartiesByPrefix(ctx, w.maxEntities)
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +173,7 @@ func (w *WorldStateAggregator) loadActiveParties(ctx context.Context) ([]semdrag
 }
 
 func (w *WorldStateAggregator) loadGuilds(ctx context.Context) ([]semdragons.Guild, error) {
-	prefix := w.boardConfig.TypePrefix(semdragons.EntityTypeGuild)
-	entities, err := w.graph.QueryByPrefix(ctx, prefix, w.maxEntities)
+	entities, err := w.graph.ListGuildsByPrefix(ctx, w.maxEntities)
 	if err != nil {
 		return nil, err
 	}
@@ -194,8 +190,7 @@ func (w *WorldStateAggregator) loadGuilds(ctx context.Context) ([]semdragons.Gui
 }
 
 func (w *WorldStateAggregator) loadActiveBattles(ctx context.Context) ([]semdragons.BossBattle, error) {
-	prefix := w.boardConfig.TypePrefix(semdragons.EntityTypeBattle)
-	entities, err := w.graph.QueryByPrefix(ctx, prefix, w.maxEntities)
+	entities, err := w.graph.ListEntitiesByType(ctx, semdragons.EntityTypeBattle, w.maxEntities)
 	if err != nil {
 		return nil, err
 	}

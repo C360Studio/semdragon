@@ -74,6 +74,30 @@ type Quest struct {
 	TrajectoryID string `json:"trajectory_id"`
 }
 
+// BattleVerdict holds the outcome of a boss battle review.
+type BattleVerdict struct {
+	Passed       bool    `json:"passed"`
+	QualityScore float64 `json:"quality_score"`
+	XPAwarded    int64   `json:"xp_awarded"`
+	XPPenalty    int64   `json:"xp_penalty"`
+	Feedback     string  `json:"feedback"`
+	LevelChange  int     `json:"level_change"`
+}
+
+// FailureType categorizes quest failures.
+type FailureType string
+
+const (
+	// FailureQuality indicates the quest output did not meet quality standards.
+	FailureQuality FailureType = "quality"
+	// FailureTimeout indicates the quest exceeded its time limit.
+	FailureTimeout FailureType = "timeout"
+	// FailureError indicates an unexpected error during execution.
+	FailureError FailureType = "error"
+	// FailureAbandoned indicates the agent abandoned the quest.
+	FailureAbandoned FailureType = "abandoned"
+)
+
 // QuestConstraints defines limits and requirements for quest execution.
 type QuestConstraints struct {
 	MaxDuration   time.Duration      `json:"max_duration"`

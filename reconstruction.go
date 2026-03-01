@@ -16,7 +16,7 @@ import (
 // EntityState stores data as Triples; these helpers parse them back to structs.
 //
 // Usage:
-//   entity, err := gc.GetEntity(ctx, entityID)
+//   entity, err := gc.GetEntityDirect(ctx, entityID)
 //   quest := QuestFromEntityState(entity)
 // =============================================================================
 

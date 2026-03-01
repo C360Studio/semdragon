@@ -8,8 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/component"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // =============================================================================
@@ -24,6 +26,7 @@ import (
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
+	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
 
@@ -33,10 +36,19 @@ type Component struct {
 	// Agent to guild mapping - in-memory projection
 	agentGuilds sync.Map // map[domain.AgentID][]domain.GuildID
 
+	// KV watcher for agent entity state changes (entity-centric architecture)
+	agentWatch  jetstream.KeyWatcher
+	watchDoneCh chan struct{}
+
+	// Agent state cache for detecting level/XP transitions that trigger clustering
+	agents   map[string]*semdragons.Agent
+	agentsMu sync.RWMutex
+
 	// Internal state
 	running  atomic.Bool
 	mu       sync.RWMutex
 	stopChan chan struct{}
+	stopOnce sync.Once
 
 	// Metrics
 	guildsCreated   atomic.Uint64
@@ -68,15 +80,16 @@ func (c *Component) Meta() component.Metadata {
 }
 
 // InputPorts returns the ports this component accepts data on.
+// Entity-centric: watches ENTITY_STATES KV for agent level/XP changes that trigger clustering.
 func (c *Component) InputPorts() []component.Port {
 	return []component.Port{
 		{
-			Name:        "agent-xp",
+			Name:        "agent-state-watch",
 			Direction:   component.DirectionInput,
 			Required:    false,
-			Description: "Agent XP events for auto-formation triggers",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateAgentXP,
+			Description: "Agent entity state changes via KV watch (detects level/XP transitions for auto-formation)",
+			Config: &component.KVWatchPort{
+				Bucket: "", // ENTITY_STATES bucket, watched dynamically
 			},
 		},
 	}
@@ -204,6 +217,7 @@ func (c *Component) Initialize() error {
 	}
 
 	c.boardConfig = c.config.ToBoardConfig()
+	c.agents = make(map[string]*semdragons.Agent)
 	c.stopChan = make(chan struct{})
 
 	return nil
@@ -225,6 +239,20 @@ func (c *Component) Start(ctx context.Context) error {
 		return errors.New("component already running")
 	}
 
+	// Create graph client for entity state reads and watches
+	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
+
+	// Watch agent entity type for level/XP changes that trigger auto-formation clustering
+	if c.config.EnableAutoFormation {
+		watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeAgent)
+		if err != nil {
+			return err
+		}
+		c.agentWatch = watcher
+		c.watchDoneCh = make(chan struct{})
+		go c.processAgentWatchUpdates()
+	}
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
@@ -232,14 +260,14 @@ func (c *Component) Start(ctx context.Context) error {
 	c.logger.Info("guildformation component started",
 		"org", c.config.Org,
 		"platform", c.config.Platform,
-		"board", c.config.Board)
+		"board", c.config.Board,
+		"auto_formation", c.config.EnableAutoFormation)
 
 	return nil
 }
 
 // Stop gracefully shuts down the component.
-// Timeout is unused: shutdown is non-blocking with no background goroutines to wait for.
-func (c *Component) Stop(_ time.Duration) error {
+func (c *Component) Stop(timeout time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -247,7 +275,26 @@ func (c *Component) Stop(_ time.Duration) error {
 		return nil
 	}
 
-	close(c.stopChan)
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	// Signal stop using sync.Once to prevent double-close panic
+	c.stopOnce.Do(func() {
+		close(c.stopChan)
+	})
+
+	// Stop KV watcher and wait for watch goroutine to exit
+	if c.agentWatch != nil {
+		c.agentWatch.Stop()
+	}
+	if c.watchDoneCh != nil {
+		select {
+		case <-c.watchDoneCh:
+		case <-time.After(timeout):
+			c.logger.Warn("guildformation stop timed out waiting for KV watcher")
+		}
+	}
 
 	c.running.Store(false)
 	c.logger.Info("guildformation component stopped")

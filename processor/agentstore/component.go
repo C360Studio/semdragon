@@ -12,7 +12,10 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/pkg/errs"
+	"github.com/nats-io/nats.go/jetstream"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 )
 
@@ -28,8 +31,17 @@ import (
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
+	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
+
+	// KV watcher for agent entity state changes (entity-centric architecture)
+	agentWatch  jetstream.KeyWatcher
+	watchDoneCh chan struct{}
+
+	// Agent XP cache for affordability queries without caller-supplied state.
+	// Keys are entity ID strings; values are int64 XP totals.
+	agentXPCache sync.Map
 
 	// Store catalog - in-memory projection
 	catalog sync.Map // map[string]*StoreItem
@@ -44,6 +56,7 @@ type Component struct {
 	running  atomic.Bool
 	mu       sync.RWMutex
 	stopChan chan struct{}
+	stopOnce sync.Once
 
 	// Metrics
 	itemsListed       atomic.Uint64
@@ -75,15 +88,16 @@ func (c *Component) Meta() component.Metadata {
 }
 
 // InputPorts returns the ports this component accepts data on.
+// Entity-centric: watches ENTITY_STATES KV for agent XP changes.
 func (c *Component) InputPorts() []component.Port {
 	return []component.Port{
 		{
-			Name:        "agent-xp",
+			Name:        "agent-state-watch",
 			Direction:   component.DirectionInput,
 			Required:    false,
-			Description: "Agent XP events for purchase validation",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateAgentXP,
+			Description: "Agent entity state changes via KV watch (tracks XP for affordability)",
+			Config: &component.KVWatchPort{
+				Bucket: "", // ENTITY_STATES bucket, watched dynamically via graph client
 			},
 		},
 	}
@@ -206,13 +220,13 @@ func (c *Component) Initialize() error {
 
 	c.boardConfig = c.config.ToBoardConfig()
 	c.stopChan = make(chan struct{})
+	c.watchDoneCh = make(chan struct{})
 
 	return nil
 }
 
 // Start begins component operation with the given context.
-// Context is unused: initialization is synchronous and in-memory.
-func (c *Component) Start(_ context.Context) error {
+func (c *Component) Start(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -224,6 +238,17 @@ func (c *Component) Start(_ context.Context) error {
 	for _, item := range DefaultConsumables() {
 		c.catalog.Store(item.ID, &item)
 	}
+
+	// Create graph client for entity state reads
+	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
+
+	// Start KV watcher for agent entity state (entity-centric: XP changes are facts)
+	watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeAgent)
+	if err != nil {
+		return errs.Wrap(err, "agent_store", "Start", "watch agent entity type")
+	}
+	c.agentWatch = watcher
+	go c.processAgentWatchUpdates()
 
 	c.startTime = time.Now()
 	c.running.Store(true)
@@ -238,8 +263,7 @@ func (c *Component) Start(_ context.Context) error {
 }
 
 // Stop gracefully shuts down the component.
-// Timeout is unused: shutdown is non-blocking with no background goroutines to wait for.
-func (c *Component) Stop(_ time.Duration) error {
+func (c *Component) Stop(timeout time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -247,7 +271,28 @@ func (c *Component) Stop(_ time.Duration) error {
 		return nil
 	}
 
-	close(c.stopChan)
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	// Signal stop using sync.Once to prevent double-close panic
+	c.stopOnce.Do(func() {
+		close(c.stopChan)
+	})
+
+	// Stop KV watcher to unblock the watch goroutine
+	if c.agentWatch != nil {
+		c.agentWatch.Stop()
+	}
+
+	// Wait for watch goroutine to finish with timeout
+	if c.watchDoneCh != nil {
+		select {
+		case <-c.watchDoneCh:
+		case <-time.After(timeout):
+			c.logger.Warn("agent_store stop timed out waiting for KV watcher")
+		}
+	}
 
 	c.running.Store(false)
 	c.logger.Info("agent_store component stopped")

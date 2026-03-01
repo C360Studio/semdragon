@@ -5,9 +5,178 @@ import (
 	"errors"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/pkg/errs"
+	"github.com/nats-io/nats.go/jetstream"
 )
+
+// =============================================================================
+// KV WATCH HANDLER - Entity-centric agent state monitoring
+// =============================================================================
+// Replaces the NATS Subscribe to agent XP predicates. Instead of receiving
+// pre-built XP event payloads, this processor watches agent entity state in KV
+// directly. "Agent progressed" is a fact about the world — it belongs in KV
+// Watch, not a NATS subscription.
+//
+// The watch detects level changes in agents and triggers auto-formation
+// clustering when enough agents have progressed to a new tier.
+// =============================================================================
+
+// processAgentWatchUpdates handles agent entity state changes from KV.
+// Detects level/tier transitions that should trigger guild auto-formation.
+func (c *Component) processAgentWatchUpdates() {
+	defer close(c.watchDoneCh)
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case entry, ok := <-c.agentWatch.Updates():
+			if !ok {
+				return
+			}
+			if entry == nil {
+				continue // Initial sync complete
+			}
+			c.handleAgentStateChange(entry)
+		}
+	}
+}
+
+// handleAgentStateChange processes an agent entity state change from KV.
+// Detects when an agent levels up and evaluates auto-formation clustering.
+func (c *Component) handleAgentStateChange(entry jetstream.KeyValueEntry) {
+	if !c.running.Load() {
+		return
+	}
+
+	key := entry.Key()
+	instance := semdragons.ExtractInstance(key)
+	if instance == "" || instance == key {
+		// Key did not contain a dot separator — not a valid entity ID.
+		c.logger.Warn("agent watch entry has unexpected key format", "key", key)
+		return
+	}
+
+	if entry.Operation() == jetstream.KeyValueDelete {
+		c.agentsMu.Lock()
+		delete(c.agents, instance)
+		c.agentsMu.Unlock()
+		c.logger.Debug("agent removed from guildformation cache", "instance", instance)
+		return
+	}
+
+	// Decode entity state and reconstruct the Agent from its triples.
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		c.logger.Warn("failed to decode agent entity state", "instance", instance, "error", err)
+		return
+	}
+	agent := semdragons.AgentFromEntityState(entityState)
+	if agent == nil {
+		c.logger.Warn("failed to reconstruct agent from entity state", "instance", instance)
+		return
+	}
+
+	// Diff against cached state to detect level changes.
+	c.agentsMu.Lock()
+	prev, hadPrev := c.agents[instance]
+	c.agents[instance] = agent
+	c.agentsMu.Unlock()
+
+	if !hadPrev {
+		// First time seeing this agent — just cache it, no clustering trigger.
+		return
+	}
+
+	// React to tier promotions: re-evaluate guild clustering for this agent.
+	if prev.Tier != agent.Tier || prev.Level != agent.Level {
+		c.logger.Debug("agent progressed, evaluating auto-formation",
+			"instance", instance,
+			"old_level", prev.Level,
+			"new_level", agent.Level,
+			"old_tier", prev.Tier,
+			"new_tier", agent.Tier)
+		c.evaluateAutoFormation(agent)
+	}
+}
+
+// evaluateAutoFormation checks whether a recently-progressed agent should be
+// placed into a guild. It clusters agents by skill specialization when
+// MinMembersForFormation unguilded agents share a skill and the auto-formation
+// feature is enabled.
+func (c *Component) evaluateAutoFormation(agent *semdragons.Agent) {
+	if !c.config.EnableAutoFormation {
+		return
+	}
+
+	// Collect all unguilded agents who share a skill with the progressed agent.
+	agentSkills := agent.SkillProficiencies
+	if len(agentSkills) == 0 {
+		return
+	}
+
+	// Check each skill this agent has for potential guild clustering.
+	for skill := range agentSkills {
+		c.evaluateSkillCluster(agent, domain.SkillTag(skill))
+	}
+}
+
+// evaluateSkillCluster collects all unguilded agents proficient in the given
+// skill. If enough agents meet the threshold, it auto-forms a guild.
+func (c *Component) evaluateSkillCluster(trigger *semdragons.Agent, skill domain.SkillTag) {
+	// Collect unguilded agents with this skill from the cache.
+	c.agentsMu.RLock()
+	var candidates []domain.AgentID
+	for _, a := range c.agents {
+		if _, hasSkill := a.SkillProficiencies[semdragons.SkillTag(skill)]; !hasSkill {
+			continue
+		}
+		// Only include unguilded agents (no existing guild membership in the cache).
+		if guilds := c.GetAgentGuilds(a.ID); len(guilds) == 0 {
+			candidates = append(candidates, a.ID)
+		}
+	}
+	c.agentsMu.RUnlock()
+
+	if len(candidates) < c.config.MinMembersForFormation {
+		return
+	}
+
+	// Auto-form a guild with the trigger agent as founder.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	guildName := "Guild of " + string(skill)
+	guild, err := c.CreateGuild(ctx, guildName, []domain.SkillTag{skill}, trigger.ID)
+	if err != nil {
+		c.logger.Error("auto-formation guild creation failed",
+			"skill", skill,
+			"founder", trigger.ID,
+			"error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+
+	c.logger.Info("auto-formed guild from skill cluster",
+		"guild_id", guild.ID,
+		"skill", skill,
+		"candidates", len(candidates))
+
+	// Add remaining candidates (skip the founder who was added by CreateGuild).
+	for _, candidateID := range candidates {
+		if candidateID == trigger.ID {
+			continue
+		}
+		if err := c.JoinGuild(ctx, guild.ID, candidateID); err != nil {
+			c.logger.Warn("failed to add candidate to auto-formed guild",
+				"guild_id", guild.ID,
+				"agent_id", candidateID,
+				"error", err)
+		}
+	}
+}
 
 // =============================================================================
 // GUILD HANDLERS

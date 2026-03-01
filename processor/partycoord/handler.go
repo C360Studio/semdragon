@@ -5,6 +5,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/pkg/errs"
 )
@@ -345,4 +348,171 @@ func randomSuffix() string {
 		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
 	}
 	return string(b)
+}
+
+// =============================================================================
+// QUEST STATE MANAGEMENT (KV Watch — facts about the world)
+// =============================================================================
+
+// loadInitialQuestState loads all quests from KV into the local cache.
+// This populates the cache before the watcher starts so no state is missed.
+func (c *Component) loadInitialQuestState(ctx context.Context) error {
+	questEntities, err := c.graph.ListQuestsByPrefix(ctx, 100)
+	if err != nil {
+		return err
+	}
+
+	c.questsMu.Lock()
+	for _, entity := range questEntities {
+		quest := semdragons.QuestFromEntityState(&entity)
+		if quest != nil {
+			instance := semdragons.ExtractInstance(string(quest.ID))
+			c.quests[instance] = quest
+		}
+	}
+	c.questsMu.Unlock()
+
+	c.logger.Debug("loaded initial quest state", "quests", len(questEntities))
+	return nil
+}
+
+// startQuestWatcher sets up a KV watch on quest entities and starts the
+// background goroutine that processes updates.
+func (c *Component) startQuestWatcher(ctx context.Context) error {
+	kv, err := c.graph.KVBucket(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Watch all quests on this board: org.platform.game.board.quest.>
+	questPrefix := c.graph.Config().TypePrefix("quest") + ".>"
+	watcher, err := kv.Watch(ctx, questPrefix)
+	if err != nil {
+		return err
+	}
+	c.questWatch = watcher
+
+	go c.processQuestWatchUpdates()
+
+	c.logger.Debug("started KV watcher for quest state")
+	return nil
+}
+
+// stopQuestWatcher stops the KV watcher.
+func (c *Component) stopQuestWatcher() {
+	if c.questWatch != nil {
+		c.questWatch.Stop()
+	}
+}
+
+// processQuestWatchUpdates consumes KV watch updates for quest state changes.
+// Runs in a dedicated goroutine; signals watchDoneCh when it exits.
+func (c *Component) processQuestWatchUpdates() {
+	defer close(c.watchDoneCh)
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+
+		case entry, ok := <-c.questWatch.Updates():
+			if !ok {
+				return
+			}
+			if entry == nil {
+				// nil entry signals initial sync complete — all existing entries delivered
+				continue
+			}
+			c.handleQuestUpdate(entry)
+		}
+	}
+}
+
+// handleQuestUpdate processes a single quest state change from KV.
+// Keys in the ENTITY_STATES bucket use the full 6-part entity ID format:
+// org.platform.game.board.quest.instance
+func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
+	key := entry.Key()
+	instance := semdragons.ExtractInstance(key)
+	if instance == "" || instance == key {
+		// Key did not contain a dot separator — not a valid entity ID.
+		c.logger.Warn("quest watch entry has unexpected key format", "key", key)
+		return
+	}
+
+	if entry.Operation() == jetstream.KeyValueDelete {
+		c.questsMu.Lock()
+		delete(c.quests, instance)
+		c.questsMu.Unlock()
+		c.logger.Debug("quest removed from cache", "instance", instance)
+		return
+	}
+
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		c.logger.Warn("failed to decode quest entity state", "instance", instance, "error", err)
+		return
+	}
+
+	quest := semdragons.QuestFromEntityState(entityState)
+	if quest == nil {
+		c.logger.Warn("failed to reconstruct quest from entity state", "instance", instance)
+		return
+	}
+
+	c.questsMu.Lock()
+	prev := c.quests[instance]
+	c.quests[instance] = quest
+	c.questsMu.Unlock()
+
+	c.lastActivity.Store(time.Now())
+	c.logger.Debug("quest cache updated", "instance", instance, "status", quest.Status)
+
+	// React to quest state transitions when auto-formation is enabled.
+	// A quest moving into "claimed" status and requiring a party triggers formation.
+	if c.config.AutoFormParties {
+		c.maybeFormParty(prev, quest)
+	}
+}
+
+// maybeFormParty inspects the quest state transition and auto-forms a party
+// when a party-required quest is claimed and no party has been assigned yet.
+func (c *Component) maybeFormParty(prev, curr *semdragons.Quest) {
+	if !curr.PartyRequired {
+		return
+	}
+
+	// Only react to the transition into "claimed" status
+	prevStatus := semdragons.QuestStatus("")
+	if prev != nil {
+		prevStatus = prev.Status
+	}
+	if prevStatus == curr.Status {
+		return // No status change; nothing to do
+	}
+	if curr.Status != semdragons.QuestClaimed {
+		return
+	}
+	if curr.ClaimedBy == nil {
+		return
+	}
+	if curr.PartyID != nil {
+		return // Party already assigned
+	}
+
+	ctx := context.Background()
+	party, err := c.FormParty(ctx, curr.ID, *curr.ClaimedBy)
+	if err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("auto-form party failed",
+			"quest_id", curr.ID,
+			"agent_id", *curr.ClaimedBy,
+			"error", err)
+		return
+	}
+
+	c.logger.Info("auto-formed party for party-required quest",
+		"quest_id", curr.ID,
+		"party_id", party.ID,
+		"lead_id", *curr.ClaimedBy)
 }
