@@ -20,7 +20,9 @@
 		if (browser) {
 			document.body.classList.add('hydrated');
 
-			const baseUrl = env.PUBLIC_API_URL || 'http://localhost:8080';
+			// In dev, Vite proxies /game, /health, /message-logger to the backend.
+			// In Docker, PUBLIC_API_URL points to the backend container directly.
+			const baseUrl = env.PUBLIC_API_URL || '';
 			const sseBucket = env.PUBLIC_SSE_BUCKET || 'semdragons-local-dev-board1';
 			api.setApiUrl(baseUrl);
 

@@ -10,6 +10,11 @@ export default defineConfig({
 	},
 	server: {
 		port: 5173,
-		host: true
+		host: true,
+		proxy: {
+			'/game': 'http://localhost:8080',
+			'/health': 'http://localhost:8080',
+			'/message-logger': 'http://localhost:8080'
+		}
 	}
 });

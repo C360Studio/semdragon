@@ -16,6 +16,7 @@ import type {
 } from '$types';
 import { questId, agentId, battleId, partyId, guildId } from '$types';
 import { worldStore } from '$stores/worldStore.svelte';
+import { transformEntity, isGraphEntity } from './entity-transformer';
 
 // =============================================================================
 // ENTITY KEY PARSING
@@ -103,21 +104,25 @@ export function createSSEService() {
 		const entityType = entityTypeFromKey(key);
 		if (!entityType) return;
 
+		// Transform graph triple format to flat entity if needed
+		const entity = isGraphEntity(value) ? transformEntity(entityType, key, value) : value;
+		if (!entity) return;
+
 		switch (entityType) {
 			case 'quest':
-				worldStore.upsertQuest(value as Quest);
+				worldStore.upsertQuest(entity as Quest);
 				break;
 			case 'agent':
-				worldStore.upsertAgent(value as Agent);
+				worldStore.upsertAgent(entity as Agent);
 				break;
 			case 'battle':
-				worldStore.upsertBattle(value as BossBattle);
+				worldStore.upsertBattle(entity as BossBattle);
 				break;
 			case 'party':
-				worldStore.upsertParty(value as Party);
+				worldStore.upsertParty(entity as Party);
 				break;
 			case 'guild':
-				worldStore.upsertGuild(value as Guild);
+				worldStore.upsertGuild(entity as Guild);
 				break;
 		}
 	}
@@ -126,25 +131,22 @@ export function createSSEService() {
 		const entityType = entityTypeFromKey(key);
 		if (!entityType) return;
 
-		const parts = key.split('.');
-		const instanceId = parts[5];
-		if (!instanceId) return;
-
+		// Use the full 6-part key as the entity ID (matches upsert behavior)
 		switch (entityType) {
 			case 'quest':
-				worldStore.removeQuest(questId(instanceId));
+				worldStore.removeQuest(questId(key));
 				break;
 			case 'agent':
-				worldStore.removeAgent(agentId(instanceId));
+				worldStore.removeAgent(agentId(key));
 				break;
 			case 'battle':
-				worldStore.removeBattle(battleId(instanceId));
+				worldStore.removeBattle(battleId(key));
 				break;
 			case 'party':
-				worldStore.removeParty(partyId(instanceId));
+				worldStore.removeParty(partyId(key));
 				break;
 			case 'guild':
-				worldStore.removeGuild(guildId(instanceId));
+				worldStore.removeGuild(guildId(key));
 				break;
 		}
 	}

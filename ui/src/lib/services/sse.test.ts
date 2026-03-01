@@ -379,7 +379,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeQuest).toHaveBeenCalledWith(
-				questId('quest-1')
+				questId('c360.prod.game.board1.quest.quest-1')
 			);
 		});
 
@@ -399,7 +399,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeAgent).toHaveBeenCalledWith(
-				agentId('agent-1')
+				agentId('c360.prod.game.board1.agent.agent-1')
 			);
 		});
 
@@ -419,7 +419,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeBattle).toHaveBeenCalledWith(
-				battleId('battle-1')
+				battleId('c360.prod.game.board1.battle.battle-1')
 			);
 		});
 
@@ -439,7 +439,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeParty).toHaveBeenCalledWith(
-				partyId('party-1')
+				partyId('c360.prod.game.board1.party.party-1')
 			);
 		});
 
@@ -459,7 +459,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeGuild).toHaveBeenCalledWith(
-				guildId('guild-1')
+				guildId('c360.prod.game.board1.guild.guild-1')
 			);
 		});
 	});
