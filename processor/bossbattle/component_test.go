@@ -279,6 +279,156 @@ func TestComponent_Stats(t *testing.T) {
 }
 
 // =============================================================================
+// AGENT STATUS LIFECYCLE TESTS
+// =============================================================================
+
+// TestBattleStartSetsInBattle verifies that when a battle starts via the
+// KV watcher (quest transitions to in_review), the agent is set to in_battle.
+func TestBattleStartSetsInBattle(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "inbattle")
+	defer comp.Stop(5 * time.Second)
+
+	gc := comp.Graph()
+
+	// Create agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.boardConfig.AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:     agentID,
+		Name:   "battle-agent",
+		Status: semdragons.AgentOnQuest,
+		Level:  7,
+		Tier:   semdragons.TierJourneyman,
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	// Create a quest that requires review and transition it to in_review
+	questInstance := semdragons.GenerateInstance()
+	questID := semdragons.QuestID(comp.boardConfig.QuestEntityID(questInstance))
+	agentIDRef := semdragons.AgentID(agentID)
+	quest := &questboard.Quest{
+		ID:         questID,
+		Title:      "Battle Start Quest",
+		Status:     semdragons.QuestInProgress,
+		Difficulty: semdragons.DifficultyModerate,
+		BaseXP:     100,
+		ClaimedBy:  &agentIDRef,
+		Constraints: questboard.QuestConstraints{
+			RequireReview: true,
+			ReviewLevel:   semdragons.ReviewStandard,
+		},
+	}
+
+	// Write quest as in_progress first (seeds the watcher cache)
+	if err := gc.PutEntityState(ctx, quest, "quest.started"); err != nil {
+		t.Fatalf("Failed to create test quest: %v", err)
+	}
+
+	// Give the watcher time to cache the in_progress state
+	time.Sleep(200 * time.Millisecond)
+
+	// Transition quest to in_review — this triggers battle start via KV watcher
+	quest.Status = semdragons.QuestInReview
+	quest.Output = map[string]any{"result": "test output"}
+	if err := gc.EmitEntityUpdate(ctx, quest, "quest.in_review"); err != nil {
+		t.Fatalf("Failed to transition quest to in_review: %v", err)
+	}
+
+	// Wait for the reactive handler to start the battle and update agent
+	time.Sleep(1 * time.Second)
+
+	// Read agent back from KV
+	agentEntity, err := gc.GetAgent(ctx, agentID)
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	if updatedAgent == nil {
+		t.Fatal("Failed to reconstruct agent from entity state")
+	}
+
+	if updatedAgent.Status != semdragons.AgentInBattle {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentInBattle)
+	}
+}
+
+// TestBattleVerdictTransitionsQuest verifies that after a battle completes,
+// the quest is transitioned to completed (victory) or failed (defeat).
+func TestBattleVerdictTransitionsQuest(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "verdict")
+	defer comp.Stop(5 * time.Second)
+
+	gc := comp.Graph()
+
+	// Start a battle directly (not via watcher, for deterministic control)
+	quest := &questboard.Quest{
+		ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID("verdict-quest")),
+		Title:      "Verdict Bridge Quest",
+		Difficulty: semdragons.DifficultyModerate,
+		BaseXP:     100,
+		Status:     semdragons.QuestInReview,
+		Constraints: questboard.QuestConstraints{
+			RequireReview: true,
+			ReviewLevel:   semdragons.ReviewStandard,
+		},
+	}
+
+	// Persist the quest so it can be read back later
+	if err := gc.PutEntityState(ctx, quest, "quest.in_review"); err != nil {
+		t.Fatalf("Failed to create test quest: %v", err)
+	}
+
+	// Start battle which will evaluate and bridge verdict → quest
+	battle, err := comp.StartBattle(ctx, quest, map[string]any{"result": "test output"})
+	if err != nil {
+		t.Fatalf("StartBattle failed: %v", err)
+	}
+
+	// Wait for async evaluation to complete and bridge to quest
+	time.Sleep(2 * time.Second)
+
+	// Read the quest back from KV to check if verdict was bridged
+	questEntity, err := gc.GetEntityDirect(ctx, string(quest.ID))
+	if err != nil {
+		t.Fatalf("GetEntityDirect failed: %v", err)
+	}
+
+	// Reconstruct quest from entity state
+	var questStatus string
+	for _, triple := range questEntity.Triples {
+		if triple.Predicate == "quest.status.state" {
+			if v, ok := triple.Object.(string); ok {
+				questStatus = v
+			}
+		}
+	}
+
+	// Battle should have completed — the evaluator returns a verdict
+	// which triggers the bridge to either complete or fail the quest.
+	if questStatus != string(semdragons.QuestCompleted) && questStatus != string(semdragons.QuestFailed) {
+		t.Errorf("Quest status = %q after battle verdict, want %q or %q",
+			questStatus, semdragons.QuestCompleted, semdragons.QuestFailed)
+	}
+
+	// Verify battle reached terminal state
+	_ = battle // Battle was started, evaluation ran async
+	stats := comp.Stats()
+	if stats.Completed == 0 {
+		t.Error("Battle should have completed")
+	}
+}
+
+// =============================================================================
 // HELPERS
 // =============================================================================
 

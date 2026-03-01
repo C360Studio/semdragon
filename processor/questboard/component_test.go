@@ -553,6 +553,280 @@ func TestComponent_ConfigSchema(t *testing.T) {
 }
 
 // =============================================================================
+// AGENT STATUS LIFECYCLE TESTS
+// =============================================================================
+
+// TestClaimSetsAgentOnQuest verifies that claiming a quest transitions the
+// agent to on_quest status with CurrentQuest set.
+func TestClaimSetsAgentOnQuest(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "claimstatus")
+	defer comp.Stop(5 * time.Second)
+
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "status-claim-agent", 5)
+
+	quest, err := comp.PostQuest(ctx, Quest{
+		Title:      "Claim Status Quest",
+		Difficulty: semdragons.DifficultyTrivial,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	if err := comp.ClaimQuest(ctx, quest.ID, agent.ID); err != nil {
+		t.Fatalf("ClaimQuest failed: %v", err)
+	}
+
+	// Read agent back from KV to verify status was written
+	agentEntity, err := comp.GraphClient().GetAgent(ctx, agent.ID)
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	if updatedAgent == nil {
+		t.Fatal("Failed to reconstruct agent from entity state")
+	}
+
+	if updatedAgent.Status != semdragons.AgentOnQuest {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentOnQuest)
+	}
+	if updatedAgent.CurrentQuest == nil {
+		t.Error("CurrentQuest should be set after claim")
+	}
+}
+
+// TestAbandonResetsAgent verifies that abandoning a quest resets the agent
+// to idle with CurrentQuest cleared.
+func TestAbandonResetsAgent(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "abandonreset")
+	defer comp.Stop(5 * time.Second)
+
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "status-abandon-agent", 5)
+
+	quest, err := comp.PostQuest(ctx, Quest{
+		Title:      "Abandon Reset Quest",
+		Difficulty: semdragons.DifficultyTrivial,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	// Claim then abandon
+	if err := comp.ClaimQuest(ctx, quest.ID, agent.ID); err != nil {
+		t.Fatalf("ClaimQuest failed: %v", err)
+	}
+
+	if err := comp.AbandonQuest(ctx, quest.ID, "Changed my mind"); err != nil {
+		t.Fatalf("AbandonQuest failed: %v", err)
+	}
+
+	// Read agent back from KV
+	agentEntity, err := comp.GraphClient().GetAgent(ctx, agent.ID)
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	if updatedAgent == nil {
+		t.Fatal("Failed to reconstruct agent from entity state")
+	}
+
+	if updatedAgent.Status != semdragons.AgentIdle {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentIdle)
+	}
+	if updatedAgent.CurrentQuest != nil {
+		t.Errorf("CurrentQuest should be nil after abandon, got %v", updatedAgent.CurrentQuest)
+	}
+}
+
+// TestFailRepostResetsAgent verifies that when a quest fails with retries
+// remaining (repost path), the agent is reset to idle so it can claim again.
+func TestFailRepostResetsAgent(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "failrepost")
+	defer comp.Stop(5 * time.Second)
+
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "status-repost-agent", 5)
+
+	quest, err := comp.PostQuest(ctx, Quest{
+		Title:       "Fail Repost Quest",
+		Difficulty:  semdragons.DifficultyTrivial,
+		MaxAttempts: 3,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	// Claim → start → fail (should repost because MaxAttempts=3, Attempts=1)
+	if err := comp.ClaimQuest(ctx, quest.ID, agent.ID); err != nil {
+		t.Fatalf("ClaimQuest failed: %v", err)
+	}
+	if err := comp.StartQuest(ctx, quest.ID); err != nil {
+		t.Fatalf("StartQuest failed: %v", err)
+	}
+	if err := comp.FailQuest(ctx, quest.ID, "First failure"); err != nil {
+		t.Fatalf("FailQuest failed: %v", err)
+	}
+
+	// Verify quest was reposted
+	reposted, _ := comp.GetQuest(ctx, quest.ID)
+	if reposted.Status != semdragons.QuestPosted {
+		t.Fatalf("Quest should be reposted, got %v", reposted.Status)
+	}
+
+	// Read agent back from KV
+	agentEntity, err := comp.GraphClient().GetAgent(ctx, agent.ID)
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	if updatedAgent == nil {
+		t.Fatal("Failed to reconstruct agent from entity state")
+	}
+
+	if updatedAgent.Status != semdragons.AgentIdle {
+		t.Errorf("Status = %v, want %v (should reset on repost)", updatedAgent.Status, semdragons.AgentIdle)
+	}
+	if updatedAgent.CurrentQuest != nil {
+		t.Errorf("CurrentQuest should be nil after repost, got %v", updatedAgent.CurrentQuest)
+	}
+
+	// Verify the agent can re-claim the reposted quest
+	if err := comp.ClaimQuest(ctx, quest.ID, agent.ID); err != nil {
+		t.Errorf("Agent should be able to re-claim after repost, got: %v", err)
+	}
+}
+
+// TestRejectsClaimWhenOnQuest verifies that an agent with CurrentQuest set
+// cannot claim another quest.
+func TestRejectsClaimWhenOnQuest(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "rejectonquest")
+	defer comp.Stop(5 * time.Second)
+
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "busy-agent", 5)
+
+	// Post two quests
+	quest1, err := comp.PostQuest(ctx, Quest{
+		Title:      "First Quest",
+		Difficulty: semdragons.DifficultyTrivial,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest 1 failed: %v", err)
+	}
+	quest2, err := comp.PostQuest(ctx, Quest{
+		Title:      "Second Quest",
+		Difficulty: semdragons.DifficultyTrivial,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest 2 failed: %v", err)
+	}
+
+	// Claim first quest
+	if err := comp.ClaimQuest(ctx, quest1.ID, agent.ID); err != nil {
+		t.Fatalf("ClaimQuest 1 failed: %v", err)
+	}
+
+	// Try to claim second quest — should be rejected
+	err = comp.ClaimQuest(ctx, quest2.ID, agent.ID)
+	if err == nil {
+		t.Error("Should reject claim when agent already on a quest")
+	}
+}
+
+// TestRejectsClaimWhenOnCooldown verifies that an agent on active cooldown
+// cannot claim a quest.
+func TestRejectsClaimWhenOnCooldown(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "rejectcooldown")
+	defer comp.Stop(5 * time.Second)
+
+	// Create agent directly with cooldown status and future CooldownUntil
+	instance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(instance))
+	cooldownUntil := time.Now().Add(1 * time.Hour) // Far in the future
+	agent := &semdragons.Agent{
+		ID:            agentID,
+		Name:          "cooldown-agent",
+		Level:         5,
+		Tier:          semdragons.TierApprentice,
+		Status:        semdragons.AgentCooldown,
+		CooldownUntil: &cooldownUntil,
+	}
+	if err := comp.GraphClient().PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	quest, err := comp.PostQuest(ctx, Quest{
+		Title:      "Cooldown Rejection Quest",
+		Difficulty: semdragons.DifficultyTrivial,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	err = comp.ClaimQuest(ctx, quest.ID, agentID)
+	if err == nil {
+		t.Error("Should reject claim when agent is on active cooldown")
+	}
+}
+
+// TestAllowsClaimWhenCooldownExpired verifies that an agent whose cooldown
+// has expired can claim a quest.
+func TestAllowsClaimWhenCooldownExpired(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "expiredcooldown")
+	defer comp.Stop(5 * time.Second)
+
+	// Create agent with EXPIRED cooldown (CooldownUntil in the past)
+	instance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(instance))
+	cooldownUntil := time.Now().Add(-1 * time.Hour) // In the past
+	agent := &semdragons.Agent{
+		ID:            agentID,
+		Name:          "expired-cooldown-agent",
+		Level:         5,
+		Tier:          semdragons.TierApprentice,
+		Status:        semdragons.AgentCooldown,
+		CooldownUntil: &cooldownUntil,
+	}
+	if err := comp.GraphClient().PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	quest, err := comp.PostQuest(ctx, Quest{
+		Title:      "Expired Cooldown Quest",
+		Difficulty: semdragons.DifficultyTrivial,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	err = comp.ClaimQuest(ctx, quest.ID, agentID)
+	if err != nil {
+		t.Errorf("Should allow claim when cooldown is expired, got: %v", err)
+	}
+}
+
+// =============================================================================
 // HELPERS
 // =============================================================================
 
