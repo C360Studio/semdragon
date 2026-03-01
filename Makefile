@@ -1,4 +1,4 @@
-.PHONY: build test test-integration test-all lint fmt tidy check e2e e2e-setup e2e-teardown e2e-headed e2e-clean
+.PHONY: build test test-integration test-all lint fmt tidy check schema check-schema e2e e2e-setup e2e-teardown e2e-headed e2e-clean
 
 # Build all packages
 build:
@@ -51,6 +51,20 @@ check: fmt tidy lint test-all
 coverage:
 	go test -tags=integration -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
+
+# =============================================================================
+# Entity Schema Codegen
+# =============================================================================
+
+# Generate entity schema JSON from Go Triples() implementations
+schema:
+	go run ./cmd/gen-entity-schema > ui/src/lib/services/entity-schema.generated.json
+
+# Check that committed schema matches current Go code (ignoring generated_at timestamp)
+check-schema:
+	@go run ./cmd/gen-entity-schema | grep -v generated_at > /tmp/schema-check-new.json
+	@grep -v generated_at ui/src/lib/services/entity-schema.generated.json > /tmp/schema-check-old.json
+	@diff /tmp/schema-check-new.json /tmp/schema-check-old.json && echo "Schema is up to date."
 
 # =============================================================================
 # E2E Testing (Playwright)

@@ -9,7 +9,7 @@
 #   make e2e-run       — Run Playwright tests (assumes stack is already up)
 #   make e2e-chromium  — Run Playwright on chromium only (fast iteration)
 
-.PHONY: test check e2e e2e-up e2e-down e2e-run e2e-chromium e2e-install dev
+.PHONY: test check check-schema e2e e2e-up e2e-down e2e-run e2e-chromium e2e-install dev
 
 # ─── Unit Tests ───────────────────────────────────────────────────────
 
@@ -18,6 +18,10 @@ test:
 
 check:
 	npm run check
+
+# Verify entity schema matches Go code (delegates to root Makefile)
+check-schema:
+	cd .. && make check-schema
 
 # ─── Dev Server ───────────────────────────────────────────────────────
 

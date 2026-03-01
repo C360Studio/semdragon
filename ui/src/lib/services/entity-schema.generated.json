@@ -1,0 +1,136 @@
+{
+  "generated_at": "2026-03-01T20:03:37Z",
+  "entities": {
+    "agent": {
+      "static": [
+        "agent.identity.display_name",
+        "agent.identity.name",
+        "agent.lifecycle.created_at",
+        "agent.lifecycle.updated_at",
+        "agent.npc.flag",
+        "agent.progression.death_count",
+        "agent.progression.level",
+        "agent.progression.tier",
+        "agent.progression.xp.current",
+        "agent.progression.xp.to_level",
+        "agent.stats.bosses_defeated",
+        "agent.stats.quests_completed",
+        "agent.stats.quests_failed",
+        "agent.stats.total_xp_earned",
+        "agent.status.state"
+      ],
+      "dynamic": [
+        "agent.skill.{tag}.level",
+        "agent.skill.{tag}.total_xp"
+      ],
+      "optional": [
+        "agent.assignment.quest",
+        "agent.membership.party",
+        "agent.status.cooldown_until"
+      ],
+      "multi_value": [
+        "agent.membership.guild"
+      ]
+    },
+    "battle": {
+      "static": [
+        "battle.assignment.agent",
+        "battle.assignment.quest",
+        "battle.lifecycle.started_at",
+        "battle.review.level",
+        "battle.status.state"
+      ],
+      "dynamic": [],
+      "optional": [
+        "battle.lifecycle.completed_at",
+        "battle.verdict.feedback",
+        "battle.verdict.passed",
+        "battle.verdict.score",
+        "battle.verdict.xp_awarded"
+      ],
+      "multi_value": [
+        "battle.judge.id"
+      ]
+    },
+    "guild": {
+      "static": [
+        "guild.config.max_members",
+        "guild.config.min_level",
+        "guild.founding.agent",
+        "guild.founding.date",
+        "guild.identity.description",
+        "guild.identity.name",
+        "guild.lifecycle.created_at",
+        "guild.stats.quests_failed",
+        "guild.stats.quests_handled",
+        "guild.stats.reputation",
+        "guild.stats.success_rate",
+        "guild.status.state"
+      ],
+      "dynamic": [
+        "guild.member.{id}.contribution",
+        "guild.member.{id}.rank"
+      ],
+      "optional": [
+        "guild.identity.culture",
+        "guild.identity.motto"
+      ],
+      "multi_value": [
+        "guild.membership.agent",
+        "guild.resource.tool",
+        "guild.routing.preferred_client",
+        "guild.routing.quest_type"
+      ]
+    },
+    "party": {
+      "static": [
+        "party.assignment.quest",
+        "party.identity.name",
+        "party.lifecycle.formed_at",
+        "party.membership.lead",
+        "party.status.state"
+      ],
+      "dynamic": [
+        "party.member.{id}.role",
+        "party.subquest.{id}.agent"
+      ],
+      "optional": [
+        "party.coordination.strategy",
+        "party.lifecycle.disbanded_at"
+      ],
+      "multi_value": [
+        "party.membership.member"
+      ]
+    },
+    "quest": {
+      "static": [
+        "quest.attempts.current",
+        "quest.attempts.max",
+        "quest.difficulty.level",
+        "quest.identity.description",
+        "quest.identity.title",
+        "quest.lifecycle.posted_at",
+        "quest.party.required",
+        "quest.review.level",
+        "quest.status.state",
+        "quest.tier.minimum",
+        "quest.xp.base"
+      ],
+      "dynamic": [],
+      "optional": [
+        "quest.assignment.agent",
+        "quest.assignment.party",
+        "quest.lifecycle.claimed_at",
+        "quest.lifecycle.completed_at",
+        "quest.lifecycle.started_at",
+        "quest.observability.trajectory_id",
+        "quest.parent.quest",
+        "quest.priority.guild"
+      ],
+      "multi_value": [
+        "quest.skill.required",
+        "quest.tool.required"
+      ]
+    }
+  }
+}
