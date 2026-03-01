@@ -66,19 +66,10 @@ func (c *Component) PostQuest(ctx context.Context, quest Quest) (*Quest, error) 
 		quest.MinTier = domain.TierFromDifficulty(quest.Difficulty)
 	}
 
-	// Emit quest to graph system
+	// Emit quest to graph system (KV write is the event — watchers are notified)
 	if err := c.graph.EmitEntity(ctx, &quest, "quest.posted"); err != nil {
 		c.errorsCount.Add(1)
 		return nil, errs.Wrap(err, "QuestBoard", "PostQuest", "emit quest")
-	}
-
-	// Emit lifecycle event with trace context using local typed subject
-	if err := SubjectQuestPosted.Publish(ctx, c.deps.NATSClient, QuestPostedPayload{
-		Quest:    quest,
-		PostedAt: quest.PostedAt,
-		Trace:    TraceInfo{TrajectoryID: tc.TraceID, SpanID: tc.SpanID},
-	}); err != nil {
-		c.logger.Debug("failed to publish quest posted event", "quest", quest.ID, "error", err)
 	}
 
 	return &quest, nil
@@ -286,21 +277,10 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 	quest.ClaimedAt = &now
 	quest.Attempts++
 
-	// Emit updated quest to graph
+	// Emit updated quest to graph (KV write is the event — watchers are notified)
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.claimed"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "ClaimQuest", "emit update")
-	}
-
-	// Create span for claim event and emit
-	_, tc := c.traces.NewEventSpan(ctx, semdragons.QuestID(questID))
-	if err := SubjectQuestClaimed.Publish(ctx, c.deps.NATSClient, QuestClaimedPayload{
-		Quest:     *quest,
-		AgentID:   agentID,
-		ClaimedAt: *quest.ClaimedAt,
-		Trace:     TraceInfo{TrajectoryID: tc.TraceID, SpanID: tc.SpanID},
-	}); err != nil {
-		c.logger.Debug("failed to publish quest claimed event", "quest", quest.ID, "error", err)
 	}
 
 	return nil
@@ -359,22 +339,10 @@ func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.Quest
 	quest.ClaimedAt = &now
 	quest.Attempts++
 
-	// Emit updated quest to graph
+	// Emit updated quest to graph (KV write is the event — watchers are notified)
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.claimed"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "ClaimQuestForParty", "emit update")
-	}
-
-	// Create span for claim event
-	_, tc := c.traces.NewEventSpan(ctx, semdragons.QuestID(questID))
-	if err := SubjectQuestClaimed.Publish(ctx, c.deps.NATSClient, QuestClaimedPayload{
-		Quest:     *quest,
-		AgentID:   leadAgentID,
-		PartyID:   &partyID,
-		ClaimedAt: *quest.ClaimedAt,
-		Trace:     TraceInfo{TrajectoryID: tc.TraceID, SpanID: tc.SpanID},
-	}); err != nil {
-		c.logger.Debug("failed to publish quest claimed event", "quest", quest.ID, "error", err)
 	}
 
 	return nil
@@ -399,14 +367,6 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 		return fmt.Errorf("quest not abandonable: %s", quest.Status)
 	}
 
-	var agentID domain.AgentID
-	var partyID *domain.PartyID
-
-	if quest.ClaimedBy != nil {
-		agentID = *quest.ClaimedBy
-	}
-	partyID = quest.PartyID
-
 	// Reset quest state
 	quest.Status = domain.QuestPosted
 	quest.ClaimedBy = nil
@@ -414,23 +374,10 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 	quest.ClaimedAt = nil
 	quest.StartedAt = nil
 
-	// Emit updated quest to graph
+	// Emit updated quest to graph (KV write is the event — watchers are notified)
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.abandoned"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "AbandonQuest", "emit update")
-	}
-
-	// Create span for abandon event
-	_, abandonTC := c.traces.NewEventSpan(ctx, semdragons.QuestID(questID))
-	if err := SubjectQuestAbandoned.Publish(ctx, c.deps.NATSClient, QuestAbandonedPayload{
-		Quest:       *quest,
-		AgentID:     agentID,
-		PartyID:     partyID,
-		Reason:      reason,
-		AbandonedAt: time.Now(),
-		Trace:       TraceInfo{TrajectoryID: abandonTC.TraceID, SpanID: abandonTC.SpanID},
-	}); err != nil {
-		c.logger.Debug("failed to publish quest abandoned event", "quest", quest.ID, "error", err)
 	}
 
 	return nil
@@ -455,34 +402,15 @@ func (c *Component) StartQuest(ctx context.Context, questID domain.QuestID) erro
 		return fmt.Errorf("quest not claimed: %s", quest.Status)
 	}
 
-	var agentID domain.AgentID
-	var partyID *domain.PartyID
-
-	if quest.ClaimedBy != nil {
-		agentID = *quest.ClaimedBy
-	}
-	partyID = quest.PartyID
-
 	// Update quest state
 	now := time.Now()
 	quest.Status = domain.QuestInProgress
 	quest.StartedAt = &now
 
-	// Emit updated quest to graph
+	// Emit updated quest to graph (KV write is the event — watchers are notified)
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "StartQuest", "emit update")
-	}
-
-	_, tc := c.traces.NewEventSpan(ctx, semdragons.QuestID(questID))
-	if err := SubjectQuestStarted.Publish(ctx, c.deps.NATSClient, QuestStartedPayload{
-		Quest:     *quest,
-		AgentID:   agentID,
-		PartyID:   partyID,
-		StartedAt: *quest.StartedAt,
-		Trace:     TraceInfo{TrajectoryID: tc.TraceID, SpanID: tc.SpanID},
-	}); err != nil {
-		c.logger.Debug("failed to publish quest started event", "quest", quest.ID, "error", err)
 	}
 
 	return nil
@@ -509,44 +437,27 @@ func (c *Component) SubmitResult(ctx context.Context, questID domain.QuestID, re
 		return fmt.Errorf("quest not in_progress: %s", quest.Status)
 	}
 
-	var agentID domain.AgentID
-	if quest.ClaimedBy != nil {
-		agentID = *quest.ClaimedBy
-	}
-
 	quest.Output = result
-	needsReview := quest.Constraints.RequireReview
 
-	if needsReview {
+	if quest.Constraints.RequireReview {
 		quest.Status = domain.QuestInReview
 	} else {
 		now := time.Now()
 		quest.Status = domain.QuestCompleted
 		quest.CompletedAt = &now
+		if quest.StartedAt != nil {
+			quest.Duration = now.Sub(*quest.StartedAt)
+		}
 	}
 
-	// Emit updated quest to graph
+	// Emit updated quest to graph (KV write is the event — bossbattle watches for in_review)
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.submitted"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "SubmitResult", "emit update")
 	}
 
-	// Publish quest submitted event - bossbattle processor will create battle if needed
-	_, submitTC := c.traces.NewEventSpan(ctx, semdragons.QuestID(questID))
-	if err := SubjectQuestSubmitted.Publish(ctx, c.deps.NATSClient, QuestSubmittedPayload{
-		Quest:        *quest,
-		AgentID:      agentID,
-		Result:       result,
-		SubmittedAt:  time.Now(),
-		NeedsReview:  needsReview,
-		ReviewLevel:  quest.Constraints.ReviewLevel,
-		Trace:        TraceInfo{TrajectoryID: submitTC.TraceID, SpanID: submitTC.SpanID},
-	}); err != nil {
-		c.logger.Debug("failed to publish quest submitted event", "quest", quest.ID, "error", err)
-	}
-
 	// If quest completed directly (no review), end the trace
-	if !needsReview {
+	if !quest.Constraints.RequireReview {
 		c.traces.EndQuestTrace(semdragons.QuestID(questID))
 	}
 
@@ -572,41 +483,19 @@ func (c *Component) CompleteQuest(ctx context.Context, questID domain.QuestID, v
 		return fmt.Errorf("quest not completable: %s", quest.Status)
 	}
 
-	var agentID domain.AgentID
-	var partyID *domain.PartyID
-	var duration time.Duration
-
-	if quest.ClaimedBy != nil {
-		agentID = *quest.ClaimedBy
-	}
-	partyID = quest.PartyID
-
 	now := time.Now()
 	quest.Status = domain.QuestCompleted
 	quest.CompletedAt = &now
+	quest.Verdict = &verdict
 
 	if quest.StartedAt != nil {
-		duration = now.Sub(*quest.StartedAt)
+		quest.Duration = now.Sub(*quest.StartedAt)
 	}
 
-	// Emit updated quest to graph
+	// Emit updated quest to graph (KV write is the event — agent_progression watches for completed)
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.completed"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "CompleteQuest", "emit update")
-	}
-
-	// Create final span for completion event
-	_, completeTC := c.traces.NewEventSpan(ctx, semdragons.QuestID(questID))
-	if err := SubjectQuestCompleted.Publish(ctx, c.deps.NATSClient, QuestCompletedPayload{
-		Quest:       *quest,
-		AgentID:     agentID,
-		PartyID:     partyID,
-		Verdict:     verdict,
-		CompletedAt: *quest.CompletedAt,
-		Duration:    duration,
-		Trace:       TraceInfo{TrajectoryID: completeTC.TraceID, SpanID: completeTC.SpanID},
-	}); err != nil {
-		c.logger.Debug("failed to publish quest completed event", "quest", quest.ID, "error", err)
 	}
 
 	// End trace for this quest (terminal state)
@@ -634,47 +523,26 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 		return fmt.Errorf("quest not failable: %s", quest.Status)
 	}
 
-	var agentID domain.AgentID
-	var partyID *domain.PartyID
-	var reposted bool
+	// Set failure context on quest entity (watchers see this in triples)
+	quest.FailureReason = reason
+	quest.FailureType = FailureQuality
 
-	if quest.ClaimedBy != nil {
-		agentID = *quest.ClaimedBy
-	}
-	partyID = quest.PartyID
-
-	if quest.Attempts < quest.MaxAttempts {
+	reposted := quest.Attempts < quest.MaxAttempts
+	if reposted {
 		quest.Status = domain.QuestPosted
 		quest.ClaimedBy = nil
 		quest.PartyID = nil
 		quest.ClaimedAt = nil
 		quest.StartedAt = nil
 		quest.Output = nil
-		reposted = true
 	} else {
 		quest.Status = domain.QuestFailed
 	}
 
-	// Emit updated quest to graph
+	// Emit updated quest to graph (KV write is the event — agent_progression watches for failed)
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.failed"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "FailQuest", "emit update")
-	}
-
-	// Create span for failure event
-	_, failTC := c.traces.NewEventSpan(ctx, semdragons.QuestID(questID))
-	if err := SubjectQuestFailed.Publish(ctx, c.deps.NATSClient, QuestFailedPayload{
-		Quest:    *quest,
-		AgentID:  agentID,
-		PartyID:  partyID,
-		Reason:   reason,
-		FailType: FailureQuality,
-		FailedAt: time.Now(),
-		Attempt:  quest.Attempts,
-		Reposted: reposted,
-		Trace:    TraceInfo{TrajectoryID: failTC.TraceID, SpanID: failTC.SpanID},
-	}); err != nil {
-		c.logger.Debug("failed to publish quest failed event", "quest", quest.ID, "error", err)
 	}
 
 	// End trace if quest reached terminal state (not reposted)
@@ -704,35 +572,13 @@ func (c *Component) EscalateQuest(ctx context.Context, questID domain.QuestID, r
 		return fmt.Errorf("quest cannot be escalated: %s", quest.Status)
 	}
 
-	var agentID domain.AgentID
-	var partyID *domain.PartyID
-
-	if quest.ClaimedBy != nil {
-		agentID = *quest.ClaimedBy
-	}
-	partyID = quest.PartyID
-
 	quest.Status = domain.QuestEscalated
 	quest.Escalated = true
 
-	// Emit updated quest to graph
+	// Emit updated quest to graph (KV write is the event — watchers are notified)
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.escalated"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "EscalateQuest", "emit update")
-	}
-
-	// Create span for escalation event
-	_, escTC := c.traces.NewEventSpan(ctx, semdragons.QuestID(questID))
-	if err := SubjectQuestEscalated.Publish(ctx, c.deps.NATSClient, QuestEscalatedPayload{
-		Quest:       *quest,
-		AgentID:     agentID,
-		PartyID:     partyID,
-		Reason:      reason,
-		EscalatedAt: time.Now(),
-		Attempts:    quest.Attempts,
-		Trace:       TraceInfo{TrajectoryID: escTC.TraceID, SpanID: escTC.SpanID},
-	}); err != nil {
-		c.logger.Debug("failed to publish quest escalated event", "quest", quest.ID, "error", err)
 	}
 
 	// End trace for escalated quest (terminal state requiring DM attention)
@@ -928,6 +774,52 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *Quest {
 		case "quest.review.level":
 			if v, ok := triple.Object.(float64); ok {
 				quest.Constraints.ReviewLevel = domain.ReviewLevel(int(v))
+			}
+		case "quest.review.needs_review":
+			if v, ok := triple.Object.(bool); ok {
+				quest.Constraints.RequireReview = v
+			}
+		case "quest.verdict.passed":
+			if v, ok := triple.Object.(bool); ok {
+				if quest.Verdict == nil {
+					quest.Verdict = &BattleVerdict{}
+				}
+				quest.Verdict.Passed = v
+			}
+		case "quest.verdict.score":
+			if v, ok := triple.Object.(float64); ok {
+				if quest.Verdict == nil {
+					quest.Verdict = &BattleVerdict{}
+				}
+				quest.Verdict.QualityScore = v
+			}
+		case "quest.verdict.xp_awarded":
+			if v, ok := triple.Object.(float64); ok {
+				if quest.Verdict == nil {
+					quest.Verdict = &BattleVerdict{}
+				}
+				quest.Verdict.XPAwarded = int64(v)
+			}
+		case "quest.verdict.feedback":
+			if v, ok := triple.Object.(string); ok {
+				if quest.Verdict == nil {
+					quest.Verdict = &BattleVerdict{}
+				}
+				quest.Verdict.Feedback = v
+			}
+		case "quest.failure.reason":
+			if v, ok := triple.Object.(string); ok {
+				quest.FailureReason = v
+			}
+		case "quest.failure.type":
+			if v, ok := triple.Object.(string); ok {
+				quest.FailureType = FailureType(v)
+			}
+		case "quest.duration":
+			if v, ok := triple.Object.(string); ok {
+				if d, err := time.ParseDuration(v); err == nil {
+					quest.Duration = d
+				}
 			}
 		case "quest.lifecycle.posted_at":
 			if v, ok := triple.Object.(string); ok {

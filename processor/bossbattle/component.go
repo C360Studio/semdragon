@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
-	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/errs"
+	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
@@ -25,8 +25,8 @@ import (
 // COMPONENT - BossBattle as native semstreams processor
 // =============================================================================
 // Implements Discoverable + LifecycleComponent interfaces.
-// Subscribes to quest.lifecycle.submitted events.
-// Runs battle evaluations and emits battle.review.* events.
+// Watches quest entity state via KV for in_review transitions.
+// Runs battle evaluations and emits battle state via entity writes.
 // =============================================================================
 
 // Component implements the BossBattle processor as a semstreams component.
@@ -38,8 +38,12 @@ type Component struct {
 	logger      *slog.Logger
 	boardConfig *semdragons.BoardConfig
 
-	// Subscriptions
-	submittedSub *natsclient.Subscription
+	// KV watcher for quest entity state changes (entity-centric architecture)
+	questWatch  jetstream.KeyWatcher
+	watchDoneCh chan struct{}
+
+	// Quest state cache for detecting transitions
+	questCache sync.Map // map[entityID]domain.QuestStatus
 
 	// Battle tracking
 	activeBattles sync.Map // map[BattleID]*activeBattle
@@ -89,15 +93,16 @@ func (c *Component) Meta() component.Metadata {
 }
 
 // InputPorts returns the ports this component accepts data on.
+// Entity-centric: watches ENTITY_STATES KV for quest status transitions to in_review.
 func (c *Component) InputPorts() []component.Port {
 	return []component.Port{
 		{
-			Name:        "quest-submitted",
+			Name:        "quest-state-watch",
 			Direction:   component.DirectionInput,
 			Required:    true,
-			Description: "Quest submission events triggering battles",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateQuestSubmitted,
+			Description: "Quest entity state changes via KV watch (detects in_review transitions)",
+			Config: &component.KVWritePort{
+				Bucket: "", // ENTITY_STATES bucket, watched dynamically
 			},
 		},
 	}
@@ -275,18 +280,21 @@ func (c *Component) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Subscribe to quest submitted events (triggers battles)
-	if c.config.AutoStartOnSubmit {
-		submittedSub, err := questboard.SubjectQuestSubmitted.Subscribe(ctx, c.deps.NATSClient, c.handleQuestSubmitted)
-		if err != nil {
-			return errs.Wrap(err, "BossBattle", "Start", "subscribe to quest.lifecycle.submitted")
-		}
-		c.submittedSub = submittedSub
-	}
-
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
+
+	// Watch quest entity type for status transitions to in_review (entity-centric)
+	if c.config.AutoStartOnSubmit {
+		watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeQuest)
+		if err != nil {
+			c.running.Store(false)
+			return errs.Wrap(err, "BossBattle", "Start", "watch quest entity type")
+		}
+		c.questWatch = watcher
+		c.watchDoneCh = make(chan struct{})
+		go c.processQuestWatchUpdates()
+	}
 
 	c.logger.Info("bossbattle component started",
 		"org", c.config.Org,
@@ -309,6 +317,16 @@ func (c *Component) Stop(_ time.Duration) error {
 	// Close stop channel
 	close(c.stopChan)
 
+	// Stop KV watcher
+	if c.questWatch != nil {
+		c.questWatch.Stop()
+	}
+
+	// Wait for watch goroutine to finish
+	if c.watchDoneCh != nil {
+		<-c.watchDoneCh
+	}
+
 	// Cancel all active battles
 	c.activeBattles.Range(func(_, value any) bool {
 		if ab, ok := value.(*activeBattle); ok {
@@ -316,11 +334,6 @@ func (c *Component) Stop(_ time.Duration) error {
 		}
 		return true
 	})
-
-	// Unsubscribe from events
-	if c.submittedSub != nil {
-		c.submittedSub.Unsubscribe()
-	}
 
 	c.running.Store(false)
 	c.logger.Info("bossbattle component stopped")

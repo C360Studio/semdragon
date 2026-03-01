@@ -1,9 +1,7 @@
 // Package agent_progression provides a native semstreams component for XP calculation and
-// agent progression management. It reacts to quest completion and failure events,
-// calculates XP awards/penalties, and emits progression events.
-//
-// This component uses the "fat events" pattern - event payloads contain all context
-// needed for processing, so handlers are pure functions with no external fetches.
+// agent progression management. It watches quest entity state via KV for completion and
+// failure transitions, reads agent state directly from KV, calculates XP awards/penalties,
+// and emits progression updates via entity state writes.
 package agent_progression
 
 import (
@@ -15,42 +13,47 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
-	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/errs"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semdragons/domain"
+	graphclient "github.com/c360studio/semdragons/graph"
 	"github.com/c360studio/semdragons/internal/util"
-	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
 // COMPONENT - Agent progression as native semstreams processor
 // =============================================================================
 // Implements Discoverable + LifecycleComponent interfaces.
-// Subscribes to quest.lifecycle.completed and quest.lifecycle.failed events.
-// Calculates XP awards/penalties and emits agent.progression.* events.
+// Watches quest entity state via KV for completed/failed transitions.
+// Reads agent state from KV, calculates XP awards/penalties, and
+// emits agent progression updates via entity state writes.
 //
 // File organization:
 // - component.go: Core Component struct, interfaces, lifecycle
 // - config.go: Config struct, defaults, validation
-// - handler.go: Event handlers (pure functions)
+// - handler.go: KV watch handlers and entity state helpers
 // - register.go: Factory and registry registration
 // - xp.go: XP calculation logic
 // - agent.go: Agent type definition
-// - payloads.go: Event payloads
+// - payloads.go: XP payload types (Graphable entities)
 // =============================================================================
 
 // Component implements the agent progression processor as a semstreams component.
 type Component struct {
-	config      *Config
-	deps        component.Dependencies
-	xpEngine    XPEngine
+	config   *Config
+	deps     component.Dependencies
+	graph    *graphclient.GraphClient
+	xpEngine XPEngine
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
 
-	// Subscriptions
-	completedSub *natsclient.Subscription
-	failedSub    *natsclient.Subscription
+	// KV watcher for quest entity state changes (entity-centric architecture)
+	questWatch  jetstream.KeyWatcher
+	watchDoneCh chan struct{}
+
+	// Quest state cache for detecting transitions
+	questCache sync.Map // map[entityID]domain.QuestStatus
 
 	// Internal state
 	running  atomic.Bool
@@ -85,24 +88,16 @@ func (c *Component) Meta() component.Metadata {
 }
 
 // InputPorts returns the ports this component accepts data on.
+// Entity-centric: watches ENTITY_STATES KV for quest status transitions to completed/failed.
 func (c *Component) InputPorts() []component.Port {
 	return []component.Port{
 		{
-			Name:        "quest-completed",
+			Name:        "quest-state-watch",
 			Direction:   component.DirectionInput,
 			Required:    true,
-			Description: "Quest completion events triggering XP calculation",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateQuestCompleted,
-			},
-		},
-		{
-			Name:        "quest-failed",
-			Direction:   component.DirectionInput,
-			Required:    true,
-			Description: "Quest failure events triggering XP penalties",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateQuestFailed,
+			Description: "Quest entity state changes via KV watch (detects completed/failed transitions)",
+			Config: &component.KVWritePort{
+				Bucket: "", // ENTITY_STATES bucket, watched dynamically
 			},
 		},
 	}
@@ -269,24 +264,22 @@ func (c *Component) Start(ctx context.Context) error {
 		return errors.New("component already running")
 	}
 
-	// Subscribe to quest completed events
-	completedSub, err := questboard.SubjectQuestCompleted.Subscribe(ctx, c.deps.NATSClient, c.handleQuestCompleted)
-	if err != nil {
-		return errs.Wrap(err, "agent_progression", "Start", "subscribe to quest.lifecycle.completed")
-	}
-	c.completedSub = completedSub
-
-	// Subscribe to quest failed events
-	failedSub, err := questboard.SubjectQuestFailed.Subscribe(ctx, c.deps.NATSClient, c.handleQuestFailed)
-	if err != nil {
-		c.completedSub.Unsubscribe()
-		return errs.Wrap(err, "agent_progression", "Start", "subscribe to quest.lifecycle.failed")
-	}
-	c.failedSub = failedSub
+	// Create graph client for entity state reads
+	c.graph = graphclient.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
+
+	// Watch quest entity type for status transitions to completed/failed (entity-centric)
+	watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeQuest)
+	if err != nil {
+		c.running.Store(false)
+		return errs.Wrap(err, "agent_progression", "Start", "watch quest entity type")
+	}
+	c.questWatch = watcher
+	c.watchDoneCh = make(chan struct{})
+	go c.processQuestWatchUpdates()
 
 	c.logger.Info("agent_progression component started",
 		"org", c.config.Org,
@@ -297,8 +290,6 @@ func (c *Component) Start(ctx context.Context) error {
 }
 
 // Stop gracefully shuts down the component.
-// The timeout parameter is part of the LifecycleComponent interface but is not
-// currently used as unsubscription is synchronous.
 func (c *Component) Stop(_ time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -310,12 +301,14 @@ func (c *Component) Stop(_ time.Duration) error {
 	// Close stop channel
 	close(c.stopChan)
 
-	// Unsubscribe from events
-	if c.completedSub != nil {
-		c.completedSub.Unsubscribe()
+	// Stop KV watcher
+	if c.questWatch != nil {
+		c.questWatch.Stop()
 	}
-	if c.failedSub != nil {
-		c.failedSub.Unsubscribe()
+
+	// Wait for watch goroutine to finish
+	if c.watchDoneCh != nil {
+		<-c.watchDoneCh
 	}
 
 	c.running.Store(false)

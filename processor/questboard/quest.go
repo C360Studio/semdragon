@@ -58,9 +58,17 @@ type Quest struct {
 	Deadline    *time.Time `json:"deadline,omitempty"`
 
 	// Failure tracking
-	Attempts    int  `json:"attempts"`
-	MaxAttempts int  `json:"max_attempts"`
-	Escalated   bool `json:"escalated"`
+	Attempts      int         `json:"attempts"`
+	MaxAttempts   int         `json:"max_attempts"`
+	Escalated     bool        `json:"escalated"`
+	FailureReason string      `json:"failure_reason,omitempty"`
+	FailureType   FailureType `json:"failure_type,omitempty"`
+
+	// Verdict (set on completion after boss battle)
+	Verdict *BattleVerdict `json:"verdict,omitempty"`
+
+	// Duration of quest execution (from start to completion)
+	Duration time.Duration `json:"duration,omitempty"`
 
 	// Observability - links back to semstreams
 	TrajectoryID string `json:"trajectory_id"`
@@ -185,11 +193,47 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
-	// Review level
+	// Review
 	triples = append(triples, message.Triple{
 		Subject: entityID, Predicate: "quest.review.level", Object: int(q.Constraints.ReviewLevel),
 		Source: source, Timestamp: now, Confidence: 1.0,
 	})
+	triples = append(triples, message.Triple{
+		Subject: entityID, Predicate: "quest.review.needs_review", Object: q.Constraints.RequireReview,
+		Source: source, Timestamp: now, Confidence: 1.0,
+	})
+
+	// Verdict (set on completion after boss battle)
+	if q.Verdict != nil {
+		triples = append(triples,
+			message.Triple{Subject: entityID, Predicate: "quest.verdict.passed", Object: q.Verdict.Passed, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "quest.verdict.score", Object: q.Verdict.QualityScore, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "quest.verdict.xp_awarded", Object: q.Verdict.XPAwarded, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "quest.verdict.feedback", Object: q.Verdict.Feedback, Source: source, Timestamp: now, Confidence: 1.0},
+		)
+	}
+
+	// Failure info
+	if q.FailureReason != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.failure.reason", Object: q.FailureReason,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.FailureType != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.failure.type", Object: string(q.FailureType),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	// Duration
+	if q.Duration > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.duration", Object: q.Duration.String(),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
 
 	return triples
 }

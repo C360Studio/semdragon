@@ -278,6 +278,51 @@ func (r GuildRank) GuildBonusRate() float64 {
 }
 
 // =============================================================================
+// TIER PERMISSIONS
+// =============================================================================
+
+// TierPermissions defines what a trust tier is allowed to do.
+type TierPermissions struct {
+	CanClaimQuestTier QuestDifficulty
+	CanLeadParty      bool
+	CanDecomposeQuest bool
+	CanSupervise      bool
+	CanActAsDM        bool
+	MaxConcurrent     int // Max concurrent quests
+}
+
+// TierPerms maps each trust tier to its allowed permissions.
+var TierPerms = map[TrustTier]TierPermissions{
+	TierApprentice: {
+		CanClaimQuestTier: DifficultyTrivial,
+		MaxConcurrent:     1,
+	},
+	TierJourneyman: {
+		CanClaimQuestTier: DifficultyModerate,
+		MaxConcurrent:     2,
+	},
+	TierExpert: {
+		CanClaimQuestTier: DifficultyHard,
+		MaxConcurrent:     3,
+	},
+	TierMaster: {
+		CanClaimQuestTier: DifficultyEpic,
+		CanLeadParty:      true,
+		CanDecomposeQuest: true,
+		CanSupervise:      true,
+		MaxConcurrent:     4,
+	},
+	TierGrandmaster: {
+		CanClaimQuestTier: DifficultyLegendary,
+		CanLeadParty:      true,
+		CanDecomposeQuest: true,
+		CanSupervise:      true,
+		CanActAsDM:        true,
+		MaxConcurrent:     5,
+	},
+}
+
+// =============================================================================
 // TOOL
 // =============================================================================
 

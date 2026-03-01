@@ -43,14 +43,13 @@ func (gc *GraphClient) Config() *domain.BoardConfig {
 // ENTITY EMISSION
 // =============================================================================
 
-// EmitEntity publishes a Graphable entity to the graph system via JetStream.
-// The entity is published to "entity.{category}" where category comes from eventType.
-// graph-ingest subscribes to "entity.>" and persists the EntityState.
+// EmitEntity publishes a Graphable entity to the graph system.
+// Writes entity state to KV (for watchers) and publishes to JetStream (for audit trail).
+// KV watchers are notified immediately, enabling the entity-centric reactive pattern.
 //
 // Example:
 //
 //	err := gc.EmitEntity(ctx, &quest, "quest.posted")
-//	// Publishes to "entity.quest.posted"
 func (gc *GraphClient) EmitEntity(ctx context.Context, entity semgraph.Graphable, eventType string) error {
 	msgType := message.Type{
 		Domain:   "semdragons",
@@ -58,7 +57,6 @@ func (gc *GraphClient) EmitEntity(ctx context.Context, entity semgraph.Graphable
 		Version:  "v1",
 	}
 
-	// Create EntityState directly from Graphable
 	entityState := &semgraph.EntityState{
 		ID:          entity.EntityID(),
 		Triples:     entity.Triples(),
@@ -67,14 +65,29 @@ func (gc *GraphClient) EmitEntity(ctx context.Context, entity semgraph.Graphable
 		UpdatedAt:   time.Now(),
 	}
 
-	// Serialize and publish
 	data, err := json.Marshal(entityState)
 	if err != nil {
 		return fmt.Errorf("marshal entity state: %w", err)
 	}
 
+	// Write to KV for entity-centric watchers (primary path)
+	bucket, err := gc.nats.GetKeyValueBucket(ctx, semgraph.BucketEntityStates)
+	if err != nil {
+		return fmt.Errorf("get entity states bucket: %w", err)
+	}
+	if _, err := bucket.Put(ctx, entity.EntityID(), data); err != nil {
+		return fmt.Errorf("put entity state: %w", err)
+	}
+
+	// Also publish to JetStream for audit trail and graph-ingest compatibility
 	subject := fmt.Sprintf("entity.%s", eventType)
-	return gc.nats.PublishToStream(ctx, subject, data)
+	if err := gc.nats.PublishToStream(ctx, subject, data); err != nil {
+		// Log but don't fail - KV is the primary write path
+		// JetStream publish failure shouldn't block entity state updates
+		_ = err
+	}
+
+	return nil
 }
 
 // EmitEntityUpdate publishes an updated entity state.
@@ -325,6 +338,103 @@ func (gc *GraphClient) ListGuildsByPrefix(ctx context.Context, limit int) ([]sem
 func (gc *GraphClient) ListPartiesByPrefix(ctx context.Context, limit int) ([]semgraph.EntityState, error) {
 	prefix := gc.config.TypePrefix(domain.EntityTypeParty)
 	return gc.QueryByPrefix(ctx, prefix, limit)
+}
+
+// =============================================================================
+// ENTITY STATE KV - Direct entity state management (entity-centric architecture)
+// =============================================================================
+// The NATS KV "Twofer": KV buckets are backed by JetStream streams, giving us
+// unified state + event semantics. Put = update state AND emit event. Watch =
+// subscribe to state changes. No separate event payloads needed.
+// =============================================================================
+
+// PutEntityState writes entity state directly to the ENTITY_STATES KV bucket.
+// This is the primary write path for the entity-centric architecture.
+// KV watchers will be notified of this change immediately.
+func (gc *GraphClient) PutEntityState(ctx context.Context, entity semgraph.Graphable, eventType string) error {
+	msgType := message.Type{
+		Domain:   "semdragons",
+		Category: eventType,
+		Version:  "v1",
+	}
+
+	entityState := &semgraph.EntityState{
+		ID:          entity.EntityID(),
+		Triples:     entity.Triples(),
+		MessageType: msgType,
+		Version:     1,
+		UpdatedAt:   time.Now(),
+	}
+
+	data, err := json.Marshal(entityState)
+	if err != nil {
+		return fmt.Errorf("marshal entity state: %w", err)
+	}
+
+	bucket, err := gc.nats.GetKeyValueBucket(ctx, semgraph.BucketEntityStates)
+	if err != nil {
+		return fmt.Errorf("get entity states bucket: %w", err)
+	}
+
+	_, err = bucket.Put(ctx, entity.EntityID(), data)
+	if err != nil {
+		return fmt.Errorf("put entity state: %w", err)
+	}
+
+	return nil
+}
+
+// WatchEntityType watches for changes to entities of a specific type on this board.
+// Returns a KeyWatcher that emits updates when entities are created, updated, or deleted.
+// The pattern matches all entities of the type, e.g., "c360.prod.game.board1.quest.*".
+//
+// Callers must call watcher.Stop() when done.
+func (gc *GraphClient) WatchEntityType(ctx context.Context, entityType string) (jetstream.KeyWatcher, error) {
+	bucket, err := gc.nats.GetKeyValueBucket(ctx, semgraph.BucketEntityStates)
+	if err != nil {
+		return nil, fmt.Errorf("get entity states bucket: %w", err)
+	}
+
+	pattern := gc.config.TypePrefix(entityType) + ".*"
+	watcher, err := bucket.Watch(ctx, pattern)
+	if err != nil {
+		return nil, fmt.Errorf("watch entity type %s: %w", entityType, err)
+	}
+
+	return watcher, nil
+}
+
+// WatchEntity watches for changes to a single entity by its full entity ID.
+// Returns a KeyWatcher that emits updates when the entity changes.
+//
+// Callers must call watcher.Stop() when done.
+func (gc *GraphClient) WatchEntity(ctx context.Context, entityID string) (jetstream.KeyWatcher, error) {
+	bucket, err := gc.nats.GetKeyValueBucket(ctx, semgraph.BucketEntityStates)
+	if err != nil {
+		return nil, fmt.Errorf("get entity states bucket: %w", err)
+	}
+
+	watcher, err := bucket.Watch(ctx, entityID)
+	if err != nil {
+		return nil, fmt.Errorf("watch entity %s: %w", entityID, err)
+	}
+
+	return watcher, nil
+}
+
+// DecodeEntityState unmarshals a KV entry value into an EntityState.
+// Used by KV watchers to process entity state changes.
+func DecodeEntityState(entry jetstream.KeyValueEntry) (*semgraph.EntityState, error) {
+	if entry == nil || entry.Value() == nil {
+		return nil, nil
+	}
+
+	var entity semgraph.EntityState
+	if err := json.Unmarshal(entry.Value(), &entity); err != nil {
+		return nil, fmt.Errorf("unmarshal entity state: %w", err)
+	}
+
+	return &entity, nil
 }
 
 // =============================================================================

@@ -8,6 +8,7 @@ import (
 
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/pkg/errs"
+	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
@@ -15,45 +16,187 @@ import (
 )
 
 // =============================================================================
-// EVENT HANDLERS
+// KV WATCH HANDLER - Entity-centric quest state monitoring
 // =============================================================================
 
-// handleQuestSubmitted processes quest submission events and starts battles.
-func (c *Component) handleQuestSubmitted(ctx context.Context, payload questboard.QuestSubmittedPayload) error {
+// processQuestWatchUpdates handles quest entity state changes from KV.
+// Detects transitions to "in_review" status and triggers battles.
+func (c *Component) processQuestWatchUpdates() {
+	defer close(c.watchDoneCh)
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case entry, ok := <-c.questWatch.Updates():
+			if !ok {
+				return
+			}
+			if entry == nil {
+				continue // Initial sync complete
+			}
+			c.handleQuestStateChange(entry)
+		}
+	}
+}
+
+// handleQuestStateChange processes a quest entity state change from KV.
+// Detects when a quest transitions to "in_review" and starts a battle.
+func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 	if !c.running.Load() {
-		return nil
+		return
+	}
+
+	if entry.Operation() == jetstream.KeyValueDelete {
+		c.questCache.Delete(entry.Key())
+		return
+	}
+
+	// Decode entity state
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		return
+	}
+
+	// Extract current quest status from triples
+	var currentStatus domain.QuestStatus
+	var needsReview bool
+	var reviewLevel domain.ReviewLevel
+	for _, triple := range entityState.Triples {
+		switch triple.Predicate {
+		case "quest.status.state":
+			if v, ok := triple.Object.(string); ok {
+				currentStatus = domain.QuestStatus(v)
+			}
+		case "quest.review.needs_review":
+			if v, ok := triple.Object.(bool); ok {
+				needsReview = v
+			}
+		case "quest.review.level":
+			if v, ok := triple.Object.(float64); ok {
+				reviewLevel = domain.ReviewLevel(int(v))
+			}
+		}
+	}
+
+	// Check for transition to in_review (state diffing against cache)
+	prevStatus, hadPrev := c.questCache.Load(entry.Key())
+	c.questCache.Store(entry.Key(), currentStatus)
+
+	if !hadPrev || prevStatus == currentStatus {
+		return // Not a status transition, or first time seeing this entity
+	}
+
+	// Only react to transitions INTO in_review
+	if currentStatus != domain.QuestInReview {
+		return
 	}
 
 	c.lastActivity.Store(time.Now())
 
 	// Check if quest requires review
-	if !payload.NeedsReview {
+	if !needsReview {
 		c.logger.Debug("skipping battle for quest without review requirement",
-			"quest", payload.Quest.ID)
-		return nil
+			"quest", entry.Key())
+		return
 	}
 
-	if c.config.RequireReviewLevel && payload.ReviewLevel == domain.ReviewAuto {
+	if c.config.RequireReviewLevel && reviewLevel == domain.ReviewAuto {
 		c.logger.Debug("skipping battle for quest with auto review level",
-			"quest", payload.Quest.ID)
-		return nil
+			"quest", entry.Key())
+		return
 	}
 
-	// Start battle
-	battle, err := c.StartBattle(ctx, &payload.Quest, payload.Result)
+	// Reconstruct quest from entity state for battle
+	quest := questFromEntityStateForBattle(entityState)
+	if quest == nil {
+		c.logger.Warn("failed to reconstruct quest from entity state", "quest", entry.Key())
+		return
+	}
+
+	// Start battle with background context (watcher goroutine context)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	battle, err := c.StartBattle(ctx, quest, quest.Output)
 	if err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to start battle",
-			"quest", payload.Quest.ID,
+			"quest", quest.ID,
 			"error", err)
-		return nil // Don't return error to avoid NATS redelivery
+		return
 	}
 
 	c.logger.Debug("started battle for submitted quest",
-		"quest", payload.Quest.ID,
+		"quest", quest.ID,
 		"battle", battle.ID)
+}
 
-	return nil
+// questFromEntityStateForBattle reconstructs a questboard.Quest from entity state triples.
+func questFromEntityStateForBattle(entity *graph.EntityState) *questboard.Quest {
+	if entity == nil {
+		return nil
+	}
+
+	quest := &questboard.Quest{
+		ID: domain.QuestID(entity.ID),
+	}
+
+	for _, triple := range entity.Triples {
+		switch triple.Predicate {
+		case "quest.identity.title":
+			if v, ok := triple.Object.(string); ok {
+				quest.Title = v
+			}
+		case "quest.identity.description":
+			if v, ok := triple.Object.(string); ok {
+				quest.Description = v
+			}
+		case "quest.status.state":
+			if v, ok := triple.Object.(string); ok {
+				quest.Status = domain.QuestStatus(v)
+			}
+		case "quest.difficulty.level":
+			if v, ok := triple.Object.(float64); ok {
+				quest.Difficulty = domain.QuestDifficulty(int(v))
+			}
+		case "quest.tier.minimum":
+			if v, ok := triple.Object.(float64); ok {
+				quest.MinTier = domain.TrustTier(int(v))
+			}
+		case "quest.xp.base":
+			if v, ok := triple.Object.(float64); ok {
+				quest.BaseXP = int64(v)
+			}
+		case "quest.assignment.agent":
+			if v, ok := triple.Object.(string); ok {
+				agentID := domain.AgentID(v)
+				quest.ClaimedBy = &agentID
+			}
+		case "quest.review.level":
+			if v, ok := triple.Object.(float64); ok {
+				quest.Constraints.ReviewLevel = domain.ReviewLevel(int(v))
+			}
+		case "quest.review.needs_review":
+			if v, ok := triple.Object.(bool); ok {
+				quest.Constraints.RequireReview = v
+			}
+		case "quest.attempts.current":
+			if v, ok := triple.Object.(float64); ok {
+				quest.Attempts = int(v)
+			}
+		case "quest.attempts.max":
+			if v, ok := triple.Object.(float64); ok {
+				quest.MaxAttempts = int(v)
+			}
+		case "quest.observability.trajectory_id":
+			if v, ok := triple.Object.(string); ok {
+				quest.TrajectoryID = v
+			}
+		}
+	}
+
+	return quest
 }
 
 // =============================================================================
@@ -87,15 +230,6 @@ func (c *Component) StartBattle(ctx context.Context, quest *questboard.Quest, ou
 		cancel:    cancel,
 	}
 	c.activeBattles.Store(battle.ID, ab)
-
-	// Emit battle started event
-	if err := SubjectBattleStarted.Publish(ctx, c.deps.NATSClient, BattleStartedPayload{
-		Battle:    *battle,
-		Quest:     *quest,
-		StartedAt: battle.StartedAt,
-	}); err != nil {
-		c.logger.Debug("failed to publish battle started event", "battle", battle.ID, "error", err)
-	}
 
 	c.battlesStarted.Add(1)
 
@@ -234,6 +368,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 	}
 
 	// Persist final battle state (only if component is still running)
+	// KV write IS the event — watchers (e.g., questboard) are notified of battle completion.
 	if c.running.Load() {
 		persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		eventType := "battle.completed"
@@ -249,16 +384,6 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				"error", err)
 		}
 		cancel()
-
-		// Emit verdict event
-		if err := SubjectBattleVerdict.Publish(persistCtx, c.deps.NATSClient, BattleVerdictPayload{
-			Battle:  *ab.battle,
-			Quest:   *ab.quest,
-			Verdict: *ab.battle.Verdict,
-			EndedAt: now,
-		}); err != nil {
-			c.logger.Debug("failed to publish battle verdict event", "battle", ab.battle.ID, "error", err)
-		}
 	} else {
 		c.logger.Debug("skipping battle persistence after shutdown",
 			"battle", ab.battle.ID)
