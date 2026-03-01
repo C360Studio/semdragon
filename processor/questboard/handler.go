@@ -160,10 +160,15 @@ func (c *Component) AvailableQuests(ctx context.Context, agentID domain.AgentID,
 	}
 
 	// Check agent can claim
-	if agent.Status != semdragons.AgentIdle {
+	switch agent.Status {
+	case semdragons.AgentRetired, semdragons.AgentInBattle:
 		return []Quest{}, nil
+	case semdragons.AgentCooldown:
+		if agent.CooldownUntil != nil && time.Now().Before(*agent.CooldownUntil) {
+			return []Quest{}, nil
+		}
 	}
-	if agent.CooldownUntil != nil && time.Now().Before(*agent.CooldownUntil) {
+	if agent.CurrentQuest != nil {
 		return []Quest{}, nil
 	}
 
@@ -277,6 +282,17 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 		return errs.Wrap(err, "QuestBoard", "ClaimQuest", "emit update")
 	}
 
+	// Update agent status to on_quest
+	now2 := time.Now()
+	questIDRef := semdragons.QuestID(quest.ID)
+	agent.Status = semdragons.AgentOnQuest
+	agent.CurrentQuest = &questIDRef
+	agent.UpdatedAt = now2
+	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.on_quest"); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("failed to update agent status on claim", "error", err)
+	}
+
 	return nil
 }
 
@@ -361,6 +377,20 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 
 	if quest.Status != domain.QuestClaimed && quest.Status != domain.QuestInProgress {
 		return fmt.Errorf("quest not abandonable: %s", quest.Status)
+	}
+
+	// Reset agent status before clearing quest assignment
+	if quest.ClaimedBy != nil {
+		abandonAgent, agentErr := c.getAgentByID(ctx, semdragons.AgentID(*quest.ClaimedBy))
+		if agentErr == nil {
+			abandonAgent.Status = semdragons.AgentIdle
+			abandonAgent.CurrentQuest = nil
+			abandonAgent.UpdatedAt = time.Now()
+			if writeErr := c.graph.EmitEntityUpdate(ctx, abandonAgent, "agent.status.idle"); writeErr != nil {
+				c.errorsCount.Add(1)
+				c.logger.Error("failed to reset agent status on abandon", "error", writeErr)
+			}
+		}
 	}
 
 	// Reset quest state
@@ -525,6 +555,20 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 
 	reposted := quest.Attempts < quest.MaxAttempts
 	if reposted {
+		// Reset agent status before clearing quest assignment (agentprogression
+		// skips reposted quests because ClaimedBy is nil after repost)
+		if quest.ClaimedBy != nil {
+			repostAgent, agentErr := c.getAgentByID(ctx, semdragons.AgentID(*quest.ClaimedBy))
+			if agentErr == nil {
+				repostAgent.Status = semdragons.AgentIdle
+				repostAgent.CurrentQuest = nil
+				repostAgent.UpdatedAt = time.Now()
+				if writeErr := c.graph.EmitEntityUpdate(ctx, repostAgent, "agent.status.idle"); writeErr != nil {
+					c.errorsCount.Add(1)
+					c.logger.Error("failed to reset agent status on fail-repost", "error", writeErr)
+				}
+			}
+		}
 		quest.Status = domain.QuestPosted
 		quest.ClaimedBy = nil
 		quest.PartyID = nil
@@ -854,12 +898,20 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *Quest {
 }
 
 func (c *Component) validateAgentCanClaim(agent *semdragons.Agent, quest *Quest) error {
-	if agent.Status != semdragons.AgentIdle {
-		return fmt.Errorf("agent not idle: %s", agent.Status)
+	switch agent.Status {
+	case semdragons.AgentRetired:
+		return errors.New("agent is retired")
+	case semdragons.AgentInBattle:
+		return errors.New("agent is in battle")
+	case semdragons.AgentCooldown:
+		if agent.CooldownUntil != nil && time.Now().Before(*agent.CooldownUntil) {
+			return errors.New("agent on cooldown")
+		}
+		// Expired cooldown — allow (status corrected on claim)
 	}
 
-	if agent.CooldownUntil != nil && time.Now().Before(*agent.CooldownUntil) {
-		return errors.New("agent on cooldown")
+	if agent.CurrentQuest != nil {
+		return errors.New("agent already on a quest")
 	}
 
 	if domain.TrustTier(semdragons.TierFromLevel(agent.Level)) < quest.MinTier {
@@ -868,11 +920,6 @@ func (c *Component) validateAgentCanClaim(agent *semdragons.Agent, quest *Quest)
 
 	if quest.PartyRequired {
 		return errors.New("quest requires party")
-	}
-
-	perms := semdragons.TierPermissionsFor(semdragons.TierFromLevel(agent.Level))
-	if agent.CurrentQuest != nil && perms.MaxConcurrent <= 1 {
-		return errors.New("agent at concurrent quest limit")
 	}
 
 	if len(quest.RequiredSkills) > 0 {
