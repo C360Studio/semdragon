@@ -144,6 +144,40 @@ stats.board.current                  // Current board statistics
 - State changes emit events; consumers react independently
 - Avoid request/response patterns when pub/sub fits better
 
+### The NATS KV "Twofer"
+
+NATS KV buckets are backed by JetStream streams. This gives us unified state + event semantics:
+
+| Interface | Purpose | Example |
+|-----------|---------|---------|
+| **KV Get/Put** | Current state queries | `Get("c360.prod.game.board1.quest.abc")` |
+| **KV Watch** | Event subscription | `Watch("c360.prod.game.board1.quest.*")` |
+| **Stream Replay** | Historical reconstruction | Replay from revision N |
+
+**Key insight**: We don't need separate event streams. The entity state bucket IS the event log.
+
+### Predicates as Events
+
+The predicate index (3-part keys like `quest.status.claimed`) acts as event channels:
+
+| Traditional Event | Predicate Watch |
+|-------------------|-----------------|
+| `quest.lifecycle.posted` | `quest.status.posted` |
+| `quest.lifecycle.claimed` | `quest.status.claimed` |
+| `agent.progression.levelup` | `agent.progression.level` |
+
+**The predicate IS the event type.** Processors watch predicates instead of subscribing to event subjects.
+
+### Three Subscription Patterns
+
+1. **Entity-level**: Watch one entity (`c360.prod.game.board1.quest.abc123`)
+2. **Type-level**: Watch all of a type (`c360.prod.game.board1.quest.*`)
+3. **Predicate-level**: Watch a predicate index (`quest.status.claimed`)
+
+Processors cache last-known state in memory to detect what changed on each watch update.
+
+See `/docs/adr/entity-centric-architecture.md` for full details.
+
 ### Debugging: Message Logger, Traces, and Trajectories
 
 **Semstreams provides powerful debugging tools - use them.**
