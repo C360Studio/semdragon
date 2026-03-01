@@ -39,12 +39,15 @@ type Component struct {
 	// KV watches for real-time state updates
 	agentWatch jetstream.KeyWatcher
 	questWatch jetstream.KeyWatcher
+	guildWatch jetstream.KeyWatcher
 
 	// Cached state
 	agents   map[string]*semdragons.Agent
 	quests   map[string]*semdragons.Quest
+	guilds   map[string]*semdragons.Guild
 	agentsMu sync.RWMutex
 	questsMu sync.RWMutex
+	guildsMu sync.RWMutex
 
 	// Internal state
 	running     atomic.Bool
@@ -98,6 +101,15 @@ func (c *Component) InputPorts() []component.Port {
 			Direction:   component.DirectionInput,
 			Required:    true,
 			Description: "Quest state from KV (polled)",
+			Config: &component.KVWatchPort{
+				Bucket: "", // Set dynamically from config
+			},
+		},
+		{
+			Name:        "guild-state",
+			Direction:   component.DirectionInput,
+			Required:    false,
+			Description: "Guild state from KV for rank/reputation in affinity scoring",
 			Config: &component.KVWatchPort{
 				Bucket: "", // Set dynamically from config
 			},
@@ -266,6 +278,7 @@ func (c *Component) Initialize() error {
 	c.boidEngine = NewDefaultBoidEngine()
 	c.agents = make(map[string]*semdragons.Agent)
 	c.quests = make(map[string]*semdragons.Quest)
+	c.guilds = make(map[string]*semdragons.Guild)
 	c.stopChan = make(chan struct{})
 	c.doneChan = make(chan struct{})
 	c.watchDoneCh = make(chan struct{})

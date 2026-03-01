@@ -14,13 +14,11 @@ import (
 // =============================================================================
 // KV WATCH HANDLER - Entity-centric agent state monitoring
 // =============================================================================
-// Replaces the NATS Subscribe to agent XP predicates. Instead of receiving
-// pre-built XP event payloads, this processor watches agent entity state in KV
-// directly. "Agent progressed" is a fact about the world — it belongs in KV
-// Watch, not a NATS subscription.
+// Watches agent entity state in KV directly. "Agent progressed" is a fact about
+// the world -- it belongs in KV Watch, not a NATS subscription.
 //
-// The watch detects level changes in agents and triggers auto-formation
-// clustering when enough agents have progressed to a new tier.
+// The watch detects level changes in agents and triggers social-model auto-formation
+// when enough unguilded agents exist and a qualified founder is available.
 // =============================================================================
 
 // processAgentWatchUpdates handles agent entity state changes from KV.
@@ -45,7 +43,7 @@ func (c *Component) processAgentWatchUpdates() {
 }
 
 // handleAgentStateChange processes an agent entity state change from KV.
-// Detects when an agent levels up and evaluates auto-formation clustering.
+// Detects when an agent levels up and evaluates auto-formation.
 func (c *Component) handleAgentStateChange(entry jetstream.KeyValueEntry) {
 	if !c.running.Load() {
 		return
@@ -54,7 +52,6 @@ func (c *Component) handleAgentStateChange(entry jetstream.KeyValueEntry) {
 	key := entry.Key()
 	instance := semdragons.ExtractInstance(key)
 	if instance == "" || instance == key {
-		// Key did not contain a dot separator — not a valid entity ID.
 		c.logger.Warn("agent watch entry has unexpected key format", "key", key)
 		return
 	}
@@ -86,11 +83,10 @@ func (c *Component) handleAgentStateChange(entry jetstream.KeyValueEntry) {
 	c.agentsMu.Unlock()
 
 	if !hadPrev {
-		// First time seeing this agent — just cache it, no clustering trigger.
 		return
 	}
 
-	// React to tier promotions: re-evaluate guild clustering for this agent.
+	// React to tier promotions: re-evaluate guild formation for this agent.
 	if prev.Tier != agent.Tier || prev.Level != agent.Level {
 		c.logger.Debug("agent progressed, evaluating auto-formation",
 			"instance", instance,
@@ -102,40 +98,30 @@ func (c *Component) handleAgentStateChange(entry jetstream.KeyValueEntry) {
 	}
 }
 
-// evaluateAutoFormation checks whether a recently-progressed agent should be
-// placed into a guild. It clusters agents by skill specialization when
-// MinMembersForFormation unguilded agents share a skill and the auto-formation
-// feature is enabled.
-func (c *Component) evaluateAutoFormation(agent *semdragons.Agent) {
+// evaluateAutoFormation checks whether enough unguilded agents exist to form a
+// guild using the social model. Instead of clustering by shared skill, this
+// seeds diverse guilds led by an Expert+ founder.
+func (c *Component) evaluateAutoFormation(trigger *semdragons.Agent) {
 	if !c.config.EnableAutoFormation {
 		return
 	}
 
-	// Collect all unguilded agents who share a skill with the progressed agent.
-	agentSkills := agent.SkillProficiencies
-	if len(agentSkills) == 0 {
+	// Gate: founder must be Expert+ tier (level 11+) -- founding is a leadership act.
+	if trigger.Tier < domain.TierExpert {
 		return
 	}
 
-	// Check each skill this agent has for potential guild clustering.
-	for skill := range agentSkills {
-		c.evaluateSkillCluster(agent, domain.SkillTag(skill))
+	// Only unguilded agents can found a guild.
+	if guilds := c.GetAgentGuilds(trigger.ID); len(guilds) > 0 {
+		return
 	}
-}
 
-// evaluateSkillCluster collects all unguilded agents proficient in the given
-// skill. If enough agents meet the threshold, it auto-forms a guild.
-func (c *Component) evaluateSkillCluster(trigger *semdragons.Agent, skill domain.SkillTag) {
-	// Collect unguilded agents with this skill from the cache.
+	// Collect all unguilded agents from the cache.
 	c.agentsMu.RLock()
-	var candidates []domain.AgentID
+	var candidates []*semdragons.Agent
 	for _, a := range c.agents {
-		if _, hasSkill := a.SkillProficiencies[semdragons.SkillTag(skill)]; !hasSkill {
-			continue
-		}
-		// Only include unguilded agents (no existing guild membership in the cache).
 		if guilds := c.GetAgentGuilds(a.ID); len(guilds) == 0 {
-			candidates = append(candidates, a.ID)
+			candidates = append(candidates, a)
 		}
 	}
 	c.agentsMu.RUnlock()
@@ -144,46 +130,119 @@ func (c *Component) evaluateSkillCluster(trigger *semdragons.Agent, skill domain
 		return
 	}
 
-	// Auto-form a guild with the trigger agent as founder.
+	// Diversity: pick candidates with different primary skills to seed mixed composition.
+	selected := selectDiverseCandidates(candidates, c.config.MinMembersForFormation, trigger.ID)
+	if len(selected) < c.config.MinMembersForFormation {
+		// Not enough diverse candidates; fall back to whatever we have.
+		selected = candidates
+		if len(selected) > c.config.MinMembersForFormation {
+			selected = selected[:c.config.MinMembersForFormation]
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	guildName := "Guild of " + string(skill)
-	guild, err := c.CreateGuild(ctx, guildName, []domain.SkillTag{skill}, trigger.ID)
+	guild, err := c.CreateGuild(ctx, CreateGuildParams{
+		Name:     generateGuildName(trigger),
+		Culture:  "Founded through demonstrated expertise",
+		FounderID: trigger.ID,
+		MinLevel:  1,
+	})
 	if err != nil {
 		c.logger.Error("auto-formation guild creation failed",
-			"skill", skill,
 			"founder", trigger.ID,
 			"error", err)
 		c.errorsCount.Add(1)
 		return
 	}
 
-	c.logger.Info("auto-formed guild from skill cluster",
+	c.logger.Info("auto-formed guild via social model",
 		"guild_id", guild.ID,
-		"skill", skill,
-		"candidates", len(candidates))
+		"guild_name", guild.Name,
+		"candidates", len(selected))
 
 	// Add remaining candidates (skip the founder who was added by CreateGuild).
-	for _, candidateID := range candidates {
-		if candidateID == trigger.ID {
+	for _, candidate := range selected {
+		if candidate.ID == trigger.ID {
 			continue
 		}
-		if err := c.JoinGuild(ctx, guild.ID, candidateID); err != nil {
+		if err := c.JoinGuild(ctx, guild.ID, candidate.ID); err != nil {
 			c.logger.Warn("failed to add candidate to auto-formed guild",
 				"guild_id", guild.ID,
-				"agent_id", candidateID,
+				"agent_id", candidate.ID,
 				"error", err)
 		}
 	}
+}
+
+// selectDiverseCandidates picks agents with different primary skills, always
+// including the founder. Returns up to `count` agents.
+func selectDiverseCandidates(candidates []*semdragons.Agent, count int, founderID domain.AgentID) []*semdragons.Agent {
+	selected := make([]*semdragons.Agent, 0, count)
+	seenSkills := make(map[semdragons.SkillTag]bool)
+
+	// Always include the founder first.
+	for _, c := range candidates {
+		if c.ID == founderID {
+			selected = append(selected, c)
+			for skill := range c.SkillProficiencies {
+				seenSkills[skill] = true
+			}
+			break
+		}
+	}
+
+	// Add candidates whose primary skill is not yet represented.
+	for _, c := range candidates {
+		if len(selected) >= count {
+			break
+		}
+		if c.ID == founderID {
+			continue
+		}
+		hasNewSkill := false
+		for skill := range c.SkillProficiencies {
+			if !seenSkills[skill] {
+				hasNewSkill = true
+				break
+			}
+		}
+		if hasNewSkill {
+			selected = append(selected, c)
+			for skill := range c.SkillProficiencies {
+				seenSkills[skill] = true
+			}
+		}
+	}
+
+	return selected
+}
+
+// generateGuildName creates a guild name from the founder's identity.
+func generateGuildName(founder *semdragons.Agent) string {
+	name := founder.Name
+	if founder.DisplayName != "" {
+		name = founder.DisplayName
+	}
+	return name + "'s Guild"
 }
 
 // =============================================================================
 // GUILD HANDLERS
 // =============================================================================
 
-// CreateGuild creates a new guild.
-func (c *Component) CreateGuild(ctx context.Context, name string, specializations []domain.SkillTag, founderID domain.AgentID) (*Guild, error) {
+// CreateGuildParams holds parameters for creating a new guild.
+type CreateGuildParams struct {
+	Name      string
+	Culture   string
+	Motto     string
+	FounderID domain.AgentID
+	MinLevel  int
+}
+
+// CreateGuild creates a new guild using the social-construct model.
+func (c *Component) CreateGuild(ctx context.Context, params CreateGuildParams) (*semdragons.Guild, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -192,32 +251,46 @@ func (c *Component) CreateGuild(ctx context.Context, name string, specialization
 	instance := domain.GenerateInstance()
 	guildID := domain.GuildID(c.boardConfig.GuildEntityID(instance))
 
-	guild := &Guild{
-		ID:              guildID,
-		Name:            name,
-		Status:          domain.GuildActive,
-		Specializations: specializations,
-		Guildmaster:     founderID,
-		Members: []GuildMember{
+	guild := &semdragons.Guild{
+		ID:          semdragons.GuildID(guildID),
+		Name:        params.Name,
+		Description: "",
+		Status:      domain.GuildActive,
+		Culture:     params.Culture,
+		Motto:       params.Motto,
+		MinLevel:    params.MinLevel,
+		MaxMembers:  c.config.MaxGuildSize,
+		FoundedBy:   semdragons.AgentID(params.FounderID),
+		Founded:     now,
+		Members: []semdragons.GuildMember{
 			{
-				AgentID:  founderID,
+				AgentID:  semdragons.AgentID(params.FounderID),
 				Rank:     domain.GuildRankMaster,
 				JoinedAt: now,
 			},
 		},
-		FoundedAt: now,
+		Reputation:  0.5, // Start neutral
+		SuccessRate: 0.0,
+		CreatedAt:   now,
 	}
 
-	// Store guild
+	// Store guild in memory
 	c.guilds.Store(guildID, guild)
 
 	// Update agent guild mapping
-	c.addAgentGuild(founderID, guildID)
+	c.addAgentGuild(params.FounderID, guildID)
+
+	// Persist to KV via graph client
+	if err := c.graph.EmitEntity(ctx, guild, "guild.created"); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("failed to persist guild to KV", "guild_id", guildID, "error", err)
+		// Continue -- in-memory state is valid, KV will catch up on next mutation.
+	}
 
 	// Publish guild created event
 	if err := SubjectGuildCreated.Publish(ctx, c.deps.NATSClient, GuildCreatedPayload{
 		Guild:     *guild,
-		FounderID: founderID,
+		FounderID: params.FounderID,
 		Timestamp: now,
 	}); err != nil {
 		c.errorsCount.Add(1)
@@ -229,19 +302,20 @@ func (c *Component) CreateGuild(ctx context.Context, name string, specialization
 
 	c.logger.Info("guild created",
 		"guild_id", guildID,
-		"guild_name", name,
-		"founder", founderID)
+		"guild_name", params.Name,
+		"culture", params.Culture,
+		"founder", params.FounderID)
 
 	return guild, nil
 }
 
 // GetGuild returns a guild by ID.
-func (c *Component) GetGuild(guildID domain.GuildID) (*Guild, bool) {
+func (c *Component) GetGuild(guildID domain.GuildID) (*semdragons.Guild, bool) {
 	val, ok := c.guilds.Load(guildID)
 	if !ok {
 		return nil, false
 	}
-	return val.(*Guild), true
+	return val.(*semdragons.Guild), true
 }
 
 // JoinGuild adds an agent to a guild.
@@ -254,29 +328,34 @@ func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agent
 	if !ok {
 		return errors.New("guild not found")
 	}
-	guild := val.(*Guild)
+	guild := val.(*semdragons.Guild)
 
 	// Check if already a member
-	if guild.IsMember(agentID) {
+	if isMember(guild, semdragons.AgentID(agentID)) {
 		return errors.New("already a member")
 	}
 
 	// Check max size
-	if c.config.MaxGuildSize > 0 && guild.MemberCount() >= c.config.MaxGuildSize {
+	if c.config.MaxGuildSize > 0 && len(guild.Members) >= c.config.MaxGuildSize {
 		return errors.New("guild is full")
 	}
 
 	now := time.Now()
 
 	// Add member
-	guild.Members = append(guild.Members, GuildMember{
-		AgentID:  agentID,
+	guild.Members = append(guild.Members, semdragons.GuildMember{
+		AgentID:  semdragons.AgentID(agentID),
 		Rank:     domain.GuildRankInitiate,
 		JoinedAt: now,
 	})
 
 	// Update agent guild mapping
 	c.addAgentGuild(agentID, guildID)
+
+	// Persist updated guild to KV
+	if err := c.graph.EmitEntity(ctx, guild, "guild.member.joined"); err != nil {
+		c.logger.Error("failed to persist guild update to KV", "guild_id", guildID, "error", err)
+	}
 
 	// Publish join event
 	if err := SubjectGuildJoined.Publish(ctx, c.deps.NATSClient, GuildJoinedPayload{
@@ -310,40 +389,36 @@ func (c *Component) LeaveGuild(ctx context.Context, guildID domain.GuildID, agen
 	if !ok {
 		return errors.New("guild not found")
 	}
-	guild := val.(*Guild)
+	guild := val.(*semdragons.Guild)
 
 	// Check if a member
-	if !guild.IsMember(agentID) {
+	if !isMember(guild, semdragons.AgentID(agentID)) {
 		return errors.New("not a member")
 	}
 
-	// Cannot leave if guildmaster (must transfer first)
-	if guild.Guildmaster == agentID {
+	// Cannot leave if founder/guildmaster (must transfer first)
+	if guild.FoundedBy == semdragons.AgentID(agentID) {
 		return errors.New("guildmaster must transfer leadership before leaving")
 	}
 
 	// Remove member
-	newMembers := make([]GuildMember, 0, len(guild.Members)-1)
+	newMembers := make([]semdragons.GuildMember, 0, len(guild.Members)-1)
 	for _, m := range guild.Members {
-		if m.AgentID != agentID {
+		if m.AgentID != semdragons.AgentID(agentID) {
 			newMembers = append(newMembers, m)
 		}
 	}
 	guild.Members = newMembers
 
-	// Remove from officers if applicable
-	newOfficers := make([]domain.AgentID, 0)
-	for _, officer := range guild.Officers {
-		if officer != agentID {
-			newOfficers = append(newOfficers, officer)
-		}
-	}
-	guild.Officers = newOfficers
-
 	// Update agent guild mapping
 	c.removeAgentGuild(agentID, guildID)
 
 	now := time.Now()
+
+	// Persist updated guild to KV
+	if err := c.graph.EmitEntity(ctx, guild, "guild.member.left"); err != nil {
+		c.logger.Error("failed to persist guild update to KV", "guild_id", guildID, "error", err)
+	}
 
 	// Publish leave event
 	if err := SubjectGuildLeft.Publish(ctx, c.deps.NATSClient, GuildLeftPayload{
@@ -377,9 +452,9 @@ func (c *Component) PromoteMember(ctx context.Context, guildID domain.GuildID, a
 	if !ok {
 		return errors.New("guild not found")
 	}
-	guild := val.(*Guild)
+	guild := val.(*semdragons.Guild)
 
-	member := guild.GetMember(agentID)
+	member := getMember(guild, semdragons.AgentID(agentID))
 	if member == nil {
 		return errors.New("not a member")
 	}
@@ -387,12 +462,12 @@ func (c *Component) PromoteMember(ctx context.Context, guildID domain.GuildID, a
 	oldRank := member.Rank
 	member.Rank = newRank
 
-	// Add to officers if promoted to officer rank
-	if newRank == domain.GuildRankOfficer && !guild.IsOfficer(agentID) {
-		guild.Officers = append(guild.Officers, agentID)
-	}
-
 	now := time.Now()
+
+	// Persist updated guild to KV
+	if err := c.graph.EmitEntity(ctx, guild, "guild.member.promoted"); err != nil {
+		c.logger.Error("failed to persist guild update to KV", "guild_id", guildID, "error", err)
+	}
 
 	// Publish promotion event
 	if err := SubjectGuildPromoted.Publish(ctx, c.deps.NATSClient, GuildPromotedPayload{
@@ -429,15 +504,19 @@ func (c *Component) DisbandGuild(ctx context.Context, guildID domain.GuildID, re
 	if !ok {
 		return errors.New("guild not found")
 	}
-	guild := val.(*Guild)
+	guild := val.(*semdragons.Guild)
 
 	now := time.Now()
 	guild.Status = domain.GuildInactive
-	guild.DisbandedAt = &now
 
 	// Remove all agent guild mappings
 	for _, member := range guild.Members {
-		c.removeAgentGuild(member.AgentID, guildID)
+		c.removeAgentGuild(domain.AgentID(member.AgentID), guildID)
+	}
+
+	// Persist updated guild to KV
+	if err := c.graph.EmitEntity(ctx, guild, "guild.disbanded"); err != nil {
+		c.logger.Error("failed to persist guild disbandment to KV", "guild_id", guildID, "error", err)
 	}
 
 	// Publish disband event
@@ -472,10 +551,10 @@ func (c *Component) GetAgentGuilds(agentID domain.AgentID) []domain.GuildID {
 }
 
 // ListGuilds returns all active guilds.
-func (c *Component) ListGuilds() []*Guild {
-	var guilds []*Guild
+func (c *Component) ListGuilds() []*semdragons.Guild {
+	var guilds []*semdragons.Guild
 	c.guilds.Range(func(_, value any) bool {
-		guild := value.(*Guild)
+		guild := value.(*semdragons.Guild)
 		if guild.Status == domain.GuildActive {
 			guilds = append(guilds, guild)
 		}
@@ -487,6 +566,21 @@ func (c *Component) ListGuilds() []*Guild {
 // =============================================================================
 // INTERNAL HELPERS
 // =============================================================================
+
+// isMember checks if an agent is a member of a guild.
+func isMember(guild *semdragons.Guild, agentID semdragons.AgentID) bool {
+	return getMember(guild, agentID) != nil
+}
+
+// getMember returns a pointer to a member in the guild's Members slice, or nil.
+func getMember(guild *semdragons.Guild, agentID semdragons.AgentID) *semdragons.GuildMember {
+	for i := range guild.Members {
+		if guild.Members[i].AgentID == agentID {
+			return &guild.Members[i]
+		}
+	}
+	return nil
+}
 
 // addAgentGuild adds a guild to an agent's guild list.
 func (c *Component) addAgentGuild(agentID domain.AgentID, guildID domain.GuildID) {

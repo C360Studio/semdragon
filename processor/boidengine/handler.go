@@ -45,9 +45,27 @@ func (c *Component) loadInitialState(ctx context.Context) error {
 	}
 	c.questsMu.Unlock()
 
+	// Load all guilds from graph for rank/reputation lookups
+	guildEntities, err := c.graph.ListGuildsByPrefix(ctx, 100)
+	if err != nil {
+		c.logger.Warn("failed to load guilds (affinity scoring degraded)", "error", err)
+		// Non-fatal: boid engine works without guild context, just with binary matching
+	} else {
+		c.guildsMu.Lock()
+		for _, entity := range guildEntities {
+			guild := semdragons.GuildFromEntityState(&entity)
+			if guild != nil {
+				instance := semdragons.ExtractInstance(string(guild.ID))
+				c.guilds[instance] = guild
+			}
+		}
+		c.guildsMu.Unlock()
+	}
+
 	c.logger.Debug("loaded initial state",
 		"agents", len(agentEntities),
-		"quests", len(c.quests))
+		"quests", len(c.quests),
+		"guilds", len(c.guilds))
 
 	return nil
 }
@@ -77,10 +95,20 @@ func (c *Component) startKVWatchers(ctx context.Context) error {
 	}
 	c.questWatch = questWatcher
 
+	// Watch guild state changes for rank/reputation updates
+	guildPrefix := c.graph.Config().TypePrefix("guild") + ".>"
+	guildWatcher, err := kv.Watch(ctx, guildPrefix)
+	if err != nil {
+		c.logger.Warn("failed to start guild KV watcher (affinity scoring degraded)", "error", err)
+		// Non-fatal: guild context from initial load still available
+	} else {
+		c.guildWatch = guildWatcher
+	}
+
 	// Start goroutine to process watch updates
 	go c.processWatchUpdates()
 
-	c.logger.Debug("started KV watchers for agent and quest state")
+	c.logger.Debug("started KV watchers for agent, quest, and guild state")
 	return nil
 }
 
@@ -92,11 +120,20 @@ func (c *Component) stopKVWatchers() {
 	if c.questWatch != nil {
 		c.questWatch.Stop()
 	}
+	if c.guildWatch != nil {
+		c.guildWatch.Stop()
+	}
 }
 
 // processWatchUpdates handles updates from KV watchers.
 func (c *Component) processWatchUpdates() {
 	defer close(c.watchDoneCh)
+
+	// Guild watcher may be nil if setup failed (non-fatal)
+	var guildUpdates <-chan jetstream.KeyValueEntry
+	if c.guildWatch != nil {
+		guildUpdates = c.guildWatch.Updates()
+	}
 
 	for {
 		select {
@@ -120,6 +157,16 @@ func (c *Component) processWatchUpdates() {
 				continue // Initial sync complete
 			}
 			c.handleQuestUpdate(entry)
+
+		case entry, ok := <-guildUpdates:
+			if !ok {
+				guildUpdates = nil // Closed, stop selecting
+				continue
+			}
+			if entry == nil {
+				continue // Initial sync complete
+			}
+			c.handleGuildUpdate(entry)
 		}
 	}
 }
@@ -208,6 +255,41 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 	c.logger.Debug("quest cache updated", "instance", instance, "status", quest.Status)
 }
 
+// handleGuildUpdate processes a guild state change from KV.
+func (c *Component) handleGuildUpdate(entry jetstream.KeyValueEntry) {
+	key := entry.Key()
+	instance := semdragons.ExtractInstance(key)
+	if instance == "" || instance == key {
+		c.logger.Warn("guild watch entry has unexpected key format", "key", key)
+		return
+	}
+
+	if entry.Operation() == jetstream.KeyValueDelete {
+		c.guildsMu.Lock()
+		delete(c.guilds, instance)
+		c.guildsMu.Unlock()
+		c.logger.Debug("guild removed from cache", "instance", instance)
+		return
+	}
+
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		c.logger.Warn("failed to decode guild entity state", "instance", instance, "error", err)
+		return
+	}
+	guild := semdragons.GuildFromEntityState(entityState)
+	if guild == nil {
+		c.logger.Warn("failed to reconstruct guild from entity state", "instance", instance)
+		return
+	}
+
+	c.guildsMu.Lock()
+	c.guilds[instance] = guild
+	c.guildsMu.Unlock()
+
+	c.logger.Debug("guild cache updated", "instance", instance, "reputation", guild.Reputation)
+}
+
 // =============================================================================
 // COMPUTATION LOOP
 // =============================================================================
@@ -258,6 +340,18 @@ func (c *Component) computeAndPublish() {
 
 	if len(agents) == 0 || len(quests) == 0 {
 		return
+	}
+
+	// Provide guild context for rank/reputation scoring
+	c.guildsMu.RLock()
+	guildCtx := make(map[semdragons.GuildID]*semdragons.Guild, len(c.guilds))
+	for _, guild := range c.guilds {
+		guildCtx[guild.ID] = guild
+	}
+	c.guildsMu.RUnlock()
+
+	if engine, ok := c.boidEngine.(*DefaultBoidEngine); ok {
+		engine.SetGuildContext(guildCtx)
 	}
 
 	// Compute attractions
@@ -336,6 +430,18 @@ func (c *Component) ComputeAttractionsNow() []QuestAttraction {
 		}
 	}
 	c.questsMu.RUnlock()
+
+	// Provide guild context for rank/reputation scoring
+	c.guildsMu.RLock()
+	guildCtx := make(map[semdragons.GuildID]*semdragons.Guild, len(c.guilds))
+	for _, guild := range c.guilds {
+		guildCtx[guild.ID] = guild
+	}
+	c.guildsMu.RUnlock()
+
+	if engine, ok := c.boidEngine.(*DefaultBoidEngine); ok {
+		engine.SetGuildContext(guildCtx)
+	}
 
 	return c.boidEngine.ComputeAttractions(agents, quests, c.rules)
 }

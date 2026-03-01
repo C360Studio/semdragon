@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
@@ -50,10 +51,10 @@ type TraceInfo struct {
 
 // GuildCreatedPayload is emitted when a new guild is formed.
 type GuildCreatedPayload struct {
-	Guild     Guild          `json:"guild"`
-	FounderID domain.AgentID `json:"founder_id"`
-	Timestamp time.Time      `json:"timestamp"`
-	Trace     TraceInfo      `json:"trace,omitempty"`
+	Guild     semdragons.Guild `json:"guild"`
+	FounderID domain.AgentID   `json:"founder_id"`
+	Timestamp time.Time        `json:"timestamp"`
+	Trace     TraceInfo        `json:"trace,omitempty"`
 }
 
 // EntityID returns the entity ID for this event.

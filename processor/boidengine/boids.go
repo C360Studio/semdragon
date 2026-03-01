@@ -103,7 +103,14 @@ func DefaultBoidRules() BoidRules {
 
 // DefaultBoidEngine implements BoidEngine with standard flocking behavior.
 type DefaultBoidEngine struct {
-	rules BoidRules
+	rules  BoidRules
+	guilds map[semdragons.GuildID]*semdragons.Guild // Guild context for rank/reputation lookups
+}
+
+// SetGuildContext provides guild data for rank and reputation calculations.
+// Called by the component before each computation cycle.
+func (e *DefaultBoidEngine) SetGuildContext(guilds map[semdragons.GuildID]*semdragons.Guild) {
+	e.guilds = guilds
 }
 
 // NewDefaultBoidEngine creates a new boid engine with default rules.
@@ -198,13 +205,28 @@ func (e *DefaultBoidEngine) computeAttraction(
 	// Rule 4: Hunger - idle time increases urgency
 	attr.HungerScore = 0.5 * rules.HungerWeight // Base hunger, would use actual idle time
 
-	// Rule 5: Affinity - skill and guild match
+	// Rule 5: Affinity - skill and guild match, weighted by rank and reputation
 	skillMatch := float64(matchingSkills)
 	guildMatch := 0.0
 	if quest.GuildPriority != nil {
 		for _, guildID := range agent.Guilds {
 			if guildID == *quest.GuildPriority {
+				// Base membership match
 				guildMatch = 1.0
+
+				// Boost by rank: higher-ranked members have stronger affinity
+				// GuildBonusRate ranges 0.10 (initiate) to 0.25 (guildmaster)
+				if guild, ok := e.guilds[guildID]; ok {
+					for _, m := range guild.Members {
+						if m.AgentID == agent.ID {
+							guildMatch += m.Rank.GuildBonusRate() * 5.0 // 0.5–1.25 rank bonus
+							break
+						}
+					}
+					// Boost by reputation: reputable guilds provide stronger pull
+					// Reputation ranges 0.0–1.0
+					guildMatch *= 1.0 + guild.Reputation*0.5 // up to 1.5x multiplier
+				}
 				break
 			}
 		}

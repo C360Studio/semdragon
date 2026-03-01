@@ -235,8 +235,9 @@ func (c *Component) SetStock(itemID string, inStock bool) error {
 // PURCHASE HANDLERS
 // =============================================================================
 
-// Purchase buys an item for an agent.
-func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int) (*OwnedItem, error) {
+// Purchase buys an item for an agent. If the agent is in any guild and the item
+// has a GuildDiscount > 0, the effective cost is reduced accordingly.
+func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*OwnedItem, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -253,13 +254,22 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 		return nil, errors.New("item out of stock")
 	}
 
+	// Apply guild discount if the agent is in any guild and the item offers one.
+	effectiveCost := item.XPCost
+	if item.GuildDiscount > 0 && len(agentGuilds) > 0 {
+		effectiveCost = int64(float64(item.XPCost) * (1.0 - item.GuildDiscount))
+		if effectiveCost < 0 {
+			effectiveCost = 0
+		}
+	}
+
 	// Check affordability
-	if currentXP < item.XPCost {
+	if currentXP < effectiveCost {
 		return nil, errors.New("insufficient XP")
 	}
 
 	now := time.Now()
-	newXP := currentXP - item.XPCost
+	newXP := currentXP - effectiveCost
 
 	// Create owned item
 	owned := &OwnedItem{
@@ -267,7 +277,7 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 		ItemName:     item.Name,
 		PurchaseType: item.PurchaseType,
 		PurchasedAt:  now,
-		XPSpent:      item.XPCost,
+		XPSpent:      effectiveCost,
 	}
 
 	if item.PurchaseType == PurchaseRental {
@@ -281,7 +291,7 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 	} else if item.ItemType == ItemTypeConsumable {
 		inv.Consumables[itemID]++
 	}
-	inv.TotalSpent += item.XPCost
+	inv.TotalSpent += effectiveCost
 
 	// Publish purchase event
 	if err := SubjectStoreItemPurchased.Publish(ctx, c.deps.NATSClient, StorePurchasePayload{
@@ -289,7 +299,7 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 		ItemID:      itemID,
 		ItemName:    item.Name,
 		ItemType:    item.ItemType,
-		XPSpent:     item.XPCost,
+		XPSpent:     effectiveCost,
 		XPBefore:    currentXP,
 		XPAfter:     newXP,
 		LevelBefore: currentLevel,
@@ -319,7 +329,8 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 	c.logger.Info("item purchased",
 		"agent_id", agentID,
 		"item_id", itemID,
-		"xp_spent", item.XPCost)
+		"xp_spent", effectiveCost,
+		"guild_discount_applied", item.GuildDiscount > 0 && len(agentGuilds) > 0)
 
 	return owned, nil
 }

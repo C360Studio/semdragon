@@ -31,7 +31,7 @@ type Component struct {
 	boardConfig *domain.BoardConfig
 
 	// Guild state - in-memory projection
-	guilds sync.Map // map[domain.GuildID]*Guild
+	guilds sync.Map // map[domain.GuildID]*semdragons.Guild
 
 	// Agent to guild mapping - in-memory projection
 	agentGuilds sync.Map // map[domain.AgentID][]domain.GuildID

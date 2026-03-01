@@ -133,12 +133,36 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 	// Determine if this is a guild quest
 	isGuildQuest := quest.GuildPriority != nil
 
+	// Read guild entity to populate GuildRank for XP multiplier (B1)
+	var guildForStats *semdragons.Guild
+	var guildRank domain.GuildRank
+	if isGuildQuest {
+		guildEntity, guildErr := c.graph.GetGuild(ctx, domain.GuildID(*quest.GuildPriority))
+		if guildErr == nil {
+			guild := semdragons.GuildFromEntityState(guildEntity)
+			if guild != nil {
+				guildForStats = guild
+				for _, m := range guild.Members {
+					if m.AgentID == semdragons.AgentID(agentID) {
+						guildRank = m.Rank
+						break
+					}
+				}
+			}
+		} else {
+			c.logger.Debug("could not read guild for XP multiplier",
+				"guild_id", *quest.GuildPriority,
+				"error", guildErr)
+		}
+	}
+
 	// Build XP context from entity state (replaces fat event pattern)
 	xpCtx := XPContext{
 		Quest:        *quest,
 		Agent:        *agent,
 		Duration:     quest.Duration,
 		IsGuildQuest: isGuildQuest,
+		GuildRank:    guildRank,
 		Attempt:      quest.Attempts,
 	}
 
@@ -163,6 +187,11 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 	if err := c.emitAgentXPUpdate(ctx, agentID, quest.ID, &award, nil, tempAgent); err != nil {
 		c.logger.Error("failed to emit agent XP update", "error", err)
 		c.errorsCount.Add(1)
+	}
+
+	// Update guild reputation and member contribution on quest completion (B2)
+	if isGuildQuest && guildForStats != nil {
+		c.updateGuildStatsOnCompletion(ctx, guildForStats, semdragons.AgentID(agentID), award.TotalXP)
 	}
 
 	// Emit level up event if applicable
@@ -262,6 +291,17 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 	if err := c.emitAgentXPUpdate(ctx, agentID, quest.ID, nil, &penalty, tempAgent); err != nil {
 		c.logger.Error("failed to emit agent XP penalty", "error", err)
 		c.errorsCount.Add(1)
+	}
+
+	// Update guild stats on quest failure (B2)
+	if quest.GuildPriority != nil {
+		guildEntity, guildErr := c.graph.GetGuild(ctx, domain.GuildID(*quest.GuildPriority))
+		if guildErr == nil {
+			guild := semdragons.GuildFromEntityState(guildEntity)
+			if guild != nil {
+				c.updateGuildStatsOnFailure(ctx, guild)
+			}
+		}
 	}
 
 	c.logger.Debug("processed quest failure",
@@ -445,4 +485,57 @@ func (c *Component) CalculatePenalty(penaltyCtx PenaltyContext) XPPenalty {
 // BoardConfig returns the board configuration.
 func (c *Component) BoardConfig() *domain.BoardConfig {
 	return c.boardConfig
+}
+
+// =============================================================================
+// GUILD STATS UPDATES (B2)
+// =============================================================================
+
+// updateGuildStatsOnCompletion increments guild reputation and member contribution
+// when a guild quest is completed successfully.
+func (c *Component) updateGuildStatsOnCompletion(ctx context.Context, guild *semdragons.Guild, agentID semdragons.AgentID, xpEarned int64) {
+	guild.QuestsHandled++
+	if guild.QuestsHandled > 0 {
+		guild.SuccessRate = float64(guild.QuestsHandled-guild.QuestsFailed) / float64(guild.QuestsHandled)
+	}
+
+	// Nudge reputation toward success rate (weighted average favoring recent performance)
+	guild.Reputation = guild.Reputation*0.9 + guild.SuccessRate*0.1
+
+	// Update member contribution
+	for i := range guild.Members {
+		if guild.Members[i].AgentID == agentID {
+			guild.Members[i].Contribution += float64(xpEarned)
+			break
+		}
+	}
+
+	// Persist updated guild to KV
+	if err := c.graph.EmitEntity(ctx, guild, "guild.stats.updated"); err != nil {
+		c.logger.Error("failed to persist guild stats update",
+			"guild_id", guild.ID,
+			"error", err)
+		c.errorsCount.Add(1)
+	}
+}
+
+// updateGuildStatsOnFailure increments failure counters and recalculates success rate
+// when a guild quest fails.
+func (c *Component) updateGuildStatsOnFailure(ctx context.Context, guild *semdragons.Guild) {
+	guild.QuestsHandled++
+	guild.QuestsFailed++
+	if guild.QuestsHandled > 0 {
+		guild.SuccessRate = float64(guild.QuestsHandled-guild.QuestsFailed) / float64(guild.QuestsHandled)
+	}
+
+	// Nudge reputation toward success rate
+	guild.Reputation = guild.Reputation*0.9 + guild.SuccessRate*0.1
+
+	// Persist updated guild to KV
+	if err := c.graph.EmitEntity(ctx, guild, "guild.stats.updated"); err != nil {
+		c.logger.Error("failed to persist guild stats update on failure",
+			"guild_id", guild.ID,
+			"error", err)
+		c.errorsCount.Add(1)
+	}
 }
