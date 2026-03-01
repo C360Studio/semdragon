@@ -43,19 +43,19 @@ export abstract class BasePage {
 	constructor(page: Page) {
 		this.page = page;
 
-		// Layout
-		this.connectionStatus = page.locator('.connection-status');
+		// Layout - prefer data-testid selectors
+		this.connectionStatus = page.locator('[data-testid="connection-status"]');
 		this.leftPanel = page.locator('[class*="left-panel"], .explorer-panel, .filters-panel');
-		this.rightPanel = page.locator('[class*="right-panel"], .details-panel');
+		this.rightPanel = page.locator('[data-testid="details-panel"]');
 		this.centerPanel = page.locator('[class*="center-panel"], main, .dashboard, .quest-board, .agent-roster');
 
-		// Navigation (available from dashboard)
-		this.navQuests = page.locator('.nav-item', { hasText: 'Quest Board' });
-		this.navAgents = page.locator('.nav-item', { hasText: 'Agent Roster' });
-		this.navBattles = page.locator('.nav-item', { hasText: 'Boss Battles' });
-		this.navGuilds = page.locator('.nav-item', { hasText: 'Guilds' });
-		this.navTrajectories = page.locator('.nav-item', { hasText: 'Trajectories' });
-		this.navStore = page.locator('.nav-item', { hasText: 'Store' });
+		// Navigation - prefer data-testid selectors
+		this.navQuests = page.locator('[data-testid="nav-quests"]');
+		this.navAgents = page.locator('[data-testid="nav-agents"]');
+		this.navBattles = page.locator('[data-testid="nav-battles"]');
+		this.navGuilds = page.locator('[data-testid="nav-guilds"]');
+		this.navTrajectories = page.locator('[data-testid="nav-trajectories"]');
+		this.navStore = page.locator('[data-testid="nav-store"]');
 	}
 
 	/**
@@ -89,7 +89,7 @@ export abstract class BasePage {
 	}
 
 	/**
-	 * Check WebSocket connection status.
+	 * Check SSE connection status.
 	 */
 	async isConnected(): Promise<boolean> {
 		const classes = await this.connectionStatus.getAttribute('class');
@@ -97,10 +97,10 @@ export abstract class BasePage {
 	}
 
 	/**
-	 * Wait for WebSocket connection.
+	 * Wait for SSE connection.
 	 */
 	async waitForConnection(timeout = 10000): Promise<void> {
-		await this.page.waitForSelector('.connection-status.connected', { timeout });
+		await this.page.waitForSelector('[data-testid="connection-status"].connected', { timeout });
 	}
 
 	/**

@@ -85,37 +85,37 @@
 				<h2>Explorer</h2>
 			</header>
 			<nav class="explorer-nav">
-				<a href="/quests" class="nav-item">
+				<a href="/quests" class="nav-item" data-testid="nav-quests">
 					<span class="nav-icon">Q</span>
 					<span class="nav-label">Quest Board</span>
-					<span class="nav-count">{worldStore.questList.length}</span>
+					<span class="nav-count" data-testid="nav-count">{worldStore.questList.length}</span>
 				</a>
-				<a href="/agents" class="nav-item">
+				<a href="/agents" class="nav-item" data-testid="nav-agents">
 					<span class="nav-icon">A</span>
 					<span class="nav-label">Agent Roster</span>
-					<span class="nav-count">{worldStore.agentList.length}</span>
+					<span class="nav-count" data-testid="nav-count">{worldStore.agentList.length}</span>
 				</a>
-				<a href="/battles" class="nav-item">
+				<a href="/battles" class="nav-item" data-testid="nav-battles">
 					<span class="nav-icon">B</span>
 					<span class="nav-label">Boss Battles</span>
-					<span class="nav-count">{worldStore.activeBattles.length}</span>
+					<span class="nav-count" data-testid="nav-count">{worldStore.activeBattles.length}</span>
 				</a>
-				<a href="/guilds" class="nav-item">
+				<a href="/guilds" class="nav-item" data-testid="nav-guilds">
 					<span class="nav-icon">G</span>
 					<span class="nav-label">Guilds</span>
-					<span class="nav-count">{worldStore.guildList.length}</span>
+					<span class="nav-count" data-testid="nav-count">{worldStore.guildList.length}</span>
 				</a>
-				<a href="/trajectories" class="nav-item">
+				<a href="/trajectories" class="nav-item" data-testid="nav-trajectories">
 					<span class="nav-icon">T</span>
 					<span class="nav-label">Trajectories</span>
 				</a>
-				<a href="/store" class="nav-item">
+				<a href="/store" class="nav-item" data-testid="nav-store">
 					<span class="nav-icon">S</span>
 					<span class="nav-label">Store</span>
 				</a>
 			</nav>
 
-			<div class="event-feed">
+			<div class="event-feed" data-testid="event-feed">
 				<header class="section-header">
 					<h3>Recent Activity</h3>
 					<select
@@ -132,7 +132,7 @@
 				</header>
 				<ul class="event-list">
 					{#each filteredEvents() as event}
-						<li class="event-item" data-category={eventIcon(event.type)}>
+						<li class="event-item" data-testid="event-item" data-category={eventIcon(event.type)}>
 							<span class="event-icon">{eventIcon(event.type)}</span>
 							<span class="event-type">{event.type.split('.').slice(-1)[0]}</span>
 							<span class="event-time">{formatTime(event.timestamp)}</span>
@@ -150,7 +150,7 @@
 			<header class="dashboard-header">
 				<h1>The DM's Scrying Pool</h1>
 				<div class="header-actions">
-					<div class="connection-status" class:connected={worldStore.connected}>
+					<div class="connection-status" data-testid="connection-status" class:connected={worldStore.connected}>
 						{worldStore.connected ? 'Connected' : 'Disconnected'}
 					</div>
 				</div>
@@ -162,44 +162,44 @@
 				<div class="error">{worldStore.error}</div>
 			{:else}
 				<!-- Stats Grid -->
-				<div class="stats-grid">
-					<div class="stat-card">
+				<div class="stats-grid" data-testid="dashboard-stats">
+					<div class="stat-card" data-testid="stat-active-agents">
 						<span class="stat-value">{worldStore.stats.active_agents}</span>
 						<span class="stat-label">Active Agents</span>
 					</div>
-					<div class="stat-card">
+					<div class="stat-card" data-testid="stat-idle-agents">
 						<span class="stat-value">{worldStore.stats.idle_agents}</span>
 						<span class="stat-label">Idle Agents</span>
 					</div>
-					<div class="stat-card">
+					<div class="stat-card" data-testid="stat-open-quests">
 						<span class="stat-value">{worldStore.stats.open_quests}</span>
 						<span class="stat-label">Open Quests</span>
 					</div>
-					<div class="stat-card">
+					<div class="stat-card" data-testid="stat-active-quests">
 						<span class="stat-value">{worldStore.stats.active_quests}</span>
 						<span class="stat-label">Active Quests</span>
 					</div>
-					<div class="stat-card">
+					<div class="stat-card" data-testid="stat-completion-rate">
 						<span class="stat-value">{(worldStore.stats.completion_rate * 100).toFixed(1)}%</span>
 						<span class="stat-label">Completion Rate</span>
 					</div>
-					<div class="stat-card">
+					<div class="stat-card" data-testid="stat-avg-quality">
 						<span class="stat-value">{(worldStore.stats.avg_quality * 100).toFixed(1)}%</span>
 						<span class="stat-label">Avg Quality</span>
 					</div>
-					<div class="stat-card">
+					<div class="stat-card" data-testid="stat-total-xp-earned">
 						<span class="stat-value">{formatNumber(worldStore.totalXpEarned)}</span>
 						<span class="stat-label">Total XP Earned</span>
 					</div>
-					<div class="stat-card">
+					<div class="stat-card" data-testid="stat-active-parties">
 						<span class="stat-value">{worldStore.partyList.length}</span>
 						<span class="stat-label">Active Parties</span>
 					</div>
-					<div class="stat-card">
+					<div class="stat-card" data-testid="stat-guilds">
 						<span class="stat-value">{worldStore.guildList.length}</span>
 						<span class="stat-label">Guilds</span>
 					</div>
-					<div class="stat-card">
+					<div class="stat-card" data-testid="stat-battle-win-rate">
 						<span class="stat-value">{worldStore.battleStats.winRate.toFixed(0)}%</span>
 						<span class="stat-label">Battle Win Rate</span>
 					</div>
@@ -210,7 +210,7 @@
 					<h2 id="tier-heading">Agent Distribution by Tier</h2>
 					<div class="tier-bars">
 						{#each worldStore.tierDistribution as tier}
-							<div class="tier-row">
+							<div class="tier-row" data-testid="tier-{tier.name.toLowerCase()}">
 								<span class="tier-name">{tier.name}</span>
 								<div class="tier-bar-container">
 									<div
@@ -291,7 +291,7 @@
 	{/snippet}
 
 	{#snippet rightPanel()}
-		<div class="details-panel">
+		<div class="details-panel" data-testid="details-panel">
 			<header class="panel-header">
 				<h2>Details</h2>
 			</header>

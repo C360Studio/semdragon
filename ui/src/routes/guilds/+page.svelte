@@ -27,8 +27,8 @@
 				<p class="guild-description">{guild.description}</p>
 
 				<div class="guild-domain">
-					<span class="domain-label">Domain:</span>
-					<span class="domain-value">{guild.domain}</span>
+					<span class="domain-label">Culture:</span>
+					<span class="domain-value">{guild.culture}</span>
 				</div>
 
 				<div class="guild-stats">
@@ -51,11 +51,11 @@
 				</div>
 
 				<div class="guild-skills">
-					{#each guild.skills.slice(0, 4) as skill}
-						<span class="skill-tag">{skill.replace('_', ' ')}</span>
+					{#each (guild.quest_types || []).slice(0, 4) as qtype}
+						<span class="skill-tag">{qtype.replace('_', ' ')}</span>
 					{/each}
-					{#if guild.skills.length > 4}
-						<span class="skill-more">+{guild.skills.length - 4}</span>
+					{#if (guild.quest_types || []).length > 4}
+						<span class="skill-more">+{(guild.quest_types || []).length - 4}</span>
 					{/if}
 				</div>
 			</div>

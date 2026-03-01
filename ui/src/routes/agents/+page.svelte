@@ -52,7 +52,7 @@
 			</header>
 			<div class="filters-content">
 				<label for="agent-status-filter" class="filter-label">Status</label>
-				<select id="agent-status-filter" bind:value={statusFilter} class="filter-select">
+				<select id="agent-status-filter" bind:value={statusFilter} class="filter-select" data-testid="agent-status-filter">
 					<option value="all">All</option>
 					<option value="idle">Idle</option>
 					<option value="on_quest">On Quest</option>
@@ -89,13 +89,14 @@
 						aria-label="Select agent: {agent.name}, Level {agent.level} {TrustTierNames[agent.tier]}"
 						aria-pressed={worldStore.selectedAgentId === agent.id}
 						onclick={() => selectAgent(agent)}
+						data-testid="agent-card"
 					>
 						<div class="agent-header">
-							<span class="agent-name">{agent.name}</span>
+							<span class="agent-name" data-testid="agent-name">{agent.name}</span>
 							<span class="agent-level">Lv.{agent.level}</span>
 						</div>
 
-						<div class="tier-badge" data-tier={agent.tier}>
+						<div class="tier-badge" data-tier={agent.tier} data-testid="tier-badge">
 							{TrustTierNames[agent.tier]}
 						</div>
 
@@ -111,11 +112,11 @@
 						</div>
 
 						<div class="agent-skills">
-							{#each agent.skills.slice(0, 3) as skill}
+							{#each Object.keys(agent.skill_proficiencies || {}).slice(0, 3) as skill}
 								<span class="skill-tag">{skill.replace('_', ' ')}</span>
 							{/each}
-							{#if agent.skills.length > 3}
-								<span class="skill-more">+{agent.skills.length - 3}</span>
+							{#if Object.keys(agent.skill_proficiencies || {}).length > 3}
+								<span class="skill-more">+{Object.keys(agent.skill_proficiencies || {}).length - 3}</span>
 							{/if}
 						</div>
 					</button>
@@ -128,7 +129,7 @@
 	{/snippet}
 
 	{#snippet rightPanel()}
-		<div class="details-panel">
+		<div class="details-panel" data-testid="details-panel">
 			<header class="panel-header">
 				<h2>Agent Details</h2>
 			</header>
@@ -172,7 +173,7 @@
 
 						<h4>Skills</h4>
 						<div class="skills-list">
-							{#each agent.skills as skill}
+							{#each Object.keys(agent.skill_proficiencies || {}) as skill}
 								<span class="skill-tag">{skill.replace('_', ' ')}</span>
 							{/each}
 						</div>

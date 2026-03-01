@@ -95,7 +95,7 @@
 			{:else}
 			<div class="kanban-board">
 				{#each kanbanColumns as column}
-					<div class="kanban-column" data-status={column.status}>
+					<div class="kanban-column" data-status={column.status} data-testid="quest-column-{column.status}">
 						<header class="column-header">
 							<h3>{column.label}</h3>
 							<span class="column-count">{questsByStatus[column.status].length}</span>
@@ -108,8 +108,9 @@
 									aria-label="{quest.title}, {QuestDifficultyNames[quest.difficulty]} difficulty, {quest.base_xp} XP"
 									aria-pressed={worldStore.selectedQuestId === quest.id}
 									onclick={() => selectQuest(quest)}
+									data-testid="quest-card"
 								>
-									<h4 class="quest-title">{quest.title}</h4>
+									<h4 class="quest-title" data-testid="quest-title">{quest.title}</h4>
 									<div class="quest-meta">
 										<span
 											class="difficulty-badge"
@@ -137,7 +138,7 @@
 	{/snippet}
 
 	{#snippet rightPanel()}
-		<div class="details-panel">
+		<div class="details-panel" data-testid="details-panel">
 			<header class="panel-header">
 				<h2>Quest Details</h2>
 			</header>

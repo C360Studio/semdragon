@@ -1,7 +1,8 @@
 /**
  * API Service - HTTP client for Semdragons backend
  *
- * Provides typed API methods for all backend endpoints.
+ * All domain endpoints use /game/ prefix.
+ * SSE handles initial hydration and live updates; REST is for mutations and on-demand queries.
  */
 
 import type {
@@ -65,90 +66,48 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 	});
 }
 
-async function putJson<T>(path: string, body: unknown): Promise<T> {
-	return fetchJson<T>(path, {
-		method: 'PUT',
-		body: JSON.stringify(body)
-	});
-}
-
-async function deleteRequest(path: string): Promise<void> {
-	const url = `${apiUrl}${path}`;
-	const response = await fetch(url, { method: 'DELETE' });
-
-	if (!response.ok) {
-		const errorText = await response.text();
-		throw new Error(`API Error ${response.status}: ${errorText}`);
-	}
-}
-
 // =============================================================================
-// WORLD STATE
+// WORLD STATE (fallback — SSE replay is the primary hydration path)
 // =============================================================================
 
 export async function getWorldState(): Promise<WorldState> {
-	return fetchJson<WorldState>('/world');
+	return fetchJson<WorldState>('/game/world');
 }
 
 // =============================================================================
 // QUESTS
 // =============================================================================
 
-export interface QuestFilters {
-	status?: string;
-	difficulty?: number;
-	guild_id?: string;
-}
-
-export async function getQuests(filters?: QuestFilters): Promise<Quest[]> {
-	const params = new URLSearchParams();
-	if (filters?.status) params.set('status', filters.status);
-	if (filters?.difficulty !== undefined) params.set('difficulty', String(filters.difficulty));
-	if (filters?.guild_id) params.set('guild_id', filters.guild_id);
-
-	const queryString = params.toString();
-	const path = queryString ? `/quests?${queryString}` : '/quests';
-	return fetchJson<Quest[]>(path);
-}
-
 export async function getQuest(id: QuestID): Promise<Quest> {
-	return fetchJson<Quest>(`/quests/${id}`);
+	return fetchJson<Quest>(`/game/quests/${id}`);
 }
 
 export async function createQuest(objective: string, hints?: QuestHints): Promise<Quest> {
-	return postJson<Quest>('/quests', { objective, hints });
+	return postJson<Quest>('/game/quests', { objective, hints });
 }
 
 // =============================================================================
 // AGENTS
 // =============================================================================
 
-export async function getAgents(): Promise<Agent[]> {
-	return fetchJson<Agent[]>('/agents');
-}
-
 export async function getAgent(id: AgentID): Promise<Agent> {
-	return fetchJson<Agent>(`/agents/${id}`);
+	return fetchJson<Agent>(`/game/agents/${id}`);
 }
 
 export async function recruitAgent(config: AgentConfig): Promise<Agent> {
-	return postJson<Agent>('/agents', config);
+	return postJson<Agent>('/game/agents', config);
 }
 
 export async function retireAgent(id: AgentID, reason: string): Promise<void> {
-	await postJson(`/agents/${id}/retire`, { reason });
+	await postJson(`/game/agents/${id}/retire`, { reason });
 }
 
 // =============================================================================
 // BATTLES
 // =============================================================================
 
-export async function getBattles(): Promise<BossBattle[]> {
-	return fetchJson<BossBattle[]>('/battles');
-}
-
 export async function getBattle(id: BattleID): Promise<BossBattle> {
-	return fetchJson<BossBattle>(`/battles/${id}`);
+	return fetchJson<BossBattle>(`/game/battles/${id}`);
 }
 
 // =============================================================================
@@ -162,7 +121,7 @@ export interface TrajectoryEvent {
 }
 
 export async function getTrajectory(id: string): Promise<TrajectoryEvent[]> {
-	return fetchJson<TrajectoryEvent[]>(`/trajectories/${id}`);
+	return fetchJson<TrajectoryEvent[]>(`/game/trajectories/${id}`);
 }
 
 // =============================================================================
@@ -181,11 +140,11 @@ export interface ChatResponse {
 }
 
 export async function sendDMChat(message: string): Promise<ChatResponse> {
-	return postJson<ChatResponse>('/dm/chat', { message });
+	return postJson<ChatResponse>('/game/dm/chat', { message });
 }
 
 export async function intervene(questId: QuestID, intervention: Intervention): Promise<void> {
-	await postJson(`/dm/intervene/${questId}`, intervention);
+	await postJson(`/game/dm/intervene/${questId}`, intervention);
 }
 
 // =============================================================================
@@ -193,35 +152,34 @@ export async function intervene(questId: QuestID, intervention: Intervention): P
 // =============================================================================
 
 export async function getStoreItems(agentId: AgentID): Promise<StoreItem[]> {
-	return fetchJson<StoreItem[]>(`/store?agent_id=${agentId}`);
+	return fetchJson<StoreItem[]>(`/game/store?agent_id=${agentId}`);
 }
 
 export async function getStoreItem(itemId: string): Promise<StoreItem> {
-	return fetchJson<StoreItem>(`/store/${itemId}`);
+	return fetchJson<StoreItem>(`/game/store/${itemId}`);
 }
 
 export async function getInventory(agentId: AgentID): Promise<AgentInventory> {
-	return fetchJson<AgentInventory>(`/agents/${agentId}/inventory`);
+	return fetchJson<AgentInventory>(`/game/agents/${agentId}/inventory`);
 }
 
 export async function purchase(request: PurchaseRequest): Promise<PurchaseResponse> {
-	return postJson<PurchaseResponse>('/store/purchase', request);
+	return postJson<PurchaseResponse>('/game/store/purchase', request);
 }
 
 export async function useConsumable(request: UseConsumableRequest): Promise<UseConsumableResponse> {
-	// Only send necessary fields - agent_id is already in the URL path
-	return postJson<UseConsumableResponse>(`/agents/${request.agent_id}/inventory/use`, {
+	return postJson<UseConsumableResponse>(`/game/agents/${request.agent_id}/inventory/use`, {
 		consumable_id: request.consumable_id,
 		quest_id: request.quest_id
 	});
 }
 
 export async function getActiveEffects(agentId: AgentID): Promise<ActiveEffect[]> {
-	return fetchJson<ActiveEffect[]>(`/agents/${agentId}/effects`);
+	return fetchJson<ActiveEffect[]>(`/game/agents/${agentId}/effects`);
 }
 
 // =============================================================================
-// HEALTH
+// HEALTH (system endpoint — no /game/ prefix)
 // =============================================================================
 
 export async function healthCheck(): Promise<{ status: string }> {
@@ -235,14 +193,11 @@ export async function healthCheck(): Promise<{ status: string }> {
 export const api = {
 	setApiUrl,
 	getWorldState,
-	getQuests,
 	getQuest,
 	createQuest,
-	getAgents,
 	getAgent,
 	recruitAgent,
 	retireAgent,
-	getBattles,
 	getBattle,
 	getTrajectory,
 	sendDMChat,

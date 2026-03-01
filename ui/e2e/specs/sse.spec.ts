@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/test-base';
 
-test.describe('WebSocket Connection', () => {
+test.describe('SSE Connection', () => {
 	test('dashboard shows connection status', async ({ dashboardPage }) => {
 		await dashboardPage.goto();
 
@@ -8,12 +8,12 @@ test.describe('WebSocket Connection', () => {
 		await expect(dashboardPage.connectionStatusBadge).toBeVisible();
 	});
 
-	test('connection status reflects WebSocket state', async ({ dashboardPage, wsHelper }) => {
+	test('connection status reflects SSE state', async ({ dashboardPage, sseHelper }) => {
 		await dashboardPage.goto();
 
-		// Wait for WebSocket to connect (may take a moment)
+		// Wait for SSE to connect (may take a moment)
 		try {
-			await wsHelper.waitForConnection(15000);
+			await sseHelper.waitForConnection(15000);
 			await dashboardPage.verifyConnectionStatus(true);
 		} catch {
 			// If connection fails, verify disconnected state
@@ -22,43 +22,42 @@ test.describe('WebSocket Connection', () => {
 	});
 });
 
-test.describe('WebSocket - Real-time Updates', () => {
-	test('event feed updates when events occur', async ({ dashboardPage, wsHelper, seedQuests }) => {
+test.describe('SSE - Real-time Updates', () => {
+	test('event feed updates when events occur', async ({ dashboardPage, sseHelper, seedQuests }) => {
 		await dashboardPage.goto();
 
 		// Get initial event count
-		const initialCount = await wsHelper.getEventCount();
+		const initialCount = await sseHelper.getEventCount();
 
-		// Create a new quest (should trigger an event)
+		// Create a new quest (should trigger an SSE event via KV change)
 		await seedQuests([
 			{
-				title: 'WebSocket Test Quest',
+				title: 'SSE Test Quest',
 				difficulty: 'easy',
 				base_xp: 50
 			}
 		]);
 
 		// Wait for the event to appear in the feed
-		// Note: This depends on WebSocket being connected and delivering events
 		try {
-			await wsHelper.waitForConnection(5000);
+			await sseHelper.waitForConnection(5000);
 			// Events may take a moment to propagate
 			await dashboardPage.page.waitForTimeout(1000);
 
 			// Check if event count increased or if we see the new event
-			const newCount = await wsHelper.getEventCount();
+			const newCount = await sseHelper.getEventCount();
 			// Count might have increased, or we might see the new event type
 		} catch {
-			// WebSocket not connected, skip real-time verification
+			// SSE not connected, skip real-time verification
 			test.skip();
 		}
 	});
 
-	test('stats update when data changes', async ({ dashboardPage, wsHelper, seedQuests }) => {
+	test('stats update when data changes', async ({ dashboardPage, sseHelper, seedQuests }) => {
 		await dashboardPage.goto();
 
 		try {
-			await wsHelper.waitForConnection(5000);
+			await sseHelper.waitForConnection(5000);
 		} catch {
 			test.skip();
 			return;
@@ -73,7 +72,7 @@ test.describe('WebSocket - Real-time Updates', () => {
 			{ title: 'Stat Update Test 2', difficulty: 'easy' }
 		]);
 
-		// Wait for stats to update
+		// Wait for stats to update via SSE
 		await dashboardPage.page.waitForTimeout(1000);
 
 		// Note: This test verifies the stat display exists and updates
@@ -83,38 +82,38 @@ test.describe('WebSocket - Real-time Updates', () => {
 	});
 });
 
-test.describe('WebSocket - Connection Recovery', () => {
-	test('connection status updates on disconnect', async ({ dashboardPage, wsHelper }) => {
+test.describe('SSE - Connection Recovery', () => {
+	test('connection status updates on disconnect', async ({ dashboardPage, sseHelper }) => {
 		await dashboardPage.goto();
 
 		try {
 			// Wait for initial connection
-			await wsHelper.waitForConnection(10000);
+			await sseHelper.waitForConnection(10000);
 
-			// Block WebSocket connections
-			await wsHelper.blockWebSocket();
+			// Block SSE connections
+			await sseHelper.blockSSE();
 
 			// Reload page to trigger reconnection attempt
 			await dashboardPage.page.reload();
 
 			// Should show disconnected (since we blocked the route)
-			await wsHelper.waitForDisconnection(5000);
+			await sseHelper.waitForDisconnection(5000);
 		} catch {
 			// Connection behavior varies by environment
 			test.skip();
 		} finally {
 			// Always unblock
-			await wsHelper.unblockWebSocket();
+			await sseHelper.unblockSSE();
 		}
 	});
 });
 
-test.describe('WebSocket - Event Types', () => {
-	test('quest events appear in feed', async ({ dashboardPage, wsHelper, seedQuests }) => {
+test.describe('SSE - Event Types', () => {
+	test('quest events appear in feed', async ({ dashboardPage, sseHelper, seedQuests }) => {
 		await dashboardPage.goto();
 
 		try {
-			await wsHelper.waitForConnection(5000);
+			await sseHelper.waitForConnection(5000);
 		} catch {
 			test.skip();
 			return;
@@ -133,27 +132,27 @@ test.describe('WebSocket - Event Types', () => {
 		await expect(dashboardPage.eventFilter).toHaveValue('quest');
 	});
 
-	test('filter controls event visibility', async ({ dashboardPage, wsHelper }) => {
+	test('filter controls event visibility', async ({ dashboardPage, sseHelper }) => {
 		await dashboardPage.goto();
 
 		// Get all events
 		await dashboardPage.filterEvents('all');
-		const allCount = await wsHelper.getEventCount();
+		const allCount = await sseHelper.getEventCount();
 
 		// Filter to specific category
 		await dashboardPage.filterEvents('agent');
-		const agentCount = await wsHelper.getEventCount();
+		const agentCount = await sseHelper.getEventCount();
 
 		// Agent-only count should be <= all events
 		expect(agentCount).toBeLessThanOrEqual(allCount);
 	});
 });
 
-test.describe('WebSocket - UI Responsiveness', () => {
+test.describe('SSE - UI Responsiveness', () => {
 	test('UI remains responsive during connection', async ({ dashboardPage }) => {
 		await dashboardPage.goto();
 
-		// Verify UI elements are interactive while WebSocket connects
+		// Verify UI elements are interactive while SSE connects
 		await expect(dashboardPage.heading).toBeVisible();
 		await expect(dashboardPage.statsGrid).toBeVisible();
 		await expect(dashboardPage.eventFilter).toBeEnabled();
@@ -170,7 +169,7 @@ test.describe('WebSocket - UI Responsiveness', () => {
 	}) => {
 		await dashboardPage.goto();
 
-		// Navigate without waiting for WebSocket
+		// Navigate without waiting for SSE
 		await dashboardPage.navQuests.click();
 		await expect(page).toHaveURL(/.*\/quests/);
 

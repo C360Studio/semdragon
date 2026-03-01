@@ -117,7 +117,7 @@ test.describe('Quest Board - With Seeded Data', () => {
 		// If quest was created successfully, it should appear
 		if (questIds.length > 0) {
 			// Wait for the quest to appear in the posted column
-			await questsPage.page.waitForTimeout(500); // Allow for WebSocket update
+			await questsPage.page.waitForTimeout(500); // Allow for SSE update
 
 			// Look for our quest
 			const postedQuests = questsPage.getQuestsInColumn('posted');

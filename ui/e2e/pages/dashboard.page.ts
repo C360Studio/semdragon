@@ -45,26 +45,26 @@ export class DashboardPage extends BasePage {
 
 		// Header
 		this.heading = page.locator('.dashboard-header h1');
-		this.connectionStatusBadge = page.locator('.connection-status');
+		this.connectionStatusBadge = page.locator('[data-testid="connection-status"]');
 
-		// Stats grid - locate by label text
-		this.statsGrid = page.locator('.stats-grid');
-		this.statActiveAgents = this.getStatCard('Active Agents');
-		this.statIdleAgents = this.getStatCard('Idle Agents');
-		this.statOpenQuests = this.getStatCard('Open Quests');
-		this.statActiveQuests = this.getStatCard('Active Quests');
-		this.statCompletionRate = this.getStatCard('Completion Rate');
-		this.statAvgQuality = this.getStatCard('Avg Quality');
-		this.statTotalXP = this.getStatCard('Total XP Earned');
-		this.statActiveParties = this.getStatCard('Active Parties');
-		this.statGuilds = this.getStatCard('Guilds');
-		this.statBattleWinRate = this.getStatCard('Battle Win Rate');
+		// Stats grid - use data-testid selectors
+		this.statsGrid = page.locator('[data-testid="dashboard-stats"]');
+		this.statActiveAgents = page.locator('[data-testid="stat-active-agents"]');
+		this.statIdleAgents = page.locator('[data-testid="stat-idle-agents"]');
+		this.statOpenQuests = page.locator('[data-testid="stat-open-quests"]');
+		this.statActiveQuests = page.locator('[data-testid="stat-active-quests"]');
+		this.statCompletionRate = page.locator('[data-testid="stat-completion-rate"]');
+		this.statAvgQuality = page.locator('[data-testid="stat-avg-quality"]');
+		this.statTotalXP = page.locator('[data-testid="stat-total-xp-earned"]');
+		this.statActiveParties = page.locator('[data-testid="stat-active-parties"]');
+		this.statGuilds = page.locator('[data-testid="stat-guilds"]');
+		this.statBattleWinRate = page.locator('[data-testid="stat-battle-win-rate"]');
 
 		// Sections
 		this.tierDistribution = page.locator('.dashboard-section').filter({
 			has: page.locator('#tier-heading')
 		});
-		this.tierBars = page.locator('.tier-bars .tier-row');
+		this.tierBars = page.locator('[data-testid^="tier-"]');
 		this.activeQuestsSection = page.locator('.dashboard-section').filter({
 			has: page.locator('#quests-heading')
 		});
@@ -78,23 +78,21 @@ export class DashboardPage extends BasePage {
 			has: page.locator('#parties-heading')
 		});
 
-		// Event feed
-		this.eventFeed = page.locator('.event-feed');
+		// Event feed - use data-testid selectors
+		this.eventFeed = page.locator('[data-testid="event-feed"]');
 		this.eventFilter = page.locator('.event-filter');
 		this.eventList = page.locator('.event-list');
-		this.eventItems = page.locator('.event-item');
+		this.eventItems = page.locator('[data-testid="event-item"]');
 
 		// Details panel
-		this.detailsPanel = page.locator('.details-panel');
+		this.detailsPanel = page.locator('[data-testid="details-panel"]');
 	}
 
 	/**
-	 * Get a stat card by its label.
+	 * Get a stat card by its data-testid.
 	 */
-	private getStatCard(label: string): Locator {
-		return this.page.locator('.stat-card').filter({
-			has: this.page.locator('.stat-label', { hasText: label })
-		});
+	private getStatCardByTestId(testId: string): Locator {
+		return this.page.locator(`[data-testid="${testId}"]`);
 	}
 
 	/**
@@ -114,10 +112,34 @@ export class DashboardPage extends BasePage {
 	}
 
 	/**
-	 * Get the value of a stat card.
+	 * Get the value of a stat card by label.
 	 */
 	async getStatValue(label: string): Promise<string> {
-		const card = this.getStatCard(label);
+		// Map label to data-testid
+		const testIdMap: Record<string, string> = {
+			'Active Agents': 'stat-active-agents',
+			'Idle Agents': 'stat-idle-agents',
+			'Open Quests': 'stat-open-quests',
+			'Active Quests': 'stat-active-quests',
+			'Completion Rate': 'stat-completion-rate',
+			'Avg Quality': 'stat-avg-quality',
+			'Total XP Earned': 'stat-total-xp-earned',
+			'Active Parties': 'stat-active-parties',
+			'Guilds': 'stat-guilds',
+			'Battle Win Rate': 'stat-battle-win-rate'
+		};
+
+		const testId = testIdMap[label];
+		if (testId) {
+			const card = this.getStatCardByTestId(testId);
+			const value = await card.locator('.stat-value').textContent();
+			return value ?? '';
+		}
+
+		// Fallback to label-based lookup
+		const card = this.page.locator('.stat-card').filter({
+			has: this.page.locator('.stat-label', { hasText: label })
+		});
 		const value = await card.locator('.stat-value').textContent();
 		return value ?? '';
 	}

@@ -8,11 +8,15 @@ import {
 	type Agent,
 	type Quest,
 	type BossBattle,
+	type Party,
+	type Guild,
 	type GameEvent,
 	type WorldStats,
 	agentId,
 	questId,
-	battleId
+	battleId,
+	partyId,
+	guildId
 } from '$types';
 
 // Default stats for tests
@@ -39,10 +43,10 @@ function createTestAgent(overrides: Partial<Agent> = {}): Agent {
 		xp_to_level: 500,
 		tier: 1,
 		status: 'idle',
-		skills: ['code_generation', 'code_review'],
 		equipment: [],
 		guilds: [],
 		death_count: 0,
+		skill_proficiencies: {} as Agent['skill_proficiencies'],
 		stats: {
 			quests_completed: 10,
 			quests_failed: 1,
@@ -126,10 +130,52 @@ function createTestBattle(overrides: Partial<BossBattle> = {}): BossBattle {
 	};
 }
 
+// Helper to create a test party
+function createTestParty(overrides: Partial<Party> = {}): Party {
+	return {
+		id: partyId('party-1'),
+		name: 'Alpha Squad',
+		status: 'active',
+		quest_id: questId('quest-1'),
+		lead: agentId('agent-1'),
+		members: [],
+		strategy: 'balanced',
+		sub_quest_map: {},
+		shared_context: [],
+		sub_results: {},
+		formed_at: new Date().toISOString(),
+		...overrides
+	};
+}
+
+// Helper to create a test guild
+function createTestGuild(overrides: Partial<Guild> = {}): Guild {
+	return {
+		id: guildId('guild-1'),
+		name: 'Data Wranglers',
+		description: 'A guild of data specialists',
+		status: 'active',
+		members: [],
+		max_members: 20,
+		min_level: 3,
+		founded: new Date().toISOString(),
+		founded_by: agentId('agent-1'),
+		culture: 'data-first',
+		reputation: 0.8,
+		quests_handled: 50,
+		success_rate: 0.9,
+		quests_failed: 5,
+		library: [],
+		shared_tools: [],
+		created_at: new Date().toISOString(),
+		...overrides
+	};
+}
+
 // Helper to create a test event
 function createTestEvent(overrides: Partial<GameEvent> = {}): GameEvent {
 	return {
-		type: 'quest.posted',
+		type: 'quest.lifecycle.posted',
 		timestamp: Date.now(),
 		session_id: 'session-1',
 		trajectory_id: 'traj-1',
@@ -151,12 +197,18 @@ describe('worldStore', () => {
 			expect(store.agents.size).toBe(0);
 			expect(store.quests.size).toBe(0);
 			expect(store.battles.size).toBe(0);
+			expect(store.parties.size).toBe(0);
+			expect(store.guilds.size).toBe(0);
 			expect(store.recentEvents).toHaveLength(0);
 		});
 
 		it('starts disconnected and loading', () => {
 			expect(store.connected).toBe(false);
 			expect(store.loading).toBe(true);
+		});
+
+		it('starts not synced', () => {
+			expect(store.synced).toBe(false);
 		});
 
 		it('has no selected entities', () => {
@@ -166,7 +218,231 @@ describe('worldStore', () => {
 		});
 	});
 
-	describe('setWorldState', () => {
+	describe('upsertAgent', () => {
+		it('adds a new agent', () => {
+			const agent = createTestAgent();
+			store.upsertAgent(agent);
+
+			expect(store.agents.size).toBe(1);
+			expect(store.agents.get(agent.id)).toEqual(agent);
+		});
+
+		it('updates an existing agent', () => {
+			const agent = createTestAgent();
+			store.upsertAgent(agent);
+
+			const updatedAgent = { ...agent, level: 6, xp: 200 };
+			store.upsertAgent(updatedAgent);
+
+			expect(store.agents.size).toBe(1);
+			expect(store.agents.get(agent.id)?.level).toBe(6);
+			expect(store.agents.get(agent.id)?.xp).toBe(200);
+		});
+	});
+
+	describe('upsertQuest', () => {
+		it('adds a new quest', () => {
+			const quest = createTestQuest();
+			store.upsertQuest(quest);
+
+			expect(store.quests.size).toBe(1);
+			expect(store.quests.get(quest.id)).toEqual(quest);
+		});
+
+		it('updates an existing quest', () => {
+			const quest = createTestQuest();
+			store.upsertQuest(quest);
+
+			const updatedQuest = { ...quest, status: 'claimed' as const, claimed_by: agentId('agent-1') };
+			store.upsertQuest(updatedQuest);
+
+			expect(store.quests.size).toBe(1);
+			expect(store.quests.get(quest.id)?.status).toBe('claimed');
+		});
+	});
+
+	describe('upsertBattle', () => {
+		it('adds a new battle', () => {
+			const battle = createTestBattle();
+			store.upsertBattle(battle);
+
+			expect(store.battles.size).toBe(1);
+			expect(store.battles.get(battle.id)).toEqual(battle);
+		});
+
+		it('updates an existing battle', () => {
+			const battle = createTestBattle();
+			store.upsertBattle(battle);
+
+			const updatedBattle = {
+				...battle,
+				status: 'victory' as const,
+				verdict: {
+					passed: true,
+					quality_score: 0.9,
+					xp_awarded: 150,
+					xp_penalty: 0,
+					level_change: 0,
+					feedback: 'Great work!'
+				}
+			};
+			store.upsertBattle(updatedBattle);
+
+			expect(store.battles.size).toBe(1);
+			expect(store.battles.get(battle.id)?.status).toBe('victory');
+			expect(store.battles.get(battle.id)?.verdict?.passed).toBe(true);
+		});
+	});
+
+	describe('upsertParty', () => {
+		it('adds a new party', () => {
+			const party = createTestParty();
+			store.upsertParty(party);
+
+			expect(store.parties.size).toBe(1);
+			expect(store.parties.get(party.id)).toEqual(party);
+		});
+
+		it('updates an existing party', () => {
+			const party = createTestParty();
+			store.upsertParty(party);
+
+			const updated = { ...party, status: 'disbanded' as const };
+			store.upsertParty(updated);
+
+			expect(store.parties.size).toBe(1);
+			expect(store.parties.get(party.id)?.status).toBe('disbanded');
+		});
+	});
+
+	describe('upsertGuild', () => {
+		it('adds a new guild', () => {
+			const guild = createTestGuild();
+			store.upsertGuild(guild);
+
+			expect(store.guilds.size).toBe(1);
+			expect(store.guilds.get(guild.id)).toEqual(guild);
+		});
+
+		it('updates an existing guild', () => {
+			const guild = createTestGuild();
+			store.upsertGuild(guild);
+
+			const updated = { ...guild, reputation: 0.95 };
+			store.upsertGuild(updated);
+
+			expect(store.guilds.size).toBe(1);
+			expect(store.guilds.get(guild.id)?.reputation).toBe(0.95);
+		});
+	});
+
+	describe('removeAgent', () => {
+		it('removes an agent by ID', () => {
+			store.upsertAgent(createTestAgent({ id: agentId('agent-1') }));
+			store.upsertAgent(createTestAgent({ id: agentId('agent-2') }));
+
+			store.removeAgent(agentId('agent-1'));
+
+			expect(store.agents.size).toBe(1);
+			expect(store.agents.has(agentId('agent-1'))).toBe(false);
+			expect(store.agents.has(agentId('agent-2'))).toBe(true);
+		});
+
+		it('does nothing when removing non-existent agent', () => {
+			store.removeAgent(agentId('agent-nonexistent'));
+			expect(store.agents.size).toBe(0);
+		});
+	});
+
+	describe('removeQuest', () => {
+		it('removes a quest by ID', () => {
+			store.upsertQuest(createTestQuest({ id: questId('quest-1') }));
+			store.removeQuest(questId('quest-1'));
+
+			expect(store.quests.size).toBe(0);
+		});
+	});
+
+	describe('removeBattle', () => {
+		it('removes a battle by ID', () => {
+			store.upsertBattle(createTestBattle({ id: battleId('battle-1') }));
+			store.removeBattle(battleId('battle-1'));
+
+			expect(store.battles.size).toBe(0);
+		});
+	});
+
+	describe('removeParty', () => {
+		it('removes a party by ID', () => {
+			store.upsertParty(createTestParty({ id: partyId('party-1') }));
+			store.removeParty(partyId('party-1'));
+
+			expect(store.parties.size).toBe(0);
+		});
+	});
+
+	describe('removeGuild', () => {
+		it('removes a guild by ID', () => {
+			store.upsertGuild(createTestGuild({ id: guildId('guild-1') }));
+			store.removeGuild(guildId('guild-1'));
+
+			expect(store.guilds.size).toBe(0);
+		});
+	});
+
+	describe('synced state', () => {
+		it('sets synced state', () => {
+			expect(store.synced).toBe(false);
+
+			store.setSynced(true);
+			expect(store.synced).toBe(true);
+
+			store.setSynced(false);
+			expect(store.synced).toBe(false);
+		});
+
+		it('reset clears synced state', () => {
+			store.setSynced(true);
+			store.reset();
+			expect(store.synced).toBe(false);
+		});
+	});
+
+	describe('hydrateFromSnapshot', () => {
+		it('populates all entity maps from snapshot', () => {
+			const agents = [createTestAgent({ id: agentId('agent-1') })];
+			const quests = [createTestQuest({ id: questId('quest-1') })];
+			const parties = [createTestParty({ id: partyId('party-1') })];
+			const guilds = [createTestGuild({ id: guildId('guild-1') })];
+			const battles = [createTestBattle({ id: battleId('battle-1') })];
+
+			store.hydrateFromSnapshot({ agents, quests, parties, guilds, battles });
+
+			expect(store.agents.size).toBe(1);
+			expect(store.quests.size).toBe(1);
+			expect(store.parties.size).toBe(1);
+			expect(store.guilds.size).toBe(1);
+			expect(store.battles.size).toBe(1);
+		});
+
+		it('merges with existing data (does not clear)', () => {
+			store.upsertAgent(createTestAgent({ id: agentId('agent-existing') }));
+
+			store.hydrateFromSnapshot({
+				agents: [createTestAgent({ id: agentId('agent-new') })],
+				quests: [],
+				parties: [],
+				guilds: [],
+				battles: []
+			});
+
+			expect(store.agents.size).toBe(2);
+			expect(store.agents.has(agentId('agent-existing'))).toBe(true);
+			expect(store.agents.has(agentId('agent-new'))).toBe(true);
+		});
+	});
+
+	describe('setWorldState (legacy)', () => {
 		it('replaces all agents, quests, and battles', () => {
 			const agents = [createTestAgent({ id: agentId('agent-1') })];
 			const quests = [createTestQuest({ id: questId('quest-1') })];
@@ -188,7 +464,6 @@ describe('worldStore', () => {
 		});
 
 		it('clears previous state when setting new state', () => {
-			// Set initial state
 			store.setWorldState({
 				agents: [createTestAgent({ id: agentId('agent-1') })],
 				quests: [],
@@ -198,7 +473,6 @@ describe('worldStore', () => {
 				stats: defaultStats
 			});
 
-			// Set new state with different agent
 			store.setWorldState({
 				agents: [createTestAgent({ id: agentId('agent-2'), name: 'New Agent' })],
 				quests: [],
@@ -214,93 +488,32 @@ describe('worldStore', () => {
 		});
 	});
 
-	describe('updateAgent', () => {
-		it('adds a new agent', () => {
+	describe('legacy update aliases', () => {
+		it('updateAgent works as upsert', () => {
 			const agent = createTestAgent();
 			store.updateAgent(agent);
-
 			expect(store.agents.size).toBe(1);
 			expect(store.agents.get(agent.id)).toEqual(agent);
 		});
 
-		it('updates an existing agent', () => {
-			const agent = createTestAgent();
-			store.updateAgent(agent);
-
-			const updatedAgent = { ...agent, level: 6, xp: 200 };
-			store.updateAgent(updatedAgent);
-
-			expect(store.agents.size).toBe(1);
-			expect(store.agents.get(agent.id)?.level).toBe(6);
-			expect(store.agents.get(agent.id)?.xp).toBe(200);
-		});
-	});
-
-	describe('updateQuest', () => {
-		it('adds a new quest', () => {
+		it('updateQuest works as upsert', () => {
 			const quest = createTestQuest();
 			store.updateQuest(quest);
-
 			expect(store.quests.size).toBe(1);
-			expect(store.quests.get(quest.id)).toEqual(quest);
 		});
 
-		it('updates an existing quest', () => {
-			const quest = createTestQuest();
-			store.updateQuest(quest);
-
-			const updatedQuest = { ...quest, status: 'claimed' as const, claimed_by: agentId('agent-1') };
-			store.updateQuest(updatedQuest);
-
-			expect(store.quests.size).toBe(1);
-			expect(store.quests.get(quest.id)?.status).toBe('claimed');
-			expect(store.quests.get(quest.id)?.claimed_by).toBe('agent-1');
-		});
-	});
-
-	describe('updateBattle', () => {
-		it('adds a new battle', () => {
+		it('updateBattle works as upsert', () => {
 			const battle = createTestBattle();
 			store.updateBattle(battle);
-
 			expect(store.battles.size).toBe(1);
-			expect(store.battles.get(battle.id)).toEqual(battle);
-		});
-
-		it('updates an existing battle', () => {
-			const battle = createTestBattle();
-			store.updateBattle(battle);
-
-			const updatedBattle = {
-				...battle,
-				status: 'victory' as const,
-				verdict: {
-					passed: true,
-					quality_score: 0.9,
-					xp_awarded: 150,
-					xp_penalty: 0,
-					level_change: 0,
-					feedback: 'Great work!'
-				}
-			};
-			store.updateBattle(updatedBattle);
-
-			expect(store.battles.size).toBe(1);
-			expect(store.battles.get(battle.id)?.status).toBe('victory');
-			expect(store.battles.get(battle.id)?.verdict?.passed).toBe(true);
 		});
 	});
 
 	describe('selection', () => {
 		beforeEach(() => {
-			store.setWorldState({
-				agents: [createTestAgent({ id: agentId('agent-1') })],
-				quests: [createTestQuest({ id: questId('quest-1') })],
-				parties: [],
-				guilds: [],
-				battles: [createTestBattle({ id: battleId('battle-1') })],
-				stats: defaultStats
-			});
+			store.upsertAgent(createTestAgent({ id: agentId('agent-1') }));
+			store.upsertQuest(createTestQuest({ id: questId('quest-1') }));
+			store.upsertBattle(createTestBattle({ id: battleId('battle-1') }));
 		});
 
 		it('selects an agent', () => {
@@ -340,14 +553,13 @@ describe('worldStore', () => {
 
 			store.addEvent(event);
 			expect(store.recentEvents).toHaveLength(1);
-			expect(store.recentEvents[0].type).toBe('quest.posted');
+			expect(store.recentEvents[0].type).toBe('quest.lifecycle.posted');
 		});
 
 		it('limits the event stream to 100 events', () => {
-			// Add 105 events
 			for (let i = 0; i < 105; i++) {
 				store.addEvent(createTestEvent({
-					type: 'quest.claimed',
+					type: 'quest.lifecycle.claimed',
 					timestamp: Date.now() + i
 				}));
 			}
@@ -374,15 +586,40 @@ describe('worldStore', () => {
 		});
 	});
 
+	describe('computed stats', () => {
+		it('computes agent stats from entity maps', () => {
+			store.upsertAgent(createTestAgent({ id: agentId('a1'), status: 'idle' }));
+			store.upsertAgent(createTestAgent({ id: agentId('a2'), status: 'on_quest' }));
+			store.upsertAgent(createTestAgent({ id: agentId('a3'), status: 'retired' }));
+
+			const stats = store.stats;
+			expect(stats.idle_agents).toBe(1);
+			expect(stats.active_agents).toBe(1);
+			expect(stats.retired_agents).toBe(1);
+		});
+
+		it('computes quest stats', () => {
+			store.upsertQuest(createTestQuest({ id: questId('q1'), status: 'posted' }));
+			store.upsertQuest(createTestQuest({ id: questId('q2'), status: 'in_progress' }));
+			store.upsertQuest(createTestQuest({ id: questId('q3'), status: 'completed' }));
+			store.upsertQuest(createTestQuest({ id: questId('q4'), status: 'failed' }));
+
+			const stats = store.stats;
+			expect(stats.open_quests).toBe(1);
+			expect(stats.active_quests).toBe(1);
+			expect(stats.completion_rate).toBe(0.5); // 1 completed / 2 (completed + failed)
+		});
+	});
+
 	describe('dashboard derived states', () => {
 		describe('tierDistribution', () => {
 			it('calculates tier distribution with correct percentages', () => {
 				store.setWorldState({
 					agents: [
-						createTestAgent({ id: agentId('agent-1'), level: 3, tier: 0 }), // Apprentice
-						createTestAgent({ id: agentId('agent-2'), level: 7, tier: 1 }), // Journeyman
-						createTestAgent({ id: agentId('agent-3'), level: 8, tier: 1 }), // Journeyman
-						createTestAgent({ id: agentId('agent-4'), level: 12, tier: 2 }) // Expert
+						createTestAgent({ id: agentId('agent-1'), level: 3, tier: 0 }),
+						createTestAgent({ id: agentId('agent-2'), level: 7, tier: 1 }),
+						createTestAgent({ id: agentId('agent-3'), level: 8, tier: 1 }),
+						createTestAgent({ id: agentId('agent-4'), level: 12, tier: 2 })
 					],
 					quests: [],
 					parties: [],
@@ -393,26 +630,17 @@ describe('worldStore', () => {
 
 				const distribution = store.tierDistribution;
 				expect(distribution).toHaveLength(5);
-				expect(distribution[0].count).toBe(1); // Apprentice: 1
+				expect(distribution[0].count).toBe(1);
 				expect(distribution[0].name).toBe('Apprentice');
-				expect(distribution[1].count).toBe(2); // Journeyman: 2
+				expect(distribution[1].count).toBe(2);
 				expect(distribution[1].name).toBe('Journeyman');
-				expect(distribution[2].count).toBe(1); // Expert: 1
+				expect(distribution[2].count).toBe(1);
 				expect(distribution[0].percentage).toBe(25);
 				expect(distribution[1].percentage).toBe(50);
 				expect(distribution[2].percentage).toBe(25);
 			});
 
 			it('handles empty agent list without division by zero', () => {
-				store.setWorldState({
-					agents: [],
-					quests: [],
-					parties: [],
-					guilds: [],
-					battles: [],
-					stats: defaultStats
-				});
-
 				const distribution = store.tierDistribution;
 				expect(distribution).toHaveLength(5);
 				distribution.forEach((tier) => {
@@ -422,102 +650,50 @@ describe('worldStore', () => {
 			});
 
 			it('includes all five tiers even when some are empty', () => {
-				store.setWorldState({
-					agents: [createTestAgent({ id: agentId('agent-1'), level: 19, tier: 4 })], // Grandmaster only
-					quests: [],
-					parties: [],
-					guilds: [],
-					battles: [],
-					stats: defaultStats
-				});
+				store.upsertAgent(createTestAgent({ id: agentId('agent-1'), level: 19, tier: 4 }));
 
 				const distribution = store.tierDistribution;
 				expect(distribution).toHaveLength(5);
 				expect(distribution[4].name).toBe('Grandmaster');
 				expect(distribution[4].count).toBe(1);
 				expect(distribution[4].percentage).toBe(100);
-				// Other tiers should be 0
 				expect(distribution[0].count).toBe(0);
-				expect(distribution[1].count).toBe(0);
-				expect(distribution[2].count).toBe(0);
-				expect(distribution[3].count).toBe(0);
 			});
 		});
 
 		describe('totalXpEarned', () => {
 			it('sums total XP across all agents', () => {
-				store.setWorldState({
-					agents: [
-						createTestAgent({
-							id: agentId('agent-1'),
-							stats: {
-								quests_completed: 10,
-								quests_failed: 1,
-								bosses_defeated: 5,
-								bosses_failed: 0,
-								total_xp_earned: 1000,
-								total_xp_spent: 0,
-								avg_quality_score: 0.85,
-								avg_efficiency: 0.9,
-								parties_led: 2,
-								quests_decomposed: 3
-							}
-						}),
-						createTestAgent({
-							id: agentId('agent-2'),
-							stats: {
-								quests_completed: 20,
-								quests_failed: 2,
-								bosses_defeated: 10,
-								bosses_failed: 1,
-								total_xp_earned: 2500,
-								total_xp_spent: 100,
-								avg_quality_score: 0.9,
-								avg_efficiency: 0.85,
-								parties_led: 5,
-								quests_decomposed: 7
-							}
-						})
-					],
-					quests: [],
-					parties: [],
-					guilds: [],
-					battles: [],
-					stats: defaultStats
-				});
+				store.upsertAgent(createTestAgent({
+					id: agentId('agent-1'),
+					stats: {
+						quests_completed: 10, quests_failed: 1, bosses_defeated: 5,
+						bosses_failed: 0, total_xp_earned: 1000, total_xp_spent: 0,
+						avg_quality_score: 0.85, avg_efficiency: 0.9, parties_led: 2, quests_decomposed: 3
+					}
+				}));
+				store.upsertAgent(createTestAgent({
+					id: agentId('agent-2'),
+					stats: {
+						quests_completed: 20, quests_failed: 2, bosses_defeated: 10,
+						bosses_failed: 1, total_xp_earned: 2500, total_xp_spent: 100,
+						avg_quality_score: 0.9, avg_efficiency: 0.85, parties_led: 5, quests_decomposed: 7
+					}
+				}));
 
 				expect(store.totalXpEarned).toBe(3500);
 			});
 
 			it('returns 0 for empty agent list', () => {
-				store.setWorldState({
-					agents: [],
-					quests: [],
-					parties: [],
-					guilds: [],
-					battles: [],
-					stats: defaultStats
-				});
-
 				expect(store.totalXpEarned).toBe(0);
 			});
 		});
 
 		describe('battleStats', () => {
 			it('calculates win rate correctly', () => {
-				store.setWorldState({
-					agents: [],
-					quests: [],
-					parties: [],
-					guilds: [],
-					battles: [
-						createTestBattle({ id: battleId('b1'), status: 'victory' }),
-						createTestBattle({ id: battleId('b2'), status: 'victory' }),
-						createTestBattle({ id: battleId('b3'), status: 'victory' }),
-						createTestBattle({ id: battleId('b4'), status: 'defeat' })
-					],
-					stats: defaultStats
-				});
+				store.upsertBattle(createTestBattle({ id: battleId('b1'), status: 'victory' }));
+				store.upsertBattle(createTestBattle({ id: battleId('b2'), status: 'victory' }));
+				store.upsertBattle(createTestBattle({ id: battleId('b3'), status: 'victory' }));
+				store.upsertBattle(createTestBattle({ id: battleId('b4'), status: 'defeat' }));
 
 				const stats = store.battleStats;
 				expect(stats.won).toBe(3);
@@ -526,15 +702,6 @@ describe('worldStore', () => {
 			});
 
 			it('handles no battles without division by zero', () => {
-				store.setWorldState({
-					agents: [],
-					quests: [],
-					parties: [],
-					guilds: [],
-					battles: [],
-					stats: defaultStats
-				});
-
 				const stats = store.battleStats;
 				expect(stats.won).toBe(0);
 				expect(stats.lost).toBe(0);
@@ -542,18 +709,9 @@ describe('worldStore', () => {
 			});
 
 			it('ignores active and retreat battles when calculating win rate', () => {
-				store.setWorldState({
-					agents: [],
-					quests: [],
-					parties: [],
-					guilds: [],
-					battles: [
-						createTestBattle({ id: battleId('b1'), status: 'active' }),
-						createTestBattle({ id: battleId('b2'), status: 'retreat' }),
-						createTestBattle({ id: battleId('b3'), status: 'victory' })
-					],
-					stats: defaultStats
-				});
+				store.upsertBattle(createTestBattle({ id: battleId('b1'), status: 'active' }));
+				store.upsertBattle(createTestBattle({ id: battleId('b2'), status: 'retreat' }));
+				store.upsertBattle(createTestBattle({ id: battleId('b3'), status: 'victory' }));
 
 				const stats = store.battleStats;
 				expect(stats.won).toBe(1);
@@ -562,17 +720,8 @@ describe('worldStore', () => {
 			});
 
 			it('calculates 50% win rate correctly', () => {
-				store.setWorldState({
-					agents: [],
-					quests: [],
-					parties: [],
-					guilds: [],
-					battles: [
-						createTestBattle({ id: battleId('b1'), status: 'victory' }),
-						createTestBattle({ id: battleId('b2'), status: 'defeat' })
-					],
-					stats: defaultStats
-				});
+				store.upsertBattle(createTestBattle({ id: battleId('b1'), status: 'victory' }));
+				store.upsertBattle(createTestBattle({ id: battleId('b2'), status: 'defeat' }));
 
 				const stats = store.battleStats;
 				expect(stats.won).toBe(1);
@@ -584,57 +733,67 @@ describe('worldStore', () => {
 
 	describe('derived lists', () => {
 		it('provides sorted agent list', () => {
-			store.setWorldState({
-				agents: [
-					createTestAgent({ id: agentId('agent-3'), level: 10 }),
-					createTestAgent({ id: agentId('agent-1'), level: 5 }),
-					createTestAgent({ id: agentId('agent-2'), level: 15 })
-				],
-				quests: [],
-				parties: [],
-				guilds: [],
-				battles: [],
-				stats: defaultStats
-			});
+			store.upsertAgent(createTestAgent({ id: agentId('agent-3'), level: 10 }));
+			store.upsertAgent(createTestAgent({ id: agentId('agent-1'), level: 5 }));
+			store.upsertAgent(createTestAgent({ id: agentId('agent-2'), level: 15 }));
 
 			const list = store.agentList;
 			expect(list).toHaveLength(3);
-			// List should be sorted by level descending
 			expect(list[0].level).toBe(15);
 			expect(list[1].level).toBe(10);
 			expect(list[2].level).toBe(5);
 		});
 
 		it('provides quest list', () => {
-			store.setWorldState({
-				agents: [],
-				quests: [
-					createTestQuest({ id: questId('quest-1') }),
-					createTestQuest({ id: questId('quest-2') })
-				],
-				parties: [],
-				guilds: [],
-				battles: [],
-				stats: defaultStats
-			});
+			store.upsertQuest(createTestQuest({ id: questId('quest-1') }));
+			store.upsertQuest(createTestQuest({ id: questId('quest-2') }));
 
 			expect(store.questList).toHaveLength(2);
 		});
 
 		it('provides battle list', () => {
-			store.setWorldState({
-				agents: [],
-				quests: [],
-				parties: [],
-				guilds: [],
-				battles: [
-					createTestBattle({ id: battleId('battle-1') }),
-					createTestBattle({ id: battleId('battle-2') })
-				],
-				stats: defaultStats
-			});
+			store.upsertBattle(createTestBattle({ id: battleId('battle-1') }));
+			store.upsertBattle(createTestBattle({ id: battleId('battle-2') }));
 
 			expect(store.battleList).toHaveLength(2);
+		});
+
+		it('provides party list', () => {
+			store.upsertParty(createTestParty({ id: partyId('party-1') }));
+			store.upsertParty(createTestParty({ id: partyId('party-2') }));
+
+			expect(store.partyList).toHaveLength(2);
+		});
+
+		it('provides guild list', () => {
+			store.upsertGuild(createTestGuild({ id: guildId('guild-1') }));
+			store.upsertGuild(createTestGuild({ id: guildId('guild-2') }));
+
+			expect(store.guildList).toHaveLength(2);
+		});
+	});
+
+	describe('reset', () => {
+		it('clears all state', () => {
+			store.upsertAgent(createTestAgent());
+			store.upsertQuest(createTestQuest());
+			store.upsertBattle(createTestBattle());
+			store.upsertParty(createTestParty());
+			store.upsertGuild(createTestGuild());
+			store.addEvent(createTestEvent());
+			store.setSynced(true);
+			store.setError('some error');
+
+			store.reset();
+
+			expect(store.agents.size).toBe(0);
+			expect(store.quests.size).toBe(0);
+			expect(store.battles.size).toBe(0);
+			expect(store.parties.size).toBe(0);
+			expect(store.guilds.size).toBe(0);
+			expect(store.recentEvents).toHaveLength(0);
+			expect(store.synced).toBe(false);
+			expect(store.error).toBeNull();
 		});
 	});
 });

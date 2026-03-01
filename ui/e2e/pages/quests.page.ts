@@ -41,11 +41,11 @@ export class QuestsPage extends BasePage {
 		this.kanbanBoard = page.locator('.kanban-board');
 		this.kanbanColumns = page.locator('.kanban-column');
 
-		// Quest cards
-		this.questCards = page.locator('.quest-card');
+		// Quest cards - use data-testid
+		this.questCards = page.locator('[data-testid="quest-card"]');
 
-		// Details panel
-		this.detailsPanel = page.locator('.details-panel');
+		// Details panel - use data-testid
+		this.detailsPanel = page.locator('[data-testid="details-panel"]');
 		this.detailsTitle = page.locator('.detail-section h3');
 		this.detailsDescription = page.locator('.quest-description');
 
@@ -70,10 +70,10 @@ export class QuestsPage extends BasePage {
 	}
 
 	/**
-	 * Get a kanban column by status.
+	 * Get a kanban column by status using data-testid.
 	 */
 	getColumn(status: QuestStatus): Locator {
-		return this.page.locator(`.kanban-column[data-status="${status}"]`);
+		return this.page.locator(`[data-testid="quest-column-${status}"]`);
 	}
 
 	/**
@@ -94,7 +94,7 @@ export class QuestsPage extends BasePage {
 	 * Get all quest cards in a column.
 	 */
 	getQuestsInColumn(status: QuestStatus): Locator {
-		return this.getColumn(status).locator('.quest-card');
+		return this.getColumn(status).locator('[data-testid="quest-card"]');
 	}
 
 	/**
@@ -124,8 +124,8 @@ export class QuestsPage extends BasePage {
 	 * Select a quest by its title.
 	 */
 	async selectQuestByTitle(title: string): Promise<void> {
-		const questCard = this.page.locator('.quest-card').filter({
-			has: this.page.locator('.quest-title', { hasText: title })
+		const questCard = this.page.locator('[data-testid="quest-card"]').filter({
+			has: this.page.locator('[data-testid="quest-title"]', { hasText: title })
 		});
 		await questCard.click();
 	}
@@ -155,7 +155,7 @@ export class QuestsPage extends BasePage {
 		xp: string;
 	}> {
 		const card = this.questCards.nth(index);
-		const title = (await card.locator('.quest-title').textContent()) ?? '';
+		const title = (await card.locator('[data-testid="quest-title"]').textContent()) ?? '';
 		const difficulty = (await card.locator('.difficulty-badge').textContent()) ?? '';
 		const xp = (await card.locator('.xp-badge').textContent()) ?? '';
 

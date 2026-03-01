@@ -83,6 +83,7 @@
 						aria-label="Battle {battle.id.slice(0, 8)}, {battle.status}, {ReviewLevelNames[battle.level]} review"
 						aria-pressed={worldStore.selectedBattleId === battle.id}
 						onclick={() => selectBattle(battle)}
+						data-testid="battle-card"
 					>
 						<div class="battle-header">
 							<span class="battle-id">Battle #{battle.id.slice(0, 8)}</span>
@@ -135,7 +136,7 @@
 	{/snippet}
 
 	{#snippet rightPanel()}
-		<div class="details-panel">
+		<div class="details-panel" data-testid="details-panel">
 			<header class="panel-header">
 				<h2>Battle Details</h2>
 			</header>

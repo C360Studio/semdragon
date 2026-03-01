@@ -56,7 +56,7 @@
 				<section class="detail-card">
 					<h2>Skills</h2>
 					<div class="skills-grid">
-						{#each agent.skills as skill}
+						{#each Object.keys(agent.skill_proficiencies || {}) as skill}
 							<span class="skill-tag">{skill.replace('_', ' ')}</span>
 						{:else}
 							<span class="empty-text">No skills</span>

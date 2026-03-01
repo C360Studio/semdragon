@@ -41,16 +41,16 @@ export class AgentsPage extends BasePage {
 		this.heading = page.locator('.roster-header h1');
 		this.agentCount = page.locator('.agent-count');
 
-		// Filters
+		// Filters - use data-testid
 		this.filtersPanel = page.locator('.filters-panel');
-		this.statusFilter = page.locator('#agent-status-filter');
+		this.statusFilter = page.locator('[data-testid="agent-status-filter"]');
 
-		// Agent grid
+		// Agent grid - use data-testid
 		this.agentGrid = page.locator('.agent-grid');
-		this.agentCards = page.locator('.agent-card');
+		this.agentCards = page.locator('[data-testid="agent-card"]');
 
-		// Details panel
-		this.detailsPanel = page.locator('.details-panel');
+		// Details panel - use data-testid
+		this.detailsPanel = page.locator('[data-testid="details-panel"]');
 		this.detailsName = page.locator('.agent-profile h3');
 		this.detailsTierBadge = page.locator('.agent-profile .tier-badge');
 		this.detailsLevel = page.locator('.level-number');
@@ -113,8 +113,8 @@ export class AgentsPage extends BasePage {
 	 * Get an agent card by name.
 	 */
 	getAgentCardByName(name: string): Locator {
-		return this.page.locator('.agent-card').filter({
-			has: this.page.locator('.agent-name', { hasText: name })
+		return this.page.locator('[data-testid="agent-card"]').filter({
+			has: this.page.locator('[data-testid="agent-name"]', { hasText: name })
 		});
 	}
 
@@ -159,9 +159,9 @@ export class AgentsPage extends BasePage {
 		status: string;
 	}> {
 		const card = this.agentCards.nth(index);
-		const name = (await card.locator('.agent-name').textContent()) ?? '';
+		const name = (await card.locator('[data-testid="agent-name"]').textContent()) ?? '';
 		const level = (await card.locator('.agent-level').textContent()) ?? '';
-		const tier = (await card.locator('.tier-badge').textContent()) ?? '';
+		const tier = (await card.locator('[data-testid="tier-badge"]').textContent()) ?? '';
 		const status = (await card.locator('.agent-status').textContent()) ?? '';
 
 		return {
@@ -180,7 +180,7 @@ export class AgentsPage extends BasePage {
 		const count = await this.agentCards.count();
 
 		for (let i = 0; i < count; i++) {
-			const name = await this.agentCards.nth(i).locator('.agent-name').textContent();
+			const name = await this.agentCards.nth(i).locator('[data-testid="agent-name"]').textContent();
 			if (name) {
 				names.push(name.trim());
 			}
@@ -231,7 +231,7 @@ export class AgentsPage extends BasePage {
 		const result: Locator[] = [];
 
 		for (const card of cards) {
-			const tier = await card.locator('.tier-badge').textContent();
+			const tier = await card.locator('[data-testid="tier-badge"]').textContent();
 			if (tier?.toLowerCase().includes(tierName.toLowerCase())) {
 				result.push(card);
 			}

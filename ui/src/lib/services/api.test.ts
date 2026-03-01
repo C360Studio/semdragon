@@ -3,8 +3,29 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { api, setApiUrl, getQuests, getAgents, getBattles, healthCheck } from './api';
+import {
+	api,
+	setApiUrl,
+	healthCheck,
+	getQuest,
+	createQuest,
+	getAgent,
+	recruitAgent,
+	retireAgent,
+	getBattle,
+	getTrajectory,
+	sendDMChat,
+	intervene,
+	getStoreItems,
+	getStoreItem,
+	getInventory,
+	purchase,
+	useConsumable,
+	getActiveEffects,
+	getWorldState
+} from './api';
 import type { Quest, Agent, BossBattle, AgentStats, QuestConstraints, AgentConfig } from '$types';
+import { agentId, questId, battleId } from '$types';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -108,140 +129,334 @@ describe('API Service', () => {
 		});
 	});
 
-	describe('getAgents', () => {
-		it('returns list of agents', async () => {
-			const mockAgents: Agent[] = [
-				{
-					id: 'agent-1' as Agent['id'],
-					name: 'Test Agent',
-					level: 5,
-					xp: 100,
-					xp_to_level: 500,
-					tier: 1,
-					status: 'idle',
-					skills: ['code_generation'],
-					equipment: [],
-					guilds: [],
-					death_count: 0,
-					stats: createAgentStats(),
-					config: createAgentConfig(),
-					created_at: '2024-01-01T00:00:00Z',
-					updated_at: '2024-01-01T00:00:00Z'
-				}
-			];
-
+	describe('getWorldState (fallback)', () => {
+		it('fetches world state from /game/world', async () => {
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
-				json: async () => mockAgents
+				json: async () => ({
+					agents: [],
+					quests: [],
+					parties: [],
+					guilds: [],
+					battles: [],
+					stats: {}
+				})
 			});
 
-			const result = await getAgents();
+			await getWorldState();
 
-			expect(result).toEqual(mockAgents);
 			expect(mockFetch).toHaveBeenCalledWith(
-				'http://test-api.local/agents',
+				'http://test-api.local/game/world',
 				expect.any(Object)
 			);
-		});
-
-		it('throws on network error', async () => {
-			mockFetch.mockRejectedValueOnce(new Error('Network error'));
-
-			await expect(getAgents()).rejects.toThrow('Network error');
 		});
 	});
 
-	describe('getQuests', () => {
-		it('returns list of quests without filters', async () => {
-			const mockQuests: Quest[] = [
-				{
-					id: 'quest-1' as Quest['id'],
-					title: 'Test Quest',
-					description: 'A test quest',
-					status: 'posted',
-					difficulty: 2,
-					base_xp: 100,
-					bonus_xp: 0,
-					guild_xp: 0,
-					required_skills: [],
-					required_tools: [],
-					min_tier: 0,
-					max_attempts: 3,
-					attempts: 0,
-					party_required: false,
-					min_party_size: 1,
-					sub_quests: [],
-					escalated: false,
-					input: null,
-					constraints: createQuestConstraints(),
-					posted_at: '2024-01-01T00:00:00Z',
-					trajectory_id: 'traj-1'
-				}
-			];
+	describe('getQuest', () => {
+		it('fetches a quest by ID from /game/quests/{id}', async () => {
+			const mockQuest: Quest = {
+				id: questId('quest-1'),
+				title: 'Test Quest',
+				description: 'A test quest',
+				status: 'posted',
+				difficulty: 2,
+				base_xp: 100,
+				bonus_xp: 0,
+				guild_xp: 0,
+				required_skills: [],
+				required_tools: [],
+				min_tier: 0,
+				max_attempts: 3,
+				attempts: 0,
+				party_required: false,
+				min_party_size: 1,
+				sub_quests: [],
+				escalated: false,
+				input: null,
+				constraints: createQuestConstraints(),
+				posted_at: '2024-01-01T00:00:00Z',
+				trajectory_id: 'traj-1'
+			};
 
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
-				json: async () => mockQuests
+				json: async () => mockQuest
 			});
 
-			const result = await getQuests();
+			const result = await getQuest(questId('quest-1'));
 
-			expect(result).toEqual(mockQuests);
+			expect(result).toEqual(mockQuest);
 			expect(mockFetch).toHaveBeenCalledWith(
-				'http://test-api.local/quests',
+				'http://test-api.local/game/quests/quest-1',
+				expect.any(Object)
+			);
+		});
+	});
+
+	describe('createQuest', () => {
+		it('posts a new quest to /game/quests', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'quest-new', title: 'New Quest' })
+			});
+
+			await createQuest('Build a dashboard');
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/quests',
+				expect.objectContaining({
+					method: 'POST',
+					body: JSON.stringify({ objective: 'Build a dashboard' })
+				})
+			);
+		});
+
+		it('includes hints when provided', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'quest-new' })
+			});
+
+			await createQuest('Build a dashboard', {
+				suggested_difficulty: 3,
+				require_human_review: true,
+				budget: 100
+			});
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/quests',
+				expect.objectContaining({
+					body: JSON.stringify({
+						objective: 'Build a dashboard',
+						hints: {
+							suggested_difficulty: 3,
+							require_human_review: true,
+							budget: 100
+						}
+					})
+				})
+			);
+		});
+	});
+
+	describe('getAgent', () => {
+		it('fetches an agent by ID from /game/agents/{id}', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'agent-1', name: 'Test Agent' })
+			});
+
+			await getAgent(agentId('agent-1'));
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/agents/agent-1',
+				expect.any(Object)
+			);
+		});
+	});
+
+	describe('recruitAgent', () => {
+		it('posts to /game/agents', async () => {
+			const config: AgentConfig = createAgentConfig();
+
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'agent-new', name: 'New Agent' })
+			});
+
+			await recruitAgent(config);
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/agents',
+				expect.objectContaining({
+					method: 'POST',
+					body: JSON.stringify(config)
+				})
+			);
+		});
+	});
+
+	describe('retireAgent', () => {
+		it('posts to /game/agents/{id}/retire', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({})
+			});
+
+			await retireAgent(agentId('agent-1'), 'No longer needed');
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/agents/agent-1/retire',
+				expect.objectContaining({
+					method: 'POST',
+					body: JSON.stringify({ reason: 'No longer needed' })
+				})
+			);
+		});
+	});
+
+	describe('getBattle', () => {
+		it('fetches a battle by ID from /game/battles/{id}', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'battle-1', status: 'active' })
+			});
+
+			await getBattle(battleId('battle-1'));
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/battles/battle-1',
+				expect.any(Object)
+			);
+		});
+	});
+
+	describe('getTrajectory', () => {
+		it('fetches trajectory events from /game/trajectories/{id}', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => [{ timestamp: 123, type: 'event', data: {} }]
+			});
+
+			const result = await getTrajectory('traj-1');
+
+			expect(result).toHaveLength(1);
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/trajectories/traj-1',
+				expect.any(Object)
+			);
+		});
+	});
+
+	describe('sendDMChat', () => {
+		it('posts to /game/dm/chat', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ message: 'Hello!' })
+			});
+
+			await sendDMChat('Hello');
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/dm/chat',
+				expect.objectContaining({
+					method: 'POST',
+					body: JSON.stringify({ message: 'Hello' })
+				})
+			);
+		});
+	});
+
+	describe('intervene', () => {
+		it('posts to /game/dm/intervene/{questId}', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({})
+			});
+
+			await intervene(questId('quest-1'), { type: 'assist', reason: 'Needs help' });
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/dm/intervene/quest-1',
+				expect.objectContaining({
+					method: 'POST',
+					body: JSON.stringify({ type: 'assist', reason: 'Needs help' })
+				})
+			);
+		});
+	});
+
+	describe('store endpoints', () => {
+		it('fetches store items from /game/store', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => [{ id: 'item-1', name: 'Sword' }]
+			});
+
+			await getStoreItems(agentId('agent-1'));
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/store?agent_id=agent-1',
 				expect.any(Object)
 			);
 		});
 
-		it('appends filters as query params', async () => {
+		it('fetches a store item by ID from /game/store/{id}', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'item-1', name: 'Sword' })
+			});
+
+			await getStoreItem('item-1');
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/store/item-1',
+				expect.any(Object)
+			);
+		});
+
+		it('fetches inventory from /game/agents/{id}/inventory', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ agent_id: 'agent-1', owned_tools: {}, consumables: {}, total_spent: 0 })
+			});
+
+			await getInventory(agentId('agent-1'));
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/agents/agent-1/inventory',
+				expect.any(Object)
+			);
+		});
+
+		it('posts purchase to /game/store/purchase', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ success: true })
+			});
+
+			await purchase({ agent_id: agentId('agent-1'), item_id: 'item-1' });
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/store/purchase',
+				expect.objectContaining({
+					method: 'POST',
+					body: JSON.stringify({ agent_id: 'agent-1', item_id: 'item-1' })
+				})
+			);
+		});
+
+		it('posts consumable use to /game/agents/{id}/inventory/use', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ success: true, remaining: 2, active_effects: [] })
+			});
+
+			await useConsumable({
+				agent_id: agentId('agent-1'),
+				consumable_id: 'potion-1',
+				quest_id: questId('quest-1')
+			});
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/agents/agent-1/inventory/use',
+				expect.objectContaining({
+					method: 'POST',
+					body: JSON.stringify({ consumable_id: 'potion-1', quest_id: 'quest-1' })
+				})
+			);
+		});
+
+		it('fetches active effects from /game/agents/{id}/effects', async () => {
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
 				json: async () => []
 			});
 
-			await getQuests({ status: 'posted', difficulty: 2 });
+			await getActiveEffects(agentId('agent-1'));
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				expect.stringContaining('http://test-api.local/quests?'),
-				expect.any(Object)
-			);
-			expect(mockFetch).toHaveBeenCalledWith(
-				expect.stringContaining('status=posted'),
-				expect.any(Object)
-			);
-			expect(mockFetch).toHaveBeenCalledWith(
-				expect.stringContaining('difficulty=2'),
-				expect.any(Object)
-			);
-		});
-	});
-
-	describe('getBattles', () => {
-		it('returns list of battles', async () => {
-			const mockBattles: BossBattle[] = [
-				{
-					id: 'battle-1' as BossBattle['id'],
-					quest_id: 'quest-1' as Quest['id'],
-					agent_id: 'agent-1' as Agent['id'],
-					status: 'active',
-					level: 1,
-					criteria: [],
-					results: [],
-					judges: [{ type: 'llm', id: 'gpt-4', config: {} }],
-					started_at: '2024-01-01T00:00:00Z'
-				}
-			];
-
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: async () => mockBattles
-			});
-
-			const result = await getBattles();
-
-			expect(result).toEqual(mockBattles);
-			expect(mockFetch).toHaveBeenCalledWith(
-				'http://test-api.local/battles',
+				'http://test-api.local/game/agents/agent-1/effects',
 				expect.any(Object)
 			);
 		});
@@ -255,7 +470,7 @@ describe('API Service', () => {
 				text: async () => 'Not Found'
 			});
 
-			await expect(getAgents()).rejects.toThrow('API Error 404: Not Found');
+			await expect(getAgent(agentId('agent-1'))).rejects.toThrow('API Error 404: Not Found');
 		});
 
 		it('handles empty error body', async () => {
@@ -278,6 +493,12 @@ describe('API Service', () => {
 
 			await expect(healthCheck()).rejects.toThrow('Unexpected token');
 		});
+
+		it('throws on network error', async () => {
+			mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+			await expect(getAgent(agentId('agent-1'))).rejects.toThrow('Network error');
+		});
 	});
 });
 
@@ -290,18 +511,21 @@ describe('API Service Object', () => {
 	it('exports all API methods', () => {
 		expect(api.setApiUrl).toBeDefined();
 		expect(api.getWorldState).toBeDefined();
-		expect(api.getQuests).toBeDefined();
 		expect(api.getQuest).toBeDefined();
 		expect(api.createQuest).toBeDefined();
-		expect(api.getAgents).toBeDefined();
 		expect(api.getAgent).toBeDefined();
 		expect(api.recruitAgent).toBeDefined();
 		expect(api.retireAgent).toBeDefined();
-		expect(api.getBattles).toBeDefined();
 		expect(api.getBattle).toBeDefined();
 		expect(api.getTrajectory).toBeDefined();
 		expect(api.sendDMChat).toBeDefined();
 		expect(api.intervene).toBeDefined();
+		expect(api.getStoreItems).toBeDefined();
+		expect(api.getStoreItem).toBeDefined();
+		expect(api.getInventory).toBeDefined();
+		expect(api.purchase).toBeDefined();
+		expect(api.useConsumable).toBeDefined();
+		expect(api.getActiveEffects).toBeDefined();
 		expect(api.healthCheck).toBeDefined();
 	});
 

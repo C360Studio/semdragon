@@ -2,7 +2,7 @@ import { test as base, expect, type Page, type APIRequestContext } from '@playwr
 import { DashboardPage } from '../pages/dashboard.page';
 import { QuestsPage } from '../pages/quests.page';
 import { AgentsPage } from '../pages/agents.page';
-import { WebSocketHelper } from './websocket-helpers';
+import { SSEHelper } from './sse-helpers';
 
 /**
  * API URL for backend interactions.
@@ -98,14 +98,14 @@ interface QuestPayload {
  *
  * Provides:
  * - Page objects for each major page
- * - WebSocket helpers for real-time testing
+ * - SSE helpers for real-time testing
  * - API client for test data seeding
  */
 export const test = base.extend<{
 	dashboardPage: DashboardPage;
 	questsPage: QuestsPage;
 	agentsPage: AgentsPage;
-	wsHelper: WebSocketHelper;
+	sseHelper: SSEHelper;
 	seedQuests: (quests: QuestPayload[]) => Promise<string[]>;
 	apiRequest: APIRequestContext;
 }>({
@@ -125,10 +125,10 @@ export const test = base.extend<{
 		await use(agentsPage);
 	},
 
-	// WebSocket helper
-	wsHelper: async ({ page }, use) => {
-		const wsHelper = new WebSocketHelper(page);
-		await use(wsHelper);
+	// SSE helper
+	sseHelper: async ({ page }, use) => {
+		const sseHelper = new SSEHelper(page);
+		await use(sseHelper);
 	},
 
 	// API request context for backend operations
@@ -148,13 +148,14 @@ export const test = base.extend<{
 			const ids: string[] = [];
 
 			for (const quest of quests) {
-				const response = await apiRequest.post('/quests', {
+				const response = await apiRequest.post('/game/quests', {
 					data: {
-						title: quest.title,
-						description: quest.description || `Test quest: ${quest.title}`,
-						difficulty: difficultyToNumber(quest.difficulty || 'easy'),
-						base_xp: quest.base_xp || 100,
-						required_skills: quest.required_skills || []
+						objective: quest.title,
+						hints: {
+							suggested_difficulty: difficultyToNumber(quest.difficulty || 'easy'),
+							require_human_review: false,
+							budget: quest.base_xp || 100
+						}
 					}
 				});
 

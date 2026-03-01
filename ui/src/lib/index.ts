@@ -2,4 +2,4 @@
 export * from './types';
 export { worldStore } from './stores/worldStore.svelte';
 export { api } from './services/api';
-export { websocketService } from './services/websocket';
+export { sseService } from './services/sse';

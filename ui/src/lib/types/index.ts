@@ -157,8 +157,7 @@ export interface Agent {
 	death_count: number;
 	tier: TrustTier;
 	equipment: Tool[];
-	skills: SkillTag[]; // DEPRECATED: Use skill_proficiencies instead
-	skill_proficiencies?: Record<SkillTag, SkillProficiency>; // Optional for backward compatibility
+	skill_proficiencies: Record<SkillTag, SkillProficiency>;
 	guilds: GuildID[];
 	current_quest?: QuestID;
 	current_party?: PartyID;
@@ -212,6 +211,8 @@ export interface QuestConstraints {
 	review_level: ReviewLevel;
 }
 
+export type FailureType = 'quality' | 'timeout' | 'error' | 'abandoned';
+
 export interface Quest {
 	id: QuestID;
 	title: string;
@@ -222,6 +223,7 @@ export interface Quest {
 	// Requirements
 	required_skills: SkillTag[];
 	required_tools: string[];
+	allowed_tools?: string[];
 	min_tier: TrustTier;
 	party_required: boolean;
 	min_party_size: number;
@@ -235,6 +237,7 @@ export interface Quest {
 	input: unknown;
 	output?: unknown;
 	constraints: QuestConstraints;
+	duration?: number;
 
 	// Quest chain / decomposition
 	parent_quest?: QuestID;
@@ -257,6 +260,11 @@ export interface Quest {
 	attempts: number;
 	max_attempts: number;
 	escalated: boolean;
+	failure_reason?: string;
+	failure_type?: FailureType;
+
+	// Review
+	verdict?: BattleVerdict;
 
 	// Observability
 	trajectory_id: string;
@@ -363,7 +371,7 @@ export type GuildRank = 'initiate' | 'member' | 'veteran' | 'officer' | 'guildma
 export interface GuildMember {
 	agent_id: AgentID;
 	rank: GuildRank;
-	guild_xp: number;
+	contribution: number;
 	joined_at: string;
 }
 
@@ -383,19 +391,21 @@ export interface Guild {
 	name: string;
 	description: string;
 	status: GuildStatus;
-	domain: string;
-	skills: SkillTag[];
-	quest_types: string[];
 	members: GuildMember[];
 	max_members: number;
+	min_level: number;
+	founded: string;
+	founded_by: AgentID;
+	culture: string;
+	motto?: string;
 	reputation: number;
 	quests_handled: number;
 	success_rate: number;
+	quests_failed: number;
 	library: LibraryEntry[];
 	shared_tools: string[];
-	min_level_to_join: number;
-	required_skills: SkillTag[];
-	auto_recruit: boolean;
+	quest_types?: string[];
+	preferred_clients?: string[];
 	created_at: string;
 }
 
@@ -454,25 +464,26 @@ export interface Session {
 // =============================================================================
 
 export type GameEventType =
-	| 'quest.posted'
-	| 'quest.claimed'
-	| 'quest.started'
-	| 'quest.completed'
-	| 'quest.failed'
-	| 'quest.escalated'
-	| 'agent.recruited'
-	| 'agent.level_up'
-	| 'agent.level_down'
-	| 'agent.death'
-	| 'agent.permadeath'
-	| 'agent.revived'
-	| 'battle.started'
-	| 'battle.victory'
-	| 'battle.defeat'
-	| 'party.formed'
-	| 'party.disbanded'
-	| 'guild.created'
-	| 'guild.joined'
+	| 'quest.lifecycle.posted'
+	| 'quest.lifecycle.claimed'
+	| 'quest.lifecycle.started'
+	| 'quest.lifecycle.submitted'
+	| 'quest.lifecycle.completed'
+	| 'quest.lifecycle.failed'
+	| 'quest.lifecycle.escalated'
+	| 'quest.lifecycle.abandoned'
+	| 'agent.progression.xp'
+	| 'agent.progression.levelup'
+	| 'agent.progression.leveldown'
+	| 'agent.progression.death'
+	| 'battle.review.started'
+	| 'battle.review.verdict'
+	| 'battle.review.victory'
+	| 'battle.review.defeat'
+	| 'party.formation.created'
+	| 'party.formation.disbanded'
+	| 'guild.membership.joined'
+	| 'guild.membership.promoted'
 	| 'dm.intervention'
 	| 'dm.escalation'
 	| 'dm.session_start'
@@ -723,3 +734,26 @@ export interface SkillImprovementResult {
 	leveled_up: boolean;
 	at_max_level: boolean;
 }
+
+// =============================================================================
+// SSE TYPES
+// =============================================================================
+
+export type KVOperation = 'create' | 'update' | 'delete' | 'initial_sync_complete';
+
+export interface KVWatchConnectedEvent {
+	bucket: string;
+	pattern: string;
+	message: string;
+}
+
+export interface KVChangeEvent {
+	bucket: string;
+	key: string;
+	operation: KVOperation;
+	value?: unknown;
+	revision: number;
+	timestamp: string;
+}
+
+export type EntityType = 'quest' | 'agent' | 'battle' | 'party' | 'guild';
