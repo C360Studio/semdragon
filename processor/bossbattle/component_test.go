@@ -282,6 +282,19 @@ func TestComponent_Stats(t *testing.T) {
 // AGENT STATUS LIFECYCLE TESTS
 // =============================================================================
 
+// waitFor polls check every 50ms until it returns true or timeout elapses.
+func waitFor(t *testing.T, timeout time.Duration, check func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if check() {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out: %s", msg)
+}
+
 // TestBattleStartSetsInBattle verifies that when a battle starts via the
 // KV watcher (quest transitions to in_review), the agent is set to in_battle.
 func TestBattleStartSetsInBattle(t *testing.T) {
@@ -311,14 +324,14 @@ func TestBattleStartSetsInBattle(t *testing.T) {
 	// Create a quest that requires review and transition it to in_review
 	questInstance := semdragons.GenerateInstance()
 	questID := semdragons.QuestID(comp.boardConfig.QuestEntityID(questInstance))
-	agentIDRef := semdragons.AgentID(agentID)
+	claimedBy := agentID
 	quest := &questboard.Quest{
 		ID:         questID,
 		Title:      "Battle Start Quest",
 		Status:     semdragons.QuestInProgress,
 		Difficulty: semdragons.DifficultyModerate,
 		BaseXP:     100,
-		ClaimedBy:  &agentIDRef,
+		ClaimedBy:  &claimedBy,
 		Constraints: questboard.QuestConstraints{
 			RequireReview: true,
 			ReviewLevel:   semdragons.ReviewStandard,
@@ -340,10 +353,17 @@ func TestBattleStartSetsInBattle(t *testing.T) {
 		t.Fatalf("Failed to transition quest to in_review: %v", err)
 	}
 
-	// Wait for the reactive handler to start the battle and update agent
-	time.Sleep(1 * time.Second)
+	// Poll until the reactive handler has set the agent to in_battle.
+	waitFor(t, 5*time.Second, func() bool {
+		agentEntity, err := gc.GetAgent(ctx, agentID)
+		if err != nil {
+			return false
+		}
+		updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+		return updatedAgent != nil && updatedAgent.Status == semdragons.AgentInBattle
+	}, "agent status to become AgentInBattle")
 
-	// Read agent back from KV
+	// Final read to produce a clear error message if the poll somehow passed early.
 	agentEntity, err := gc.GetAgent(ctx, agentID)
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
@@ -388,14 +408,19 @@ func TestBattleVerdictTransitionsQuest(t *testing.T) {
 		t.Fatalf("Failed to create test quest: %v", err)
 	}
 
-	// Start battle which will evaluate and bridge verdict → quest
-	battle, err := comp.StartBattle(ctx, quest, map[string]any{"result": "test output"})
+	// Start battle which will evaluate and bridge verdict → quest.
+	// DefaultBattleEvaluator returns score 0.8 for non-nil output, which
+	// exceeds all ReviewStandard thresholds (0.7, 0.6, 0.5), so the result
+	// is always a victory.
+	_, err := comp.StartBattle(ctx, quest, map[string]any{"result": "test output"})
 	if err != nil {
 		t.Fatalf("StartBattle failed: %v", err)
 	}
 
-	// Wait for async evaluation to complete and bridge to quest
-	time.Sleep(2 * time.Second)
+	// Poll until async evaluation completes and the verdict is bridged to the quest.
+	waitFor(t, 5*time.Second, func() bool {
+		return comp.Stats().Completed > 0
+	}, "battle to reach terminal state (stats.Completed > 0)")
 
 	// Read the quest back from KV to check if verdict was bridged
 	questEntity, err := gc.GetEntityDirect(ctx, string(quest.ID))
@@ -403,7 +428,9 @@ func TestBattleVerdictTransitionsQuest(t *testing.T) {
 		t.Fatalf("GetEntityDirect failed: %v", err)
 	}
 
-	// Reconstruct quest from entity state
+	// Reconstruct quest status from entity state triples.
+	// questFromEntityStateForBattle does not parse quest.lifecycle.completed_at,
+	// so we scan the triples directly for the status predicate.
 	var questStatus string
 	for _, triple := range questEntity.Triples {
 		if triple.Predicate == "quest.status.state" {
@@ -413,15 +440,13 @@ func TestBattleVerdictTransitionsQuest(t *testing.T) {
 		}
 	}
 
-	// Battle should have completed — the evaluator returns a verdict
-	// which triggers the bridge to either complete or fail the quest.
-	if questStatus != string(semdragons.QuestCompleted) && questStatus != string(semdragons.QuestFailed) {
-		t.Errorf("Quest status = %q after battle verdict, want %q or %q",
-			questStatus, semdragons.QuestCompleted, semdragons.QuestFailed)
+	// DefaultBattleEvaluator always passes with ReviewStandard, so the quest
+	// must be completed (not failed).
+	if questStatus != string(semdragons.QuestCompleted) {
+		t.Errorf("Quest status = %q after victory verdict, want %q", questStatus, semdragons.QuestCompleted)
 	}
 
-	// Verify battle reached terminal state
-	_ = battle // Battle was started, evaluation ran async
+	// Verify battle reached terminal state (already ensured by waitFor above).
 	stats := comp.Stats()
 	if stats.Completed == 0 {
 		t.Error("Battle should have completed")

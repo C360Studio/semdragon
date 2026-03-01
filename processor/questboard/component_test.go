@@ -4,6 +4,7 @@ package questboard
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -594,7 +595,10 @@ func TestClaimSetsAgentOnQuest(t *testing.T) {
 		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentOnQuest)
 	}
 	if updatedAgent.CurrentQuest == nil {
-		t.Error("CurrentQuest should be set after claim")
+		t.Fatal("CurrentQuest should be set after claim")
+	}
+	if *updatedAgent.CurrentQuest != semdragons.QuestID(quest.ID) {
+		t.Errorf("CurrentQuest = %v, want %v", *updatedAgent.CurrentQuest, quest.ID)
 	}
 }
 
@@ -742,7 +746,10 @@ func TestRejectsClaimWhenOnQuest(t *testing.T) {
 	// Try to claim second quest — should be rejected
 	err = comp.ClaimQuest(ctx, quest2.ID, agent.ID)
 	if err == nil {
-		t.Error("Should reject claim when agent already on a quest")
+		t.Fatal("Should reject claim when agent already on a quest")
+	}
+	if !strings.Contains(err.Error(), "already on a quest") {
+		t.Errorf("Expected 'already on a quest' error, got: %v", err)
 	}
 }
 
@@ -782,7 +789,10 @@ func TestRejectsClaimWhenOnCooldown(t *testing.T) {
 
 	err = comp.ClaimQuest(ctx, quest.ID, agentID)
 	if err == nil {
-		t.Error("Should reject claim when agent is on active cooldown")
+		t.Fatal("Should reject claim when agent is on active cooldown")
+	}
+	if !strings.Contains(err.Error(), "agent on cooldown") {
+		t.Errorf("Expected 'agent on cooldown' error, got: %v", err)
 	}
 }
 
@@ -822,7 +832,101 @@ func TestAllowsClaimWhenCooldownExpired(t *testing.T) {
 
 	err = comp.ClaimQuest(ctx, quest.ID, agentID)
 	if err != nil {
-		t.Errorf("Should allow claim when cooldown is expired, got: %v", err)
+		t.Fatalf("Should allow claim when cooldown is expired, got: %v", err)
+	}
+	agentEntity, err := comp.GraphClient().GetAgent(ctx, agentID)
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	if updatedAgent == nil {
+		t.Fatal("Failed to reconstruct agent")
+	}
+	if updatedAgent.Status != semdragons.AgentOnQuest {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentOnQuest)
+	}
+	if updatedAgent.CurrentQuest == nil {
+		t.Error("CurrentQuest should be set after claim")
+	}
+}
+
+// TestRejectsClaimWhenRetired verifies that a retired agent cannot claim quests.
+func TestRejectsClaimWhenRetired(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "rejectretired")
+	defer comp.Stop(5 * time.Second)
+
+	// Create agent directly with retired status
+	instance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(instance))
+	agent := &semdragons.Agent{
+		ID:     agentID,
+		Name:   "retired-agent",
+		Level:  5,
+		Tier:   semdragons.TierApprentice,
+		Status: semdragons.AgentRetired,
+	}
+	if err := comp.GraphClient().PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	quest, err := comp.PostQuest(ctx, Quest{
+		Title:      "Retired Rejection Quest",
+		Difficulty: semdragons.DifficultyTrivial,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	err = comp.ClaimQuest(ctx, quest.ID, agentID)
+	if err == nil {
+		t.Fatal("Should reject claim when agent is retired")
+	}
+	if !strings.Contains(err.Error(), "agent is retired") {
+		t.Errorf("Expected 'agent is retired' error, got: %v", err)
+	}
+}
+
+// TestRejectsClaimWhenInBattle verifies that an agent in battle cannot claim quests.
+func TestRejectsClaimWhenInBattle(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "rejectinbattle")
+	defer comp.Stop(5 * time.Second)
+
+	// Create agent directly with in_battle status
+	instance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(instance))
+	agent := &semdragons.Agent{
+		ID:     agentID,
+		Name:   "battle-agent",
+		Level:  5,
+		Tier:   semdragons.TierApprentice,
+		Status: semdragons.AgentInBattle,
+	}
+	if err := comp.GraphClient().PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	quest, err := comp.PostQuest(ctx, Quest{
+		Title:      "Battle Rejection Quest",
+		Difficulty: semdragons.DifficultyTrivial,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	err = comp.ClaimQuest(ctx, quest.ID, agentID)
+	if err == nil {
+		t.Fatal("Should reject claim when agent is in battle")
+	}
+	if !strings.Contains(err.Error(), "agent is in battle") {
+		t.Errorf("Expected 'agent is in battle' error, got: %v", err)
 	}
 }
 

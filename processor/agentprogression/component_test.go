@@ -36,19 +36,23 @@ func TestXPPreservesAgentData(t *testing.T) {
 
 	gc := comp.graph
 
-	// Create an agent with rich state (name, skills, guilds)
+	// Create an agent with rich state (name, skills, guilds).
+	// Use AgentOnQuest with CurrentQuest set — consistent with an agent actively working.
 	instance := semdragons.GenerateInstance()
 	agentID := semdragons.AgentID(comp.boardConfig.AgentEntityID(instance))
+	questInstance := semdragons.GenerateInstance()
+	questID := semdragons.QuestID(comp.boardConfig.QuestEntityID(questInstance))
 	agent := &semdragons.Agent{
-		ID:          agentID,
-		Name:        "xp-preserve-agent",
-		DisplayName: "Shadow Weaver",
-		Status:      semdragons.AgentIdle,
-		Level:       5,
-		XP:          200,
-		XPToLevel:   300,
-		Tier:        semdragons.TierApprentice,
-		Guilds:      []semdragons.GuildID{"guild-alpha", "guild-beta"},
+		ID:           agentID,
+		Name:         "xp-preserve-agent",
+		DisplayName:  "Shadow Weaver",
+		Status:       semdragons.AgentOnQuest,
+		CurrentQuest: &questID,
+		Level:        5,
+		XP:           200,
+		XPToLevel:    300,
+		Tier:         semdragons.TierApprentice,
+		Guilds:       []semdragons.GuildID{"guild-alpha", "guild-beta"},
 		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
 			semdragons.SkillCodeGen:  {Level: semdragons.ProficiencyJourneyman},
 			semdragons.SkillAnalysis: {Level: semdragons.ProficiencyExpert},
@@ -64,10 +68,8 @@ func TestXPPreservesAgentData(t *testing.T) {
 
 	// Create a quest claimed by this agent, then transition it to completed.
 	// The component's KV watcher will detect the transition and process XP.
-	questInstance := semdragons.GenerateInstance()
-	questID := domain.QuestID(comp.boardConfig.QuestEntityID(questInstance))
 	quest := &questboard.Quest{
-		ID:          questID,
+		ID:          domain.QuestID(questID),
 		Title:       "XP Preserve Test Quest",
 		Status:      domain.QuestInProgress,
 		Difficulty:  semdragons.DifficultyTrivial,
@@ -93,22 +95,25 @@ func TestXPPreservesAgentData(t *testing.T) {
 		t.Fatalf("Failed to complete test quest: %v", err)
 	}
 
-	// Wait for the reactive handler to process the completion
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the reactive handler to process the completion and write back the agent.
+	// For a trivial quest with BaseXP=50 and no verdict/streak, TotalXP == 50.
+	// Starting XP=200, XPToLevel=300, so the agent gains 50 XP → new XP=250 (no level-up).
+	updatedAgent := waitForAgentUpdate(t, gc, agentID,
+		func(a *semdragons.Agent) bool { return a.XP > 200 },
+		3*time.Second,
+		"agent XP to increase above 200 after quest completion")
 
-	// Read agent back from KV
-	agentEntity, err := gc.GetAgent(ctx, agentID)
-	if err != nil {
-		t.Fatalf("Failed to read agent after XP update: %v", err)
+	// XP assertions: base-only award is 50, so new XP should be ~250 (no level-up)
+	if updatedAgent.XP <= 200 {
+		t.Errorf("XP should have increased: got XP=%d, want > 200", updatedAgent.XP)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
-	if updatedAgent == nil {
-		t.Fatal("Failed to reconstruct agent from entity state")
+	// Level must not change: XP gained (50) < XPToLevel (300)
+	if updatedAgent.Level != 5 {
+		t.Errorf("Level should not have changed: got %d, want 5", updatedAgent.Level)
 	}
-
-	// Verify XP was applied (agent should have more XP than before)
-	if updatedAgent.XP <= 200 && updatedAgent.Level <= 5 {
-		t.Errorf("XP should have increased: got XP=%d Level=%d", updatedAgent.XP, updatedAgent.Level)
+	// Agent is reset to idle by the completion handler
+	if updatedAgent.Status != semdragons.AgentIdle {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentIdle)
 	}
 
 	// CRITICAL: Verify all other fields are preserved (the overwrite bug regression)
@@ -185,17 +190,11 @@ func TestCompletionResetsAgent(t *testing.T) {
 		t.Fatalf("Failed to complete test quest: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-
-	// Read agent back
-	agentEntity, err := gc.GetAgent(ctx, agentID)
-	if err != nil {
-		t.Fatalf("Failed to read agent: %v", err)
-	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
-	if updatedAgent == nil {
-		t.Fatal("Failed to reconstruct agent")
-	}
+	// Wait for the reactive handler to reset the agent to idle
+	updatedAgent := waitForAgentUpdate(t, gc, agentID,
+		func(a *semdragons.Agent) bool { return a.Status == semdragons.AgentIdle },
+		3*time.Second,
+		"agent Status to become idle after quest completion")
 
 	if updatedAgent.Status != semdragons.AgentIdle {
 		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentIdle)
@@ -264,17 +263,14 @@ func TestFailureSetsAgentCooldown(t *testing.T) {
 		t.Fatalf("Failed to fail test quest: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-
-	// Read agent back
-	agentEntity, err := gc.GetAgent(ctx, agentID)
-	if err != nil {
-		t.Fatalf("Failed to read agent: %v", err)
-	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
-	if updatedAgent == nil {
-		t.Fatal("Failed to reconstruct agent")
-	}
+	// Wait for the reactive handler to apply the failure penalty and set cooldown.
+	// Penalty math: baseLoss = 100 * 0.5 = 50; FailureSoft multiplier 0.25 = 12.5 → 12;
+	// difficulty scale = 1.0 + 0*0.2 = 1.0 (DifficultyTrivial == 0); XPLost = 12.
+	// Starting XP=100 → new XP should be ~88.
+	updatedAgent := waitForAgentUpdate(t, gc, agentID,
+		func(a *semdragons.Agent) bool { return a.Status == semdragons.AgentCooldown },
+		3*time.Second,
+		"agent Status to become cooldown after quest failure")
 
 	// Default failure type is FailureSoft (from questboard.FailureQuality mapping),
 	// which has CooldownDur of 1 minute
@@ -292,11 +288,38 @@ func TestFailureSetsAgentCooldown(t *testing.T) {
 	if updatedAgent.Stats.QuestsFailed != 1 {
 		t.Errorf("QuestsFailed = %d, want 1", updatedAgent.Stats.QuestsFailed)
 	}
+	// XP penalty: starting XP=100, XPLost~=12, so new XP should be below 100
+	if updatedAgent.XP >= 100 {
+		t.Errorf("XP should have decreased due to penalty: got XP=%d, want < 100", updatedAgent.XP)
+	}
 }
 
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+// waitForAgentUpdate polls KV until check returns true for the agent, or timeout
+// is exceeded. Returns the passing agent state. Fails the test on timeout.
+//
+// This replaces fixed time.Sleep + manual read-back patterns. Polling at 50ms
+// intervals means the test responds as soon as the handler writes the update,
+// rather than waiting an arbitrary fixed duration.
+func waitForAgentUpdate(t *testing.T, gc *semdragons.GraphClient, agentID semdragons.AgentID, check func(*semdragons.Agent) bool, timeout time.Duration, msg string) *semdragons.Agent {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		entity, err := gc.GetAgent(context.Background(), agentID)
+		if err == nil {
+			agent := semdragons.AgentFromEntityState(entity)
+			if agent != nil && check(agent) {
+				return agent
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for: %s", msg)
+	return nil
+}
 
 func setupComponent(t *testing.T, client *natsclient.Client, name string) *Component {
 	t.Helper()

@@ -39,7 +39,7 @@ func TestCooldownSkipClearsStatus(t *testing.T) {
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
 	cooldownUntil := time.Now().Add(1 * time.Hour)
 	agent := &semdragons.Agent{
-		ID:            semdragons.AgentID(agentID),
+		ID:            agentID, // domain.AgentID IS semdragons.AgentID (type alias)
 		Name:          "cooldown-skip-agent",
 		Status:        semdragons.AgentCooldown,
 		Level:         5,
@@ -50,7 +50,7 @@ func TestCooldownSkipClearsStatus(t *testing.T) {
 		t.Fatalf("Failed to create test agent: %v", err)
 	}
 
-	// Give the agent a cooldown_skip consumable in inventory
+	// Bypass Purchase API to avoid XP/tier setup — testing cooldown_skip effect, not purchase flow
 	inv := comp.GetInventory(agentID)
 	inv.Consumables["cooldown_skip"] = 1
 
@@ -60,8 +60,21 @@ func TestCooldownSkipClearsStatus(t *testing.T) {
 		t.Fatalf("UseConsumable failed: %v", err)
 	}
 
+	// Verify consumable was consumed
+	if count := inv.Consumables["cooldown_skip"]; count != 0 {
+		t.Errorf("cooldown_skip count = %d, want 0 (consumed)", count)
+	}
+
+	// Verify active effect was recorded
+	effects := comp.GetActiveEffects(agentID)
+	if len(effects) != 1 {
+		t.Errorf("expected 1 active effect, got %d", len(effects))
+	} else if effects[0].Effect.Type != ConsumableCooldownSkip {
+		t.Errorf("active effect type = %v, want %v", effects[0].Effect.Type, ConsumableCooldownSkip)
+	}
+
 	// Read agent back from KV
-	agentEntity, err := gc.GetAgent(ctx, semdragons.AgentID(agentID))
+	agentEntity, err := gc.GetAgent(ctx, agentID)
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
@@ -72,6 +85,74 @@ func TestCooldownSkipClearsStatus(t *testing.T) {
 
 	if updatedAgent.Status != semdragons.AgentIdle {
 		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentIdle)
+	}
+	if updatedAgent.CooldownUntil != nil {
+		t.Errorf("CooldownUntil should be nil, got %v", updatedAgent.CooldownUntil)
+	}
+}
+
+// TestCooldownSkipWhenNotOnCooldown verifies that using a cooldown_skip consumable
+// on an agent who is not in cooldown still consumes the item and records the active
+// effect, but does not change the agent's idle status.
+func TestCooldownSkipWhenNotOnCooldown(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "skipnoop")
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Setup: agent with Status=AgentIdle, no CooldownUntil
+	instance := semdragons.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
+	agent := &semdragons.Agent{
+		ID:    agentID, // domain.AgentID IS semdragons.AgentID (type alias)
+		Name:  "idle-agent",
+		Status: semdragons.AgentIdle,
+		Level: 3,
+		Tier:  semdragons.TierApprentice,
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	// Bypass Purchase API to avoid XP/tier setup — testing cooldown_skip effect, not purchase flow
+	inv := comp.GetInventory(agentID)
+	inv.Consumables["cooldown_skip"] = 1
+
+	// Use the cooldown_skip consumable
+	err := comp.UseConsumable(ctx, agentID, "cooldown_skip", nil)
+	if err != nil {
+		t.Fatalf("UseConsumable failed: %v", err)
+	}
+
+	// Verify consumable was consumed
+	if count := inv.Consumables["cooldown_skip"]; count != 0 {
+		t.Errorf("cooldown_skip count = %d, want 0 (consumed)", count)
+	}
+
+	// Verify active effect was recorded
+	effects := comp.GetActiveEffects(agentID)
+	if len(effects) != 1 {
+		t.Errorf("expected 1 active effect, got %d", len(effects))
+	} else if effects[0].Effect.Type != ConsumableCooldownSkip {
+		t.Errorf("active effect type = %v, want %v", effects[0].Effect.Type, ConsumableCooldownSkip)
+	}
+
+	// Read agent back from KV — status must remain idle (no cooldown to clear)
+	agentEntity, err := gc.GetAgent(ctx, agentID)
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	if updatedAgent == nil {
+		t.Fatal("Failed to reconstruct agent from entity state")
+	}
+
+	if updatedAgent.Status != semdragons.AgentIdle {
+		t.Errorf("Status = %v, want %v (idle agent must stay idle)", updatedAgent.Status, semdragons.AgentIdle)
 	}
 	if updatedAgent.CooldownUntil != nil {
 		t.Errorf("CooldownUntil should be nil, got %v", updatedAgent.CooldownUntil)
