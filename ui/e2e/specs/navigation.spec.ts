@@ -115,7 +115,10 @@ test.describe('Navigation - Browser History', () => {
 	test('forward button works after going back', async ({ dashboardPage, page }) => {
 		await dashboardPage.goto();
 		await dashboardPage.navQuests.click();
+		await expect(page).toHaveURL(/.*\/quests/);
+
 		await page.goBack();
+		await expect(page).toHaveURL('/');
 
 		await page.goForward();
 		await expect(page).toHaveURL(/.*\/quests/);

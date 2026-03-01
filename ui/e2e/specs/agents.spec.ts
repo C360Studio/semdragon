@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures/test-base';
+import { test, expect, hasBackend } from '../fixtures/test-base';
 
 test.describe('Agent Roster', () => {
 	test.beforeEach(async ({ agentsPage }) => {
@@ -164,6 +164,8 @@ test.describe('Agent Roster - Selection', () => {
 
 test.describe('Agent Roster - With Seeded Data', () => {
 	test('seeded agents appear in roster', async ({ agentsPage }) => {
+		test.skip(!hasBackend(), 'Requires backend with seeded data');
+
 		await agentsPage.goto();
 
 		// E2E roster creates specific agents

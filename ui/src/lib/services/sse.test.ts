@@ -112,17 +112,17 @@ describe('SSE Service', () => {
 	describe('connect', () => {
 		it('creates EventSource with correct URL', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			expect(source.url).toBe(
-				'http://localhost:8080/message-logger/kv/ENTITY_STATES/watch?pattern=*'
+				'http://localhost:8080/message-logger/kv/semdragons-local-dev-board1/watch?pattern=*'
 			);
 		});
 
 		it('sets connected state on connected event', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			source.emit('connected');
@@ -132,7 +132,7 @@ describe('SSE Service', () => {
 
 		it('resets synced on reconnection', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			source.emit('connected');
@@ -142,10 +142,10 @@ describe('SSE Service', () => {
 
 		it('closes existing connection before reconnecting', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 			const firstSource = getLastSource();
 
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 			expect(firstSource.readyState).toBe(2); // CLOSED
 		});
 	});
@@ -153,7 +153,7 @@ describe('SSE Service', () => {
 	describe('kv_change events', () => {
 		it('upserts quest on create/update', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const questData = { id: questId('quest-1'), title: 'Test Quest' };
@@ -173,7 +173,7 @@ describe('SSE Service', () => {
 
 		it('upserts agent on update', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const agentData = { id: agentId('agent-1'), name: 'Test Agent' };
@@ -193,7 +193,7 @@ describe('SSE Service', () => {
 
 		it('upserts battle', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const battleData = { id: battleId('battle-1'), status: 'active' };
@@ -213,7 +213,7 @@ describe('SSE Service', () => {
 
 		it('upserts party', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const partyData = { id: partyId('party-1'), name: 'Alpha Squad' };
@@ -233,7 +233,7 @@ describe('SSE Service', () => {
 
 		it('upserts guild', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const guildData = { id: guildId('guild-1'), name: 'Data Wranglers' };
@@ -253,7 +253,7 @@ describe('SSE Service', () => {
 
 		it('ignores unknown entity types', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -276,7 +276,7 @@ describe('SSE Service', () => {
 
 		it('ignores keys with fewer than 6 parts', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -296,7 +296,7 @@ describe('SSE Service', () => {
 
 		it('ignores keys with more than 6 parts', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -315,7 +315,7 @@ describe('SSE Service', () => {
 
 		it('handles malformed JSON in kv_change without throwing', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			expect(() => source.emit('kv_change', '{ invalid json')).not.toThrow();
@@ -326,7 +326,7 @@ describe('SSE Service', () => {
 
 		it('ignores upsert with null value', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -345,7 +345,7 @@ describe('SSE Service', () => {
 
 		it('ignores upsert with undefined value', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -365,7 +365,7 @@ describe('SSE Service', () => {
 	describe('delete operations', () => {
 		it('removes quest on delete', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -385,7 +385,7 @@ describe('SSE Service', () => {
 
 		it('removes agent on delete', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -405,7 +405,7 @@ describe('SSE Service', () => {
 
 		it('removes battle on delete', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -425,7 +425,7 @@ describe('SSE Service', () => {
 
 		it('removes party on delete', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -445,7 +445,7 @@ describe('SSE Service', () => {
 
 		it('removes guild on delete', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -467,7 +467,7 @@ describe('SSE Service', () => {
 	describe('initial_sync_complete', () => {
 		it('sets synced and loading states', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			const event: KVChangeEvent = {
@@ -489,7 +489,7 @@ describe('SSE Service', () => {
 	describe('error handling', () => {
 		it('sets disconnected on error', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			source.triggerError();
@@ -499,7 +499,7 @@ describe('SSE Service', () => {
 
 		it('resets synced state on error', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			// Complete initial sync first
@@ -523,7 +523,7 @@ describe('SSE Service', () => {
 	describe('disconnect', () => {
 		it('closes the EventSource', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			const source = getLastSource();
 			service.disconnect();
@@ -534,7 +534,7 @@ describe('SSE Service', () => {
 
 		it('resets synced state', async () => {
 			const service = await getService();
-			service.connect('http://localhost:8080');
+			service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 			// Simulate sync completion
 			const source = getLastSource();
@@ -568,7 +568,7 @@ describe('Entity key parsing', () => {
 		const store = worldStoreMod.worldStore as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
 		const service = createSSEService();
-		service.connect('http://localhost:8080');
+		service.connect('http://localhost:8080', 'semdragons-local-dev-board1');
 
 		const source = MockEventSource.instances[MockEventSource.instances.length - 1];
 

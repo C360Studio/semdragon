@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures/test-base';
+import { test, expect, hasBackend } from '../fixtures/test-base';
 
 test.describe('Quest Board', () => {
 	test.beforeEach(async ({ questsPage }) => {
@@ -101,6 +101,8 @@ test.describe('Quest Board - Selection', () => {
 
 test.describe('Quest Board - With Seeded Data', () => {
 	test('creating a quest adds it to posted column', async ({ questsPage, seedQuests }) => {
+		test.skip(!hasBackend(), 'Requires backend for quest creation');
+
 		// Seed a new quest
 		const questIds = await seedQuests([
 			{
@@ -127,6 +129,8 @@ test.describe('Quest Board - With Seeded Data', () => {
 	});
 
 	test('seeded quests appear in board', async ({ questsPage, seedQuests }) => {
+		test.skip(!hasBackend(), 'Requires backend for quest creation');
+
 		// Create multiple quests
 		await seedQuests([
 			{ title: 'Quest Alpha', difficulty: 'trivial', base_xp: 50 },

@@ -194,9 +194,21 @@ function difficultyToNumber(
 	return map[difficulty] ?? 1;
 }
 
+/**
+ * Check if the backend is available (set by global-setup.ts).
+ *
+ * Tests that need the backend should call:
+ *   test('my test', async () => {
+ *     if (!hasBackend()) test.skip();
+ *     ...
+ *   });
+ */
+export function hasBackend(): boolean {
+	return process.env.E2E_BACKEND_AVAILABLE === 'true';
+}
+
 // Re-export expect for convenience
 export { expect };
 
-// Re-export Page type and helpers
+// Re-export Page type
 export type { Page };
-export { waitForHydration, waitForBackendHealth, retry };

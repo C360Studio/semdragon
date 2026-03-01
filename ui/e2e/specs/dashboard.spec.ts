@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures/test-base';
+import { test, expect, hasBackend } from '../fixtures/test-base';
 
 test.describe('Dashboard', () => {
 	test.beforeEach(async ({ dashboardPage }) => {
@@ -15,6 +15,8 @@ test.describe('Dashboard', () => {
 	});
 
 	test('displays stats grid with all metrics', async ({ dashboardPage }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
+
 		await expect(dashboardPage.statsGrid).toBeVisible();
 
 		// Check that stat cards exist
@@ -26,11 +28,15 @@ test.describe('Dashboard', () => {
 	});
 
 	test('displays tier distribution section', async ({ dashboardPage }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
+
 		await expect(dashboardPage.tierDistribution).toBeVisible();
 		await expect(dashboardPage.tierBars.first()).toBeVisible();
 	});
 
 	test('displays all major sections', async ({ dashboardPage }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
+
 		await dashboardPage.verifyAllSectionsVisible();
 	});
 
@@ -48,6 +54,8 @@ test.describe('Dashboard', () => {
 	});
 
 	test('tier distribution shows five tiers', async ({ dashboardPage }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
+
 		const tiers = await dashboardPage.getTierDistribution();
 
 		// Should have exactly 5 tiers
@@ -88,6 +96,8 @@ test.describe('Dashboard - Navigation', () => {
 
 test.describe('Dashboard - Stats Values', () => {
 	test('stat values are numeric or percentage', async ({ dashboardPage }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
+
 		await dashboardPage.goto();
 
 		const activeAgents = await dashboardPage.getStatValue('Active Agents');

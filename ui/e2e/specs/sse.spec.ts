@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures/test-base';
+import { test, expect, hasBackend } from '../fixtures/test-base';
 
 test.describe('SSE Connection', () => {
 	test('dashboard shows connection status', async ({ dashboardPage }) => {
@@ -9,22 +9,24 @@ test.describe('SSE Connection', () => {
 	});
 
 	test('connection status reflects SSE state', async ({ dashboardPage, sseHelper }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE connection');
+
 		await dashboardPage.goto();
 
-		// Wait for SSE to connect (may take a moment)
-		try {
-			await sseHelper.waitForConnection(15000);
-			await dashboardPage.verifyConnectionStatus(true);
-		} catch {
-			// If connection fails, verify disconnected state
-			await dashboardPage.verifyConnectionStatus(false);
-		}
+		// Wait for SSE to connect
+		await sseHelper.waitForConnection(15000);
+		await dashboardPage.verifyConnectionStatus(true);
 	});
 });
 
 test.describe('SSE - Real-time Updates', () => {
 	test('event feed updates when events occur', async ({ dashboardPage, sseHelper, seedQuests }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE events');
+
 		await dashboardPage.goto();
+
+		// Wait for connection
+		await sseHelper.waitForConnection(5000);
 
 		// Get initial event count
 		const initialCount = await sseHelper.getEventCount();
@@ -39,29 +41,18 @@ test.describe('SSE - Real-time Updates', () => {
 		]);
 
 		// Wait for the event to appear in the feed
-		try {
-			await sseHelper.waitForConnection(5000);
-			// Events may take a moment to propagate
-			await dashboardPage.page.waitForTimeout(1000);
+		await dashboardPage.page.waitForTimeout(1000);
 
-			// Check if event count increased or if we see the new event
-			const newCount = await sseHelper.getEventCount();
-			// Count might have increased, or we might see the new event type
-		} catch {
-			// SSE not connected, skip real-time verification
-			test.skip();
-		}
+		// Check if event count increased
+		const newCount = await sseHelper.getEventCount();
+		expect(newCount).toBeGreaterThanOrEqual(initialCount);
 	});
 
 	test('stats update when data changes', async ({ dashboardPage, sseHelper, seedQuests }) => {
-		await dashboardPage.goto();
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
 
-		try {
-			await sseHelper.waitForConnection(5000);
-		} catch {
-			test.skip();
-			return;
-		}
+		await dashboardPage.goto();
+		await sseHelper.waitForConnection(5000);
 
 		// Get initial open quests count
 		const initialOpenQuests = await dashboardPage.getStatValue('Open Quests');
@@ -84,40 +75,33 @@ test.describe('SSE - Real-time Updates', () => {
 
 test.describe('SSE - Connection Recovery', () => {
 	test('connection status updates on disconnect', async ({ dashboardPage, sseHelper }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE connection');
+
 		await dashboardPage.goto();
 
-		try {
-			// Wait for initial connection
-			await sseHelper.waitForConnection(10000);
+		// Wait for initial connection
+		await sseHelper.waitForConnection(10000);
 
-			// Block SSE connections
-			await sseHelper.blockSSE();
+		// Block SSE connections
+		await sseHelper.blockSSE();
 
-			// Reload page to trigger reconnection attempt
-			await dashboardPage.page.reload();
+		// Reload page to trigger reconnection attempt
+		await dashboardPage.page.reload();
 
-			// Should show disconnected (since we blocked the route)
-			await sseHelper.waitForDisconnection(5000);
-		} catch {
-			// Connection behavior varies by environment
-			test.skip();
-		} finally {
-			// Always unblock
-			await sseHelper.unblockSSE();
-		}
+		// Should show disconnected (since we blocked the route)
+		await sseHelper.waitForDisconnection(5000);
+
+		// Always unblock
+		await sseHelper.unblockSSE();
 	});
 });
 
 test.describe('SSE - Event Types', () => {
 	test('quest events appear in feed', async ({ dashboardPage, sseHelper, seedQuests }) => {
-		await dashboardPage.goto();
+		test.skip(!hasBackend(), 'Requires backend for SSE events');
 
-		try {
-			await sseHelper.waitForConnection(5000);
-		} catch {
-			test.skip();
-			return;
-		}
+		await dashboardPage.goto();
+		await sseHelper.waitForConnection(5000);
 
 		// Filter to quest events
 		await dashboardPage.filterEvents('quest');
@@ -133,7 +117,10 @@ test.describe('SSE - Event Types', () => {
 	});
 
 	test('filter controls event visibility', async ({ dashboardPage, sseHelper }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE events');
+
 		await dashboardPage.goto();
+		await sseHelper.waitForConnection(5000);
 
 		// Get all events
 		await dashboardPage.filterEvents('all');
@@ -153,8 +140,9 @@ test.describe('SSE - UI Responsiveness', () => {
 		await dashboardPage.goto();
 
 		// Verify UI elements are interactive while SSE connects
+		// These elements are always visible regardless of loading state
 		await expect(dashboardPage.heading).toBeVisible();
-		await expect(dashboardPage.statsGrid).toBeVisible();
+		await expect(dashboardPage.eventFeed).toBeVisible();
 		await expect(dashboardPage.eventFilter).toBeEnabled();
 
 		// Can interact with filter

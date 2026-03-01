@@ -49,13 +49,13 @@ export function createSSEService() {
 	let source: EventSource | null = null;
 	let synced = false;
 
-	function connect(baseUrl: string) {
+	function connect(baseUrl: string, bucket: string) {
 		if (source !== null) {
 			source.close();
 			source = null;
 		}
 
-		const url = `${baseUrl}/message-logger/kv/ENTITY_STATES/watch?pattern=*`;
+		const url = `${baseUrl}/message-logger/kv/${bucket}/watch?pattern=*`;
 		source = new EventSource(url);
 
 		source.addEventListener('connected', () => {

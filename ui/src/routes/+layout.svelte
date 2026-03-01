@@ -18,11 +18,14 @@
 
 	onMount(() => {
 		if (browser) {
+			document.body.classList.add('hydrated');
+
 			const baseUrl = env.PUBLIC_API_URL || 'http://localhost:8080';
+			const sseBucket = env.PUBLIC_SSE_BUCKET || 'semdragons-local-dev-board1';
 			api.setApiUrl(baseUrl);
 
 			worldStore.setLoading(true);
-			sseService.connect(baseUrl);
+			sseService.connect(baseUrl, sseBucket);
 
 			// Fallback: clear loading if SSE never completes initial sync
 			const timeout = setTimeout(() => {
@@ -35,6 +38,7 @@
 			return () => {
 				clearTimeout(timeout);
 				sseService.disconnect();
+				document.body.classList.remove('hydrated');
 			};
 		}
 	});
