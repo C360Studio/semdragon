@@ -10,8 +10,8 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semdragons/processor/agent_progression"
+	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/pkg/errs"

@@ -17,9 +17,9 @@ import (
 // Guild is a permanent organization of agents specializing in related skills.
 // Members gain XP bonuses on quests matching guild specialization.
 type Guild struct {
-	ID          domain.GuildID   `json:"id"`
-	Name        string           `json:"name"`
-	Description string           `json:"description,omitempty"`
+	ID          domain.GuildID     `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
 	Status      domain.GuildStatus `json:"status"`
 
 	// Specialization
@@ -27,7 +27,7 @@ type Guild struct {
 	FocusArea       string            `json:"focus_area"`      // General area of expertise
 
 	// Leadership
-	Guildmaster domain.AgentID `json:"guildmaster"`
+	Guildmaster domain.AgentID   `json:"guildmaster"`
 	Officers    []domain.AgentID `json:"officers,omitempty"`
 
 	// Membership
@@ -45,11 +45,11 @@ type Guild struct {
 
 // GuildMember represents an agent's membership in a guild.
 type GuildMember struct {
-	AgentID   domain.AgentID    `json:"agent_id"`
-	Rank      domain.GuildRank  `json:"rank"`
-	JoinedAt  time.Time         `json:"joined_at"`
-	QuestsFor int               `json:"quests_for"` // Quests completed for this guild
-	XPEarned  int64             `json:"xp_earned"`  // XP earned while in guild
+	AgentID   domain.AgentID   `json:"agent_id"`
+	Rank      domain.GuildRank `json:"rank"`
+	JoinedAt  time.Time        `json:"joined_at"`
+	QuestsFor int              `json:"quests_for"` // Quests completed for this guild
+	XPEarned  int64            `json:"xp_earned"`  // XP earned while in guild
 }
 
 // =============================================================================

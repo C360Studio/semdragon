@@ -2,14 +2,138 @@ package semdragons
 
 import (
 	"context"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
-// DUNGEON MASTER - Orchestration that knows it's orchestration
+// DM TYPE ALIASES - domain/ is the single source of truth
 // =============================================================================
-// The DM is the only place where top-down control lives. Everything else is
-// emergent (quest board pulls, guild formation, party composition).
-// The DM can be a human, an LLM, or a hybrid. Full auto = LLM DM.
+
+// DMMode determines how much autonomy the DM has.
+type DMMode = domain.DMMode
+
+// DMFullAuto and related constants define DM operation modes.
+const (
+	DMFullAuto   = domain.DMFullAuto
+	DMAssisted   = domain.DMAssisted
+	DMSupervised = domain.DMSupervised
+	DMManual     = domain.DMManual
+)
+
+// SessionConfig holds configuration for a DM session.
+type SessionConfig = domain.SessionConfig
+
+// SessionSummary contains aggregate statistics for a completed session.
+type SessionSummary = domain.SessionSummary
+
+// GameEventType categorizes events in the game event stream.
+type GameEventType = domain.GameEventType
+
+// EventQuestPosted and related constants define game event types.
+const (
+	EventQuestPosted    = domain.EventQuestPosted
+	EventQuestClaimed   = domain.EventQuestClaimed
+	EventQuestStarted   = domain.EventQuestStarted
+	EventQuestCompleted = domain.EventQuestCompleted
+	EventQuestFailed    = domain.EventQuestFailed
+	EventQuestEscalated = domain.EventQuestEscalated
+
+	EventAgentRecruited  = domain.EventAgentRecruited
+	EventAgentLevelUp    = domain.EventAgentLevelUp
+	EventAgentLevelDown  = domain.EventAgentLevelDown
+	EventAgentDeath      = domain.EventAgentDeath
+	EventAgentPermadeath = domain.EventAgentPermadeath
+	EventAgentRevived    = domain.EventAgentRevived
+
+	EventBattleStarted = domain.EventBattleStarted
+	EventBattleVictory = domain.EventBattleVictory
+	EventBattleDefeat  = domain.EventBattleDefeat
+
+	EventPartyFormed    = domain.EventPartyFormed
+	EventPartyDisbanded = domain.EventPartyDisbanded
+	EventGuildCreated   = domain.EventGuildCreated
+	EventGuildJoined    = domain.EventGuildJoined
+
+	EventDMIntervention = domain.EventDMIntervention
+	EventDMEscalation   = domain.EventDMEscalation
+	EventDMSessionStart = domain.EventDMSessionStart
+	EventDMSessionEnd   = domain.EventDMSessionEnd
+)
+
+// GameEvent represents an event in the game event stream.
+type GameEvent = domain.GameEvent
+
+// EventFilter specifies criteria for filtering game events.
+type EventFilter = domain.EventFilter
+
+// InterventionType categorizes the kind of DM intervention.
+type InterventionType = domain.InterventionType
+
+// InterventionAssist and related constants define intervention types.
+const (
+	InterventionAssist   = domain.InterventionAssist
+	InterventionRedirect = domain.InterventionRedirect
+	InterventionTakeover = domain.InterventionTakeover
+	InterventionAbort    = domain.InterventionAbort
+	InterventionAugment  = domain.InterventionAugment
+)
+
+// Intervention represents a DM action on an ongoing quest.
+type Intervention = domain.Intervention
+
+// QuestHints provides optional guidance for quest creation.
+type QuestHints = domain.QuestHints
+
+// AgentEvaluation contains a performance assessment of an agent.
+type AgentEvaluation = domain.AgentEvaluation
+
+// PartyStrategy determines how a party is composed.
+type PartyStrategy = domain.PartyStrategy
+
+// PartyStrategyBalanced and related constants define party strategy values.
+const (
+	PartyStrategyBalanced   = domain.PartyStrategyBalanced
+	PartyStrategySpecialist = domain.PartyStrategySpecialist
+	PartyStrategyMentor     = domain.PartyStrategyMentor
+	PartyStrategyMinimal    = domain.PartyStrategyMinimal
+)
+
+// ApprovalType categorizes the kind of approval being requested.
+type ApprovalType = domain.ApprovalType
+
+// ApprovalQuestCreate and related constants define approval type values.
+const (
+	ApprovalQuestCreate        = domain.ApprovalQuestCreate
+	ApprovalQuestDecomposition = domain.ApprovalQuestDecomposition
+	ApprovalPartyFormation     = domain.ApprovalPartyFormation
+	ApprovalBattleVerdict      = domain.ApprovalBattleVerdict
+	ApprovalAgentRecruit       = domain.ApprovalAgentRecruit
+	ApprovalAgentRetire        = domain.ApprovalAgentRetire
+	ApprovalIntervention       = domain.ApprovalIntervention
+	ApprovalEscalation         = domain.ApprovalEscalation
+)
+
+// ApprovalRequest represents a request for human approval.
+type ApprovalRequest = domain.ApprovalRequest
+
+// ApprovalOption represents a choice available in an approval request.
+type ApprovalOption = domain.ApprovalOption
+
+// ApprovalResponse contains the human's decision.
+type ApprovalResponse = domain.ApprovalResponse
+
+// ApprovalFilter specifies criteria for filtering approval responses.
+type ApprovalFilter = domain.ApprovalFilter
+
+// InterventionContext provides context for suggesting interventions.
+type InterventionContext = domain.InterventionContext
+
+// EscalationAttempt records a previous attempt to resolve an escalation.
+type EscalationAttempt = domain.EscalationAttempt
+
+// =============================================================================
+// ROOT-OWNED TYPES (unique to root package)
 // =============================================================================
 
 // DungeonMaster is the orchestration interface.
@@ -17,153 +141,41 @@ import (
 // In human-in-the-loop mode, some methods route to human approval.
 type DungeonMaster interface {
 	// --- Session Management ---
-
-	// StartSession begins a new game session (workflow execution context).
 	StartSession(ctx context.Context, config SessionConfig) (*Session, error)
-
-	// EndSession wraps up a session, collects final stats.
 	EndSession(ctx context.Context, sessionID string) (*SessionSummary, error)
 
 	// --- Quest Management ---
-
-	// CreateQuest crafts a quest from a high-level objective.
-	// The DM decides difficulty, required skills, review level, XP rewards.
 	CreateQuest(ctx context.Context, objective string, hints QuestHints) (*Quest, error)
-
-	// ReviewQuestDecomposition approves or modifies a party lead's sub-quest breakdown.
 	ReviewQuestDecomposition(ctx context.Context, parentID QuestID, subQuests []Quest) ([]Quest, error)
 
 	// --- Agent Management ---
-
-	// RecruitAgent brings a new agent into the world at level 1.
 	RecruitAgent(ctx context.Context, config AgentConfig) (*Agent, error)
-
-	// RetireAgent permanently removes an agent (permadeath or manual removal).
 	RetireAgent(ctx context.Context, agentID AgentID, reason string) error
-
-	// EvaluateAgent runs an ad-hoc assessment of an agent's current performance.
 	EvaluateAgent(ctx context.Context, agentID AgentID) (*AgentEvaluation, error)
 
 	// --- Party Management ---
-
-	// FormParty assembles a party for a quest. The DM picks composition.
 	FormParty(ctx context.Context, questID QuestID, strategy PartyStrategy) (*Party, error)
 
 	// --- Intervention ---
-
-	// Intervene allows the DM to step into any ongoing quest.
-	// This is the "DM override" - can redirect, assist, or take over.
 	Intervene(ctx context.Context, questID QuestID, action Intervention) error
-
-	// HandleEscalation deals with escalated quests (TPK scenarios).
 	HandleEscalation(ctx context.Context, questID QuestID) (*EscalationResult, error)
-
-	// HandleBossBattle runs or delegates a boss battle for a completed quest.
 	HandleBossBattle(ctx context.Context, questID QuestID, submission any) (*BossBattle, error)
 
 	// --- Observation ---
-
-	// WorldState returns the current state of everything.
 	WorldState(ctx context.Context) (*WorldState, error)
-
-	// WatchEvents subscribes to the event stream (backed by semstreams).
 	WatchEvents(ctx context.Context, filter EventFilter) (<-chan GameEvent, error)
 }
 
-// DMMode determines how much autonomy the DM has.
-type DMMode string
-
-const (
-	// DMFullAuto indicates the LLM makes all decisions.
-	DMFullAuto DMMode = "full_auto"
-	// DMAssisted indicates the LLM proposes, human approves critical decisions.
-	DMAssisted DMMode = "assisted"
-	// DMSupervised indicates humans make key decisions, LLM handles routine.
-	DMSupervised DMMode = "supervised"
-	// DMManual indicates human DM with LLM as advisor only.
-	DMManual DMMode = "manual"
-)
-
-// SessionConfig holds configuration for a DM session.
-type SessionConfig struct {
-	Mode           DMMode            `json:"mode"`
-	Name           string            `json:"name"`
-	Description    string            `json:"description"`
-	DMModel        string            `json:"dm_model"`        // LLM model for DM decisions
-	MaxConcurrent  int               `json:"max_concurrent"`  // Max quests running at once
-	AutoEscalate   bool              `json:"auto_escalate"`   // Auto-escalate after max attempts
-	TrajectoryMode string            `json:"trajectory_mode"` // semstreams trajectory config
-	Metadata       map[string]string `json:"metadata"`
-}
-
 // Session represents an active DM session.
-type Session struct {
-	ID         string        `json:"id"`
-	Config     SessionConfig `json:"config"`
-	WorldState *WorldState   `json:"world_state"`
-	Active     bool          `json:"active"`
-}
+type Session = domain.Session
 
-// SessionSummary contains aggregate statistics for a completed session.
-type SessionSummary struct {
-	SessionID       string  `json:"session_id"`
-	QuestsCompleted int     `json:"quests_completed"`
-	QuestsFailed    int     `json:"quests_failed"`
-	QuestsEscalated int     `json:"quests_escalated"`
-	AgentsActive    int     `json:"agents_active"`
-	TotalXPAwarded  int64   `json:"total_xp_awarded"`
-	AvgQuality      float64 `json:"avg_quality"`
-	LevelUps        int     `json:"level_ups"`
-	LevelDowns      int     `json:"level_downs"`
-	Deaths          int     `json:"deaths"`
-}
+// WorldState contains the complete state of the game world.
+// Uses []any slices to avoid circular deps between domain and root entity types.
+// Use the Typed* accessor functions to extract concrete entity types.
+type WorldState = domain.WorldState
 
-// QuestHints provides optional guidance for quest creation.
-type QuestHints struct {
-	SuggestedDifficulty *QuestDifficulty `json:"suggested_difficulty,omitempty"`
-	SuggestedSkills     []SkillTag       `json:"suggested_skills,omitempty"`
-	PreferGuild         *GuildID         `json:"prefer_guild,omitempty"`
-	RequireHumanReview  bool             `json:"require_human_review"`
-	Budget              float64          `json:"budget"`
-	Deadline            string           `json:"deadline,omitempty"`
-}
-
-// PartyStrategy determines how a party is composed.
-type PartyStrategy string
-
-const (
-	// PartyStrategyBalanced uses a mix of skills.
-	PartyStrategyBalanced PartyStrategy = "balanced"
-	// PartyStrategySpecialist uses all members from the same guild.
-	PartyStrategySpecialist PartyStrategy = "specialist"
-	// PartyStrategyMentor pairs a high-level lead with apprentices.
-	PartyStrategyMentor PartyStrategy = "mentor"
-	// PartyStrategyMinimal uses the smallest viable party.
-	PartyStrategyMinimal PartyStrategy = "minimal"
-)
-
-// Intervention represents a DM action on an ongoing quest.
-type Intervention struct {
-	Type    InterventionType `json:"type"`
-	Reason  string           `json:"reason"`
-	Payload any              `json:"payload,omitempty"`
-}
-
-// InterventionType categorizes the kind of DM intervention.
-type InterventionType string
-
-const (
-	// InterventionAssist gives the agent a hint.
-	InterventionAssist InterventionType = "assist"
-	// InterventionRedirect changes the approach.
-	InterventionRedirect InterventionType = "redirect"
-	// InterventionTakeover has the DM finish the quest.
-	InterventionTakeover InterventionType = "takeover"
-	// InterventionAbort kills the quest.
-	InterventionAbort InterventionType = "abort"
-	// InterventionAugment adds resources or tools.
-	InterventionAugment InterventionType = "augment"
-)
+// WorldStats contains aggregate statistics about the game world.
+type WorldStats = domain.WorldStats
 
 // EscalationResult describes how an escalated quest was resolved.
 type EscalationResult struct {
@@ -173,127 +185,95 @@ type EscalationResult struct {
 	DMCompleted bool     `json:"dm_completed"` // DM did it themselves
 }
 
-// AgentEvaluation contains a performance assessment of an agent.
-type AgentEvaluation struct {
-	AgentID          AgentID  `json:"agent_id"`
-	CurrentLevel     int      `json:"current_level"`
-	RecommendedLevel int      `json:"recommended_level"`
-	Strengths        []string `json:"strengths"`
-	Weaknesses       []string `json:"weaknesses"`
-	Recommendation   string   `json:"recommendation"` // "promote", "maintain", "demote", "retire"
-}
-
 // =============================================================================
-// WORLD STATE - Everything the DM can see
+// TYPED ACCESSORS - extract concrete types from WorldState's []any slices
+//
+// WorldState.Agents contains Agent values, Quests contains Quest values, etc.
+// The dm_worldstate processor stores typed values in []any slices.
+// These accessors handle both value and pointer types for resilience.
 // =============================================================================
 
-// WorldState contains the complete state of the game world.
-type WorldState struct {
-	Agents  []Agent      `json:"agents"`
-	Quests  []Quest      `json:"quests"`
-	Parties []Party      `json:"parties"`
-	Guilds  []Guild      `json:"guilds"`
-	Battles []BossBattle `json:"battles"`
-	Stats   WorldStats   `json:"stats"`
+// TypedAgents extracts Agent values from a WorldState's Agents slice.
+func TypedAgents(ws *WorldState) []Agent {
+	if ws == nil {
+		return nil
+	}
+	agents := make([]Agent, 0, len(ws.Agents))
+	for _, a := range ws.Agents {
+		switch v := a.(type) {
+		case Agent:
+			agents = append(agents, v)
+		case *Agent:
+			agents = append(agents, *v)
+		}
+	}
+	return agents
 }
 
-// WorldStats contains aggregate statistics about the game world.
-type WorldStats struct {
-	ActiveAgents   int     `json:"active_agents"`
-	IdleAgents     int     `json:"idle_agents"`
-	CooldownAgents int     `json:"cooldown_agents"`
-	RetiredAgents  int     `json:"retired_agents"`
-	OpenQuests     int     `json:"open_quests"`
-	ActiveQuests   int     `json:"active_quests"`
-	CompletionRate float64 `json:"completion_rate"`
-	AvgQuality     float64 `json:"avg_quality"`
-	ActiveParties  int     `json:"active_parties"`
-	ActiveGuilds   int     `json:"active_guilds"`
+// TypedQuests extracts Quest values from a WorldState's Quests slice.
+func TypedQuests(ws *WorldState) []Quest {
+	if ws == nil {
+		return nil
+	}
+	quests := make([]Quest, 0, len(ws.Quests))
+	for _, q := range ws.Quests {
+		switch v := q.(type) {
+		case Quest:
+			quests = append(quests, v)
+		case *Quest:
+			quests = append(quests, *v)
+		}
+	}
+	return quests
 }
 
-// =============================================================================
-// GAME EVENTS - The event stream (maps to semstreams)
-// =============================================================================
-
-// GameEventType categorizes events in the game event stream.
-type GameEventType string
-
-const (
-	// EventQuestPosted indicates a quest was posted to the board.
-	EventQuestPosted GameEventType = "quest.posted"
-	// EventQuestClaimed indicates a quest was claimed by an agent.
-	EventQuestClaimed GameEventType = "quest.claimed"
-	// EventQuestStarted indicates work began on a quest.
-	EventQuestStarted GameEventType = "quest.started"
-	// EventQuestCompleted indicates a quest was completed successfully.
-	EventQuestCompleted GameEventType = "quest.completed"
-	// EventQuestFailed indicates a quest failed.
-	EventQuestFailed GameEventType = "quest.failed"
-	// EventQuestEscalated indicates a quest was escalated.
-	EventQuestEscalated GameEventType = "quest.escalated"
-
-	// EventAgentRecruited indicates a new agent joined.
-	EventAgentRecruited GameEventType = "agent.recruited"
-	// EventAgentLevelUp indicates an agent leveled up.
-	EventAgentLevelUp GameEventType = "agent.level_up"
-	// EventAgentLevelDown indicates an agent leveled down.
-	EventAgentLevelDown GameEventType = "agent.level_down"
-	// EventAgentDeath indicates a cooldown was triggered.
-	EventAgentDeath GameEventType = "agent.death"
-	// EventAgentPermadeath indicates permanent retirement.
-	EventAgentPermadeath GameEventType = "agent.permadeath"
-	// EventAgentRevived indicates an agent returned from cooldown.
-	EventAgentRevived GameEventType = "agent.revived"
-
-	// EventBattleStarted indicates a boss battle began.
-	EventBattleStarted GameEventType = "battle.started"
-	// EventBattleVictory indicates the agent won the battle.
-	EventBattleVictory GameEventType = "battle.victory"
-	// EventBattleDefeat indicates the agent lost the battle.
-	EventBattleDefeat GameEventType = "battle.defeat"
-
-	// EventPartyFormed indicates a party was created.
-	EventPartyFormed GameEventType = "party.formed"
-	// EventPartyDisbanded indicates a party was dissolved.
-	EventPartyDisbanded GameEventType = "party.disbanded"
-	// EventGuildCreated indicates a guild was created.
-	EventGuildCreated GameEventType = "guild.created"
-	// EventGuildJoined indicates an agent joined a guild.
-	EventGuildJoined GameEventType = "guild.joined"
-
-	// EventDMIntervention indicates the DM intervened.
-	EventDMIntervention GameEventType = "dm.intervention"
-	// EventDMEscalation indicates the DM handled an escalation.
-	EventDMEscalation GameEventType = "dm.escalation"
-	// EventDMSessionStart indicates a session started.
-	EventDMSessionStart GameEventType = "dm.session_start"
-	// EventDMSessionEnd indicates a session ended.
-	EventDMSessionEnd GameEventType = "dm.session_end"
-)
-
-// GameEvent represents an event in the game event stream.
-type GameEvent struct {
-	Type      GameEventType `json:"type"`
-	Timestamp int64         `json:"timestamp"` // Unix millis
-	SessionID string        `json:"session_id"`
-	Data      any           `json:"data"`
-
-	// References for easy filtering
-	QuestID  *QuestID  `json:"quest_id,omitempty"`
-	AgentID  *AgentID  `json:"agent_id,omitempty"`
-	PartyID  *PartyID  `json:"party_id,omitempty"`
-	GuildID  *GuildID  `json:"guild_id,omitempty"`
-	BattleID *BattleID `json:"battle_id,omitempty"`
-
-	// Semstreams integration
-	TrajectoryID string `json:"trajectory_id"`
-	SpanID       string `json:"span_id"`
+// TypedParties extracts Party values from a WorldState's Parties slice.
+func TypedParties(ws *WorldState) []Party {
+	if ws == nil {
+		return nil
+	}
+	parties := make([]Party, 0, len(ws.Parties))
+	for _, p := range ws.Parties {
+		switch v := p.(type) {
+		case Party:
+			parties = append(parties, v)
+		case *Party:
+			parties = append(parties, *v)
+		}
+	}
+	return parties
 }
 
-// EventFilter specifies criteria for filtering game events.
-type EventFilter struct {
-	Types   []GameEventType `json:"types,omitempty"`
-	QuestID *QuestID        `json:"quest_id,omitempty"`
-	AgentID *AgentID        `json:"agent_id,omitempty"`
-	GuildID *GuildID        `json:"guild_id,omitempty"`
+// TypedGuilds extracts Guild values from a WorldState's Guilds slice.
+func TypedGuilds(ws *WorldState) []Guild {
+	if ws == nil {
+		return nil
+	}
+	guilds := make([]Guild, 0, len(ws.Guilds))
+	for _, g := range ws.Guilds {
+		switch v := g.(type) {
+		case Guild:
+			guilds = append(guilds, v)
+		case *Guild:
+			guilds = append(guilds, *v)
+		}
+	}
+	return guilds
+}
+
+// TypedBattles extracts BossBattle values from a WorldState's Battles slice.
+func TypedBattles(ws *WorldState) []BossBattle {
+	if ws == nil {
+		return nil
+	}
+	battles := make([]BossBattle, 0, len(ws.Battles))
+	for _, b := range ws.Battles {
+		switch v := b.(type) {
+		case BossBattle:
+			battles = append(battles, v)
+		case *BossBattle:
+			battles = append(battles, *v)
+		}
+	}
+	return battles
 }

@@ -9,8 +9,8 @@ import (
 	"sync"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semdragons/processor/agent_progression"
+	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/agentic"
 )
 

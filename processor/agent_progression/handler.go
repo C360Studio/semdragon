@@ -7,8 +7,8 @@ import (
 	semgraph "github.com/c360studio/semstreams/graph"
 	"github.com/nats-io/nats.go/jetstream"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	graphclient "github.com/c360studio/semdragons/graph"
 	"github.com/c360studio/semdragons/processor/questboard"
 )
 
@@ -57,7 +57,7 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 	}
 
 	// Decode entity state
-	entityState, err := graphclient.DecodeEntityState(entry)
+	entityState, err := semdragons.DecodeEntityState(entry)
 	if err != nil || entityState == nil {
 		return
 	}
@@ -135,9 +135,9 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 
 	// Build XP context from entity state (replaces fat event pattern)
 	xpCtx := XPContext{
-		Quest: *quest,
-		Agent: *agent,
-		Duration: quest.Duration,
+		Quest:        *quest,
+		Agent:        *agent,
+		Duration:     quest.Duration,
 		IsGuildQuest: isGuildQuest,
 		Attempt:      quest.Attempts,
 	}
@@ -275,13 +275,13 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 func (c *Component) emitAgentXPUpdate(ctx context.Context, agentID domain.AgentID, questID domain.QuestID, award *XPAward, penalty *XPPenalty, agent *Agent) error {
 	// Build XP payload as a Graphable entity for emission
 	payload := &AgentXPPayload{
-		AgentID:     agentID,
-		QuestID:     questID,
-		Award:       award,
-		Penalty:     penalty,
-		XPAfter:     agent.XP,
-		LevelAfter:  agent.Level,
-		Timestamp:   time.Now(),
+		AgentID:    agentID,
+		QuestID:    questID,
+		Award:      award,
+		Penalty:    penalty,
+		XPAfter:    agent.XP,
+		LevelAfter: agent.Level,
+		Timestamp:  time.Now(),
 	}
 
 	if award != nil {

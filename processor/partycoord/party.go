@@ -27,9 +27,9 @@ type Party struct {
 	Members []PartyMember  `json:"members"`
 
 	// Coordination
-	Strategy      string                          `json:"strategy"`       // The lead's plan of attack
+	Strategy      string                            `json:"strategy"`       // The lead's plan of attack
 	SubQuestMap   map[domain.QuestID]domain.AgentID `json:"sub_quest_map"`  // Who's doing what
-	SharedContext []ContextItem                   `json:"shared_context"` // Party-wide knowledge
+	SharedContext []ContextItem                     `json:"shared_context"` // Party-wide knowledge
 
 	// Results
 	SubResults   map[domain.QuestID]any `json:"sub_results,omitempty"`   // Collected sub-quest outputs

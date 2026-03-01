@@ -85,7 +85,7 @@ type AgentSpec struct {
 	Skills      []domain.SkillTag `json:"skills"`
 	GuildID     string            `json:"guild_id,omitempty"`
 	IsNPC       bool              `json:"is_npc"`
-	Count       int               `json:"count"` // How many of this type to create
+	Count       int               `json:"count"`                  // How many of this type to create
 	NamePattern string            `json:"name_pattern,omitempty"` // e.g., "analyst-{n}"
 }
 

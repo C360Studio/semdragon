@@ -155,10 +155,10 @@ func TestComponent_StartBattle(t *testing.T) {
 
 	// Create a test quest
 	quest := &semdragons.Quest{
-		ID:          semdragons.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
-		Title:       "Test Quest",
-		Difficulty:  semdragons.DifficultyModerate,
-		BaseXP:      100,
+		ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
+		Title:      "Test Quest",
+		Difficulty: semdragons.DifficultyModerate,
+		BaseXP:     100,
 		Constraints: semdragons.QuestConstraints{
 			RequireReview: true,
 			ReviewLevel:   semdragons.ReviewStandard,

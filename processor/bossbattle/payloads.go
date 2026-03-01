@@ -146,13 +146,13 @@ func (p *BattleVerdictPayload) Validate() error {
 
 // BattleVictoryPayload contains data for battle.review.victory events.
 type BattleVictoryPayload struct {
-	Battle       BossBattle       `json:"battle"`
-	Quest        questboard.Quest `json:"quest"`
-	Verdict      BattleVerdict    `json:"verdict"`
-	XPAwarded    int64            `json:"xp_awarded"`
-	LevelChange  int              `json:"level_change"`
-	CompletedAt  time.Time        `json:"completed_at"`
-	Trace        TraceInfo        `json:"trace,omitempty"`
+	Battle      BossBattle       `json:"battle"`
+	Quest       questboard.Quest `json:"quest"`
+	Verdict     BattleVerdict    `json:"verdict"`
+	XPAwarded   int64            `json:"xp_awarded"`
+	LevelChange int              `json:"level_change"`
+	CompletedAt time.Time        `json:"completed_at"`
+	Trace       TraceInfo        `json:"trace,omitempty"`
 }
 
 func (p *BattleVictoryPayload) EntityID() string { return string(p.Battle.ID) }

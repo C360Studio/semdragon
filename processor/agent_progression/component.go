@@ -16,8 +16,8 @@ import (
 	"github.com/c360studio/semstreams/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	graphclient "github.com/c360studio/semdragons/graph"
 	"github.com/c360studio/semdragons/internal/util"
 )
 
@@ -41,10 +41,10 @@ import (
 
 // Component implements the agent progression processor as a semstreams component.
 type Component struct {
-	config   *Config
-	deps     component.Dependencies
-	graph    *graphclient.GraphClient
-	xpEngine XPEngine
+	config      *Config
+	deps        component.Dependencies
+	graph       *semdragons.GraphClient
+	xpEngine    XPEngine
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
 
@@ -265,7 +265,7 @@ func (c *Component) Start(ctx context.Context) error {
 	}
 
 	// Create graph client for entity state reads
-	c.graph = graphclient.NewGraphClient(c.deps.NATSClient, c.boardConfig)
+	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 
 	c.startTime = time.Now()
 	c.running.Store(true)

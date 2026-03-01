@@ -43,9 +43,9 @@ type BattleVerdict struct {
 
 // Judge represents an evaluator for boss battles.
 type Judge struct {
-	ID     string            `json:"id"`
-	Type   domain.JudgeType  `json:"type"`
-	Config map[string]any    `json:"config"`
+	ID     string           `json:"id"`
+	Type   domain.JudgeType `json:"type"`
+	Config map[string]any   `json:"config"`
 }
 
 // =============================================================================

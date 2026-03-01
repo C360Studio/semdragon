@@ -16,9 +16,9 @@ type Config struct {
 	Board    string `json:"board"`
 
 	// Execution settings
-	MaxTurns      int    `json:"max_turns"`       // Maximum tool-call loops per execution
-	MaxTokens     int    `json:"max_tokens"`      // Token budget per execution
-	SandboxDir    string `json:"sandbox_dir"`     // Base directory for file operations
+	MaxTurns       int    `json:"max_turns"`       // Maximum tool-call loops per execution
+	MaxTokens      int    `json:"max_tokens"`      // Token budget per execution
+	SandboxDir     string `json:"sandbox_dir"`     // Base directory for file operations
 	EnableBuiltins bool   `json:"enable_builtins"` // Register built-in tools
 }
 

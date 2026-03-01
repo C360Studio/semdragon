@@ -126,7 +126,7 @@ func (s *CharacterSheetService) buildSkillBars(agent *Agent) []SkillBar {
 			Skill:           skill,
 			SkillName:       skillTagToName(skill),
 			Level:           prof.Level,
-			LevelName:       ProficiencyLevelNames[prof.Level],
+			LevelName:       ProficiencyLevelName(prof.Level),
 			Progress:        prof.Progress,
 			ProgressPercent: prof.ProgressPercent(),
 			TotalXP:         prof.TotalXP,

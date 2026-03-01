@@ -2,37 +2,59 @@ package semdragons
 
 import (
 	"time"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
-// PARTY - A temporary group formed to tackle a quest
+// PARTY/GUILD PRIMITIVE ALIASES - domain/ is the single source of truth
 // =============================================================================
 
 // PartyStatus represents the current state of a party.
-type PartyStatus string
+type PartyStatus = domain.PartyStatus
 
+// PartyForming and related constants define party status values.
 const (
-	// PartyForming indicates the party is recruiting members.
-	PartyForming PartyStatus = "forming"
-	// PartyActive indicates the party is on a quest.
-	PartyActive PartyStatus = "active"
-	// PartyDisbanded indicates the quest is complete or failed.
-	PartyDisbanded PartyStatus = "disbanded"
+	PartyForming   = domain.PartyForming
+	PartyActive    = domain.PartyActive
+	PartyDisbanded = domain.PartyDisbanded
 )
 
 // PartyRole represents a member's role within a party.
-type PartyRole string
+type PartyRole = domain.PartyRole
 
+// RoleLead and related constants define party role values.
 const (
-	// RoleLead decomposes quest, coordinates, and faces the boss.
-	RoleLead PartyRole = "lead"
-	// RoleExecutor does the actual sub-quest work.
-	RoleExecutor PartyRole = "executor"
-	// RoleReviewer provides internal QA before boss battle.
-	RoleReviewer PartyRole = "reviewer"
-	// RoleScout handles research, context gathering, and recon.
-	RoleScout PartyRole = "scout"
+	RoleLead     = domain.RoleLead
+	RoleExecutor = domain.RoleExecutor
+	RoleReviewer = domain.RoleReviewer
+	RoleScout    = domain.RoleScout
 )
+
+// GuildStatus represents the current state of a guild.
+type GuildStatus = domain.GuildStatus
+
+// GuildActive and related constants define guild status values.
+const (
+	GuildActive   = domain.GuildActive
+	GuildInactive = domain.GuildInactive
+)
+
+// GuildRank represents a member's rank within a guild.
+type GuildRank = domain.GuildRank
+
+// GuildRankInitiate and related constants define guild rank values.
+const (
+	GuildRankInitiate = domain.GuildRankInitiate
+	GuildRankMember   = domain.GuildRankMember
+	GuildRankVeteran  = domain.GuildRankVeteran
+	GuildRankOfficer  = domain.GuildRankOfficer
+	GuildRankMaster   = domain.GuildRankMaster
+)
+
+// =============================================================================
+// ENTITY STRUCTS (root-owned, reference aliased primitives)
+// =============================================================================
 
 // Party is a temporary group of agents formed to tackle a quest together.
 // The party lead is responsible for decomposing the quest and rolling up results.
@@ -73,61 +95,6 @@ type ContextItem struct {
 	Value   any       `json:"value"`
 	AddedBy AgentID   `json:"added_by"`
 	AddedAt time.Time `json:"added_at"`
-}
-
-// =============================================================================
-// GUILD - Persistent specialization clusters
-// =============================================================================
-
-// GuildStatus represents the current state of a guild.
-type GuildStatus string
-
-const (
-	// GuildActive indicates the guild is actively accepting quests.
-	GuildActive GuildStatus = "active"
-	// GuildInactive indicates the guild is not accepting quests.
-	GuildInactive GuildStatus = "inactive"
-)
-
-// GuildRank represents a member's rank within a guild.
-type GuildRank string
-
-const (
-	// GuildRankInitiate indicates a new member proving themselves.
-	GuildRankInitiate GuildRank = "initiate"
-	// GuildRankMember indicates an established contributor.
-	GuildRankMember GuildRank = "member"
-	// GuildRankVeteran indicates a member with proven track record.
-	GuildRankVeteran GuildRank = "veteran"
-	// GuildRankOfficer can recruit and manage guild quests.
-	GuildRankOfficer GuildRank = "officer"
-	// GuildRankMaster leads the guild.
-	GuildRankMaster GuildRank = "guildmaster"
-)
-
-// GuildBonusRate returns the XP bonus rate for this guild rank.
-// Higher ranks earn more from guild quests as reward for their investment.
-//
-//	Initiate:    10%
-//	Member:      15%
-//	Veteran:     18%
-//	Officer:     20%
-//	Guildmaster: 25%
-func (r GuildRank) GuildBonusRate() float64 {
-	switch r {
-	case GuildRankInitiate:
-		return 0.10
-	case GuildRankMember:
-		return 0.15
-	case GuildRankVeteran:
-		return 0.18
-	case GuildRankOfficer:
-		return 0.20
-	case GuildRankMaster:
-		return 0.25
-	default:
-		return 0.10 // Unknown rank gets initiate rate
-	}
 }
 
 // Guild is a persistent social organization of agents with mixed composition.

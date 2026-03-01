@@ -39,12 +39,12 @@ type Component struct {
 	stopChan chan struct{}
 
 	// Metrics
-	guildsCreated    atomic.Uint64
-	membersJoined    atomic.Uint64
-	promotionsCount  atomic.Uint64
-	errorsCount      atomic.Int64
-	lastActivity     atomic.Value // time.Time
-	startTime        time.Time
+	guildsCreated   atomic.Uint64
+	membersJoined   atomic.Uint64
+	promotionsCount atomic.Uint64
+	errorsCount     atomic.Int64
+	lastActivity    atomic.Value // time.Time
+	startTime       time.Time
 }
 
 // ensure Component implements the required interfaces.

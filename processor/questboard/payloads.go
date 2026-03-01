@@ -225,14 +225,14 @@ type BattleVerdict struct {
 // AgentContext contains agent state needed for downstream processing.
 // Embedded in events so handlers don't need to fetch state (fat events pattern).
 type AgentContext struct {
-	Level     int                `json:"level"`
-	XP        int64              `json:"xp"`
-	XPToLevel int64              `json:"xp_to_level"`
-	Tier      domain.TrustTier   `json:"tier"`
-	Streak    int                `json:"streak"`
-	Guilds    []domain.GuildID   `json:"guilds,omitempty"`
-	GuildRank domain.GuildRank   `json:"guild_rank,omitempty"` // Rank in priority guild if applicable
-	Stats     AgentContextStats  `json:"stats"`
+	Level     int               `json:"level"`
+	XP        int64             `json:"xp"`
+	XPToLevel int64             `json:"xp_to_level"`
+	Tier      domain.TrustTier  `json:"tier"`
+	Streak    int               `json:"streak"`
+	Guilds    []domain.GuildID  `json:"guilds,omitempty"`
+	GuildRank domain.GuildRank  `json:"guild_rank,omitempty"` // Rank in priority guild if applicable
+	Stats     AgentContextStats `json:"stats"`
 }
 
 // AgentContextStats contains stats relevant for XP calculation.

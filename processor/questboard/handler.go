@@ -102,7 +102,7 @@ func (c *Component) PostSubQuests(ctx context.Context, parentID domain.QuestID, 
 		return nil, errs.Wrap(err, "QuestBoard", "PostSubQuests", "load decomposer")
 	}
 
-	perms := semdragons.TierPerms[semdragons.TierFromLevel(agent.Level)]
+	perms := semdragons.TierPermissionsFor(semdragons.TierFromLevel(agent.Level))
 	if !perms.CanDecomposeQuest {
 		return nil, errors.New("agent cannot decompose quests (requires Master+ tier)")
 	}
@@ -307,7 +307,7 @@ func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.Quest
 		return errs.Wrap(err, "QuestBoard", "ClaimQuestForParty", "load lead")
 	}
 
-	perms := semdragons.TierPerms[semdragons.TierFromLevel(agent.Level)]
+	perms := semdragons.TierPermissionsFor(semdragons.TierFromLevel(agent.Level))
 	if !perms.CanLeadParty {
 		return errors.New("party lead cannot lead parties (requires Master+ tier)")
 	}
@@ -868,7 +868,7 @@ func (c *Component) validateAgentCanClaim(agent *semdragons.Agent, quest *Quest)
 		return errors.New("quest requires party")
 	}
 
-	perms := semdragons.TierPerms[semdragons.TierFromLevel(agent.Level)]
+	perms := semdragons.TierPermissionsFor(semdragons.TierFromLevel(agent.Level))
 	if agent.CurrentQuest != nil && perms.MaxConcurrent <= 1 {
 		return errors.New("agent at concurrent quest limit")
 	}
@@ -888,4 +888,3 @@ func (c *Component) validateAgentCanClaim(agent *semdragons.Agent, quest *Quest)
 
 	return nil
 }
-

@@ -47,12 +47,12 @@ type Component struct {
 	questsMu sync.RWMutex
 
 	// Internal state
-	running      atomic.Bool
-	mu           sync.RWMutex
-	stopChan     chan struct{}
-	doneChan     chan struct{}
-	watchDoneCh  chan struct{} // Signals watch goroutines are done
-	stopOnce     sync.Once
+	running     atomic.Bool
+	mu          sync.RWMutex
+	stopChan    chan struct{}
+	doneChan    chan struct{}
+	watchDoneCh chan struct{} // Signals watch goroutines are done
+	stopOnce    sync.Once
 
 	// Metrics
 	suggestionsComputed atomic.Uint64

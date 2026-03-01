@@ -2,49 +2,192 @@ package semdragons
 
 import (
 	"time"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
-// CORE DOMAIN TYPES
+// PRIMITIVE TYPE ALIASES - domain/ is the single source of truth
 // =============================================================================
-// Semdragons: Agentic coordination modeled as a tabletop RPG
-// Built on top of semstreams for observability, trajectories, and event streaming
-// =============================================================================
-
-// -----------------------------------------------------------------------------
-// Agent - An autonomous worker that claims and executes quests
-// -----------------------------------------------------------------------------
 
 // AgentID uniquely identifies an agent in the system.
-type AgentID string
+type AgentID = domain.AgentID
 
 // GuildID uniquely identifies a guild.
-type GuildID string
+type GuildID = domain.GuildID
 
 // QuestID uniquely identifies a quest on the board.
-type QuestID string
+type QuestID = domain.QuestID
 
 // PartyID uniquely identifies a party of agents.
-type PartyID string
+type PartyID = domain.PartyID
 
 // BattleID uniquely identifies a boss battle (review session).
-type BattleID string
+type BattleID = domain.BattleID
 
 // AgentStatus represents the current state of an agent in the system.
-type AgentStatus string
+type AgentStatus = domain.AgentStatus
 
+// AgentIdle and related constants define agent status values.
 const (
-	// AgentIdle indicates the agent is available to claim quests.
-	AgentIdle AgentStatus = "idle"
-	// AgentOnQuest indicates the agent is currently executing a quest.
-	AgentOnQuest AgentStatus = "on_quest"
-	// AgentInBattle indicates the agent is facing a boss battle (review).
-	AgentInBattle AgentStatus = "in_battle"
-	// AgentCooldown indicates the agent failed and is cooling down before retry.
-	AgentCooldown AgentStatus = "cooldown"
-	// AgentRetired indicates permadeath from catastrophic failure.
-	AgentRetired AgentStatus = "retired"
+	AgentIdle     = domain.AgentIdle
+	AgentOnQuest  = domain.AgentOnQuest
+	AgentInBattle = domain.AgentInBattle
+	AgentCooldown = domain.AgentCooldown
+	AgentRetired  = domain.AgentRetired
 )
+
+// TrustTier represents an agent's trust level derived from their level.
+type TrustTier = domain.TrustTier
+
+// TierApprentice and related constants define trust tier levels.
+const (
+	TierApprentice  = domain.TierApprentice
+	TierJourneyman  = domain.TierJourneyman
+	TierExpert      = domain.TierExpert
+	TierMaster      = domain.TierMaster
+	TierGrandmaster = domain.TierGrandmaster
+)
+
+// TierFromLevel returns the trust tier for a given agent level.
+func TierFromLevel(level int) TrustTier {
+	return domain.TierFromLevel(level)
+}
+
+// SkillTag represents a domain of competence.
+type SkillTag = domain.SkillTag
+
+// SkillCodeGen and related constants define skill tag values.
+const (
+	SkillCodeGen       = domain.SkillCodeGen
+	SkillCodeReview    = domain.SkillCodeReview
+	SkillDataTransform = domain.SkillDataTransform
+	SkillSummarization = domain.SkillSummarization
+	SkillResearch      = domain.SkillResearch
+	SkillPlanning      = domain.SkillPlanning
+	SkillCustomerComms = domain.SkillCustomerComms
+	SkillAnalysis      = domain.SkillAnalysis
+	SkillTraining      = domain.SkillTraining
+)
+
+// ProficiencyLevel represents mastery level of a skill (1-5).
+type ProficiencyLevel = domain.ProficiencyLevel
+
+// ProficiencyNovice and related constants define proficiency levels.
+const (
+	ProficiencyNovice     = domain.ProficiencyNovice
+	ProficiencyApprentice = domain.ProficiencyApprentice
+	ProficiencyJourneyman = domain.ProficiencyJourneyman
+	ProficiencyExpert     = domain.ProficiencyExpert
+	ProficiencyMaster     = domain.ProficiencyMaster
+)
+
+// ProficiencyLevelName returns the human-readable name for a proficiency level.
+func ProficiencyLevelName(level ProficiencyLevel) string {
+	return domain.ProficiencyLevelName(level)
+}
+
+// SkillProficiency tracks an agent's mastery of a specific skill.
+type SkillProficiency = domain.SkillProficiency
+
+// QuestStatus represents the lifecycle state of a quest.
+type QuestStatus = domain.QuestStatus
+
+// QuestPosted and related constants define quest status values.
+const (
+	QuestPosted     = domain.QuestPosted
+	QuestClaimed    = domain.QuestClaimed
+	QuestInProgress = domain.QuestInProgress
+	QuestInReview   = domain.QuestInReview
+	QuestCompleted  = domain.QuestCompleted
+	QuestFailed     = domain.QuestFailed
+	QuestEscalated  = domain.QuestEscalated
+	QuestCancelled  = domain.QuestCancelled
+)
+
+// QuestDifficulty represents the challenge level of a quest.
+type QuestDifficulty = domain.QuestDifficulty
+
+// DifficultyTrivial and related constants define quest difficulty levels.
+const (
+	DifficultyTrivial   = domain.DifficultyTrivial
+	DifficultyEasy      = domain.DifficultyEasy
+	DifficultyModerate  = domain.DifficultyModerate
+	DifficultyHard      = domain.DifficultyHard
+	DifficultyEpic      = domain.DifficultyEpic
+	DifficultyLegendary = domain.DifficultyLegendary
+)
+
+// ReviewLevel indicates the rigor of the boss battle review.
+type ReviewLevel = domain.ReviewLevel
+
+// ReviewAuto and related constants define review level values.
+const (
+	ReviewAuto     = domain.ReviewAuto
+	ReviewStandard = domain.ReviewStandard
+	ReviewStrict   = domain.ReviewStrict
+	ReviewHuman    = domain.ReviewHuman
+)
+
+// BattleStatus represents the state of a boss battle.
+type BattleStatus = domain.BattleStatus
+
+// BattleActive and related constants define battle status values.
+const (
+	BattleActive  = domain.BattleActive
+	BattleVictory = domain.BattleVictory
+	BattleDefeat  = domain.BattleDefeat
+	BattleRetreat = domain.BattleRetreat
+)
+
+// JudgeType indicates the kind of judge (automated, LLM, or human).
+type JudgeType = domain.JudgeType
+
+// JudgeAutomated and related constants define judge type values.
+const (
+	JudgeAutomated = domain.JudgeAutomated
+	JudgeLLM       = domain.JudgeLLM
+	JudgeHuman     = domain.JudgeHuman
+)
+
+// ReviewCriterion defines a single evaluation criterion for a boss battle.
+type ReviewCriterion = domain.ReviewCriterion
+
+// ReviewResult holds a judge's evaluation of a single criterion.
+type ReviewResult = domain.ReviewResult
+
+// Tool represents a capability an agent can use.
+type Tool = domain.Tool
+
+// =============================================================================
+// XP HELPERS (re-exported from domain)
+// =============================================================================
+
+// DefaultXPForDifficulty returns base XP for quest difficulty.
+func DefaultXPForDifficulty(difficulty QuestDifficulty) int64 {
+	return domain.DefaultXPForDifficulty(difficulty)
+}
+
+// TierFromDifficulty returns the minimum trust tier for a difficulty level.
+func TierFromDifficulty(difficulty QuestDifficulty) TrustTier {
+	return domain.TierFromDifficulty(difficulty)
+}
+
+// =============================================================================
+// TIER PERMISSIONS - domain/ is the single source of truth
+// =============================================================================
+
+// TierPermissions defines what a trust tier is allowed to do.
+type TierPermissions = domain.TierPermissions
+
+// TierPermissionsFor returns the permissions for the given trust tier.
+func TierPermissionsFor(tier TrustTier) TierPermissions {
+	return domain.TierPermissionsFor(tier)
+}
+
+// =============================================================================
+// ENTITY STRUCTS (root-owned, reference aliased primitives)
+// =============================================================================
 
 // Agent represents an autonomous worker in the semdragons system.
 // Agents earn XP, level up, join guilds, and claim quests from the board.
@@ -171,258 +314,13 @@ type AgentStats struct {
 	QuestsDecomposed int     `json:"quests_decomposed"`
 }
 
-// SkillTag represents a domain of competence.
-type SkillTag string
-
-// Skill tags for common agent competencies.
-const (
-	SkillCodeGen       SkillTag = "code_generation"
-	SkillCodeReview    SkillTag = "code_review"
-	SkillDataTransform SkillTag = "data_transformation"
-	SkillSummarization SkillTag = "summarization"
-	SkillResearch      SkillTag = "research"
-	SkillPlanning      SkillTag = "planning"
-	SkillCustomerComms SkillTag = "customer_communications"
-	SkillAnalysis      SkillTag = "analysis"
-	SkillTraining      SkillTag = "training" // Can lead training parties as mentor
-)
-
-// -----------------------------------------------------------------------------
-// Agent Persona - Character identity that shapes behavior, NOT progression
-// -----------------------------------------------------------------------------
-//
-// DESIGN PRINCIPLE: Persona affects TRAJECTORY, not PROGRESSION.
-//
-// Persona influences (trajectory):
-//   - Communication and output style
-//   - Problem-solving approach
-//   - Quest type preferences (soft attraction via boids, not hard gates)
-//   - Party compatibility (complementary personalities)
-//   - Guild culture fit
-//
-// Persona does NOT influence (progression):
-//   - XP calculations
-//   - Boss battle verdicts
-//   - Skill proficiency gains
-//   - Tier capabilities
-//   - Review outcomes
-//   - Level progression
-//
-// This ensures fair competition: agents succeed based on demonstrated
-// competence, not character backstory. A well-written persona makes an
-// agent more interesting, not more powerful.
-
 // AgentPersona defines an agent's character identity and behavioral style.
 type AgentPersona struct {
-	// SystemPrompt is injected into the agent's LLM calls to shape behavior.
-	// Should describe thinking style, communication approach, problem-solving
-	// preferences - NOT claims of capability or expertise.
-	SystemPrompt string `json:"system_prompt"`
-
-	// Backstory provides RPG flavor text and may hint at guild affinity.
-	// Example: "Forged in the data mines of the Analytics Guild..."
-	Backstory string `json:"backstory"`
-
-	// Traits are personality descriptors that affect style, not power.
-	// Examples: "methodical", "creative", "terse", "thorough", "playful"
-	// These may influence party formation (complementary traits work well).
-	Traits []string `json:"traits,omitempty"`
-
-	// Style describes communication preferences.
-	// Examples: "formal", "casual", "technical", "narrative"
-	Style string `json:"style,omitempty"`
+	SystemPrompt string   `json:"system_prompt"`
+	Backstory    string   `json:"backstory"`
+	Traits       []string `json:"traits,omitempty"`
+	Style        string   `json:"style,omitempty"`
 }
-
-// -----------------------------------------------------------------------------
-// Skill Proficiency - Skills have levels that improve through use
-// -----------------------------------------------------------------------------
-
-// ProficiencyLevel represents mastery level of a skill (1-5).
-type ProficiencyLevel int
-
-const (
-	// ProficiencyNovice is basic familiarity (default starting level).
-	ProficiencyNovice ProficiencyLevel = 1
-	// ProficiencyApprentice is developing competence.
-	ProficiencyApprentice ProficiencyLevel = 2
-	// ProficiencyJourneyman is solid working knowledge.
-	ProficiencyJourneyman ProficiencyLevel = 3
-	// ProficiencyExpert is high mastery.
-	ProficiencyExpert ProficiencyLevel = 4
-	// ProficiencyMaster is peak proficiency.
-	ProficiencyMaster ProficiencyLevel = 5
-)
-
-// ProficiencyLevelNames maps levels to human-readable names.
-var ProficiencyLevelNames = map[ProficiencyLevel]string{
-	ProficiencyNovice:     "Novice",
-	ProficiencyApprentice: "Apprentice",
-	ProficiencyJourneyman: "Journeyman",
-	ProficiencyExpert:     "Expert",
-	ProficiencyMaster:     "Master",
-}
-
-// SkillProficiency tracks an agent's mastery of a specific skill.
-type SkillProficiency struct {
-	Level      ProficiencyLevel `json:"level"`
-	Progress   int              `json:"progress"`    // 0-99 points toward next level
-	TotalXP    int64            `json:"total_xp"`    // Lifetime XP earned using this skill
-	QuestsUsed int              `json:"quests_used"` // Number of quests using this skill
-	LastUsed   *time.Time       `json:"last_used,omitempty"`
-}
-
-// ProgressPercent returns progress as a percentage (0-100).
-func (sp SkillProficiency) ProgressPercent() float64 {
-	if sp.Level >= ProficiencyMaster {
-		return 100.0
-	}
-	return float64(sp.Progress)
-}
-
-// CanLevelUp returns true if progress is sufficient for level up.
-func (sp SkillProficiency) CanLevelUp() bool {
-	return sp.Progress >= 100 && sp.Level < ProficiencyMaster
-}
-
-// -----------------------------------------------------------------------------
-// Trust Tiers - What agents are allowed to do based on level
-// -----------------------------------------------------------------------------
-
-// TrustTier represents an agent's trust level derived from their level.
-type TrustTier int
-
-// Trust tier constants defining capability gates.
-const (
-	// TierApprentice is for levels 1-5: read-only, summarize, simple transforms.
-	TierApprentice TrustTier = iota
-	// TierJourneyman is for levels 6-10: can call tools, make API requests.
-	TierJourneyman
-	// TierExpert is for levels 11-15: can spend money, modify state, write to prod.
-	TierExpert
-	// TierMaster is for levels 16-18: can supervise agents, decompose quests, lead parties.
-	TierMaster
-	// TierGrandmaster is for levels 19-20: can act as DM delegate, create quests, manage guilds.
-	TierGrandmaster
-)
-
-// TierFromLevel returns the trust tier for a given agent level.
-func TierFromLevel(level int) TrustTier {
-	switch {
-	case level <= 5:
-		return TierApprentice
-	case level <= 10:
-		return TierJourneyman
-	case level <= 15:
-		return TierExpert
-	case level <= 18:
-		return TierMaster
-	default:
-		return TierGrandmaster
-	}
-}
-
-// TierPermissions defines what a trust tier is allowed to do.
-type TierPermissions struct {
-	CanUseTool        func(Tool) bool
-	CanClaimQuestTier QuestDifficulty
-	CanLeadParty      bool
-	CanDecomposeQuest bool
-	CanSupervise      bool
-	CanActAsDM        bool
-	MaxConcurrent     int // Max concurrent quests
-}
-
-// TierPerms maps each trust tier to its allowed permissions.
-var TierPerms = map[TrustTier]TierPermissions{
-	TierApprentice: {
-		CanClaimQuestTier: DifficultyTrivial,
-		MaxConcurrent:     1,
-	},
-	TierJourneyman: {
-		CanClaimQuestTier: DifficultyModerate,
-		MaxConcurrent:     2,
-	},
-	TierExpert: {
-		CanClaimQuestTier: DifficultyHard,
-		MaxConcurrent:     3,
-	},
-	TierMaster: {
-		CanClaimQuestTier: DifficultyEpic,
-		CanLeadParty:      true,
-		CanDecomposeQuest: true,
-		CanSupervise:      true,
-		MaxConcurrent:     4,
-	},
-	TierGrandmaster: {
-		CanClaimQuestTier: DifficultyLegendary,
-		CanLeadParty:      true,
-		CanDecomposeQuest: true,
-		CanSupervise:      true,
-		CanActAsDM:        true,
-		MaxConcurrent:     5,
-	},
-}
-
-// -----------------------------------------------------------------------------
-// Tools / Equipment - What agents have access to
-// -----------------------------------------------------------------------------
-
-// Tool represents a capability an agent can use.
-type Tool struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	MinTier     TrustTier      `json:"min_tier"`
-	Category    string         `json:"category"`
-	Dangerous   bool           `json:"dangerous"`
-	Config      map[string]any `json:"config"`
-}
-
-// -----------------------------------------------------------------------------
-// Quest - A unit of work posted to the quest board
-// -----------------------------------------------------------------------------
-
-// QuestStatus represents the lifecycle state of a quest.
-type QuestStatus string
-
-// Quest status constants.
-const (
-	// QuestPosted indicates the quest is on the board, unclaimed.
-	QuestPosted QuestStatus = "posted"
-	// QuestClaimed indicates the quest is claimed by an agent/party.
-	QuestClaimed QuestStatus = "claimed"
-	// QuestInProgress indicates the quest is actively being worked.
-	QuestInProgress QuestStatus = "in_progress"
-	// QuestInReview indicates the quest is in boss battle (review) phase.
-	QuestInReview QuestStatus = "in_review"
-	// QuestCompleted indicates the quest is done and reviewed.
-	QuestCompleted QuestStatus = "completed"
-	// QuestFailed indicates the quest failed and may be re-posted.
-	QuestFailed QuestStatus = "failed"
-	// QuestEscalated indicates TPK - needs higher-level attention.
-	QuestEscalated QuestStatus = "escalated"
-	// QuestCancelled indicates the quest was withdrawn.
-	QuestCancelled QuestStatus = "cancelled"
-)
-
-// QuestDifficulty represents the challenge level of a quest.
-type QuestDifficulty int
-
-// Quest difficulty constants.
-const (
-	// DifficultyTrivial is for level 1-5 agents.
-	DifficultyTrivial QuestDifficulty = iota
-	// DifficultyEasy is for level 3-7 agents.
-	DifficultyEasy
-	// DifficultyModerate is for level 6-10 agents.
-	DifficultyModerate
-	// DifficultyHard is for level 10-14 agents.
-	DifficultyHard
-	// DifficultyEpic is for level 14-18 agents.
-	DifficultyEpic
-	// DifficultyLegendary is for level 18-20 agents or requires a party.
-	DifficultyLegendary
-)
 
 // Quest represents a unit of work on the quest board.
 type Quest struct {
@@ -485,25 +383,6 @@ type QuestConstraints struct {
 	ReviewLevel   ReviewLevel   `json:"review_level"`
 }
 
-// -----------------------------------------------------------------------------
-// Boss Battle - Quality gates disguised as encounters
-// -----------------------------------------------------------------------------
-
-// ReviewLevel indicates the rigor of the boss battle review.
-type ReviewLevel int
-
-// Review level constants.
-const (
-	// ReviewAuto uses automated checks only (the goblin).
-	ReviewAuto ReviewLevel = iota
-	// ReviewStandard uses LLM-as-judge review (the ogre).
-	ReviewStandard
-	// ReviewStrict uses a multi-judge panel (the dragon).
-	ReviewStrict
-	// ReviewHuman requires a human reviewer (the DM themselves).
-	ReviewHuman
-)
-
 // BossBattle represents a quality gate review session.
 type BossBattle struct {
 	ID      BattleID     `json:"id"`
@@ -520,21 +399,6 @@ type BossBattle struct {
 	CompletedAt *time.Time        `json:"completed_at,omitempty"`
 }
 
-// BattleStatus represents the state of a boss battle.
-type BattleStatus string
-
-// Battle status constants.
-const (
-	// BattleActive indicates the battle is in progress.
-	BattleActive BattleStatus = "active"
-	// BattleVictory indicates the agent passed review.
-	BattleVictory BattleStatus = "victory"
-	// BattleDefeat indicates the agent failed review.
-	BattleDefeat BattleStatus = "defeat"
-	// BattleRetreat indicates the agent requested a re-do.
-	BattleRetreat BattleStatus = "retreat"
-)
-
 // BattleVerdict holds the outcome of a boss battle.
 type BattleVerdict struct {
 	Passed       bool    `json:"passed"`
@@ -545,39 +409,9 @@ type BattleVerdict struct {
 	LevelChange  int     `json:"level_change"`
 }
 
-// ReviewCriterion defines a single evaluation criterion for a boss battle.
-type ReviewCriterion struct {
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Weight      float64 `json:"weight"`
-	Threshold   float64 `json:"threshold"`
-}
-
-// ReviewResult holds a judge's evaluation of a single criterion.
-type ReviewResult struct {
-	CriterionName string  `json:"criterion_name"`
-	Score         float64 `json:"score"`
-	Passed        bool    `json:"passed"`
-	Reasoning     string  `json:"reasoning"`
-	JudgeID       string  `json:"judge_id"`
-}
-
 // Judge represents an evaluator for boss battles.
 type Judge struct {
 	ID     string         `json:"id"`
 	Type   JudgeType      `json:"type"`
 	Config map[string]any `json:"config"`
 }
-
-// JudgeType indicates the kind of judge (automated, LLM, or human).
-type JudgeType string
-
-// Judge type constants.
-const (
-	// JudgeAutomated uses rule-based checks.
-	JudgeAutomated JudgeType = "automated"
-	// JudgeLLM uses LLM-as-judge evaluation.
-	JudgeLLM JudgeType = "llm"
-	// JudgeHuman requires a human reviewer.
-	JudgeHuman JudgeType = "human"
-)

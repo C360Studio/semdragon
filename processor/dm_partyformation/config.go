@@ -15,8 +15,8 @@ type Config struct {
 	Board    string `json:"board"`
 
 	// Party formation settings
-	DefaultStrategy   string `json:"default_strategy"`    // Default party strategy
-	MaxPartySize      int    `json:"max_party_size"`      // Maximum party size
+	DefaultStrategy   string `json:"default_strategy"`     // Default party strategy
+	MaxPartySize      int    `json:"max_party_size"`       // Maximum party size
 	MinMembersForLead int    `json:"min_members_for_lead"` // Minimum members for party lead
 }
 

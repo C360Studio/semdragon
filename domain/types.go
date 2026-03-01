@@ -102,13 +102,18 @@ const (
 	ProficiencyMaster     ProficiencyLevel = 5
 )
 
-// ProficiencyLevelNames maps levels to human-readable names.
-var ProficiencyLevelNames = map[ProficiencyLevel]string{
+// proficiencyLevelNames maps levels to human-readable names.
+var proficiencyLevelNames = map[ProficiencyLevel]string{
 	ProficiencyNovice:     "Novice",
 	ProficiencyApprentice: "Apprentice",
 	ProficiencyJourneyman: "Journeyman",
 	ProficiencyExpert:     "Expert",
 	ProficiencyMaster:     "Master",
+}
+
+// ProficiencyLevelName returns the human-readable name for a proficiency level.
+func ProficiencyLevelName(level ProficiencyLevel) string {
+	return proficiencyLevelNames[level]
 }
 
 // SkillProficiency tracks an agent's mastery of a specific skill.
@@ -291,8 +296,8 @@ type TierPermissions struct {
 	MaxConcurrent     int // Max concurrent quests
 }
 
-// TierPerms maps each trust tier to its allowed permissions.
-var TierPerms = map[TrustTier]TierPermissions{
+// tierPerms maps each trust tier to its allowed permissions.
+var tierPerms = map[TrustTier]TierPermissions{
 	TierApprentice: {
 		CanClaimQuestTier: DifficultyTrivial,
 		MaxConcurrent:     1,
@@ -320,6 +325,11 @@ var TierPerms = map[TrustTier]TierPermissions{
 		CanActAsDM:        true,
 		MaxConcurrent:     5,
 	},
+}
+
+// TierPermissionsFor returns the permissions for the given trust tier.
+func TierPermissionsFor(tier TrustTier) TierPermissions {
+	return tierPerms[tier]
 }
 
 // =============================================================================

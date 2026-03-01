@@ -107,12 +107,12 @@ const (
 	EventQuestEscalated GameEventType = "quest.escalated"
 
 	// Agent events
-	EventAgentRecruited GameEventType = "agent.recruited"
-	EventAgentLevelUp   GameEventType = "agent.level_up"
-	EventAgentLevelDown GameEventType = "agent.level_down"
-	EventAgentDeath     GameEventType = "agent.death"
+	EventAgentRecruited  GameEventType = "agent.recruited"
+	EventAgentLevelUp    GameEventType = "agent.level_up"
+	EventAgentLevelDown  GameEventType = "agent.level_down"
+	EventAgentDeath      GameEventType = "agent.death"
 	EventAgentPermadeath GameEventType = "agent.permadeath"
-	EventAgentRevived   GameEventType = "agent.revived"
+	EventAgentRevived    GameEventType = "agent.revived"
 
 	// Battle events
 	EventBattleStarted GameEventType = "battle.started"

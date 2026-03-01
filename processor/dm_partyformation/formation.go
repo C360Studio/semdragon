@@ -237,7 +237,7 @@ func (e *PartyFormationEngine) formMentorParty(
 		default:
 		}
 
-		perms := semdragons.TierPerms[agent.Tier]
+		perms := semdragons.TierPermissionsFor(agent.Tier)
 		if perms.CanLeadParty {
 			if lead == nil || agent.Level > lead.Level {
 				agentCopy := agent
@@ -377,7 +377,7 @@ func (e *PartyFormationEngine) selectLead(agents []semdragons.Agent) (*semdragon
 func (e *PartyFormationEngine) selectLeadFromAgents(agents []semdragons.Agent) (*semdragons.Agent, error) {
 	var lead *semdragons.Agent
 	for _, agent := range agents {
-		perms := semdragons.TierPerms[agent.Tier]
+		perms := semdragons.TierPermissionsFor(agent.Tier)
 		if perms.CanLeadParty {
 			if lead == nil || agent.Level > lead.Level {
 				agentCopy := agent
@@ -424,11 +424,11 @@ func (e *PartyFormationEngine) RankAgentsForQuest(
 
 // PartyMemberSuggestion represents a suggested party member with metadata.
 type PartyMemberSuggestion struct {
-	Agent          semdragons.Agent     `json:"agent"`
-	Score          float64              `json:"score"`
-	CanLead        bool                 `json:"can_lead"`
+	Agent          semdragons.Agent      `json:"agent"`
+	Score          float64               `json:"score"`
+	CanLead        bool                  `json:"can_lead"`
 	SkillsCovered  []semdragons.SkillTag `json:"skills_covered"`
-	GuildMatch     bool                 `json:"guild_match"`
+	GuildMatch     bool                  `json:"guild_match"`
 	RecommendedFor semdragons.PartyRole  `json:"recommended_for"`
 }
 
@@ -450,7 +450,7 @@ func (e *PartyFormationEngine) SuggestPartyMembers(
 	var suggestions []PartyMemberSuggestion
 
 	for _, agent := range agents {
-		perms := semdragons.TierPerms[agent.Tier]
+		perms := semdragons.TierPermissionsFor(agent.Tier)
 
 		var coveredSkills []semdragons.SkillTag
 		agentSkills := agent.GetSkillTags()
