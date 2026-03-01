@@ -25,9 +25,9 @@ import { worldStore } from '$stores/worldStore.svelte';
  * Extract entity type from a 6-part entity ID key.
  * Format: org.platform.domain.system.TYPE.instance
  */
-function entityTypeFromKey(key: string): EntityType | null {
+export function entityTypeFromKey(key: string): EntityType | null {
 	const parts = key.split('.');
-	if (parts.length < 6) return null;
+	if (parts.length !== 6) return null;
 	const type = parts[4];
 	switch (type) {
 		case 'quest':
@@ -50,6 +50,11 @@ export function createSSEService() {
 	let synced = false;
 
 	function connect(baseUrl: string) {
+		if (source !== null) {
+			source.close();
+			source = null;
+		}
+
 		const url = `${baseUrl}/message-logger/kv/ENTITY_STATES/watch?pattern=*`;
 		source = new EventSource(url);
 
@@ -59,7 +64,13 @@ export function createSSEService() {
 		});
 
 		source.addEventListener('kv_change', (e: MessageEvent) => {
-			const event: KVChangeEvent = JSON.parse(e.data);
+			let event: KVChangeEvent;
+			try {
+				event = JSON.parse(e.data) as KVChangeEvent;
+			} catch {
+				console.error('[SSE] Failed to parse kv_change payload:', e.data);
+				return;
+			}
 
 			if (event.operation === 'initial_sync_complete') {
 				synced = true;
@@ -78,11 +89,17 @@ export function createSSEService() {
 
 		source.onerror = () => {
 			worldStore.setConnected(false);
+			synced = false;
+			worldStore.setSynced(false);
 			// EventSource auto-reconnects after server-sent retry interval
 		};
 	}
 
 	function handleUpsert(key: string, value: unknown) {
+		if (value === null || value === undefined || typeof value !== 'object') {
+			console.error('[SSE] Received non-object value for upsert, key:', key);
+			return;
+		}
 		const entityType = entityTypeFromKey(key);
 		if (!entityType) return;
 
@@ -109,21 +126,25 @@ export function createSSEService() {
 		const entityType = entityTypeFromKey(key);
 		if (!entityType) return;
 
+		const parts = key.split('.');
+		const instanceId = parts[5];
+		if (!instanceId) return;
+
 		switch (entityType) {
 			case 'quest':
-				worldStore.removeQuest(questId(key));
+				worldStore.removeQuest(questId(instanceId));
 				break;
 			case 'agent':
-				worldStore.removeAgent(agentId(key));
+				worldStore.removeAgent(agentId(instanceId));
 				break;
 			case 'battle':
-				worldStore.removeBattle(battleId(key));
+				worldStore.removeBattle(battleId(instanceId));
 				break;
 			case 'party':
-				worldStore.removeParty(partyId(key));
+				worldStore.removeParty(partyId(instanceId));
 				break;
 			case 'guild':
-				worldStore.removeGuild(guildId(key));
+				worldStore.removeGuild(guildId(instanceId));
 				break;
 		}
 	}

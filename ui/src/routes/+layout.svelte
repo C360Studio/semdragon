@@ -14,6 +14,8 @@
 
 	let { children }: LayoutProps = $props();
 
+	const SSE_TIMEOUT_MS = 15_000;
+
 	onMount(() => {
 		if (browser) {
 			const baseUrl = env.PUBLIC_API_URL || 'http://localhost:8080';
@@ -22,7 +24,16 @@
 			worldStore.setLoading(true);
 			sseService.connect(baseUrl);
 
+			// Fallback: clear loading if SSE never completes initial sync
+			const timeout = setTimeout(() => {
+				if (worldStore.loading) {
+					worldStore.setLoading(false);
+					worldStore.setError('Connection timed out — data may be incomplete');
+				}
+			}, SSE_TIMEOUT_MS);
+
 			return () => {
+				clearTimeout(timeout);
 				sseService.disconnect();
 			};
 		}

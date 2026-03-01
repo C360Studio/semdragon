@@ -20,7 +20,7 @@
 	<title>{agent?.name ?? 'Agent'} - Semdragons</title>
 </svelte:head>
 
-<div class="agent-detail-page">
+<div class="agent-detail-page" data-testid="agent-detail-page">
 	<header class="page-header">
 		<a href="/agents" class="back-link">Back to Agent Roster</a>
 	</header>
@@ -29,7 +29,7 @@
 		<div class="agent-content">
 			<div class="agent-header">
 				<div class="agent-identity">
-					<h1>{agent.name}</h1>
+					<h1 data-testid="agent-name">{agent.name}</h1>
 					<span class="tier-badge" data-tier={agent.tier}>
 						{TrustTierNames[agent.tier]}
 					</span>
@@ -39,7 +39,7 @@
 				</div>
 			</div>
 
-			<div class="level-card">
+			<div class="level-card" data-testid="agent-level">
 				<div class="level-info">
 					<span class="level-label">Level</span>
 					<span class="level-value">{agent.level}</span>
@@ -149,7 +149,7 @@
 			</div>
 		</div>
 	{:else}
-		<div class="not-found">
+		<div class="not-found" data-testid="agent-not-found">
 			<h2>Agent not found</h2>
 			<p>The agent with ID "{id}" could not be found.</p>
 			<a href="/agents">Back to Agent Roster</a>

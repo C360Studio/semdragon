@@ -543,7 +543,7 @@ describe('worldStore', () => {
 
 			store.selectAgent(null);
 			expect(store.selectedAgentId).toBeNull();
-			expect(store.selectedAgent).toBeUndefined();
+			expect(store.selectedAgent).toBeNull();
 		});
 	});
 

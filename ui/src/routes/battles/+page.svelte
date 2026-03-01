@@ -47,7 +47,7 @@
 			</header>
 			<div class="filters-content">
 				<label for="battle-status-filter" class="filter-label">Status</label>
-				<select id="battle-status-filter" bind:value={statusFilter} class="filter-select">
+				<select id="battle-status-filter" bind:value={statusFilter} class="filter-select" data-testid="battle-status-filter">
 					<option value="all">All</option>
 					<option value="active">Active</option>
 					<option value="victory">Victory</option>

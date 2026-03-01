@@ -18,7 +18,7 @@
 
 	<div class="guilds-grid">
 		{#each worldStore.guildList as guild}
-			<div class="guild-card" data-status={guild.status}>
+			<a href="/guilds/{guild.id}" class="guild-card" data-status={guild.status} data-testid="guild-card">
 				<div class="guild-header">
 					<h2>{guild.name}</h2>
 					<span class="guild-status">{guild.status}</span>
@@ -58,7 +58,7 @@
 						<span class="skill-more">+{(guild.quest_types || []).length - 4}</span>
 					{/if}
 				</div>
-			</div>
+			</a>
 		{:else}
 			<div class="empty-state">No guilds found</div>
 		{/each}
@@ -96,10 +96,24 @@
 	}
 
 	.guild-card {
+		display: block;
 		background: var(--ui-surface-secondary);
 		border: 1px solid var(--ui-border-subtle);
 		border-radius: var(--radius-lg);
 		padding: var(--spacing-lg);
+		color: var(--ui-text-primary);
+		text-decoration: none;
+		transition: border-color 150ms ease;
+	}
+
+	.guild-card:hover {
+		border-color: var(--ui-border-interactive);
+		text-decoration: none;
+	}
+
+	.guild-card:focus-visible {
+		outline: 2px solid var(--ui-interactive-primary);
+		outline-offset: 2px;
 	}
 
 	.guild-card[data-status='active'] {

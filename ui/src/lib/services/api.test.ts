@@ -111,9 +111,7 @@ describe('API Service', () => {
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://test-api.local/health',
 				expect.objectContaining({
-					headers: expect.objectContaining({
-						'Content-Type': 'application/json'
-					})
+					headers: {}
 				})
 			);
 		});

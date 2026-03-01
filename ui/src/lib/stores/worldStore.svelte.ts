@@ -121,7 +121,7 @@ const computedStats = $derived<WorldStats>({
 });
 
 // Tier distribution for agent breakdown
-const tierDistribution = $derived(() => {
+const tierDistribution = $derived.by(() => {
 	const tiers = [
 		{ tier: 0 as const, name: 'Apprentice', count: 0 },
 		{ tier: 1 as const, name: 'Journeyman', count: 0 },
@@ -136,6 +136,7 @@ const tierDistribution = $derived(() => {
 		}
 	}
 
+	// Avoid division by zero when no agents exist
 	const total = agentList.length || 1;
 	return tiers.map(t => ({
 		...t,
@@ -149,7 +150,7 @@ const totalXpEarned = $derived(
 );
 
 // Boss battle win/loss stats
-const battleStats = $derived(() => {
+const battleStats = $derived.by(() => {
 	const won = battleList.filter(b => b.status === 'victory').length;
 	const lost = battleList.filter(b => b.status === 'defeat').length;
 	const total = won + lost;
@@ -285,18 +286,19 @@ function addEvent(event: GameEvent) {
 }
 
 // Bulk hydrate from world state snapshot (fallback for GET /game/world)
-function hydrateFromSnapshot(state: {
+// Builds Maps once instead of creating N intermediate copies via individual upserts
+function hydrateFromSnapshot(snapshot: {
 	agents: Agent[];
 	quests: Quest[];
 	parties: Party[];
 	guilds: Guild[];
 	battles: BossBattle[];
 }) {
-	for (const a of state.agents) upsertAgent(a);
-	for (const q of state.quests) upsertQuest(q);
-	for (const p of state.parties) upsertParty(p);
-	for (const g of state.guilds) upsertGuild(g);
-	for (const b of state.battles) upsertBattle(b);
+	agents = new Map([...agents, ...snapshot.agents.map(a => [a.id, a] as const)]);
+	quests = new Map([...quests, ...snapshot.quests.map(q => [q.id, q] as const)]);
+	parties = new Map([...parties, ...snapshot.parties.map(p => [p.id, p] as const)]);
+	guilds = new Map([...guilds, ...snapshot.guilds.map(g => [g.id, g] as const)]);
+	battles = new Map([...battles, ...snapshot.battles.map(b => [b.id, b] as const)]);
 }
 
 // Clear all state
@@ -385,9 +387,9 @@ export function createWorldStore() {
 		get selectedAgentId() { return state.selectedAgentId; },
 		get selectedQuestId() { return state.selectedQuestId; },
 		get selectedBattleId() { return state.selectedBattleId; },
-		get selectedAgent() { return state.selectedAgentId ? state.agents.get(state.selectedAgentId) : undefined; },
-		get selectedQuest() { return state.selectedQuestId ? state.quests.get(state.selectedQuestId) : undefined; },
-		get selectedBattle() { return state.selectedBattleId ? state.battles.get(state.selectedBattleId) : undefined; },
+		get selectedAgent() { return state.selectedAgentId ? state.agents.get(state.selectedAgentId) ?? null : null; },
+		get selectedQuest() { return state.selectedQuestId ? state.quests.get(state.selectedQuestId) ?? null : null; },
+		get selectedBattle() { return state.selectedBattleId ? state.battles.get(state.selectedBattleId) ?? null : null; },
 		get agentList() { return Array.from(state.agents.values()).sort((a, b) => b.level - a.level); },
 		get questList() { return Array.from(state.quests.values()); },
 		get partyList() { return Array.from(state.parties.values()); },
@@ -436,11 +438,15 @@ export function createWorldStore() {
 		upsertGuild(guild: Guild) { state.guilds.set(guild.id, guild); },
 		upsertBattle(battle: BossBattle) { state.battles.set(battle.id, battle); },
 
-		// Legacy aliases
+		/** @deprecated Use upsertAgent instead */
 		updateAgent(agent: Agent) { state.agents.set(agent.id, agent); },
+		/** @deprecated Use upsertQuest instead */
 		updateQuest(quest: Quest) { state.quests.set(quest.id, quest); },
+		/** @deprecated Use upsertParty instead */
 		updateParty(party: Party) { state.parties.set(party.id, party); },
+		/** @deprecated Use upsertGuild instead */
 		updateGuild(guild: Guild) { state.guilds.set(guild.id, guild); },
+		/** @deprecated Use upsertBattle instead */
 		updateBattle(battle: BossBattle) { state.battles.set(battle.id, battle); },
 
 		// Remove methods
@@ -567,9 +573,9 @@ export const worldStore = {
 	get activeBattles() { return activeBattles; },
 
 	// Dashboard derived state
-	get tierDistribution() { return tierDistribution(); },
+	get tierDistribution() { return tierDistribution; },
 	get totalXpEarned() { return totalXpEarned; },
-	get battleStats() { return battleStats(); },
+	get battleStats() { return battleStats; },
 
 	// Store state
 	get storeItems() { return storeItems; },
@@ -597,11 +603,15 @@ export const worldStore = {
 	upsertGuild,
 	upsertBattle,
 
-	// Legacy update aliases
+	/** @deprecated Use upsertAgent instead */
 	updateAgent: upsertAgent,
+	/** @deprecated Use upsertQuest instead */
 	updateQuest: upsertQuest,
+	/** @deprecated Use upsertParty instead */
 	updateParty: upsertParty,
+	/** @deprecated Use upsertGuild instead */
 	updateGuild: upsertGuild,
+	/** @deprecated Use upsertBattle instead */
 	updateBattle: upsertBattle,
 
 	// Remove

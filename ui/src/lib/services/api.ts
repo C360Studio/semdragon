@@ -43,10 +43,11 @@ export function setApiUrl(url: string): void {
 
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
 	const url = `${apiUrl}${path}`;
+	const hasBody = options?.body !== undefined;
 	const response = await fetch(url, {
 		...options,
 		headers: {
-			'Content-Type': 'application/json',
+			...(hasBody ? { 'Content-Type': 'application/json' } : {}),
 			...options?.headers
 		}
 	});
@@ -64,6 +65,19 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 		method: 'POST',
 		body: JSON.stringify(body)
 	});
+}
+
+async function postVoid(path: string, body: unknown): Promise<void> {
+	const url = `${apiUrl}${path}`;
+	const response = await fetch(url, {
+		method: 'POST',
+		body: JSON.stringify(body),
+		headers: { 'Content-Type': 'application/json' }
+	});
+	if (!response.ok) {
+		const errorText = await response.text();
+		throw new Error(`API Error ${response.status}: ${errorText}`);
+	}
 }
 
 // =============================================================================
@@ -99,7 +113,7 @@ export async function recruitAgent(config: AgentConfig): Promise<Agent> {
 }
 
 export async function retireAgent(id: AgentID, reason: string): Promise<void> {
-	await postJson(`/game/agents/${id}/retire`, { reason });
+	await postVoid(`/game/agents/${id}/retire`, { reason });
 }
 
 // =============================================================================
@@ -144,7 +158,7 @@ export async function sendDMChat(message: string): Promise<ChatResponse> {
 }
 
 export async function intervene(questId: QuestID, intervention: Intervention): Promise<void> {
-	await postJson(`/game/dm/intervene/${questId}`, intervention);
+	await postVoid(`/game/dm/intervene/${questId}`, intervention);
 }
 
 // =============================================================================
@@ -152,7 +166,8 @@ export async function intervene(questId: QuestID, intervention: Intervention): P
 // =============================================================================
 
 export async function getStoreItems(agentId: AgentID): Promise<StoreItem[]> {
-	return fetchJson<StoreItem[]>(`/game/store?agent_id=${agentId}`);
+	const params = new URLSearchParams({ agent_id: String(agentId) });
+	return fetchJson<StoreItem[]>(`/game/store?${params}`);
 }
 
 export async function getStoreItem(itemId: string): Promise<StoreItem> {

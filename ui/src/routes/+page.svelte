@@ -20,7 +20,7 @@
 	let eventFilter = $state<EventCategory>('all');
 
 	// Filter events by category
-	const filteredEvents = $derived(() => {
+	const filteredEvents = $derived.by(() => {
 		const events = worldStore.recentEvents.slice(0, 15);
 		if (eventFilter === 'all') return events;
 
@@ -88,22 +88,22 @@
 				<a href="/quests" class="nav-item" data-testid="nav-quests">
 					<span class="nav-icon">Q</span>
 					<span class="nav-label">Quest Board</span>
-					<span class="nav-count" data-testid="nav-count">{worldStore.questList.length}</span>
+					<span class="nav-count" data-testid="nav-count-quests">{worldStore.questList.length}</span>
 				</a>
 				<a href="/agents" class="nav-item" data-testid="nav-agents">
 					<span class="nav-icon">A</span>
 					<span class="nav-label">Agent Roster</span>
-					<span class="nav-count" data-testid="nav-count">{worldStore.agentList.length}</span>
+					<span class="nav-count" data-testid="nav-count-agents">{worldStore.agentList.length}</span>
 				</a>
 				<a href="/battles" class="nav-item" data-testid="nav-battles">
 					<span class="nav-icon">B</span>
 					<span class="nav-label">Boss Battles</span>
-					<span class="nav-count" data-testid="nav-count">{worldStore.activeBattles.length}</span>
+					<span class="nav-count" data-testid="nav-count-battles">{worldStore.activeBattles.length}</span>
 				</a>
 				<a href="/guilds" class="nav-item" data-testid="nav-guilds">
 					<span class="nav-icon">G</span>
 					<span class="nav-label">Guilds</span>
-					<span class="nav-count" data-testid="nav-count">{worldStore.guildList.length}</span>
+					<span class="nav-count" data-testid="nav-count-guilds">{worldStore.guildList.length}</span>
 				</a>
 				<a href="/trajectories" class="nav-item" data-testid="nav-trajectories">
 					<span class="nav-icon">T</span>
@@ -131,7 +131,7 @@
 					</select>
 				</header>
 				<ul class="event-list">
-					{#each filteredEvents() as event}
+					{#each filteredEvents as event}
 						<li class="event-item" data-testid="event-item" data-category={eventIcon(event.type)}>
 							<span class="event-icon">{eventIcon(event.type)}</span>
 							<span class="event-type">{event.type.split('.').slice(-1)[0]}</span>
@@ -278,7 +278,7 @@
 						{#each worldStore.partyList.filter((p) => p.status === 'active') as party}
 							<div class="party-row">
 								<span class="party-name">{party.name || `Party #${party.id.slice(-6)}`}</span>
-								<span class="party-quest">Quest: {party.quest_id.slice(-6)}</span>
+								<span class="party-quest">Quest: {party.quest_id ? party.quest_id.slice(-6) : 'TBD'}</span>
 								<span class="party-size">{party.members.length} agents</span>
 							</div>
 						{:else}

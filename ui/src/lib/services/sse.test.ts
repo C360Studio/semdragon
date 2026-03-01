@@ -139,6 +139,15 @@ describe('SSE Service', () => {
 
 			expect(service.synced).toBe(false);
 		});
+
+		it('closes existing connection before reconnecting', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+			const firstSource = getLastSource();
+
+			service.connect('http://localhost:8080');
+			expect(firstSource.readyState).toBe(2); // CLOSED
+		});
 	});
 
 	describe('kv_change events', () => {
@@ -284,6 +293,73 @@ describe('SSE Service', () => {
 			expect(worldStore.upsertQuest).not.toHaveBeenCalled();
 			expect(worldStore.upsertAgent).not.toHaveBeenCalled();
 		});
+
+		it('ignores keys with more than 6 parts', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+
+			const source = getLastSource();
+			const event: KVChangeEvent = {
+				bucket: 'ENTITY_STATES',
+				key: 'c360.prod.game.board1.quest.id.extra',
+				operation: 'create',
+				value: { id: 'test' },
+				revision: 1,
+				timestamp: '2024-01-01T00:00:00Z'
+			};
+
+			source.emit('kv_change', JSON.stringify(event));
+
+			expect(worldStore.upsertQuest).not.toHaveBeenCalled();
+		});
+
+		it('handles malformed JSON in kv_change without throwing', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+
+			const source = getLastSource();
+			expect(() => source.emit('kv_change', '{ invalid json')).not.toThrow();
+
+			expect(worldStore.upsertQuest).not.toHaveBeenCalled();
+			expect(worldStore.upsertAgent).not.toHaveBeenCalled();
+		});
+
+		it('ignores upsert with null value', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+
+			const source = getLastSource();
+			const event: KVChangeEvent = {
+				bucket: 'ENTITY_STATES',
+				key: 'c360.prod.game.board1.quest.quest-1',
+				operation: 'create',
+				value: null as unknown as undefined,
+				revision: 1,
+				timestamp: '2024-01-01T00:00:00Z'
+			};
+
+			source.emit('kv_change', JSON.stringify(event));
+
+			expect(worldStore.upsertQuest).not.toHaveBeenCalled();
+		});
+
+		it('ignores upsert with undefined value', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+
+			const source = getLastSource();
+			const event: KVChangeEvent = {
+				bucket: 'ENTITY_STATES',
+				key: 'c360.prod.game.board1.quest.quest-1',
+				operation: 'create',
+				revision: 1,
+				timestamp: '2024-01-01T00:00:00Z'
+			};
+
+			source.emit('kv_change', JSON.stringify(event));
+
+			expect(worldStore.upsertQuest).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('delete operations', () => {
@@ -303,7 +379,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeQuest).toHaveBeenCalledWith(
-				questId('c360.prod.game.board1.quest.quest-1')
+				questId('quest-1')
 			);
 		});
 
@@ -323,7 +399,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeAgent).toHaveBeenCalledWith(
-				agentId('c360.prod.game.board1.agent.agent-1')
+				agentId('agent-1')
 			);
 		});
 
@@ -343,7 +419,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeBattle).toHaveBeenCalledWith(
-				battleId('c360.prod.game.board1.battle.battle-1')
+				battleId('battle-1')
 			);
 		});
 
@@ -363,7 +439,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeParty).toHaveBeenCalledWith(
-				partyId('c360.prod.game.board1.party.party-1')
+				partyId('party-1')
 			);
 		});
 
@@ -383,7 +459,7 @@ describe('SSE Service', () => {
 			source.emit('kv_change', JSON.stringify(event));
 
 			expect(worldStore.removeGuild).toHaveBeenCalledWith(
-				guildId('c360.prod.game.board1.guild.guild-1')
+				guildId('guild-1')
 			);
 		});
 	});
@@ -419,6 +495,28 @@ describe('SSE Service', () => {
 			source.triggerError();
 
 			expect(worldStore.setConnected).toHaveBeenCalledWith(false);
+		});
+
+		it('resets synced state on error', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+
+			const source = getLastSource();
+			// Complete initial sync first
+			const syncEvent: KVChangeEvent = {
+				bucket: 'ENTITY_STATES',
+				key: '',
+				operation: 'initial_sync_complete',
+				revision: 0,
+				timestamp: '2024-01-01T00:00:00Z'
+			};
+			source.emit('kv_change', JSON.stringify(syncEvent));
+			expect(service.synced).toBe(true);
+
+			// Error should reset synced
+			source.triggerError();
+			expect(service.synced).toBe(false);
+			expect(worldStore.setSynced).toHaveBeenCalledWith(false);
 		});
 	});
 
