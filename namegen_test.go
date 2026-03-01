@@ -25,6 +25,11 @@ func setupNameGenTestBoard(t *testing.T) (*GraphClient, func()) {
 
 	gc := NewGraphClient(tc.Client, &config)
 
+	// Ensure board-specific KV bucket exists (mirrors main.go startup)
+	if err := gc.EnsureBucket(context.Background()); err != nil {
+		t.Fatalf("EnsureBucket failed: %v", err)
+	}
+
 	return gc, func() {
 		tc.Client.Close(context.Background())
 	}

@@ -45,6 +45,12 @@ func TestComponent_Lifecycle(t *testing.T) {
 		t.Fatalf("Initialize failed: %v", err)
 	}
 
+	// Ensure board-specific KV bucket exists (mirrors main.go startup)
+	gc := semdragons.NewGraphClient(client, comp.boardConfig)
+	if err := gc.EnsureBucket(ctx); err != nil {
+		t.Fatalf("EnsureBucket failed: %v", err)
+	}
+
 	// Test Meta
 	meta := comp.Meta()
 	if meta.Name != "boidengine" {
@@ -265,6 +271,12 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 
 	if err := comp.Initialize(); err != nil {
 		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	// Ensure board-specific KV bucket exists (mirrors main.go startup)
+	gc := semdragons.NewGraphClient(client, comp.boardConfig)
+	if err := gc.EnsureBucket(ctx); err != nil {
+		t.Fatalf("EnsureBucket failed: %v", err)
 	}
 
 	if err := comp.Start(ctx); err != nil {
