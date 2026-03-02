@@ -1982,6 +1982,252 @@ func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// ADR PHASE 6 COMPLETION TESTS
+// =============================================================================
+
+func TestStrategicShopping(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "stratshop"
+	config.InitialDelayMs = 100
+	config.OnQuestIntervalMs = 200
+	config.StrategicShopMaxCost = 200
+
+	store := setupStoreComponent(t, client, "stratshop")
+	defer store.Stop(5 * time.Second)
+
+	comp := setupComponentWithDeps(t, client, config, store, nil)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create a claimed quest for the agent to reference
+	questInstance := semdragons.GenerateInstance()
+	questID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	claimedAt := time.Now()
+	quest := &semdragons.Quest{
+		ID:        questID,
+		Title:     "Strategic shopping test quest",
+		Status:    semdragons.QuestClaimed,
+		ClaimedBy: &agentID,
+		ClaimedAt: &claimedAt,
+		PostedAt:  time.Now(),
+		MinTier:   semdragons.TierApprentice,
+		BaseXP:    100,
+	}
+	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.claimed"); err != nil {
+		t.Fatalf("Failed to create test quest: %v", err)
+	}
+
+	// Create agent on quest: Level 7 (Journeyman), XP 500, no consumables
+	agent := &semdragons.Agent{
+		ID:           agentID,
+		Name:         "strategic-shopper",
+		Status:       semdragons.AgentOnQuest,
+		Level:        7,
+		XP:           500,
+		XPToLevel:    400,
+		Tier:         semdragons.TierJourneyman,
+		CurrentQuest: &questID,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for strategic purchase (quality_shield costs 150 XP, within StrategicShopMaxCost=200)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for strategic purchase")
+		case <-time.After(100 * time.Millisecond):
+			agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
+			if err != nil {
+				continue
+			}
+			updated := semdragons.AgentFromEntityState(agentEntity)
+			if updated == nil {
+				continue
+			}
+			if updated.TotalSpent > 0 {
+				t.Logf("agent strategically purchased item, total_spent=%d", updated.TotalSpent)
+				return
+			}
+			// Also check consumable count as alternative signal
+			if len(updated.Consumables) > 0 {
+				t.Logf("agent has consumables after strategic purchase: %v", updated.Consumables)
+				return
+			}
+		}
+	}
+}
+
+func TestFullLifecycle(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "fullcycle"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create two posted quests
+	quest1Instance := semdragons.GenerateInstance()
+	quest1ID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(quest1Instance))
+	quest1 := &semdragons.Quest{
+		ID:       quest1ID,
+		Title:    "Lifecycle quest 1",
+		Status:   semdragons.QuestPosted,
+		PostedAt: time.Now(),
+		MinTier:  semdragons.TierApprentice,
+		BaseXP:   100,
+	}
+	if err := gc.PutEntityState(ctx, quest1, "quest.lifecycle.posted"); err != nil {
+		t.Fatalf("Failed to create quest1: %v", err)
+	}
+
+	quest2Instance := semdragons.GenerateInstance()
+	quest2ID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(quest2Instance))
+	quest2 := &semdragons.Quest{
+		ID:       quest2ID,
+		Title:    "Lifecycle quest 2",
+		Status:   semdragons.QuestPosted,
+		PostedAt: time.Now(),
+		MinTier:  semdragons.TierApprentice,
+		BaseXP:   100,
+	}
+	if err := gc.PutEntityState(ctx, quest2, "quest.lifecycle.posted"); err != nil {
+		t.Fatalf("Failed to create quest2: %v", err)
+	}
+
+	// Create idle agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "lifecycle-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Step 1: Publish boid suggestion for quest1
+	suggestions1 := []boidengine.SuggestedClaim{
+		{AgentID: agentID, QuestID: quest1ID, Score: 5.0, Confidence: 0.9, Reason: "lifecycle claim 1"},
+	}
+	data1, err := json.Marshal(suggestions1)
+	if err != nil {
+		t.Fatalf("Marshal suggestions1: %v", err)
+	}
+	if err := client.Publish(ctx, "boid.suggestions."+agentInstance, data1); err != nil {
+		t.Fatalf("Publish suggestions1: %v", err)
+	}
+
+	// Step 2: Poll until quest1 is claimed and agent is on_quest
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for quest1 claim")
+		case <-time.After(100 * time.Millisecond):
+			questEntity, err := gc.GetQuest(ctx, domain.QuestID(quest1ID))
+			if err != nil {
+				continue
+			}
+			updatedQuest := semdragons.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
+				// Verify agent is on_quest
+				agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
+				if err != nil {
+					t.Fatalf("GetAgent after quest1 claim failed: %v", err)
+				}
+				updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+				if updatedAgent == nil {
+					t.Fatal("Failed to reconstruct agent after quest1 claim")
+				}
+				if updatedAgent.Status != semdragons.AgentOnQuest {
+					t.Errorf("Agent status = %v after quest1 claim, want %v", updatedAgent.Status, semdragons.AgentOnQuest)
+				}
+				goto quest1Claimed
+			}
+		}
+	}
+quest1Claimed:
+	t.Log("quest1 claimed successfully")
+
+	// Step 3: Simulate quest completion — write agent back to idle (what agentprogression would do)
+	agent.Status = semdragons.AgentIdle
+	agent.CurrentQuest = nil
+	agent.UpdatedAt = time.Now()
+	if err := gc.EmitEntityUpdate(ctx, agent, "agent.progression.completed"); err != nil {
+		t.Fatalf("Failed to emit agent idle transition: %v", err)
+	}
+
+	// Brief pause for KV watch to pick up the state change
+	time.Sleep(300 * time.Millisecond)
+
+	// Step 4: Publish boid suggestion for quest2
+	suggestions2 := []boidengine.SuggestedClaim{
+		{AgentID: agentID, QuestID: quest2ID, Score: 4.0, Confidence: 0.8, Reason: "lifecycle claim 2"},
+	}
+	data2, err := json.Marshal(suggestions2)
+	if err != nil {
+		t.Fatalf("Marshal suggestions2: %v", err)
+	}
+	if err := client.Publish(ctx, "boid.suggestions."+agentInstance, data2); err != nil {
+		t.Fatalf("Publish suggestions2: %v", err)
+	}
+
+	// Step 5: Poll until quest2 is claimed
+	deadline = time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for quest2 claim")
+		case <-time.After(100 * time.Millisecond):
+			questEntity, err := gc.GetQuest(ctx, domain.QuestID(quest2ID))
+			if err != nil {
+				continue
+			}
+			updatedQuest := semdragons.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
+				if updatedQuest.ClaimedBy == nil || semdragons.AgentID(*updatedQuest.ClaimedBy) != agentID {
+					t.Errorf("quest2 ClaimedBy = %v, want %v", updatedQuest.ClaimedBy, agentID)
+				}
+				t.Log("quest2 claimed successfully — full lifecycle complete")
+				return
+			}
+		}
+	}
+}
+
 func setupComponent(t *testing.T, client *natsclient.Client, name string) *Component {
 	t.Helper()
 
