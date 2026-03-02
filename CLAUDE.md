@@ -271,7 +271,11 @@ The root `semdragons` package re-exports type aliases from `domain/` and provide
 
 **`domains/`** (plural) contains three concrete domain implementations: `software.go`, `dnd.go`, `research.go`. Each defines a `DomainConfig` (vocabulary mapping) and a `DomainCatalog` (prompt fragments for `promptmanager`).
 
-**`processor/`** contains 14 reactive components registered via `componentregistry/`, plus `promptmanager` which is a library (not a standalone component). Each processor follows the same structure: `component.go`, `config.go`, `register.go`, `handler.go`. See "Processor Architecture Patterns" below.
+**`processor/`** contains 16 reactive components registered via `componentregistry/`, plus `promptmanager` which is a library (not a standalone component). Each processor follows the same structure: `component.go`, `config.go`, `register.go`, `handler.go`. See "Processor Architecture Patterns" below.
+
+Two components form the **agentic integration layer** that bridges quest lifecycle to semstreams' event-driven LLM execution:
+- `questbridge` — Watches quest entities for `in_progress` transitions, assembles `TaskMessage` (prompt, tools, metadata), publishes to AGENT JetStream stream, handles loop completion/failure events. Uses KV twofer bootstrap protocol for crash recovery via QUEST_LOOPS bucket.
+- `questtools` — Consumes `tool.execute.*` from AGENT stream, enforces tier/skill/sandbox gates via `executor.ToolRegistry`, publishes `tool.result.*` back. Reconstructs agent/quest context from `ToolCall.Metadata` to avoid KV round-trips on the hot path.
 
 **`service/api/`** implements the REST API as a `service.Service` that registers HTTP handlers with the semstreams service manager. It reads entity state via `GraphClient` and delegates writes using `EmitEntity`/`EmitEntityUpdate`.
 
@@ -394,7 +398,8 @@ API endpoints that return 501 Not Implemented:
 - `POST /api/game/dm/intervene/{questId}` — DM quest intervention
 
 Processors registered but excluded from the default config (opt-in):
-- `executor` — requires LLM credentials (`ANTHROPIC_API_KEY` or equivalent)
+- `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)
+- `questbridge`, `questtools` — event-driven agentic execution via semstreams `agentic-loop` + `agentic-model`. Requires AGENT stream and model_registry in config. Included in default config.
 - `autonomy` — depends on executor; DM approval gate is implemented but untested with real LLM calls
 - `seeding` — requires explicit config; `ModeTrainingArena` needs LLM, `ModeTieredRoster` works without
 - `dmsession`, `dmapproval`, `dmpartyformation` — DM session management (functional, not in default config)

@@ -99,6 +99,19 @@ func (r *ToolRegistry) Get(name string) *RegisteredTool {
 	return nil
 }
 
+// ListAll returns all registered tools.
+// Used by processors that need to inspect available tools without holding
+// a reference to the executor Component (e.g. questbridge).
+func (r *ToolRegistry) ListAll() []RegisteredTool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	tools := make([]RegisteredTool, 0, len(r.tools))
+	for _, tool := range r.tools {
+		tools = append(tools, tool)
+	}
+	return tools
+}
+
 // GetToolsForQuest returns tool definitions the agent can use for this quest.
 // Filters by:
 // - Quest's AllowedTools list (if specified)

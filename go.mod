@@ -3,8 +3,9 @@ module github.com/c360studio/semdragons
 go 1.25.3
 
 require (
-	github.com/c360studio/semstreams v0.0.0-20260302143933-289bd6c73d99
+	github.com/c360studio/semstreams v0.0.0-20260302165510-693e350b8779
 	github.com/nats-io/nats.go v1.48.0
+	github.com/nats-io/nuid v1.0.1
 )
 
 require (
@@ -51,7 +52,6 @@ require (
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nats-io/nkeys v0.4.11 // indirect
-	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

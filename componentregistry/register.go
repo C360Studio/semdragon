@@ -9,6 +9,10 @@ import (
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 	graphquery "github.com/c360studio/semstreams/processor/graph-query"
 
+	// Semstreams agentic processors
+	agenticloop "github.com/c360studio/semstreams/processor/agentic-loop"
+	agenticmodel "github.com/c360studio/semstreams/processor/agentic-model"
+
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/autonomy"
@@ -22,6 +26,8 @@ import (
 	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semdragons/processor/questboard"
+	"github.com/c360studio/semdragons/processor/questbridge"
+	"github.com/c360studio/semdragons/processor/questtools"
 	"github.com/c360studio/semdragons/processor/seeding"
 )
 
@@ -43,6 +49,17 @@ func RegisterAll(registry *component.Registry) error {
 		}
 	}
 
+	// Register semstreams agentic processors.
+	// These provide event-driven LLM loop orchestration and model routing
+	// that questbridge and questtools depend on.
+	if err := agenticloop.Register(registry); err != nil {
+		return err
+	}
+	// agenticmodel.Register takes RegistryInterface (satisfied by *component.Registry)
+	if err := agenticmodel.Register(registry); err != nil {
+		return err
+	}
+
 	// Register semdragons processor components
 	processors := []func(*component.Registry) error{
 		questboard.Register,
@@ -59,6 +76,8 @@ func RegisterAll(registry *component.Registry) error {
 		dmapproval.Register,
 		dmworldstate.Register,
 		dmpartyformation.Register,
+		questbridge.Register,
+		questtools.Register,
 	}
 
 	for _, register := range processors {
@@ -85,6 +104,14 @@ func RegisterProcessors(registry *component.Registry) error {
 		}
 	}
 
+	// Register semstreams agentic processors
+	if err := agenticloop.Register(registry); err != nil {
+		return err
+	}
+	if err := agenticmodel.Register(registry); err != nil {
+		return err
+	}
+
 	// Register semdragons processors
 	processors := []func(*component.Registry) error{
 		questboard.Register,
@@ -101,6 +128,8 @@ func RegisterProcessors(registry *component.Registry) error {
 		dmapproval.Register,
 		dmworldstate.Register,
 		dmpartyformation.Register,
+		questbridge.Register,
+		questtools.Register,
 	}
 
 	for _, register := range processors {
@@ -115,6 +144,10 @@ func RegisterProcessors(registry *component.Registry) error {
 // ComponentNames returns the names of all registered components.
 func ComponentNames() []string {
 	return []string{
+		// Semstreams agentic processors
+		"agentic-loop",
+		"agentic-model",
+		// Semdragons processors
 		questboard.ComponentName,
 		agentprogression.ComponentName,
 		agentstore.ComponentName,
@@ -129,12 +162,18 @@ func ComponentNames() []string {
 		dmapproval.ComponentName,
 		dmworldstate.ComponentName,
 		dmpartyformation.ComponentName,
+		questbridge.ComponentName,
+		questtools.ComponentName,
 	}
 }
 
 // ProcessorNames returns the names of processor components.
 func ProcessorNames() []string {
 	return []string{
+		// Semstreams agentic processors
+		"agentic-loop",
+		"agentic-model",
+		// Semdragons processors
 		questboard.ComponentName,
 		agentprogression.ComponentName,
 		agentstore.ComponentName,
@@ -149,5 +188,7 @@ func ProcessorNames() []string {
 		dmapproval.ComponentName,
 		dmworldstate.ComponentName,
 		dmpartyformation.ComponentName,
+		questbridge.ComponentName,
+		questtools.ComponentName,
 	}
 }

@@ -32,6 +32,28 @@
       }
     }
   },
+  "model_registry": {
+    "endpoints": {
+      "ollama-qwen": {
+        "provider": "ollama",
+        "url": "http://localhost:11434",
+        "model": "qwen2.5-coder:7b",
+        "max_tokens": 32768,
+        "supports_tools": true
+      }
+    },
+    "capabilities": {
+      "agent-work": {
+        "description": "Default capability for agent quest execution",
+        "preferred": ["ollama-qwen"],
+        "requires_tools": true
+      }
+    },
+    "defaults": {
+      "model": "ollama-qwen",
+      "capability": "agent-work"
+    }
+  },
   "streams": {
     "GRAPH": {
       "subjects": [
@@ -39,6 +61,24 @@
         "graph.export.>"
       ],
       "max_age": "24h",
+      "storage": "file",
+      "replicas": 1
+    },
+    "AGENT": {
+      "subjects": [
+        "agent.task.*",
+        "agent.request.>",
+        "agent.response.>",
+        "agent.complete.*",
+        "agent.failed.*",
+        "agent.created.*",
+        "agent.signal.*",
+        "agent.context.compaction.*",
+        "agent.boid.>",
+        "tool.execute.*",
+        "tool.result.>"
+      ],
+      "max_age": "72h",
       "storage": "file",
       "replicas": 1
     }
@@ -169,6 +209,63 @@
         "org": "local",
         "platform": "dev",
         "board": "board1"
+      }
+    },
+    "agentic-loop": {
+      "type": "processor",
+      "name": "agentic-loop",
+      "enabled": true,
+      "config": {
+        "max_iterations": 20,
+        "timeout": "300s",
+        "stream_name": "AGENT",
+        "loops_bucket": "AGENT_LOOPS",
+        "trajectories_bucket": "AGENT_TRAJECTORIES",
+        "context": {
+          "enabled": false
+        }
+      }
+    },
+    "agentic-model": {
+      "type": "processor",
+      "name": "agentic-model",
+      "enabled": true,
+      "config": {
+        "stream_name": "AGENT",
+        "timeout": "120s",
+        "retry": {
+          "max_attempts": 3,
+          "backoff": "exponential"
+        }
+      }
+    },
+    "questbridge": {
+      "type": "processor",
+      "name": "questbridge",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "stream_name": "AGENT",
+        "quest_loops_bucket": "QUEST_LOOPS",
+        "max_iterations": 20,
+        "enable_builtins": true,
+        "default_role": "general"
+      }
+    },
+    "questtools": {
+      "type": "processor",
+      "name": "questtools",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "stream_name": "AGENT",
+        "quest_loops_bucket": "QUEST_LOOPS",
+        "timeout": "60s",
+        "enable_builtins": true
       }
     }
   }
