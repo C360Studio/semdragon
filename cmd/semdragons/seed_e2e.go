@@ -163,8 +163,8 @@ func seedGuilds(ctx context.Context, graph *semdragons.GraphClient, boardCfg *se
 
 // agentSpec describes one agent (or a batch sharing the same profile) to seed.
 type agentSpec struct {
-	namePattern string           // e.g. "apprentice-{n}" or a fixed name
-	level       int              // base level assigned
+	namePattern string // e.g. "apprentice-{n}" or a fixed name
+	level       int    // base level assigned
 	skills      []domain.SkillTag
 	guildID     semdragons.GuildID
 	isNPC       bool

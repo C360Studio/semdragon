@@ -14,6 +14,7 @@ import (
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/dmworldstate"
 	"github.com/c360studio/semstreams/service"
 )
@@ -31,6 +32,7 @@ type Service struct {
 	*service.BaseService
 	graph  GraphQuerier       // concrete type is *semdragons.GraphClient
 	world  WorldStateProvider // concrete type is *dmworldstate.WorldStateAggregator
+	store  StoreProvider      // concrete type is *agentstore.Component; nil if unavailable
 	config Config
 	logger *slog.Logger
 }
@@ -83,6 +85,7 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 
 	graph := semdragons.NewGraphClient(deps.NATSClient, boardConfig)
 	world := dmworldstate.NewWorldStateAggregator(graph, cfg.MaxEntities, logger)
+	store := resolveStoreComponent(deps, logger)
 
 	baseService := service.NewBaseServiceWithOptions(
 		"game",
@@ -96,9 +99,31 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 		BaseService: baseService,
 		graph:       graph,
 		world:       world,
+		store:       store,
 		config:      cfg,
 		logger:      logger,
 	}, nil
+}
+
+// resolveStoreComponent attempts to retrieve the agentstore component from the
+// component registry. Returns nil with a warning if unavailable — handlers
+// degrade gracefully by returning 503 Service Unavailable.
+func resolveStoreComponent(deps *service.Dependencies, logger *slog.Logger) StoreProvider {
+	if deps == nil || deps.ComponentRegistry == nil {
+		return nil
+	}
+	comp := deps.ComponentRegistry.Component(agentstore.ComponentName)
+	if comp == nil {
+		logger.Warn("agent_store component not found in registry; store endpoints will return 503")
+		return nil
+	}
+	sp, ok := comp.(StoreProvider)
+	if !ok {
+		logger.Warn("agent_store component does not satisfy StoreProvider interface",
+			"type", fmt.Sprintf("%T", comp))
+		return nil
+	}
+	return sp
 }
 
 // Start starts the API service.

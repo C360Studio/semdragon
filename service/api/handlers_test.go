@@ -13,6 +13,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/nats-io/nats.go/jetstream"
@@ -117,6 +118,74 @@ func (m *mockWorld) WorldState(ctx context.Context) (*domain.WorldState, error) 
 	}, nil
 }
 
+// mockStore implements StoreProvider with function fields.
+type mockStore struct {
+	listItemsFn      func(agentTier domain.TrustTier) []agentstore.StoreItem
+	catalogFn        func() []agentstore.StoreItem
+	getItemFn        func(itemID string) (*agentstore.StoreItem, bool)
+	purchaseFn       func(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*agentstore.OwnedItem, error)
+	canAffordFn      func(itemID string, currentXP int64) (bool, int64)
+	getInventoryFn   func(agentID domain.AgentID) *agentstore.AgentInventory
+	useConsumableFn  func(ctx context.Context, agentID domain.AgentID, consumableID string, questID *domain.QuestID) error
+	getActiveEffectsFn func(agentID domain.AgentID) []agentstore.ActiveEffect
+}
+
+func (m *mockStore) ListItems(agentTier domain.TrustTier) []agentstore.StoreItem {
+	if m.listItemsFn != nil {
+		return m.listItemsFn(agentTier)
+	}
+	return nil
+}
+
+func (m *mockStore) Catalog() []agentstore.StoreItem {
+	if m.catalogFn != nil {
+		return m.catalogFn()
+	}
+	return nil
+}
+
+func (m *mockStore) GetItem(itemID string) (*agentstore.StoreItem, bool) {
+	if m.getItemFn != nil {
+		return m.getItemFn(itemID)
+	}
+	return nil, false
+}
+
+func (m *mockStore) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*agentstore.OwnedItem, error) {
+	if m.purchaseFn != nil {
+		return m.purchaseFn(ctx, agentID, itemID, currentXP, currentLevel, agentGuilds)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockStore) CanAfford(itemID string, currentXP int64) (bool, int64) {
+	if m.canAffordFn != nil {
+		return m.canAffordFn(itemID, currentXP)
+	}
+	return false, 0
+}
+
+func (m *mockStore) GetInventory(agentID domain.AgentID) *agentstore.AgentInventory {
+	if m.getInventoryFn != nil {
+		return m.getInventoryFn(agentID)
+	}
+	return agentstore.NewAgentInventory(agentID)
+}
+
+func (m *mockStore) UseConsumable(ctx context.Context, agentID domain.AgentID, consumableID string, questID *domain.QuestID) error {
+	if m.useConsumableFn != nil {
+		return m.useConsumableFn(ctx, agentID, consumableID, questID)
+	}
+	return errors.New("not implemented")
+}
+
+func (m *mockStore) GetActiveEffects(agentID domain.AgentID) []agentstore.ActiveEffect {
+	if m.getActiveEffectsFn != nil {
+		return m.getActiveEffectsFn(agentID)
+	}
+	return nil
+}
+
 // =============================================================================
 // TEST HELPER
 // =============================================================================
@@ -128,6 +197,17 @@ func newTestService(g GraphQuerier, w WorldStateProvider) *Service {
 	return &Service{
 		graph:  g,
 		world:  w,
+		config: Config{Board: "board1", MaxEntities: 100},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}
+
+// newTestServiceWithStore creates a Service with graph, world, and store providers.
+func newTestServiceWithStore(g GraphQuerier, w WorldStateProvider, s StoreProvider) *Service {
+	return &Service{
+		graph:  g,
+		world:  w,
+		store:  s,
 		config: Config{Board: "board1", MaxEntities: 100},
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
@@ -539,15 +619,19 @@ func TestHandleGetQuest(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "key not found returns 404",
-			pathID:     "q1",
-			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) { return nil, jetstream.ErrKeyNotFound },
+			name:   "key not found returns 404",
+			pathID: "q1",
+			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrKeyNotFound
+			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:       "bucket not found returns 404",
-			pathID:     "q1",
-			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) { return nil, jetstream.ErrBucketNotFound },
+			name:   "bucket not found returns 404",
+			pathID: "q1",
+			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrBucketNotFound
+			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
@@ -560,9 +644,11 @@ func TestHandleGetQuest(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "server error returns 500",
-			pathID:     "q1",
-			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) { return nil, errors.New("nats error") },
+			name:   "server error returns 500",
+			pathID: "q1",
+			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+				return nil, errors.New("nats error")
+			},
 			wantStatus: http.StatusInternalServerError,
 		},
 	}
@@ -666,9 +752,11 @@ func TestHandleGetAgent(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "key not found returns 404",
-			pathID:     "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) { return nil, jetstream.ErrKeyNotFound },
+			name:   "key not found returns 404",
+			pathID: "a1",
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrKeyNotFound
+			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
@@ -680,9 +768,11 @@ func TestHandleGetAgent(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "server error returns 500",
-			pathID:     "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) { return nil, errors.New("io error") },
+			name:   "server error returns 500",
+			pathID: "a1",
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return nil, errors.New("io error")
+			},
 			wantStatus: http.StatusInternalServerError,
 		},
 	}
@@ -728,20 +818,26 @@ func TestHandleListBattles(t *testing.T) {
 		wantLen    int
 	}{
 		{
-			name:       "success with one battle",
-			listFn:     func(_ context.Context, _ string, _ int) ([]graph.EntityState, error) { return []graph.EntityState{es}, nil },
+			name: "success with one battle",
+			listFn: func(_ context.Context, _ string, _ int) ([]graph.EntityState, error) {
+				return []graph.EntityState{es}, nil
+			},
 			wantStatus: http.StatusOK,
 			wantLen:    1,
 		},
 		{
-			name:       "bucket not found returns empty array",
-			listFn:     func(_ context.Context, _ string, _ int) ([]graph.EntityState, error) { return nil, jetstream.ErrBucketNotFound },
+			name: "bucket not found returns empty array",
+			listFn: func(_ context.Context, _ string, _ int) ([]graph.EntityState, error) {
+				return nil, jetstream.ErrBucketNotFound
+			},
 			wantStatus: http.StatusOK,
 			wantLen:    0,
 		},
 		{
-			name:       "other error returns 500",
-			listFn:     func(_ context.Context, _ string, _ int) ([]graph.EntityState, error) { return nil, errors.New("timeout") },
+			name: "other error returns 500",
+			listFn: func(_ context.Context, _ string, _ int) ([]graph.EntityState, error) {
+				return nil, errors.New("timeout")
+			},
 			wantStatus: http.StatusInternalServerError,
 		},
 	}
@@ -773,10 +869,10 @@ func TestHandleGetBattle(t *testing.T) {
 	es := makeBattleEntityState(b)
 
 	tests := []struct {
-		name         string
-		pathID       string
-		getBattleFn  func(context.Context, semdragons.BattleID) (*graph.EntityState, error)
-		wantStatus   int
+		name        string
+		pathID      string
+		getBattleFn func(context.Context, semdragons.BattleID) (*graph.EntityState, error)
+		wantStatus  int
 	}{
 		{
 			name:        "success",
@@ -785,10 +881,12 @@ func TestHandleGetBattle(t *testing.T) {
 			wantStatus:  http.StatusOK,
 		},
 		{
-			name:        "key not found returns 404",
-			pathID:      "b1",
-			getBattleFn: func(_ context.Context, _ semdragons.BattleID) (*graph.EntityState, error) { return nil, jetstream.ErrKeyNotFound },
-			wantStatus:  http.StatusNotFound,
+			name:   "key not found returns 404",
+			pathID: "b1",
+			getBattleFn: func(_ context.Context, _ semdragons.BattleID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrKeyNotFound
+			},
+			wantStatus: http.StatusNotFound,
 		},
 		{
 			name:   "invalid id returns 400",
@@ -799,10 +897,12 @@ func TestHandleGetBattle(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:        "server error returns 500",
-			pathID:      "b1",
-			getBattleFn: func(_ context.Context, _ semdragons.BattleID) (*graph.EntityState, error) { return nil, errors.New("io error") },
-			wantStatus:  http.StatusInternalServerError,
+			name:   "server error returns 500",
+			pathID: "b1",
+			getBattleFn: func(_ context.Context, _ semdragons.BattleID) (*graph.EntityState, error) {
+				return nil, errors.New("io error")
+			},
+			wantStatus: http.StatusInternalServerError,
 		},
 	}
 
@@ -887,8 +987,8 @@ func TestHandleCreateQuest(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:  "emit error returns 500",
-			body:  map[string]any{"objective": "Quest that fails to emit"},
+			name: "emit error returns 500",
+			body: map[string]any{"objective": "Quest that fails to emit"},
 			emitEntityFn: func(_ context.Context, _ graph.Graphable, _ string) error {
 				return errors.New("nats write failed")
 			},
@@ -1603,8 +1703,8 @@ func TestHandleRecruitAgent(t *testing.T) {
 			},
 		},
 		{
-			name:  "emit error returns 500",
-			body:  map[string]any{"name": "Broken Agent"},
+			name: "emit error returns 500",
+			body: map[string]any{"name": "Broken Agent"},
 			emitEntityFn: func(_ context.Context, _ graph.Graphable, _ string) error {
 				return errors.New("nats write failed")
 			},
@@ -1669,9 +1769,11 @@ func TestHandleRetireAgent(t *testing.T) {
 			wantStatus: http.StatusNoContent,
 		},
 		{
-			name:       "agent not found returns 404",
-			pathID:     "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) { return nil, jetstream.ErrKeyNotFound },
+			name:   "agent not found returns 404",
+			pathID: "a1",
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrKeyNotFound
+			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
@@ -1683,9 +1785,11 @@ func TestHandleRetireAgent(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "get agent error returns 500",
-			pathID:     "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) { return nil, errors.New("io error") },
+			name:   "get agent error returns 500",
+			pathID: "a1",
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return nil, errors.New("io error")
+			},
 			wantStatus: http.StatusInternalServerError,
 		},
 		{
@@ -1749,13 +1853,6 @@ func TestStubHandlers(t *testing.T) {
 			path:    "/dm/chat",
 			handler: svc.handleDMChat,
 		},
-		{
-			name:    "get store item returns 501",
-			method:  http.MethodGet,
-			pattern: "GET /store/{id}",
-			path:    "/store/item1",
-			handler: svc.handleGetStoreItem,
-		},
 	}
 
 	for _, tc := range tests {
@@ -1816,6 +1913,585 @@ func TestWriteError(t *testing.T) {
 }
 
 // =============================================================================
+// STORE HANDLER TESTS
+// =============================================================================
+
+func sampleStoreItem() agentstore.StoreItem {
+	return agentstore.StoreItem{
+		ID:           "web_search",
+		Name:         "Web Search",
+		Description:  "Search the web",
+		ItemType:     agentstore.ItemTypeTool,
+		PurchaseType: agentstore.PurchasePermanent,
+		XPCost:       50,
+		MinTier:      domain.TierApprentice,
+		InStock:      true,
+	}
+}
+
+func TestHandleListStore(t *testing.T) {
+	tool := sampleStoreItem()
+	agent := sampleAgent()
+	agent.XP = 500
+	agent.Level = 5
+	agent.Tier = semdragons.TierApprentice
+	agentES := makeAgentEntityState(agent)
+
+	tests := []struct {
+		name       string
+		query      string
+		store      *mockStore
+		getAgentFn func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		wantStatus int
+		wantLen    int
+	}{
+		{
+			name:  "catalog returns all items when no agent_id",
+			query: "",
+			store: &mockStore{
+				catalogFn: func() []agentstore.StoreItem { return []agentstore.StoreItem{tool} },
+			},
+			wantStatus: http.StatusOK,
+			wantLen:    1,
+		},
+		{
+			name:  "filtered by agent tier when agent_id provided",
+			query: "?agent_id=a1",
+			store: &mockStore{
+				listItemsFn: func(_ domain.TrustTier) []agentstore.StoreItem { return []agentstore.StoreItem{tool} },
+			},
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return &agentES, nil
+			},
+			wantStatus: http.StatusOK,
+			wantLen:    1,
+		},
+		{
+			name:  "agent not found returns 404",
+			query: "?agent_id=missing",
+			store: &mockStore{},
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrKeyNotFound
+			},
+			wantStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mg := &mockGraph{getAgentFn: tc.getAgentFn}
+			svc := newTestServiceWithStore(mg, &mockWorld{}, tc.store)
+
+			req := httptest.NewRequest(http.MethodGet, "/store"+tc.query, nil)
+			rr := httptest.NewRecorder()
+			svc.handleListStore(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.wantStatus == http.StatusOK {
+				var items []agentstore.StoreItem
+				decodeJSON(t, rr.Body.Bytes(), &items)
+				if len(items) != tc.wantLen {
+					t.Errorf("items count: got %d, want %d", len(items), tc.wantLen)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleGetStoreItem(t *testing.T) {
+	tool := sampleStoreItem()
+
+	tests := []struct {
+		name       string
+		pathID     string
+		getItemFn  func(string) (*agentstore.StoreItem, bool)
+		wantStatus int
+	}{
+		{
+			name:   "found",
+			pathID: "web_search",
+			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
+				return &tool, true
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:   "not found",
+			pathID: "nonexistent",
+			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
+				return nil, false
+			},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "invalid id",
+			pathID:     "bad.id",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &mockStore{getItemFn: tc.getItemFn}
+			svc := newTestServiceWithStore(&mockGraph{}, &mockWorld{}, store)
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /store/{id}", svc.handleGetStoreItem)
+
+			req := httptest.NewRequest(http.MethodGet, "/store/"+tc.pathID, nil)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.wantStatus == http.StatusOK {
+				var item agentstore.StoreItem
+				decodeJSON(t, rr.Body.Bytes(), &item)
+				if item.ID != tool.ID {
+					t.Errorf("item ID: got %q, want %q", item.ID, tool.ID)
+				}
+			}
+		})
+	}
+}
+
+func TestHandlePurchase(t *testing.T) {
+	tool := sampleStoreItem()
+	agent := sampleAgent()
+	agent.XP = 200
+	agent.Level = 5
+	agent.Tier = semdragons.TierApprentice
+	agentES := makeAgentEntityState(agent)
+
+	tests := []struct {
+		name       string
+		body       map[string]string
+		getAgentFn func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		getItemFn  func(string) (*agentstore.StoreItem, bool)
+		purchaseFn func(context.Context, domain.AgentID, string, int64, int, []domain.GuildID) (*agentstore.OwnedItem, error)
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name: "successful purchase",
+			body: map[string]string{"agent_id": "a1", "item_id": "web_search"},
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return &agentES, nil
+			},
+			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
+				return &tool, true
+			},
+			purchaseFn: func(_ context.Context, _ domain.AgentID, _ string, _ int64, _ int, _ []domain.GuildID) (*agentstore.OwnedItem, error) {
+				return &agentstore.OwnedItem{ItemID: "web_search", ItemName: "Web Search", XPSpent: 50}, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp map[string]any
+				decodeJSON(t, body, &resp)
+				if resp["success"] != true {
+					t.Errorf("expected success=true, got %v", resp["success"])
+				}
+				if resp["xp_spent"].(float64) != 50 {
+					t.Errorf("expected xp_spent=50, got %v", resp["xp_spent"])
+				}
+			},
+		},
+		{
+			name: "insufficient XP",
+			body: map[string]string{"agent_id": "a1", "item_id": "web_search"},
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return &agentES, nil
+			},
+			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
+				return &tool, true
+			},
+			purchaseFn: func(_ context.Context, _ domain.AgentID, _ string, _ int64, _ int, _ []domain.GuildID) (*agentstore.OwnedItem, error) {
+				return nil, errors.New("insufficient XP")
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp map[string]any
+				decodeJSON(t, body, &resp)
+				if resp["success"] != false {
+					t.Errorf("expected success=false, got %v", resp["success"])
+				}
+			},
+		},
+		{
+			name: "item not found",
+			body: map[string]string{"agent_id": "a1", "item_id": "nonexistent"},
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return &agentES, nil
+			},
+			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
+				return nil, false
+			},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "missing fields",
+			body:       map[string]string{"agent_id": ""},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "agent not found",
+			body: map[string]string{"agent_id": "missing", "item_id": "web_search"},
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrKeyNotFound
+			},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "invalid item_id format",
+			body:       map[string]string{"agent_id": "a1", "item_id": "bad.id"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "tier gate blocks purchase",
+			body: map[string]string{"agent_id": "a1", "item_id": "deploy_access"},
+			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+				return &agentES, nil // agent is TierApprentice
+			},
+			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
+				expertItem := agentstore.StoreItem{
+					ID:      "deploy_access",
+					MinTier: domain.TierExpert,
+					InStock: true,
+				}
+				return &expertItem, true
+			},
+			wantStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &mockStore{
+				getItemFn:  tc.getItemFn,
+				purchaseFn: tc.purchaseFn,
+				getInventoryFn: func(id domain.AgentID) *agentstore.AgentInventory {
+					return agentstore.NewAgentInventory(id)
+				},
+			}
+			mg := &mockGraph{getAgentFn: tc.getAgentFn}
+			svc := newTestServiceWithStore(mg, &mockWorld{}, store)
+
+			bodyJSON, _ := json.Marshal(tc.body)
+			req := httptest.NewRequest(http.MethodPost, "/store/purchase", bytes.NewReader(bodyJSON))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			svc.handlePurchase(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleGetInventory(t *testing.T) {
+	tests := []struct {
+		name       string
+		pathID     string
+		invFn      func(domain.AgentID) *agentstore.AgentInventory
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "returns inventory",
+			pathID: "agent1",
+			invFn: func(id domain.AgentID) *agentstore.AgentInventory {
+				inv := agentstore.NewAgentInventory(id)
+				inv.OwnedTools["web_search"] = agentstore.OwnedItem{ItemID: "web_search"}
+				return inv
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var inv agentstore.AgentInventory
+				decodeJSON(t, body, &inv)
+				if _, ok := inv.OwnedTools["web_search"]; !ok {
+					t.Error("expected web_search in owned tools")
+				}
+			},
+		},
+		{
+			name:   "empty inventory for unknown agent",
+			pathID: "unknown",
+			invFn: func(id domain.AgentID) *agentstore.AgentInventory {
+				return agentstore.NewAgentInventory(id)
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "invalid id",
+			pathID:     "bad.id",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &mockStore{getInventoryFn: tc.invFn}
+			svc := newTestServiceWithStore(&mockGraph{}, &mockWorld{}, store)
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /agents/{id}/inventory", svc.handleGetInventory)
+
+			req := httptest.NewRequest(http.MethodGet, "/agents/"+tc.pathID+"/inventory", nil)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleUseConsumable(t *testing.T) {
+	tests := []struct {
+		name       string
+		pathID     string
+		body       map[string]string
+		useFn      func(context.Context, domain.AgentID, string, *domain.QuestID) error
+		effectsFn  func(domain.AgentID) []agentstore.ActiveEffect
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "success",
+			pathID: "agent1",
+			body:   map[string]string{"consumable_id": "xp_boost"},
+			useFn: func(_ context.Context, _ domain.AgentID, _ string, _ *domain.QuestID) error {
+				return nil
+			},
+			effectsFn: func(_ domain.AgentID) []agentstore.ActiveEffect {
+				return []agentstore.ActiveEffect{{ConsumableID: "xp_boost"}}
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp map[string]any
+				decodeJSON(t, body, &resp)
+				if resp["success"] != true {
+					t.Errorf("expected success=true, got %v", resp["success"])
+				}
+			},
+		},
+		{
+			name:   "success with quest_id",
+			pathID: "agent1",
+			body:   map[string]string{"consumable_id": "xp_boost", "quest_id": "q1"},
+			useFn: func(_ context.Context, _ domain.AgentID, _ string, questID *domain.QuestID) error {
+				if questID == nil || string(*questID) != "q1" {
+					return errors.New("expected quest_id to be q1")
+				}
+				return nil
+			},
+			effectsFn: func(_ domain.AgentID) []agentstore.ActiveEffect {
+				return []agentstore.ActiveEffect{{ConsumableID: "xp_boost"}}
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp map[string]any
+				decodeJSON(t, body, &resp)
+				if resp["success"] != true {
+					t.Errorf("expected success=true, got %v", resp["success"])
+				}
+			},
+		},
+		{
+			name:   "consumable not owned",
+			pathID: "agent1",
+			body:   map[string]string{"consumable_id": "xp_boost"},
+			useFn: func(_ context.Context, _ domain.AgentID, _ string, _ *domain.QuestID) error {
+				return errors.New("consumable not owned")
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp map[string]any
+				decodeJSON(t, body, &resp)
+				if resp["success"] != false {
+					t.Errorf("expected success=false, got %v", resp["success"])
+				}
+			},
+		},
+		{
+			name:       "missing consumable_id",
+			pathID:     "agent1",
+			body:       map[string]string{},
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &mockStore{
+				useConsumableFn: tc.useFn,
+				getActiveEffectsFn: tc.effectsFn,
+				getInventoryFn: func(id domain.AgentID) *agentstore.AgentInventory {
+					return agentstore.NewAgentInventory(id)
+				},
+			}
+			svc := newTestServiceWithStore(&mockGraph{}, &mockWorld{}, store)
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /agents/{id}/inventory/use", svc.handleUseConsumable)
+
+			bodyJSON, _ := json.Marshal(tc.body)
+			req := httptest.NewRequest(http.MethodPost, "/agents/"+tc.pathID+"/inventory/use", bytes.NewReader(bodyJSON))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleGetEffects(t *testing.T) {
+	tests := []struct {
+		name       string
+		pathID     string
+		effectsFn  func(domain.AgentID) []agentstore.ActiveEffect
+		wantStatus int
+		wantLen    int
+	}{
+		{
+			name:   "returns effects",
+			pathID: "agent1",
+			effectsFn: func(_ domain.AgentID) []agentstore.ActiveEffect {
+				return []agentstore.ActiveEffect{{ConsumableID: "xp_boost"}}
+			},
+			wantStatus: http.StatusOK,
+			wantLen:    1,
+		},
+		{
+			name:   "empty effects returns empty array",
+			pathID: "agent1",
+			effectsFn: func(_ domain.AgentID) []agentstore.ActiveEffect {
+				return nil
+			},
+			wantStatus: http.StatusOK,
+			wantLen:    0,
+		},
+		{
+			name:       "invalid id",
+			pathID:     "bad.id",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &mockStore{getActiveEffectsFn: tc.effectsFn}
+			svc := newTestServiceWithStore(&mockGraph{}, &mockWorld{}, store)
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /agents/{id}/effects", svc.handleGetEffects)
+
+			req := httptest.NewRequest(http.MethodGet, "/agents/"+tc.pathID+"/effects", nil)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.wantStatus == http.StatusOK {
+				var effects []agentstore.ActiveEffect
+				decodeJSON(t, rr.Body.Bytes(), &effects)
+				if len(effects) != tc.wantLen {
+					t.Errorf("effects count: got %d, want %d", len(effects), tc.wantLen)
+				}
+			}
+		})
+	}
+}
+
+func TestStoreHandlers_ComponentUnavailable(t *testing.T) {
+	// When store is nil, all handlers should return 503.
+	svc := newTestService(&mockGraph{}, &mockWorld{})
+
+	handlers := []struct {
+		name    string
+		method  string
+		path    string
+		handler http.HandlerFunc
+		body    string
+	}{
+		{"listStore", http.MethodGet, "/store", svc.handleListStore, ""},
+		{"purchase", http.MethodPost, "/store/purchase", svc.handlePurchase, `{"agent_id":"a","item_id":"b"}`},
+	}
+
+	for _, h := range handlers {
+		t.Run(h.name, func(t *testing.T) {
+			var body *bytes.Reader
+			if h.body != "" {
+				body = bytes.NewReader([]byte(h.body))
+			} else {
+				body = bytes.NewReader(nil)
+			}
+			req := httptest.NewRequest(h.method, h.path, body)
+			rr := httptest.NewRecorder()
+			h.handler(rr, req)
+
+			if rr.Code != http.StatusServiceUnavailable {
+				t.Errorf("%s: got %d, want %d\nbody: %s", h.name, rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+			}
+		})
+	}
+
+	// Handlers with path values need a mux
+	muxHandlers := []struct {
+		name    string
+		pattern string
+		path    string
+		method  string
+		handler http.HandlerFunc
+		body    string
+	}{
+		{"getStoreItem", "GET /store/{id}", "/store/web_search", http.MethodGet, svc.handleGetStoreItem, ""},
+		{"getInventory", "GET /agents/{id}/inventory", "/agents/a1/inventory", http.MethodGet, svc.handleGetInventory, ""},
+		{"useConsumable", "POST /agents/{id}/inventory/use", "/agents/a1/inventory/use", http.MethodPost, svc.handleUseConsumable, `{"consumable_id":"xp_boost"}`},
+		{"getEffects", "GET /agents/{id}/effects", "/agents/a1/effects", http.MethodGet, svc.handleGetEffects, ""},
+	}
+
+	for _, h := range muxHandlers {
+		t.Run(h.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc(h.pattern, h.handler)
+
+			var body *bytes.Reader
+			if h.body != "" {
+				body = bytes.NewReader([]byte(h.body))
+			} else {
+				body = bytes.NewReader(nil)
+			}
+			req := httptest.NewRequest(h.method, h.path, body)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusServiceUnavailable {
+				t.Errorf("%s: got %d, want %d\nbody: %s", h.name, rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+			}
+		})
+	}
+}
+
+// =============================================================================
 // COMPILE-TIME INTERFACE SATISFACTION CHECKS
 // =============================================================================
 
@@ -1823,9 +2499,11 @@ func TestWriteError(t *testing.T) {
 // types satisfy the interfaces, so a method signature drift is caught as a
 // build error rather than a runtime panic.
 var (
-	_ GraphQuerier      = (*semdragons.GraphClient)(nil)
-	_ GraphQuerier      = (*mockGraph)(nil)
+	_ GraphQuerier       = (*semdragons.GraphClient)(nil)
+	_ GraphQuerier       = (*mockGraph)(nil)
 	_ WorldStateProvider = (*mockWorld)(nil)
+	_ StoreProvider      = (*agentstore.Component)(nil)
+	_ StoreProvider      = (*mockStore)(nil)
 )
 
 // messageTripleUsed ensures the graph/message import is referenced so the

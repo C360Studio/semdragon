@@ -10,6 +10,7 @@ import (
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -143,13 +144,13 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Objective string `json:"objective"`
 		Hints     *struct {
-			SuggestedDifficulty *int      `json:"suggested_difficulty,omitempty"`
-			SuggestedSkills     []string  `json:"suggested_skills,omitempty"`
-			PreferGuild         *string   `json:"prefer_guild,omitempty"`
-			RequireHumanReview  bool      `json:"require_human_review"`
-			ReviewLevel         *int      `json:"review_level,omitempty"`
-			Budget              float64   `json:"budget"`
-			Deadline            string    `json:"deadline,omitempty"`
+			SuggestedDifficulty *int     `json:"suggested_difficulty,omitempty"`
+			SuggestedSkills     []string `json:"suggested_skills,omitempty"`
+			PreferGuild         *string  `json:"prefer_guild,omitempty"`
+			RequireHumanReview  bool     `json:"require_human_review"`
+			ReviewLevel         *int     `json:"review_level,omitempty"`
+			Budget              float64  `json:"budget"`
+			Deadline            string   `json:"deadline,omitempty"`
 		} `json:"hints,omitempty"`
 	}
 
@@ -852,55 +853,224 @@ func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 // STORE
 // =============================================================================
 
-func (s *Service) handleListStore(w http.ResponseWriter, _ *http.Request) {
-	// Agent store items are managed by the agentstore processor component.
-	// The API service doesn't hold a direct reference to the component instance.
-	// For now, return an empty array; will be wired when component access is available.
-	s.writeJSON(w, []any{})
+func (s *Service) handleListStore(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	agentIDParam := r.URL.Query().Get("agent_id")
+	if agentIDParam != "" {
+		// Look up agent to get tier for filtering
+		agentEntity, err := s.graph.GetAgent(r.Context(), semdragons.AgentID(agentIDParam))
+		if err != nil {
+			if isBucketNotFound(err) || isKeyNotFound(err) {
+				s.writeError(w, "agent not found", http.StatusNotFound)
+				return
+			}
+			s.writeError(w, "failed to retrieve agent", http.StatusInternalServerError)
+			s.logger.Error("Failed to retrieve agent for store listing", "agent_id", agentIDParam, "error", err)
+			return
+		}
+		agent := semdragons.AgentFromEntityState(agentEntity)
+		if agent == nil {
+			s.writeError(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		s.writeJSON(w, s.store.ListItems(agent.Tier))
+		return
+	}
+
+	s.writeJSON(w, s.store.Catalog())
 }
 
 func (s *Service) handleGetStoreItem(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !isValidPathID(id) {
-		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+	if s.store == nil {
+		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	// TODO: Wire store item lookup when agent store component is available
-	s.writeError(w, "store item lookup not yet available", http.StatusNotImplemented)
+
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid item ID", http.StatusBadRequest)
+		return
+	}
+
+	item, ok := s.store.GetItem(id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.writeJSON(w, item)
 }
 
-func (s *Service) handlePurchase(w http.ResponseWriter, _ *http.Request) {
-	s.writeError(w, "store purchase not yet available", http.StatusNotImplemented)
+func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	var req struct {
+		AgentID string `json:"agent_id"`
+		ItemID  string `json:"item_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.AgentID == "" || req.ItemID == "" {
+		s.writeError(w, "agent_id and item_id are required", http.StatusBadRequest)
+		return
+	}
+	if !isValidPathID(req.ItemID) {
+		s.writeError(w, "invalid item_id", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Normalize agent ID to instance portion — graph.GetAgent handles both
+	// full entity IDs and instance-only, but store methods use the ID as a
+	// sync.Map key so it must match what path-based handlers pass (instance only).
+	agentID := semdragons.AgentID(semdragons.ExtractInstance(req.AgentID))
+
+	// Resolve agent state from graph
+	agentEntity, err := s.graph.GetAgent(ctx, agentID)
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			s.writeError(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		s.writeError(w, "failed to retrieve agent", http.StatusInternalServerError)
+		s.logger.Error("Failed to retrieve agent for purchase", "agent_id", req.AgentID, "error", err)
+		return
+	}
+	agent := semdragons.AgentFromEntityState(agentEntity)
+	if agent == nil {
+		s.writeError(w, "agent not found", http.StatusNotFound)
+		return
+	}
+
+	// Check tier gate before purchasing
+	item, itemOK := s.store.GetItem(req.ItemID)
+	if !itemOK {
+		s.writeError(w, "item not found", http.StatusNotFound)
+		return
+	}
+	if agent.Tier < item.MinTier {
+		s.writeError(w, "agent tier too low for this item", http.StatusForbidden)
+		return
+	}
+
+	owned, purchaseErr := s.store.Purchase(ctx, agentID, req.ItemID, agent.XP, agent.Level, agent.Guilds)
+	if purchaseErr != nil {
+		s.logger.Warn("Purchase failed", "agent_id", agentID, "item_id", req.ItemID, "error", purchaseErr)
+		s.writeJSON(w, map[string]any{
+			"success": false,
+			"error":   purchaseErr.Error(),
+		})
+		return
+	}
+
+	inv := s.store.GetInventory(agentID)
+
+	s.writeJSON(w, map[string]any{
+		"success":      true,
+		"item":         item,
+		"xp_spent":     owned.XPSpent,
+		"xp_remaining": agent.XP - owned.XPSpent,
+		"inventory":    inv,
+	})
 }
 
 func (s *Service) handleGetInventory(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
 	id := r.PathValue("id")
 	if !isValidPathID(id) {
 		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
 		return
 	}
-	// TODO: Wire inventory lookup when agent store component is available
-	s.writeError(w, "inventory lookup not yet available", http.StatusNotImplemented)
+
+	inv := s.store.GetInventory(semdragons.AgentID(id))
+	s.writeJSON(w, inv)
 }
 
 func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
 	id := r.PathValue("id")
 	if !isValidPathID(id) {
 		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
 		return
 	}
-	// TODO: Wire consumable use when agent store component is available
-	s.writeError(w, "consumable use not yet available", http.StatusNotImplemented)
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	var req struct {
+		ConsumableID string `json:"consumable_id"`
+		QuestID      string `json:"quest_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.ConsumableID == "" {
+		s.writeError(w, "consumable_id is required", http.StatusBadRequest)
+		return
+	}
+
+	agentID := semdragons.AgentID(id)
+
+	var questIDPtr *semdragons.QuestID
+	if req.QuestID != "" {
+		qid := semdragons.QuestID(req.QuestID)
+		questIDPtr = &qid
+	}
+
+	if err := s.store.UseConsumable(r.Context(), agentID, req.ConsumableID, questIDPtr); err != nil {
+		s.writeJSON(w, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	inv := s.store.GetInventory(agentID)
+	remaining := inv.ConsumableCount(req.ConsumableID)
+	effects := s.store.GetActiveEffects(agentID)
+
+	s.writeJSON(w, map[string]any{
+		"success":        true,
+		"remaining":      remaining,
+		"active_effects": effects,
+	})
 }
 
 func (s *Service) handleGetEffects(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
 	id := r.PathValue("id")
 	if !isValidPathID(id) {
 		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
 		return
 	}
-	// TODO: Wire effects lookup when agent store component is available
-	s.writeError(w, "effects lookup not yet available", http.StatusNotImplemented)
+
+	effects := s.store.GetActiveEffects(semdragons.AgentID(id))
+	if effects == nil {
+		effects = make([]agentstore.ActiveEffect, 0)
+	}
+	s.writeJSON(w, effects)
 }
 
 // =============================================================================
