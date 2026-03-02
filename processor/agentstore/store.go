@@ -2,6 +2,7 @@ package agentstore
 
 import (
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
@@ -104,8 +105,10 @@ type OwnedItem struct {
 	UsesRemaining int          `json:"uses_remaining,omitempty"`
 }
 
-// AgentInventory tracks what an agent owns.
+// AgentInventory tracks what an agent owns. The mutex protects concurrent
+// access from the KV watcher goroutine and API handler goroutines.
 type AgentInventory struct {
+	mu          sync.RWMutex         `json:"-"`
 	AgentID     domain.AgentID       `json:"agent_id"`
 	OwnedTools  map[string]OwnedItem `json:"owned_tools"`
 	Consumables map[string]int       `json:"consumables"`
@@ -124,6 +127,8 @@ func NewAgentInventory(agentID domain.AgentID) *AgentInventory {
 
 // HasTool checks if the agent has a specific tool.
 func (inv *AgentInventory) HasTool(toolID string) bool {
+	inv.mu.RLock()
+	defer inv.mu.RUnlock()
 	owned, ok := inv.OwnedTools[toolID]
 	if !ok {
 		return false
@@ -136,11 +141,15 @@ func (inv *AgentInventory) HasTool(toolID string) bool {
 
 // HasConsumable checks if the agent has at least one of a consumable.
 func (inv *AgentInventory) HasConsumable(consumableID string) bool {
+	inv.mu.RLock()
+	defer inv.mu.RUnlock()
 	return inv.Consumables[consumableID] > 0
 }
 
 // ConsumableCount returns how many of a consumable the agent has.
 func (inv *AgentInventory) ConsumableCount(consumableID string) int {
+	inv.mu.RLock()
+	defer inv.mu.RUnlock()
 	return inv.Consumables[consumableID]
 }
 

@@ -3,7 +3,6 @@ package agentstore
 import (
 	"context"
 	"errors"
-	"maps"
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -107,9 +106,15 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 // loadInitialState() pattern — called once during Start() so caches survive
 // restarts.
 func (c *Component) loadInitialInventories(ctx context.Context) error {
-	agentEntities, err := c.graph.ListAgentsByPrefix(ctx, 500)
+	const agentLimit = 500
+	agentEntities, err := c.graph.ListAgentsByPrefix(ctx, agentLimit)
 	if err != nil {
 		return err
+	}
+
+	if len(agentEntities) == agentLimit {
+		c.logger.Warn("agent limit reached during initial inventory load; some agents may not be rehydrated until watcher catches up",
+			"limit", agentLimit)
 	}
 
 	loaded := 0
@@ -131,9 +136,10 @@ func (c *Component) loadInitialInventories(ctx context.Context) error {
 	return nil
 }
 
-// syncInventoryFromAgent overwrites the local inventory and active effects
-// caches from a reconstructed Agent. This is cheap (map overwrites) and keeps
-// caches warm when other processors mutate agent entities.
+// syncInventoryFromAgent merges inventory and active effects from a
+// reconstructed Agent into the local caches. Uses merge (not replace) because
+// the watcher may reflect our own stale KV writes back — a full replacement
+// would overwrite more recent local state from Purchase/UseConsumable calls.
 func (c *Component) syncInventoryFromAgent(agent *semdragons.Agent) {
 	hasInventory := len(agent.OwnedTools) > 0 || len(agent.Consumables) > 0 || agent.TotalSpent > 0
 	hasEffects := len(agent.ActiveEffects) > 0
@@ -144,23 +150,42 @@ func (c *Component) syncInventoryFromAgent(agent *semdragons.Agent) {
 
 	if hasInventory {
 		inv := c.getOrCreateInventory(agent.ID)
-		// Overwrite tools
+		inv.mu.Lock()
+
+		// Merge tools — add/update from agent entity, preserve local-only entries.
 		for id, tool := range agent.OwnedTools {
+			// -1 = permanent (domain convention); 0+ = rental (may be exhausted)
 			purchaseType := PurchasePermanent
 			if tool.UsesRemaining >= 0 {
 				purchaseType = PurchaseRental
 			}
+			var itemName string
+			if val, ok := c.catalog.Load(id); ok {
+				itemName = val.(*StoreItem).Name
+			}
 			inv.OwnedTools[id] = OwnedItem{
 				ItemID:        id,
+				ItemName:      itemName,
 				PurchaseType:  purchaseType,
 				PurchasedAt:   tool.PurchasedAt,
 				XPSpent:       tool.XPSpent,
 				UsesRemaining: tool.UsesRemaining,
 			}
 		}
-		// Overwrite consumables
-		maps.Copy(inv.Consumables, agent.Consumables)
-		inv.TotalSpent = agent.TotalSpent
+
+		// Merge consumables — use max of local vs agent entity count to avoid
+		// overwriting a recent local Purchase with a stale reflected write.
+		for id, count := range agent.Consumables {
+			if count > inv.Consumables[id] {
+				inv.Consumables[id] = count
+			}
+		}
+
+		// TotalSpent: use the higher value (local may have a more recent purchase).
+		if agent.TotalSpent > inv.TotalSpent {
+			inv.TotalSpent = agent.TotalSpent
+		}
+		inv.mu.Unlock()
 	}
 
 	if hasEffects {
@@ -385,12 +410,15 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 
 	// Update in-memory inventory cache (fast path for local reads)
 	inv := c.getOrCreateInventory(agentID)
+	inv.mu.Lock()
 	if item.ItemType == ItemTypeTool {
 		inv.OwnedTools[itemID] = *owned
 	} else if item.ItemType == ItemTypeConsumable {
 		inv.Consumables[itemID]++
 	}
 	inv.TotalSpent += effectiveCost
+	totalSpent := inv.TotalSpent // capture under lock for event payload
+	inv.mu.Unlock()
 
 	// Read-modify-write agent entity to KV (source of truth)
 	agentEntity, agentErr := c.graph.GetAgent(ctx, agentID)
@@ -457,7 +485,7 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 		ItemID:     itemID,
 		ItemName:   item.Name,
 		Quantity:   1,
-		TotalSpent: inv.TotalSpent,
+		TotalSpent: totalSpent,
 		Timestamp:  now,
 	}); err != nil {
 		c.errorsCount.Add(1)
@@ -506,15 +534,15 @@ func (c *Component) HasTool(agentID domain.AgentID, toolID string) bool {
 }
 
 // getOrCreateInventory gets or creates an inventory for an agent.
+// Uses LoadOrStore to avoid TOCTOU races when the watcher goroutine and
+// API handlers access the same agent concurrently.
 func (c *Component) getOrCreateInventory(agentID domain.AgentID) *AgentInventory {
-	val, ok := c.inventories.Load(agentID)
-	if ok {
+	if val, ok := c.inventories.Load(agentID); ok {
 		return val.(*AgentInventory)
 	}
-
 	inv := NewAgentInventory(agentID)
-	c.inventories.Store(agentID, inv)
-	return inv
+	val, _ := c.inventories.LoadOrStore(agentID, inv)
+	return val.(*AgentInventory)
 }
 
 // =============================================================================
@@ -530,10 +558,15 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 
 	inv := c.getOrCreateInventory(agentID)
 
-	// Check if has consumable
-	if !inv.HasConsumable(consumableID) {
+	// Check and decrement under lock to prevent races with the watcher.
+	inv.mu.Lock()
+	if inv.Consumables[consumableID] <= 0 {
+		inv.mu.Unlock()
 		return errors.New("consumable not owned")
 	}
+	inv.Consumables[consumableID]--
+	remaining := inv.Consumables[consumableID]
+	inv.mu.Unlock()
 
 	// Get consumable item for effect info
 	val, ok := c.catalog.Load(consumableID)
@@ -541,10 +574,6 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 		return errors.New("consumable not found in catalog")
 	}
 	item := val.(*StoreItem)
-
-	// Decrement count in cache
-	inv.Consumables[consumableID]--
-	remaining := inv.Consumables[consumableID]
 
 	// Create active effect (in-memory cache)
 	effect := ActiveEffect{

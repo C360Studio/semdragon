@@ -170,41 +170,70 @@ func TestInventorySurvivesRestart(t *testing.T) {
 
 	boardName := "restart"
 
-	// --- Instance 1: purchase an item ---
+	// --- Instance 1: purchase items ---
 	comp1 := setupComponent(t, client, boardName)
 	gc := semdragons.NewGraphClient(client, comp1.BoardConfig())
 
-	// Create agent with enough XP to buy the cheapest tool (web_search: 50 XP)
+	// Create agent with enough XP to buy multiple items.
+	// web_search (permanent tool): 50 XP
+	// context_expander (rental tool, 10 uses): 200 XP (requires Journeyman)
+	// retry_token (consumable): 50 XP
+	// Total: 300 XP needed. Use Journeyman tier (level 6) for tier-gated items.
 	instance := semdragons.GenerateInstance()
 	agentID := domain.AgentID(comp1.BoardConfig().AgentEntityID(instance))
 	agent := &semdragons.Agent{
 		ID:     agentID,
 		Name:   "restart-test-agent",
 		Status: semdragons.AgentIdle,
-		Level:  5,
-		Tier:   semdragons.TierApprentice,
-		XP:     200,
+		Level:  8,
+		Tier:   semdragons.TierJourneyman,
+		XP:     1000,
 	}
 	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 		t.Fatalf("Failed to create test agent: %v", err)
 	}
 
-	// Purchase a permanent tool
-	owned, err := comp1.Purchase(ctx, agentID, "web_search", 200, 5, nil)
+	// Purchase a permanent tool (web_search: 50 XP)
+	owned, err := comp1.Purchase(ctx, agentID, "web_search", 1000, 8, nil)
 	if err != nil {
-		t.Fatalf("Purchase failed: %v", err)
+		t.Fatalf("Purchase web_search failed: %v", err)
 	}
 	if owned == nil {
 		t.Fatal("Purchase returned nil OwnedItem")
 	}
 
+	// Purchase a rental tool (context_expander: 200 XP, 10 uses)
+	owned2, err := comp1.Purchase(ctx, agentID, "context_expander", 950, 8, nil)
+	if err != nil {
+		t.Fatalf("Purchase context_expander failed: %v", err)
+	}
+	if owned2 == nil {
+		t.Fatal("Purchase context_expander returned nil OwnedItem")
+	}
+
+	// Purchase a consumable (retry_token: 50 XP)
+	owned3, err := comp1.Purchase(ctx, agentID, "retry_token", 750, 8, nil)
+	if err != nil {
+		t.Fatalf("Purchase retry_token failed: %v", err)
+	}
+	if owned3 == nil {
+		t.Fatal("Purchase retry_token returned nil OwnedItem")
+	}
+
 	// Verify inventory on instance 1
 	inv1 := comp1.GetInventory(agentID)
 	if !inv1.HasTool("web_search") {
-		t.Fatal("instance 1: expected web_search in inventory after purchase")
+		t.Fatal("instance 1: expected web_search in inventory")
 	}
-	if inv1.TotalSpent != 50 {
-		t.Errorf("instance 1: TotalSpent = %d, want 50", inv1.TotalSpent)
+	if !inv1.HasTool("context_expander") {
+		t.Fatal("instance 1: expected context_expander in inventory")
+	}
+	if !inv1.HasConsumable("retry_token") {
+		t.Fatal("instance 1: expected retry_token in inventory")
+	}
+	expectedSpent := int64(50 + 200 + 50) // 300
+	if inv1.TotalSpent != expectedSpent {
+		t.Errorf("instance 1: TotalSpent = %d, want %d", inv1.TotalSpent, expectedSpent)
 	}
 
 	// Stop instance 1
@@ -218,21 +247,45 @@ func TestInventorySurvivesRestart(t *testing.T) {
 
 	// Verify inventory was rehydrated from KV
 	inv2 := comp2.GetInventory(agentID)
+
+	// Permanent tool
 	if !inv2.HasTool("web_search") {
 		t.Error("instance 2: expected web_search in inventory after restart")
 	}
-	if inv2.TotalSpent != 50 {
-		t.Errorf("instance 2: TotalSpent = %d, want 50", inv2.TotalSpent)
+
+	// Rental tool with uses remaining
+	if !inv2.HasTool("context_expander") {
+		t.Error("instance 2: expected context_expander in inventory after restart")
 	}
+
+	// Consumable
+	if !inv2.HasConsumable("retry_token") {
+		t.Error("instance 2: expected retry_token consumable after restart")
+	}
+	if count := inv2.ConsumableCount("retry_token"); count != 1 {
+		t.Errorf("instance 2: retry_token count = %d, want 1", count)
+	}
+
+	// TotalSpent
+	if inv2.TotalSpent != expectedSpent {
+		t.Errorf("instance 2: TotalSpent = %d, want %d", inv2.TotalSpent, expectedSpent)
+	}
+
+	// ItemName populated from catalog during rehydration
+	inv2.mu.RLock()
+	if name := inv2.OwnedTools["web_search"].ItemName; name != "Web Search" {
+		t.Errorf("instance 2: web_search ItemName = %q, want %q", name, "Web Search")
+	}
+	inv2.mu.RUnlock()
 
 	// Verify XP cache was also rehydrated
 	xp, ok := comp2.AgentXP(agentID)
 	if !ok {
 		t.Error("instance 2: expected agent in XP cache after restart")
 	}
-	// Purchase deducted 50 XP from agent entity (200 - 50 = 150)
-	if xp != 150 {
-		t.Errorf("instance 2: cached XP = %d, want 150", xp)
+	// 1000 - 50 - 200 - 50 = 700
+	if xp != 700 {
+		t.Errorf("instance 2: cached XP = %d, want 700", xp)
 	}
 }
 
