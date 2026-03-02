@@ -100,64 +100,6 @@ func TestTripleString(t *testing.T) {
 }
 
 // =============================================================================
-// extractInstanceFromEntityKey
-// =============================================================================
-
-func TestExtractInstanceFromEntityKey(t *testing.T) {
-	tests := []struct {
-		name      string
-		entityKey string
-		want      string
-	}{
-		{
-			name:      "standard six-part key returns last segment",
-			entityKey: "c360.prod.game.board1.quest.abc123",
-			want:      "abc123",
-		},
-		{
-			name:      "six-part key with agent type",
-			entityKey: "c360.dev.game.main.agent.dragon",
-			want:      "dragon",
-		},
-		{
-			name:      "six-part key with UUID-like instance",
-			entityKey: "org.platform.game.board.quest.550e8400-e29b-41d4-a716-446655440000",
-			want:      "550e8400-e29b-41d4-a716-446655440000",
-		},
-		{
-			name:      "single segment with no dots is returned as-is",
-			entityKey: "justanid",
-			want:      "justanid",
-		},
-		{
-			name:      "two-part key returns last segment",
-			entityKey: "quest.abc",
-			want:      "abc",
-		},
-		{
-			name:      "key ending in dot returns empty string after last dot",
-			entityKey: "c360.prod.game.board.quest.",
-			want:      "",
-		},
-		{
-			name:      "empty string returns empty string",
-			entityKey: "",
-			want:      "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := extractInstanceFromEntityKey(tt.entityKey)
-			if got != tt.want {
-				t.Errorf("extractInstanceFromEntityKey(%q) = %q; want %q",
-					tt.entityKey, got, tt.want)
-			}
-		})
-	}
-}
-
-// =============================================================================
 // buildLegacySystemPrompt
 // =============================================================================
 

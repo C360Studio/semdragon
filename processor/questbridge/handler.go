@@ -186,7 +186,11 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	userPrompt := buildUserPrompt(quest)
 
 	// Construct the TaskMessage.
-	loopID := fmt.Sprintf("quest-%s-%s", questID, nuid.Next())
+	// Sanitize questID for use in NATS subject tokens — entity IDs contain dots
+	// which are subject delimiters. Replace dots with hyphens so the ID is a single
+	// token, allowing agent.task.* and agent.complete.* filters to match correctly.
+	subjectSafeQuestID := strings.ReplaceAll(questID, ".", "-")
+	loopID := fmt.Sprintf("quest-%s-%s", subjectSafeQuestID, nuid.Next())
 	taskMsg := agentic.TaskMessage{
 		TaskID: questID,
 		Role:   role,
@@ -215,7 +219,9 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	}
 
 	// Publish to agent.task.{questID} on the AGENT stream.
-	subject := fmt.Sprintf("agent.task.%s", questID)
+	// Use the sanitized (dot-free) quest ID so the subject is a valid 3-token
+	// pattern matching agent.task.* consumer filters.
+	subject := fmt.Sprintf("agent.task.%s", subjectSafeQuestID)
 	if err := c.deps.NATSClient.PublishToStream(ctx, subject, data); err != nil {
 		c.logger.Error("failed to publish TaskMessage",
 			"quest_id", questID, "subject", subject, "error", err)
@@ -295,7 +301,7 @@ func (c *Component) consumeCompletions(ctx context.Context) {
 
 	consumer, err := js.CreateOrUpdateConsumer(ctx, c.config.StreamName, jetstream.ConsumerConfig{
 		Durable:        consumerName,
-		FilterSubjects: []string{"agent.complete.*", "agent.failed.*"},
+		FilterSubjects: []string{"agent.complete.>", "agent.failed.>"},
 		AckPolicy:      jetstream.AckExplicitPolicy,
 	})
 	if err != nil {
@@ -464,11 +470,9 @@ func (c *Component) reconcileOrphanedQuests(ctx context.Context) {
 
 		entityKey, _ := key.(string)
 
-		// Strip the entity prefix to get just the instance portion used as
-		// the QUEST_LOOPS KV key. Entity keys look like:
-		//   org.platform.game.board.quest.{instance}
-		questKeyPart := extractInstanceFromEntityKey(entityKey)
-		entry, err := c.questLoopsBucket.Get(ctx, questKeyPart)
+		// QUEST_LOOPS keys are the full entity ID (same key handleQuestStarted
+		// uses when writing the mapping). Use the full entity key for lookup.
+		entry, err := c.questLoopsBucket.Get(ctx, entityKey)
 		if err != nil {
 			// No mapping — quest may predate bridge deployment or was orphaned.
 			c.logger.Warn("orphaned in_progress quest with no loop mapping — manual review required",
@@ -483,8 +487,9 @@ func (c *Component) reconcileOrphanedQuests(ctx context.Context) {
 			return true
 		}
 
-		// Re-register the mapping so completion events are handled correctly.
-		c.activeLoops.Store(questKeyPart, &mapping)
+		// Re-register the mapping under the full entity ID — same key that
+		// findMapping uses for lookup when completion events arrive.
+		c.activeLoops.Store(entityKey, &mapping)
 		c.logger.Info("recovered quest-loop mapping after restart",
 			"quest_id", mapping.QuestID,
 			"loop_id", mapping.LoopID,
@@ -740,12 +745,3 @@ func tripleString(triples []message.Triple, predicate string) string {
 	return ""
 }
 
-// extractInstanceFromEntityKey extracts the instance portion from a full entity key.
-// Entity keys follow the pattern org.platform.domain.board.type.instance.
-// We need just the instance for QUEST_LOOPS KV lookups.
-func extractInstanceFromEntityKey(entityKey string) string {
-	if idx := strings.LastIndex(entityKey, "."); idx >= 0 {
-		return entityKey[idx+1:]
-	}
-	return entityKey
-}

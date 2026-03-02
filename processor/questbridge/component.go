@@ -111,7 +111,7 @@ func (c *Component) InputPorts() []component.Port {
 			Description: "Agentic loop completion/failure events from AGENT stream",
 			Config: &component.JetStreamPort{
 				StreamName: "AGENT",
-				Subjects:   []string{"agent.complete.*", "agent.failed.*"},
+				Subjects:   []string{"agent.complete.>", "agent.failed.>"},
 			},
 		},
 	}
