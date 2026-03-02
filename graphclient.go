@@ -192,6 +192,18 @@ func (gc *GraphClient) ListStoreItemsByPrefix(ctx context.Context, limit int) ([
 	return gc.ListEntitiesByType(ctx, EntityTypeStoreItem, limit)
 }
 
+// GetPeerReview retrieves a peer review by its review ID (instance portion).
+func (gc *GraphClient) GetPeerReview(ctx context.Context, reviewID PeerReviewID) (*graph.EntityState, error) {
+	instance := ExtractInstance(string(reviewID))
+	entityID := gc.config.PeerReviewEntityID(instance)
+	return gc.GetEntityDirect(ctx, entityID)
+}
+
+// ListPeerReviewsByPrefix retrieves all peer reviews on this board from KV.
+func (gc *GraphClient) ListPeerReviewsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
+	return gc.ListEntitiesByType(ctx, EntityTypePeerReview, limit)
+}
+
 // ListEntitiesByType retrieves all entities of a given type directly from the
 // ENTITY_STATES KV bucket. This reads from the source of truth without requiring
 // the graph-ingest query service to be running.

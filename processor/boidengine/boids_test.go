@@ -1,6 +1,7 @@
 package boidengine
 
 import (
+	"math"
 	"testing"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -145,5 +146,118 @@ func TestSuggestTopN_LimitToN(t *testing.T) {
 	}
 	if agent1[1].QuestID != "quest2" {
 		t.Errorf("rank 2 quest = %s, want quest2", agent1[1].QuestID)
+	}
+}
+
+// =============================================================================
+// PEER REPUTATION MODIFIER UNIT TESTS
+// =============================================================================
+// These tests call computeAttraction directly via ComputeAttractions, using a
+// single-agent, single-quest scenario where the skill/guild match produces a
+// known base AffinityScore that we can inspect through TotalScore arithmetic.
+// =============================================================================
+
+// baseAttractionFor is a helper that builds the minimal agent/quest pair needed
+// to produce a non-zero attraction and returns the computed QuestAttraction.
+// The agent has one matching skill (code_gen); no guild priority on the quest so
+// guildMatch=0. Expected base AffinityScore = 1.0 (one skill match) * AffinityWeight
+// (1.5) = 1.5.
+func baseAttractionFor(t *testing.T, agent semdragons.Agent) QuestAttraction {
+	t.Helper()
+
+	engine := NewDefaultBoidEngine()
+	rules := DefaultBoidRules()
+
+	quest := semdragons.Quest{
+		ID:             "q1",
+		Status:         semdragons.QuestPosted,
+		RequiredSkills: []semdragons.SkillTag{"code_gen"},
+	}
+	agents := []semdragons.Agent{agent}
+	quests := []semdragons.Quest{quest}
+
+	attractions := engine.ComputeAttractions(agents, quests, rules)
+	if len(attractions) == 0 {
+		t.Fatal("expected at least one attraction, got none")
+	}
+	return attractions[0]
+}
+
+// agentWithSkill creates an Agent with a single code_gen skill proficiency entry.
+// Agent.SkillProficiencies is the authoritative skill store used by HasSkill().
+func agentWithSkill(id semdragons.AgentID, stats semdragons.AgentStats) semdragons.Agent {
+	return semdragons.Agent{
+		ID:     id,
+		Status: semdragons.AgentIdle,
+		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+			"code_gen": {},
+		},
+		Stats: stats,
+	}
+}
+
+func TestAffinityScore_PositivePeerReputation(t *testing.T) {
+	// avg=5.0 → reputationMod = (5.0-3.0)/2.0 = 1.0 → multiplier = 1.0 + 1.0*0.3 = 1.3
+	// base AffinityScore = 1.5 → boosted = 1.5 * 1.3 = 1.95
+	agent := agentWithSkill("agent-pos", semdragons.AgentStats{
+		PeerReviewAvg:   5.0,
+		PeerReviewCount: 3,
+	})
+
+	attr := baseAttractionFor(t, agent)
+
+	const want = 1.95
+	if math.Abs(attr.AffinityScore-want) > 1e-9 {
+		t.Errorf("AffinityScore = %.6f, want %.6f (±30%% boost for avg=5.0)", attr.AffinityScore, want)
+	}
+}
+
+func TestAffinityScore_NegativePeerReputation(t *testing.T) {
+	// avg=1.0 → reputationMod = (1.0-3.0)/2.0 = -1.0 → multiplier = 1.0 + (-1.0)*0.3 = 0.7
+	// base AffinityScore = 1.5 → reduced = 1.5 * 0.7 = 1.05
+	agent := agentWithSkill("agent-neg", semdragons.AgentStats{
+		PeerReviewAvg:   1.0,
+		PeerReviewCount: 2,
+	})
+
+	attr := baseAttractionFor(t, agent)
+
+	const want = 1.05
+	if math.Abs(attr.AffinityScore-want) > 1e-9 {
+		t.Errorf("AffinityScore = %.6f, want %.6f (±30%% reduction for avg=1.0)", attr.AffinityScore, want)
+	}
+}
+
+func TestAffinityScore_NeutralPeerReputation(t *testing.T) {
+	// avg=3.0 → reputationMod = (3.0-3.0)/2.0 = 0.0 → multiplier = 1.0
+	// AffinityScore is unchanged from its base value.
+	agent := agentWithSkill("agent-neutral", semdragons.AgentStats{
+		PeerReviewAvg:   3.0,
+		PeerReviewCount: 5,
+	})
+
+	attr := baseAttractionFor(t, agent)
+
+	// Base affinity: 1 skill match * 1.5 weight = 1.5 — no change
+	const want = 1.5
+	if math.Abs(attr.AffinityScore-want) > 1e-9 {
+		t.Errorf("AffinityScore = %.6f, want %.6f (neutral avg=3.0 must leave score unchanged)", attr.AffinityScore, want)
+	}
+}
+
+func TestAffinityScore_NoPeerReviews(t *testing.T) {
+	// PeerReviewCount=0 → modifier branch is skipped entirely, no division by zero.
+	// AffinityScore equals the unmodified base value.
+	agent := agentWithSkill("agent-noreviews", semdragons.AgentStats{
+		PeerReviewAvg:   0.0, // zero-value; irrelevant when Count==0
+		PeerReviewCount: 0,
+	})
+
+	attr := baseAttractionFor(t, agent)
+
+	// Base affinity: 1 skill match * 1.5 weight = 1.5 — unmodified
+	const want = 1.5
+	if math.Abs(attr.AffinityScore-want) > 1e-9 {
+		t.Errorf("AffinityScore = %.6f, want %.6f (count=0 must leave score unchanged)", attr.AffinityScore, want)
 	}
 }

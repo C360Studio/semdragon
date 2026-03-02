@@ -1410,6 +1410,352 @@ func (s *Service) handleGetEffects(w http.ResponseWriter, r *http.Request) {
 }
 
 // =============================================================================
+// PEER REVIEWS
+// =============================================================================
+
+func (s *Service) handleCreateReview(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+
+	var req struct {
+		QuestID    string  `json:"quest_id"`
+		PartyID    *string `json:"party_id,omitempty"`
+		LeaderID   string  `json:"leader_id"`
+		MemberID   string  `json:"member_id"`
+		IsSoloTask bool    `json:"is_solo_task"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.QuestID == "" {
+		s.writeError(w, "quest_id is required", http.StatusBadRequest)
+		return
+	}
+	if req.LeaderID == "" {
+		s.writeError(w, "leader_id is required", http.StatusBadRequest)
+		return
+	}
+	if req.MemberID == "" {
+		s.writeError(w, "member_id is required", http.StatusBadRequest)
+		return
+	}
+	if req.LeaderID == req.MemberID && !req.IsSoloTask {
+		s.writeError(w, "leader_id and member_id must be different for non-solo reviews", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	instance := semdragons.GenerateShortInstance()
+	reviewID := s.graph.Config().PeerReviewEntityID(instance)
+	now := time.Now()
+
+	review := &semdragons.PeerReview{
+		ID:         semdragons.PeerReviewID(reviewID),
+		Status:     semdragons.PeerReviewPending,
+		QuestID:    semdragons.QuestID(req.QuestID),
+		LeaderID:   semdragons.AgentID(req.LeaderID),
+		MemberID:   semdragons.AgentID(req.MemberID),
+		IsSoloTask: req.IsSoloTask,
+		CreatedAt:  now,
+	}
+	if req.PartyID != nil {
+		pid := semdragons.PartyID(*req.PartyID)
+		review.PartyID = &pid
+	}
+
+	if err := s.graph.EmitEntity(ctx, review, "review.lifecycle.pending"); err != nil {
+		s.writeError(w, "failed to create review", http.StatusInternalServerError)
+		s.logger.Error("Failed to create peer review", "error", err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(review)
+}
+
+func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid review ID", http.StatusBadRequest)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+
+	var req struct {
+		ReviewerID  string `json:"reviewer_id"`
+		Ratings     struct {
+			Q1 int `json:"q1"`
+			Q2 int `json:"q2"`
+			Q3 int `json:"q3"`
+		} `json:"ratings"`
+		Explanation string `json:"explanation,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.ReviewerID == "" {
+		s.writeError(w, "reviewer_id is required", http.StatusBadRequest)
+		return
+	}
+
+	ratings := semdragons.ReviewRatings{Q1: req.Ratings.Q1, Q2: req.Ratings.Q2, Q3: req.Ratings.Q3}
+	if err := ratings.Validate(req.Explanation); err != nil {
+		s.writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Load existing review
+	entity, err := s.graph.GetPeerReview(ctx, semdragons.PeerReviewID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve review", http.StatusInternalServerError)
+		s.logger.Error("Failed to get peer review", "id", id, "error", err)
+		return
+	}
+
+	review := semdragons.PeerReviewFromEntityState(entity)
+	if review == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if review.Status == semdragons.PeerReviewCompleted {
+		s.writeError(w, "review is already completed", http.StatusConflict)
+		return
+	}
+
+	reviewerID := semdragons.AgentID(req.ReviewerID)
+	now := time.Now()
+
+	switch reviewerID {
+	case review.LeaderID:
+		if review.LeaderReview != nil {
+			s.writeError(w, "leader has already submitted a review", http.StatusConflict)
+			return
+		}
+		review.LeaderReview = &semdragons.ReviewSubmission{
+			ReviewerID:  reviewerID,
+			RevieweeID:  review.MemberID,
+			Direction:   semdragons.ReviewDirectionLeaderToMember,
+			Ratings:     ratings,
+			Explanation: req.Explanation,
+			SubmittedAt: now,
+		}
+	case review.MemberID:
+		if review.IsSoloTask {
+			s.writeError(w, "solo tasks do not accept member reviews", http.StatusBadRequest)
+			return
+		}
+		if review.MemberReview != nil {
+			s.writeError(w, "member has already submitted a review", http.StatusConflict)
+			return
+		}
+		review.MemberReview = &semdragons.ReviewSubmission{
+			ReviewerID:  reviewerID,
+			RevieweeID:  review.LeaderID,
+			Direction:   semdragons.ReviewDirectionMemberToLeader,
+			Ratings:     ratings,
+			Explanation: req.Explanation,
+			SubmittedAt: now,
+		}
+	default:
+		s.writeError(w, "reviewer is not a participant in this review", http.StatusForbidden)
+		return
+	}
+
+	// Determine completion
+	completed := false
+	if review.IsSoloTask {
+		// Solo tasks complete when leader (DM) submits
+		completed = review.LeaderReview != nil
+	} else {
+		completed = review.LeaderReview != nil && review.MemberReview != nil
+	}
+
+	eventType := "review.lifecycle.submitted"
+	if completed {
+		review.Status = semdragons.PeerReviewCompleted
+		review.CompletedAt = &now
+		eventType = "review.lifecycle.completed"
+
+		// Compute averages: LeaderAvgRating = member's rating of leader,
+		// MemberAvgRating = leader's rating of member
+		if review.LeaderReview != nil {
+			review.MemberAvgRating = review.LeaderReview.Ratings.Average()
+		}
+		if review.MemberReview != nil {
+			review.LeaderAvgRating = review.MemberReview.Ratings.Average()
+		}
+	} else {
+		review.Status = semdragons.PeerReviewPartial
+	}
+
+	if err := s.graph.EmitEntityUpdate(ctx, review, eventType); err != nil {
+		s.writeError(w, "failed to submit review", http.StatusInternalServerError)
+		s.logger.Error("Failed to submit peer review", "id", id, "error", err)
+		return
+	}
+
+	// Blind enforcement: mask the other party's submission until completed
+	resp := blindMaskReview(review, reviewerID)
+	s.writeJSON(w, resp)
+}
+
+// stripPartialSubmissions redacts both submissions from non-completed reviews
+// returned by unauthenticated GET/LIST endpoints to enforce blind review.
+func stripPartialSubmissions(review *semdragons.PeerReview) semdragons.PeerReview {
+	if review.Status == semdragons.PeerReviewCompleted {
+		return *review
+	}
+	masked := *review
+	masked.LeaderReview = nil
+	masked.MemberReview = nil
+	masked.LeaderAvgRating = 0
+	masked.MemberAvgRating = 0
+	return masked
+}
+
+// blindMaskReview returns a copy of the review with the other party's submission
+// masked out if the review is not yet completed. This enforces blind review —
+// neither party can see the other's ratings until both have submitted.
+func blindMaskReview(review *semdragons.PeerReview, viewerID semdragons.AgentID) *semdragons.PeerReview {
+	if review.Status == semdragons.PeerReviewCompleted {
+		return review
+	}
+	// Create shallow copy to avoid mutating original
+	masked := *review
+	switch viewerID {
+	case review.LeaderID:
+		masked.MemberReview = nil
+		masked.LeaderAvgRating = 0
+	case review.MemberID:
+		masked.LeaderReview = nil
+		masked.MemberAvgRating = 0
+	default:
+		// Non-participant: mask both
+		masked.LeaderReview = nil
+		masked.MemberReview = nil
+		masked.LeaderAvgRating = 0
+		masked.MemberAvgRating = 0
+	}
+	return &masked
+}
+
+func (s *Service) handleGetReview(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid review ID", http.StatusBadRequest)
+		return
+	}
+
+	entity, err := s.graph.GetPeerReview(r.Context(), semdragons.PeerReviewID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve review", http.StatusInternalServerError)
+		s.logger.Error("Failed to get peer review", "id", id, "error", err)
+		return
+	}
+
+	review := semdragons.PeerReviewFromEntityState(entity)
+	if review == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Strip partial submissions from unauthenticated GET to enforce blind review.
+	masked := stripPartialSubmissions(review)
+	s.writeJSON(w, masked)
+}
+
+func (s *Service) handleListReviews(w http.ResponseWriter, r *http.Request) {
+	entities, err := s.graph.ListPeerReviewsByPrefix(r.Context(), s.config.MaxEntities)
+	if err != nil {
+		if isBucketNotFound(err) {
+			s.writeJSON(w, []semdragons.PeerReview{})
+			return
+		}
+		s.writeError(w, "failed to list reviews", http.StatusInternalServerError)
+		s.logger.Error("Failed to list peer reviews", "error", err)
+		return
+	}
+
+	statusFilter := r.URL.Query().Get("status")
+	questFilter := r.URL.Query().Get("quest_id")
+
+	var reviews []semdragons.PeerReview
+	for _, entity := range entities {
+		review := semdragons.PeerReviewFromEntityState(&entity)
+		if review == nil {
+			continue
+		}
+		if statusFilter != "" && string(review.Status) != statusFilter {
+			continue
+		}
+		if questFilter != "" && string(review.QuestID) != questFilter {
+			continue
+		}
+		reviews = append(reviews, stripPartialSubmissions(review))
+	}
+
+	if reviews == nil {
+		reviews = []semdragons.PeerReview{}
+	}
+	s.writeJSON(w, reviews)
+}
+
+func (s *Service) handleListAgentReviews(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid agent ID", http.StatusBadRequest)
+		return
+	}
+
+	agentID := semdragons.AgentID(id)
+
+	entities, err := s.graph.ListPeerReviewsByPrefix(r.Context(), s.config.MaxEntities)
+	if err != nil {
+		if isBucketNotFound(err) {
+			s.writeJSON(w, []semdragons.PeerReview{})
+			return
+		}
+		s.writeError(w, "failed to list reviews", http.StatusInternalServerError)
+		s.logger.Error("Failed to list agent reviews", "agent_id", id, "error", err)
+		return
+	}
+
+	var reviews []semdragons.PeerReview
+	for _, entity := range entities {
+		review := semdragons.PeerReviewFromEntityState(&entity)
+		if review == nil {
+			continue
+		}
+		if review.LeaderID != agentID && review.MemberID != agentID {
+			continue
+		}
+		reviews = append(reviews, stripPartialSubmissions(review))
+	}
+
+	if reviews == nil {
+		reviews = []semdragons.PeerReview{}
+	}
+	s.writeJSON(w, reviews)
+}
+
+// =============================================================================
 // HELPERS
 // =============================================================================
 

@@ -1,6 +1,7 @@
 package semdragons
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
@@ -25,16 +26,40 @@ type PartyID = domain.PartyID
 // BattleID uniquely identifies a boss battle (review session).
 type BattleID = domain.BattleID
 
+// PeerReviewID uniquely identifies a peer review.
+type PeerReviewID = domain.PeerReviewID
+
 // AgentStatus represents the current state of an agent in the system.
 type AgentStatus = domain.AgentStatus
 
 // AgentIdle and related constants define agent status values.
 const (
-	AgentIdle     = domain.AgentIdle
-	AgentOnQuest  = domain.AgentOnQuest
-	AgentInBattle = domain.AgentInBattle
-	AgentCooldown = domain.AgentCooldown
-	AgentRetired  = domain.AgentRetired
+	AgentIdle          = domain.AgentIdle
+	AgentOnQuest       = domain.AgentOnQuest
+	AgentInBattle      = domain.AgentInBattle
+	AgentCooldown      = domain.AgentCooldown
+	AgentRetired       = domain.AgentRetired
+	AgentPendingReview = domain.AgentPendingReview
+)
+
+// PeerReviewStatus represents the lifecycle state of a peer review.
+type PeerReviewStatus = domain.PeerReviewStatus
+
+// PeerReviewPending and related constants define peer review lifecycle states.
+const (
+	PeerReviewPending   = domain.PeerReviewPending
+	PeerReviewPartial   = domain.PeerReviewPartial
+	PeerReviewCompleted = domain.PeerReviewCompleted
+)
+
+// ReviewDirection indicates which party is reviewing which.
+type ReviewDirection = domain.ReviewDirection
+
+// ReviewDirectionLeaderToMember and related constants define review direction values.
+const (
+	ReviewDirectionLeaderToMember = domain.ReviewDirectionLeaderToMember
+	ReviewDirectionMemberToLeader = domain.ReviewDirectionMemberToLeader
+	ReviewDirectionDMToAgent      = domain.ReviewDirectionDMToAgent
 )
 
 // TrustTier represents an agent's trust level derived from their level.
@@ -222,10 +247,10 @@ type Agent struct {
 	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
 
 	// Store inventory (reconstructed from agent entity triples)
-	OwnedTools    map[string]OwnedTool  `json:"owned_tools,omitempty"`
-	Consumables   map[string]int        `json:"consumables,omitempty"`
-	TotalSpent    int64                 `json:"total_spent"`
-	ActiveEffects []AgentEffect         `json:"active_effects,omitempty"`
+	OwnedTools    map[string]OwnedTool `json:"owned_tools,omitempty"`
+	Consumables   map[string]int       `json:"consumables,omitempty"`
+	TotalSpent    int64                `json:"total_spent"`
+	ActiveEffects []AgentEffect        `json:"active_effects,omitempty"`
 
 	// Stats - lifetime tracking for the DM and observability
 	Stats AgentStats `json:"stats"`
@@ -298,16 +323,16 @@ func (a *Agent) AddSkill(skill SkillTag) {
 
 // OwnedTool tracks an agent's purchased tool (stored as agent entity triples).
 type OwnedTool struct {
-	StoreItemID   string    `json:"store_item_id"`   // Entity ref → storeitem entity ID
-	XPSpent       int64     `json:"xp_spent"`        // XP paid for this tool
-	UsesRemaining int       `json:"uses_remaining"`  // -1 = permanent
+	StoreItemID   string    `json:"store_item_id"`  // Entity ref → storeitem entity ID
+	XPSpent       int64     `json:"xp_spent"`       // XP paid for this tool
+	UsesRemaining int       `json:"uses_remaining"` // -1 = permanent
 	PurchasedAt   time.Time `json:"purchased_at"`
 }
 
 // AgentEffect tracks a consumable effect currently active on an agent.
 type AgentEffect struct {
-	EffectType      string   `json:"effect_type"`       // xp_boost, quality_shield, etc.
-	QuestsRemaining int      `json:"quests_remaining"`  // Quests until effect expires
+	EffectType      string   `json:"effect_type"`        // xp_boost, quality_shield, etc.
+	QuestsRemaining int      `json:"quests_remaining"`   // Quests until effect expires
 	QuestID         *QuestID `json:"quest_id,omitempty"` // Quest that triggered the effect
 }
 
@@ -333,6 +358,8 @@ type AgentStats struct {
 	AvgEfficiency    float64 `json:"avg_efficiency"`
 	PartiesLed       int     `json:"parties_led"`
 	QuestsDecomposed int     `json:"quests_decomposed"`
+	PeerReviewAvg    float64 `json:"peer_review_avg"`
+	PeerReviewCount  int     `json:"peer_review_count"`
 }
 
 // AgentPersona defines an agent's character identity and behavioral style.
@@ -364,8 +391,8 @@ type Quest struct {
 	GuildXP int64 `json:"guild_xp"` // XP toward guild reputation
 
 	// Execution context - the actual work
-	Input        any              `json:"input"`  // Quest payload
-	Output       any              `json:"output"` // Result when completed
+	Input        any              `json:"input"`                   // Quest payload
+	Output       any              `json:"output"`                  // Result when completed
 	Constraints  QuestConstraints `json:"constraints"`
 	AllowedTools []string         `json:"allowed_tools,omitempty"` // Tool whitelist for execution (empty = all allowed)
 
@@ -437,4 +464,74 @@ type Judge struct {
 	ID     string         `json:"id"`
 	Type   JudgeType      `json:"type"`
 	Config map[string]any `json:"config"`
+}
+
+// =============================================================================
+// PEER REVIEW
+// =============================================================================
+
+// ReviewRatings holds the 3 peer review ratings (1-5 scale).
+type ReviewRatings struct {
+	Q1 int `json:"q1"` // Quality/Clarity
+	Q2 int `json:"q2"` // Communication/Support
+	Q3 int `json:"q3"` // Autonomy/Fairness
+}
+
+// Average returns the mean of the three ratings.
+func (r ReviewRatings) Average() float64 {
+	return float64(r.Q1+r.Q2+r.Q3) / 3.0
+}
+
+// Validate checks that ratings are in range and explanation is provided when required.
+func (r ReviewRatings) Validate(explanation string) error {
+	for i, v := range []int{r.Q1, r.Q2, r.Q3} {
+		if v < 1 || v > 5 {
+			return fmt.Errorf("rating Q%d must be between 1 and 5, got %d", i+1, v)
+		}
+	}
+	if r.Average() < 3.0 && explanation == "" {
+		return fmt.Errorf("explanation required when average rating is below 3.0")
+	}
+	return nil
+}
+
+// ReviewSubmission represents one party's submitted review.
+type ReviewSubmission struct {
+	ReviewerID  AgentID         `json:"reviewer_id"`
+	RevieweeID  AgentID         `json:"reviewee_id"`
+	Direction   ReviewDirection `json:"direction"`
+	Ratings     ReviewRatings   `json:"ratings"`
+	Explanation string          `json:"explanation,omitempty"`
+	SubmittedAt time.Time       `json:"submitted_at"`
+}
+
+// PeerReview is the entity tracking bidirectional review between two agents.
+type PeerReview struct {
+	ID              PeerReviewID      `json:"id"`
+	Status          PeerReviewStatus  `json:"status"`
+	QuestID         QuestID           `json:"quest_id"`
+	PartyID         *PartyID          `json:"party_id,omitempty"`
+	LeaderID        AgentID           `json:"leader_id"`
+	MemberID        AgentID           `json:"member_id"`
+	IsSoloTask      bool              `json:"is_solo_task"`
+	LeaderReview    *ReviewSubmission `json:"leader_review,omitempty"`
+	MemberReview    *ReviewSubmission `json:"member_review,omitempty"`
+	LeaderAvgRating float64           `json:"leader_avg_rating"`
+	MemberAvgRating float64           `json:"member_avg_rating"`
+	CreatedAt       time.Time         `json:"created_at"`
+	CompletedAt     *time.Time        `json:"completed_at,omitempty"`
+}
+
+// LeaderToMemberQuestions are the review questions for leader reviewing member.
+var LeaderToMemberQuestions = [3]string{
+	"Task quality — did the deliverable meet acceptance criteria?",
+	"Communication — were blockers surfaced promptly?",
+	"Autonomy — did they work independently without excessive hand-holding?",
+}
+
+// MemberToLeaderQuestions are the review questions for member reviewing leader.
+var MemberToLeaderQuestions = [3]string{
+	"Clarity — was the task well-defined with clear acceptance criteria?",
+	"Support — were blockers unblocked promptly?",
+	"Fairness — was the task appropriate for my level/skills?",
 }

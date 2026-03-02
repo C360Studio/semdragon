@@ -25,6 +25,9 @@ type PartyID string
 // BattleID uniquely identifies a boss battle (review session).
 type BattleID string
 
+// PeerReviewID uniquely identifies a peer review between two agents.
+type PeerReviewID string
+
 // =============================================================================
 // AGENT PRIMITIVES
 // =============================================================================
@@ -38,7 +41,28 @@ const (
 	AgentOnQuest  AgentStatus = "on_quest"
 	AgentInBattle AgentStatus = "in_battle"
 	AgentCooldown AgentStatus = "cooldown"
-	AgentRetired  AgentStatus = "retired"
+	AgentRetired        AgentStatus = "retired"
+	AgentPendingReview  AgentStatus = "pending_review"
+)
+
+// PeerReviewStatus represents the lifecycle state of a peer review.
+type PeerReviewStatus string
+
+// PeerReviewPending and related constants define peer review lifecycle states.
+const (
+	PeerReviewPending   PeerReviewStatus = "pending"
+	PeerReviewPartial   PeerReviewStatus = "partial"
+	PeerReviewCompleted PeerReviewStatus = "completed"
+)
+
+// ReviewDirection indicates which party is reviewing which.
+type ReviewDirection string
+
+// ReviewDirectionLeaderToMember and related constants define review direction values.
+const (
+	ReviewDirectionLeaderToMember ReviewDirection = "leader_to_member"
+	ReviewDirectionMemberToLeader ReviewDirection = "member_to_leader"
+	ReviewDirectionDMToAgent      ReviewDirection = "dm_to_agent"
 )
 
 // =============================================================================

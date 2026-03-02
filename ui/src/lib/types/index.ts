@@ -17,6 +17,7 @@ export type QuestID = Brand<string, 'QuestID'>;
 export type PartyID = Brand<string, 'PartyID'>;
 export type GuildID = Brand<string, 'GuildID'>;
 export type BattleID = Brand<string, 'BattleID'>;
+export type PeerReviewID = Brand<string, 'PeerReviewID'>;
 
 // Helper functions to create branded IDs
 export const agentId = (id: string): AgentID => id as AgentID;
@@ -24,12 +25,13 @@ export const questId = (id: string): QuestID => id as QuestID;
 export const partyId = (id: string): PartyID => id as PartyID;
 export const guildId = (id: string): GuildID => id as GuildID;
 export const battleId = (id: string): BattleID => id as BattleID;
+export const peerReviewId = (id: string): PeerReviewID => id as PeerReviewID;
 
 // =============================================================================
 // AGENT
 // =============================================================================
 
-export type AgentStatus = 'idle' | 'on_quest' | 'in_battle' | 'cooldown' | 'retired';
+export type AgentStatus = 'idle' | 'on_quest' | 'in_battle' | 'cooldown' | 'retired' | 'pending_review';
 
 export type TrustTier = 0 | 1 | 2 | 3 | 4;
 
@@ -101,6 +103,8 @@ export interface AgentStats {
 	avg_efficiency: number;
 	parties_led: number;
 	quests_decomposed: number;
+	peer_review_avg: number;
+	peer_review_count: number;
 }
 
 export interface AgentConfig {
@@ -490,7 +494,10 @@ export type GameEventType =
 	| 'dm.session_end'
 	| 'store.item.purchased'
 	| 'store.consumable.used'
-	| 'agent.inventory.updated';
+	| 'agent.inventory.updated'
+	| 'review.lifecycle.pending'
+	| 'review.lifecycle.submitted'
+	| 'review.lifecycle.completed';
 
 export interface GameEvent {
 	type: GameEventType;
@@ -664,6 +671,59 @@ export interface UseConsumableResponse {
 	remaining: number;
 	active_effects: ActiveEffect[];
 	error?: string;
+}
+
+// =============================================================================
+// PEER REVIEW
+// =============================================================================
+
+export type PeerReviewStatus = 'pending' | 'partial' | 'completed';
+
+export type ReviewDirection = 'leader_to_member' | 'member_to_leader' | 'dm_to_agent';
+
+export interface ReviewRatings {
+	q1: number; // Quality/Clarity (1-5)
+	q2: number; // Communication/Support (1-5)
+	q3: number; // Autonomy/Fairness (1-5)
+}
+
+export interface ReviewSubmission {
+	reviewer_id: AgentID;
+	reviewee_id: AgentID;
+	direction: ReviewDirection;
+	ratings: ReviewRatings;
+	explanation?: string;
+	submitted_at: string;
+}
+
+export interface PeerReview {
+	id: PeerReviewID;
+	status: PeerReviewStatus;
+	quest_id: QuestID;
+	party_id?: PartyID;
+	leader_id: AgentID;
+	member_id: AgentID;
+	is_solo_task: boolean;
+	leader_review?: ReviewSubmission;
+	member_review?: ReviewSubmission;
+	leader_avg_rating: number;
+	member_avg_rating: number;
+	created_at: string;
+	completed_at?: string;
+}
+
+export interface CreateReviewRequest {
+	quest_id: QuestID;
+	party_id?: PartyID;
+	leader_id: AgentID;
+	member_id: AgentID;
+	is_solo_task: boolean;
+}
+
+export interface SubmitReviewRequest {
+	reviewer_id: AgentID;
+	ratings: ReviewRatings;
+	explanation?: string;
 }
 
 // =============================================================================

@@ -17,8 +17,10 @@ type GraphQuerier interface {
 	GetQuest(ctx context.Context, id semdragons.QuestID) (*graph.EntityState, error)
 	GetAgent(ctx context.Context, id semdragons.AgentID) (*graph.EntityState, error)
 	GetBattle(ctx context.Context, id semdragons.BattleID) (*graph.EntityState, error)
+	GetPeerReview(ctx context.Context, id semdragons.PeerReviewID) (*graph.EntityState, error)
 	ListQuestsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
 	ListAgentsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
+	ListPeerReviewsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
 	ListEntitiesByType(ctx context.Context, entityType string, limit int) ([]graph.EntityState, error)
 	EmitEntity(ctx context.Context, entity graph.Graphable, eventType string) error
 	EmitEntityUpdate(ctx context.Context, entity graph.Graphable, eventType string) error

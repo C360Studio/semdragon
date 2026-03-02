@@ -22,6 +22,10 @@ const (
 	CategoryProviderHints FragmentCategory = 100
 	// CategoryTierGuardrails contains behavioral bounds for the agent's trust tier.
 	CategoryTierGuardrails FragmentCategory = 200
+	// CategoryPeerFeedback contains low-rating warnings from recent peer reviews.
+	// Injected directly by the assembler from AssemblyContext.PeerFeedback, not
+	// from the fragment registry, so it can carry runtime data (ratings, text).
+	CategoryPeerFeedback FragmentCategory = 250
 	// CategorySkillContext contains instructions for quest-required skills.
 	CategorySkillContext FragmentCategory = 300
 	// CategoryGuildKnowledge contains guild library knowledge fragments.
@@ -88,8 +92,22 @@ type AssemblyContext struct {
 	MaxDuration      string
 	MaxTokens        int
 
+	// PeerFeedback carries low-rated peer review questions to be surfaced as
+	// warnings in the assembled prompt. Only questions with below-threshold ratings
+	// should be included; the assembler emits them verbatim without further filtering.
+	PeerFeedback []PeerFeedbackSummary `json:"peer_feedback,omitempty"`
+
 	// Resolution
 	Provider string // from resolved endpoint ("anthropic", "openai", etc.)
+}
+
+// PeerFeedbackSummary describes a single peer-review question on which the agent
+// received a below-threshold average rating. It is included in AssemblyContext so
+// the assembler can inject corrective guidance into the system prompt.
+type PeerFeedbackSummary struct {
+	Question    string  `json:"question"`
+	AvgRating   float64 `json:"avg_rating"`
+	Explanation string  `json:"explanation"`
 }
 
 // =============================================================================

@@ -238,6 +238,15 @@ func (e *DefaultBoidEngine) computeAttraction(
 	}
 	attr.AffinityScore = (skillMatch + guildMatch) * rules.AffinityWeight
 
+	// Peer reputation modifier: agents rated highly by peers get a stronger affinity pull.
+	// PeerReviewAvg is on a 1–5 scale; we normalize it to a -1.0..+1.0 range around the
+	// neutral midpoint (3.0) and apply a ±30% multiplier so reputation meaningfully
+	// differentiates agents without drowning out skill/guild match.
+	if agent.Stats.PeerReviewCount > 0 {
+		reputationMod := (agent.Stats.PeerReviewAvg - 3.0) / 2.0 // -1.0 to +1.0
+		attr.AffinityScore *= (1.0 + reputationMod*0.3)           // ±30% affinity
+	}
+
 	// Rule 6: Caution - avoid over-leveled quests
 	tierDiff := int(quest.MinTier) - int(agent.Tier)
 	if tierDiff > 0 {

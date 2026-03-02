@@ -128,6 +128,13 @@ const (
 	PredicateInventoryUpdated   = domain.PredicateInventoryUpdated
 )
 
+// PredicateReviewPending and related constants define peer review predicates.
+const (
+	PredicateReviewPending   = domain.PredicateReviewPending
+	PredicateReviewSubmitted = domain.PredicateReviewSubmitted
+	PredicateReviewCompleted = domain.PredicateReviewCompleted
+)
+
 // RegisterVocabulary registers all semdragons predicates with the vocabulary system.
 // Delegates to domain.RegisterVocabulary() which is the single source of truth.
 func RegisterVocabulary() {

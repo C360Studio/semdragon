@@ -286,6 +286,14 @@ func (a *Agent) Triples() []message.Triple {
 		}
 	}
 
+	// Peer review reputation
+	if a.Stats.PeerReviewCount > 0 {
+		triples = append(triples,
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_avg", Object: a.Stats.PeerReviewAvg, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_count", Object: a.Stats.PeerReviewCount, Source: source, Timestamp: now, Confidence: 1.0},
+		)
+	}
+
 	return triples
 }
 
@@ -518,6 +526,92 @@ func (g *Guild) Triples() []message.Triple {
 	for _, client := range g.PreferredClients {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "guild.routing.preferred_client", Object: client,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	return triples
+}
+
+// -----------------------------------------------------------------------------
+// PEER REVIEW - Graphable implementation
+// -----------------------------------------------------------------------------
+
+// EntityID returns the 6-part entity ID for this peer review.
+func (pr *PeerReview) EntityID() string {
+	return string(pr.ID)
+}
+
+// Triples returns all semantic facts about this peer review.
+func (pr *PeerReview) Triples() []message.Triple {
+	now := time.Now()
+	source := "peerreview"
+	entityID := pr.EntityID()
+
+	triples := []message.Triple{
+		// Status
+		{Subject: entityID, Predicate: "review.status.state", Object: string(pr.Status), Source: source, Timestamp: now, Confidence: 1.0},
+
+		// Assignment
+		{Subject: entityID, Predicate: "review.assignment.quest", Object: string(pr.QuestID), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "review.assignment.leader", Object: string(pr.LeaderID), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "review.assignment.member", Object: string(pr.MemberID), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "review.config.solo_task", Object: pr.IsSoloTask, Source: source, Timestamp: now, Confidence: 1.0},
+
+		// Lifecycle
+		{Subject: entityID, Predicate: "review.lifecycle.created_at", Object: pr.CreatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+	}
+
+	if pr.PartyID != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "review.assignment.party", Object: string(*pr.PartyID),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	// Leader's review of member
+	if pr.LeaderReview != nil {
+		triples = append(triples,
+			message.Triple{Subject: entityID, Predicate: "review.leader.q1", Object: pr.LeaderReview.Ratings.Q1, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.leader.q2", Object: pr.LeaderReview.Ratings.Q2, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.leader.q3", Object: pr.LeaderReview.Ratings.Q3, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.leader.submitted_at", Object: pr.LeaderReview.SubmittedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		)
+		if pr.LeaderReview.Explanation != "" {
+			triples = append(triples, message.Triple{
+				Subject: entityID, Predicate: "review.leader.explanation", Object: pr.LeaderReview.Explanation,
+				Source: source, Timestamp: now, Confidence: 1.0,
+			})
+		}
+	}
+
+	// Member's review of leader
+	if pr.MemberReview != nil {
+		triples = append(triples,
+			message.Triple{Subject: entityID, Predicate: "review.member.q1", Object: pr.MemberReview.Ratings.Q1, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.member.q2", Object: pr.MemberReview.Ratings.Q2, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.member.q3", Object: pr.MemberReview.Ratings.Q3, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.member.submitted_at", Object: pr.MemberReview.SubmittedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		)
+		if pr.MemberReview.Explanation != "" {
+			triples = append(triples, message.Triple{
+				Subject: entityID, Predicate: "review.member.explanation", Object: pr.MemberReview.Explanation,
+				Source: source, Timestamp: now, Confidence: 1.0,
+			})
+		}
+	}
+
+	// Computed averages (when completed)
+	if pr.Status == PeerReviewCompleted {
+		triples = append(triples,
+			message.Triple{Subject: entityID, Predicate: "review.result.leader_avg", Object: pr.LeaderAvgRating, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.result.member_avg", Object: pr.MemberAvgRating, Source: source, Timestamp: now, Confidence: 1.0},
+		)
+	}
+
+	if pr.CompletedAt != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "review.lifecycle.completed_at", Object: pr.CompletedAt.Format(time.RFC3339),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}

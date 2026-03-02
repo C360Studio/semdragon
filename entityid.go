@@ -10,12 +10,13 @@ import (
 
 // EntityType constants for the type part of entity IDs.
 const (
-	EntityTypeQuest     = domain.EntityTypeQuest
-	EntityTypeAgent     = domain.EntityTypeAgent
-	EntityTypeParty     = domain.EntityTypeParty
-	EntityTypeGuild     = domain.EntityTypeGuild
-	EntityTypeBattle    = domain.EntityTypeBattle
-	EntityTypeStoreItem = domain.EntityTypeStoreItem
+	EntityTypeQuest      = domain.EntityTypeQuest
+	EntityTypeAgent      = domain.EntityTypeAgent
+	EntityTypeParty      = domain.EntityTypeParty
+	EntityTypeGuild      = domain.EntityTypeGuild
+	EntityTypeBattle     = domain.EntityTypeBattle
+	EntityTypeStoreItem  = domain.EntityTypeStoreItem
+	EntityTypePeerReview = domain.EntityTypePeerReview
 )
 
 // BoardConfig holds the configuration for a quest board instance.
@@ -116,4 +117,14 @@ func IsBattleID(id string) bool {
 // IsStoreItemID checks if the entity ID is for a store item.
 func IsStoreItemID(id string) bool {
 	return domain.IsStoreItemID(id)
+}
+
+// ToPeerReviewID converts an entity ID string to PeerReviewID.
+func ToPeerReviewID(entityID string) PeerReviewID {
+	return domain.ToPeerReviewID(entityID)
+}
+
+// IsPeerReviewID checks if the entity ID is for a peer review.
+func IsPeerReviewID(id string) bool {
+	return domain.IsPeerReviewID(id)
 }

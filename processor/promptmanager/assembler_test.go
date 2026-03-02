@@ -293,6 +293,122 @@ func TestAssembleSystemPrompt_FragmentOrdering(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// PEER FEEDBACK INJECTION TESTS
+// =============================================================================
+
+func TestAssembly_WithPeerFeedback(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierExpert,
+		PeerFeedback: []PeerFeedbackSummary{
+			{Question: "Communicates clearly", AvgRating: 2.1, Explanation: "Responses were too terse."},
+		},
+	})
+
+	if !strings.Contains(result.SystemMessage, "Peer Feedback") {
+		t.Error("expected 'Peer Feedback' section header in output")
+	}
+	if !strings.Contains(result.SystemMessage, "You MUST address these") {
+		t.Error("expected mandatory warning preamble in peer feedback section")
+	}
+}
+
+func TestAssembly_WithPeerFeedback_XMLFormat(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:     domain.TierExpert,
+		Provider: "anthropic",
+		PeerFeedback: []PeerFeedbackSummary{
+			{Question: "Meets deadlines", AvgRating: 1.8},
+		},
+	})
+
+	// Anthropic provider must wrap the section in XML tags.
+	if !strings.Contains(result.SystemMessage, "<peer_feedback>") {
+		t.Error("expected <peer_feedback> XML open tag for Anthropic provider")
+	}
+	if !strings.Contains(result.SystemMessage, "</peer_feedback>") {
+		t.Error("expected </peer_feedback> XML close tag for Anthropic provider")
+	}
+}
+
+func TestAssembly_WithPeerFeedback_MarkdownFormat(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:     domain.TierExpert,
+		Provider: "openai",
+		PeerFeedback: []PeerFeedbackSummary{
+			{Question: "Asks clarifying questions", AvgRating: 2.5},
+		},
+	})
+
+	// OpenAI provider must use a markdown header.
+	if !strings.Contains(result.SystemMessage, "## Peer Feedback") {
+		t.Error("expected '## Peer Feedback' markdown header for OpenAI provider")
+	}
+}
+
+func TestAssembly_WithoutPeerFeedback(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:         domain.TierExpert,
+		PeerFeedback: nil, // explicitly empty
+	})
+
+	if strings.Contains(result.SystemMessage, "Peer Feedback") {
+		t.Error("should not include 'Peer Feedback' section when no feedback provided")
+	}
+	if strings.Contains(result.SystemMessage, "peer-feedback-warnings") {
+		t.Error("should not include peer-feedback-warnings in FragmentsUsed when no feedback")
+	}
+}
+
+func TestAssembly_PeerFeedbackContent(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierExpert,
+		PeerFeedback: []PeerFeedbackSummary{
+			{Question: "Code quality", AvgRating: 1.5, Explanation: "Too many magic numbers."},
+			{Question: "Documentation", AvgRating: 2.0, Explanation: ""},
+		},
+	})
+
+	// Each question must appear with its rating.
+	if !strings.Contains(result.SystemMessage, "Code quality") {
+		t.Error("expected first question 'Code quality' in output")
+	}
+	if !strings.Contains(result.SystemMessage, "1.5/5.0") {
+		t.Error("expected rating '1.5/5.0' in output")
+	}
+	if !strings.Contains(result.SystemMessage, "Too many magic numbers.") {
+		t.Error("expected explanation 'Too many magic numbers.' in output")
+	}
+	if !strings.Contains(result.SystemMessage, "Documentation") {
+		t.Error("expected second question 'Documentation' in output")
+	}
+	if !strings.Contains(result.SystemMessage, "2.0/5.0") {
+		t.Error("expected rating '2.0/5.0' in output")
+	}
+
+	// FragmentsUsed must include the synthetic peer-feedback-warnings ID.
+	found := false
+	for _, id := range result.FragmentsUsed {
+		if id == "peer-feedback-warnings" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'peer-feedback-warnings' in FragmentsUsed")
+	}
+}
+
 func TestAssembleSystemPrompt_DnDDomain(t *testing.T) {
 	// Verify a completely different domain produces different output
 	dndCatalog := &DomainCatalog{

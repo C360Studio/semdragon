@@ -22,7 +22,12 @@ import type {
 	PurchaseResponse,
 	UseConsumableRequest,
 	UseConsumableResponse,
-	ActiveEffect
+	ActiveEffect,
+	PeerReview,
+	PeerReviewID,
+	PeerReviewStatus,
+	CreateReviewRequest,
+	SubmitReviewRequest
 } from '$types';
 
 // =============================================================================
@@ -151,9 +156,16 @@ export interface Trajectory {
 
 export interface TrajectoryStep {
 	timestamp: string;
-	step_type: string; // "model_call" | "tool_call"
-	duration: number;
-	[key: string]: unknown;
+	step_type: 'model_call' | 'tool_call';
+	request_id?: string;
+	prompt?: string;
+	response?: string;
+	tokens_in?: number;
+	tokens_out?: number;
+	tool_name?: string;
+	tool_arguments?: Record<string, unknown>;
+	tool_result?: string;
+	duration: number; // milliseconds
 }
 
 export async function getTrajectory(id: string): Promise<Trajectory> {
@@ -293,6 +305,40 @@ export async function getActiveEffects(agentId: AgentID): Promise<ActiveEffect[]
 }
 
 // =============================================================================
+// PEER REVIEWS
+// =============================================================================
+
+export async function createReview(request: CreateReviewRequest): Promise<PeerReview> {
+	return postJson<PeerReview>('/game/reviews', request);
+}
+
+export async function submitReview(
+	reviewId: PeerReviewID,
+	submission: SubmitReviewRequest
+): Promise<PeerReview> {
+	return postJson<PeerReview>(`/game/reviews/${reviewId}/submit`, submission);
+}
+
+export async function getReview(id: PeerReviewID): Promise<PeerReview> {
+	return fetchJson<PeerReview>(`/game/reviews/${id}`);
+}
+
+export async function listReviews(
+	status?: PeerReviewStatus,
+	questId?: string
+): Promise<PeerReview[]> {
+	const params = new URLSearchParams();
+	if (status) params.set('status', status);
+	if (questId) params.set('quest_id', questId);
+	const qs = params.toString();
+	return fetchJson<PeerReview[]>(`/game/reviews${qs ? `?${qs}` : ''}`);
+}
+
+export async function getAgentReviews(agentId: AgentID): Promise<PeerReview[]> {
+	return fetchJson<PeerReview[]>(`/game/agents/${agentId}/reviews`);
+}
+
+// =============================================================================
 // HEALTH (system endpoint — no /game/ prefix)
 // =============================================================================
 
@@ -324,5 +370,10 @@ export const api = {
 	purchase,
 	useConsumable,
 	getActiveEffects,
+	createReview,
+	submitReview,
+	getReview,
+	listReviews,
+	getAgentReviews,
 	healthCheck
 };

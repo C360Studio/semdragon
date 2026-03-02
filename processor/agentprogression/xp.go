@@ -28,14 +28,15 @@ type XPEngine interface {
 
 // XPContext provides context for XP calculation.
 type XPContext struct {
-	Quest        questboard.Quest          `json:"quest"`
-	Agent        Agent                     `json:"agent"`
-	BattleResult *questboard.BattleVerdict `json:"battle_result,omitempty"`
-	Duration     time.Duration             `json:"duration"`
-	Streak       int                       `json:"streak"`
-	IsGuildQuest bool                      `json:"is_guild_quest"`
-	GuildRank    domain.GuildRank          `json:"guild_rank,omitempty"`
-	Attempt      int                       `json:"attempt"`
+	Quest           questboard.Quest          `json:"quest"`
+	Agent           Agent                     `json:"agent"`
+	BattleResult    *questboard.BattleVerdict `json:"battle_result,omitempty"`
+	Duration        time.Duration             `json:"duration"`
+	Streak          int                       `json:"streak"`
+	IsGuildQuest    bool                      `json:"is_guild_quest"`
+	GuildRank       domain.GuildRank          `json:"guild_rank,omitempty"`
+	Attempt         int                       `json:"attempt"`
+	PeerReviewScore *float64                  `json:"peer_review_score,omitempty"`
 }
 
 // PenaltyContext provides context for penalty calculation.
@@ -61,25 +62,27 @@ type LevelEvent struct {
 
 // DefaultXPEngine implements XPEngine with standard formulas.
 type DefaultXPEngine struct {
-	QualityMultiplier  float64 `json:"quality_multiplier"`
-	SpeedMultiplier    float64 `json:"speed_multiplier"`
-	StreakMultiplier   float64 `json:"streak_multiplier"`
-	GuildBonusRate     float64 `json:"guild_bonus_rate"`
-	RetryPenaltyRate   float64 `json:"retry_penalty_rate"`
-	FailurePenaltyRate float64 `json:"failure_penalty_rate"`
-	LevelDownThreshold int     `json:"level_down_threshold"`
+	QualityMultiplier    float64 `json:"quality_multiplier"`
+	SpeedMultiplier      float64 `json:"speed_multiplier"`
+	StreakMultiplier     float64 `json:"streak_multiplier"`
+	GuildBonusRate       float64 `json:"guild_bonus_rate"`
+	RetryPenaltyRate     float64 `json:"retry_penalty_rate"`
+	FailurePenaltyRate   float64 `json:"failure_penalty_rate"`
+	LevelDownThreshold   int     `json:"level_down_threshold"`
+	PeerReviewMultiplier float64 `json:"peer_review_multiplier"`
 }
 
 // DefaultXPEngineConfig returns sensible defaults.
 func DefaultXPEngineConfig() DefaultXPEngine {
 	return DefaultXPEngine{
-		QualityMultiplier:  2.0,
-		SpeedMultiplier:    0.5,
-		StreakMultiplier:   0.1,
-		GuildBonusRate:     0.15,
-		RetryPenaltyRate:   0.25,
-		FailurePenaltyRate: 0.5,
-		LevelDownThreshold: 3,
+		QualityMultiplier:    2.0,
+		SpeedMultiplier:      0.5,
+		StreakMultiplier:     0.1,
+		GuildBonusRate:       0.15,
+		RetryPenaltyRate:     0.25,
+		FailurePenaltyRate:   0.5,
+		LevelDownThreshold:   3,
+		PeerReviewMultiplier: 0.3,
 	}
 }
 
@@ -130,8 +133,14 @@ func (e *DefaultXPEngine) CalculateXP(ctx XPContext) XPAward {
 		award.AttemptPenalty = int64(float64(award.BaseXP+award.QualityBonus) * retryPenalty)
 	}
 
+	// Peer review bonus: score 5.0 → +30% base; 3.0 → neutral; 1.0 → -30% base
+	if ctx.PeerReviewScore != nil {
+		modifier := (*ctx.PeerReviewScore - 3.0) / 2.0
+		award.PeerReviewBonus = int64(float64(award.BaseXP) * modifier * e.PeerReviewMultiplier)
+	}
+
 	// Calculate total
-	award.TotalXP = award.BaseXP + award.QualityBonus + award.SpeedBonus + award.StreakBonus + award.GuildBonus - award.AttemptPenalty
+	award.TotalXP = award.BaseXP + award.QualityBonus + award.SpeedBonus + award.StreakBonus + award.GuildBonus - award.AttemptPenalty + award.PeerReviewBonus
 	if award.TotalXP < 0 {
 		award.TotalXP = 0
 	}
@@ -236,6 +245,11 @@ func (e *DefaultXPEngine) buildBreakdown(award XPAward) string {
 	}
 	if award.AttemptPenalty > 0 {
 		parts = append(parts, fmt.Sprintf("Retry: -%d", award.AttemptPenalty))
+	}
+	if award.PeerReviewBonus > 0 {
+		parts = append(parts, fmt.Sprintf("PeerReview: +%d", award.PeerReviewBonus))
+	} else if award.PeerReviewBonus < 0 {
+		parts = append(parts, fmt.Sprintf("PeerReview: %d", award.PeerReviewBonus))
 	}
 	return fmt.Sprintf("%v = %d XP", parts, award.TotalXP)
 }

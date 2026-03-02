@@ -272,6 +272,19 @@ const (
 	PredicateAutonomyUseIntent = "agent.autonomy.useintent"
 )
 
+// --- Peer Review Predicates ---
+
+const (
+	// PredicateReviewPending - Peer review created, waiting for submissions.
+	PredicateReviewPending = "review.lifecycle.pending"
+
+	// PredicateReviewSubmitted - One side submitted their review.
+	PredicateReviewSubmitted = "review.lifecycle.submitted"
+
+	// PredicateReviewCompleted - Both sides submitted, review complete.
+	PredicateReviewCompleted = "review.lifecycle.completed"
+)
+
 // --- Store Predicates ---
 
 const (
@@ -605,5 +618,19 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateInventoryUpdated,
 		vocabulary.WithDescription("Agent inventory changed"),
 		vocabulary.WithDataType("InventoryUpdatedPayload"),
+	)
+
+	// Peer review predicates
+	vocabulary.Register(PredicateReviewPending,
+		vocabulary.WithDescription("Peer review created, waiting for submissions"),
+		vocabulary.WithDataType("PeerReviewPayload"),
+	)
+	vocabulary.Register(PredicateReviewSubmitted,
+		vocabulary.WithDescription("One side submitted their peer review"),
+		vocabulary.WithDataType("PeerReviewPayload"),
+	)
+	vocabulary.Register(PredicateReviewCompleted,
+		vocabulary.WithDescription("Both sides submitted, peer review complete"),
+		vocabulary.WithDataType("PeerReviewPayload"),
 	)
 }

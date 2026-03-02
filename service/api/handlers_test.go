@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
@@ -26,15 +27,17 @@ import (
 // mockGraph implements GraphQuerier with function fields so each test case can
 // supply exactly the behavior it needs without coupling tests together.
 type mockGraph struct {
-	configFn             func() *semdragons.BoardConfig
-	getQuestFn           func(ctx context.Context, id semdragons.QuestID) (*graph.EntityState, error)
-	getAgentFn           func(ctx context.Context, id semdragons.AgentID) (*graph.EntityState, error)
-	getBattleFn          func(ctx context.Context, id semdragons.BattleID) (*graph.EntityState, error)
-	listQuestsFn         func(ctx context.Context, limit int) ([]graph.EntityState, error)
-	listAgentsFn         func(ctx context.Context, limit int) ([]graph.EntityState, error)
-	listEntitiesByTypeFn func(ctx context.Context, entityType string, limit int) ([]graph.EntityState, error)
-	emitEntityFn         func(ctx context.Context, entity graph.Graphable, eventType string) error
-	emitEntityUpdateFn   func(ctx context.Context, entity graph.Graphable, eventType string) error
+	configFn               func() *semdragons.BoardConfig
+	getQuestFn             func(ctx context.Context, id semdragons.QuestID) (*graph.EntityState, error)
+	getAgentFn             func(ctx context.Context, id semdragons.AgentID) (*graph.EntityState, error)
+	getBattleFn            func(ctx context.Context, id semdragons.BattleID) (*graph.EntityState, error)
+	getPeerReviewFn        func(ctx context.Context, id semdragons.PeerReviewID) (*graph.EntityState, error)
+	listQuestsFn           func(ctx context.Context, limit int) ([]graph.EntityState, error)
+	listAgentsFn           func(ctx context.Context, limit int) ([]graph.EntityState, error)
+	listPeerReviewsFn      func(ctx context.Context, limit int) ([]graph.EntityState, error)
+	listEntitiesByTypeFn   func(ctx context.Context, entityType string, limit int) ([]graph.EntityState, error)
+	emitEntityFn           func(ctx context.Context, entity graph.Graphable, eventType string) error
+	emitEntityUpdateFn     func(ctx context.Context, entity graph.Graphable, eventType string) error
 }
 
 func (m *mockGraph) Config() *semdragons.BoardConfig {
@@ -65,9 +68,23 @@ func (m *mockGraph) GetBattle(ctx context.Context, id semdragons.BattleID) (*gra
 	return nil, jetstream.ErrKeyNotFound
 }
 
+func (m *mockGraph) GetPeerReview(ctx context.Context, id semdragons.PeerReviewID) (*graph.EntityState, error) {
+	if m.getPeerReviewFn != nil {
+		return m.getPeerReviewFn(ctx, id)
+	}
+	return nil, jetstream.ErrKeyNotFound
+}
+
 func (m *mockGraph) ListQuestsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
 	if m.listQuestsFn != nil {
 		return m.listQuestsFn(ctx, limit)
+	}
+	return nil, nil
+}
+
+func (m *mockGraph) ListPeerReviewsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
+	if m.listPeerReviewsFn != nil {
+		return m.listPeerReviewsFn(ctx, limit)
 	}
 	return nil, nil
 }
@@ -2693,6 +2710,797 @@ func TestHandleGetDMSession(t *testing.T) {
 			}
 			if tc.checkBody != nil {
 				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+// =============================================================================
+// PEER REVIEW HANDLER TESTS
+// =============================================================================
+
+// makePeerReviewEntityState builds an EntityState whose Triples will reconstruct
+// to the supplied PeerReview via PeerReviewFromEntityState.
+func makePeerReviewEntityState(pr *semdragons.PeerReview) graph.EntityState {
+	return graph.EntityState{
+		ID:      string(pr.ID),
+		Triples: pr.Triples(),
+	}
+}
+
+// samplePeerReview returns a minimal PeerReview suitable for use in tests.
+func samplePeerReview() *semdragons.PeerReview {
+	return &semdragons.PeerReview{
+		ID:        semdragons.PeerReviewID("test.dev.game.board1.peerreview.r1"),
+		Status:    semdragons.PeerReviewPending,
+		QuestID:   semdragons.QuestID("test.dev.game.board1.quest.q1"),
+		LeaderID:  semdragons.AgentID("test.dev.game.board1.agent.leader1"),
+		MemberID:  semdragons.AgentID("test.dev.game.board1.agent.member1"),
+		CreatedAt: time.Now(),
+	}
+}
+
+func TestHandleCreateReview(t *testing.T) {
+	boardCfg := &semdragons.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
+
+	tests := []struct {
+		name         string
+		body         any
+		emitEntityFn func(context.Context, graph.Graphable, string) error
+		wantStatus   int
+		checkBody    func(t *testing.T, body []byte)
+	}{
+		{
+			name: "success creates review with 201",
+			body: map[string]any{
+				"quest_id":  "q1",
+				"leader_id": "leader1",
+				"member_id": "member1",
+			},
+			wantStatus: http.StatusCreated,
+			checkBody: func(t *testing.T, body []byte) {
+				var review semdragons.PeerReview
+				decodeJSON(t, body, &review)
+				if review.Status != semdragons.PeerReviewPending {
+					t.Errorf("status: got %q, want pending", review.Status)
+				}
+				if string(review.QuestID) != "q1" {
+					t.Errorf("quest_id: got %q, want q1", review.QuestID)
+				}
+			},
+		},
+		{
+			name: "solo task creates review with 201",
+			body: map[string]any{
+				"quest_id":     "q1",
+				"leader_id":    "leader1",
+				"member_id":    "member1",
+				"is_solo_task": true,
+			},
+			wantStatus: http.StatusCreated,
+			checkBody: func(t *testing.T, body []byte) {
+				var review semdragons.PeerReview
+				decodeJSON(t, body, &review)
+				if !review.IsSoloTask {
+					t.Error("expected is_solo_task=true")
+				}
+			},
+		},
+		{
+			name:       "missing quest_id returns 400",
+			body:       map[string]any{"leader_id": "l1", "member_id": "m1"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing leader_id returns 400",
+			body:       map[string]any{"quest_id": "q1", "member_id": "m1"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing member_id returns 400",
+			body:       map[string]any{"quest_id": "q1", "leader_id": "l1"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "self-review (leader==member, non-solo) returns 400",
+			body: map[string]any{
+				"quest_id":  "q1",
+				"leader_id": "same-agent",
+				"member_id": "same-agent",
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "self-review allowed for solo task",
+			body: map[string]any{
+				"quest_id":     "q1",
+				"leader_id":    "same-agent",
+				"member_id":    "same-agent",
+				"is_solo_task": true,
+			},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name:       "invalid JSON returns 400",
+			body:       "not json",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "emit error returns 500",
+			body: map[string]any{
+				"quest_id":  "q1",
+				"leader_id": "leader1",
+				"member_id": "member1",
+			},
+			emitEntityFn: func(_ context.Context, _ graph.Graphable, _ string) error {
+				return errors.New("nats write failed")
+			},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &mockGraph{
+				configFn:     func() *semdragons.BoardConfig { return boardCfg },
+				emitEntityFn: tc.emitEntityFn,
+			}
+			svc := newTestService(g, &mockWorld{})
+
+			var bodyBytes []byte
+			switch v := tc.body.(type) {
+			case string:
+				bodyBytes = []byte(v)
+			default:
+				var err error
+				bodyBytes, err = json.Marshal(v)
+				if err != nil {
+					t.Fatalf("marshal request body: %v", err)
+				}
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/reviews", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			svc.handleCreateReview(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleSubmitReview(t *testing.T) {
+	pendingReview := samplePeerReview()
+	pendingES := makePeerReviewEntityState(pendingReview)
+
+	// Partial review — leader has already submitted
+	partialReview := samplePeerReview()
+	partialReview.Status = semdragons.PeerReviewPartial
+	partialReview.LeaderReview = &semdragons.ReviewSubmission{
+		ReviewerID:  partialReview.LeaderID,
+		RevieweeID:  partialReview.MemberID,
+		Direction:   semdragons.ReviewDirectionLeaderToMember,
+		Ratings:     semdragons.ReviewRatings{Q1: 4, Q2: 5, Q3: 4},
+		SubmittedAt: time.Now(),
+	}
+	partialES := makePeerReviewEntityState(partialReview)
+
+	// Solo pending review
+	soloReview := samplePeerReview()
+	soloReview.IsSoloTask = true
+	soloES := makePeerReviewEntityState(soloReview)
+
+	tests := []struct {
+		name             string
+		pathID           string
+		body             any
+		getPeerReviewFn  func(context.Context, semdragons.PeerReviewID) (*graph.EntityState, error)
+		emitEntityUpdateFn func(context.Context, graph.Graphable, string) error
+		wantStatus       int
+		checkBody        func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "leader submits first — status partial",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(pendingReview.LeaderID),
+				"ratings":     map[string]any{"q1": 4, "q2": 5, "q3": 3},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &pendingES, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var review semdragons.PeerReview
+				decodeJSON(t, body, &review)
+				if review.Status != semdragons.PeerReviewPartial {
+					t.Errorf("status: got %q, want partial", review.Status)
+				}
+				if review.LeaderReview == nil {
+					t.Error("expected leader_review to be set")
+				}
+				// Blind enforcement: member review should be masked
+				if review.MemberReview != nil {
+					t.Error("expected member_review to be nil (blind enforcement)")
+				}
+			},
+		},
+		{
+			name:   "member submits second — status completed",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(partialReview.MemberID),
+				"ratings":     map[string]any{"q1": 3, "q2": 4, "q3": 5},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &partialES, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var review semdragons.PeerReview
+				decodeJSON(t, body, &review)
+				if review.Status != semdragons.PeerReviewCompleted {
+					t.Errorf("status: got %q, want completed", review.Status)
+				}
+				if review.LeaderReview == nil {
+					t.Error("expected leader_review to be visible after completion")
+				}
+				if review.MemberReview == nil {
+					t.Error("expected member_review to be visible after completion")
+				}
+				if review.CompletedAt == nil {
+					t.Error("expected completed_at to be set")
+				}
+				// Check averages
+				if review.MemberAvgRating == 0 {
+					t.Error("expected member_avg_rating to be set")
+				}
+				if review.LeaderAvgRating == 0 {
+					t.Error("expected leader_avg_rating to be set")
+				}
+			},
+		},
+		{
+			name:   "solo task — leader submits and completes immediately",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(soloReview.LeaderID),
+				"ratings":     map[string]any{"q1": 5, "q2": 5, "q3": 5},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &soloES, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var review semdragons.PeerReview
+				decodeJSON(t, body, &review)
+				if review.Status != semdragons.PeerReviewCompleted {
+					t.Errorf("status: got %q, want completed", review.Status)
+				}
+			},
+		},
+		{
+			name:   "solo task — member cannot submit",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(soloReview.MemberID),
+				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 3},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &soloES, nil
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "rating out of range (q1=0) returns 400",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(pendingReview.LeaderID),
+				"ratings":     map[string]any{"q1": 0, "q2": 5, "q3": 5},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &pendingES, nil
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "rating out of range (q3=6) returns 400",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(pendingReview.LeaderID),
+				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 6},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &pendingES, nil
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "low avg without explanation returns 400",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(pendingReview.LeaderID),
+				"ratings":     map[string]any{"q1": 1, "q2": 2, "q3": 1},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &pendingES, nil
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "low avg with explanation returns 200",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(pendingReview.LeaderID),
+				"ratings":     map[string]any{"q1": 1, "q2": 2, "q3": 1},
+				"explanation": "Agent was unresponsive and missed deadlines",
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &pendingES, nil
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:   "duplicate leader submission returns 409",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(partialReview.LeaderID),
+				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 3},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &partialES, nil
+			},
+			wantStatus: http.StatusConflict,
+		},
+		{
+			name:   "unauthorized reviewer returns 403",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": "some-other-agent",
+				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 3},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &pendingES, nil
+			},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:   "missing reviewer_id returns 400",
+			pathID: "r1",
+			body:   map[string]any{"ratings": map[string]any{"q1": 3, "q2": 3, "q3": 3}},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &pendingES, nil
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "review not found returns 404",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": "any",
+				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 3},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrKeyNotFound
+			},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:   "invalid path ID returns 400",
+			pathID: "bad.id",
+			body: map[string]any{
+				"reviewer_id": "any",
+				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 3},
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "member submits first — status partial",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(pendingReview.MemberID),
+				"ratings":     map[string]any{"q1": 5, "q2": 4, "q3": 3},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &pendingES, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var review semdragons.PeerReview
+				decodeJSON(t, body, &review)
+				if review.Status != semdragons.PeerReviewPartial {
+					t.Errorf("status: got %q, want partial", review.Status)
+				}
+				if review.MemberReview == nil {
+					t.Error("expected member_review to be set")
+				}
+				// Blind: leader review masked
+				if review.LeaderReview != nil {
+					t.Error("expected leader_review to be nil (blind enforcement)")
+				}
+			},
+		},
+		{
+			name:   "submit to completed review returns 409",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(partialReview.LeaderID),
+				"ratings":     map[string]any{"q1": 5, "q2": 5, "q3": 5},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				// Build a completed review
+				completedReview := samplePeerReview()
+				completedReview.Status = semdragons.PeerReviewCompleted
+				completedReview.LeaderReview = &semdragons.ReviewSubmission{
+					ReviewerID: completedReview.LeaderID,
+					Ratings:    semdragons.ReviewRatings{Q1: 3, Q2: 3, Q3: 3},
+				}
+				completedReview.MemberReview = &semdragons.ReviewSubmission{
+					ReviewerID: completedReview.MemberID,
+					Ratings:    semdragons.ReviewRatings{Q1: 3, Q2: 3, Q3: 3},
+				}
+				es := makePeerReviewEntityState(completedReview)
+				return &es, nil
+			},
+			wantStatus: http.StatusConflict,
+		},
+		{
+			name:   "emit update error returns 500",
+			pathID: "r1",
+			body: map[string]any{
+				"reviewer_id": string(pendingReview.LeaderID),
+				"ratings":     map[string]any{"q1": 4, "q2": 4, "q3": 4},
+			},
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &pendingES, nil
+			},
+			emitEntityUpdateFn: func(_ context.Context, _ graph.Graphable, _ string) error {
+				return errors.New("nats write failed")
+			},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &mockGraph{
+				getPeerReviewFn:    tc.getPeerReviewFn,
+				emitEntityUpdateFn: tc.emitEntityUpdateFn,
+			}
+			svc := newTestService(g, &mockWorld{})
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /reviews/{id}/submit", svc.handleSubmitReview)
+
+			var bodyBytes []byte
+			switch v := tc.body.(type) {
+			case string:
+				bodyBytes = []byte(v)
+			default:
+				var err error
+				bodyBytes, err = json.Marshal(v)
+				if err != nil {
+					t.Fatalf("marshal request body: %v", err)
+				}
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/reviews/"+tc.pathID+"/submit", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleGetReview(t *testing.T) {
+	review := samplePeerReview()
+	es := makePeerReviewEntityState(review)
+
+	// Partial review with leader submission — GET should strip it
+	partialWithSubmission := samplePeerReview()
+	partialWithSubmission.Status = semdragons.PeerReviewPartial
+	partialWithSubmission.LeaderReview = &semdragons.ReviewSubmission{
+		ReviewerID:  partialWithSubmission.LeaderID,
+		RevieweeID:  partialWithSubmission.MemberID,
+		Direction:   semdragons.ReviewDirectionLeaderToMember,
+		Ratings:     semdragons.ReviewRatings{Q1: 4, Q2: 5, Q3: 3},
+		SubmittedAt: time.Now(),
+	}
+	partialES := makePeerReviewEntityState(partialWithSubmission)
+
+	tests := []struct {
+		name            string
+		pathID          string
+		getPeerReviewFn func(context.Context, semdragons.PeerReviewID) (*graph.EntityState, error)
+		wantStatus      int
+		checkBody       func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "success returns 200",
+			pathID: "r1",
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &es, nil
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:   "partial review strips submissions (blind enforcement)",
+			pathID: "r1",
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return &partialES, nil
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var review semdragons.PeerReview
+				decodeJSON(t, body, &review)
+				if review.LeaderReview != nil {
+					t.Error("expected leader_review to be stripped from GET on partial review")
+				}
+				if review.MemberReview != nil {
+					t.Error("expected member_review to be stripped from GET on partial review")
+				}
+			},
+		},
+		{
+			name:   "key not found returns 404",
+			pathID: "r1",
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrKeyNotFound
+			},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:   "bucket not found returns 404",
+			pathID: "r1",
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return nil, jetstream.ErrBucketNotFound
+			},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:   "invalid id returns 400",
+			pathID: "bad.id",
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return nil, errors.New("should not be called")
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "server error returns 500",
+			pathID: "r1",
+			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+				return nil, errors.New("nats error")
+			},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newTestService(&mockGraph{getPeerReviewFn: tc.getPeerReviewFn}, &mockWorld{})
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /reviews/{id}", svc.handleGetReview)
+
+			req := httptest.NewRequest(http.MethodGet, "/reviews/"+tc.pathID, nil)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d", rr.Code, tc.wantStatus)
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestHandleListReviews(t *testing.T) {
+	pending := samplePeerReview()
+	completed := samplePeerReview()
+	completed.ID = semdragons.PeerReviewID("test.dev.game.board1.peerreview.r2")
+	completed.Status = semdragons.PeerReviewCompleted
+	completed.QuestID = semdragons.QuestID("test.dev.game.board1.quest.q2")
+
+	entities := []graph.EntityState{
+		makePeerReviewEntityState(pending),
+		makePeerReviewEntityState(completed),
+	}
+
+	tests := []struct {
+		name              string
+		query             string
+		listPeerReviewsFn func(context.Context, int) ([]graph.EntityState, error)
+		wantStatus        int
+		wantCount         int
+	}{
+		{
+			name: "returns all reviews",
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return entities, nil
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  2,
+		},
+		{
+			name:  "filter by status",
+			query: "?status=completed",
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return entities, nil
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  1,
+		},
+		{
+			name:  "filter by quest_id",
+			query: "?quest_id=" + string(completed.QuestID),
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return entities, nil
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  1,
+		},
+		{
+			name: "empty result returns empty array",
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return nil, nil
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  0,
+		},
+		{
+			name: "bucket not found returns empty array",
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return nil, jetstream.ErrBucketNotFound
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  0,
+		},
+		{
+			name: "server error returns 500",
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return nil, errors.New("nats error")
+			},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newTestService(&mockGraph{listPeerReviewsFn: tc.listPeerReviewsFn}, &mockWorld{})
+
+			req := httptest.NewRequest(http.MethodGet, "/reviews"+tc.query, nil)
+			rr := httptest.NewRecorder()
+			svc.handleListReviews(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+
+			if tc.wantStatus == http.StatusOK {
+				var reviews []semdragons.PeerReview
+				decodeJSON(t, rr.Body.Bytes(), &reviews)
+				if len(reviews) != tc.wantCount {
+					t.Errorf("count: got %d, want %d", len(reviews), tc.wantCount)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleListAgentReviews(t *testing.T) {
+	// Use short IDs that match what r.PathValue("id") returns,
+	// since the handler constructs AgentID from the raw path value.
+	leaderID := semdragons.AgentID("leader1")
+	memberID := semdragons.AgentID("member1")
+	otherID := semdragons.AgentID("other1")
+
+	r1 := &semdragons.PeerReview{
+		ID:        semdragons.PeerReviewID("test.dev.game.board1.peerreview.r1"),
+		Status:    semdragons.PeerReviewPending,
+		QuestID:   semdragons.QuestID("test.dev.game.board1.quest.q1"),
+		LeaderID:  leaderID,
+		MemberID:  memberID,
+		CreatedAt: time.Now(),
+	}
+	r2 := &semdragons.PeerReview{
+		ID:        semdragons.PeerReviewID("test.dev.game.board1.peerreview.r2"),
+		Status:    semdragons.PeerReviewPending,
+		QuestID:   semdragons.QuestID("test.dev.game.board1.quest.q2"),
+		LeaderID:  otherID,
+		MemberID:  otherID,
+		CreatedAt: time.Now(),
+	}
+
+	entities := []graph.EntityState{
+		makePeerReviewEntityState(r1),
+		makePeerReviewEntityState(r2),
+	}
+
+	tests := []struct {
+		name              string
+		pathID            string
+		listPeerReviewsFn func(context.Context, int) ([]graph.EntityState, error)
+		wantStatus        int
+		wantCount         int
+	}{
+		{
+			name:   "returns reviews where agent is leader",
+			pathID: "leader1",
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return entities, nil
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  1,
+		},
+		{
+			name:   "returns reviews where agent is member",
+			pathID: "member1",
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return entities, nil
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  1,
+		},
+		{
+			name:   "agent with no reviews returns empty array",
+			pathID: "nobody",
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return entities, nil
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  0,
+		},
+		{
+			name:       "invalid id returns 400",
+			pathID:     "bad.id",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "bucket not found returns empty array",
+			pathID: "leader1",
+			listPeerReviewsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
+				return nil, jetstream.ErrBucketNotFound
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newTestService(&mockGraph{listPeerReviewsFn: tc.listPeerReviewsFn}, &mockWorld{})
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /agents/{id}/reviews", svc.handleListAgentReviews)
+
+			req := httptest.NewRequest(http.MethodGet, "/agents/"+tc.pathID+"/reviews", nil)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+
+			if tc.wantStatus == http.StatusOK {
+				var reviews []semdragons.PeerReview
+				decodeJSON(t, rr.Body.Bytes(), &reviews)
+				if len(reviews) != tc.wantCount {
+					t.Errorf("count: got %d, want %d", len(reviews), tc.wantCount)
+				}
 			}
 		})
 	}

@@ -55,6 +55,23 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		sections = append(sections, formatSection(label, content.String(), style))
 	}
 
+	// Inject peer feedback warnings after registry fragments and before agent overrides.
+	// Low ratings are surfaced as explicit directives so the agent corrects the
+	// behaviors that peers flagged — not as soft suggestions.
+	if len(ctx.PeerFeedback) > 0 {
+		var warnings strings.Builder
+		warnings.WriteString("In recent tasks, your peers rated you low on the following. You MUST address these:\n")
+		for _, fb := range ctx.PeerFeedback {
+			warnings.WriteString(fmt.Sprintf("- %s (%.1f/5.0)", fb.Question, fb.AvgRating))
+			if fb.Explanation != "" {
+				warnings.WriteString(fmt.Sprintf(": %s", fb.Explanation))
+			}
+			warnings.WriteByte('\n')
+		}
+		sections = append(sections, formatSection("Peer Feedback", warnings.String(), style))
+		usedIDs = append(usedIDs, "peer-feedback-warnings")
+	}
+
 	// Append agent-level overrides (not from registry — per-agent customization)
 	if ctx.SystemPrompt != "" {
 		sections = append(sections, formatSection("Agent Configuration", ctx.SystemPrompt, style))
@@ -112,6 +129,8 @@ func categoryLabel(cat FragmentCategory) string {
 		return "Provider"
 	case CategoryTierGuardrails:
 		return "Tier Guardrails"
+	case CategoryPeerFeedback:
+		return "Peer Feedback"
 	case CategorySkillContext:
 		return "Skills"
 	case CategoryGuildKnowledge:

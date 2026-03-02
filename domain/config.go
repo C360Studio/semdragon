@@ -27,8 +27,9 @@ const (
 	EntityTypeAgent     = "agent"
 	EntityTypeParty     = "party"
 	EntityTypeGuild     = "guild"
-	EntityTypeBattle    = "battle"
-	EntityTypeStoreItem = "storeitem"
+	EntityTypeBattle     = "battle"
+	EntityTypeStoreItem  = "storeitem"
+	EntityTypePeerReview = "peerreview"
 )
 
 // BoardConfig holds the configuration for a quest board instance.
@@ -145,6 +146,11 @@ func (c *BoardConfig) BattleEntityID(instance string) string {
 // StoreItemEntityID generates a store item entity ID.
 func (c *BoardConfig) StoreItemEntityID(instance string) string {
 	return c.EntityID(EntityTypeStoreItem, instance)
+}
+
+// PeerReviewEntityID generates a peer review entity ID.
+func (c *BoardConfig) PeerReviewEntityID(instance string) string {
+	return c.EntityID(EntityTypePeerReview, instance)
 }
 
 // BucketName returns the KV bucket name for this board.
@@ -294,6 +300,16 @@ func IsBattleID(id string) bool {
 // IsStoreItemID checks if the entity ID is for a store item.
 func IsStoreItemID(id string) bool {
 	return ExtractType(id) == EntityTypeStoreItem
+}
+
+// ToPeerReviewID converts an entity ID string to PeerReviewID.
+func ToPeerReviewID(entityID string) PeerReviewID {
+	return PeerReviewID(entityID)
+}
+
+// IsPeerReviewID checks if the entity ID is for a peer review.
+func IsPeerReviewID(id string) bool {
+	return ExtractType(id) == EntityTypePeerReview
 }
 
 // =============================================================================

@@ -196,6 +196,12 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 		// Inventory total spent
 		case "agent.inventory.total_spent":
 			a.TotalSpent = asInt64(triple.Object)
+
+		// Peer review reputation
+		case "agent.reputation.peer_avg":
+			a.Stats.PeerReviewAvg = asFloat64(triple.Object)
+		case "agent.reputation.peer_count":
+			a.Stats.PeerReviewCount = asInt(triple.Object)
 		}
 
 		// Handle skill proficiencies (dynamic predicates)
@@ -566,6 +572,108 @@ func GuildFromEntityState(entity *graph.EntityState) *Guild {
 	}
 
 	return g
+}
+
+// -----------------------------------------------------------------------------
+// PEER REVIEW RECONSTRUCTION
+// -----------------------------------------------------------------------------
+
+// PeerReviewFromEntityState reconstructs a PeerReview from graph EntityState.
+func PeerReviewFromEntityState(entity *graph.EntityState) *PeerReview {
+	if entity == nil {
+		return nil
+	}
+
+	pr := &PeerReview{
+		ID: PeerReviewID(entity.ID),
+	}
+
+	for _, triple := range entity.Triples {
+		switch triple.Predicate {
+		case "review.status.state":
+			pr.Status = PeerReviewStatus(asString(triple.Object))
+		case "review.assignment.quest":
+			pr.QuestID = QuestID(asString(triple.Object))
+		case "review.assignment.leader":
+			pr.LeaderID = AgentID(asString(triple.Object))
+		case "review.assignment.member":
+			pr.MemberID = AgentID(asString(triple.Object))
+		case "review.assignment.party":
+			partyID := PartyID(asString(triple.Object))
+			pr.PartyID = &partyID
+		case "review.config.solo_task":
+			pr.IsSoloTask = asBool(triple.Object)
+		case "review.lifecycle.created_at":
+			pr.CreatedAt = asTime(triple.Object)
+		case "review.lifecycle.completed_at":
+			t := asTime(triple.Object)
+			pr.CompletedAt = &t
+		case "review.result.leader_avg":
+			pr.LeaderAvgRating = asFloat64(triple.Object)
+		case "review.result.member_avg":
+			pr.MemberAvgRating = asFloat64(triple.Object)
+
+		// Leader review fields
+		case "review.leader.q1":
+			ensureLeaderReview(pr)
+			pr.LeaderReview.Ratings.Q1 = asInt(triple.Object)
+		case "review.leader.q2":
+			ensureLeaderReview(pr)
+			pr.LeaderReview.Ratings.Q2 = asInt(triple.Object)
+		case "review.leader.q3":
+			ensureLeaderReview(pr)
+			pr.LeaderReview.Ratings.Q3 = asInt(triple.Object)
+		case "review.leader.explanation":
+			ensureLeaderReview(pr)
+			pr.LeaderReview.Explanation = asString(triple.Object)
+		case "review.leader.submitted_at":
+			ensureLeaderReview(pr)
+			pr.LeaderReview.SubmittedAt = asTime(triple.Object)
+
+		// Member review fields
+		case "review.member.q1":
+			ensureMemberReview(pr)
+			pr.MemberReview.Ratings.Q1 = asInt(triple.Object)
+		case "review.member.q2":
+			ensureMemberReview(pr)
+			pr.MemberReview.Ratings.Q2 = asInt(triple.Object)
+		case "review.member.q3":
+			ensureMemberReview(pr)
+			pr.MemberReview.Ratings.Q3 = asInt(triple.Object)
+		case "review.member.explanation":
+			ensureMemberReview(pr)
+			pr.MemberReview.Explanation = asString(triple.Object)
+		case "review.member.submitted_at":
+			ensureMemberReview(pr)
+			pr.MemberReview.SubmittedAt = asTime(triple.Object)
+		}
+	}
+
+	return pr
+}
+
+// ensureLeaderReview initializes the LeaderReview field if nil, using entity context
+// that has already been parsed from the triples.
+func ensureLeaderReview(pr *PeerReview) {
+	if pr.LeaderReview == nil {
+		pr.LeaderReview = &ReviewSubmission{
+			ReviewerID: pr.LeaderID,
+			RevieweeID: pr.MemberID,
+			Direction:  ReviewDirectionLeaderToMember,
+		}
+	}
+}
+
+// ensureMemberReview initializes the MemberReview field if nil, using entity context
+// that has already been parsed from the triples.
+func ensureMemberReview(pr *PeerReview) {
+	if pr.MemberReview == nil {
+		pr.MemberReview = &ReviewSubmission{
+			ReviewerID: pr.MemberID,
+			RevieweeID: pr.LeaderID,
+			Direction:  ReviewDirectionMemberToLeader,
+		}
+	}
 }
 
 // =============================================================================

@@ -252,6 +252,13 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"dm/sessions/{id}", cors(s.handleGetDMSession))
 	mux.HandleFunc("POST "+prefix+"dm/intervene/{questId}", cors(requireAuth(apiKey, s.handleDMIntervene)))
 
+	// Peer Reviews
+	mux.HandleFunc("POST "+prefix+"reviews", cors(requireAuth(apiKey, s.handleCreateReview)))
+	mux.HandleFunc("POST "+prefix+"reviews/{id}/submit", cors(requireAuth(apiKey, s.handleSubmitReview)))
+	mux.HandleFunc("GET "+prefix+"reviews/{id}", cors(s.handleGetReview))
+	mux.HandleFunc("GET "+prefix+"reviews", cors(s.handleListReviews))
+	mux.HandleFunc("GET "+prefix+"agents/{id}/reviews", cors(s.handleListAgentReviews))
+
 	// Store
 	mux.HandleFunc("GET "+prefix+"store", cors(s.handleListStore))
 	mux.HandleFunc("GET "+prefix+"store/{id}", cors(s.handleGetStoreItem))

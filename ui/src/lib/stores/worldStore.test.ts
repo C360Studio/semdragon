@@ -57,7 +57,9 @@ function createTestAgent(overrides: Partial<Agent> = {}): Agent {
 			avg_quality_score: 0.85,
 			avg_efficiency: 0.9,
 			parties_led: 2,
-			quests_decomposed: 3
+			quests_decomposed: 3,
+			peer_review_avg: 0,
+			peer_review_count: 0
 		},
 		config: {
 			provider: 'openai',
@@ -668,7 +670,8 @@ describe('worldStore', () => {
 					stats: {
 						quests_completed: 10, quests_failed: 1, bosses_defeated: 5,
 						bosses_failed: 0, total_xp_earned: 1000, total_xp_spent: 0,
-						avg_quality_score: 0.85, avg_efficiency: 0.9, parties_led: 2, quests_decomposed: 3
+						avg_quality_score: 0.85, avg_efficiency: 0.9, parties_led: 2, quests_decomposed: 3,
+						peer_review_avg: 0, peer_review_count: 0
 					}
 				}));
 				store.upsertAgent(createTestAgent({
@@ -676,7 +679,8 @@ describe('worldStore', () => {
 					stats: {
 						quests_completed: 20, quests_failed: 2, bosses_defeated: 10,
 						bosses_failed: 1, total_xp_earned: 2500, total_xp_spent: 100,
-						avg_quality_score: 0.9, avg_efficiency: 0.85, parties_led: 5, quests_decomposed: 7
+						avg_quality_score: 0.9, avg_efficiency: 0.85, parties_led: 5, quests_decomposed: 7,
+						peer_review_avg: 0, peer_review_count: 0
 					}
 				}));
 

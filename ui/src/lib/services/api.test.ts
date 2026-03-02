@@ -43,7 +43,9 @@ function createAgentStats(): AgentStats {
 		avg_quality_score: 0.85,
 		avg_efficiency: 0.9,
 		parties_led: 2,
-		quests_decomposed: 3
+		quests_decomposed: 3,
+		peer_review_avg: 0,
+		peer_review_count: 0
 	};
 }
 
