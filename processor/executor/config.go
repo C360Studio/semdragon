@@ -2,6 +2,7 @@ package executor
 
 import (
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/processor/promptmanager"
 )
 
 // =============================================================================
@@ -20,6 +21,10 @@ type Config struct {
 	MaxTokens      int    `json:"max_tokens"`      // Token budget per execution
 	SandboxDir     string `json:"sandbox_dir"`     // Base directory for file operations
 	EnableBuiltins bool   `json:"enable_builtins"` // Register built-in tools
+
+	// Domain prompt catalog (optional). When set, enables domain-aware prompt assembly
+	// instead of legacy string concatenation.
+	DomainCatalog *promptmanager.DomainCatalog `json:"-"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.

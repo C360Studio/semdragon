@@ -224,6 +224,13 @@ const (
 	PredicateApprovalResolved = "approval.request.resolved"
 )
 
+// --- Prompt Assembly Predicates ---
+
+const (
+	// PredicatePromptAssembled - System prompt assembled from domain catalog.
+	PredicatePromptAssembled = "prompt.assembly.completed"
+)
+
 // --- Execution Predicates ---
 
 const (
@@ -516,6 +523,12 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateApprovalResolved,
 		vocabulary.WithDescription("Approval request resolved"),
 		vocabulary.WithDataType("ApprovalResponse"),
+	)
+
+	// Prompt assembly predicates
+	vocabulary.Register(PredicatePromptAssembled,
+		vocabulary.WithDescription("System prompt assembled from domain catalog"),
+		vocabulary.WithDataType("PromptAssembledPayload"),
 	)
 
 	// Execution predicates

@@ -11,6 +11,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
@@ -243,11 +244,19 @@ func (c *Component) Start(ctx context.Context) error {
 		c.toolRegistry.RegisterBuiltins()
 	}
 
-	// Create executor
+	// Create prompt assembler if domain catalog is configured
 	opts := []Option{
 		WithMaxTurns(c.config.MaxTurns),
 		WithMaxTokens(c.config.MaxTokens),
 	}
+	if c.config.DomainCatalog != nil {
+		promptRegistry := promptmanager.NewPromptRegistry()
+		promptRegistry.RegisterProviderStyles()
+		promptRegistry.RegisterDomainCatalog(c.config.DomainCatalog)
+		opts = append(opts, WithPromptAssembler(promptmanager.NewPromptAssembler(promptRegistry)))
+	}
+
+	// Create executor
 	c.executor = NewDefaultExecutor(c.registry, c.toolRegistry, opts...)
 
 	c.startTime = time.Now()

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/model"
@@ -82,10 +83,11 @@ type ExecutionStep struct {
 
 // DefaultExecutor implements AgentExecutor using semstreams model infrastructure.
 type DefaultExecutor struct {
-	registry     model.RegistryReader
-	toolRegistry *ToolRegistry
-	maxTurns     int
-	maxTokens    int
+	registry        model.RegistryReader
+	toolRegistry    *ToolRegistry
+	promptAssembler *promptmanager.PromptAssembler // nil = legacy path
+	maxTurns        int
+	maxTokens       int
 }
 
 // Option configures a DefaultExecutor.
@@ -102,6 +104,14 @@ func WithMaxTurns(n int) Option {
 func WithMaxTokens(n int) Option {
 	return func(e *DefaultExecutor) {
 		e.maxTokens = n
+	}
+}
+
+// WithPromptAssembler sets the domain-aware prompt assembler.
+// When nil, buildSystemPrompt falls back to the legacy string concatenation path.
+func WithPromptAssembler(pa *promptmanager.PromptAssembler) Option {
+	return func(e *DefaultExecutor) {
+		e.promptAssembler = pa
 	}
 }
 
@@ -292,7 +302,60 @@ func (e *DefaultExecutor) buildInitialMessages(agent *agentprogression.Agent, qu
 }
 
 // buildSystemPrompt constructs the system prompt from agent persona and quest context.
+// When a promptAssembler is configured, it delegates to the domain-aware assembly pipeline.
+// Otherwise, falls back to the legacy string concatenation path.
 func (e *DefaultExecutor) buildSystemPrompt(agent *agentprogression.Agent, quest *questboard.Quest) string {
+	if e.promptAssembler != nil {
+		return e.buildAssembledSystemPrompt(agent, quest)
+	}
+	return e.buildLegacySystemPrompt(agent, quest)
+}
+
+// buildAssembledSystemPrompt uses the domain-aware prompt assembler.
+func (e *DefaultExecutor) buildAssembledSystemPrompt(agent *agentprogression.Agent, quest *questboard.Quest) string {
+	var personaPrompt string
+	if agent.Persona != nil {
+		personaPrompt = agent.Persona.SystemPrompt
+	}
+
+	var maxDuration string
+	if quest.Constraints.MaxDuration > 0 {
+		maxDuration = quest.Constraints.MaxDuration.String()
+	}
+
+	// Resolve provider from endpoint for provider-aware formatting
+	provider := agent.Config.Provider
+	if provider == "" {
+		endpointName := e.registry.Resolve(e.resolveCapability(agent, quest))
+		if ep := e.registry.GetEndpoint(endpointName); ep != nil {
+			provider = ep.Provider
+		}
+	}
+
+	ctx := promptmanager.AssemblyContext{
+		AgentID:          agent.ID,
+		Tier:             agent.Tier,
+		Level:            agent.Level,
+		Skills:           agent.SkillProficiencies,
+		Guilds:           agent.Guilds,
+		SystemPrompt:     agent.Config.SystemPrompt,
+		PersonaPrompt:    personaPrompt,
+		QuestTitle:       quest.Title,
+		QuestDescription: quest.Description,
+		QuestInput:       quest.Input,
+		RequiredSkills:   quest.RequiredSkills,
+		MaxDuration:      maxDuration,
+		MaxTokens:        quest.Constraints.MaxTokens,
+		Provider:         provider,
+	}
+
+	result := e.promptAssembler.AssembleSystemPrompt(ctx)
+	return result.SystemMessage
+}
+
+// buildLegacySystemPrompt is the original string concatenation path.
+// Used when no promptAssembler is configured (backward compatibility).
+func (e *DefaultExecutor) buildLegacySystemPrompt(agent *agentprogression.Agent, quest *questboard.Quest) string {
 	var prompt string
 
 	// Start with agent's system prompt if configured

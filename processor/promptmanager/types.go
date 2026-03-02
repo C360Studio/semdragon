@@ -1,0 +1,104 @@
+// Package promptmanager provides domain-aware prompt composition for quest execution.
+// It assembles system prompts from domain catalogs, tier guardrails, skill context,
+// and agent persona — replacing hardcoded string concatenation with a gated fragment system.
+package promptmanager
+
+import (
+	"github.com/c360studio/semdragons/domain"
+)
+
+// =============================================================================
+// FRAGMENT CATEGORIES - Controls assembly ordering (lower = earlier)
+// =============================================================================
+
+// FragmentCategory controls assembly ordering. Fragments are sorted by category
+// first, then by priority within category.
+type FragmentCategory int
+
+const (
+	// CategorySystemBase is the domain identity fragment ("You are a developer...").
+	CategorySystemBase FragmentCategory = 0
+	// CategoryProviderHints contains provider-specific formatting instructions.
+	CategoryProviderHints FragmentCategory = 100
+	// CategoryTierGuardrails contains behavioral bounds for the agent's trust tier.
+	CategoryTierGuardrails FragmentCategory = 200
+	// CategorySkillContext contains instructions for quest-required skills.
+	CategorySkillContext FragmentCategory = 300
+	// CategoryGuildKnowledge contains guild library knowledge fragments.
+	CategoryGuildKnowledge FragmentCategory = 400
+	// CategoryPersona contains agent character/personality overrides.
+	CategoryPersona FragmentCategory = 500
+	// CategoryQuestContext contains quest title, description, and constraints.
+	CategoryQuestContext FragmentCategory = 600
+)
+
+// =============================================================================
+// PROMPT FRAGMENT - Atomic unit of prompt composition
+// =============================================================================
+
+// PromptFragment is the atomic unit of prompt composition.
+// Fragments are gated by tier, skills, provider, and guild — only matching
+// fragments are included in the assembled prompt.
+type PromptFragment struct {
+	ID       string
+	Category FragmentCategory
+	Content  string
+	Priority int // Ordering within category (lower = first)
+
+	// Gating (nil/empty = matches all)
+	MinTier   *domain.TrustTier
+	MaxTier   *domain.TrustTier
+	Skills    []domain.SkillTag // Agent must have >= 1
+	Providers []string          // "anthropic", "openai", "ollama"
+	GuildID   *domain.GuildID
+}
+
+// =============================================================================
+// PROVIDER STYLE - Formatting conventions per LLM provider
+// =============================================================================
+
+// ProviderStyle controls formatting per provider.
+type ProviderStyle struct {
+	Provider       string
+	PreferXML      bool // Anthropic: wrap sections in XML tags
+	PreferMarkdown bool // OpenAI/Ollama: markdown headers
+}
+
+// =============================================================================
+// ASSEMBLY CONTEXT - Input to prompt assembly
+// =============================================================================
+
+// AssemblyContext is the input to prompt assembly. It provides all the information
+// needed to select and compose the right fragments for a specific execution.
+type AssemblyContext struct {
+	// Agent identity and capabilities
+	AgentID      domain.AgentID
+	Tier         domain.TrustTier
+	Level        int
+	Skills       map[domain.SkillTag]domain.SkillProficiency
+	Guilds       []domain.GuildID
+	SystemPrompt string // from AgentConfig (override)
+	PersonaPrompt string // from AgentPersona
+
+	// Quest details
+	QuestTitle       string
+	QuestDescription string
+	QuestInput       any
+	RequiredSkills   []domain.SkillTag
+	MaxDuration      string
+	MaxTokens        int
+
+	// Resolution
+	Provider string // from resolved endpoint ("anthropic", "openai", etc.)
+}
+
+// =============================================================================
+// ASSEMBLED PROMPT - Output of prompt assembly
+// =============================================================================
+
+// AssembledPrompt is the output of prompt assembly.
+type AssembledPrompt struct {
+	SystemMessage string   // The composed system prompt
+	UserMessage   string   // The user message (quest input)
+	FragmentsUsed []string // Fragment IDs for observability
+}
