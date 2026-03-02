@@ -256,17 +256,32 @@ The payload registry is how we pass typed data across the event bus. Even though
 | 16-18 | Master | Agent supervision, quest decomposition, party lead |
 | 19-20 | Grandmaster | DM delegation, guild management |
 
-## Current State
+## Package Structure
 
-The project has core types and interfaces defined in the root `semdragons` package:
-- `types.go` - Core domain types (Agent, Quest, TrustTier, etc.)
-- `questboard.go` - QuestBoard interface and QuestBuilder
-- `xp.go` - XPEngine interface and DefaultXPEngine
-- `boids.go` - BoidEngine interface and rules
-- `dm.go` - DungeonMaster interface and GameEvents
-- `social.go` - Party and Guild structures
+The root `semdragons` package re-exports type aliases from `domain/` and provides entity helpers:
+- `types.go` — Type aliases (AgentID, QuestID, TrustTier, etc.) re-exported from `domain/`
+- `graphable.go` + `graphclient.go` — Entity state serialization and NATS KV read/write
+- `entityid.go` — Six-part entity ID construction helpers
+- `dm.go` — DungeonMaster interface and GameEvent definitions
+- `social.go` — Party and Guild structure types
+- `vocab.go` — Vocabulary predicate registration
+- `domain.go` + `config.go` — Domain configuration types and BoardConfig
 
-Design documentation in `/docs/DESIGN.md`.
+**`domain/`** is the authoritative source for all enum types (`SkillTag`, `TrustTier`, `QuestDifficulty`, `QuestStatus`, `DMMode`, etc.) and `BoardConfig`. Prefer importing from `domain/` directly in processors; root package aliases are for external consumer convenience.
+
+**`domains/`** (plural) contains three concrete domain implementations: `software.go`, `dnd.go`, `research.go`. Each defines a `DomainConfig` (vocabulary mapping) and a `DomainCatalog` (prompt fragments for `promptmanager`).
+
+**`processor/`** contains 14 reactive components registered via `componentregistry/`, plus `promptmanager` which is a library (not a standalone component). Each processor follows the same structure: `component.go`, `config.go`, `register.go`, `handler.go`. See "Processor Architecture Patterns" below.
+
+**`service/api/`** implements the REST API as a `service.Service` that registers HTTP handlers with the semstreams service manager. It reads entity state via `GraphClient` and delegates writes using `EmitEntity`/`EmitEntityUpdate`.
+
+**`componentregistry/`** is the single location that imports all processors and wires them into the semstreams component registry. Register new processors here.
+
+**`cmd/semdragons/`** is the binary entry point: CLI flags, config loading, NATS connection, stream/bucket init, service manager setup, graceful shutdown.
+
+**`ui/`** is the SvelteKit 5 dashboard. Vite proxies `/game`, `/health`, and `/message-logger` to the backend. Uses a single `worldStore.svelte.ts` reactive store fed by SSE via the message-logger endpoint.
+
+Design documentation in `/docs/DESIGN.md`. Getting started in `/docs/GETTING-STARTED.md`.
 
 ## Development Commands
 
@@ -288,8 +303,8 @@ Tests are separated using Go build tags for faster feedback loops:
 
 | Category | Tag | Docker Required | Files |
 |----------|-----|-----------------|-------|
-| **Unit** | (none) | No | `evaluator_test.go`, `boids_test.go`, `trajectory_test.go`, `skill_progression_test.go`, `judge_test.go` |
-| **Integration** | `//go:build integration` | Yes (NATS) | `store_test.go`, `board_test.go`, `party_coordination_test.go`, `progression_test.go`, `guild_formation_test.go`, `namegen_test.go`, `dm_test.go` |
+| **Unit** | (none) | No | Root: `graphable_test.go`, `validation_test.go`, `reconstruction_test.go`, `namegen_test.go`, `trajectory_test.go`. Processors: `processor/promptmanager/*_test.go`, `processor/executor/executor_test.go` |
+| **Integration** | `//go:build integration` | Yes (NATS) | `processor/*/component_test.go` (questboard, bossbattle, agentprogression, agentstore, autonomy, boidengine, guildformation, partycoord, etc.) |
 
 **During development**: Use `make test` for fast iteration (unit tests only).
 **Before committing**: Use `make test-all` to run the full suite.
@@ -301,10 +316,34 @@ Depends on: `github.com/c360studio/semstreams`
 
 ## Key Interfaces
 
-- **QuestBoard**: Pull-based work distribution (post, claim, submit, complete)
-- **XPEngine**: Calculate XP, apply bonuses/penalties, manage leveling
-- **BoidEngine**: Compute quest attractions, suggest claims, emergent behavior
-- **DungeonMaster**: Top-down orchestration with 4 modes (FullAuto → Manual)
+Core interfaces are defined inline in domain packages and satisfied by processor components registered via `componentregistry/`. The primary entry points:
+
+- **`GraphClient`** (`graphclient.go`) — Entity state read/write against NATS KV
+- **`service/api.Service`** — REST API backed by GraphClient and processor components
+- **`processor/questboard.Component`** — Quest lifecycle (post, claim, start, submit, complete, fail, abandon)
+- **`processor/bossbattle.Component`** — Review evaluation triggered by quest submission
+- **`processor/autonomy.Component`** — Heartbeat-driven agent decision loop with DM approval gate
+- **`processor/boidengine.Component`** — Periodic boid attraction computation, publishes suggestions per agent
+
+## Processor Architecture Patterns
+
+Every processor in `processor/` follows the same structure. When adding a new processor:
+
+**Component struct**: Fields are config pointer, deps references, graph client, logger, board config, optional component references, atomic state (`running` bool, `stop` chan), and metric atomics.
+
+**`register.go`**: Single exported function `Register(registry *component.Registry) error` using `registry.Register(ComponentName, NewFromConfig)`.
+
+**`NewFromConfig`**: Receives raw JSON config and `component.Dependencies`. Call `DefaultConfig()`, unmarshal if rawConfig is non-empty, validate, and construct. Never store the full `deps` struct beyond initialization.
+
+**`Start`/`Stop` lifecycle**: `Start(ctx)` launches KV watchers and goroutines, sets `running` atomic. `Stop(timeout)` closes stop channel and waits for goroutines.
+
+**KV watchers**: Use `deps.NATSClient.WatchKV(ctx, bucketName, pattern)`. Cache last-known entity state in a map keyed by entity ID. On each watch update, compare new state to cached state to detect what changed.
+
+**Lock ordering**: If the component has both a lifecycle mutex and a per-entity map mutex, always acquire lifecycle mutex first. Document this in a comment.
+
+**Emitting state changes**: Use `graph.EmitEntityUpdate(ctx, entity, "domain.verb")` for updates, `graph.EmitEntity(ctx, entity, "domain.verb")` for new entities. The predicate string becomes the event type in the trajectory.
+
+**Registration**: After implementing, add your processor's `Register` function to both `RegisterAll` and `RegisterProcessors` in `componentregistry/register.go`, and optionally add config to `config/semdragons.json`.
 
 ## Code Patterns
 
@@ -347,13 +386,19 @@ Practical helpers in `.claude/skills/`:
 | `/quest-handler` | Handling quest lifecycle events (claim, complete, fail) |
 | `/utils` | Quick reference for semstreams utility packages |
 
-## Roadmap (from DESIGN.md)
+## Open Items
 
-- [x] Implement QuestBoard backed by semstreams
-- [x] Implement DefaultBoidEngine with six rules
-- [x] Wire up XP engine with real boss battle evaluators
-- [x] Build DM interface (ManualDM complete, automation modes pending)
-- [x] Semstreams integration: Map GameEvents to trajectory spans
-- [x] Build guild auto-formation based on agent performance clustering
-- [x] Dashboard: "The DM's scrying pool"
-- [x] Agent Store System: XP-based marketplace for tools and consumables
+API endpoints that return 501 Not Implemented:
+- `GET /api/game/trajectories/{id}` — trajectory lookup from NATS KV
+- `POST /api/game/dm/chat` — DM natural language chat interface (in active development: QuestBrief intake + `DependsOn`/`Acceptance` additions to Quest)
+- `POST /api/game/dm/intervene/{questId}` — DM quest intervention
+
+Processors registered but excluded from the default config (opt-in):
+- `executor` — requires LLM credentials (`ANTHROPIC_API_KEY` or equivalent)
+- `autonomy` — depends on executor; DM approval gate is implemented but untested with real LLM calls
+- `seeding` — requires explicit config; `ModeTrainingArena` needs LLM, `ModeTieredRoster` works without
+- `dmsession`, `dmapproval`, `dmpartyformation` — DM session management (functional, not in default config)
+
+**Adding a new processor**: implement in `processor/<name>/`, register in `componentregistry/register.go`, optionally add to `config/semdragons.json`.
+
+**Adding a new API endpoint**: add handler in `service/api/handlers.go`, register route in `service/api/service.go` `RegisterHTTPHandlers()`.

@@ -26,6 +26,8 @@ quest := semdragons.NewQuest("Analyze Q3 sales data").
 board.PostQuest(ctx, quest)
 ```
 
+See [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) for full setup, environment variables, and a first-quest walkthrough.
+
 ## Core Concepts
 
 | RPG Concept | Engineering Reality |
@@ -54,20 +56,29 @@ board.PostQuest(ctx, quest)
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                  DUNGEON MASTER                  │
-│         (Human / LLM / Hybrid control)          │
+│              SVELTE DASHBOARD (:5173)            │
+│     (quests, agents, battles, store, guilds)     │
 ├─────────────────────────────────────────────────┤
-│   GUILDS        PARTIES         BOIDS           │
-│   (specialization) (temp groups) (emergent flock)│
+│            REST API  (:8080/api/game/)            │
+│   quests · agents · battles · store · world      │
 ├─────────────────────────────────────────────────┤
-│              QUEST BOARD                         │
-│        (pull-based work distribution)           │
+│   DUNGEON MASTER LAYER                           │
+│   dmsession · dmapproval · dmworldstate          │
+│   dmpartyformation · autonomy                    │
 ├─────────────────────────────────────────────────┤
-│         XP ENGINE + BOSS BATTLES                │
-│    (evaluation, leveling, trust gates)          │
+│   GUILDS        PARTIES         BOIDS            │
+│   guildformation  partycoord    boidengine       │
 ├─────────────────────────────────────────────────┤
-│                 SEMSTREAMS                       │
-│   (event streaming, trajectories, observability)│
+│         QUEST BOARD + EXECUTION                  │
+│   questboard · bossbattle · executor             │
+│   agentprogression · agentstore · seeding        │
+├─────────────────────────────────────────────────┤
+│              PROMPT ASSEMBLY                     │
+│   promptmanager · domains (software/dnd/research)│
+├─────────────────────────────────────────────────┤
+│                 SEMSTREAMS                        │
+│   NATS JetStream · KV (entity state + events)   │
+│   graph-ingest · graph-index · graph-query       │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -76,39 +87,62 @@ board.PostQuest(ctx, quest)
 - **Earned trust**: Tiers derived from XP, not declared roles
 - **Emergent coordination**: Boids engine suggests claims without central scheduling
 - **Full observability**: All events map to semstreams trajectories
+- **Domain-configurable**: Software, D&D, and research themes ship out of the box
 
 ## Development
 
 ```bash
-make build      # Build all packages
-make test       # Run all tests (requires Docker for testcontainers)
-make lint       # Run golangci-lint
-make check      # Full check: fmt, tidy, lint, test
+make build                    # Build all packages
+make test                     # Unit tests only (no Docker)
+make test-integration         # Integration tests (requires Docker)
+make test-all                 # All tests
+make lint                     # revive + go vet
+make check                    # fmt, tidy, lint, test-all
+make e2e                      # Full E2E suite (Playwright + Docker)
 ```
 
 ## Project Structure
 
 ```
 semdragons/
-├── types.go        # Core domain types (Agent, Quest, TrustTier)
-├── questboard.go   # QuestBoard interface and QuestBuilder
-├── board.go        # NATSQuestBoard implementation
-├── storage.go      # KV bucket and key patterns
-├── events.go       # Event payloads and publishing
-├── vocab.go        # Vocabulary predicates registration
-├── entityid.go     # 6-part entity ID helpers
-├── xp.go           # XP engine and leveling
-├── boids.go        # Boid engine for emergent behavior
-├── dm.go           # Dungeon Master interface
-├── social.go       # Party and Guild structures
-└── docs/
-    └── DESIGN.md   # Full design document
+├── cmd/semdragons/         # Binary entry point + CLI
+├── componentregistry/      # Registers all processors with semstreams
+├── config/                 # Default runtime config (semdragons.json)
+├── domain/                 # Enums, config types, vocabulary (source of truth)
+├── domains/                # Domain implementations: software, dnd, research
+├── processor/              # 14 reactive event processors
+│   ├── agentprogression/   #   XP and leveling on quest outcome
+│   ├── agentstore/         #   XP marketplace: tools, consumables
+│   ├── autonomy/           #   Heartbeat-driven agent decision loop
+│   ├── boidengine/         #   Periodic boid attraction computation
+│   ├── bossbattle/         #   Review evaluation (automated + LLM + human)
+│   ├── dmapproval/         #   DM approval gate (NATS request/reply)
+│   ├── dmpartyformation/   #   DM-controlled party assembly
+│   ├── dmsession/          #   DM session lifecycle
+│   ├── dmworldstate/       #   Aggregated world state for /world
+│   ├── executor/           #   LLM prompt assembly + tool execution
+│   ├── guildformation/     #   Auto guild clustering from performance
+│   ├── partycoord/         #   Party lifecycle (form/assign/merge/disband)
+│   ├── promptmanager/      #   Fragment-based domain-aware prompts (library)
+│   ├── questboard/         #   Quest lifecycle state machine
+│   └── seeding/            #   Environment bootstrapping
+├── service/api/            # REST API handlers
+├── ui/                     # SvelteKit 5 dashboard + Playwright E2E
+│   ├── src/routes/         #   Pages: agents, quests, battles, store, guilds
+│   ├── e2e/specs/          #   12 Playwright specs
+│   └── docker-compose.yml  #   Full stack: nats + backend + ui
+├── docs/                   # Design docs + ADRs + getting started
+└── *.go                    # Core types, entity IDs, graph client, vocab
 ```
 
 ## Dependencies
 
-- [semstreams](https://github.com/c360studio/semstreams) - Event streaming and observability
-- NATS JetStream - Message broker and KV store
+- [semstreams](https://github.com/c360studio/semstreams) — Event streaming and observability
+- NATS JetStream — Message broker and KV store
+- SvelteKit 5 — Dashboard UI
+- Playwright — E2E testing
+
+Module: `github.com/c360studio/semdragons`
 
 ## License
 
