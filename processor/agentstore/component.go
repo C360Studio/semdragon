@@ -247,6 +247,13 @@ func (c *Component) Start(ctx context.Context) error {
 	// Seed catalog items to KV so other processors can read them
 	c.seedCatalogToKV(ctx)
 
+	// Rehydrate inventory/effects/XP caches from existing agent entities in KV.
+	// Non-fatal: caches rebuild from watcher updates if initial load fails.
+	if err := c.loadInitialInventories(ctx); err != nil {
+		c.logger.Warn("failed to load initial inventories (will rebuild from watch)",
+			"error", err)
+	}
+
 	// Start KV watcher for agent entity state (entity-centric: XP changes are facts)
 	watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeAgent)
 	if err != nil {

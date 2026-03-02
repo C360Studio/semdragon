@@ -3,6 +3,7 @@ package agentstore
 import (
 	"context"
 	"errors"
+	"maps"
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -77,17 +78,16 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 		return
 	}
 
+	// Always sync inventory/effects from KV — catches mutations by other
+	// processors (autonomy, bossbattle) and rehydrates on first observation.
+	c.syncInventoryFromAgent(agent)
+
 	// Detect XP changes by diffing against the cached value.
 	prevXP, hadPrev := c.agentXPCache.Load(key)
 	c.agentXPCache.Store(key, agent.XP)
 
-	if !hadPrev {
-		// First time we see this agent — seed the cache, no action needed.
-		return
-	}
-
-	if prevXP.(int64) == agent.XP {
-		return // No XP change, nothing to react to.
+	if !hadPrev || prevXP.(int64) == agent.XP {
+		return // First observation or no XP change — no affordability check needed.
 	}
 
 	c.lastActivity.Store(time.Now())
@@ -100,6 +100,88 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 
 	// Log newly affordable items so the agent (or a DM) can act on them.
 	c.logNewlyAffordableItems(agent)
+}
+
+// loadInitialInventories loads all agent entities from KV and populates the
+// inventory, active effects, and XP caches. Follows the boidengine
+// loadInitialState() pattern — called once during Start() so caches survive
+// restarts.
+func (c *Component) loadInitialInventories(ctx context.Context) error {
+	agentEntities, err := c.graph.ListAgentsByPrefix(ctx, 500)
+	if err != nil {
+		return err
+	}
+
+	loaded := 0
+	for _, entity := range agentEntities {
+		agent := semdragons.AgentFromEntityState(&entity)
+		if agent == nil {
+			continue
+		}
+
+		// Seed XP cache (keyed by full entity ID, same as the watcher)
+		c.agentXPCache.Store(string(agent.ID), agent.XP)
+
+		// Populate inventory and effects caches from agent entity state
+		c.syncInventoryFromAgent(agent)
+		loaded++
+	}
+
+	c.logger.Debug("loaded initial inventories from KV", "agents_loaded", loaded)
+	return nil
+}
+
+// syncInventoryFromAgent overwrites the local inventory and active effects
+// caches from a reconstructed Agent. This is cheap (map overwrites) and keeps
+// caches warm when other processors mutate agent entities.
+func (c *Component) syncInventoryFromAgent(agent *semdragons.Agent) {
+	hasInventory := len(agent.OwnedTools) > 0 || len(agent.Consumables) > 0 || agent.TotalSpent > 0
+	hasEffects := len(agent.ActiveEffects) > 0
+
+	if !hasInventory && !hasEffects {
+		return
+	}
+
+	if hasInventory {
+		inv := c.getOrCreateInventory(agent.ID)
+		// Overwrite tools
+		for id, tool := range agent.OwnedTools {
+			purchaseType := PurchasePermanent
+			if tool.UsesRemaining >= 0 {
+				purchaseType = PurchaseRental
+			}
+			inv.OwnedTools[id] = OwnedItem{
+				ItemID:        id,
+				PurchaseType:  purchaseType,
+				PurchasedAt:   tool.PurchasedAt,
+				XPSpent:       tool.XPSpent,
+				UsesRemaining: tool.UsesRemaining,
+			}
+		}
+		// Overwrite consumables
+		maps.Copy(inv.Consumables, agent.Consumables)
+		inv.TotalSpent = agent.TotalSpent
+	}
+
+	if hasEffects {
+		var effects []ActiveEffect
+		for _, ae := range agent.ActiveEffects {
+			effect := ActiveEffect{
+				ConsumableID:    ae.EffectType, // effect type doubles as consumable ID
+				QuestsRemaining: ae.QuestsRemaining,
+				QuestID:         ae.QuestID,
+			}
+			// Look up catalog for full effect details
+			if val, ok := c.catalog.Load(ae.EffectType); ok {
+				item := val.(*StoreItem)
+				if item.Effect != nil {
+					effect.Effect = *item.Effect
+				}
+			}
+			effects = append(effects, effect)
+		}
+		c.activeEffects.Store(agent.ID, effects)
+	}
 }
 
 // logNewlyAffordableItems logs store items that became affordable after an XP change.

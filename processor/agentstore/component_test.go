@@ -159,6 +159,83 @@ func TestCooldownSkipWhenNotOnCooldown(t *testing.T) {
 	}
 }
 
+// TestInventorySurvivesRestart proves that a fresh agentstore component
+// rehydrates inventories from KV on Start(). This is the core restart-survival
+// test: purchase on instance A, stop A, start instance B, verify B sees the
+// purchased item.
+func TestInventorySurvivesRestart(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	boardName := "restart"
+
+	// --- Instance 1: purchase an item ---
+	comp1 := setupComponent(t, client, boardName)
+	gc := semdragons.NewGraphClient(client, comp1.BoardConfig())
+
+	// Create agent with enough XP to buy the cheapest tool (web_search: 50 XP)
+	instance := semdragons.GenerateInstance()
+	agentID := domain.AgentID(comp1.BoardConfig().AgentEntityID(instance))
+	agent := &semdragons.Agent{
+		ID:     agentID,
+		Name:   "restart-test-agent",
+		Status: semdragons.AgentIdle,
+		Level:  5,
+		Tier:   semdragons.TierApprentice,
+		XP:     200,
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	// Purchase a permanent tool
+	owned, err := comp1.Purchase(ctx, agentID, "web_search", 200, 5, nil)
+	if err != nil {
+		t.Fatalf("Purchase failed: %v", err)
+	}
+	if owned == nil {
+		t.Fatal("Purchase returned nil OwnedItem")
+	}
+
+	// Verify inventory on instance 1
+	inv1 := comp1.GetInventory(agentID)
+	if !inv1.HasTool("web_search") {
+		t.Fatal("instance 1: expected web_search in inventory after purchase")
+	}
+	if inv1.TotalSpent != 50 {
+		t.Errorf("instance 1: TotalSpent = %d, want 50", inv1.TotalSpent)
+	}
+
+	// Stop instance 1
+	if err := comp1.Stop(5 * time.Second); err != nil {
+		t.Fatalf("Stop instance 1 failed: %v", err)
+	}
+
+	// --- Instance 2: fresh component, same KV ---
+	comp2 := setupComponent(t, client, boardName)
+	defer comp2.Stop(5 * time.Second)
+
+	// Verify inventory was rehydrated from KV
+	inv2 := comp2.GetInventory(agentID)
+	if !inv2.HasTool("web_search") {
+		t.Error("instance 2: expected web_search in inventory after restart")
+	}
+	if inv2.TotalSpent != 50 {
+		t.Errorf("instance 2: TotalSpent = %d, want 50", inv2.TotalSpent)
+	}
+
+	// Verify XP cache was also rehydrated
+	xp, ok := comp2.AgentXP(agentID)
+	if !ok {
+		t.Error("instance 2: expected agent in XP cache after restart")
+	}
+	// Purchase deducted 50 XP from agent entity (200 - 50 = 150)
+	if xp != 150 {
+		t.Errorf("instance 2: cached XP = %d, want 150", xp)
+	}
+}
+
 // =============================================================================
 // HELPERS
 // =============================================================================
