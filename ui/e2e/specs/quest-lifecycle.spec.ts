@@ -6,6 +6,9 @@ import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/te
  * Exercises the full quest state machine via the backend API and verifies
  * that each transition produces the correct status in GET /quests/{id}.
  *
+ * Each test recruits its own fresh agent so parallel runs never race
+ * over the same idle agent.
+ *
  * State machine:
  *   posted -> claimed -> in_progress -> completed   (no review)
  *   posted -> claimed -> in_progress -> in_review   (review required)
@@ -19,20 +22,11 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 		// 1. Create an easy quest with no review requirement
 		const quest = await lifecycleApi.createQuest('E2E no-review lifecycle quest', 1);
 		expect(quest.id).toBeTruthy();
-
 		const questInstance = extractInstance(quest.id);
 
-		// 2. Get an idle agent to claim the quest
-		//    Seeded data guarantees at least one apprentice-tier idle agent
-		const agents = await lifecycleApi.getWorldState();
-		const allAgents = (agents.agents ?? []) as Array<{
-			id: string;
-			status: string;
-			tier: number;
-		}>;
-		const idleAgent = allAgents.find((a) => a.status === 'idle');
-		expect(idleAgent, 'No idle agent found; seeded agents should be idle').toBeTruthy();
-		const agentInstance = extractInstance(idleAgent!.id);
+		// 2. Recruit a fresh agent (starts idle, apprentice tier — fine for easy quests)
+		const agent = await lifecycleApi.recruitAgent('lifecycle-norev-agent');
+		const agentInstance = extractInstance(agent.id);
 
 		// 3. Claim the quest
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);
@@ -68,21 +62,17 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 	}) => {
 		test.skip(!hasBackend(), 'Requires running backend');
 
-		// 1. Create a quest that requires human review
+		// 1. Create a quest that requires human review (difficulty=easy so any agent qualifies)
 		const quest = await lifecycleApi.createQuestWithReview(
 			'E2E review-required lifecycle quest',
 			1
 		);
 		expect(quest.id).toBeTruthy();
-
 		const questInstance = extractInstance(quest.id);
 
-		// 2. Find an idle agent
-		const world = await lifecycleApi.getWorldState();
-		const allAgents = (world.agents ?? []) as Array<{ id: string; status: string; tier: number }>;
-		const idleAgent = allAgents.find((a) => a.status === 'idle');
-		expect(idleAgent, 'No idle agent available').toBeTruthy();
-		const agentInstance = extractInstance(idleAgent!.id);
+		// 2. Recruit a fresh agent
+		const agent = await lifecycleApi.recruitAgent('lifecycle-review-agent');
+		const agentInstance = extractInstance(agent.id);
 
 		// 3. Claim -> start -> submit
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);
@@ -94,33 +84,24 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 		const submitRes = await lifecycleApi.submitQuest(questInstance, 'E2E review output');
 		expect(submitRes.ok, `submit failed: ${submitRes.status}`).toBeTruthy();
 
-		// 4. With review required, the quest should land in in_review
-		const finalQuest = await retry(
-			async () => {
-				const q = await lifecycleApi.getQuest(questInstance);
-				if (q.status !== 'in_review') {
-					throw new Error(`Expected in_review, got ${q.status}`);
-				}
-				return q;
-			},
-			{ timeout: 8000, interval: 500, message: 'Quest did not reach in_review status' }
-		);
-
-		expect(finalQuest.status).toBe('in_review');
+		// 4. With review required, the submit response should show in_review.
+		//    The boss battle processor auto-evaluates quickly, so the status
+		//    is transient — by the time we poll it may already be failed/completed.
+		//    Check the submit response directly for the review path.
+		const submitData = await submitRes.json();
+		expect(submitData.status).toBe('in_review');
+		expect(submitData.constraints?.require_review).toBe(true);
 	});
 
 	test('abandon returns quest to posted', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
 
-		// 1. Create and claim a quest
+		// 1. Create and claim a quest with a fresh agent
 		const quest = await lifecycleApi.createQuest('E2E abandon lifecycle quest', 1);
 		const questInstance = extractInstance(quest.id);
 
-		const world = await lifecycleApi.getWorldState();
-		const allAgents = (world.agents ?? []) as Array<{ id: string; status: string }>;
-		const idleAgent = allAgents.find((a) => a.status === 'idle');
-		expect(idleAgent, 'No idle agent available').toBeTruthy();
-		const agentInstance = extractInstance(idleAgent!.id);
+		const agent = await lifecycleApi.recruitAgent('lifecycle-abandon-agent');
+		const agentInstance = extractInstance(agent.id);
 
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);
 		expect(claimRes.ok, `claim failed: ${claimRes.status}`).toBeTruthy();
@@ -149,15 +130,12 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 	test('fail with retries remaining reposts quest', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
 
-		// 1. Create a quest
+		// 1. Create a quest and recruit a fresh agent
 		const quest = await lifecycleApi.createQuest('E2E fail-repost lifecycle quest', 1);
 		const questInstance = extractInstance(quest.id);
 
-		const world = await lifecycleApi.getWorldState();
-		const allAgents = (world.agents ?? []) as Array<{ id: string; status: string }>;
-		const idleAgent = allAgents.find((a) => a.status === 'idle');
-		expect(idleAgent, 'No idle agent available').toBeTruthy();
-		const agentInstance = extractInstance(idleAgent!.id);
+		const agent = await lifecycleApi.recruitAgent('lifecycle-fail-agent');
+		const agentInstance = extractInstance(agent.id);
 
 		// 2. Claim -> start -> fail
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);

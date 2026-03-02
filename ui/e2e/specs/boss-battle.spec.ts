@@ -6,12 +6,15 @@ import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/te
  * When a quest requiring review is submitted, the backend should automatically
  * create a boss battle record. These tests verify that the battle appears in
  * GET /battles and that quests without review skip that path entirely.
+ *
+ * Each test recruits its own fresh agent to avoid race conditions with
+ * parallel tests competing for shared seeded agents.
  */
 test.describe('Boss Battle - Auto Trigger', () => {
 	test('submitting quest with review triggers battle', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
 
-		// 1. Create a quest that requires human review
+		// 1. Create a quest that requires human review (difficulty=easy so fresh agent qualifies)
 		const quest = await lifecycleApi.createQuestWithReview(
 			'E2E boss battle trigger quest',
 			1
@@ -19,12 +22,9 @@ test.describe('Boss Battle - Auto Trigger', () => {
 		expect(quest.id).toBeTruthy();
 		const questInstance = extractInstance(quest.id);
 
-		// 2. Find an idle agent and run through the lifecycle
-		const world = await lifecycleApi.getWorldState();
-		const allAgents = (world.agents ?? []) as Array<{ id: string; status: string }>;
-		const idleAgent = allAgents.find((a) => a.status === 'idle');
-		expect(idleAgent, 'No idle agent available').toBeTruthy();
-		const agentInstance = extractInstance(idleAgent!.id);
+		// 2. Recruit a fresh agent and run through the lifecycle
+		const agent = await lifecycleApi.recruitAgent('battle-trigger-agent');
+		const agentInstance = extractInstance(agent.id);
 
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);
 		expect(claimRes.ok, `claim failed: ${claimRes.status}`).toBeTruthy();
@@ -70,12 +70,9 @@ test.describe('Boss Battle - Auto Trigger', () => {
 		const quest = await lifecycleApi.createQuest('E2E no-battle quest', 1);
 		const questInstance = extractInstance(quest.id);
 
-		// 3. Find an idle agent and complete the full lifecycle
-		const world = await lifecycleApi.getWorldState();
-		const allAgents = (world.agents ?? []) as Array<{ id: string; status: string }>;
-		const idleAgent = allAgents.find((a) => a.status === 'idle');
-		expect(idleAgent, 'No idle agent available').toBeTruthy();
-		const agentInstance = extractInstance(idleAgent!.id);
+		// 3. Recruit a fresh agent and complete the full lifecycle
+		const agent = await lifecycleApi.recruitAgent('battle-nobattle-agent');
+		const agentInstance = extractInstance(agent.id);
 
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);
 		expect(claimRes.ok, `claim failed: ${claimRes.status}`).toBeTruthy();

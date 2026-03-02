@@ -139,6 +139,51 @@ export interface BattleResponse {
 	[key: string]: unknown;
 }
 
+export interface StoreItemResponse {
+	id: string;
+	name: string;
+	description: string;
+	item_type: string;
+	purchase_type: string;
+	xp_cost: number;
+	min_tier: number;
+	in_stock: boolean;
+	[key: string]: unknown;
+}
+
+export interface PurchaseResponse {
+	success: boolean;
+	item?: StoreItemResponse;
+	xp_spent?: number;
+	xp_remaining?: number;
+	inventory?: InventoryResponse;
+	error?: string;
+	[key: string]: unknown;
+}
+
+export interface InventoryResponse {
+	agent_id: string;
+	owned_tools: Record<string, unknown>;
+	consumables: Record<string, number>;
+	total_spent: number;
+	[key: string]: unknown;
+}
+
+export interface ActiveEffectResponse {
+	consumable_id: string;
+	effect: { type: string; magnitude?: number; duration?: number };
+	quests_remaining: number;
+	[key: string]: unknown;
+}
+
+export interface UseConsumableResponse {
+	success: boolean;
+	remaining?: number;
+	active_effects?: ActiveEffectResponse[];
+	error?: string;
+	[key: string]: unknown;
+}
+
 export interface WorldStateResponse {
 	agents?: AgentResponse[];
 	quests?: QuestResponse[];
@@ -166,6 +211,16 @@ export interface LifecycleApi {
 	getAgent: (agentId: string) => Promise<AgentResponse>;
 	listBattles: () => Promise<BattleResponse[]>;
 	getWorldState: () => Promise<WorldStateResponse>;
+	listStore: (agentId?: string) => Promise<StoreItemResponse[]>;
+	getStoreItem: (itemId: string) => Promise<StoreItemResponse>;
+	purchaseItem: (agentId: string, itemId: string) => Promise<PurchaseResponse>;
+	getInventory: (agentId: string) => Promise<InventoryResponse>;
+	useConsumable: (
+		agentId: string,
+		consumableId: string,
+		questId?: string
+	) => Promise<UseConsumableResponse>;
+	getEffects: (agentId: string) => Promise<ActiveEffectResponse[]>;
 }
 
 /**
@@ -308,7 +363,7 @@ export const test = base.extend<{
 					data: {
 						objective,
 						hints: {
-							suggested_difficulty: 2,
+							suggested_difficulty: 1,
 							suggested_skills: [],
 							require_human_review: true,
 							review_level: reviewLevel,
@@ -380,6 +435,71 @@ export const test = base.extend<{
 				const res = await apiContext.get('/game/world');
 				if (!res.ok()) {
 					throw new Error(`getWorldState failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			listStore: async (agentId?) => {
+				const query = agentId ? `?agent_id=${agentId}` : '';
+				const res = await apiContext.get(`/game/store${query}`);
+				if (!res.ok()) {
+					throw new Error(`listStore failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getStoreItem: async (itemId) => {
+				const res = await apiContext.get(`/game/store/${itemId}`);
+				if (!res.ok()) {
+					throw new Error(`getStoreItem failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			purchaseItem: async (agentId, itemId) => {
+				const res = await apiContext.post('/game/store/purchase', {
+					data: { agent_id: agentId, item_id: itemId }
+				});
+				// Parse body regardless of status — the purchase endpoint uses
+				// the body to communicate success/failure. Non-2xx responses
+				// (e.g., 403 tier gate) return {"error": "..."} without a
+				// success field, so we normalize to always include it.
+				const body = await res.text();
+				try {
+					const parsed = JSON.parse(body);
+					if (!res.ok() && parsed.success === undefined) {
+						parsed.success = false;
+					}
+					return parsed;
+				} catch {
+					return { success: false, error: `HTTP ${res.status()}: ${body}` };
+				}
+			},
+
+			getInventory: async (agentId) => {
+				const res = await apiContext.get(`/game/agents/${agentId}/inventory`);
+				if (!res.ok()) {
+					throw new Error(`getInventory failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			useConsumable: async (agentId, consumableId, questId?) => {
+				const data: Record<string, string> = { consumable_id: consumableId };
+				if (questId) data.quest_id = questId;
+				const res = await apiContext.post(`/game/agents/${agentId}/inventory/use`, {
+					data
+				});
+				if (!res.ok()) {
+					throw new Error(`useConsumable failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getEffects: async (agentId) => {
+				const res = await apiContext.get(`/game/agents/${agentId}/effects`);
+				if (!res.ok()) {
+					throw new Error(`getEffects failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			}
