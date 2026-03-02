@@ -6,6 +6,7 @@ import (
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
@@ -52,7 +53,14 @@ func (c *Component) evaluateAutonomy(instance string) {
 	}
 	c.trackersMu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Extend timeout when DM approval may block waiting for human response.
+	// Each agent's heartbeat runs in its own goroutine, so blocking one
+	// agent doesn't affect others.
+	timeout := 10 * time.Second
+	if c.config.DMMode == domain.DMSupervised || c.config.DMMode == domain.DMManual {
+		timeout = c.config.ApprovalTimeout() + 10*time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	actionTaken := "none"
 

@@ -3,6 +3,7 @@ package autonomy
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -10,8 +11,10 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
+	"github.com/c360studio/semdragons/processor/dmapproval"
 	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/natsclient"
 )
 
 // =============================================================================
@@ -1780,6 +1783,165 @@ func TestScoreGuilds_SkillAffinity(t *testing.T) {
 	// Matching guild should score higher due to skill affinity
 	if result[0].GuildID != "guild.match" {
 		t.Errorf("guild with matching quest types should rank first, got %q", result[0].GuildID)
+	}
+}
+
+// =============================================================================
+// APPROVAL GATE UNIT TESTS
+// =============================================================================
+
+func TestRequestApproval_FullAuto(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DMMode = domain.DMFullAuto
+	cfg.SessionID = "session-1"
+	c := &Component{
+		config:   &cfg,
+		trackers: make(map[string]*agentTracker),
+		// approval is nil — but FullAuto short-circuits before checking
+	}
+
+	if !c.requestApproval(context.Background(), domain.ApprovalAutonomyClaim, "test", "details", nil) {
+		t.Error("requestApproval should return true in FullAuto mode")
+	}
+}
+
+func TestRequestApproval_Assisted(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DMMode = domain.DMAssisted
+	cfg.SessionID = "session-1"
+	c := &Component{
+		config:   &cfg,
+		trackers: make(map[string]*agentTracker),
+	}
+
+	if !c.requestApproval(context.Background(), domain.ApprovalAutonomyShop, "test", "details", nil) {
+		t.Error("requestApproval should return true in Assisted mode")
+	}
+}
+
+func TestRequestApproval_NilApproval(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DMMode = domain.DMSupervised
+	cfg.SessionID = "session-1"
+	c := &Component{
+		config:   &cfg,
+		approval: nil, // nil approval component
+		trackers: make(map[string]*agentTracker),
+	}
+
+	if !c.requestApproval(context.Background(), domain.ApprovalAutonomyGuild, "test", "details", nil) {
+		t.Error("requestApproval should return true when approval component is nil")
+	}
+}
+
+func TestRequestApproval_EmptySession(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DMMode = domain.DMSupervised
+	cfg.SessionID = "" // empty session
+	c := &Component{
+		config:   &cfg,
+		trackers: make(map[string]*agentTracker),
+	}
+
+	if !c.requestApproval(context.Background(), domain.ApprovalAutonomyUse, "test", "details", nil) {
+		t.Error("requestApproval should return true when SessionID is empty")
+	}
+}
+
+func TestRequestApproval_Supervised_NotRunning_Denied(t *testing.T) {
+	// When the approval component is not running, RequestApproval returns an error,
+	// which requestApproval translates to denied (false).
+	cfg := DefaultConfig()
+	cfg.DMMode = domain.DMSupervised
+	cfg.SessionID = "session-1"
+	cfg.ApprovalTimeoutMs = 1000 // short timeout for test
+
+	approvalComp := &dmapproval.Component{} // not started — RequestApproval will fail
+
+	c := &Component{
+		config:   &cfg,
+		approval: approvalComp,
+		trackers: make(map[string]*agentTracker),
+		logger:   slog.Default(),
+	}
+
+	if c.requestApproval(context.Background(), domain.ApprovalAutonomyClaim, "test", "details", nil) {
+		t.Error("requestApproval should return false when approval component returns error")
+	}
+}
+
+func TestRequestApproval_Manual_NotRunning_Denied(t *testing.T) {
+	// Manual mode behaves identically to Supervised — both require approval.
+	cfg := DefaultConfig()
+	cfg.DMMode = domain.DMManual
+	cfg.SessionID = "session-1"
+	cfg.ApprovalTimeoutMs = 1000
+
+	approvalComp := &dmapproval.Component{} // not started — RequestApproval will fail
+
+	c := &Component{
+		config:   &cfg,
+		approval: approvalComp,
+		trackers: make(map[string]*agentTracker),
+		logger:   slog.Default(),
+	}
+
+	if c.requestApproval(context.Background(), domain.ApprovalAutonomyClaim, "test", "details", nil) {
+		t.Error("requestApproval should return false in Manual mode when approval component returns error")
+	}
+}
+
+func TestInitialize_InvalidDMMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DMMode = "invalid_mode"
+
+	c := &Component{
+		config: &cfg,
+		deps:   component.Dependencies{NATSClient: &natsclient.Client{}},
+	}
+
+	if err := c.Initialize(); err == nil {
+		t.Error("Initialize should return error for invalid DMMode")
+	}
+}
+
+func TestApprovalTimeout_Default(t *testing.T) {
+	cfg := DefaultConfig()
+	got := cfg.ApprovalTimeout()
+	want := 5 * time.Minute
+	if got != want {
+		t.Errorf("ApprovalTimeout() = %v, want %v", got, want)
+	}
+}
+
+func TestApprovalTimeout_Custom(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ApprovalTimeoutMs = 60000
+	got := cfg.ApprovalTimeout()
+	want := time.Minute
+	if got != want {
+		t.Errorf("ApprovalTimeout() = %v, want %v", got, want)
+	}
+}
+
+func TestApprovalTimeout_Zero(t *testing.T) {
+	cfg := Config{} // zero value
+	got := cfg.ApprovalTimeout()
+	want := 5 * time.Minute // should default
+	if got != want {
+		t.Errorf("ApprovalTimeout() with zero value = %v, want default %v", got, want)
+	}
+}
+
+func TestConfigSchema_ApprovalProperties(t *testing.T) {
+	comp := &Component{}
+	schema := comp.ConfigSchema()
+
+	approvalProps := []string{"dm_mode", "session_id", "approval_timeout_ms"}
+	for _, prop := range approvalProps {
+		if _, ok := schema.Properties[prop]; !ok {
+			t.Errorf("missing approval property %q in ConfigSchema", prop)
+		}
 	}
 }
 

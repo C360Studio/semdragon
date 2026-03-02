@@ -22,6 +22,16 @@ const (
 	DMManual DMMode = "manual"
 )
 
+// ValidDMMode returns true if the given DMMode is one of the known constants.
+func ValidDMMode(mode DMMode) bool {
+	switch mode {
+	case DMFullAuto, DMAssisted, DMSupervised, DMManual:
+		return true
+	default:
+		return false
+	}
+}
+
 // =============================================================================
 // SESSION TYPES
 // =============================================================================
@@ -217,6 +227,10 @@ const (
 	ApprovalAgentRetire        ApprovalType = "agent_retire"
 	ApprovalIntervention       ApprovalType = "intervention"
 	ApprovalEscalation         ApprovalType = "escalation"
+	ApprovalAutonomyClaim      ApprovalType = "autonomy_claim"
+	ApprovalAutonomyShop       ApprovalType = "autonomy_shop"
+	ApprovalAutonomyGuild      ApprovalType = "autonomy_guild"
+	ApprovalAutonomyUse        ApprovalType = "autonomy_use"
 )
 
 // ApprovalRequest represents a request for human approval.

@@ -41,6 +41,11 @@ type Config struct {
 	MaxGuildsPerAgent int `json:"max_guilds_per_agent"` // Max guilds an agent can autonomously join
 	GuildJoinMinLevel int `json:"guild_join_min_level"` // Min agent level to autonomously join guilds
 	GuildSuggestionsN int `json:"guild_suggestions_n"`  // Number of guild choices to evaluate
+
+	// DM approval routing
+	DMMode            domain.DMMode `json:"dm_mode"`             // DM mode governing approval behavior
+	SessionID         string        `json:"session_id"`          // DM session ID for approval requests
+	ApprovalTimeoutMs int           `json:"approval_timeout_ms"` // Timeout for approval requests (ms); default 300000 (5 min)
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -66,6 +71,9 @@ func DefaultConfig() Config {
 		MaxGuildsPerAgent: 3,
 		GuildJoinMinLevel: 3,
 		GuildSuggestionsN: 5,
+
+		DMMode:            domain.DMFullAuto,
+		ApprovalTimeoutMs: 300000, // 5 minutes
 	}
 }
 
@@ -73,6 +81,15 @@ func DefaultConfig() Config {
 // that justifies spending a cooldown_skip consumable.
 func (c *Config) CooldownSkipMinRemaining() time.Duration {
 	return time.Duration(c.CooldownSkipMinRemainingMs) * time.Millisecond
+}
+
+// ApprovalTimeout returns the timeout for DM approval requests.
+// Defaults to 5 minutes if not configured.
+func (c *Config) ApprovalTimeout() time.Duration {
+	if c.ApprovalTimeoutMs <= 0 {
+		return 5 * time.Minute
+	}
+	return time.Duration(c.ApprovalTimeoutMs) * time.Millisecond
 }
 
 // ToBoardConfig converts processor config to domain BoardConfig.

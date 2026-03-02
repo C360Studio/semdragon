@@ -18,6 +18,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
+	"github.com/c360studio/semdragons/processor/dmapproval"
 	"github.com/c360studio/semdragons/processor/guildformation"
 )
 
@@ -1641,6 +1642,346 @@ func waitForTracker(t *testing.T, comp *Component, instance string, timeout time
 	}
 }
 
+// =============================================================================
+// APPROVAL GATE INTEGRATION TESTS
+// =============================================================================
+
+func TestClaimApprovalGate_FullAuto(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "approvefa"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.DMMode = domain.DMFullAuto // default — no approval needed
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create a posted quest
+	questInstance := semdragons.GenerateInstance()
+	questID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
+	quest := &semdragons.Quest{
+		ID:       questID,
+		Title:    "FullAuto approval test quest",
+		Status:   semdragons.QuestPosted,
+		PostedAt: time.Now(),
+		MinTier:  semdragons.TierApprentice,
+		BaseXP:   100,
+	}
+	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
+		t.Fatalf("Failed to create test quest: %v", err)
+	}
+
+	// Create idle agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "fullauto-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Publish boid suggestion
+	suggestions := []boidengine.SuggestedClaim{
+		{AgentID: agentID, QuestID: questID, Score: 5.0, Confidence: 0.9, Reason: "test fullauto claim"},
+	}
+	data, err := json.Marshal(suggestions)
+	if err != nil {
+		t.Fatalf("Marshal suggestions: %v", err)
+	}
+	if err := client.Publish(ctx, "boid.suggestions."+agentInstance, data); err != nil {
+		t.Fatalf("Publish suggestions: %v", err)
+	}
+
+	// Wait for autonomous claim — should succeed without any approval
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for FullAuto claim (no approval needed)")
+		case <-time.After(100 * time.Millisecond):
+			questEntity, err := gc.GetQuest(ctx, domain.QuestID(questID))
+			if err != nil {
+				continue
+			}
+			updatedQuest := semdragons.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
+				return // success: claimed without approval
+			}
+		}
+	}
+}
+
+func TestClaimApprovalGate_Supervised_Approved(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	// Set up dmapproval component with auto-approve
+	approvalCfg := dmapproval.DefaultConfig()
+	approvalCfg.Org = "test"
+	approvalCfg.Platform = "integration"
+	approvalCfg.Board = "approvesu"
+	approvalCfg.AutoApprove = true // Auto-approve all requests
+
+	deps := component.Dependencies{NATSClient: client}
+	approvalComp, err := dmapproval.NewFromConfig(approvalCfg, deps)
+	if err != nil {
+		t.Fatalf("dmapproval NewFromConfig failed: %v", err)
+	}
+	if err := approvalComp.Initialize(); err != nil {
+		t.Fatalf("dmapproval Initialize failed: %v", err)
+	}
+	if err := approvalComp.Start(ctx); err != nil {
+		t.Fatalf("dmapproval Start failed: %v", err)
+	}
+	defer approvalComp.Stop(5 * time.Second)
+
+	// Set up autonomy component with supervised mode
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "approvesu"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.DMMode = domain.DMSupervised
+	config.SessionID = "test.integration.game.approvesu.session.s1"
+	config.ApprovalTimeoutMs = 5000 // 5 second timeout
+
+	autonomyComp := setupComponentWithDeps(t, client, config, nil, nil, approvalComp)
+	defer autonomyComp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, autonomyComp.BoardConfig())
+
+	// Create a posted quest
+	questInstance := semdragons.GenerateInstance()
+	questID := semdragons.QuestID(autonomyComp.BoardConfig().QuestEntityID(questInstance))
+	quest := &semdragons.Quest{
+		ID:       questID,
+		Title:    "Supervised approval test quest",
+		Status:   semdragons.QuestPosted,
+		PostedAt: time.Now(),
+		MinTier:  semdragons.TierApprentice,
+		BaseXP:   100,
+	}
+	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
+		t.Fatalf("Failed to create test quest: %v", err)
+	}
+
+	// Create idle agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(autonomyComp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "supervised-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, autonomyComp, agentInstance, 3*time.Second)
+
+	// Publish boid suggestion
+	suggestions := []boidengine.SuggestedClaim{
+		{AgentID: agentID, QuestID: questID, Score: 5.0, Confidence: 0.9, Reason: "test supervised claim"},
+	}
+	sugData, err := json.Marshal(suggestions)
+	if err != nil {
+		t.Fatalf("Marshal suggestions: %v", err)
+	}
+	if err := client.Publish(ctx, "boid.suggestions."+agentInstance, sugData); err != nil {
+		t.Fatalf("Publish suggestions: %v", err)
+	}
+
+	// Wait for claim to succeed (auto-approved by dmapproval)
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for supervised + auto-approved claim")
+		case <-time.After(100 * time.Millisecond):
+			questEntity, err := gc.GetQuest(ctx, domain.QuestID(questID))
+			if err != nil {
+				continue
+			}
+			updatedQuest := semdragons.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
+				return // success: approved and claimed
+			}
+		}
+	}
+}
+
+func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	// Set up dmapproval component (NOT auto-approve)
+	approvalCfg := dmapproval.DefaultConfig()
+	approvalCfg.Org = "test"
+	approvalCfg.Platform = "integration"
+	approvalCfg.Board = "denysu"
+
+	deps := component.Dependencies{NATSClient: client}
+	approvalComp, err := dmapproval.NewFromConfig(approvalCfg, deps)
+	if err != nil {
+		t.Fatalf("dmapproval NewFromConfig failed: %v", err)
+	}
+	if err := approvalComp.Initialize(); err != nil {
+		t.Fatalf("dmapproval Initialize failed: %v", err)
+	}
+	if err := approvalComp.Start(ctx); err != nil {
+		t.Fatalf("dmapproval Start failed: %v", err)
+	}
+	defer approvalComp.Stop(5 * time.Second)
+
+	sessionID := "test.integration.game.denysu.session.deny1"
+
+	// Subscribe to approval requests and auto-deny them
+	sessionInstance := semdragons.ExtractInstance(sessionID)
+	approvalSubject := "approval.request." + sessionInstance
+	denySub, subErr := client.Subscribe(ctx, approvalSubject, func(_ context.Context, msg *nats.Msg) {
+		var envelope struct {
+			Request domain.ApprovalRequest `json:"request"`
+			ReplyTo string                 `json:"reply_to"`
+		}
+		if err := json.Unmarshal(msg.Data, &envelope); err != nil {
+			return
+		}
+		// Respond with denial
+		resp := domain.ApprovalResponse{
+			RequestID:   envelope.Request.ID,
+			SessionID:   envelope.Request.SessionID,
+			Approved:    false,
+			SelectedID:  "deny",
+			Reason:      "denied by test",
+			RespondedAt: time.Now(),
+		}
+		respData, err := json.Marshal(resp)
+		if err != nil {
+			return
+		}
+		if err := client.Publish(ctx, envelope.ReplyTo, respData); err != nil {
+			t.Logf("failed to publish denial response: %v", err)
+		}
+	})
+	if subErr != nil {
+		t.Fatalf("Subscribe to approval requests failed: %v", subErr)
+	}
+	defer denySub.Unsubscribe()
+
+	// Set up autonomy component with supervised mode
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "denysu"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.DMMode = domain.DMSupervised
+	config.SessionID = sessionID
+	config.ApprovalTimeoutMs = 5000
+
+	autonomyComp := setupComponentWithDeps(t, client, config, nil, nil, approvalComp)
+	defer autonomyComp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, autonomyComp.BoardConfig())
+
+	// Create a posted quest
+	questInstance := semdragons.GenerateInstance()
+	questID := semdragons.QuestID(autonomyComp.BoardConfig().QuestEntityID(questInstance))
+	quest := &semdragons.Quest{
+		ID:       questID,
+		Title:    "Denied claim test quest",
+		Status:   semdragons.QuestPosted,
+		PostedAt: time.Now(),
+		MinTier:  semdragons.TierApprentice,
+		BaseXP:   100,
+	}
+	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
+		t.Fatalf("Failed to create test quest: %v", err)
+	}
+
+	// Create idle agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(autonomyComp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "denied-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, autonomyComp, agentInstance, 3*time.Second)
+
+	// Publish boid suggestion
+	suggestions := []boidengine.SuggestedClaim{
+		{AgentID: agentID, QuestID: questID, Score: 5.0, Confidence: 0.9, Reason: "test denied claim"},
+	}
+	sugData, err := json.Marshal(suggestions)
+	if err != nil {
+		t.Fatalf("Marshal suggestions: %v", err)
+	}
+	if err := client.Publish(ctx, "boid.suggestions."+agentInstance, sugData); err != nil {
+		t.Fatalf("Publish suggestions: %v", err)
+	}
+
+	// Wait a few heartbeats — quest should NOT be claimed
+	time.Sleep(2 * time.Second)
+
+	questEntity, err := gc.GetQuest(ctx, domain.QuestID(questID))
+	if err != nil {
+		t.Fatalf("GetQuest failed: %v", err)
+	}
+	updatedQuest := semdragons.QuestFromEntityState(questEntity)
+	if updatedQuest == nil {
+		t.Fatal("Failed to reconstruct quest")
+	}
+	if updatedQuest.Status != semdragons.QuestPosted {
+		t.Errorf("Quest status = %v, want %v (claim should have been denied)", updatedQuest.Status, semdragons.QuestPosted)
+	}
+
+	// Verify agent is still idle
+	agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	if updatedAgent == nil {
+		t.Fatal("Failed to reconstruct agent")
+	}
+	if updatedAgent.Status != semdragons.AgentIdle {
+		t.Errorf("Agent status = %v, want %v (should stay idle after denied claim)", updatedAgent.Status, semdragons.AgentIdle)
+	}
+}
+
 func setupComponent(t *testing.T, client *natsclient.Client, name string) *Component {
 	t.Helper()
 
@@ -1652,9 +1993,9 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 	return setupComponentWithConfig(t, client, config)
 }
 
-// setupComponentWithDeps creates a component with store and/or guilds injected BEFORE Start.
-// SetStore/SetGuilds must be called before Start because the running guard rejects them.
-func setupComponentWithDeps(t *testing.T, client *natsclient.Client, config Config, store *agentstore.Component, guilds *guildformation.Component) *Component {
+// setupComponentWithDeps creates a component with store, guilds, and optional approval injected BEFORE Start.
+// SetStore/SetGuilds/SetApproval must be called before Start because the running guard rejects them.
+func setupComponentWithDeps(t *testing.T, client *natsclient.Client, config Config, store *agentstore.Component, guilds *guildformation.Component, approval ...*dmapproval.Component) *Component {
 	t.Helper()
 
 	deps := component.Dependencies{NATSClient: client}
@@ -1679,6 +2020,9 @@ func setupComponentWithDeps(t *testing.T, client *natsclient.Client, config Conf
 	}
 	if guilds != nil {
 		comp.SetGuilds(guilds)
+	}
+	if len(approval) > 0 && approval[0] != nil {
+		comp.SetApproval(approval[0])
 	}
 
 	if err := comp.Start(ctx); err != nil {

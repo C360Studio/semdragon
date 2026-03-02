@@ -21,6 +21,43 @@ import (
 var errNoViableClaim = errors.New("no viable quest to claim")
 
 // =============================================================================
+// APPROVAL GATE
+// =============================================================================
+// requestApproval blocks until the DM approves or denies an autonomous action.
+// Auto-approves when: approval component is nil, DMMode is FullAuto or Assisted,
+// or SessionID is empty. Returns true if the action should proceed.
+// =============================================================================
+
+func (c *Component) requestApproval(ctx context.Context, approvalType domain.ApprovalType, title, details string, payload any) bool {
+	if c.approval == nil || c.config.DMMode == domain.DMFullAuto || c.config.DMMode == domain.DMAssisted {
+		return true
+	}
+	if c.config.SessionID == "" {
+		return true
+	}
+
+	// Use the caller's context. In supervised/manual mode, evaluateAutonomy
+	// extends the evaluation timeout to ApprovalTimeout+10s, providing
+	// sufficient headroom for both the approval wait and subsequent I/O.
+	resp, err := c.approval.RequestApproval(ctx, domain.ApprovalRequest{
+		SessionID: c.config.SessionID,
+		Type:      approvalType,
+		Title:     title,
+		Details:   details,
+		Payload:   payload,
+		Options: []domain.ApprovalOption{
+			{ID: "approve", Label: "Approve", IsDefault: true},
+			{ID: "deny", Label: "Deny"},
+		},
+	})
+	if err != nil {
+		c.logger.Warn("approval request failed, denying action", "type", approvalType, "error", err)
+		return false
+	}
+	return resp.Approved
+}
+
+// =============================================================================
 // AUTONOMOUS ACTIONS
 // =============================================================================
 // Each method returns an action struct with shouldExecute and execute closures
@@ -86,6 +123,18 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Age
 				"quest_id", suggestion.QuestID,
 				"reason", err)
 			continue
+		}
+
+		// Approval gate: block in supervised/manual mode.
+		// On denial, stop trying — a denial means "do not claim right now,"
+		// not "show me the next option." Prevents repeated DM prompts.
+		if !c.requestApproval(ctx, domain.ApprovalAutonomyClaim,
+			fmt.Sprintf("Agent %s wants to claim quest %s", agent.Name, quest.Title),
+			fmt.Sprintf("Quest: %s (difficulty: %d, XP: %d)", quest.Title, quest.Difficulty, quest.BaseXP),
+			map[string]any{"agent_id": agent.ID, "quest_id": suggestion.QuestID, "score": suggestion.Score},
+		) {
+			c.logger.Info("claim denied by DM", "agent_id", agent.ID, "quest_id", suggestion.QuestID)
+			return errNoViableClaim
 		}
 
 		// Write quest state: claimed
@@ -202,6 +251,16 @@ func (c *Component) executeShop(ctx context.Context, agent *semdragons.Agent) er
 		return nil
 	}
 
+	// Approval gate: block in supervised/manual mode
+	if !c.requestApproval(ctx, domain.ApprovalAutonomyShop,
+		fmt.Sprintf("Agent %s wants to purchase %s", agent.Name, item.Name),
+		fmt.Sprintf("Item: %s (cost: %d XP, budget: %d XP)", item.Name, item.XPCost, budget),
+		map[string]any{"agent_id": agent.ID, "item_id": item.ID, "xp_cost": item.XPCost},
+	) {
+		c.logger.Info("shop purchase denied by DM", "agent_id", agent.ID, "item_id", item.ID)
+		return nil
+	}
+
 	_, err := c.store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guilds)
 	if err != nil {
 		c.logger.Warn("autonomous shop purchase failed",
@@ -281,6 +340,17 @@ func (c *Component) executeShopStrategic(ctx context.Context, agent *semdragons.
 			if item.XPCost > c.config.StrategicShopMaxCost || item.XPCost > agent.XP {
 				continue
 			}
+
+			// Approval gate: block in supervised/manual mode
+			if !c.requestApproval(ctx, domain.ApprovalAutonomyShop,
+				fmt.Sprintf("Agent %s wants to buy %s (strategic)", agent.Name, item.Name),
+				fmt.Sprintf("Item: %s (cost: %d XP, strategic mid-quest purchase)", item.Name, item.XPCost),
+				map[string]any{"agent_id": agent.ID, "item_id": item.ID, "strategic": true},
+			) {
+				c.logger.Info("strategic purchase denied by DM", "agent_id", agent.ID, "item_id", item.ID)
+				return nil
+			}
+
 			_, err := c.store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guilds)
 			if err != nil {
 				c.logger.Warn("autonomous strategic purchase failed",
@@ -357,6 +427,17 @@ func (c *Component) useConsumableAction() action {
 			if consumableID == "" {
 				return nil
 			}
+
+			// Approval gate: block in supervised/manual mode
+			if !c.requestApproval(ctx, domain.ApprovalAutonomyUse,
+				fmt.Sprintf("Agent %s wants to use %s", agent.Name, consumableID),
+				fmt.Sprintf("Consumable: %s (agent status: %s)", consumableID, string(agent.Status)),
+				map[string]any{"agent_id": agent.ID, "consumable_id": consumableID},
+			) {
+				c.logger.Info("consumable use denied by DM", "agent_id", agent.ID, "consumable_id", consumableID)
+				return nil
+			}
+
 			if err := c.store.UseConsumable(ctx, agent.ID, consumableID, agent.CurrentQuest); err != nil {
 				c.logger.Warn("autonomous consumable use failed",
 					"agent_id", agent.ID,
@@ -404,6 +485,16 @@ func (c *Component) useCooldownSkipAction() action {
 			return remaining > c.config.CooldownSkipMinRemaining()
 		},
 		execute: func(ctx context.Context, agent *semdragons.Agent, _ *agentTracker) error {
+			// Approval gate: block in supervised/manual mode
+			if !c.requestApproval(ctx, domain.ApprovalAutonomyUse,
+				fmt.Sprintf("Agent %s wants to skip cooldown", agent.Name),
+				"Using cooldown_skip consumable to end cooldown early",
+				map[string]any{"agent_id": agent.ID, "consumable_id": string(agentstore.ConsumableCooldownSkip)},
+			) {
+				c.logger.Info("cooldown skip denied by DM", "agent_id", agent.ID)
+				return nil
+			}
+
 			if err := c.store.UseConsumable(ctx, agent.ID, string(agentstore.ConsumableCooldownSkip), nil); err != nil {
 				c.logger.Warn("autonomous cooldown skip failed",
 					"agent_id", agent.ID,
@@ -556,6 +647,17 @@ func (c *Component) executeJoinGuild(ctx context.Context, agent *semdragons.Agen
 
 	// Pick the best (index 0 — sorted descending by score)
 	best := suggestions[0]
+
+	// Approval gate: block in supervised/manual mode
+	if !c.requestApproval(ctx, domain.ApprovalAutonomyGuild,
+		fmt.Sprintf("Agent %s wants to join guild %s", agent.Name, best.GuildName),
+		fmt.Sprintf("Guild: %s (score: %.3f, reason: %s)", best.GuildName, best.Score, best.Reason),
+		map[string]any{"agent_id": agent.ID, "guild_id": string(best.GuildID), "score": best.Score},
+	) {
+		c.logger.Info("guild join denied by DM", "agent_id", agent.ID, "guild_id", best.GuildID)
+		return nil
+	}
+
 	if err := c.guilds.JoinGuild(ctx, domain.GuildID(best.GuildID), domain.AgentID(agent.ID)); err != nil {
 		// "Already a member" means the KV agent snapshot was stale — not a real error.
 		// "Guild is full" can happen between scoring and joining — also not actionable.

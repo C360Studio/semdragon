@@ -6,6 +6,7 @@ package autonomy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/dmapproval"
 	"github.com/c360studio/semdragons/processor/guildformation"
 )
 
@@ -42,8 +44,9 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
-	store  *agentstore.Component      // Optional: nil disables shopping/consumable actions
-	guilds *guildformation.Component // Optional: nil disables guild joining
+	store    *agentstore.Component      // Optional: nil disables shopping/consumable actions
+	guilds   *guildformation.Component // Optional: nil disables guild joining
+	approval *dmapproval.Component     // Optional: nil auto-approves all actions
 
 	// KV watcher for agent entity state changes
 	agentWatch  jetstream.KeyWatcher
@@ -295,6 +298,24 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Default:     5,
 				Category:    "guild",
 			},
+			"dm_mode": {
+				Type:        "string",
+				Description: "DM mode governing approval behavior (full_auto, assisted, supervised, manual)",
+				Default:     "full_auto",
+				Category:    "approval",
+			},
+			"session_id": {
+				Type:        "string",
+				Description: "DM session ID for routing approval requests",
+				Default:     "",
+				Category:    "approval",
+			},
+			"approval_timeout_ms": {
+				Type:        "int",
+				Description: "Timeout for DM approval requests (ms)",
+				Default:     300000,
+				Category:    "approval",
+			},
 		},
 		Required: []string{"org", "platform", "board"},
 	}
@@ -361,6 +382,10 @@ func (c *Component) Initialize() error {
 		return errors.New("NATS client required")
 	}
 
+	if c.config.DMMode != "" && !domain.ValidDMMode(c.config.DMMode) {
+		return fmt.Errorf("invalid dm_mode %q: must be one of full_auto, assisted, supervised, manual", c.config.DMMode)
+	}
+
 	c.boardConfig = c.config.ToBoardConfig()
 	c.stopChan = make(chan struct{})
 	c.watchDoneCh = make(chan struct{})
@@ -376,6 +401,13 @@ func (c *Component) Start(ctx context.Context) error {
 
 	if c.running.Load() {
 		return errors.New("component already running")
+	}
+
+	// Warn if approval mode is configured but SessionID is empty — actions will
+	// silently auto-approve, which defeats the purpose of supervised/manual mode.
+	if (c.config.DMMode == domain.DMSupervised || c.config.DMMode == domain.DMManual) && c.config.SessionID == "" {
+		c.logger.Warn("dm_mode is set to approval-required mode but session_id is empty; all actions will auto-approve",
+			"dm_mode", c.config.DMMode)
 	}
 
 	// Create graph client for entity state reads/writes
@@ -488,4 +520,17 @@ func (c *Component) SetGuilds(guilds *guildformation.Component) {
 		return
 	}
 	c.guilds = guilds
+}
+
+// SetApproval injects the DM approval component for non-FullAuto modes.
+// When approval is nil, all actions auto-approve (same as FullAuto behavior).
+// SetApproval is ignored once the component is running to prevent concurrent access.
+func (c *Component) SetApproval(approval *dmapproval.Component) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetApproval called while running; ignored")
+		return
+	}
+	c.approval = approval
 }
