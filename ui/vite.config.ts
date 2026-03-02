@@ -1,6 +1,8 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vitest/config';
 
+const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
+
 export default defineConfig({
 	plugins: [sveltekit()],
 	test: {
@@ -12,9 +14,9 @@ export default defineConfig({
 		port: 5173,
 		host: true,
 		proxy: {
-			'/game': 'http://localhost:8080',
-			'/health': 'http://localhost:8080',
-			'/message-logger': 'http://localhost:8080'
+			'/game': backendUrl,
+			'/health': backendUrl,
+			'/message-logger': backendUrl
 		}
 	}
 });
