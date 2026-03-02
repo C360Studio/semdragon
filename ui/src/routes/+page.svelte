@@ -6,6 +6,7 @@
 	 */
 
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import type { GameEventType } from '$types';
 
@@ -146,6 +147,7 @@
 	{/snippet}
 
 	{#snippet centerPanel()}
+		<div class="center-content">
 		<main class="dashboard" aria-label="Dashboard overview">
 			<header class="dashboard-header">
 				<h1>The DM's Scrying Pool</h1>
@@ -288,6 +290,8 @@
 				</section>
 			{/if}
 		</main>
+		<ChatPanel />
+		</div>
 	{/snippet}
 
 	{#snippet rightPanel()}
@@ -503,9 +507,17 @@
 		text-align: center;
 	}
 
+	/* Center content wrapper */
+	.center-content {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+
 	/* Dashboard */
 	.dashboard {
-		height: 100%;
+		flex: 1;
 		overflow-y: auto;
 		padding: var(--spacing-lg);
 	}

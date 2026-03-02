@@ -99,6 +99,11 @@ func DefaultModelRegistry() *model.Registry {
 				Description: "DM quest parameter decisions",
 				Preferred:   []string{"ollama"},
 			},
+			"dm-chat": {
+				Description: "DM conversational assistant for quest building",
+				Preferred:   []string{"ollama-tools"},
+				Fallback:    []string{"ollama"},
+			},
 			"agent-eval": {
 				Description: "Agent performance assessment",
 				Preferred:   []string{"ollama"},
@@ -224,6 +229,11 @@ func ProductionModelRegistry() *model.Registry {
 				Description: "DM quest parameter decisions",
 				Preferred:   []string{"claude-4"},
 				Fallback:    []string{"gpt-4o"},
+			},
+			"dm-chat": {
+				Description: "DM conversational assistant for quest building",
+				Preferred:   []string{"claude-4"},
+				Fallback:    []string{"gpt-4o", "ollama"},
 			},
 			"agent-eval": {
 				Description: "Agent performance assessment",

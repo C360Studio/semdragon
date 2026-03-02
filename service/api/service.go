@@ -11,11 +11,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/dmworldstate"
+	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/service"
 )
 
@@ -27,14 +29,33 @@ type Config struct {
 	MaxEntities int    `json:"max_entities"` // Max entities per query (default: 1000)
 }
 
+// maxChatSessions caps the number of in-memory DM chat session traces.
+// When exceeded, the map is cleared to prevent unbounded growth.
+const maxChatSessions = 1000
+
 // Service provides domain REST endpoints for the Semdragons game world.
 type Service struct {
 	*service.BaseService
-	graph  GraphQuerier       // concrete type is *semdragons.GraphClient
-	world  WorldStateProvider // concrete type is *dmworldstate.WorldStateAggregator
-	store  StoreProvider      // concrete type is *agentstore.Component; nil if unavailable
-	config Config
-	logger *slog.Logger
+	graph           GraphQuerier       // concrete type is *semdragons.GraphClient
+	world           WorldStateProvider // concrete type is *dmworldstate.WorldStateAggregator
+	store           StoreProvider      // concrete type is *agentstore.Component; nil if unavailable
+	models          ModelResolver      // concrete type is *model.Registry; nil if unavailable
+	nats            *natsclient.Client // direct NATS access for KV buckets outside graph
+	trajectories    TrajectoryQuerier  // trajectory KV lookups; nil before init
+	dmSessionReader DMSessionReader    // session reads (used by GET handler); nil before init
+	config          Config
+	logger          *slog.Logger
+
+	// DM session persistence — persists chat turns to NATS KV for server restart recovery.
+	dmSessions *dmSessionStore
+
+	// DM chat session traces for audit trail continuity.
+	// Each session gets a root trace; each turn creates a child span.
+	// The trace context propagates to graph operations so quests
+	// created from chat inherit the DM conversation trace.
+	chatTracesMu    sync.RWMutex
+	chatTraces      map[string]*natsclient.TraceContext
+	chatTracesOrder []string // insertion-ordered session IDs for eviction
 }
 
 // New creates a new Semdragons API service.
@@ -86,6 +107,9 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 	graph := semdragons.NewGraphClient(deps.NATSClient, boardConfig)
 	world := dmworldstate.NewWorldStateAggregator(graph, cfg.MaxEntities, logger)
 	store := resolveStoreComponent(deps, logger)
+	models := semdragons.DefaultModelRegistry()
+
+	sessions := &dmSessionStore{nats: deps.NATSClient, logger: logger}
 
 	baseService := service.NewBaseServiceWithOptions(
 		"game",
@@ -100,8 +124,14 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 		graph:       graph,
 		world:       world,
 		store:       store,
-		config:      cfg,
-		logger:      logger,
+		models:      models,
+		nats:            deps.NATSClient,
+		trajectories:    &natsTrajectoryQuerier{nats: deps.NATSClient},
+		dmSessionReader: sessions,
+		dmSessions:      sessions,
+		config:          cfg,
+		logger:          logger,
+		chatTraces:      make(map[string]*natsclient.TraceContext),
 	}, nil
 }
 
@@ -145,6 +175,12 @@ func (s *Service) Start(ctx context.Context) error {
 // Stop stops the API service.
 func (s *Service) Stop(timeout time.Duration) error {
 	s.logger.Info("Game API service stopping")
+
+	s.chatTracesMu.Lock()
+	s.chatTraces = make(map[string]*natsclient.TraceContext)
+	s.chatTracesOrder = nil
+	s.chatTracesMu.Unlock()
+
 	return s.BaseService.Stop(timeout)
 }
 
@@ -213,6 +249,7 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 
 	// DM
 	mux.HandleFunc("POST "+prefix+"dm/chat", cors(requireAuth(apiKey, s.handleDMChat)))
+	mux.HandleFunc("GET "+prefix+"dm/sessions/{id}", cors(s.handleGetDMSession))
 	mux.HandleFunc("POST "+prefix+"dm/intervene/{questId}", cors(requireAuth(apiKey, s.handleDMIntervene)))
 
 	// Store

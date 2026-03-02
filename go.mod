@@ -3,7 +3,7 @@ module github.com/c360studio/semdragons
 go 1.25.3
 
 require (
-	github.com/c360studio/semstreams v0.0.0-20260301143745-dae0f8d5a68f
+	github.com/c360studio/semstreams v0.0.0-20260302143933-289bd6c73d99
 	github.com/nats-io/nats.go v1.48.0
 )
 

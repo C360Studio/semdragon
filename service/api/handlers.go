@@ -11,6 +11,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -46,6 +47,21 @@ func isKeyNotFound(err error) bool {
 // notation used in NATS KV keys, and slashes would escape the URL path segment.
 func isValidPathID(id string) bool {
 	return id != "" && !strings.Contains(id, ".") && !strings.Contains(id, "/")
+}
+
+// isValidSessionID checks that the session ID is a reasonable hex string.
+// Session IDs are generated from TraceIDs (32 hex chars), so we accept
+// hex characters only, with a generous length limit.
+func isValidSessionID(id string) bool {
+	if len(id) == 0 || len(id) > 128 {
+		return false
+	}
+	for _, c := range id {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // =============================================================================
@@ -910,20 +926,227 @@ func (s *Service) handleGetBattle(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleGetTrajectory(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !isValidPathID(id) {
-		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+	if id == "" {
+		s.writeError(w, "invalid trajectory ID", http.StatusBadRequest)
 		return
 	}
-	// TODO: Wire trajectory lookup from NATS KV when trajectory service is available
-	s.writeError(w, "trajectory lookup not yet implemented", http.StatusNotImplemented)
+	// Trajectory IDs (loopIDs) may contain dots, so use hex validation OR path validation.
+	if !isValidSessionID(id) && !isValidPathID(id) {
+		s.writeError(w, "invalid trajectory ID", http.StatusBadRequest)
+		return
+	}
+
+	if s.trajectories == nil {
+		s.writeError(w, "trajectory service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	data, err := s.trajectories.GetTrajectory(r.Context(), id)
+	if err != nil {
+		if isBucketNotFound(err) {
+			s.writeError(w, "trajectory service not deployed", http.StatusServiceUnavailable)
+			return
+		}
+		if isKeyNotFound(err) {
+			s.writeError(w, "trajectory not found", http.StatusNotFound)
+			return
+		}
+		s.writeError(w, "failed to retrieve trajectory", http.StatusInternalServerError)
+		s.logger.Error("Failed to get trajectory", "id", id, "error", err)
+		return
+	}
+
+	// Pass raw JSON bytes through — avoid coupling to agentic.Trajectory type
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(data)
 }
 
 // =============================================================================
 // DUNGEON MASTER
 // =============================================================================
 
-func (s *Service) handleDMChat(w http.ResponseWriter, _ *http.Request) {
-	s.writeError(w, "DM chat not yet implemented", http.StatusNotImplemented)
+func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
+	if s.models == nil {
+		s.writeError(w, "model registry not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+
+	var req struct {
+		Message   string              `json:"message"`
+		Context   []dmChatContextItem `json:"context,omitempty"`
+		History   []ChatMessage       `json:"history,omitempty"`
+		SessionID string              `json:"session_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Message == "" {
+		s.writeError(w, "message is required", http.StatusBadRequest)
+		return
+	}
+
+	if req.SessionID != "" && !isValidSessionID(req.SessionID) {
+		s.writeError(w, "invalid session_id", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve LLM endpoint
+	endpointName := s.models.Resolve("dm-chat")
+	endpoint := s.models.GetEndpoint(endpointName)
+	if endpoint == nil {
+		s.writeError(w, "no LLM endpoint available for dm-chat", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	// --- Trace context for audit trail ---
+	// Each DM chat session gets a root trace; each turn is a child span.
+	// The trace propagates to graph operations so quests created from
+	// chat inherit the conversation's trace for end-to-end auditing.
+	sessionID, turnSpan := s.getOrCreateChatTrace(req.SessionID)
+	ctx = natsclient.ContextWithTrace(ctx, turnSpan)
+
+	// Build system prompt with world state and context
+	systemPrompt := s.buildDMSystemPrompt(ctx, req.Context)
+
+	// Build conversation: history + new user message
+	messages := make([]ChatMessage, 0, len(req.History)+1)
+	messages = append(messages, req.History...)
+	messages = append(messages, ChatMessage{Role: "user", Content: req.Message})
+
+	// Call LLM
+	llmResponse, err := callLLM(ctx, endpoint, systemPrompt, messages)
+	if err != nil {
+		s.logger.Error("DM chat LLM call failed", "error", err, "endpoint", endpointName,
+			"trace_id", turnSpan.TraceID, "span_id", turnSpan.SpanID)
+		s.writeError(w, "LLM request failed", http.StatusBadGateway)
+		return
+	}
+
+	// Try to extract quest brief or chain from the response
+	resp := struct {
+		Message    string                      `json:"message"`
+		QuestBrief *semdragons.QuestBrief      `json:"quest_brief,omitempty"`
+		QuestChain *semdragons.QuestChainBrief `json:"quest_chain,omitempty"`
+		SessionID  string                      `json:"session_id"`
+		TraceInfo  semdragons.TraceInfo         `json:"trace_info"`
+	}{
+		Message:   llmResponse,
+		SessionID: sessionID,
+		TraceInfo: semdragons.TraceInfoFromTraceContext(turnSpan),
+	}
+
+	// Check for tagged JSON blocks: ```json:quest_brief or ```json:quest_chain
+	if extracted := extractTaggedJSON(llmResponse, "quest_chain"); extracted != "" {
+		var chain semdragons.QuestChainBrief
+		if err := json.Unmarshal([]byte(extracted), &chain); err == nil {
+			if semdragons.ValidateQuestChainBrief(&chain) == nil {
+				resp.QuestChain = &chain
+			}
+		}
+	} else if extracted := extractTaggedJSON(llmResponse, "quest_brief"); extracted != "" {
+		var brief semdragons.QuestBrief
+		if err := json.Unmarshal([]byte(extracted), &brief); err == nil {
+			if semdragons.ValidateQuestBrief(&brief) == nil {
+				resp.QuestBrief = &brief
+			}
+		}
+	} else {
+		// Fall back to generic JSON extraction
+		extracted := semdragons.ExtractJSONFromLLMResponse(llmResponse)
+		if extracted != "" && extracted != llmResponse {
+			// Try as chain first (has "quests" array), then as brief
+			var chain semdragons.QuestChainBrief
+			if err := json.Unmarshal([]byte(extracted), &chain); err == nil && len(chain.Quests) > 0 {
+				if semdragons.ValidateQuestChainBrief(&chain) == nil {
+					resp.QuestChain = &chain
+				}
+			} else {
+				var brief semdragons.QuestBrief
+				if err := json.Unmarshal([]byte(extracted), &brief); err == nil {
+					if semdragons.ValidateQuestBrief(&brief) == nil {
+						resp.QuestBrief = &brief
+					}
+				}
+			}
+		}
+	}
+
+	// Best-effort: persist turn to KV. Don't fail the response on KV error.
+	if s.dmSessions != nil {
+		turn := DMChatTurn{
+			UserMessage: req.Message,
+			DMResponse:  llmResponse,
+			Timestamp:   time.Now(),
+			TraceID:     turnSpan.TraceID,
+			SpanID:      turnSpan.SpanID,
+		}
+		if kvErr := s.dmSessions.appendTurn(ctx, sessionID, turn); kvErr != nil {
+			s.logger.Warn("Failed to persist DM chat turn", "session_id", sessionID, "error", kvErr)
+		}
+	}
+
+	s.writeJSON(w, resp)
+}
+
+// getOrCreateChatTrace returns a session ID and a child span for this turn.
+// If sessionID is empty or unknown, a new root trace is created.
+func (s *Service) getOrCreateChatTrace(sessionID string) (string, *natsclient.TraceContext) {
+	// Try to find an existing session trace
+	if sessionID != "" {
+		s.chatTracesMu.RLock()
+		rootTrace := s.chatTraces[sessionID]
+		s.chatTracesMu.RUnlock()
+
+		if rootTrace != nil {
+			return sessionID, rootTrace.NewSpan()
+		}
+	}
+
+	// New session: create root trace as a session-level anchor.
+	// The root span is never emitted directly — it serves as
+	// the parent for all turn spans in this session.
+	rootTrace := natsclient.NewTraceContext()
+	sessionID = rootTrace.TraceID
+
+	s.chatTracesMu.Lock()
+	if len(s.chatTraces) >= maxChatSessions {
+		evictCount := maxChatSessions / 2
+		for _, old := range s.chatTracesOrder[:evictCount] {
+			delete(s.chatTraces, old)
+		}
+		s.chatTracesOrder = s.chatTracesOrder[evictCount:]
+		s.logger.Warn("DM chat session trace cache evicted oldest entries",
+			"evicted", evictCount, "remaining", len(s.chatTraces))
+	}
+	s.chatTraces[sessionID] = rootTrace
+	s.chatTracesOrder = append(s.chatTracesOrder, sessionID)
+	s.chatTracesMu.Unlock()
+
+	return sessionID, rootTrace.NewSpan()
+}
+
+// extractTaggedJSON extracts JSON from a tagged code block like ```json:quest_brief
+func extractTaggedJSON(text, tag string) string {
+	marker := "```json:" + tag
+	start := strings.Index(text, marker)
+	if start == -1 {
+		return ""
+	}
+	start += len(marker)
+	// Skip to next line
+	if nl := strings.Index(text[start:], "\n"); nl != -1 {
+		start += nl + 1
+	}
+	end := strings.Index(text[start:], "```")
+	if end == -1 {
+		return ""
+	}
+	return strings.TrimSpace(text[start : start+end])
 }
 
 func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
@@ -934,6 +1157,32 @@ func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 	}
 	// TODO: Wire DM intervention when DM component is available
 	s.writeError(w, "DM intervention not yet implemented", http.StatusNotImplemented)
+}
+
+func (s *Service) handleGetDMSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidSessionID(id) {
+		s.writeError(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
+
+	if s.dmSessionReader == nil {
+		s.writeError(w, "session store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	session, err := s.dmSessionReader.GetSession(r.Context(), id)
+	if err != nil {
+		s.writeError(w, "failed to retrieve session", http.StatusInternalServerError)
+		s.logger.Error("Failed to get DM session", "id", id, "error", err)
+		return
+	}
+	if session == nil {
+		s.writeError(w, "session not found", http.StatusNotFound)
+		return
+	}
+
+	s.writeJSON(w, session)
 }
 
 // =============================================================================

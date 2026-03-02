@@ -1832,43 +1832,33 @@ func TestHandleRetireAgent(t *testing.T) {
 func TestStubHandlers(t *testing.T) {
 	svc := newTestService(&mockGraph{}, &mockWorld{})
 
-	tests := []struct {
-		name    string
-		method  string
-		pattern string
-		path    string
-		handler http.HandlerFunc
-	}{
-		{
-			name:    "get trajectory returns 501",
-			method:  http.MethodGet,
-			pattern: "GET /trajectories/{id}",
-			path:    "/trajectories/traj1",
-			handler: svc.handleGetTrajectory,
-		},
-		{
-			name:    "dm chat returns 501",
-			method:  http.MethodPost,
-			pattern: "POST /dm/chat",
-			path:    "/dm/chat",
-			handler: svc.handleDMChat,
-		},
-	}
+	// Trajectory lookup returns 503 when trajectories querier is nil
+	t.Run("get trajectory returns 503 without querier", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /trajectories/{id}", svc.handleGetTrajectory)
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mux := http.NewServeMux()
-			mux.HandleFunc(tc.pattern, tc.handler)
+		req := httptest.NewRequest(http.MethodGet, "/trajectories/traj1", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
 
-			req := httptest.NewRequest(tc.method, tc.path, nil)
-			rr := httptest.NewRecorder()
-			mux.ServeHTTP(rr, req)
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected 503 Service Unavailable, got %d", rr.Code)
+		}
+	})
 
-			if rr.Code != http.StatusNotImplemented {
-				t.Errorf("expected 501 Not Implemented, got %d", rr.Code)
-			}
-		})
-	}
+	// DM chat returns 503 when model registry is nil (test service has no models)
+	t.Run("dm chat returns 503 without models", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("POST /dm/chat", svc.handleDMChat)
+
+		req := httptest.NewRequest(http.MethodPost, "/dm/chat", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected 503 Service Unavailable, got %d", rr.Code)
+		}
+	})
 }
 
 // =============================================================================
@@ -2492,6 +2482,223 @@ func TestStoreHandlers_ComponentUnavailable(t *testing.T) {
 }
 
 // =============================================================================
+// TRAJECTORY HANDLER TESTS
+// =============================================================================
+
+// mockTrajectoryStore simulates the trajectory KV bucket for handler tests.
+type mockTrajectoryStore struct {
+	data   map[string][]byte
+	getErr error // non-nil overrides all Get calls
+}
+
+func (m *mockTrajectoryStore) GetTrajectory(_ context.Context, id string) ([]byte, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	data, ok := m.data[id]
+	if !ok {
+		return nil, jetstream.ErrKeyNotFound
+	}
+	return data, nil
+}
+
+func TestHandleGetTrajectory(t *testing.T) {
+	sampleJSON := []byte(`{"loop_id":"abc123","steps":[],"duration":42}`)
+
+	tests := []struct {
+		name       string
+		pathID     string
+		natsNil    bool // simulate nats == nil
+		data       map[string][]byte
+		getErr     error
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:       "valid ID returns raw JSON",
+			pathID:     "abc123",
+			data:       map[string][]byte{"abc123": sampleJSON},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				if !bytes.Equal(body, sampleJSON) {
+					t.Errorf("body mismatch: got %s, want %s", body, sampleJSON)
+				}
+			},
+		},
+		{
+			name:       "missing trajectory returns 404",
+			pathID:     "nonexistent",
+			data:       map[string][]byte{},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "empty ID returns 404 from mux",
+			pathID:     "",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "hex ID with dots works (loopIDs can contain dots)",
+			pathID:     "abcdef0123456789",
+			data:       map[string][]byte{"abcdef0123456789": sampleJSON},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil nats returns 503",
+			pathID:     "abc123",
+			natsNil:    true,
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:       "bucket not found returns 503",
+			pathID:     "abc123",
+			getErr:     jetstream.ErrBucketNotFound,
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:       "server error returns 500",
+			pathID:     "abc123",
+			getErr:     errors.New("nats connection lost"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newTestService(&mockGraph{}, &mockWorld{})
+
+			if !tc.natsNil {
+				svc.trajectories = &mockTrajectoryStore{data: tc.data, getErr: tc.getErr}
+			}
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /trajectories/{id}", svc.handleGetTrajectory)
+
+			req := httptest.NewRequest(http.MethodGet, "/trajectories/"+tc.pathID, nil)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+// =============================================================================
+// DM SESSION HANDLER TESTS
+// =============================================================================
+
+// mockDMSessionReader simulates the DM session KV store for handler tests.
+type mockDMSessionReader struct {
+	sessions map[string]*DMChatSession
+	getErr   error
+}
+
+func (m *mockDMSessionReader) GetSession(_ context.Context, sessionID string) (*DMChatSession, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	session, ok := m.sessions[sessionID]
+	if !ok {
+		return nil, nil
+	}
+	return session, nil
+}
+
+func TestHandleGetDMSession(t *testing.T) {
+	sampleSession := &DMChatSession{
+		SessionID: "abcdef0123456789abcdef0123456789",
+		Turns: []DMChatTurn{
+			{UserMessage: "hello", DMResponse: "greetings"},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		pathID     string
+		sessions   map[string]*DMChatSession
+		getErr     error
+		nilStore   bool
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:   "valid session returns 200",
+			pathID: "abcdef0123456789abcdef0123456789",
+			sessions: map[string]*DMChatSession{
+				"abcdef0123456789abcdef0123456789": sampleSession,
+			},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var s DMChatSession
+				decodeJSON(t, body, &s)
+				if s.SessionID != sampleSession.SessionID {
+					t.Errorf("session_id: got %q, want %q", s.SessionID, sampleSession.SessionID)
+				}
+				if len(s.Turns) != 1 {
+					t.Errorf("turns count: got %d, want 1", len(s.Turns))
+				}
+			},
+		},
+		{
+			name:       "missing session returns 404",
+			pathID:     "abcdef0123456789abcdef0123456789",
+			sessions:   map[string]*DMChatSession{},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "invalid session ID returns 400",
+			pathID:     "not-hex!",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "empty session ID returns 404 from mux",
+			pathID:     "",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "nil store returns 503",
+			pathID:     "abcdef0123456789abcdef0123456789",
+			nilStore:   true,
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:       "store error returns 500",
+			pathID:     "abcdef0123456789abcdef0123456789",
+			sessions:   map[string]*DMChatSession{},
+			getErr:     errors.New("nats error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newTestService(&mockGraph{}, &mockWorld{})
+			if !tc.nilStore {
+				svc.dmSessionReader = &mockDMSessionReader{sessions: tc.sessions, getErr: tc.getErr}
+			}
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /dm/sessions/{id}", svc.handleGetDMSession)
+
+			req := httptest.NewRequest(http.MethodGet, "/dm/sessions/"+tc.pathID, nil)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+// =============================================================================
 // COMPILE-TIME INTERFACE SATISFACTION CHECKS
 // =============================================================================
 
@@ -2504,6 +2711,9 @@ var (
 	_ WorldStateProvider = (*mockWorld)(nil)
 	_ StoreProvider      = (*agentstore.Component)(nil)
 	_ StoreProvider      = (*mockStore)(nil)
+	_ TrajectoryQuerier  = (*mockTrajectoryStore)(nil)
+	_ DMSessionReader    = (*mockDMSessionReader)(nil)
+	_ DMSessionReader    = (*dmSessionStore)(nil)
 )
 
 // messageTripleUsed ensures the graph/message import is referenced so the

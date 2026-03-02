@@ -176,6 +176,29 @@ export interface ActiveEffectResponse {
 	[key: string]: unknown;
 }
 
+export interface DMChatResponse {
+	message: string;
+	quest_brief?: {
+		title: string;
+		description?: string;
+		difficulty?: number;
+		skills?: string[];
+		acceptance?: string[];
+	};
+	quest_chain?: {
+		quests: Array<{
+			title: string;
+			description?: string;
+			difficulty?: number;
+			skills?: string[];
+			acceptance?: string[];
+			depends_on?: number[];
+		}>;
+	};
+	session_id?: string;
+	trace_info?: { trace_id?: string; span_id?: string; parent_span_id?: string };
+}
+
 export interface UseConsumableResponse {
 	success: boolean;
 	remaining?: number;
@@ -221,6 +244,20 @@ export interface LifecycleApi {
 		questId?: string
 	) => Promise<UseConsumableResponse>;
 	getEffects: (agentId: string) => Promise<ActiveEffectResponse[]>;
+	sendDMChat: (
+		message: string,
+		sessionId?: string
+	) => Promise<DMChatResponse>;
+	postQuestChain: (chain: {
+		quests: Array<{
+			title: string;
+			description?: string;
+			difficulty?: number;
+			skills?: string[];
+			acceptance?: string[];
+			depends_on?: number[];
+		}>;
+	}) => Promise<QuestResponse[]>;
 }
 
 /**
@@ -500,6 +537,24 @@ export const test = base.extend<{
 				const res = await apiContext.get(`/game/agents/${agentId}/effects`);
 				if (!res.ok()) {
 					throw new Error(`getEffects failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			sendDMChat: async (message, sessionId?) => {
+				const body: Record<string, unknown> = { message };
+				if (sessionId) body.session_id = sessionId;
+				const res = await apiContext.post('/game/dm/chat', { data: body });
+				if (!res.ok()) {
+					throw new Error(`sendDMChat failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			postQuestChain: async (chain) => {
+				const res = await apiContext.post('/game/quests/chain', { data: chain });
+				if (!res.ok()) {
+					throw new Error(`postQuestChain failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			}

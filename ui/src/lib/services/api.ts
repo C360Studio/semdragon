@@ -41,6 +41,16 @@ export function setApiUrl(url: string): void {
 // FETCH HELPERS
 // =============================================================================
 
+export class ApiError extends Error {
+	constructor(
+		public readonly status: number,
+		message: string
+	) {
+		super(message);
+		this.name = 'ApiError';
+	}
+}
+
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
 	const url = `${apiUrl}${path}`;
 	const hasBody = options?.body !== undefined;
@@ -54,7 +64,7 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
 
 	if (!response.ok) {
 		const errorText = await response.text();
-		throw new Error(`API Error ${response.status}: ${errorText}`);
+		throw new ApiError(response.status, `API Error ${response.status}: ${errorText}`);
 	}
 
 	return response.json();
@@ -128,33 +138,122 @@ export async function getBattle(id: BattleID): Promise<BossBattle> {
 // TRAJECTORIES
 // =============================================================================
 
-export interface TrajectoryEvent {
-	timestamp: number;
-	type: string;
-	data: unknown;
+export interface Trajectory {
+	loop_id: string;
+	start_time: string;
+	end_time?: string;
+	steps: TrajectoryStep[];
+	outcome?: string;
+	total_tokens_in: number;
+	total_tokens_out: number;
+	duration: number;
 }
 
-export async function getTrajectory(id: string): Promise<TrajectoryEvent[]> {
-	return fetchJson<TrajectoryEvent[]>(`/game/trajectories/${id}`);
+export interface TrajectoryStep {
+	timestamp: string;
+	step_type: string; // "model_call" | "tool_call"
+	duration: number;
+	[key: string]: unknown;
+}
+
+export async function getTrajectory(id: string): Promise<Trajectory> {
+	return fetchJson<Trajectory>(`/game/trajectories/${id}`);
 }
 
 // =============================================================================
 // DUNGEON MASTER
 // =============================================================================
 
-export interface ChatMessage {
+export interface ChatHistoryMessage {
 	role: 'user' | 'dm';
 	content: string;
-	timestamp: number;
+}
+
+export interface ChatContextRef {
+	type: string;
+	id: string;
+}
+
+export interface TraceInfo {
+	trace_id?: string;
+	span_id?: string;
+	parent_span_id?: string;
 }
 
 export interface ChatResponse {
 	message: string;
-	actions?: unknown[];
+	quest_brief?: {
+		title: string;
+		description?: string;
+		difficulty?: number;
+		skills?: string[];
+		acceptance?: string[];
+	};
+	quest_chain?: {
+		quests: Array<{
+			title: string;
+			description?: string;
+			difficulty?: number;
+			skills?: string[];
+			acceptance?: string[];
+			depends_on?: number[];
+		}>;
+	};
+	session_id?: string;
+	trace_info?: TraceInfo;
 }
 
-export async function sendDMChat(message: string): Promise<ChatResponse> {
-	return postJson<ChatResponse>('/game/dm/chat', { message });
+export interface DMChatSession {
+	session_id: string;
+	created_at: string;
+	updated_at: string;
+	turns: DMChatTurn[];
+}
+
+export interface DMChatTurn {
+	user_message: string;
+	dm_response: string;
+	timestamp: string;
+	trace_id?: string;
+	span_id?: string;
+}
+
+export async function getDMSession(sessionId: string): Promise<DMChatSession | null> {
+	try {
+		return await fetchJson<DMChatSession>(`/game/dm/sessions/${sessionId}`);
+	} catch (e) {
+		if (e instanceof ApiError && e.status === 404) {
+			return null;
+		}
+		throw e;
+	}
+}
+
+export async function sendDMChat(
+	message: string,
+	context?: ChatContextRef[],
+	history?: ChatHistoryMessage[],
+	sessionId?: string
+): Promise<ChatResponse> {
+	return postJson<ChatResponse>('/game/dm/chat', {
+		message,
+		context,
+		history,
+		session_id: sessionId
+	});
+}
+
+export async function postQuestChain(chain: {
+	quests: Array<{
+		title: string;
+		description?: string;
+		difficulty?: number;
+		skills?: string[];
+		acceptance?: string[];
+		depends_on?: number[];
+	}>;
+}): Promise<Quest[]> {
+	return postJson<Quest[]>('/game/quests/chain', chain);
 }
 
 export async function intervene(questId: QuestID, intervention: Intervention): Promise<void> {
@@ -215,7 +314,9 @@ export const api = {
 	retireAgent,
 	getBattle,
 	getTrajectory,
+	getDMSession,
 	sendDMChat,
+	postQuestChain,
 	intervene,
 	getStoreItems,
 	getStoreItem,
