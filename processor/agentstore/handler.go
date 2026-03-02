@@ -162,8 +162,14 @@ func (c *Component) AddItem(ctx context.Context, item StoreItem) error {
 		return errors.New("component not running")
 	}
 
+	item.BoardConfig = c.boardConfig
 	c.catalog.Store(item.ID, &item)
 	now := time.Now()
+
+	// Write item to KV as a storeitem entity
+	if err := c.graph.EmitEntityUpdate(ctx, &item, "store.item.listed"); err != nil {
+		c.logger.Warn("failed to write store item to KV", "item_id", item.ID, "error", err)
+	}
 
 	// Publish event - downstream graph-ingest will persist if configured
 	if err := SubjectStoreItemListed.Publish(ctx, c.deps.NATSClient, StoreItemListedPayload{
@@ -235,8 +241,9 @@ func (c *Component) SetStock(itemID string, inStock bool) error {
 // PURCHASE HANDLERS
 // =============================================================================
 
-// Purchase buys an item for an agent. If the agent is in any guild and the item
-// has a GuildDiscount > 0, the effective cost is reduced accordingly.
+// Purchase buys an item for an agent. Reads agent entity from KV, mutates
+// inventory + XP, and writes back via EmitEntityUpdate. If the agent is in any
+// guild and the item has a GuildDiscount > 0, the effective cost is reduced.
 func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*OwnedItem, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
@@ -284,7 +291,7 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 		owned.UsesRemaining = item.RentalUses
 	}
 
-	// Update inventory
+	// Update in-memory inventory cache (fast path for local reads)
 	inv := c.getOrCreateInventory(agentID)
 	if item.ItemType == ItemTypeTool {
 		inv.OwnedTools[itemID] = *owned
@@ -292,6 +299,48 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 		inv.Consumables[itemID]++
 	}
 	inv.TotalSpent += effectiveCost
+
+	// Read-modify-write agent entity to KV (source of truth)
+	agentEntity, agentErr := c.graph.GetAgent(ctx, agentID)
+	if agentErr == nil && agentEntity != nil {
+		agent := semdragons.AgentFromEntityState(agentEntity)
+		if agent != nil {
+			// Ensure maps are initialized
+			if agent.OwnedTools == nil {
+				agent.OwnedTools = make(map[string]semdragons.OwnedTool)
+			}
+			if agent.Consumables == nil {
+				agent.Consumables = make(map[string]int)
+			}
+
+			// Mutate inventory on agent entity
+			if item.ItemType == ItemTypeTool {
+				usesRemaining := -1 // permanent
+				if item.PurchaseType == PurchaseRental {
+					usesRemaining = item.RentalUses
+				}
+				agent.OwnedTools[itemID] = semdragons.OwnedTool{
+					StoreItemID:   item.EntityID(),
+					XPSpent:       effectiveCost,
+					UsesRemaining: usesRemaining,
+					PurchasedAt:   now,
+				}
+			} else if item.ItemType == ItemTypeConsumable {
+				agent.Consumables[itemID]++
+			}
+
+			// Mutate XP and stats
+			agent.XP -= effectiveCost
+			agent.TotalSpent += effectiveCost
+			agent.Stats.TotalXPSpent += effectiveCost
+			agent.UpdatedAt = now
+
+			if writeErr := c.graph.EmitEntityUpdate(ctx, agent, "agent.inventory.purchased"); writeErr != nil {
+				c.errorsCount.Add(1)
+				c.logger.Error("failed to write agent entity after purchase", "error", writeErr)
+			}
+		}
+	}
 
 	// Publish purchase event
 	if err := SubjectStoreItemPurchased.Publish(ctx, c.deps.NATSClient, StorePurchasePayload{
@@ -380,7 +429,8 @@ func (c *Component) getOrCreateInventory(agentID domain.AgentID) *AgentInventory
 // CONSUMABLE HANDLERS
 // =============================================================================
 
-// UseConsumable activates a consumable for an agent.
+// UseConsumable activates a consumable for an agent. Reads agent entity from KV,
+// decrements consumable count, adds active effect, and writes back.
 func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, consumableID string, questID *domain.QuestID) error {
 	if !c.running.Load() {
 		return errors.New("component not running")
@@ -400,11 +450,11 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 	}
 	item := val.(*StoreItem)
 
-	// Decrement count
+	// Decrement count in cache
 	inv.Consumables[consumableID]--
 	remaining := inv.Consumables[consumableID]
 
-	// Create active effect
+	// Create active effect (in-memory cache)
 	effect := ActiveEffect{
 		ConsumableID:    consumableID,
 		Effect:          *item.Effect,
@@ -412,11 +462,49 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 		QuestsRemaining: item.Effect.Duration,
 		QuestID:         questID,
 	}
-
-	// Store active effect
 	c.addActiveEffect(agentID, effect)
 
 	now := time.Now()
+
+	// Read-modify-write agent entity to KV (source of truth)
+	agentEntity, agentErr := c.graph.GetAgent(ctx, agentID)
+	if agentErr == nil && agentEntity != nil {
+		agent := semdragons.AgentFromEntityState(agentEntity)
+		if agent != nil {
+			if agent.Consumables == nil {
+				agent.Consumables = make(map[string]int)
+			}
+
+			// Decrement consumable count on agent entity
+			agent.Consumables[consumableID]--
+			if agent.Consumables[consumableID] <= 0 {
+				delete(agent.Consumables, consumableID)
+			}
+
+			// Add active effect to agent entity
+			agent.ActiveEffects = append(agent.ActiveEffects, semdragons.AgentEffect{
+				EffectType:      string(item.Effect.Type),
+				QuestsRemaining: item.Effect.Duration,
+				QuestID:         questID,
+			})
+
+			// Handle cooldown_skip: transition agent back to idle
+			if item.Effect.Type == ConsumableCooldownSkip && agent.Status == semdragons.AgentCooldown {
+				agent.Status = semdragons.AgentIdle
+				agent.CooldownUntil = nil
+			}
+
+			agent.UpdatedAt = now
+			eventType := "agent.consumable.used"
+			if item.Effect.Type == ConsumableCooldownSkip && agent.Status == semdragons.AgentIdle {
+				eventType = "agent.status.idle"
+			}
+			if writeErr := c.graph.EmitEntityUpdate(ctx, agent, eventType); writeErr != nil {
+				c.errorsCount.Add(1)
+				c.logger.Error("failed to write agent entity after consumable use", "error", writeErr)
+			}
+		}
+	}
 
 	// Publish consumable used event
 	if err := SubjectConsumableUsed.Publish(ctx, c.deps.NATSClient, ConsumableUsedPayload{
@@ -429,23 +517,6 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 	}); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "AgentStore", "UseConsumable", "publish consumable used")
-	}
-
-	// Clear cooldown on cooldown_skip consumable
-	if item.Effect.Type == ConsumableCooldownSkip {
-		agentEntity, agentErr := c.graph.GetAgent(ctx, agentID)
-		if agentErr == nil {
-			agent := semdragons.AgentFromEntityState(agentEntity)
-			if agent != nil && agent.Status == semdragons.AgentCooldown {
-				agent.Status = semdragons.AgentIdle
-				agent.CooldownUntil = nil
-				agent.UpdatedAt = now
-				if writeErr := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.idle"); writeErr != nil {
-					c.errorsCount.Add(1)
-					c.logger.Error("failed to clear agent cooldown", "error", writeErr)
-				}
-			}
-		}
 	}
 
 	c.consumablesUsed.Add(1)

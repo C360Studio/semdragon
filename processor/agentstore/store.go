@@ -1,9 +1,11 @@
 package agentstore
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 )
 
@@ -74,6 +76,10 @@ type StoreItem struct {
 	// Availability
 	InStock       bool    `json:"in_stock"`
 	GuildDiscount float64 `json:"guild_discount,omitempty"`
+
+	// BoardConfig determines the entity ID prefix for this item.
+	// Set before calling EntityID() or emitting to KV.
+	BoardConfig *domain.BoardConfig `json:"-"`
 }
 
 // ConsumableEffect defines what a consumable does when used.
@@ -155,12 +161,18 @@ type ActiveEffect struct {
 // GRAPHABLE IMPLEMENTATIONS
 // =============================================================================
 
-// EntityID returns the entity ID for this store item.
+// EntityID returns the 6-part entity ID for this store item.
+// Format: org.platform.game.board.storeitem.instance
+// Requires BoardConfig to be set; falls back to legacy 3-part format if nil.
 func (s *StoreItem) EntityID() string {
+	if s.BoardConfig != nil {
+		return s.BoardConfig.StoreItemEntityID(s.ID)
+	}
+	// Fallback for backward compatibility during transition
 	return "store.item." + s.ID
 }
 
-// Triples returns semantic facts about this store item.
+// Triples returns all semantic facts about this store item.
 func (s *StoreItem) Triples() []message.Triple {
 	now := time.Now()
 	source := "agent_store"
@@ -174,6 +186,9 @@ func (s *StoreItem) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "store.item.xp_cost", Object: s.XPCost, Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "store.item.min_tier", Object: int(s.MinTier), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "store.item.in_stock", Object: s.InStock, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.rental_uses", Object: s.RentalUses, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.min_level", Object: s.MinLevel, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.guild_discount", Object: s.GuildDiscount, Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
 	if s.ToolID != "" {
@@ -181,6 +196,14 @@ func (s *StoreItem) Triples() []message.Triple {
 			Subject: entityID, Predicate: "store.item.tool_id", Object: s.ToolID,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
+	}
+
+	if s.Effect != nil {
+		triples = append(triples,
+			message.Triple{Subject: entityID, Predicate: "store.item.effect_type", Object: string(s.Effect.Type), Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "store.item.effect_magnitude", Object: s.Effect.Magnitude, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "store.item.effect_duration", Object: s.Effect.Duration, Source: source, Timestamp: now, Confidence: 1.0},
+		)
 	}
 
 	return triples
@@ -211,6 +234,129 @@ func (inv *AgentInventory) Triples() []message.Triple {
 	}
 
 	return triples
+}
+
+// =============================================================================
+// STORE ITEM RECONSTRUCTION
+// =============================================================================
+
+// StoreItemFromEntityState reconstructs a StoreItem from graph EntityState.
+func StoreItemFromEntityState(entity *graph.EntityState) *StoreItem {
+	if entity == nil {
+		return nil
+	}
+
+	s := &StoreItem{}
+	// Extract instance from entity ID as the item ID
+	s.ID = domain.ExtractInstance(entity.ID)
+
+	for _, triple := range entity.Triples {
+		switch triple.Predicate {
+		case "store.item.name":
+			s.Name = tripleString(triple.Object)
+		case "store.item.description":
+			s.Description = tripleString(triple.Object)
+		case "store.item.type":
+			s.ItemType = ItemType(tripleString(triple.Object))
+		case "store.item.purchase_type":
+			s.PurchaseType = PurchaseType(tripleString(triple.Object))
+		case "store.item.xp_cost":
+			s.XPCost = tripleInt64(triple.Object)
+		case "store.item.min_tier":
+			s.MinTier = domain.TrustTier(tripleInt(triple.Object))
+		case "store.item.in_stock":
+			s.InStock = tripleBool(triple.Object)
+		case "store.item.tool_id":
+			s.ToolID = tripleString(triple.Object)
+		case "store.item.rental_uses":
+			s.RentalUses = tripleInt(triple.Object)
+		case "store.item.min_level":
+			s.MinLevel = tripleInt(triple.Object)
+		case "store.item.guild_discount":
+			s.GuildDiscount = tripleFloat64(triple.Object)
+		case "store.item.effect_type":
+			if s.Effect == nil {
+				s.Effect = &ConsumableEffect{}
+			}
+			s.Effect.Type = ConsumableType(tripleString(triple.Object))
+		case "store.item.effect_magnitude":
+			if s.Effect == nil {
+				s.Effect = &ConsumableEffect{}
+			}
+			s.Effect.Magnitude = tripleFloat64(triple.Object)
+		case "store.item.effect_duration":
+			if s.Effect == nil {
+				s.Effect = &ConsumableEffect{}
+			}
+			s.Effect.Duration = tripleInt(triple.Object)
+		}
+	}
+
+	return s
+}
+
+// Type conversion helpers for triple values (local to agentstore package).
+
+func tripleString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func tripleInt(v any) int {
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	case string:
+		i, _ := strconv.Atoi(val)
+		return i
+	}
+	return 0
+}
+
+func tripleInt64(v any) int64 {
+	switch val := v.(type) {
+	case int64:
+		return val
+	case int:
+		return int64(val)
+	case float64:
+		return int64(val)
+	case string:
+		i, _ := strconv.ParseInt(val, 10, 64)
+		return i
+	}
+	return 0
+}
+
+func tripleFloat64(v any) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case int:
+		return float64(val)
+	case int64:
+		return float64(val)
+	case string:
+		f, _ := strconv.ParseFloat(val, 64)
+		return f
+	}
+	return 0
+}
+
+func tripleBool(v any) bool {
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		return val == "true"
+	}
+	return false
 }
 
 // =============================================================================

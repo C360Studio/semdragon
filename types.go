@@ -221,6 +221,12 @@ type Agent struct {
 	CurrentParty  *PartyID   `json:"current_party,omitempty"`
 	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
 
+	// Store inventory (reconstructed from agent entity triples)
+	OwnedTools    map[string]OwnedTool  `json:"owned_tools,omitempty"`
+	Consumables   map[string]int        `json:"consumables,omitempty"`
+	TotalSpent    int64                 `json:"total_spent"`
+	ActiveEffects []AgentEffect         `json:"active_effects,omitempty"`
+
 	// Stats - lifetime tracking for the DM and observability
 	Stats AgentStats `json:"stats"`
 
@@ -288,6 +294,21 @@ func (a *Agent) AddSkill(skill SkillTag) {
 			QuestsUsed: 0,
 		}
 	}
+}
+
+// OwnedTool tracks an agent's purchased tool (stored as agent entity triples).
+type OwnedTool struct {
+	StoreItemID   string    `json:"store_item_id"`   // Entity ref → storeitem entity ID
+	XPSpent       int64     `json:"xp_spent"`        // XP paid for this tool
+	UsesRemaining int       `json:"uses_remaining"`  // -1 = permanent
+	PurchasedAt   time.Time `json:"purchased_at"`
+}
+
+// AgentEffect tracks a consumable effect currently active on an agent.
+type AgentEffect struct {
+	EffectType      string   `json:"effect_type"`       // xp_boost, quality_shield, etc.
+	QuestsRemaining int      `json:"quests_remaining"`  // Quests until effect expires
+	QuestID         *QuestID `json:"quest_id,omitempty"` // Quest that triggered the effect
 }
 
 // AgentConfig holds the actual implementation details behind the RPG facade.

@@ -485,6 +485,37 @@ Autonomy   ── cooldown expired ── writes idle           │
 
 **No existing processor needs new dependencies.** Each processor adds a small status-write to its existing event handler. The autonomy processor is the only new component.
 
+### Knowledge Graph Alignment
+
+The store system must follow the same entity-centric architecture as every other processor. All state is
+entity state in KV. The KV write IS the event.
+
+**Principles:**
+
+1. **All processor state must be entity state in KV.** In-memory caches (sync.Map) are read-through
+   optimizations, not sources of truth. On restart, state is reconstructed from KV.
+
+2. **Entities have triples; relationships are edges between entities.** "Agent owns tool" is a triple on
+   the agent entity with the storeitem entity ID as its object — a proper graph edge:
+   `(agent.dragon) --owns--> (storeitem.web_search)`.
+
+3. **Store items are entities.** Type `storeitem` with 6-part entity IDs (e.g.,
+   `c360.prod.game.board1.storeitem.web_search`). Seeded to KV at startup. Queryable by any processor via
+   `graph.GetEntityDirect()`.
+
+4. **Inventory is agent entity triples, not a separate entity.** Follows the existing pattern where guild
+   memberships and skill proficiencies are agent triples. New predicates use the dynamic prefix pattern:
+   - `agent.inventory.tool.{itemID}` → entity ref to storeitem (relationship edge)
+   - `agent.inventory.consumable.{itemID}` → count owned
+   - `agent.inventory.total_spent` → int64
+   - `agent.effects.{effectType}.remaining` → quests remaining
+
+5. **Purchase and UseConsumable use read-modify-write.** Read agent from KV → reconstruct → mutate
+   inventory + XP → `EmitEntityUpdate`. Same pattern as every other processor.
+
+6. **"The KV write IS the event" applies to store operations.** No separate event streams needed — KV
+   watchers see inventory changes as agent entity updates.
+
 ## Consequences
 
 ### Positive

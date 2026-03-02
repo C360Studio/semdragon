@@ -4,6 +4,7 @@ package semdragons
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/c360studio/semstreams/graph"
@@ -125,6 +126,8 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 	a := &Agent{
 		ID:                 AgentID(entity.ID),
 		SkillProficiencies: make(map[SkillTag]SkillProficiency),
+		OwnedTools:         make(map[string]OwnedTool),
+		Consumables:        make(map[string]int),
 	}
 
 	for _, triple := range entity.Triples {
@@ -181,6 +184,10 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 		case "agent.membership.party":
 			partyID := PartyID(asString(triple.Object))
 			a.CurrentParty = &partyID
+
+		// Inventory total spent
+		case "agent.inventory.total_spent":
+			a.TotalSpent = asInt64(triple.Object)
 		}
 
 		// Handle skill proficiencies (dynamic predicates)
@@ -201,6 +208,72 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 					}
 					a.SkillProficiencies[skillTag] = prof
 					break
+				}
+			}
+		}
+
+		// Handle owned tools (dynamic predicates)
+		// Format: agent.inventory.tool.{itemID}[.field]
+		if strings.HasPrefix(triple.Predicate, "agent.inventory.tool.") {
+			rest := triple.Predicate[len("agent.inventory.tool."):] // e.g., "web_search" or "web_search.xp_spent"
+			dotIdx := strings.Index(rest, ".")
+			if dotIdx == -1 {
+				// Base predicate: agent.inventory.tool.{itemID} → storeitem entity ref
+				itemID := rest
+				tool := a.OwnedTools[itemID]
+				tool.StoreItemID = asString(triple.Object)
+				a.OwnedTools[itemID] = tool
+			} else {
+				itemID := rest[:dotIdx]
+				suffix := rest[dotIdx+1:]
+				tool := a.OwnedTools[itemID]
+				switch suffix {
+				case "xp_spent":
+					tool.XPSpent = asInt64(triple.Object)
+				case "uses":
+					tool.UsesRemaining = asInt(triple.Object)
+				case "purchased_at":
+					tool.PurchasedAt = asTime(triple.Object)
+				}
+				a.OwnedTools[itemID] = tool
+			}
+		}
+
+		// Handle consumables (dynamic predicates)
+		// Format: agent.inventory.consumable.{itemID} → count
+		if strings.HasPrefix(triple.Predicate, "agent.inventory.consumable.") {
+			itemID := triple.Predicate[len("agent.inventory.consumable."):]
+			a.Consumables[itemID] = asInt(triple.Object)
+		}
+
+		// Handle active effects (dynamic predicates)
+		// Format: agent.effects.{effectType}.remaining or agent.effects.{effectType}.quest
+		if strings.HasPrefix(triple.Predicate, "agent.effects.") {
+			rest := triple.Predicate[len("agent.effects."):] // e.g., "xp_boost.remaining"
+			dotIdx := strings.LastIndex(rest, ".")
+			if dotIdx > 0 {
+				effectType := rest[:dotIdx]
+				suffix := rest[dotIdx+1:]
+
+				// Find or create effect entry
+				idx := -1
+				for i, eff := range a.ActiveEffects {
+					if eff.EffectType == effectType {
+						idx = i
+						break
+					}
+				}
+				if idx == -1 {
+					a.ActiveEffects = append(a.ActiveEffects, AgentEffect{EffectType: effectType})
+					idx = len(a.ActiveEffects) - 1
+				}
+
+				switch suffix {
+				case "remaining":
+					a.ActiveEffects[idx].QuestsRemaining = asInt(triple.Object)
+				case "quest":
+					questID := QuestID(asString(triple.Object))
+					a.ActiveEffects[idx].QuestID = &questID
 				}
 			}
 		}

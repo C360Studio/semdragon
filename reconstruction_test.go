@@ -273,6 +273,153 @@ func TestBattleRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAgentRoundTrip_Inventory(t *testing.T) {
+	questID := QuestID("test.dev.game.board1.quest.q1")
+
+	original := &Agent{
+		ID:     AgentID("test.dev.game.board1.agent.a1"),
+		Name:   "store-tester",
+		Status: AgentIdle,
+		Level:  8,
+		XP:     1000,
+		Tier:   TierJourneyman,
+		OwnedTools: map[string]OwnedTool{
+			"web_search": {
+				StoreItemID:   "test.dev.game.board1.storeitem.web_search",
+				XPSpent:       50,
+				UsesRemaining: -1,
+				PurchasedAt:   time.Now().Truncate(time.Second),
+			},
+			"context_expander": {
+				StoreItemID:   "test.dev.game.board1.storeitem.context_expander",
+				XPSpent:       200,
+				UsesRemaining: 7,
+				PurchasedAt:   time.Now().Truncate(time.Second),
+			},
+		},
+		Consumables: map[string]int{
+			"xp_boost":       2,
+			"quality_shield": 1,
+		},
+		TotalSpent: 400,
+		ActiveEffects: []AgentEffect{
+			{EffectType: "xp_boost", QuestsRemaining: 1, QuestID: &questID},
+			{EffectType: "quality_shield", QuestsRemaining: 1},
+		},
+		CreatedAt: time.Now().Truncate(time.Second),
+		UpdatedAt: time.Now().Truncate(time.Second),
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := AgentFromEntityState(entity)
+
+	// Owned tools
+	if len(r.OwnedTools) != 2 {
+		t.Fatalf("OwnedTools len = %d, want 2", len(r.OwnedTools))
+	}
+	ws, ok := r.OwnedTools["web_search"]
+	if !ok {
+		t.Fatal("web_search tool not found in reconstructed OwnedTools")
+	}
+	if ws.StoreItemID != "test.dev.game.board1.storeitem.web_search" {
+		t.Errorf("web_search.StoreItemID = %q, want entity ref", ws.StoreItemID)
+	}
+	if ws.XPSpent != 50 {
+		t.Errorf("web_search.XPSpent = %d, want 50", ws.XPSpent)
+	}
+	if ws.UsesRemaining != -1 {
+		t.Errorf("web_search.UsesRemaining = %d, want -1", ws.UsesRemaining)
+	}
+
+	ce, ok := r.OwnedTools["context_expander"]
+	if !ok {
+		t.Fatal("context_expander tool not found in reconstructed OwnedTools")
+	}
+	if ce.UsesRemaining != 7 {
+		t.Errorf("context_expander.UsesRemaining = %d, want 7", ce.UsesRemaining)
+	}
+
+	// Consumables
+	if len(r.Consumables) != 2 {
+		t.Fatalf("Consumables len = %d, want 2", len(r.Consumables))
+	}
+	if r.Consumables["xp_boost"] != 2 {
+		t.Errorf("xp_boost count = %d, want 2", r.Consumables["xp_boost"])
+	}
+	if r.Consumables["quality_shield"] != 1 {
+		t.Errorf("quality_shield count = %d, want 1", r.Consumables["quality_shield"])
+	}
+
+	// Total spent
+	if r.TotalSpent != 400 {
+		t.Errorf("TotalSpent = %d, want 400", r.TotalSpent)
+	}
+
+	// Active effects
+	if len(r.ActiveEffects) != 2 {
+		t.Fatalf("ActiveEffects len = %d, want 2", len(r.ActiveEffects))
+	}
+
+	// Find xp_boost effect
+	var foundXPBoost bool
+	for _, eff := range r.ActiveEffects {
+		if eff.EffectType == "xp_boost" {
+			foundXPBoost = true
+			if eff.QuestsRemaining != 1 {
+				t.Errorf("xp_boost.QuestsRemaining = %d, want 1", eff.QuestsRemaining)
+			}
+			if eff.QuestID == nil || *eff.QuestID != questID {
+				t.Errorf("xp_boost.QuestID = %v, want %v", eff.QuestID, &questID)
+			}
+		}
+	}
+	if !foundXPBoost {
+		t.Error("xp_boost effect not found in reconstructed ActiveEffects")
+	}
+}
+
+func TestAgentRoundTrip_EmptyInventory(t *testing.T) {
+	original := &Agent{
+		ID:        AgentID("test.dev.game.board1.agent.a1"),
+		Name:      "no-items",
+		Status:    AgentIdle,
+		Level:     1,
+		CreatedAt: time.Now().Truncate(time.Second),
+		UpdatedAt: time.Now().Truncate(time.Second),
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := AgentFromEntityState(entity)
+
+	// Maps should be initialized (not nil) even with no data
+	if r.OwnedTools == nil {
+		t.Error("OwnedTools should be initialized, got nil")
+	}
+	if r.Consumables == nil {
+		t.Error("Consumables should be initialized, got nil")
+	}
+	if len(r.OwnedTools) != 0 {
+		t.Errorf("OwnedTools len = %d, want 0", len(r.OwnedTools))
+	}
+	if len(r.Consumables) != 0 {
+		t.Errorf("Consumables len = %d, want 0", len(r.Consumables))
+	}
+	if r.TotalSpent != 0 {
+		t.Errorf("TotalSpent = %d, want 0", r.TotalSpent)
+	}
+	if len(r.ActiveEffects) != 0 {
+		t.Errorf("ActiveEffects len = %d, want 0", len(r.ActiveEffects))
+	}
+}
+
 func TestQuestFromEntityState_NilReturnsNil(t *testing.T) {
 	if got := QuestFromEntityState(nil); got != nil {
 		t.Errorf("QuestFromEntityState(nil) = %v, want nil", got)

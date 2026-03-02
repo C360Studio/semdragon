@@ -23,11 +23,12 @@ import (
 
 // EntityType constants for the type part of entity IDs.
 const (
-	EntityTypeQuest  = "quest"
-	EntityTypeAgent  = "agent"
-	EntityTypeParty  = "party"
-	EntityTypeGuild  = "guild"
-	EntityTypeBattle = "battle"
+	EntityTypeQuest     = "quest"
+	EntityTypeAgent     = "agent"
+	EntityTypeParty     = "party"
+	EntityTypeGuild     = "guild"
+	EntityTypeBattle    = "battle"
+	EntityTypeStoreItem = "storeitem"
 )
 
 // BoardConfig holds the configuration for a quest board instance.
@@ -139,6 +140,11 @@ func (c *BoardConfig) GuildEntityID(instance string) string {
 // BattleEntityID generates a battle entity ID.
 func (c *BoardConfig) BattleEntityID(instance string) string {
 	return c.EntityID(EntityTypeBattle, instance)
+}
+
+// StoreItemEntityID generates a store item entity ID.
+func (c *BoardConfig) StoreItemEntityID(instance string) string {
+	return c.EntityID(EntityTypeStoreItem, instance)
 }
 
 // BucketName returns the KV bucket name for this board.
@@ -283,6 +289,11 @@ func IsGuildID(id string) bool {
 // IsBattleID checks if the entity ID is for a battle.
 func IsBattleID(id string) bool {
 	return ExtractType(id) == EntityTypeBattle
+}
+
+// IsStoreItemID checks if the entity ID is for a store item.
+func IsStoreItemID(id string) bool {
+	return ExtractType(id) == EntityTypeStoreItem
 }
 
 // =============================================================================

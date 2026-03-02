@@ -181,6 +181,17 @@ func (gc *GraphClient) GetBattle(ctx context.Context, battleID BattleID) (*graph
 	return gc.GetEntityDirect(ctx, entityID)
 }
 
+// GetStoreItem retrieves a store item by its item ID (instance portion).
+func (gc *GraphClient) GetStoreItem(ctx context.Context, itemID string) (*graph.EntityState, error) {
+	entityID := gc.config.StoreItemEntityID(itemID)
+	return gc.GetEntityDirect(ctx, entityID)
+}
+
+// ListStoreItemsByPrefix retrieves all store items on this board from KV.
+func (gc *GraphClient) ListStoreItemsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
+	return gc.ListEntitiesByType(ctx, EntityTypeStoreItem, limit)
+}
+
 // ListEntitiesByType retrieves all entities of a given type directly from the
 // ENTITY_STATES KV bucket. This reads from the source of truth without requiring
 // the graph-ingest query service to be running.

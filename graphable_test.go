@@ -101,13 +101,13 @@ func TestAgentTriples_ContainsExpectedPredicates(t *testing.T) {
 	triples := a.Triples()
 
 	expected := map[string]bool{
-		"agent.identity.name":            false,
-		"agent.identity.display_name":    false,
-		"agent.status.state":             false,
-		"agent.progression.level":        false,
-		"agent.progression.xp.current":   false,
-		"agent.progression.xp.to_level":  false,
-		"agent.progression.tier":         false,
+		"agent.identity.name":                  false,
+		"agent.identity.display_name":          false,
+		"agent.status.state":                   false,
+		"agent.progression.level":              false,
+		"agent.progression.xp.current":         false,
+		"agent.progression.xp.to_level":        false,
+		"agent.progression.tier":               false,
 		"agent.skill.code_generation.level":    false,
 		"agent.skill.code_generation.total_xp": false,
 	}
@@ -121,6 +121,92 @@ func TestAgentTriples_ContainsExpectedPredicates(t *testing.T) {
 	for pred, found := range expected {
 		if !found {
 			t.Errorf("expected predicate %q not found in agent triples", pred)
+		}
+	}
+}
+
+func TestAgentTriples_IncludesInventory(t *testing.T) {
+	questID := QuestID("test.dev.game.board1.quest.q1")
+	a := &Agent{
+		ID:     AgentID("test.dev.game.board1.agent.a1"),
+		Name:   "StoreAgent",
+		Status: AgentIdle,
+		Level:  5,
+		OwnedTools: map[string]OwnedTool{
+			"web_search": {
+				StoreItemID:   "test.dev.game.board1.storeitem.web_search",
+				XPSpent:       50,
+				UsesRemaining: -1,
+				PurchasedAt:   time.Now(),
+			},
+		},
+		Consumables: map[string]int{
+			"xp_boost": 2,
+		},
+		TotalSpent: 150,
+		ActiveEffects: []AgentEffect{
+			{EffectType: "xp_boost", QuestsRemaining: 1, QuestID: &questID},
+		},
+	}
+
+	triples := a.Triples()
+
+	expected := map[string]bool{
+		"agent.inventory.tool.web_search":              false,
+		"agent.inventory.tool.web_search.xp_spent":     false,
+		"agent.inventory.tool.web_search.uses":          false,
+		"agent.inventory.tool.web_search.purchased_at": false,
+		"agent.inventory.consumable.xp_boost":          false,
+		"agent.inventory.total_spent":                  false,
+		"agent.effects.xp_boost.remaining":             false,
+		"agent.effects.xp_boost.quest":                 false,
+	}
+
+	for _, triple := range triples {
+		if _, ok := expected[triple.Predicate]; ok {
+			expected[triple.Predicate] = true
+		}
+	}
+
+	for pred, found := range expected {
+		if !found {
+			t.Errorf("expected inventory predicate %q not found in agent triples", pred)
+		}
+	}
+
+	// Verify specific values
+	for _, triple := range triples {
+		switch triple.Predicate {
+		case "agent.inventory.tool.web_search":
+			if got := triple.Object.(string); got != "test.dev.game.board1.storeitem.web_search" {
+				t.Errorf("tool entity ref = %q, want storeitem entity ID", got)
+			}
+		case "agent.inventory.consumable.xp_boost":
+			if got := triple.Object.(int); got != 2 {
+				t.Errorf("consumable count = %d, want 2", got)
+			}
+		case "agent.inventory.total_spent":
+			if got := triple.Object.(int64); got != 150 {
+				t.Errorf("total_spent = %d, want 150", got)
+			}
+		}
+	}
+}
+
+func TestAgentTriples_EmptyInventory(t *testing.T) {
+	a := &Agent{
+		ID:     AgentID("test.dev.game.board1.agent.a1"),
+		Name:   "NoItems",
+		Status: AgentIdle,
+		Level:  1,
+	}
+
+	triples := a.Triples()
+
+	// Should NOT have inventory triples when maps are nil/empty
+	for _, triple := range triples {
+		if triple.Predicate == "agent.inventory.total_spent" {
+			t.Error("agent with zero TotalSpent should not emit agent.inventory.total_spent")
 		}
 	}
 }
@@ -146,15 +232,15 @@ func TestBattleTriples_WithVerdict(t *testing.T) {
 	triples := b.Triples()
 
 	expected := map[string]bool{
-		"battle.assignment.quest":     false,
-		"battle.assignment.agent":     false,
-		"battle.status.state":         false,
-		"battle.review.level":         false,
-		"battle.verdict.passed":       false,
-		"battle.verdict.score":        false,
-		"battle.verdict.xp_awarded":   false,
-		"battle.verdict.feedback":     false,
-		"battle.lifecycle.started_at":  false,
+		"battle.assignment.quest":       false,
+		"battle.assignment.agent":       false,
+		"battle.status.state":           false,
+		"battle.review.level":           false,
+		"battle.verdict.passed":         false,
+		"battle.verdict.score":          false,
+		"battle.verdict.xp_awarded":     false,
+		"battle.verdict.feedback":       false,
+		"battle.lifecycle.started_at":   false,
 		"battle.lifecycle.completed_at": false,
 	}
 

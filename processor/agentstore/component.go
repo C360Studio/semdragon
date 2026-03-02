@@ -234,14 +234,18 @@ func (c *Component) Start(ctx context.Context) error {
 		return errors.New("component already running")
 	}
 
-	// Load default catalog (tools + consumables)
+	// Load default catalog (tools + consumables) and seed to KV
 	for _, item := range DefaultCatalog() {
 		item := item // copy for pointer stability
+		item.BoardConfig = c.boardConfig
 		c.catalog.Store(item.ID, &item)
 	}
 
 	// Create graph client for entity state reads
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
+
+	// Seed catalog items to KV so other processors can read them
+	c.seedCatalogToKV(ctx)
 
 	// Start KV watcher for agent entity state (entity-centric: XP changes are facts)
 	watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeAgent)
@@ -299,6 +303,20 @@ func (c *Component) Stop(timeout time.Duration) error {
 	c.logger.Info("agent_store component stopped")
 
 	return nil
+}
+
+// seedCatalogToKV writes all catalog items to KV as storeitem entities.
+// This makes store items queryable by other processors via graph.GetEntityDirect.
+func (c *Component) seedCatalogToKV(ctx context.Context) {
+	c.catalog.Range(func(_, value any) bool {
+		item := value.(*StoreItem)
+		if err := c.graph.EmitEntityUpdate(ctx, item, "store.item.listed"); err != nil {
+			c.logger.Warn("failed to seed store item to KV",
+				"item_id", item.ID,
+				"error", err)
+		}
+		return true
+	})
 }
 
 // BoardConfig returns the board configuration.

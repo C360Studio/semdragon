@@ -230,6 +230,48 @@ func (a *Agent) Triples() []message.Triple {
 		})
 	}
 
+	// Owned tools — each tool creates a relationship edge to its storeitem entity
+	for itemID, tool := range a.OwnedTools {
+		prefix := fmt.Sprintf("agent.inventory.tool.%s", itemID)
+		triples = append(triples,
+			message.Triple{Subject: entityID, Predicate: prefix, Object: tool.StoreItemID, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".xp_spent", Object: tool.XPSpent, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".uses", Object: tool.UsesRemaining, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".purchased_at", Object: tool.PurchasedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		)
+	}
+
+	// Consumables — count owned per item
+	for itemID, count := range a.Consumables {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: fmt.Sprintf("agent.inventory.consumable.%s", itemID), Object: count,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	// Total XP spent in store
+	if a.TotalSpent > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "agent.inventory.total_spent", Object: a.TotalSpent,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	// Active consumable effects
+	for _, eff := range a.ActiveEffects {
+		prefix := fmt.Sprintf("agent.effects.%s", eff.EffectType)
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: prefix + ".remaining", Object: eff.QuestsRemaining,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+		if eff.QuestID != nil {
+			triples = append(triples, message.Triple{
+				Subject: entityID, Predicate: prefix + ".quest", Object: string(*eff.QuestID),
+				Source: source, Timestamp: now, Confidence: 1.0,
+			})
+		}
+	}
+
 	return triples
 }
 
