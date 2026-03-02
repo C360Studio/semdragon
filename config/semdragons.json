@@ -31,5 +31,145 @@
         "max_entities": 1000
       }
     }
+  },
+  "streams": {
+    "GRAPH": {
+      "subjects": [
+        "graph.ingest.entity",
+        "graph.export.>"
+      ],
+      "max_age": "24h",
+      "storage": "file",
+      "replicas": 1
+    }
+  },
+  "components": {
+    "graph-ingest": {
+      "type": "processor",
+      "name": "graph-ingest",
+      "enabled": true,
+      "config": {
+        "ports": {
+          "inputs": [{
+            "name": "entities_in",
+            "subject": "graph.ingest.entity",
+            "type": "jetstream",
+            "stream_name": "GRAPH"
+          }],
+          "outputs": [{
+            "name": "entity_states",
+            "subject": "ENTITY_STATES",
+            "type": "kv-write"
+          }]
+        },
+        "enable_hierarchy": true
+      }
+    },
+    "graph-index": {
+      "type": "processor",
+      "name": "graph-index",
+      "enabled": true,
+      "config": {
+        "ports": {
+          "inputs": [{
+            "name": "entity_watch",
+            "subject": "ENTITY_STATES",
+            "type": "kv-watch"
+          }],
+          "outputs": [
+            {"name": "outgoing_index", "subject": "OUTGOING_INDEX", "type": "kv"},
+            {"name": "incoming_index", "subject": "INCOMING_INDEX", "type": "kv"},
+            {"name": "alias_index", "subject": "ALIAS_INDEX", "type": "kv"},
+            {"name": "predicate_index", "subject": "PREDICATE_INDEX", "type": "kv"}
+          ]
+        },
+        "workers": 2,
+        "batch_size": 50
+      }
+    },
+    "graph-query": {
+      "type": "processor",
+      "name": "graph-query",
+      "enabled": true,
+      "config": {
+        "ports": {
+          "inputs": [{
+            "name": "query_requests",
+            "subject": "graph.query.>",
+            "type": "nats-request"
+          }],
+          "outputs": []
+        },
+        "request_timeout": "5s",
+        "max_traversal_depth": 5,
+        "max_traversal_nodes": 100
+      }
+    },
+    "questboard": {
+      "type": "processor",
+      "name": "questboard",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "default_max_attempts": 3,
+        "enable_evaluation": true
+      }
+    },
+    "bossbattle": {
+      "type": "processor",
+      "name": "bossbattle",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "auto_start_on_submit": true,
+        "max_concurrent": 10
+      }
+    },
+    "agent_progression": {
+      "type": "processor",
+      "name": "agent_progression",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1"
+      }
+    },
+    "agent_store": {
+      "type": "processor",
+      "name": "agent_store",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "enable_guild_discounts": true,
+        "default_rental_uses": 10
+      }
+    },
+    "guildformation": {
+      "type": "processor",
+      "name": "guildformation",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1"
+      }
+    },
+    "boidengine": {
+      "type": "processor",
+      "name": "boidengine",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1"
+      }
+    }
   }
 }
