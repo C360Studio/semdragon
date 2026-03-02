@@ -16,6 +16,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
+	"github.com/c360studio/semdragons/processor/guildformation"
 )
 
 // =============================================================================
@@ -678,13 +679,12 @@ func TestAutonomousIdleShopping(t *testing.T) {
 	config.IdleIntervalMs = 200
 	config.MinXPSurplusForShopping = 50
 
-	comp := setupComponentWithConfig(t, client, config)
-	defer comp.Stop(5 * time.Second)
-
-	// Set up agentstore alongside autonomy
+	// Set up agentstore alongside autonomy — inject before Start
 	store := setupStoreComponent(t, client, "idleshop")
 	defer store.Stop(5 * time.Second)
-	comp.SetStore(store)
+
+	comp := setupComponentWithDeps(t, client, config, store, nil)
+	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
@@ -739,14 +739,13 @@ func TestAutonomousCooldownSkip(t *testing.T) {
 	config.Board = "cdskip"
 	config.InitialDelayMs = 100
 	config.CooldownIntervalMs = 200
-	config.CooldownSkipMinRemaining = 30 * time.Second
-
-	comp := setupComponentWithConfig(t, client, config)
-	defer comp.Stop(5 * time.Second)
+	config.CooldownSkipMinRemainingMs = 30000
 
 	store := setupStoreComponent(t, client, "cdskip")
 	defer store.Stop(5 * time.Second)
-	comp.SetStore(store)
+
+	comp := setupComponentWithDeps(t, client, config, store, nil)
+	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
@@ -809,12 +808,11 @@ func TestAutonomousConsumableUse_InBattle(t *testing.T) {
 	config.InitialDelayMs = 100
 	config.InBattleIntervalMs = 200
 
-	comp := setupComponentWithConfig(t, client, config)
-	defer comp.Stop(5 * time.Second)
-
 	store := setupStoreComponent(t, client, "battleuse")
 	defer store.Stop(5 * time.Second)
-	comp.SetStore(store)
+
+	comp := setupComponentWithDeps(t, client, config, store, nil)
+	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
@@ -870,12 +868,11 @@ func TestNoShoppingWhenNoSurplus(t *testing.T) {
 	config.IdleIntervalMs = 200
 	config.MinXPSurplusForShopping = 50
 
-	comp := setupComponentWithConfig(t, client, config)
-	defer comp.Stop(5 * time.Second)
-
 	store := setupStoreComponent(t, client, "nosurplus")
 	defer store.Stop(5 * time.Second)
-	comp.SetStore(store)
+
+	comp := setupComponentWithDeps(t, client, config, store, nil)
+	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
@@ -912,6 +909,259 @@ func TestNoShoppingWhenNoSurplus(t *testing.T) {
 	}
 	if updated.TotalSpent != 0 {
 		t.Errorf("TotalSpent = %d, want 0 (no surplus to shop with)", updated.TotalSpent)
+	}
+}
+
+// =============================================================================
+// AUTONOMOUS GUILD JOINING TESTS
+// =============================================================================
+
+func TestAutonomousGuildJoining(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "guildjoin"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.GuildJoinMinLevel = 3
+
+	guilds := setupGuildComponent(t, client, "guildjoin")
+	defer guilds.Stop(5 * time.Second)
+
+	// SetGuilds must be called before Start (rejected while running).
+	comp := setupComponentWithDeps(t, client, config, nil, guilds)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create a guild to join
+	guild, err := guilds.CreateGuild(ctx, guildformation.CreateGuildParams{
+		Name:      "Test Guild Alpha",
+		Culture:   "Test culture",
+		FounderID: "test.integration.game.guildjoin.agent.founder",
+		MinLevel:  1,
+	})
+	if err != nil {
+		t.Fatalf("CreateGuild failed: %v", err)
+	}
+
+	// Create idle, unguilded agent at level 5 (above GuildJoinMinLevel=3)
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "guild-joiner",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for the agent to autonomously join the guild
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for autonomous guild join")
+		case <-time.After(100 * time.Millisecond):
+			agentGuilds := guilds.GetAgentGuilds(domain.AgentID(agentID))
+			if len(agentGuilds) > 0 {
+				// Verify they joined the correct guild
+				found := false
+				for _, g := range agentGuilds {
+					if g == domain.GuildID(guild.ID) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("agent joined wrong guild, got %v, want %v", agentGuilds, guild.ID)
+				}
+				return
+			}
+		}
+	}
+}
+
+func TestNoGuildJoiningBelowMinLevel(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "guildlowlvl"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.GuildJoinMinLevel = 10 // High threshold
+
+	guilds := setupGuildComponent(t, client, "guildlowlvl")
+	defer guilds.Stop(5 * time.Second)
+
+	comp := setupComponentWithDeps(t, client, config, nil, guilds)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create a guild
+	if _, err := guilds.CreateGuild(ctx, guildformation.CreateGuildParams{
+		Name:      "High Level Guild",
+		Culture:   "Veterans only",
+		FounderID: "test.integration.game.guildlowlvl.agent.founder",
+		MinLevel:  1,
+	}); err != nil {
+		t.Fatalf("CreateGuild failed: %v", err)
+	}
+
+	// Create low-level agent (level 3 < GuildJoinMinLevel 10)
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "lowlevel-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     3,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for several heartbeats — agent should NOT join
+	time.Sleep(800 * time.Millisecond)
+
+	agentGuilds := guilds.GetAgentGuilds(domain.AgentID(agentID))
+	if len(agentGuilds) > 0 {
+		t.Errorf("agent at level 3 should not join guild (min level = 10), but joined %v", agentGuilds)
+	}
+}
+
+func TestNoGuildJoiningAtMaxGuilds(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "guildmax"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.GuildJoinMinLevel = 1
+	config.MaxGuildsPerAgent = 1 // Max 1 guild
+
+	guilds := setupGuildComponent(t, client, "guildmax")
+	defer guilds.Stop(5 * time.Second)
+
+	comp := setupComponentWithDeps(t, client, config, nil, guilds)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create two guilds
+	if _, err := guilds.CreateGuild(ctx, guildformation.CreateGuildParams{
+		Name:      "Guild One",
+		Culture:   "First guild",
+		FounderID: "test.integration.game.guildmax.agent.founder1",
+		MinLevel:  1,
+	}); err != nil {
+		t.Fatalf("CreateGuild 1 failed: %v", err)
+	}
+	if _, err := guilds.CreateGuild(ctx, guildformation.CreateGuildParams{
+		Name:      "Guild Two",
+		Culture:   "Second guild",
+		FounderID: "test.integration.game.guildmax.agent.founder2",
+		MinLevel:  1,
+	}); err != nil {
+		t.Fatalf("CreateGuild 2 failed: %v", err)
+	}
+
+	// Create agent already in 1 guild (at max)
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "maxguild-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		Guilds:    []semdragons.GuildID{"existing-guild"}, // already at max (1)
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for several heartbeats — agent should NOT join another guild
+	time.Sleep(800 * time.Millisecond)
+
+	agentGuilds := guilds.GetAgentGuilds(domain.AgentID(agentID))
+	if len(agentGuilds) > 0 {
+		t.Errorf("agent at MaxGuildsPerAgent should not join more guilds, but joined %v", agentGuilds)
+	}
+}
+
+func TestNoGuildJoiningWithoutComponent(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "noguildcomp"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+	// No SetGuilds call — guilds remains nil
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create idle agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "no-guild-comp-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     10,
+		Tier:      semdragons.TierJourneyman,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for several heartbeats — no panics, no errors
+	time.Sleep(800 * time.Millisecond)
+
+	// Component should still be healthy
+	health := comp.Health()
+	if !health.Healthy {
+		t.Error("component should remain healthy with nil guilds component")
 	}
 }
 
@@ -973,7 +1223,32 @@ func TestNoShoppingWithoutStore(t *testing.T) {
 // HELPERS
 // =============================================================================
 
+// setupGuildComponent creates and starts a guildformation component for integration tests.
+func setupGuildComponent(t *testing.T, client *natsclient.Client, board string) *guildformation.Component {
+	t.Helper()
+
+	deps := component.Dependencies{NATSClient: client}
+	guildCfg := guildformation.DefaultConfig()
+	guildCfg.Org = "test"
+	guildCfg.Platform = "integration"
+	guildCfg.Board = board
+	guildCfg.EnableAutoFormation = false // No KV watcher needed; only CRUD operations
+
+	gc, err := guildformation.NewFromConfig(guildCfg, deps)
+	if err != nil {
+		t.Fatalf("guildformation NewFromConfig failed: %v", err)
+	}
+	if err := gc.Initialize(); err != nil {
+		t.Fatalf("guildformation Initialize failed: %v", err)
+	}
+	if err := gc.Start(context.Background()); err != nil {
+		t.Fatalf("guildformation Start failed: %v", err)
+	}
+	return gc
+}
+
 // setupStoreComponent creates and starts an agentstore component for integration tests.
+// Ensures the board-specific KV bucket exists before Start (required for WatchEntityType).
 func setupStoreComponent(t *testing.T, client *natsclient.Client, board string) *agentstore.Component {
 	t.Helper()
 
@@ -990,6 +1265,14 @@ func setupStoreComponent(t *testing.T, client *natsclient.Client, board string) 
 	if err := store.Initialize(); err != nil {
 		t.Fatalf("agentstore Initialize failed: %v", err)
 	}
+
+	// Ensure board-specific KV bucket exists before Start
+	boardCfg := &domain.BoardConfig{Org: "test", Platform: "integration", Board: board}
+	gc := semdragons.NewGraphClient(client, boardCfg)
+	if err := gc.EnsureBucket(context.Background()); err != nil {
+		t.Fatalf("EnsureBucket for agentstore failed: %v", err)
+	}
+
 	if err := store.Start(context.Background()); err != nil {
 		t.Fatalf("agentstore Start failed: %v", err)
 	}
@@ -1025,6 +1308,41 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 	config.Board = name
 
 	return setupComponentWithConfig(t, client, config)
+}
+
+// setupComponentWithDeps creates a component with store and/or guilds injected BEFORE Start.
+// SetStore/SetGuilds must be called before Start because the running guard rejects them.
+func setupComponentWithDeps(t *testing.T, client *natsclient.Client, config Config, store *agentstore.Component, guilds *guildformation.Component) *Component {
+	t.Helper()
+
+	deps := component.Dependencies{NATSClient: client}
+	ctx := context.Background()
+
+	comp, err := NewFromConfig(config, deps)
+	if err != nil {
+		t.Fatalf("NewFromConfig failed: %v", err)
+	}
+	if err := comp.Initialize(); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+	if err := gc.EnsureBucket(ctx); err != nil {
+		t.Fatalf("EnsureBucket failed: %v", err)
+	}
+
+	// Inject dependencies BEFORE Start
+	if store != nil {
+		comp.SetStore(store)
+	}
+	if guilds != nil {
+		comp.SetGuilds(guilds)
+	}
+
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	return comp
 }
 
 func setupComponentWithConfig(t *testing.T, client *natsclient.Client, config Config) *Component {

@@ -11,6 +11,12 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+// Sentinel errors for guild operations.
+var (
+	ErrAlreadyMember = errors.New("already a member")
+	ErrGuildFull     = errors.New("guild is full")
+)
+
 // =============================================================================
 // KV WATCH HANDLER - Entity-centric agent state monitoring
 // =============================================================================
@@ -144,8 +150,8 @@ func (c *Component) evaluateAutoFormation(trigger *semdragons.Agent) {
 	defer cancel()
 
 	guild, err := c.CreateGuild(ctx, CreateGuildParams{
-		Name:     generateGuildName(trigger),
-		Culture:  "Founded through demonstrated expertise",
+		Name:      generateGuildName(trigger),
+		Culture:   "Founded through demonstrated expertise",
 		FounderID: trigger.ID,
 		MinLevel:  1,
 	})
@@ -332,12 +338,12 @@ func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agent
 
 	// Check if already a member
 	if isMember(guild, semdragons.AgentID(agentID)) {
-		return errors.New("already a member")
+		return ErrAlreadyMember
 	}
 
 	// Check max size
 	if c.config.MaxGuildSize > 0 && len(guild.Members) >= c.config.MaxGuildSize {
-		return errors.New("guild is full")
+		return ErrGuildFull
 	}
 
 	now := time.Now()
@@ -550,13 +556,17 @@ func (c *Component) GetAgentGuilds(agentID domain.AgentID) []domain.GuildID {
 	return val.([]domain.GuildID)
 }
 
-// ListGuilds returns all active guilds.
+// ListGuilds returns all active guilds as shallow copies with independent
+// Members and QuestTypes slices, safe for concurrent read without locks.
 func (c *Component) ListGuilds() []*semdragons.Guild {
 	var guilds []*semdragons.Guild
 	c.guilds.Range(func(_, value any) bool {
-		guild := value.(*semdragons.Guild)
-		if guild.Status == domain.GuildActive {
-			guilds = append(guilds, guild)
+		original := value.(*semdragons.Guild)
+		if original.Status == domain.GuildActive {
+			cp := *original
+			cp.Members = append([]semdragons.GuildMember(nil), original.Members...)
+			cp.QuestTypes = append([]string(nil), original.QuestTypes...)
+			guilds = append(guilds, &cp)
 		}
 		return true
 	})

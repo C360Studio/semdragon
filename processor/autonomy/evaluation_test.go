@@ -2,12 +2,15 @@ package autonomy
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
+	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semstreams/component"
 )
 
@@ -45,7 +48,7 @@ func TestActionsForState_Idle(t *testing.T) {
 func TestActionsForState_OnQuest(t *testing.T) {
 	c := newTestComponent()
 	actions := c.actionsForState(semdragons.AgentOnQuest)
-	want := []string{"shop_strategic", "use_consumable", "join_guild"}
+	want := []string{"shop_strategic", "use_consumable"}
 
 	if len(actions) != len(want) {
 		t.Fatalf("on_quest actions: got %d, want %d", len(actions), len(want))
@@ -105,7 +108,7 @@ func TestActions_ReturnFalseWithoutStore(t *testing.T) {
 		c.shopStrategicAction(),
 		c.useConsumableAction(),
 		c.useCooldownSkipAction(),
-		c.joinGuildAction(), // still a stub
+		c.joinGuildAction(), // nil guilds guard
 	}
 
 	agent := &semdragons.Agent{
@@ -797,6 +800,17 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.CooldownSkipMinRemainingMs != 30000 {
 		t.Errorf("CooldownSkipMinRemainingMs = %d, want 30000", cfg.CooldownSkipMinRemainingMs)
 	}
+
+	// Guild config defaults
+	if cfg.MaxGuildsPerAgent != 3 {
+		t.Errorf("MaxGuildsPerAgent = %d, want 3", cfg.MaxGuildsPerAgent)
+	}
+	if cfg.GuildJoinMinLevel != 3 {
+		t.Errorf("GuildJoinMinLevel = %d, want 3", cfg.GuildJoinMinLevel)
+	}
+	if cfg.GuildSuggestionsN != 5 {
+		t.Errorf("GuildSuggestionsN = %d, want 5", cfg.GuildSuggestionsN)
+	}
 }
 
 func TestBackoffOnlyIdle(t *testing.T) {
@@ -948,6 +962,16 @@ func TestComponent_ConfigSchema(t *testing.T) {
 	for _, prop := range shoppingProps {
 		if _, ok := schema.Properties[prop]; !ok {
 			t.Errorf("missing shopping property %q in ConfigSchema", prop)
+		}
+	}
+
+	// Check guild properties exist
+	guildProps := []string{
+		"max_guilds_per_agent", "guild_join_min_level", "guild_suggestions_n",
+	}
+	for _, prop := range guildProps {
+		if _, ok := schema.Properties[prop]; !ok {
+			t.Errorf("missing guild property %q in ConfigSchema", prop)
 		}
 	}
 }
@@ -1213,5 +1237,440 @@ func TestActionsForState_Unknown(t *testing.T) {
 	actions := c.actionsForState("some_unknown_status")
 	if actions != nil {
 		t.Errorf("unknown status actions: got %v, want nil", actions)
+	}
+}
+
+// =============================================================================
+// GUILD JOINING TESTS
+// =============================================================================
+
+// newTestComponentWithGuilds creates a Component with a non-nil guilds for unit tests.
+// The guilds component is a zero-value guildformation.Component — only GetAgentGuilds()
+// and ListGuilds() are safe to call on it (they use sync.Map zero-value semantics).
+func newTestComponentWithGuilds() *Component {
+	cfg := DefaultConfig()
+	return &Component{
+		config:   &cfg,
+		trackers: make(map[string]*agentTracker),
+		guilds:   &guildformation.Component{},
+	}
+}
+
+func TestJoinGuild_ShouldExecute_IdleUnguilded(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	act := c.joinGuildAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.guild1",
+		Status: semdragons.AgentIdle,
+		Level:  5, // above GuildJoinMinLevel (3)
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when idle, meets level, and unguilded")
+	}
+}
+
+func TestJoinGuild_ShouldExecute_CooldownUnguilded(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	act := c.joinGuildAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.guild2",
+		Status: semdragons.AgentCooldown,
+		Level:  5,
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when on cooldown, meets level, and unguilded")
+	}
+}
+
+func TestJoinGuild_ShouldExecute_OnQuest(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	act := c.joinGuildAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.guild3",
+		Status: semdragons.AgentOnQuest,
+		Level:  5,
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when on_quest (wrong status)")
+	}
+}
+
+func TestJoinGuild_ShouldExecute_InBattle(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	act := c.joinGuildAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.guild4",
+		Status: semdragons.AgentInBattle,
+		Level:  5,
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when in_battle")
+	}
+}
+
+func TestJoinGuild_ShouldExecute_NilGuilds(t *testing.T) {
+	c := newTestComponent() // no guilds component
+	act := c.joinGuildAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.guild5",
+		Status: semdragons.AgentIdle,
+		Level:  10,
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when guilds component is nil")
+	}
+}
+
+func TestJoinGuild_ShouldExecute_BelowMinLevel(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	act := c.joinGuildAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.guild6",
+		Status: semdragons.AgentIdle,
+		Level:  1, // below GuildJoinMinLevel (3)
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when agent level below GuildJoinMinLevel")
+	}
+}
+
+func TestJoinGuild_ShouldExecute_AtMinLevel(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	act := c.joinGuildAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.guild7",
+		Status: semdragons.AgentIdle,
+		Level:  3, // exactly at GuildJoinMinLevel (3)
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when agent level equals GuildJoinMinLevel")
+	}
+}
+
+func TestJoinGuild_ShouldExecute_MaxGuildsReached(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	act := c.joinGuildAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.guild8",
+		Status: semdragons.AgentIdle,
+		Level:  5,
+		Guilds: []semdragons.GuildID{"guild1", "guild2", "guild3"}, // 3 = MaxGuildsPerAgent
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when agent already at MaxGuildsPerAgent")
+	}
+}
+
+// =============================================================================
+// GUILD SCORING TESTS
+// =============================================================================
+
+func TestScoreGuilds_FiltersFullGuilds(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	agent := &semdragons.Agent{
+		ID:    "test.local.game.board1.agent.score1",
+		Level: 5,
+	}
+	guilds := []*semdragons.Guild{
+		{
+			ID:         "guild.full",
+			Name:       "Full Guild",
+			Status:     "active",
+			MaxMembers: 2,
+			Members:    []semdragons.GuildMember{{}, {}}, // full
+			Reputation: 0.9,
+		},
+	}
+	result := c.scoreGuilds(agent, guilds, nil)
+	if len(result) != 0 {
+		t.Errorf("scoreGuilds should filter full guilds, got %d results", len(result))
+	}
+}
+
+func TestScoreGuilds_FiltersBelowMinLevel(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	agent := &semdragons.Agent{
+		ID:    "test.local.game.board1.agent.score2",
+		Level: 3,
+	}
+	guilds := []*semdragons.Guild{
+		{
+			ID:         "guild.highlevel",
+			Name:       "High Level Guild",
+			Status:     "active",
+			MinLevel:   10, // agent is level 3
+			MaxMembers: 20,
+			Reputation: 0.9,
+		},
+	}
+	result := c.scoreGuilds(agent, guilds, nil)
+	if len(result) != 0 {
+		t.Errorf("scoreGuilds should filter guilds requiring higher level, got %d results", len(result))
+	}
+}
+
+func TestScoreGuilds_FiltersExistingMembers(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	agent := &semdragons.Agent{
+		ID:    "test.local.game.board1.agent.score3",
+		Level: 5,
+	}
+	guilds := []*semdragons.Guild{
+		{
+			ID:         "guild.already",
+			Name:       "Already Member",
+			Status:     "active",
+			MaxMembers: 20,
+			Reputation: 0.9,
+		},
+	}
+	currentGuilds := []domain.GuildID{"guild.already"}
+	result := c.scoreGuilds(agent, guilds, currentGuilds)
+	if len(result) != 0 {
+		t.Errorf("scoreGuilds should filter guilds agent is already in, got %d results", len(result))
+	}
+}
+
+func TestScoreGuilds_RanksByScore(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	agent := &semdragons.Agent{
+		ID:    "test.local.game.board1.agent.score4",
+		Level: 5,
+	}
+	guilds := []*semdragons.Guild{
+		{
+			ID:          "guild.low",
+			Name:        "Low Rep",
+			Status:      "active",
+			MaxMembers:  20,
+			Reputation:  0.1,
+			SuccessRate: 0.1,
+		},
+		{
+			ID:          "guild.high",
+			Name:        "High Rep",
+			Status:      "active",
+			MaxMembers:  20,
+			Reputation:  0.9,
+			SuccessRate: 0.9,
+		},
+	}
+	result := c.scoreGuilds(agent, guilds, nil)
+	if len(result) != 2 {
+		t.Fatalf("scoreGuilds should return 2 results, got %d", len(result))
+	}
+	if result[0].GuildID != "guild.high" {
+		t.Errorf("highest-scored guild should be first, got %q", result[0].GuildID)
+	}
+	if result[0].Score <= result[1].Score {
+		t.Errorf("first guild score (%.3f) should be > second (%.3f)", result[0].Score, result[1].Score)
+	}
+}
+
+func TestScoreGuilds_ReturnsTopN(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.GuildSuggestionsN = 2 // only return top 2
+	c := &Component{
+		config:   &cfg,
+		trackers: make(map[string]*agentTracker),
+		guilds:   &guildformation.Component{},
+	}
+	agent := &semdragons.Agent{
+		ID:    "test.local.game.board1.agent.score5",
+		Level: 5,
+	}
+	guilds := make([]*semdragons.Guild, 5)
+	for i := range guilds {
+		guilds[i] = &semdragons.Guild{
+			ID:         semdragons.GuildID(fmt.Sprintf("guild.%d", i)),
+			Name:       fmt.Sprintf("Guild %d", i),
+			Status:     "active",
+			MaxMembers: 20,
+			Reputation: float64(i) * 0.2,
+		}
+	}
+	result := c.scoreGuilds(agent, guilds, nil)
+	if len(result) != 2 {
+		t.Errorf("scoreGuilds should return top %d, got %d", cfg.GuildSuggestionsN, len(result))
+	}
+}
+
+func TestScoreGuilds_EmptyList(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	agent := &semdragons.Agent{
+		ID:    "test.local.game.board1.agent.score6",
+		Level: 5,
+	}
+	result := c.scoreGuilds(agent, nil, nil)
+	if len(result) != 0 {
+		t.Errorf("scoreGuilds should return empty for nil guilds, got %d", len(result))
+	}
+}
+
+func TestScoreGuilds_SkillAffinity(t *testing.T) {
+	c := newTestComponentWithGuilds()
+	agent := &semdragons.Agent{
+		ID:    "test.local.game.board1.agent.score7",
+		Level: 5,
+		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+			"analysis":  {},
+			"synthesis": {},
+		},
+	}
+	guilds := []*semdragons.Guild{
+		{
+			ID:          "guild.match",
+			Name:        "Matching Guild",
+			Status:      "active",
+			MaxMembers:  20,
+			Reputation:  0.5,
+			SuccessRate: 0.5,
+			QuestTypes:  []string{"analysis", "synthesis"}, // full overlap
+		},
+		{
+			ID:          "guild.nomatch",
+			Name:        "No Match Guild",
+			Status:      "active",
+			MaxMembers:  20,
+			Reputation:  0.5,
+			SuccessRate: 0.5,
+			QuestTypes:  []string{"combat", "exploration"}, // no overlap
+		},
+	}
+	result := c.scoreGuilds(agent, guilds, nil)
+	if len(result) != 2 {
+		t.Fatalf("scoreGuilds should return 2 results, got %d", len(result))
+	}
+	// Matching guild should score higher due to skill affinity
+	if result[0].GuildID != "guild.match" {
+		t.Errorf("guild with matching quest types should rank first, got %q", result[0].GuildID)
+	}
+}
+
+// =============================================================================
+// GUILD SCORING HELPER TESTS
+// =============================================================================
+
+func TestGuildSkillAffinity_FullOverlap(t *testing.T) {
+	agent := &semdragons.Agent{
+		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+			"analysis": {},
+		},
+	}
+	guild := &semdragons.Guild{
+		QuestTypes: []string{"analysis"},
+	}
+	got := guildSkillAffinity(agent, guild)
+	if got != 1.0 {
+		t.Errorf("guildSkillAffinity = %.2f, want 1.0 for full overlap", got)
+	}
+}
+
+func TestGuildSkillAffinity_NoOverlap(t *testing.T) {
+	agent := &semdragons.Agent{
+		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+			"analysis": {},
+		},
+	}
+	guild := &semdragons.Guild{
+		QuestTypes: []string{"combat"},
+	}
+	got := guildSkillAffinity(agent, guild)
+	if got != 0.0 {
+		t.Errorf("guildSkillAffinity = %.2f, want 0.0 for no overlap", got)
+	}
+}
+
+func TestGuildSkillAffinity_PartialOverlap(t *testing.T) {
+	agent := &semdragons.Agent{
+		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+			"analysis":  {},
+			"synthesis": {},
+		},
+	}
+	guild := &semdragons.Guild{
+		QuestTypes: []string{"analysis", "combat"},
+	}
+	got := guildSkillAffinity(agent, guild)
+	if got != 0.5 {
+		t.Errorf("guildSkillAffinity = %.2f, want 0.5 for partial overlap", got)
+	}
+}
+
+func TestGuildSkillAffinity_NoQuestTypes(t *testing.T) {
+	agent := &semdragons.Agent{
+		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+			"analysis": {},
+		},
+	}
+	guild := &semdragons.Guild{} // no QuestTypes
+	got := guildSkillAffinity(agent, guild)
+	if got != 0.5 {
+		t.Errorf("guildSkillAffinity = %.2f, want 0.5 (neutral) for empty QuestTypes", got)
+	}
+}
+
+func TestGuildSkillAffinity_NoAgentSkills(t *testing.T) {
+	agent := &semdragons.Agent{} // no skills
+	guild := &semdragons.Guild{
+		QuestTypes: []string{"analysis"},
+	}
+	got := guildSkillAffinity(agent, guild)
+	if got != 0.0 {
+		t.Errorf("guildSkillAffinity = %.2f, want 0.0 for agent with no skills", got)
+	}
+}
+
+func TestScoreGuild_HighReputation(t *testing.T) {
+	agent := &semdragons.Agent{Level: 5}
+	guild := &semdragons.Guild{
+		Reputation:  0.9,
+		SuccessRate: 0.5,
+		MaxMembers:  20,
+		Members:     []semdragons.GuildMember{{}}, // 1 member, 19 open
+	}
+	score, reason := scoreGuild(agent, guild)
+	if score <= 0 {
+		t.Errorf("scoreGuild should return positive score, got %.3f", score)
+	}
+	if reason == "" {
+		t.Error("scoreGuild should return a non-empty reason")
+	}
+}
+
+func TestScoreGuild_NoCapacity(t *testing.T) {
+	agent := &semdragons.Agent{Level: 5}
+	guild := &semdragons.Guild{
+		Reputation: 0.5,
+		MaxMembers: 0, // no cap
+	}
+	score, _ := scoreGuild(agent, guild)
+	// With no cap, capacity factor = 1.0
+	if score <= 0 {
+		t.Errorf("scoreGuild should return positive score with no member cap, got %.3f", score)
 	}
 }

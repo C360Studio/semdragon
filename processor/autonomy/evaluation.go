@@ -185,7 +185,6 @@ func (c *Component) actionsForState(status semdragons.AgentStatus) []action {
 		return []action{
 			c.shopStrategicAction(),
 			c.useConsumableAction(),
-			c.joinGuildAction(),
 		}
 	case semdragons.AgentInBattle:
 		return []action{

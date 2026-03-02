@@ -3,10 +3,15 @@ package autonomy
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/guildformation"
 )
 
 // errNoViableClaim is returned by executeClaimQuest when all suggestions were
@@ -436,12 +441,216 @@ func pickBestItem(agent *semdragons.Agent, items []agentstore.StoreItem, budget 
 	return bestConsumable
 }
 
-// joinGuildAction returns a stub for joining a guild.
-// TODO: Implement in Phase 4 — evaluate guild suggestions, auto-join.
+// joinGuildAction returns the action for autonomously joining guilds.
+// The agent evaluates N guild choices scored by reputation, success rate,
+// capacity, and skill affinity, then joins the highest-scored option.
+// Only fires when idle or on cooldown, unguilded (or below max), and meets
+// the minimum level threshold.
 func (c *Component) joinGuildAction() action {
 	return action{
-		name:          "join_guild",
-		shouldExecute: func(*semdragons.Agent, *agentTracker) bool { return false },
-		execute:       nil,
+		name: "join_guild",
+		shouldExecute: func(agent *semdragons.Agent, _ *agentTracker) bool {
+			if c.guilds == nil {
+				return false
+			}
+			if agent.Level < c.config.GuildJoinMinLevel {
+				return false
+			}
+			if agent.Status != semdragons.AgentIdle && agent.Status != semdragons.AgentCooldown {
+				return false
+			}
+			// Use agent entity's Guilds field (from KV snapshot) for the guard.
+			// Agent.Guilds may be stale since JoinGuild doesn't update the agent entity,
+			// but executeJoinGuild filters out already-joined guilds via GetAgentGuilds
+			// and handles "already a member" errors gracefully.
+			return len(agent.Guilds) < c.config.MaxGuildsPerAgent
+		},
+		execute: func(ctx context.Context, agent *semdragons.Agent, _ *agentTracker) error {
+			return c.executeJoinGuild(ctx, agent)
+		},
 	}
+}
+
+// executeJoinGuild scores available guilds and joins the best match.
+// Logs all N choices for observability before picking.
+func (c *Component) executeJoinGuild(ctx context.Context, agent *semdragons.Agent) error {
+	allGuilds := c.guilds.ListGuilds()
+	currentGuildIDs := c.guilds.GetAgentGuilds(domain.AgentID(agent.ID))
+
+	suggestions := c.scoreGuilds(agent, allGuilds, currentGuildIDs)
+	if len(suggestions) == 0 {
+		return nil
+	}
+
+	// Log all evaluated choices for observability
+	for i, s := range suggestions {
+		c.logger.Debug("guild suggestion evaluated",
+			"agent_id", agent.ID,
+			"rank", i+1,
+			"guild_id", s.GuildID,
+			"guild_name", s.GuildName,
+			"score", fmt.Sprintf("%.3f", s.Score),
+			"reason", s.Reason)
+	}
+
+	// Pick the best (index 0 — sorted descending by score)
+	best := suggestions[0]
+	if err := c.guilds.JoinGuild(ctx, domain.GuildID(best.GuildID), domain.AgentID(agent.ID)); err != nil {
+		// "Already a member" means the KV agent snapshot was stale — not a real error.
+		// "Guild is full" can happen between scoring and joining — also not actionable.
+		if errors.Is(err, guildformation.ErrAlreadyMember) || errors.Is(err, guildformation.ErrGuildFull) {
+			c.logger.Debug("guild join skipped (stale data)",
+				"agent_id", agent.ID,
+				"guild_id", best.GuildID,
+				"reason", err)
+			return nil
+		}
+		c.logger.Warn("autonomous guild join failed",
+			"agent_id", agent.ID,
+			"guild_id", best.GuildID,
+			"error", err)
+		return err
+	}
+
+	c.logger.Info("agent autonomously joined guild",
+		"agent_id", agent.ID,
+		"guild_id", best.GuildID,
+		"guild_name", best.GuildName,
+		"score", fmt.Sprintf("%.3f", best.Score),
+		"choices_evaluated", len(suggestions))
+
+	return nil
+}
+
+// =============================================================================
+// GUILD SCORING
+// =============================================================================
+// Scoring weights for guild selection. Each factor produces a 0.0-1.0 score.
+// =============================================================================
+
+const (
+	guildWeightReputation = 0.35
+	guildWeightSuccess    = 0.25
+	guildWeightCapacity   = 0.15
+	guildWeightAffinity   = 0.25
+)
+
+// GuildSuggestion represents a scored guild option for an agent.
+type GuildSuggestion struct {
+	GuildID   semdragons.GuildID
+	GuildName string
+	Score     float64
+	Reason    string
+}
+
+// scoreGuilds filters, scores, and ranks guilds for an agent.
+// Returns top N suggestions sorted descending by score.
+func (c *Component) scoreGuilds(agent *semdragons.Agent, guilds []*semdragons.Guild, currentGuildIDs []domain.GuildID) []GuildSuggestion {
+	memberSet := make(map[semdragons.GuildID]bool, len(currentGuildIDs))
+	for _, gid := range currentGuildIDs {
+		memberSet[semdragons.GuildID(gid)] = true
+	}
+
+	var suggestions []GuildSuggestion
+	for _, guild := range guilds {
+		// Filter: already a member
+		if memberSet[guild.ID] {
+			continue
+		}
+		// Filter: guild is full
+		if guild.MaxMembers > 0 && len(guild.Members) >= guild.MaxMembers {
+			continue
+		}
+		// Filter: agent below guild MinLevel
+		if agent.Level < guild.MinLevel {
+			continue
+		}
+
+		score, reason := scoreGuild(agent, guild)
+		suggestions = append(suggestions, GuildSuggestion{
+			GuildID:   guild.ID,
+			GuildName: guild.Name,
+			Score:     score,
+			Reason:    reason,
+		})
+	}
+
+	// Sort descending by score (stable to preserve determinism on ties)
+	sort.SliceStable(suggestions, func(i, j int) bool {
+		return suggestions[i].Score > suggestions[j].Score
+	})
+
+	// Return top N
+	if len(suggestions) > c.config.GuildSuggestionsN {
+		suggestions = suggestions[:c.config.GuildSuggestionsN]
+	}
+
+	return suggestions
+}
+
+// scoreGuild computes a weighted score for how well a guild fits an agent.
+func scoreGuild(agent *semdragons.Agent, guild *semdragons.Guild) (float64, string) {
+	reputation := guild.Reputation // Already 0.0-1.0
+
+	successRate := guild.SuccessRate // Already 0.0-1.0
+
+	var capacity float64
+	if guild.MaxMembers > 0 {
+		capacity = float64(guild.MaxMembers-len(guild.Members)) / float64(guild.MaxMembers)
+	} else {
+		capacity = 1.0 // No cap = always room
+	}
+
+	affinity := guildSkillAffinity(agent, guild)
+
+	score := reputation*guildWeightReputation +
+		successRate*guildWeightSuccess +
+		capacity*guildWeightCapacity +
+		affinity*guildWeightAffinity
+
+	// Build reason string from dominant factor
+	var parts []string
+	if reputation >= 0.7 {
+		parts = append(parts, "high reputation")
+	}
+	if successRate >= 0.7 {
+		parts = append(parts, "strong success rate")
+	}
+	if affinity >= 0.5 {
+		parts = append(parts, "skill affinity")
+	}
+	reason := "general fit"
+	if len(parts) > 0 {
+		reason = strings.Join(parts, ", ")
+	}
+
+	return score, reason
+}
+
+// guildSkillAffinity computes overlap between agent's skills and guild's QuestTypes.
+// Returns 0.0-1.0: higher means the guild handles quest types matching the agent's skills.
+// If the guild has no QuestTypes, returns 0.5 (neutral — no signal).
+func guildSkillAffinity(agent *semdragons.Agent, guild *semdragons.Guild) float64 {
+	if len(guild.QuestTypes) == 0 {
+		return 0.5 // No quest type signal — neutral
+	}
+	if len(agent.SkillProficiencies) == 0 {
+		return 0.0 // Agent has no skills — no affinity
+	}
+
+	// Build set of guild quest types for O(1) lookup
+	questTypeSet := make(map[string]bool, len(guild.QuestTypes))
+	for _, qt := range guild.QuestTypes {
+		questTypeSet[qt] = true
+	}
+
+	// Count agent skills that match guild quest types
+	matches := 0
+	for skill := range agent.SkillProficiencies {
+		if questTypeSet[string(skill)] {
+			matches++
+		}
+	}
+
+	return float64(matches) / float64(len(agent.SkillProficiencies))
 }

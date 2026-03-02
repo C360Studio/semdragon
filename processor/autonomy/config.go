@@ -36,6 +36,11 @@ type Config struct {
 
 	// Consumable use thresholds
 	CooldownSkipMinRemainingMs int `json:"cooldown_skip_min_remaining_ms"` // Min remaining cooldown (ms) to justify using skip
+
+	// Guild joining thresholds
+	MaxGuildsPerAgent int `json:"max_guilds_per_agent"` // Max guilds an agent can autonomously join
+	GuildJoinMinLevel int `json:"guild_join_min_level"` // Min agent level to autonomously join guilds
+	GuildSuggestionsN int `json:"guild_suggestions_n"`  // Number of guild choices to evaluate
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -57,6 +62,10 @@ func DefaultConfig() Config {
 		CooldownShopMinXP:          25,
 		StrategicShopMaxCost:       200,
 		CooldownSkipMinRemainingMs: 30000,
+
+		MaxGuildsPerAgent: 3,
+		GuildJoinMinLevel: 3,
+		GuildSuggestionsN: 5,
 	}
 }
 

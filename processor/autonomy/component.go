@@ -19,6 +19,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/guildformation"
 )
 
 // =============================================================================
@@ -41,7 +42,8 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
-	store       *agentstore.Component // Optional: nil disables shopping/consumable actions
+	store  *agentstore.Component      // Optional: nil disables shopping/consumable actions
+	guilds *guildformation.Component // Optional: nil disables guild joining
 
 	// KV watcher for agent entity state changes
 	agentWatch  jetstream.KeyWatcher
@@ -239,6 +241,24 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Default:     30000,
 				Category:    "shopping",
 			},
+			"max_guilds_per_agent": {
+				Type:        "int",
+				Description: "Maximum guilds an agent can autonomously join",
+				Default:     3,
+				Category:    "guild",
+			},
+			"guild_join_min_level": {
+				Type:        "int",
+				Description: "Minimum agent level to autonomously join guilds",
+				Default:     3,
+				Category:    "guild",
+			},
+			"guild_suggestions_n": {
+				Type:        "int",
+				Description: "Number of guild choices to evaluate before picking",
+				Default:     5,
+				Category:    "guild",
+			},
 		},
 		Required: []string{"org", "platform", "board"},
 	}
@@ -419,4 +439,17 @@ func (c *Component) SetStore(store *agentstore.Component) {
 		return
 	}
 	c.store = store
+}
+
+// SetGuilds injects the guild formation component for autonomous guild joining.
+// When guilds is nil, joinGuildAction safely returns shouldExecute=false.
+// SetGuilds is ignored once the component is running to prevent concurrent access.
+func (c *Component) SetGuilds(guilds *guildformation.Component) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetGuilds called while running; ignored")
+		return
+	}
+	c.guilds = guilds
 }
