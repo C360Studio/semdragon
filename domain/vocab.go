@@ -251,6 +251,18 @@ const (
 
 	// PredicateAutonomyIdle - Agent idle with nothing actionable.
 	PredicateAutonomyIdle = "agent.autonomy.idle"
+
+	// PredicateAutonomyClaimIntent - Agent intends to claim a quest.
+	PredicateAutonomyClaimIntent = "agent.autonomy.claimintent"
+
+	// PredicateAutonomyShopIntent - Agent intends to purchase an item.
+	PredicateAutonomyShopIntent = "agent.autonomy.shopintent"
+
+	// PredicateAutonomyGuildIntent - Agent intends to join a guild.
+	PredicateAutonomyGuildIntent = "agent.autonomy.guildintent"
+
+	// PredicateAutonomyUseIntent - Agent intends to use a consumable.
+	PredicateAutonomyUseIntent = "agent.autonomy.useintent"
 )
 
 // --- Store Predicates ---
@@ -536,6 +548,22 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateAutonomyIdle,
 		vocabulary.WithDescription("Agent idle with nothing actionable"),
 		vocabulary.WithDataType("AutonomyIdlePayload"),
+	)
+	vocabulary.Register(PredicateAutonomyClaimIntent,
+		vocabulary.WithDescription("Agent intends to claim a quest"),
+		vocabulary.WithDataType("ClaimIntentPayload"),
+	)
+	vocabulary.Register(PredicateAutonomyShopIntent,
+		vocabulary.WithDescription("Agent intends to purchase an item"),
+		vocabulary.WithDataType("ShopIntentPayload"),
+	)
+	vocabulary.Register(PredicateAutonomyGuildIntent,
+		vocabulary.WithDescription("Agent intends to join a guild"),
+		vocabulary.WithDataType("GuildIntentPayload"),
+	)
+	vocabulary.Register(PredicateAutonomyUseIntent,
+		vocabulary.WithDescription("Agent intends to use a consumable"),
+		vocabulary.WithDataType("UseIntentPayload"),
 	)
 
 	// Store predicates

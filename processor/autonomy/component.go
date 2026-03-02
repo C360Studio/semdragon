@@ -136,6 +136,42 @@ func (c *Component) OutputPorts() []component.Port {
 			},
 		},
 		{
+			Name:        "claim-intent",
+			Direction:   component.DirectionOutput,
+			Required:    false,
+			Description: "Agent intends to claim a quest",
+			Config: &component.NATSPort{
+				Subject: domain.PredicateAutonomyClaimIntent,
+			},
+		},
+		{
+			Name:        "shop-intent",
+			Direction:   component.DirectionOutput,
+			Required:    false,
+			Description: "Agent intends to purchase an item",
+			Config: &component.NATSPort{
+				Subject: domain.PredicateAutonomyShopIntent,
+			},
+		},
+		{
+			Name:        "guild-intent",
+			Direction:   component.DirectionOutput,
+			Required:    false,
+			Description: "Agent intends to join a guild",
+			Config: &component.NATSPort{
+				Subject: domain.PredicateAutonomyGuildIntent,
+			},
+		},
+		{
+			Name:        "use-intent",
+			Direction:   component.DirectionOutput,
+			Required:    false,
+			Description: "Agent intends to use a consumable",
+			Config: &component.NATSPort{
+				Subject: domain.PredicateAutonomyUseIntent,
+			},
+		},
+		{
 			Name:        "claim-state",
 			Direction:   component.DirectionOutput,
 			Required:    false,

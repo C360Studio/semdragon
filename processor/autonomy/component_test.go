@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go"
+
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/natsclient"
@@ -1216,6 +1218,346 @@ func TestNoShoppingWithoutStore(t *testing.T) {
 	}
 	if updated.TotalSpent != 0 {
 		t.Errorf("TotalSpent = %d, want 0 (store is nil)", updated.TotalSpent)
+	}
+}
+
+// =============================================================================
+// INTENT EMISSION TESTS
+// =============================================================================
+
+func TestClaimIntentEmitted(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "claimintent"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Subscribe to claim intent before triggering action
+	intentCh := make(chan *ClaimIntentPayload, 1)
+	sub, err := client.Subscribe(ctx, domain.PredicateAutonomyClaimIntent, func(_ context.Context, msg *nats.Msg) {
+		var payload ClaimIntentPayload
+		if err := json.Unmarshal(msg.Data, &payload); err == nil {
+			select {
+			case intentCh <- &payload:
+			default:
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("Subscribe claim intent failed: %v", err)
+	}
+	defer sub.Unsubscribe()
+
+	// Create a posted quest
+	questInstance := semdragons.GenerateInstance()
+	questID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
+	quest := &semdragons.Quest{
+		ID:       questID,
+		Title:    "Intent Test Quest",
+		Status:   semdragons.QuestPosted,
+		PostedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, quest, "quest.posted"); err != nil {
+		t.Fatalf("Failed to create quest: %v", err)
+	}
+
+	// Create idle agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "claim-intent-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Publish boid suggestion
+	suggestions := []boidengine.SuggestedClaim{
+		{AgentID: agentID, QuestID: questID, Score: 4.2, Confidence: 0.9, Reason: "test"},
+	}
+	data, _ := json.Marshal(suggestions)
+	if err := client.Publish(ctx, "boid.suggestions."+agentInstance, data); err != nil {
+		t.Fatalf("Publish suggestions: %v", err)
+	}
+
+	// Wait for claim intent event
+	select {
+	case payload := <-intentCh:
+		if payload.AgentID != domain.AgentID(agentID) {
+			t.Errorf("ClaimIntent AgentID = %q, want %q", payload.AgentID, agentID)
+		}
+		if payload.QuestID != questID {
+			t.Errorf("ClaimIntent QuestID = %q, want %q", payload.QuestID, questID)
+		}
+		if payload.Score != 4.2 {
+			t.Errorf("ClaimIntent Score = %f, want 4.2", payload.Score)
+		}
+		if payload.SuggestionRank != 1 {
+			t.Errorf("ClaimIntent SuggestionRank = %d, want 1", payload.SuggestionRank)
+		}
+		t.Log("claim intent received successfully")
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for claim intent event")
+	}
+}
+
+func TestShopIntentEmitted(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "shopintent"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.MinXPSurplusForShopping = 50
+
+	store := setupStoreComponent(t, client, "shopintent")
+	defer store.Stop(5 * time.Second)
+
+	comp := setupComponentWithDeps(t, client, config, store, nil)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Subscribe to shop intent
+	intentCh := make(chan *ShopIntentPayload, 1)
+	sub, err := client.Subscribe(ctx, domain.PredicateAutonomyShopIntent, func(_ context.Context, msg *nats.Msg) {
+		var payload ShopIntentPayload
+		if err := json.Unmarshal(msg.Data, &payload); err == nil {
+			select {
+			case intentCh <- &payload:
+			default:
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("Subscribe shop intent failed: %v", err)
+	}
+	defer sub.Unsubscribe()
+
+	// Create idle agent with XP surplus
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "shop-intent-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		XP:        500,
+		XPToLevel: 300,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for shop intent event
+	select {
+	case payload := <-intentCh:
+		if payload.AgentID != domain.AgentID(agentID) {
+			t.Errorf("ShopIntent AgentID = %q, want %q", payload.AgentID, agentID)
+		}
+		if payload.ItemID == "" {
+			t.Error("ShopIntent ItemID should not be empty")
+		}
+		if payload.XPCost <= 0 {
+			t.Errorf("ShopIntent XPCost = %d, want > 0", payload.XPCost)
+		}
+		if payload.Strategic {
+			t.Error("ShopIntent Strategic should be false for idle shopping")
+		}
+		t.Logf("shop intent received: item=%s cost=%d", payload.ItemName, payload.XPCost)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for shop intent event")
+	}
+}
+
+func TestGuildIntentEmitted(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "guildintent"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.GuildJoinMinLevel = 3
+
+	guilds := setupGuildComponent(t, client, "guildintent")
+	defer guilds.Stop(5 * time.Second)
+
+	comp := setupComponentWithDeps(t, client, config, nil, guilds)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Subscribe to guild intent
+	intentCh := make(chan *GuildIntentPayload, 1)
+	sub, err := client.Subscribe(ctx, domain.PredicateAutonomyGuildIntent, func(_ context.Context, msg *nats.Msg) {
+		var payload GuildIntentPayload
+		if err := json.Unmarshal(msg.Data, &payload); err == nil {
+			select {
+			case intentCh <- &payload:
+			default:
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("Subscribe guild intent failed: %v", err)
+	}
+	defer sub.Unsubscribe()
+
+	// Create a guild
+	guild, err := guilds.CreateGuild(ctx, guildformation.CreateGuildParams{
+		Name:      "Intent Test Guild",
+		Culture:   "Testing",
+		FounderID: "test.integration.game.guildintent.agent.founder",
+		MinLevel:  1,
+	})
+	if err != nil {
+		t.Fatalf("CreateGuild failed: %v", err)
+	}
+
+	// Create idle unguilded agent
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "guild-intent-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for guild intent event
+	select {
+	case payload := <-intentCh:
+		if payload.AgentID != domain.AgentID(agentID) {
+			t.Errorf("GuildIntent AgentID = %q, want %q", payload.AgentID, agentID)
+		}
+		if payload.GuildID != string(guild.ID) {
+			t.Errorf("GuildIntent GuildID = %q, want %q", payload.GuildID, guild.ID)
+		}
+		if payload.Score <= 0 {
+			t.Errorf("GuildIntent Score = %f, want > 0", payload.Score)
+		}
+		if payload.ChoicesEvaluated < 1 {
+			t.Errorf("GuildIntent ChoicesEvaluated = %d, want >= 1", payload.ChoicesEvaluated)
+		}
+		t.Logf("guild intent received: guild=%s score=%.3f", payload.GuildName, payload.Score)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for guild intent event")
+	}
+}
+
+func TestUseIntentEmitted(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "useintent"
+	config.InitialDelayMs = 100
+	config.InBattleIntervalMs = 200
+
+	store := setupStoreComponent(t, client, "useintent")
+	defer store.Stop(5 * time.Second)
+
+	comp := setupComponentWithDeps(t, client, config, store, nil)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Subscribe to use intent
+	intentCh := make(chan *UseIntentPayload, 1)
+	sub, err := client.Subscribe(ctx, domain.PredicateAutonomyUseIntent, func(_ context.Context, msg *nats.Msg) {
+		var payload UseIntentPayload
+		if err := json.Unmarshal(msg.Data, &payload); err == nil {
+			select {
+			case intentCh <- &payload:
+			default:
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("Subscribe use intent failed: %v", err)
+	}
+	defer sub.Unsubscribe()
+
+	// Create agent in battle with quality_shield consumable
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:          agentID,
+		Name:        "use-intent-agent",
+		Status:      semdragons.AgentInBattle,
+		Level:       7,
+		Tier:        semdragons.TierJourneyman,
+		Consumables: map[string]int{"quality_shield": 1},
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create agent: %v", err)
+	}
+
+	// Seed inventory in store
+	inv := store.GetInventory(domain.AgentID(agentID))
+	inv.Consumables["quality_shield"] = 1
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for use intent event
+	select {
+	case payload := <-intentCh:
+		if payload.AgentID != domain.AgentID(agentID) {
+			t.Errorf("UseIntent AgentID = %q, want %q", payload.AgentID, agentID)
+		}
+		if payload.ConsumableID != "quality_shield" {
+			t.Errorf("UseIntent ConsumableID = %q, want %q", payload.ConsumableID, "quality_shield")
+		}
+		if payload.AgentStatus != semdragons.AgentInBattle {
+			t.Errorf("UseIntent AgentStatus = %q, want %q", payload.AgentStatus, semdragons.AgentInBattle)
+		}
+		t.Log("use intent received: consumable=quality_shield")
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for use intent event")
 	}
 }
 

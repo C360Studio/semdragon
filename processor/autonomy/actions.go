@@ -57,7 +57,7 @@ func (c *Component) claimQuestAction() action {
 // If a quest is stale (no longer posted) or fails validation, it falls through
 // to the next suggestion. KV write serialization handles concurrent claims.
 func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Agent, tracker *agentTracker) error {
-	for _, suggestion := range tracker.suggestions {
+	for i, suggestion := range tracker.suggestions {
 		// Read quest from KV
 		entity, err := c.graph.GetQuest(ctx, semdragons.QuestID(suggestion.QuestID))
 		if err != nil {
@@ -117,6 +117,17 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Age
 				"agent_id", agent.ID,
 				"error", err)
 			// Quest is already claimed — don't roll back, just log
+		}
+
+		// Emit claim intent for observability
+		if err := SubjectAutonomyClaimIntent.Publish(ctx, c.deps.NATSClient, ClaimIntentPayload{
+			AgentID:        domain.AgentID(agent.ID),
+			QuestID:        suggestion.QuestID,
+			Score:          suggestion.Score,
+			SuggestionRank: i + 1,
+			Timestamp:      time.Now(),
+		}); err != nil {
+			c.logger.Debug("failed to publish claim intent", "error", err)
 		}
 
 		c.logger.Info("agent autonomously claimed quest",
@@ -200,6 +211,19 @@ func (c *Component) executeShop(ctx context.Context, agent *semdragons.Agent) er
 		return err
 	}
 
+	// Emit shop intent for observability
+	if err := SubjectAutonomyShopIntent.Publish(ctx, c.deps.NATSClient, ShopIntentPayload{
+		AgentID:   domain.AgentID(agent.ID),
+		ItemID:    item.ID,
+		ItemName:  item.Name,
+		XPCost:    item.XPCost,
+		Budget:    budget,
+		Strategic: false,
+		Timestamp: time.Now(),
+	}); err != nil {
+		c.logger.Debug("failed to publish shop intent", "error", err)
+	}
+
 	c.logger.Info("agent autonomously purchased item",
 		"agent_id", agent.ID,
 		"item_id", item.ID,
@@ -265,6 +289,20 @@ func (c *Component) executeShopStrategic(ctx context.Context, agent *semdragons.
 					"error", err)
 				return err
 			}
+
+			// Emit shop intent for observability (strategic purchase)
+			if err := SubjectAutonomyShopIntent.Publish(ctx, c.deps.NATSClient, ShopIntentPayload{
+				AgentID:   domain.AgentID(agent.ID),
+				ItemID:    item.ID,
+				ItemName:  item.Name,
+				XPCost:    item.XPCost,
+				Budget:    agent.XP,
+				Strategic: true,
+				Timestamp: time.Now(),
+			}); err != nil {
+				c.logger.Debug("failed to publish strategic shop intent", "error", err)
+			}
+
 			c.logger.Info("agent strategically purchased consumable",
 				"agent_id", agent.ID,
 				"item_id", item.ID,
@@ -326,6 +364,18 @@ func (c *Component) useConsumableAction() action {
 					"error", err)
 				return err
 			}
+
+			// Emit use intent for observability
+			if err := SubjectAutonomyUseIntent.Publish(ctx, c.deps.NATSClient, UseIntentPayload{
+				AgentID:      domain.AgentID(agent.ID),
+				ConsumableID: consumableID,
+				AgentStatus:  agent.Status,
+				QuestID:      agent.CurrentQuest,
+				Timestamp:    time.Now(),
+			}); err != nil {
+				c.logger.Debug("failed to publish use intent", "error", err)
+			}
+
 			c.logger.Info("agent autonomously used consumable",
 				"agent_id", agent.ID,
 				"consumable_id", consumableID)
@@ -360,6 +410,17 @@ func (c *Component) useCooldownSkipAction() action {
 					"error", err)
 				return err
 			}
+
+			// Emit use intent for observability (cooldown skip)
+			if err := SubjectAutonomyUseIntent.Publish(ctx, c.deps.NATSClient, UseIntentPayload{
+				AgentID:      domain.AgentID(agent.ID),
+				ConsumableID: string(agentstore.ConsumableCooldownSkip),
+				AgentStatus:  agent.Status,
+				Timestamp:    time.Now(),
+			}); err != nil {
+				c.logger.Debug("failed to publish cooldown skip intent", "error", err)
+			}
+
 			c.logger.Info("agent autonomously skipped cooldown",
 				"agent_id", agent.ID)
 			return nil
@@ -510,6 +571,18 @@ func (c *Component) executeJoinGuild(ctx context.Context, agent *semdragons.Agen
 			"guild_id", best.GuildID,
 			"error", err)
 		return err
+	}
+
+	// Emit guild intent for observability
+	if err := SubjectAutonomyGuildIntent.Publish(ctx, c.deps.NATSClient, GuildIntentPayload{
+		AgentID:          domain.AgentID(agent.ID),
+		GuildID:          string(best.GuildID),
+		GuildName:        best.GuildName,
+		Score:            best.Score,
+		ChoicesEvaluated: len(suggestions),
+		Timestamp:        time.Now(),
+	}); err != nil {
+		c.logger.Debug("failed to publish guild intent", "error", err)
 	}
 
 	c.logger.Info("agent autonomously joined guild",
