@@ -7,6 +7,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 )
 
+
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
@@ -26,6 +27,15 @@ type Config struct {
 	CooldownIntervalMs int     `json:"cooldown_interval_ms"`  // Heartbeat interval when on cooldown
 	MaxIntervalMs      int     `json:"max_interval_ms"`       // Maximum backoff interval
 	BackoffFactor      float64 `json:"backoff_factor"`        // Multiplier for idle backoff
+
+	// Shopping thresholds
+	MinXPSurplusForShopping int64   `json:"min_xp_surplus_for_shopping"` // Min XP above XPToLevel to trigger idle shopping
+	MaxShopSpendRatio       float64 `json:"max_shop_spend_ratio"`        // Fraction of surplus to spend when idle
+	CooldownShopMinXP       int64   `json:"cooldown_shop_min_xp"`        // Min XP to shop during cooldown
+	StrategicShopMaxCost    int64   `json:"strategic_shop_max_cost"`     // Max XP to spend on strategic mid-quest purchase
+
+	// Consumable use thresholds
+	CooldownSkipMinRemainingMs int `json:"cooldown_skip_min_remaining_ms"` // Min remaining cooldown (ms) to justify using skip
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -41,7 +51,19 @@ func DefaultConfig() Config {
 		CooldownIntervalMs: 15000,
 		MaxIntervalMs:      60000,
 		BackoffFactor:      1.5,
+
+		MinXPSurplusForShopping:    50,
+		MaxShopSpendRatio:          0.5,
+		CooldownShopMinXP:          25,
+		StrategicShopMaxCost:       200,
+		CooldownSkipMinRemainingMs: 30000,
 	}
+}
+
+// CooldownSkipMinRemaining returns the minimum remaining cooldown duration
+// that justifies spending a cooldown_skip consumable.
+func (c *Config) CooldownSkipMinRemaining() time.Duration {
+	return time.Duration(c.CooldownSkipMinRemainingMs) * time.Millisecond
 }
 
 // ToBoardConfig converts processor config to domain BoardConfig.

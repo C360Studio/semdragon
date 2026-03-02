@@ -213,6 +213,16 @@ func (c *Component) ListItems(agentTier domain.TrustTier) []StoreItem {
 	return items
 }
 
+// SeedCatalog loads items into the in-memory catalog without requiring the
+// component to be running. Useful for tests and pre-start configuration.
+func (c *Component) SeedCatalog(items []StoreItem) {
+	for i := range items {
+		item := items[i]
+		item.BoardConfig = c.boardConfig
+		c.catalog.Store(item.ID, &item)
+	}
+}
+
 // Catalog returns all items in the store (admin view, no tier filtering).
 func (c *Component) Catalog() []StoreItem {
 	var items []StoreItem

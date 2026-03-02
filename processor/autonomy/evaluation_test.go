@@ -6,6 +6,7 @@ import (
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semstreams/component"
 )
@@ -95,27 +96,39 @@ func TestActionsForState_Retired(t *testing.T) {
 	}
 }
 
-func TestActionStubs_AllReturnFalse(t *testing.T) {
+func TestActions_ReturnFalseWithoutStore(t *testing.T) {
+	// When store is nil (newTestComponent has no store), all shopping and
+	// consumable actions must return shouldExecute=false — safe degradation.
 	c := newTestComponent()
-	stubs := []action{
-		// claimQuestAction is no longer a stub — skip it
+	actions := []action{
 		c.shopAction(),
 		c.shopStrategicAction(),
 		c.useConsumableAction(),
 		c.useCooldownSkipAction(),
-		c.joinGuildAction(),
+		c.joinGuildAction(), // still a stub
 	}
 
 	agent := &semdragons.Agent{
-		ID:     "test.local.game.board1.agent.stub",
+		ID:     "test.local.game.board1.agent.nilstore",
 		Status: semdragons.AgentIdle,
 		Level:  5,
+		XP:     9999,
+		Consumables: map[string]int{
+			"cooldown_skip":  1,
+			"xp_boost":       1,
+			"quality_shield": 1,
+		},
 	}
-	tracker := &agentTracker{agent: agent}
+	tracker := &agentTracker{
+		agent: agent,
+		suggestions: []boidengine.SuggestedClaim{
+			{QuestID: "test.local.game.board1.quest.q1", Score: 1.0},
+		},
+	}
 
-	for _, stub := range stubs {
-		if stub.shouldExecute(agent, tracker) {
-			t.Errorf("action %q shouldExecute returned true, want false (stub)", stub.name)
+	for _, act := range actions {
+		if act.shouldExecute(agent, tracker) {
+			t.Errorf("action %q shouldExecute returned true with nil store", act.name)
 		}
 	}
 }
@@ -178,6 +191,549 @@ func TestClaimQuestAction_ShouldExecute_NotIdle(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// SHOPPING ACTION TESTS
+// =============================================================================
+
+// newTestComponentWithStore creates a Component with a non-nil store for unit tests.
+// The store is a zero-value agentstore.Component -- only SeedCatalog() and ListItems()
+// are safe to call on it (they only use the sync.Map which has zero-value semantics).
+// Execute paths that call Purchase/UseConsumable are not exercised in unit tests.
+func newTestComponentWithStore() *Component {
+	cfg := DefaultConfig()
+	return &Component{
+		config:   &cfg,
+		trackers: make(map[string]*agentTracker),
+		store:    &agentstore.Component{}, // non-nil sentinel; execute paths not tested here
+	}
+}
+
+func TestShopAction_ShouldExecute_IdleWithSurplus(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.shopAction()
+
+	agent := &semdragons.Agent{
+		ID:        "test.local.game.board1.agent.shop1",
+		Status:    semdragons.AgentIdle,
+		XP:        500,
+		XPToLevel: 400, // surplus = 100, threshold = 50
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when idle with XP surplus above threshold")
+	}
+}
+
+func TestShopAction_ShouldExecute_IdleNoSurplus(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.shopAction()
+
+	agent := &semdragons.Agent{
+		ID:        "test.local.game.board1.agent.shop2",
+		Status:    semdragons.AgentIdle,
+		XP:        300,
+		XPToLevel: 400, // surplus = -100 (negative)
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when XP < XPToLevel")
+	}
+}
+
+func TestShopAction_ShouldExecute_CooldownWithXP(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.shopAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.shop3",
+		Status: semdragons.AgentCooldown,
+		XP:     100, // above CooldownShopMinXP (25)
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when in cooldown with XP above min")
+	}
+}
+
+func TestShopAction_ShouldExecute_CooldownLowXP(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.shopAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.shop4",
+		Status: semdragons.AgentCooldown,
+		XP:     10, // below CooldownShopMinXP (25)
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when cooldown XP below minimum")
+	}
+}
+
+func TestShopAction_ShouldExecute_NilStore(t *testing.T) {
+	c := newTestComponent() // no store
+	act := c.shopAction()
+
+	agent := &semdragons.Agent{
+		ID:        "test.local.game.board1.agent.shop5",
+		Status:    semdragons.AgentIdle,
+		XP:        9999,
+		XPToLevel: 100,
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when store is nil")
+	}
+}
+
+func TestShopAction_ShouldExecute_OnQuestIsFalse(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.shopAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.shop6",
+		Status: semdragons.AgentOnQuest,
+		XP:     9999,
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shopAction should not execute when on_quest (use shopStrategic instead)")
+	}
+}
+
+// =============================================================================
+// STRATEGIC SHOPPING TESTS
+// =============================================================================
+
+func TestShopStrategic_ShouldExecute_OnQuestMissingShield(t *testing.T) {
+	c := newTestComponentWithStore()
+	// Seed the catalog so ListItems returns items
+	c.store.SeedCatalog(agentstore.DefaultCatalog())
+	act := c.shopStrategicAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.strat1",
+		Status: semdragons.AgentOnQuest,
+		XP:     500,
+		Tier:   semdragons.TierJourneyman, // quality_shield requires Journeyman
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when on quest, missing quality_shield, can afford")
+	}
+}
+
+func TestShopStrategic_ShouldExecute_HasBoth(t *testing.T) {
+	c := newTestComponentWithStore()
+	// Catalog not seeded -- shouldExecute short-circuits on ownership check
+	// before reaching ListItems. Both consumables are already owned.
+	act := c.shopStrategicAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.strat2",
+		Status: semdragons.AgentOnQuest,
+		XP:     500,
+		Tier:   semdragons.TierJourneyman,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableQualityShield): 1,
+			string(agentstore.ConsumableXPBoost):       1,
+		},
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when agent already has both consumables")
+	}
+}
+
+func TestShopStrategic_ShouldExecute_NotOnQuest(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.shopStrategicAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.strat3",
+		Status: semdragons.AgentIdle,
+		XP:     500,
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when not on quest")
+	}
+}
+
+// =============================================================================
+// USE CONSUMABLE TESTS
+// =============================================================================
+
+func TestUseConsumable_ShouldExecute_IdleWithBoostAndSuggestions(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useConsumableAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.use1",
+		Status: semdragons.AgentIdle,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableXPBoost): 1,
+		},
+	}
+	tracker := &agentTracker{
+		agent: agent,
+		suggestions: []boidengine.SuggestedClaim{
+			{QuestID: "test.local.game.board1.quest.q1", Score: 2.0},
+		},
+	}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when idle with xp_boost and suggestions")
+	}
+}
+
+func TestUseConsumable_ShouldExecute_IdleNoConsumables(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useConsumableAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.use2",
+		Status: semdragons.AgentIdle,
+	}
+	tracker := &agentTracker{
+		agent: agent,
+		suggestions: []boidengine.SuggestedClaim{
+			{QuestID: "test.local.game.board1.quest.q1", Score: 2.0},
+		},
+	}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false with no consumables")
+	}
+}
+
+func TestUseConsumable_ShouldExecute_IdleNoSuggestions(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useConsumableAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.use3",
+		Status: semdragons.AgentIdle,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableXPBoost): 1,
+		},
+	}
+	tracker := &agentTracker{agent: agent} // no suggestions
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when idle with no suggestions (nothing to boost)")
+	}
+}
+
+func TestUseConsumable_ShouldExecute_OnQuestWithBoost(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useConsumableAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.use4",
+		Status: semdragons.AgentOnQuest,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableXPBoost): 1,
+		},
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when on quest with xp_boost")
+	}
+}
+
+func TestUseConsumable_ShouldExecute_OnQuestBoostAlreadyActive(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useConsumableAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.use5",
+		Status: semdragons.AgentOnQuest,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableXPBoost): 1,
+		},
+		ActiveEffects: []semdragons.AgentEffect{
+			{EffectType: string(agentstore.ConsumableXPBoost), QuestsRemaining: 1},
+		},
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when xp_boost is already active")
+	}
+}
+
+func TestUseConsumable_ShouldExecute_InBattleWithShield(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useConsumableAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.use6",
+		Status: semdragons.AgentInBattle,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableQualityShield): 1,
+		},
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when in battle with quality_shield")
+	}
+}
+
+func TestUseConsumable_ShouldExecute_InBattleShieldAlreadyActive(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useConsumableAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.use7",
+		Status: semdragons.AgentInBattle,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableQualityShield): 1,
+		},
+		ActiveEffects: []semdragons.AgentEffect{
+			{EffectType: string(agentstore.ConsumableQualityShield), QuestsRemaining: 1},
+		},
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when quality_shield is already active")
+	}
+}
+
+// =============================================================================
+// COOLDOWN SKIP TESTS
+// =============================================================================
+
+func TestUseCooldownSkip_ShouldExecute_CooldownWithSkip(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useCooldownSkipAction()
+
+	future := time.Now().Add(5 * time.Minute) // 5min remaining > 30s threshold
+	agent := &semdragons.Agent{
+		ID:            "test.local.game.board1.agent.skip1",
+		Status:        semdragons.AgentCooldown,
+		CooldownUntil: &future,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableCooldownSkip): 1,
+		},
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if !act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be true when in cooldown with skip consumable and enough remaining time")
+	}
+}
+
+func TestUseCooldownSkip_ShouldExecute_AlmostDone(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useCooldownSkipAction()
+
+	soon := time.Now().Add(5 * time.Second) // 5s remaining < 30s threshold
+	agent := &semdragons.Agent{
+		ID:            "test.local.game.board1.agent.skip2",
+		Status:        semdragons.AgentCooldown,
+		CooldownUntil: &soon,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableCooldownSkip): 1,
+		},
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when remaining cooldown below threshold")
+	}
+}
+
+func TestUseCooldownSkip_ShouldExecute_NoConsumable(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useCooldownSkipAction()
+
+	future := time.Now().Add(5 * time.Minute)
+	agent := &semdragons.Agent{
+		ID:            "test.local.game.board1.agent.skip3",
+		Status:        semdragons.AgentCooldown,
+		CooldownUntil: &future,
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when agent has no cooldown_skip consumable")
+	}
+}
+
+func TestUseCooldownSkip_ShouldExecute_NilCooldownUntil(t *testing.T) {
+	c := newTestComponentWithStore()
+	act := c.useCooldownSkipAction()
+
+	agent := &semdragons.Agent{
+		ID:     "test.local.game.board1.agent.skip4",
+		Status: semdragons.AgentCooldown,
+		Consumables: map[string]int{
+			string(agentstore.ConsumableCooldownSkip): 1,
+		},
+		// CooldownUntil not set
+	}
+	tracker := &agentTracker{agent: agent}
+
+	if act.shouldExecute(agent, tracker) {
+		t.Error("shouldExecute should be false when CooldownUntil is nil")
+	}
+}
+
+// =============================================================================
+// HELPER FUNCTION TESTS
+// =============================================================================
+
+func TestHasActiveEffect_Found(t *testing.T) {
+	agent := &semdragons.Agent{
+		ActiveEffects: []semdragons.AgentEffect{
+			{EffectType: "xp_boost", QuestsRemaining: 1},
+		},
+	}
+	if !hasActiveEffect(agent, "xp_boost") {
+		t.Error("hasActiveEffect should return true when effect exists with quests remaining")
+	}
+}
+
+func TestHasActiveEffect_Expired(t *testing.T) {
+	agent := &semdragons.Agent{
+		ActiveEffects: []semdragons.AgentEffect{
+			{EffectType: "xp_boost", QuestsRemaining: 0},
+		},
+	}
+	if hasActiveEffect(agent, "xp_boost") {
+		t.Error("hasActiveEffect should return false when QuestsRemaining is 0")
+	}
+}
+
+func TestHasActiveEffect_NotPresent(t *testing.T) {
+	agent := &semdragons.Agent{}
+	if hasActiveEffect(agent, "xp_boost") {
+		t.Error("hasActiveEffect should return false when no effects present")
+	}
+}
+
+func TestHasConsumable_Found(t *testing.T) {
+	agent := &semdragons.Agent{
+		Consumables: map[string]int{"xp_boost": 2},
+	}
+	if !hasConsumable(agent, "xp_boost") {
+		t.Error("hasConsumable should return true when count > 0")
+	}
+}
+
+func TestHasConsumable_Zero(t *testing.T) {
+	agent := &semdragons.Agent{
+		Consumables: map[string]int{"xp_boost": 0},
+	}
+	if hasConsumable(agent, "xp_boost") {
+		t.Error("hasConsumable should return false when count is 0")
+	}
+}
+
+func TestHasConsumable_NilMap(t *testing.T) {
+	agent := &semdragons.Agent{}
+	if hasConsumable(agent, "xp_boost") {
+		t.Error("hasConsumable should return false when Consumables map is nil")
+	}
+}
+
+func TestPickBestItem_PrefersToolsOverConsumables(t *testing.T) {
+	items := []agentstore.StoreItem{
+		{ID: "cheap_consumable", ItemType: agentstore.ItemTypeConsumable, XPCost: 50},
+		{ID: "expensive_tool", ItemType: agentstore.ItemTypeTool, XPCost: 200},
+	}
+	agent := &semdragons.Agent{}
+	result := pickBestItem(agent, items, 300)
+	if result == nil || result.ID != "expensive_tool" {
+		t.Errorf("pickBestItem should prefer tool, got %v", result)
+	}
+}
+
+func TestPickBestItem_SkipsOwnedTools(t *testing.T) {
+	items := []agentstore.StoreItem{
+		{ID: "owned_tool", ItemType: agentstore.ItemTypeTool, XPCost: 200},
+		{ID: "new_consumable", ItemType: agentstore.ItemTypeConsumable, XPCost: 50},
+	}
+	agent := &semdragons.Agent{
+		OwnedTools: map[string]semdragons.OwnedTool{
+			"owned_tool": {},
+		},
+	}
+	result := pickBestItem(agent, items, 300)
+	if result == nil || result.ID != "new_consumable" {
+		t.Errorf("pickBestItem should skip owned tool and pick consumable, got %v", result)
+	}
+}
+
+func TestPickBestItem_CapsConsumableAt2(t *testing.T) {
+	items := []agentstore.StoreItem{
+		{ID: "stocked_consumable", ItemType: agentstore.ItemTypeConsumable, XPCost: 50},
+	}
+	agent := &semdragons.Agent{
+		Consumables: map[string]int{"stocked_consumable": 2},
+	}
+	result := pickBestItem(agent, items, 300)
+	if result != nil {
+		t.Errorf("pickBestItem should return nil when consumable already at max stock, got %v", result)
+	}
+}
+
+func TestPickBestItem_PicksMostExpensiveTool(t *testing.T) {
+	items := []agentstore.StoreItem{
+		{ID: "cheap_tool", ItemType: agentstore.ItemTypeTool, XPCost: 50},
+		{ID: "expensive_tool", ItemType: agentstore.ItemTypeTool, XPCost: 200},
+	}
+	agent := &semdragons.Agent{}
+	result := pickBestItem(agent, items, 300)
+	if result == nil || result.ID != "expensive_tool" {
+		t.Errorf("pickBestItem should pick most expensive affordable tool, got %v", result)
+	}
+}
+
+func TestPickBestItem_RespectsBudgetLimit(t *testing.T) {
+	items := []agentstore.StoreItem{
+		{ID: "too_expensive", ItemType: agentstore.ItemTypeTool, XPCost: 500},
+		{ID: "affordable", ItemType: agentstore.ItemTypeConsumable, XPCost: 50},
+	}
+	agent := &semdragons.Agent{}
+	result := pickBestItem(agent, items, 100)
+	if result == nil || result.ID != "affordable" {
+		t.Errorf("pickBestItem should skip items over budget, got %v", result)
+	}
+}
+
+func TestPickBestItem_NothingAffordable(t *testing.T) {
+	items := []agentstore.StoreItem{
+		{ID: "expensive", ItemType: agentstore.ItemTypeTool, XPCost: 500},
+	}
+	agent := &semdragons.Agent{}
+	result := pickBestItem(agent, items, 100)
+	if result != nil {
+		t.Errorf("pickBestItem should return nil when nothing is affordable, got %v", result)
+	}
+}
+
+func TestPickBestItem_EmptyItems(t *testing.T) {
+	agent := &semdragons.Agent{}
+	result := pickBestItem(agent, nil, 300)
+	if result != nil {
+		t.Errorf("pickBestItem should return nil for empty items, got %v", result)
+	}
+}
+
 func TestIntervalForStatus(t *testing.T) {
 	cfg := DefaultConfig()
 
@@ -223,6 +779,23 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.BackoffFactor != 1.5 {
 		t.Errorf("BackoffFactor = %f, want 1.5", cfg.BackoffFactor)
+	}
+
+	// Shopping config defaults
+	if cfg.MinXPSurplusForShopping != 50 {
+		t.Errorf("MinXPSurplusForShopping = %d, want 50", cfg.MinXPSurplusForShopping)
+	}
+	if cfg.MaxShopSpendRatio != 0.5 {
+		t.Errorf("MaxShopSpendRatio = %f, want 0.5", cfg.MaxShopSpendRatio)
+	}
+	if cfg.CooldownShopMinXP != 25 {
+		t.Errorf("CooldownShopMinXP = %d, want 25", cfg.CooldownShopMinXP)
+	}
+	if cfg.StrategicShopMaxCost != 200 {
+		t.Errorf("StrategicShopMaxCost = %d, want 200", cfg.StrategicShopMaxCost)
+	}
+	if cfg.CooldownSkipMinRemainingMs != 30000 {
+		t.Errorf("CooldownSkipMinRemainingMs = %d, want 30000", cfg.CooldownSkipMinRemainingMs)
 	}
 }
 
@@ -363,6 +936,18 @@ func TestComponent_ConfigSchema(t *testing.T) {
 	for _, prop := range heartbeatProps {
 		if _, ok := schema.Properties[prop]; !ok {
 			t.Errorf("missing heartbeat property %q in ConfigSchema", prop)
+		}
+	}
+
+	// Check shopping/consumable properties exist
+	shoppingProps := []string{
+		"min_xp_surplus_for_shopping", "max_shop_spend_ratio",
+		"cooldown_shop_min_xp", "strategic_shop_max_cost",
+		"cooldown_skip_min_remaining_ms",
+	}
+	for _, prop := range shoppingProps {
+		if _, ok := schema.Properties[prop]; !ok {
+			t.Errorf("missing shopping property %q in ConfigSchema", prop)
 		}
 	}
 }

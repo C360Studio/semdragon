@@ -18,6 +18,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentstore"
 )
 
 // =============================================================================
@@ -40,6 +41,7 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
+	store       *agentstore.Component // Optional: nil disables shopping/consumable actions
 
 	// KV watcher for agent entity state changes
 	agentWatch  jetstream.KeyWatcher
@@ -206,6 +208,36 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Description: "Backoff multiplier for idle agents",
 				Default:     1.5,
 				Category:    "heartbeat",
+			},
+			"min_xp_surplus_for_shopping": {
+				Type:        "int",
+				Description: "Minimum XP surplus above XPToLevel to trigger idle shopping",
+				Default:     50,
+				Category:    "shopping",
+			},
+			"max_shop_spend_ratio": {
+				Type:        "float",
+				Description: "Fraction of XP surplus to spend when idle shopping",
+				Default:     0.5,
+				Category:    "shopping",
+			},
+			"cooldown_shop_min_xp": {
+				Type:        "int",
+				Description: "Minimum XP to shop during cooldown",
+				Default:     25,
+				Category:    "shopping",
+			},
+			"strategic_shop_max_cost": {
+				Type:        "int",
+				Description: "Maximum XP to spend on strategic mid-quest purchase",
+				Default:     200,
+				Category:    "shopping",
+			},
+			"cooldown_skip_min_remaining_ms": {
+				Type:        "int",
+				Description: "Minimum remaining cooldown in milliseconds to justify using skip consumable",
+				Default:     30000,
+				Category:    "shopping",
 			},
 		},
 		Required: []string{"org", "platform", "board"},
@@ -374,4 +406,17 @@ func (c *Component) Stop(timeout time.Duration) error {
 // BoardConfig returns the board configuration.
 func (c *Component) BoardConfig() *domain.BoardConfig {
 	return c.boardConfig
+}
+
+// SetStore injects the agent store component for shopping and consumable actions.
+// When store is nil, all shopping/consumable actions safely return shouldExecute=false.
+// SetStore is ignored once the component is running to prevent concurrent store access.
+func (c *Component) SetStore(store *agentstore.Component) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetStore called while running; ignored")
+		return
+	}
+	c.store = store
 }

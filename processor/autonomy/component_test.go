@@ -14,6 +14,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
 )
 
@@ -661,8 +662,339 @@ func TestAutonomousQuestClaim_AllStale(t *testing.T) {
 }
 
 // =============================================================================
+// AUTONOMOUS STORE ACTION TESTS
+// =============================================================================
+
+func TestAutonomousIdleShopping(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "idleshop"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.MinXPSurplusForShopping = 50
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	// Set up agentstore alongside autonomy
+	store := setupStoreComponent(t, client, "idleshop")
+	defer store.Stop(5 * time.Second)
+	comp.SetStore(store)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create idle agent with XP surplus (web_search costs 50 XP, apprentice tier)
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "shopper-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     5,
+		XP:        500,
+		XPToLevel: 300, // surplus = 200 > threshold 50
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for a purchase to happen via heartbeat
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for autonomous purchase")
+		case <-time.After(100 * time.Millisecond):
+			agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
+			if err != nil {
+				continue
+			}
+			updated := semdragons.AgentFromEntityState(agentEntity)
+			if updated != nil && updated.TotalSpent > 0 {
+				t.Logf("agent purchased item, total_spent=%d", updated.TotalSpent)
+				return
+			}
+		}
+	}
+}
+
+func TestAutonomousCooldownSkip(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "cdskip"
+	config.InitialDelayMs = 100
+	config.CooldownIntervalMs = 200
+	config.CooldownSkipMinRemaining = 30 * time.Second
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	store := setupStoreComponent(t, client, "cdskip")
+	defer store.Stop(5 * time.Second)
+	comp.SetStore(store)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create agent in cooldown with future expiry and a cooldown_skip consumable
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	future := time.Now().Add(1 * time.Hour) // well above 30s threshold
+	agent := &semdragons.Agent{
+		ID:            agentID,
+		Name:          "cdskip-agent",
+		Status:        semdragons.AgentCooldown,
+		Level:         3,
+		Tier:          semdragons.TierApprentice,
+		CooldownUntil: &future,
+		Consumables:   map[string]int{"cooldown_skip": 1},
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	// Seed inventory in store so UseConsumable can find it
+	inv := store.GetInventory(domain.AgentID(agentID))
+	inv.Consumables["cooldown_skip"] = 1
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for cooldown skip to happen
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for autonomous cooldown skip")
+		case <-time.After(100 * time.Millisecond):
+			agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
+			if err != nil {
+				continue
+			}
+			updated := semdragons.AgentFromEntityState(agentEntity)
+			if updated != nil && updated.Status == semdragons.AgentIdle {
+				if updated.CooldownUntil != nil {
+					t.Error("CooldownUntil should be nil after skip")
+				}
+				return
+			}
+		}
+	}
+}
+
+func TestAutonomousConsumableUse_InBattle(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "battleuse"
+	config.InitialDelayMs = 100
+	config.InBattleIntervalMs = 200
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	store := setupStoreComponent(t, client, "battleuse")
+	defer store.Stop(5 * time.Second)
+	comp.SetStore(store)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create agent in battle with quality_shield consumable
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:          agentID,
+		Name:        "battle-agent",
+		Status:      semdragons.AgentInBattle,
+		Level:       7,
+		Tier:        semdragons.TierJourneyman,
+		Consumables: map[string]int{"quality_shield": 1},
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	// Seed inventory in store
+	inv := store.GetInventory(domain.AgentID(agentID))
+	inv.Consumables["quality_shield"] = 1
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for consumable use
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for autonomous quality_shield use in battle")
+		case <-time.After(100 * time.Millisecond):
+			effects := store.GetActiveEffects(domain.AgentID(agentID))
+			if len(effects) > 0 && effects[0].Effect.Type == agentstore.ConsumableQualityShield {
+				t.Log("agent used quality_shield in battle")
+				return
+			}
+		}
+	}
+}
+
+func TestNoShoppingWhenNoSurplus(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "nosurplus"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+	config.MinXPSurplusForShopping = 50
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	store := setupStoreComponent(t, client, "nosurplus")
+	defer store.Stop(5 * time.Second)
+	comp.SetStore(store)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create idle agent with no surplus (XP < XPToLevel)
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "poor-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     2,
+		XP:        50,
+		XPToLevel: 200, // no surplus
+		Tier:      semdragons.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for several heartbeats, verify no purchase
+	time.Sleep(800 * time.Millisecond)
+
+	agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updated := semdragons.AgentFromEntityState(agentEntity)
+	if updated == nil {
+		t.Fatal("Failed to reconstruct agent")
+	}
+	if updated.TotalSpent != 0 {
+		t.Errorf("TotalSpent = %d, want 0 (no surplus to shop with)", updated.TotalSpent)
+	}
+}
+
+func TestNoShoppingWithoutStore(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "nostore"
+	config.InitialDelayMs = 100
+	config.IdleIntervalMs = 200
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+	// No SetStore call — store remains nil
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create rich idle agent — should NOT shop because store is nil
+	agentInstance := semdragons.GenerateInstance()
+	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &semdragons.Agent{
+		ID:        agentID,
+		Name:      "no-store-agent",
+		Status:    semdragons.AgentIdle,
+		Level:     10,
+		XP:        9999,
+		XPToLevel: 100,
+		Tier:      semdragons.TierJourneyman,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Wait for several heartbeats
+	time.Sleep(800 * time.Millisecond)
+
+	agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	updated := semdragons.AgentFromEntityState(agentEntity)
+	if updated == nil {
+		t.Fatal("Failed to reconstruct agent")
+	}
+	if updated.TotalSpent != 0 {
+		t.Errorf("TotalSpent = %d, want 0 (store is nil)", updated.TotalSpent)
+	}
+}
+
+// =============================================================================
 // HELPERS
 // =============================================================================
+
+// setupStoreComponent creates and starts an agentstore component for integration tests.
+func setupStoreComponent(t *testing.T, client *natsclient.Client, board string) *agentstore.Component {
+	t.Helper()
+
+	deps := component.Dependencies{NATSClient: client}
+	storeCfg := agentstore.DefaultConfig()
+	storeCfg.Org = "test"
+	storeCfg.Platform = "integration"
+	storeCfg.Board = board
+
+	store, err := agentstore.NewFromConfig(storeCfg, deps)
+	if err != nil {
+		t.Fatalf("agentstore NewFromConfig failed: %v", err)
+	}
+	if err := store.Initialize(); err != nil {
+		t.Fatalf("agentstore Initialize failed: %v", err)
+	}
+	if err := store.Start(context.Background()); err != nil {
+		t.Fatalf("agentstore Start failed: %v", err)
+	}
+	return store
+}
 
 // waitForTracker polls until the autonomy component has created a heartbeat
 // tracker for the given agent instance, or calls t.Fatalf on timeout.
