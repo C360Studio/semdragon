@@ -146,6 +146,15 @@ func (inv *AgentInventory) HasConsumable(consumableID string) bool {
 	return inv.Consumables[consumableID] > 0
 }
 
+// SetConsumable sets the count of a consumable under the inventory lock.
+// Use this instead of directly writing to inv.Consumables to avoid races
+// with the KV watcher goroutine.
+func (inv *AgentInventory) SetConsumable(consumableID string, count int) {
+	inv.mu.Lock()
+	defer inv.mu.Unlock()
+	inv.Consumables[consumableID] = count
+}
+
 // ConsumableCount returns how many of a consumable the agent has.
 func (inv *AgentInventory) ConsumableCount(consumableID string) int {
 	inv.mu.RLock()

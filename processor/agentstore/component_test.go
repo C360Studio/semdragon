@@ -52,7 +52,7 @@ func TestCooldownSkipClearsStatus(t *testing.T) {
 
 	// Bypass Purchase API to avoid XP/tier setup — testing cooldown_skip effect, not purchase flow
 	inv := comp.GetInventory(agentID)
-	inv.Consumables["cooldown_skip"] = 1
+	inv.SetConsumable("cooldown_skip", 1)
 
 	// Use the cooldown_skip consumable
 	err := comp.UseConsumable(ctx, agentID, "cooldown_skip", nil)
@@ -120,7 +120,7 @@ func TestCooldownSkipWhenNotOnCooldown(t *testing.T) {
 
 	// Bypass Purchase API to avoid XP/tier setup — testing cooldown_skip effect, not purchase flow
 	inv := comp.GetInventory(agentID)
-	inv.Consumables["cooldown_skip"] = 1
+	inv.SetConsumable("cooldown_skip", 1)
 
 	// Use the cooldown_skip consumable
 	err := comp.UseConsumable(ctx, agentID, "cooldown_skip", nil)

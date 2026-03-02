@@ -249,10 +249,15 @@ func (c *Component) StartBattle(ctx context.Context, quest *questboard.Quest, ou
 
 	c.battlesStarted.Add(1)
 
+	// Snapshot the battle BEFORE launching the goroutine — runEvaluation
+	// will mutate Status/Verdict/Results on the original. Callers get a
+	// consistent point-in-time view without racing.
+	snapshot := *battle
+
 	// Run evaluation asynchronously with its own context
 	go c.runEvaluation(battleCtx, ab)
 
-	return battle, nil
+	return &snapshot, nil
 }
 
 // buildBattle constructs a BossBattle from quest settings.

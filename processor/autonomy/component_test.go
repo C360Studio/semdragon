@@ -773,7 +773,7 @@ func TestAutonomousCooldownSkip(t *testing.T) {
 
 	// Seed inventory in store so UseConsumable can find it
 	inv := store.GetInventory(domain.AgentID(agentID))
-	inv.Consumables["cooldown_skip"] = 1
+	inv.SetConsumable("cooldown_skip", 1)
 
 	waitForTracker(t, comp, agentInstance, 3*time.Second)
 
@@ -838,7 +838,7 @@ func TestAutonomousConsumableUse_InBattle(t *testing.T) {
 
 	// Seed inventory in store
 	inv := store.GetInventory(domain.AgentID(agentID))
-	inv.Consumables["quality_shield"] = 1
+	inv.SetConsumable("quality_shield", 1)
 
 	waitForTracker(t, comp, agentInstance, 3*time.Second)
 
@@ -1540,7 +1540,7 @@ func TestUseIntentEmitted(t *testing.T) {
 
 	// Seed inventory in store
 	inv := store.GetInventory(domain.AgentID(agentID))
-	inv.Consumables["quality_shield"] = 1
+	inv.SetConsumable("quality_shield", 1)
 
 	waitForTracker(t, comp, agentInstance, 3*time.Second)
 
