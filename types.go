@@ -373,6 +373,8 @@ type Quest struct {
 	ParentQuest  *QuestID  `json:"parent_quest,omitempty"`  // If this is a sub-quest
 	SubQuests    []QuestID `json:"sub_quests,omitempty"`    // If decomposed
 	DecomposedBy *AgentID  `json:"decomposed_by,omitempty"` // Party lead who broke it down
+	DependsOn    []QuestID `json:"depends_on,omitempty"`    // Sibling dependencies (waits for these to complete)
+	Acceptance   []string  `json:"acceptance,omitempty"`    // Domain-flexible acceptance criteria
 
 	// Assignment
 	ClaimedBy     *AgentID `json:"claimed_by,omitempty"`

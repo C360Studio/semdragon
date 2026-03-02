@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -302,6 +303,141 @@ type QuestHints struct {
 	RequireHumanReview  bool             `json:"require_human_review"`
 	Budget              float64          `json:"budget"`
 	Deadline            string           `json:"deadline,omitempty"`
+}
+
+// =============================================================================
+// QUEST BRIEF - Structured quest creation input
+// =============================================================================
+
+// QuestBrief is the JSON-friendly input for creating a single quest.
+// Both human-authored JSON and chat-assembled quests produce this structure.
+type QuestBrief struct {
+	Title       string           `json:"title"`
+	Description string           `json:"description,omitempty"`
+	Difficulty  *QuestDifficulty `json:"difficulty,omitempty"`
+	Skills      []SkillTag       `json:"skills,omitempty"`
+	Acceptance  []string         `json:"acceptance,omitempty"`
+	DependsOn   []QuestID        `json:"depends_on,omitempty"`
+	Hints       *QuestHints      `json:"hints,omitempty"`
+}
+
+// QuestChainBrief defines multiple interdependent quests submitted as one batch.
+type QuestChainBrief struct {
+	Quests []QuestChainEntry `json:"quests"`
+}
+
+// QuestChainEntry is one quest within a chain. DependsOn uses array indices
+// (0-based) referring to other entries in the same chain.
+type QuestChainEntry struct {
+	Title       string           `json:"title"`
+	Description string           `json:"description,omitempty"`
+	Difficulty  *QuestDifficulty `json:"difficulty,omitempty"`
+	Skills      []SkillTag       `json:"skills,omitempty"`
+	Acceptance  []string         `json:"acceptance,omitempty"`
+	DependsOn   []int            `json:"depends_on,omitempty"`
+	Hints       *QuestHints      `json:"hints,omitempty"`
+}
+
+// maxChainSize is the maximum number of quests in a single chain submission.
+const maxChainSize = 50
+
+// ValidateQuestBrief checks that a QuestBrief has all required fields.
+func ValidateQuestBrief(b *QuestBrief) error {
+	if b == nil {
+		return fmt.Errorf("quest brief is nil")
+	}
+	if b.Title == "" {
+		return fmt.Errorf("quest brief: title is required")
+	}
+	if b.Difficulty != nil {
+		if err := validateDifficultyRange(*b.Difficulty); err != nil {
+			return fmt.Errorf("quest brief: %w", err)
+		}
+	}
+	return nil
+}
+
+// ValidateQuestChainBrief checks that a QuestChainBrief is well-formed:
+// non-empty, all titles present, index bounds valid, no self-references,
+// no duplicate deps, valid difficulty, no cycles.
+func ValidateQuestChainBrief(chain *QuestChainBrief) error {
+	if chain == nil {
+		return fmt.Errorf("quest chain brief is nil")
+	}
+	n := len(chain.Quests)
+	if n == 0 {
+		return fmt.Errorf("quest chain brief: at least one quest is required")
+	}
+	if n > maxChainSize {
+		return fmt.Errorf("quest chain brief: exceeds maximum of %d quests", maxChainSize)
+	}
+
+	for i, entry := range chain.Quests {
+		if entry.Title == "" {
+			return fmt.Errorf("quest chain brief: quest[%d] title is required", i)
+		}
+		if entry.Difficulty != nil {
+			if err := validateDifficultyRange(*entry.Difficulty); err != nil {
+				return fmt.Errorf("quest chain brief: quest[%d] %w", i, err)
+			}
+		}
+		seen := make(map[int]bool, len(entry.DependsOn))
+		for _, dep := range entry.DependsOn {
+			if dep < 0 || dep >= n {
+				return fmt.Errorf("quest chain brief: quest[%d] depends_on index %d out of range [0,%d)", i, dep, n)
+			}
+			if dep == i {
+				return fmt.Errorf("quest chain brief: quest[%d] cannot depend on itself", i)
+			}
+			if seen[dep] {
+				return fmt.Errorf("quest chain brief: quest[%d] duplicate depends_on index %d", i, dep)
+			}
+			seen[dep] = true
+		}
+	}
+
+	// Cycle detection via topological sort (Kahn's algorithm)
+	inDegree := make([]int, n)
+	adj := make([][]int, n)
+	for i, entry := range chain.Quests {
+		for _, dep := range entry.DependsOn {
+			adj[dep] = append(adj[dep], i)
+			inDegree[i]++
+		}
+	}
+
+	queue := make([]int, 0, n)
+	for i, d := range inDegree {
+		if d == 0 {
+			queue = append(queue, i)
+		}
+	}
+
+	visited := 0
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		visited++
+		for _, next := range adj[node] {
+			inDegree[next]--
+			if inDegree[next] == 0 {
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	if visited != n {
+		return fmt.Errorf("quest chain brief: dependency cycle detected")
+	}
+
+	return nil
+}
+
+func validateDifficultyRange(d QuestDifficulty) error {
+	if d < DifficultyTrivial || d > DifficultyLegendary {
+		return fmt.Errorf("difficulty %d out of range [%d,%d]", d, DifficultyTrivial, DifficultyLegendary)
+	}
+	return nil
 }
 
 // =============================================================================

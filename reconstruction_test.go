@@ -420,6 +420,84 @@ func TestAgentRoundTrip_EmptyInventory(t *testing.T) {
 	}
 }
 
+func TestQuestRoundTrip_DependsOnAndAcceptance(t *testing.T) {
+	dep1 := QuestID("test.dev.game.board1.quest.dep1")
+	dep2 := QuestID("test.dev.game.board1.quest.dep2")
+
+	original := &Quest{
+		ID:          QuestID("test.dev.game.board1.quest.q1"),
+		Title:       "Depends On Test",
+		Description: "Testing DependsOn and Acceptance round-trip",
+		Status:      QuestPosted,
+		Difficulty:  DifficultyModerate,
+		BaseXP:      200,
+		MaxAttempts: 3,
+		PostedAt:    time.Now().Truncate(time.Second),
+		DependsOn:   []QuestID{dep1, dep2},
+		Acceptance: []string{
+			"All unit tests pass",
+			"Code review approved",
+			"Documentation updated",
+		},
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if len(r.DependsOn) != 2 {
+		t.Fatalf("DependsOn len = %d, want 2", len(r.DependsOn))
+	}
+	if r.DependsOn[0] != dep1 {
+		t.Errorf("DependsOn[0] = %q, want %q", r.DependsOn[0], dep1)
+	}
+	if r.DependsOn[1] != dep2 {
+		t.Errorf("DependsOn[1] = %q, want %q", r.DependsOn[1], dep2)
+	}
+
+	if len(r.Acceptance) != 3 {
+		t.Fatalf("Acceptance len = %d, want 3", len(r.Acceptance))
+	}
+	if r.Acceptance[0] != "All unit tests pass" {
+		t.Errorf("Acceptance[0] = %q, want %q", r.Acceptance[0], "All unit tests pass")
+	}
+	if r.Acceptance[1] != "Code review approved" {
+		t.Errorf("Acceptance[1] = %q, want %q", r.Acceptance[1], "Code review approved")
+	}
+	if r.Acceptance[2] != "Documentation updated" {
+		t.Errorf("Acceptance[2] = %q, want %q", r.Acceptance[2], "Documentation updated")
+	}
+}
+
+func TestQuestRoundTrip_EmptyDependsOnAndAcceptance(t *testing.T) {
+	original := &Quest{
+		ID:          QuestID("test.dev.game.board1.quest.q1"),
+		Title:       "No Deps Test",
+		Status:      QuestPosted,
+		Difficulty:  DifficultyEasy,
+		BaseXP:      50,
+		MaxAttempts: 3,
+		PostedAt:    time.Now().Truncate(time.Second),
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if len(r.DependsOn) != 0 {
+		t.Errorf("DependsOn len = %d, want 0", len(r.DependsOn))
+	}
+	if len(r.Acceptance) != 0 {
+		t.Errorf("Acceptance len = %d, want 0", len(r.Acceptance))
+	}
+}
+
 func TestQuestFromEntityState_NilReturnsNil(t *testing.T) {
 	if got := QuestFromEntityState(nil); got != nil {
 		t.Errorf("QuestFromEntityState(nil) = %v, want nil", got)

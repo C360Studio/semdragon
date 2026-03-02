@@ -105,6 +105,20 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
+	for _, depID := range q.DependsOn {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dependency.quest", Object: string(depID),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	for _, criterion := range q.Acceptance {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.acceptance.criterion", Object: criterion,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
 	if q.ClaimedAt != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.lifecycle.claimed_at", Object: q.ClaimedAt.Format(time.RFC3339),

@@ -184,6 +184,7 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	// Quests
 	mux.HandleFunc("GET "+prefix+"quests", cors(s.handleListQuests))
 	mux.HandleFunc("GET "+prefix+"quests/{id}", cors(s.handleGetQuest))
+	mux.HandleFunc("POST "+prefix+"quests/chain", cors(requireAuth(apiKey, s.handlePostQuestChain)))
 	mux.HandleFunc("POST "+prefix+"quests", cors(requireAuth(apiKey, s.handleCreateQuest)))
 
 	// Quest lifecycle

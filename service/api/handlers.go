@@ -216,6 +216,93 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(quest)
 }
 
+func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+
+	var chain semdragons.QuestChainBrief
+	if err := json.NewDecoder(r.Body).Decode(&chain); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := semdragons.ValidateQuestChainBrief(&chain); err != nil {
+		s.writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	now := time.Now()
+
+	// First pass: post each quest (no DependsOn yet — we need real IDs first)
+	posted := make([]semdragons.Quest, 0, len(chain.Quests))
+	for _, entry := range chain.Quests {
+		instance := semdragons.GenerateShortInstance()
+		questID := s.graph.Config().QuestEntityID(instance)
+
+		difficulty := semdragons.DifficultyModerate
+		if entry.Difficulty != nil {
+			difficulty = *entry.Difficulty
+		}
+
+		quest := semdragons.Quest{
+			ID:          semdragons.QuestID(questID),
+			Title:       entry.Title,
+			Description: entry.Description,
+			Status:      semdragons.QuestPosted,
+			Difficulty:  difficulty,
+			BaseXP:      semdragons.DefaultXPForDifficulty(difficulty),
+			MinTier:     semdragons.TierFromDifficulty(difficulty),
+			MaxAttempts: 3,
+			PostedAt:    now,
+			Acceptance:  entry.Acceptance,
+		}
+
+		quest.RequiredSkills = append(quest.RequiredSkills, entry.Skills...)
+
+		if entry.Hints != nil {
+			if entry.Hints.RequireHumanReview {
+				quest.Constraints.RequireReview = true
+				quest.Constraints.ReviewLevel = semdragons.ReviewStandard
+			}
+			if entry.Hints.PreferGuild != nil {
+				quest.GuildPriority = entry.Hints.PreferGuild
+			}
+		}
+
+		if err := s.graph.EmitEntity(ctx, &quest, "quest.posted"); err != nil {
+			s.writeError(w, "failed to create quest", http.StatusInternalServerError)
+			s.logger.Error("Failed to create chain quest", "title", entry.Title, "error", err)
+			return
+		}
+
+		posted = append(posted, quest)
+	}
+
+	// Second pass: resolve index-based DependsOn to real QuestIDs
+	for i, entry := range chain.Quests {
+		if len(entry.DependsOn) == 0 {
+			continue
+		}
+
+		deps := make([]semdragons.QuestID, 0, len(entry.DependsOn))
+		for _, idx := range entry.DependsOn {
+			deps = append(deps, posted[idx].ID)
+		}
+		posted[i].DependsOn = deps
+
+		if err := s.graph.EmitEntityUpdate(ctx, &posted[i], "quest.dependencies.set"); err != nil {
+			s.writeError(w, "failed to set quest dependencies", http.StatusInternalServerError)
+			s.logger.Error("Failed to set chain dependencies", "quest_id", posted[i].ID, "error", err)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(posted)
+}
+
 // =============================================================================
 // QUEST LIFECYCLE
 // =============================================================================

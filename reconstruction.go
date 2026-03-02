@@ -91,6 +91,14 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 		case "quest.parent.quest":
 			parentID := QuestID(asString(triple.Object))
 			q.ParentQuest = &parentID
+		case "quest.dependency.quest":
+			if v := asString(triple.Object); v != "" {
+				q.DependsOn = append(q.DependsOn, QuestID(v))
+			}
+		case "quest.acceptance.criterion":
+			if v := asString(triple.Object); v != "" {
+				q.Acceptance = append(q.Acceptance, v)
+			}
 
 		// Skills and tools (collected separately)
 		case "quest.skill.required":

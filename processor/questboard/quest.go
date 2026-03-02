@@ -44,6 +44,8 @@ type Quest struct {
 	ParentQuest  *domain.QuestID  `json:"parent_quest,omitempty"`  // If this is a sub-quest
 	SubQuests    []domain.QuestID `json:"sub_quests,omitempty"`    // If decomposed
 	DecomposedBy *domain.AgentID  `json:"decomposed_by,omitempty"` // Party lead who broke it down
+	DependsOn    []domain.QuestID `json:"depends_on,omitempty"`    // Sibling dependencies (waits for these to complete)
+	Acceptance   []string         `json:"acceptance,omitempty"`    // Domain-flexible acceptance criteria
 
 	// Assignment
 	ClaimedBy     *domain.AgentID `json:"claimed_by,omitempty"`
@@ -194,6 +196,20 @@ func (q *Quest) Triples() []message.Triple {
 	if q.ParentQuest != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.parent.quest", Object: string(*q.ParentQuest),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	for _, depID := range q.DependsOn {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dependency.quest", Object: string(depID),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	for _, criterion := range q.Acceptance {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.acceptance.criterion", Object: criterion,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}

@@ -136,6 +136,74 @@ func (c *Component) PostSubQuests(ctx context.Context, parentID domain.QuestID, 
 	return posted, nil
 }
 
+// PostQuestChain validates and posts a chain of interdependent quests.
+// Index-based DependsOn entries in QuestChainEntry are resolved to real QuestIDs.
+func (c *Component) PostQuestChain(ctx context.Context, chain domain.QuestChainBrief) ([]Quest, error) {
+	if !c.running.Load() {
+		return nil, errors.New("component not running")
+	}
+
+	if err := domain.ValidateQuestChainBrief(&chain); err != nil {
+		return nil, err
+	}
+
+	c.lastActivity.Store(time.Now())
+	c.messagesProcessed.Add(1)
+
+	// First pass: post each quest without DependsOn (we don't have real IDs yet)
+	posted := make([]Quest, 0, len(chain.Quests))
+	for _, entry := range chain.Quests {
+		q := Quest{
+			Title:       entry.Title,
+			Description: entry.Description,
+			Acceptance:  entry.Acceptance,
+		}
+		if entry.Difficulty != nil {
+			q.Difficulty = *entry.Difficulty
+		} else {
+			q.Difficulty = domain.DifficultyModerate
+		}
+		q.RequiredSkills = entry.Skills
+
+		if entry.Hints != nil {
+			if entry.Hints.RequireHumanReview {
+				q.Constraints.RequireReview = true
+				q.Constraints.ReviewLevel = domain.ReviewStandard
+			}
+			if entry.Hints.PreferGuild != nil {
+				q.GuildPriority = entry.Hints.PreferGuild
+			}
+		}
+
+		result, err := c.PostQuest(ctx, q)
+		if err != nil {
+			c.errorsCount.Add(1)
+			return nil, errs.Wrap(err, "QuestBoard", "PostQuestChain", "post entry")
+		}
+		posted = append(posted, *result)
+	}
+
+	// Second pass: resolve index-based DependsOn to real QuestIDs and emit updates
+	for i, entry := range chain.Quests {
+		if len(entry.DependsOn) == 0 {
+			continue
+		}
+
+		deps := make([]domain.QuestID, 0, len(entry.DependsOn))
+		for _, idx := range entry.DependsOn {
+			deps = append(deps, posted[idx].ID)
+		}
+		posted[i].DependsOn = deps
+
+		if err := c.graph.EmitEntityUpdate(ctx, &posted[i], "quest.dependencies.set"); err != nil {
+			c.errorsCount.Add(1)
+			return nil, errs.Wrap(err, "QuestBoard", "PostQuestChain", "set dependencies")
+		}
+	}
+
+	return posted, nil
+}
+
 // QuestFilter specifies filtering options for quest queries.
 type QuestFilter struct {
 	Limit         int                     `json:"limit"`
@@ -177,14 +245,21 @@ func (c *Component) AvailableQuests(ctx context.Context, agentID domain.AgentID,
 		limit = 50
 	}
 
-	// List all quests directly from KV and filter in-memory
-	entities, err := c.graph.ListEntitiesByType(ctx, "quest", 0)
+	// List all quests directly from KV and filter in-memory.
+	// Use a high limit to ensure we scan beyond the default 100.
+	entities, err := c.graph.ListEntitiesByType(ctx, "quest", 10000)
 	if err != nil {
 		return nil, errs.Wrap(err, "QuestBoard", "AvailableQuests", "list quests")
 	}
 
 	agentTier := semdragons.TierFromLevel(agent.Level)
 	available := make([]Quest, 0, limit)
+
+	// Build entity map for O(1) dependency status lookups
+	entityMap := make(map[string]*graph.EntityState, len(entities))
+	for i := range entities {
+		entityMap[entities[i].ID] = &entities[i]
+	}
 
 	for _, entity := range entities {
 		if len(available) >= limit {
@@ -199,6 +274,26 @@ func (c *Component) AvailableQuests(ctx context.Context, agentID domain.AgentID,
 		// Filter checks
 		if quest.Status != domain.QuestPosted {
 			continue
+		}
+
+		// Dependency blocking: skip if any DependsOn quest is not completed
+		if len(quest.DependsOn) > 0 {
+			blocked := false
+			for _, depID := range quest.DependsOn {
+				depEntity := entityMap[string(depID)]
+				if depEntity == nil {
+					blocked = true
+					break
+				}
+				depQuest := c.questFromEntity(depEntity)
+				if depQuest == nil || depQuest.Status != domain.QuestCompleted {
+					blocked = true
+					break
+				}
+			}
+			if blocked {
+				continue
+			}
 		}
 		if domain.TrustTier(agentTier) < quest.MinTier {
 			continue
@@ -808,6 +903,14 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *Quest {
 			if v, ok := triple.Object.(string); ok {
 				parentID := domain.QuestID(v)
 				quest.ParentQuest = &parentID
+			}
+		case "quest.dependency.quest":
+			if v, ok := triple.Object.(string); ok {
+				quest.DependsOn = append(quest.DependsOn, domain.QuestID(v))
+			}
+		case "quest.acceptance.criterion":
+			if v, ok := triple.Object.(string); ok {
+				quest.Acceptance = append(quest.Acceptance, v)
 			}
 		case "quest.observability.trajectory_id":
 			if v, ok := triple.Object.(string); ok {

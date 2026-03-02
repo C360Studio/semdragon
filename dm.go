@@ -85,6 +85,25 @@ type Intervention = domain.Intervention
 // QuestHints provides optional guidance for quest creation.
 type QuestHints = domain.QuestHints
 
+// QuestBrief is the JSON-friendly input for creating a single quest.
+type QuestBrief = domain.QuestBrief
+
+// QuestChainBrief defines multiple interdependent quests submitted as one batch.
+type QuestChainBrief = domain.QuestChainBrief
+
+// QuestChainEntry is one quest within a chain.
+type QuestChainEntry = domain.QuestChainEntry
+
+// ValidateQuestBrief checks that a QuestBrief has all required fields.
+func ValidateQuestBrief(b *QuestBrief) error {
+	return domain.ValidateQuestBrief(b)
+}
+
+// ValidateQuestChainBrief checks that a QuestChainBrief is well-formed.
+func ValidateQuestChainBrief(chain *QuestChainBrief) error {
+	return domain.ValidateQuestChainBrief(chain)
+}
+
 // AgentEvaluation contains a performance assessment of an agent.
 type AgentEvaluation = domain.AgentEvaluation
 
