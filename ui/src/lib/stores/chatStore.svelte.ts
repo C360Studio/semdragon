@@ -9,6 +9,7 @@
 import type { Quest, QuestDifficulty, SkillTag, DMChatSession } from '$types';
 import { browser } from '$app/environment';
 import { sendDMChat, createQuest, postQuestChain, getDMSession, ApiError } from '$lib/services/api';
+import { pageContext } from '$lib/stores/pageContext.svelte';
 
 // =============================================================================
 // TYPES
@@ -23,7 +24,7 @@ export interface ChatMessage {
 }
 
 export interface ChatContextItem {
-	type: 'agent' | 'quest' | 'battle' | 'guild';
+	type: 'agent' | 'quest' | 'battle' | 'guild' | 'party';
 	id: string;
 	label: string;
 }
@@ -189,10 +190,23 @@ async function sendMessage(text: string) {
 			content: m.content
 		}));
 
-		const context = contextItems.map((c) => ({
-			type: c.type,
-			id: c.id
-		}));
+		// Merge pinned context + page context, dedup by type+id
+		const seen = new Set<string>();
+		const context: { type: string; id: string }[] = [];
+		for (const c of contextItems) {
+			const key = `${c.type}:${c.id}`;
+			if (!seen.has(key)) {
+				seen.add(key);
+				context.push({ type: c.type, id: c.id });
+			}
+		}
+		for (const c of pageContext.items) {
+			const key = `${c.type}:${c.id}`;
+			if (!seen.has(key)) {
+				seen.add(key);
+				context.push({ type: c.type, id: c.id });
+			}
+		}
 
 		const response = await sendDMChat(text.trim(), context, history, sessionId ?? undefined);
 

@@ -4,6 +4,7 @@
 	 */
 
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { TrustTierNames, type Agent } from '$types';
 
@@ -46,29 +47,24 @@
 	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
 >
 	{#snippet leftPanel()}
-		<div class="filters-panel">
-			<header class="panel-header">
-				<h2>Filters</h2>
-			</header>
-			<div class="filters-content">
-				<label for="agent-status-filter" class="filter-label">Status</label>
-				<select id="agent-status-filter" bind:value={statusFilter} class="filter-select" data-testid="agent-status-filter">
-					<option value="all">All</option>
-					<option value="idle">Idle</option>
-					<option value="on_quest">On Quest</option>
-					<option value="in_battle">In Battle</option>
-					<option value="cooldown">Cooldown</option>
-					<option value="retired">Retired</option>
-				</select>
-			</div>
-		</div>
+		<ExplorerNav />
 	{/snippet}
 
 	{#snippet centerPanel()}
 		<div class="agent-roster">
 			<header class="roster-header">
 				<h1>Agent Roster</h1>
-				<span class="agent-count">{filteredAgents.length} agents</span>
+				<div class="header-controls">
+					<select id="agent-status-filter" bind:value={statusFilter} class="inline-filter" data-testid="agent-status-filter" aria-label="Filter by status">
+						<option value="all">All Status</option>
+						<option value="idle">Idle</option>
+						<option value="on_quest">On Quest</option>
+						<option value="in_battle">In Battle</option>
+						<option value="cooldown">Cooldown</option>
+						<option value="retired">Retired</option>
+					</select>
+					<span class="agent-count">{filteredAgents.length} agents</span>
+				</div>
 			</header>
 
 			{#if worldStore.loading}
@@ -100,7 +96,14 @@
 							{TrustTierNames[agent.tier]}
 						</div>
 
-						<div class="xp-bar">
+						<div
+							class="xp-bar"
+							role="progressbar"
+							aria-label="XP progress"
+							aria-valuenow={agent.xp}
+							aria-valuemin={0}
+							aria-valuemax={agent.xp_to_level}
+						>
 							<div class="xp-fill" style="width: {xpPercentage(agent)}%"></div>
 						</div>
 						<div class="xp-label">
@@ -108,12 +111,12 @@
 						</div>
 
 						<div class="agent-status" data-status={agent.status}>
-							{agent.status.replace('_', ' ')}
+							{agent.status.replaceAll('_', ' ')}
 						</div>
 
 						<div class="agent-skills">
 							{#each Object.keys(agent.skill_proficiencies || {}).slice(0, 3) as skill}
-								<span class="skill-tag">{skill.replace('_', ' ')}</span>
+								<span class="skill-tag">{skill.replaceAll('_', ' ')}</span>
 							{/each}
 							{#if Object.keys(agent.skill_proficiencies || {}).length > 3}
 								<span class="skill-more">+{Object.keys(agent.skill_proficiencies || {}).length - 3}</span>
@@ -146,7 +149,14 @@
 
 						<div class="level-display">
 							<span class="level-number">Level {agent.level}</span>
-							<div class="xp-bar large">
+							<div
+								class="xp-bar large"
+								role="progressbar"
+								aria-label="XP progress"
+								aria-valuenow={agent.xp}
+								aria-valuemin={0}
+								aria-valuemax={agent.xp_to_level}
+							>
 								<div class="xp-fill" style="width: {xpPercentage(agent)}%"></div>
 							</div>
 							<span class="xp-text">{agent.xp} / {agent.xp_to_level} XP</span>
@@ -156,7 +166,7 @@
 							<dt>Status</dt>
 							<dd>
 								<span class="status-badge" data-status={agent.status}>
-									{agent.status.replace('_', ' ')}
+									{agent.status.replaceAll('_', ' ')}
 								</span>
 							</dd>
 							<dt>Deaths</dt>
@@ -174,7 +184,7 @@
 						<h4>Skills</h4>
 						<div class="skills-list">
 							{#each Object.keys(agent.skill_proficiencies || {}) as skill}
-								<span class="skill-tag">{skill.replace('_', ' ')}</span>
+								<span class="skill-tag">{skill.replaceAll('_', ' ')}</span>
 							{/each}
 						</div>
 
@@ -203,43 +213,6 @@
 </ThreePanelLayout>
 
 <style>
-	/* Filters Panel */
-	.filters-panel {
-		height: 100%;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.panel-header {
-		padding: var(--spacing-md);
-		background: var(--ui-surface-tertiary);
-		border-bottom: 1px solid var(--ui-border-subtle);
-	}
-
-	.panel-header h2 {
-		font-size: 0.875rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--ui-text-secondary);
-		margin: 0;
-	}
-
-	.filters-content {
-		padding: var(--spacing-md);
-	}
-
-	.filter-label {
-		display: block;
-		font-size: 0.75rem;
-		color: var(--ui-text-tertiary);
-		margin-bottom: var(--spacing-xs);
-	}
-
-	.filter-select {
-		width: 100%;
-	}
-
 	/* Agent Roster */
 	.agent-roster {
 		height: 100%;
@@ -259,6 +232,21 @@
 	.roster-header h1 {
 		margin: 0;
 		font-size: 1.25rem;
+	}
+
+	.header-controls {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+	}
+
+	.inline-filter {
+		font-size: 0.875rem;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-primary);
 	}
 
 	.agent-count {

@@ -6,24 +6,38 @@
 	 */
 
 	interface ContextChipProps {
-		type: 'agent' | 'quest' | 'battle' | 'guild';
+		type: 'agent' | 'quest' | 'battle' | 'guild' | 'party';
 		label: string;
+		variant?: 'default' | 'page';
 		onRemove?: () => void;
+		onPin?: () => void;
 	}
 
-	let { type, label, onRemove }: ContextChipProps = $props();
+	let { type, label, variant = 'default', onRemove, onPin }: ContextChipProps = $props();
 
 	const typeIcons: Record<string, string> = {
 		agent: 'A',
 		quest: 'Q',
 		battle: 'B',
-		guild: 'G'
+		guild: 'G',
+		party: 'P'
 	};
 </script>
 
-<span class="context-chip" data-type={type} data-testid="context-chip">
+<span class="context-chip" class:page-context={variant === 'page'} data-type={type} data-testid="context-chip">
 	<span class="chip-icon">{typeIcons[type] ?? '?'}</span>
 	<span class="chip-label">{label}</span>
+	{#if onPin}
+		<button
+			type="button"
+			class="chip-pin"
+			aria-label="Pin {label} to chat context"
+			title="Pin to chat context"
+			onclick={onPin}
+		>
+			+
+		</button>
+	{/if}
 	{#if onRemove}
 		<button
 			type="button"
@@ -81,6 +95,15 @@
 		color: var(--tier-master, #7b1fa2);
 	}
 
+	.context-chip[data-type='party'] .chip-icon {
+		background: var(--tier-journeyman-container, #e8f5e9);
+		color: var(--tier-journeyman, #2e7d32);
+	}
+
+	.page-context {
+		border-style: dashed;
+	}
+
 	.chip-label {
 		max-width: 120px;
 		overflow: hidden;
@@ -108,5 +131,28 @@
 	.chip-remove:hover {
 		background: var(--ui-surface-secondary);
 		color: var(--ui-text-primary);
+	}
+
+	.chip-pin {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		border: none;
+		background: none;
+		padding: 0;
+		cursor: pointer;
+		color: var(--ui-text-tertiary);
+		font-size: 0.75rem;
+		font-weight: 600;
+		line-height: 1;
+		border-radius: 50%;
+		transition: background-color 150ms ease;
+	}
+
+	.chip-pin:hover {
+		background: var(--ui-surface-secondary);
+		color: var(--ui-interactive-primary);
 	}
 </style>

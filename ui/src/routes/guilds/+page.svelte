@@ -3,74 +3,109 @@
 	 * Guild Registry - View of all guilds
 	 */
 
+	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
+
+	// Panel state
+	let leftPanelOpen = $state(true);
+	let rightPanelOpen = $state(true);
+	let leftPanelWidth = $state(280);
+	let rightPanelWidth = $state(320);
 </script>
 
 <svelte:head>
 	<title>Guilds - Semdragons</title>
 </svelte:head>
 
-<div class="guilds-page">
-	<header class="page-header">
-		<h1>Guild Registry</h1>
-		<span class="guild-count">{worldStore.guildList.length} guilds</span>
-	</header>
+<ThreePanelLayout
+	{leftPanelOpen}
+	{rightPanelOpen}
+	{leftPanelWidth}
+	{rightPanelWidth}
+	onLeftWidthChange={(w) => (leftPanelWidth = w)}
+	onRightWidthChange={(w) => (rightPanelWidth = w)}
+	onToggleLeft={() => (leftPanelOpen = !leftPanelOpen)}
+	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
+>
+	{#snippet leftPanel()}
+		<ExplorerNav />
+	{/snippet}
 
-	<div class="guilds-grid">
-		{#each worldStore.guildList as guild}
-			<a href="/guilds/{guild.id}" class="guild-card" data-status={guild.status} data-testid="guild-card">
-				<div class="guild-header">
-					<h2>{guild.name}</h2>
-					<span class="guild-status">{guild.status}</span>
-				</div>
+	{#snippet centerPanel()}
+		<div class="guilds-content">
+			<header class="page-header">
+				<h1>Guild Registry</h1>
+				<span class="guild-count">{worldStore.guildList.length} guilds</span>
+			</header>
 
-				<p class="guild-description">{guild.description}</p>
+			<div class="guilds-grid">
+				{#each worldStore.guildList as guild}
+					<a href="/guilds/{guild.id}" class="guild-card" data-status={guild.status} data-testid="guild-card">
+						<div class="guild-header">
+							<h2>{guild.name}</h2>
+							<span class="guild-status">{guild.status}</span>
+						</div>
 
-				<div class="guild-domain">
-					<span class="domain-label">Culture:</span>
-					<span class="domain-value">{guild.culture}</span>
-				</div>
+						<p class="guild-description">{guild.description}</p>
 
-				<div class="guild-stats">
-					<div class="stat">
-						<span class="stat-value">{guild.members.length}</span>
-						<span class="stat-label">Members</span>
-					</div>
-					<div class="stat">
-						<span class="stat-value">{(guild.reputation * 100).toFixed(0)}%</span>
-						<span class="stat-label">Reputation</span>
-					</div>
-					<div class="stat">
-						<span class="stat-value">{guild.quests_handled}</span>
-						<span class="stat-label">Quests</span>
-					</div>
-					<div class="stat">
-						<span class="stat-value">{(guild.success_rate * 100).toFixed(0)}%</span>
-						<span class="stat-label">Success Rate</span>
-					</div>
-				</div>
+						<div class="guild-domain">
+							<span class="domain-label">Culture:</span>
+							<span class="domain-value">{guild.culture}</span>
+						</div>
 
-				<div class="guild-skills">
-					{#each (guild.quest_types || []).slice(0, 4) as qtype}
-						<span class="skill-tag">{qtype.replace('_', ' ')}</span>
-					{/each}
-					{#if (guild.quest_types || []).length > 4}
-						<span class="skill-more">+{(guild.quest_types || []).length - 4}</span>
-					{/if}
-				</div>
-			</a>
-		{:else}
-			<div class="empty-state">No guilds found</div>
-		{/each}
-	</div>
-</div>
+						<div class="guild-stats">
+							<div class="stat">
+								<span class="stat-value">{guild.members.length}</span>
+								<span class="stat-label">Members</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{(guild.reputation * 100).toFixed(0)}%</span>
+								<span class="stat-label">Reputation</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{guild.quests_handled}</span>
+								<span class="stat-label">Quests</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{(guild.success_rate * 100).toFixed(0)}%</span>
+								<span class="stat-label">Success Rate</span>
+							</div>
+						</div>
+
+						<div class="guild-skills">
+							{#each (guild.quest_types || []).slice(0, 4) as qtype}
+								<span class="skill-tag">{qtype.replaceAll('_', ' ')}</span>
+							{/each}
+							{#if (guild.quest_types || []).length > 4}
+								<span class="skill-more">+{(guild.quest_types || []).length - 4}</span>
+							{/if}
+						</div>
+					</a>
+				{:else}
+					<div class="empty-state">No guilds found</div>
+				{/each}
+			</div>
+		</div>
+	{/snippet}
+
+	{#snippet rightPanel()}
+		<div class="details-panel">
+			<header class="panel-header">
+				<h2>Guild Details</h2>
+			</header>
+			<div class="details-content">
+				<p class="empty-state">Select a guild to view details</p>
+			</div>
+		</div>
+	{/snippet}
+</ThreePanelLayout>
 
 <style>
-	.guilds-page {
+	.guilds-content {
 		height: 100%;
 		overflow-y: auto;
 		padding: var(--spacing-lg);
-		background: var(--ui-surface-primary);
 	}
 
 	.page-header {
@@ -216,5 +251,33 @@
 		text-align: center;
 		color: var(--ui-text-tertiary);
 		padding: var(--spacing-xl);
+	}
+
+	/* Details Panel */
+	.details-panel {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.panel-header {
+		padding: var(--spacing-md);
+		background: var(--ui-surface-tertiary);
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.panel-header h2 {
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-secondary);
+		margin: 0;
+	}
+
+	.details-content {
+		flex: 1;
+		overflow-y: auto;
+		padding: var(--spacing-md);
 	}
 </style>

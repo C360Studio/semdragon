@@ -3,23 +3,22 @@
 	 * Store Page - Agent marketplace for purchasing tools and consumables
 	 *
 	 * Three-panel layout:
-	 * - Left: Category filters and agent selector
-	 * - Center: Item grid
+	 * - Left: ExplorerNav
+	 * - Center: Item grid with inline agent selector and category filter
 	 * - Right: Selected item details and inventory
 	 */
 
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { StoreGrid, ItemDetail, InventoryPanel, XPBalance } from '$components/store';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import {
-		TrustTierNames,
 		type StoreItem,
 		type AgentInventory,
 		type AgentID,
-		type TrustTier,
 		type ItemType
 	} from '$types';
-	import { getStoreItems, getInventory, purchase, useConsumable } from '$services/api';
+	import { getStoreItems, getInventory, purchase, useConsumable, ApiError } from '$services/api';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -34,6 +33,7 @@
 	let loading = $state(true);
 	let purchasing = $state(false);
 	let error = $state<string | null>(null);
+	let serviceUnavailable = $state(false);
 
 	// Filter state
 	let selectedCategory = $state<ItemType | 'all'>('all');
@@ -77,6 +77,7 @@
 
 		loading = true;
 		error = null;
+		serviceUnavailable = false;
 
 		// Use Promise.allSettled for graceful degradation - show store items even if inventory fails
 		const [itemsResult, invResult] = await Promise.allSettled([
@@ -87,9 +88,13 @@
 		if (itemsResult.status === 'fulfilled') {
 			storeItems = itemsResult.value;
 		} else {
-			error = itemsResult.reason instanceof Error
-				? itemsResult.reason.message
-				: 'Failed to load store items';
+			if (itemsResult.reason instanceof ApiError && itemsResult.reason.status === 503) {
+				serviceUnavailable = true;
+			} else {
+				error = itemsResult.reason instanceof Error
+					? itemsResult.reason.message
+					: 'Failed to load store items';
+			}
 			console.error('Failed to load store items:', itemsResult.reason);
 		}
 
@@ -206,88 +211,28 @@
 	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
 >
 	{#snippet leftPanel()}
-		<div class="filters-panel">
-			<header class="panel-header">
-				<h2>Store</h2>
-			</header>
-
-			<div class="filters-content">
-				<!-- Agent Selector -->
-				<section class="filter-section">
-					<label class="filter-label" for="agent-select">Shopping as</label>
-					<select
-						id="agent-select"
-						class="agent-select"
-						bind:value={selectedAgentId}
-					>
-						{#each worldStore.agentList as agent (agent.id)}
-							<option value={agent.id}>
-								{agent.name} (Lvl {agent.level})
-							</option>
-						{/each}
-					</select>
-
-					{#if selectedAgent}
-						<div class="agent-xp">
-							<XPBalance xp={selectedAgent.xp} />
-							<span class="tier-label">
-								{TrustTierNames[selectedAgent.tier as TrustTier]}
-							</span>
-						</div>
-					{/if}
-				</section>
-
-				<!-- Category Filter -->
-				<section class="filter-section">
-					<span class="filter-label">Categories</span>
-					<div class="category-buttons">
-						<button
-							class="category-btn"
-							class:active={selectedCategory === 'all'}
-							onclick={() => (selectedCategory = 'all')}
-						>
-							All
-						</button>
-						<button
-							class="category-btn"
-							class:active={selectedCategory === 'tool'}
-							onclick={() => (selectedCategory = 'tool')}
-						>
-							Tools
-						</button>
-						<button
-							class="category-btn"
-							class:active={selectedCategory === 'consumable'}
-							onclick={() => (selectedCategory = 'consumable')}
-						>
-							Consumables
-						</button>
-					</div>
-				</section>
-
-				<!-- Tier Info -->
-				{#if selectedAgent}
-					<section class="filter-section tier-info">
-						<span class="filter-label">Your Tier</span>
-						<div class="tier-badge" data-tier={selectedAgent.tier}>
-							{TrustTierNames[selectedAgent.tier as TrustTier]}
-						</div>
-						<p class="tier-hint">
-							Higher tier items will appear as you level up
-						</p>
-					</section>
-				{/if}
-			</div>
-		</div>
+		<ExplorerNav />
 	{/snippet}
 
 	{#snippet centerPanel()}
 		<div class="store-main">
 			<header class="store-header">
 				<h1>Agent Store</h1>
-				{#if selectedAgent}
-					<XPBalance xp={selectedAgent.xp} large />
-				{/if}
+				<div class="header-controls">
+					<select id="agent-select" class="inline-filter" bind:value={selectedAgentId} aria-label="Shop as agent">
+						{#each worldStore.agentList as agent (agent.id)}
+							<option value={agent.id}>{agent.name} (Lvl {agent.level})</option>
+						{/each}
+					</select>
+					<div class="category-buttons">
+						<button class="category-btn" class:active={selectedCategory === 'all'} onclick={() => (selectedCategory = 'all')}>All</button>
+						<button class="category-btn" class:active={selectedCategory === 'tool'} onclick={() => (selectedCategory = 'tool')}>Tools</button>
+						<button class="category-btn" class:active={selectedCategory === 'consumable'} onclick={() => (selectedCategory = 'consumable')}>Consumables</button>
+					</div>
+					{#if selectedAgent}
+						<XPBalance xp={selectedAgent.xp} />
+					{/if}
+				</div>
 			</header>
 
 			{#if error}
@@ -304,6 +249,13 @@
 							<div class="skeleton-card"></div>
 						{/each}
 					</div>
+				</div>
+			{:else if serviceUnavailable}
+				<div class="unavailable-state" data-testid="store-unavailable">
+					<div class="unavailable-icon">S</div>
+					<h2>Store Unavailable</h2>
+					<p>The agent store service is not running. Enable the <code>agent_store</code> component in your config to use the store.</p>
+					<button class="retry-btn" onclick={() => loadStoreData()}>Retry</button>
 				</div>
 			{:else if !selectedAgentId}
 				<div class="empty-state">
@@ -356,143 +308,6 @@
 </ThreePanelLayout>
 
 <style>
-	/* Filters Panel */
-	.filters-panel {
-		height: 100%;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.panel-header {
-		padding: var(--spacing-md);
-		background: var(--ui-surface-tertiary);
-		border-bottom: 1px solid var(--ui-border-subtle);
-	}
-
-	.panel-header h2 {
-		font-size: 0.875rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--ui-text-secondary);
-		margin: 0;
-	}
-
-	.filters-content {
-		flex: 1;
-		padding: var(--spacing-md);
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-lg);
-		overflow-y: auto;
-	}
-
-	.filter-section {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-sm);
-	}
-
-	.filter-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--ui-text-tertiary);
-	}
-
-	.agent-select {
-		width: 100%;
-		padding: var(--spacing-sm);
-		font-size: 0.875rem;
-		background: var(--ui-surface-primary);
-		border: 1px solid var(--ui-border-subtle);
-		border-radius: var(--radius-md);
-		color: var(--ui-text-primary);
-	}
-
-	.agent-xp {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--spacing-sm);
-	}
-
-	.tier-label {
-		font-size: 0.75rem;
-		color: var(--ui-text-tertiary);
-	}
-
-	.category-buttons {
-		display: flex;
-		gap: var(--spacing-xs);
-	}
-
-	.category-btn {
-		flex: 1;
-		padding: var(--spacing-xs) var(--spacing-sm);
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: var(--ui-text-secondary);
-		background: var(--ui-surface-primary);
-		border: 1px solid var(--ui-border-subtle);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-		transition: all 150ms ease;
-	}
-
-	.category-btn:hover {
-		border-color: var(--ui-border-interactive);
-	}
-
-	.category-btn.active {
-		color: var(--ui-text-on-primary);
-		background: var(--ui-interactive-primary);
-		border-color: var(--ui-interactive-primary);
-	}
-
-	.tier-info {
-		padding: var(--spacing-md);
-		background: var(--ui-surface-tertiary);
-		border-radius: var(--radius-md);
-	}
-
-	.tier-badge {
-		display: inline-block;
-		font-size: 0.75rem;
-		padding: var(--spacing-xs) var(--spacing-sm);
-		border-radius: var(--radius-sm);
-		text-transform: uppercase;
-		font-weight: 600;
-	}
-
-	.tier-badge[data-tier='0'] {
-		background: var(--tier-apprentice-container, #e0f2fe);
-		color: var(--tier-apprentice, #0284c7);
-	}
-	.tier-badge[data-tier='1'] {
-		background: var(--tier-journeyman-container, #d1fae5);
-		color: var(--tier-journeyman, #059669);
-	}
-	.tier-badge[data-tier='2'] {
-		background: var(--tier-expert-container, #fef3c7);
-		color: var(--tier-expert, #d97706);
-	}
-	.tier-badge[data-tier='3'] {
-		background: var(--tier-master-container, #ede9fe);
-		color: var(--tier-master, #7c3aed);
-	}
-	.tier-badge[data-tier='4'] {
-		background: var(--tier-grandmaster-container, #fce7f3);
-		color: var(--tier-grandmaster, #db2777);
-	}
-
-	.tier-hint {
-		margin: 0;
-		font-size: 0.75rem;
-		color: var(--ui-text-tertiary);
-	}
-
 	/* Store Main */
 	.store-main {
 		height: 100%;
@@ -512,6 +327,48 @@
 	.store-header h1 {
 		margin: 0;
 		font-size: 1.25rem;
+	}
+
+	.header-controls {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+	}
+
+	.inline-filter {
+		font-size: 0.875rem;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-primary);
+	}
+
+	.category-buttons {
+		display: flex;
+		gap: var(--spacing-xs);
+	}
+
+	.category-btn {
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--ui-text-secondary);
+		background: var(--ui-surface-primary);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.category-btn:hover {
+		border-color: var(--ui-border-interactive);
+	}
+
+	.category-btn.active {
+		color: var(--ui-text-on-primary);
+		background: var(--ui-interactive-primary);
+		border-color: var(--ui-interactive-primary);
 	}
 
 	.error-banner {
@@ -576,6 +433,67 @@
 		text-align: center;
 		padding: var(--spacing-xl);
 		color: var(--ui-text-tertiary);
+	}
+
+	/* Service unavailable state */
+	.unavailable-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		flex: 1;
+		padding: var(--spacing-xl);
+		text-align: center;
+		color: var(--ui-text-secondary);
+	}
+
+	.unavailable-icon {
+		width: 48px;
+		height: 48px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-lg);
+		background: var(--ui-surface-tertiary);
+		color: var(--ui-text-tertiary);
+		font-size: 1.5rem;
+		font-weight: 700;
+		margin-bottom: var(--spacing-md);
+	}
+
+	.unavailable-state h2 {
+		margin: 0 0 var(--spacing-sm);
+		font-size: 1.125rem;
+		color: var(--ui-text-primary);
+	}
+
+	.unavailable-state p {
+		margin: 0 0 var(--spacing-lg);
+		font-size: 0.875rem;
+		max-width: 400px;
+		line-height: 1.5;
+	}
+
+	.unavailable-state code {
+		padding: 2px 6px;
+		background: var(--ui-surface-tertiary);
+		border-radius: var(--radius-sm);
+		font-size: 0.8125rem;
+	}
+
+	.retry-btn {
+		padding: var(--spacing-xs) var(--spacing-lg);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-primary);
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: border-color 150ms ease;
+	}
+
+	.retry-btn:hover {
+		border-color: var(--ui-border-interactive);
 	}
 
 	/* Details Panel */

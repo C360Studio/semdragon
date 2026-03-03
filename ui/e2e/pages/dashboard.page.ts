@@ -108,7 +108,7 @@ export class DashboardPage extends BasePage {
 	 */
 	async isLoaded(): Promise<boolean> {
 		const heading = await this.heading.textContent();
-		return heading?.includes("The DM's Scrying Pool") ?? false;
+		return heading?.includes("DM Dashboard") ?? false;
 	}
 
 	/**

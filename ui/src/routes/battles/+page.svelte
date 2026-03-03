@@ -4,6 +4,7 @@
 	 */
 
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { ReviewLevelNames, type BossBattle } from '$types';
 
@@ -41,28 +42,23 @@
 	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
 >
 	{#snippet leftPanel()}
-		<div class="filters-panel">
-			<header class="panel-header">
-				<h2>Filters</h2>
-			</header>
-			<div class="filters-content">
-				<label for="battle-status-filter" class="filter-label">Status</label>
-				<select id="battle-status-filter" bind:value={statusFilter} class="filter-select" data-testid="battle-status-filter">
-					<option value="all">All</option>
-					<option value="active">Active</option>
-					<option value="victory">Victory</option>
-					<option value="defeat">Defeat</option>
-					<option value="retreat">Retreat</option>
-				</select>
-			</div>
-		</div>
+		<ExplorerNav />
 	{/snippet}
 
 	{#snippet centerPanel()}
 		<div class="battle-arena">
 			<header class="arena-header">
 				<h1>Boss Battle Arena</h1>
-				<span class="battle-count">{filteredBattles.length} battles</span>
+				<div class="header-controls">
+					<select id="battle-status-filter" bind:value={statusFilter} class="inline-filter" data-testid="battle-status-filter" aria-label="Filter by status">
+						<option value="all">All Status</option>
+						<option value="active">Active</option>
+						<option value="victory">Victory</option>
+						<option value="defeat">Defeat</option>
+						<option value="retreat">Retreat</option>
+					</select>
+					<span class="battle-count">{filteredBattles.length} battles</span>
+				</div>
 			</header>
 
 			{#if worldStore.loading}
@@ -238,43 +234,6 @@
 </ThreePanelLayout>
 
 <style>
-	/* Filters Panel */
-	.filters-panel {
-		height: 100%;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.panel-header {
-		padding: var(--spacing-md);
-		background: var(--ui-surface-tertiary);
-		border-bottom: 1px solid var(--ui-border-subtle);
-	}
-
-	.panel-header h2 {
-		font-size: 0.875rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--ui-text-secondary);
-		margin: 0;
-	}
-
-	.filters-content {
-		padding: var(--spacing-md);
-	}
-
-	.filter-label {
-		display: block;
-		font-size: 0.75rem;
-		color: var(--ui-text-tertiary);
-		margin-bottom: var(--spacing-xs);
-	}
-
-	.filter-select {
-		width: 100%;
-	}
-
 	/* Battle Arena */
 	.battle-arena {
 		height: 100%;
@@ -294,6 +253,21 @@
 	.arena-header h1 {
 		margin: 0;
 		font-size: 1.25rem;
+	}
+
+	.header-controls {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+	}
+
+	.inline-filter {
+		font-size: 0.875rem;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-primary);
 	}
 
 	.battle-count {
@@ -634,6 +608,7 @@
 
 	/* Loading State */
 	.loading-state {
+		flex: 1;
 		padding: var(--spacing-md);
 	}
 

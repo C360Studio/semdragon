@@ -6,7 +6,7 @@ test.describe('Dashboard', () => {
 	});
 
 	test('displays page title', async ({ dashboardPage }) => {
-		await expect(dashboardPage.heading).toContainText("The DM's Scrying Pool");
+		await expect(dashboardPage.heading).toContainText("DM Dashboard");
 	});
 
 	test('displays connection status indicator', async ({ dashboardPage }) => {

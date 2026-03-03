@@ -8,13 +8,28 @@
 	import { api } from '$services/api';
 	import type { Trajectory, TrajectoryStep } from '$types';
 	import { worldStore } from '$stores/worldStore.svelte';
+	import { pageContext } from '$lib/stores/pageContext.svelte';
+	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
 	const trajectoryId = $derived($page.params.id ?? '');
 	const quest = $derived(worldStore.questList.find((q) => q.trajectory_id === trajectoryId));
 
+	$effect(() => {
+		if (quest) {
+			pageContext.set([{ type: 'quest', id: quest.id, label: quest.title }]);
+		}
+		return () => pageContext.clear();
+	});
+
 	let trajectory = $state<Trajectory | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+
+	let leftPanelOpen = $state(true);
+	let rightPanelOpen = $state(false);
+	let leftPanelWidth = $state(280);
+	let rightPanelWidth = $state(320);
 
 	const steps = $derived(trajectory?.steps ?? []);
 	const totalTokensIn = $derived(trajectory?.total_tokens_in ?? 0);
@@ -62,82 +77,108 @@
 	<title>Trajectory {trajectoryId.slice(0, 8)} - Semdragons</title>
 </svelte:head>
 
-<div class="trajectory-page" data-testid="trajectory-detail-page">
-	<header class="page-header">
-		<a href="/trajectories" class="back-link" data-testid="trajectory-back-link">Back to Trajectories</a>
-	</header>
+<ThreePanelLayout
+	{leftPanelOpen}
+	{rightPanelOpen}
+	{leftPanelWidth}
+	{rightPanelWidth}
+	onLeftWidthChange={(w) => (leftPanelWidth = w)}
+	onRightWidthChange={(w) => (rightPanelWidth = w)}
+	onToggleLeft={() => (leftPanelOpen = !leftPanelOpen)}
+	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
+>
+	{#snippet leftPanel()}
+		<ExplorerNav />
+	{/snippet}
 
-	<div class="trajectory-content">
-		<div class="trajectory-header">
-			<h1 data-testid="trajectory-heading">Trajectory Timeline</h1>
-			<span class="trajectory-id" data-testid="trajectory-id">{trajectoryId}</span>
-		</div>
+	{#snippet centerPanel()}
+		<div class="trajectory-page" data-testid="trajectory-detail-page">
+			<header class="page-header">
+				<a href="/trajectories" class="back-link" data-testid="trajectory-back-link">Back to Trajectories</a>
+			</header>
 
-		{#if quest}
-			<div class="quest-context" data-testid="trajectory-quest-context">
-				<a href="/quests/{quest.id}" class="quest-link">
-					<span class="quest-title" data-testid="trajectory-quest-title">{quest.title}</span>
-					<span class="quest-status" data-testid="trajectory-quest-status" data-status={quest.status}>{quest.status}</span>
-				</a>
+			<div class="trajectory-header">
+				<h1 data-testid="trajectory-heading">Trajectory Timeline</h1>
+				<span class="trajectory-id" data-testid="trajectory-id">{trajectoryId}</span>
 			</div>
-		{/if}
 
-		{#if loading}
-			<div class="loading" data-testid="trajectory-loading">Loading trajectory...</div>
-		{:else if error}
-			<div class="error" data-testid="trajectory-error">{error}</div>
-		{:else if !trajectory}
-			<div class="empty-state" data-testid="trajectory-not-found">
-				<p>Trajectory not found.</p>
-			</div>
-		{:else}
-			{#if trajectory.outcome || totalTokensIn > 0}
-				<div class="trajectory-summary" data-testid="trajectory-summary">
-					{#if trajectory.outcome}
-						<span class="summary-item" data-testid="trajectory-outcome">Outcome: <strong>{trajectory.outcome}</strong></span>
-					{/if}
-					{#if totalTokensIn > 0 || totalTokensOut > 0}
-						<span class="summary-item" data-testid="trajectory-tokens">Tokens: {totalTokensIn.toLocaleString()} in / {totalTokensOut.toLocaleString()} out</span>
-					{/if}
-					{#if trajectory.duration > 0}
-						<span class="summary-item" data-testid="trajectory-duration">Duration: {formatMs(trajectory.duration)}</span>
-					{/if}
+			{#if quest}
+				<div class="quest-context" data-testid="trajectory-quest-context">
+					<a href="/quests/{quest.id}" class="quest-link">
+						<span class="quest-title" data-testid="trajectory-quest-title">{quest.title}</span>
+						<span class="quest-status" data-testid="trajectory-quest-status" data-status={quest.status}>{quest.status}</span>
+					</a>
 				</div>
 			{/if}
 
-			{#if steps.length === 0}
-				<div class="empty-state" data-testid="trajectory-empty-steps">
-					<p>No steps recorded yet.</p>
-					<p>Steps will appear here as the quest progresses.</p>
+			{#if loading}
+				<div class="loading" data-testid="trajectory-loading">Loading trajectory...</div>
+			{:else if error}
+				<div class="error" data-testid="trajectory-error">{error}</div>
+			{:else if !trajectory}
+				<div class="empty-state" data-testid="trajectory-not-found">
+					<p>Trajectory not found.</p>
 				</div>
 			{:else}
-				<div class="timeline" data-testid="trajectory-timeline">
-					{#each steps as step, i}
-						{@const detail = stepDetail(step)}
-						<div class="timeline-event" data-testid="timeline-event" data-step-type={step.step_type}>
-							<div class="event-marker"></div>
-							<div class="event-content">
-								<div class="event-header">
-									<span class="event-type" data-testid="event-type">{stepLabel(step)}</span>
-									<span class="event-time" data-testid="event-time">{formatTime(step.timestamp)}</span>
-									{#if step.duration > 0}
-										<span class="event-delta" data-testid="event-duration">{formatMs(step.duration)}</span>
-									{/if}
-									{#if step.tokens_in || step.tokens_out}
-										<span class="event-tokens" data-testid="event-tokens">{step.tokens_in ?? 0}/{step.tokens_out ?? 0} tok</span>
+				{#if trajectory.outcome || totalTokensIn > 0}
+					<div class="trajectory-summary" data-testid="trajectory-summary">
+						{#if trajectory.outcome}
+							<span class="summary-item" data-testid="trajectory-outcome">Outcome: <strong>{trajectory.outcome}</strong></span>
+						{/if}
+						{#if totalTokensIn > 0 || totalTokensOut > 0}
+							<span class="summary-item" data-testid="trajectory-tokens">Tokens: {totalTokensIn.toLocaleString()} in / {totalTokensOut.toLocaleString()} out</span>
+						{/if}
+						{#if trajectory.duration > 0}
+							<span class="summary-item" data-testid="trajectory-duration">Duration: {formatMs(trajectory.duration)}</span>
+						{/if}
+					</div>
+				{/if}
+
+				{#if steps.length === 0}
+					<div class="empty-state" data-testid="trajectory-empty-steps">
+						<p>No steps recorded yet.</p>
+						<p>Steps will appear here as the quest progresses.</p>
+					</div>
+				{:else}
+					<div class="timeline" data-testid="trajectory-timeline">
+						{#each steps as step}
+							{@const detail = stepDetail(step)}
+							<div class="timeline-event" data-testid="timeline-event" data-step-type={step.step_type}>
+								<div class="event-marker"></div>
+								<div class="event-content">
+									<div class="event-header">
+										<span class="event-type" data-testid="event-type">{stepLabel(step)}</span>
+										<span class="event-time" data-testid="event-time">{formatTime(step.timestamp)}</span>
+										{#if step.duration > 0}
+											<span class="event-delta" data-testid="event-duration">{formatMs(step.duration)}</span>
+										{/if}
+										{#if step.tokens_in || step.tokens_out}
+											<span class="event-tokens" data-testid="event-tokens">{step.tokens_in ?? 0}/{step.tokens_out ?? 0} tok</span>
+										{/if}
+									</div>
+									{#if detail}
+										<pre class="event-data" data-testid="event-data">{detail}</pre>
 									{/if}
 								</div>
-								{#if detail}
-									<pre class="event-data" data-testid="event-data">{detail}</pre>
-								{/if}
 							</div>
-						</div>
-					{/each}
-				</div>
+						{/each}
+					</div>
+				{/if}
 			{/if}
-		{/if}
-	</div>
-</div>
+		</div>
+	{/snippet}
+
+	{#snippet rightPanel()}
+		<div class="details-panel">
+			<header class="panel-header">
+				<h2>Related</h2>
+			</header>
+			<div class="details-content">
+				<p class="empty-state">Trajectory context</p>
+			</div>
+		</div>
+	{/snippet}
+</ThreePanelLayout>
 
 <style>
 	.trajectory-page {
@@ -154,11 +195,6 @@
 	.back-link {
 		color: var(--ui-text-secondary);
 		font-size: 0.875rem;
-	}
-
-	.trajectory-content {
-		max-width: 800px;
-		margin: 0 auto;
 	}
 
 	.trajectory-header {
@@ -319,5 +355,31 @@
 
 	.empty-state p {
 		margin: var(--spacing-sm) 0;
+	}
+
+	/* Right panel */
+	.details-panel {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.panel-header {
+		padding: var(--spacing-md);
+		background: var(--ui-surface-tertiary);
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.panel-header h2 {
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-secondary);
+		margin: 0;
+	}
+
+	.details-content {
+		padding: var(--spacing-md);
 	}
 </style>

@@ -5,121 +5,162 @@
 
 	import { page } from '$app/stores';
 	import { worldStore } from '$stores/worldStore.svelte';
-	import { QuestDifficultyNames, TrustTierNames, type QuestID, questId } from '$types';
+	import { pageContext } from '$lib/stores/pageContext.svelte';
+	import { QuestDifficultyNames, TrustTierNames, questId } from '$types';
+	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
 	const id = $derived(questId($page.params.id ?? ''));
 	const quest = $derived(worldStore.quests.get(id));
+
+	$effect(() => {
+		if (quest) {
+			pageContext.set([{ type: 'quest', id: quest.id, label: quest.title }]);
+		}
+		return () => pageContext.clear();
+	});
+
+	let leftPanelOpen = $state(true);
+	let rightPanelOpen = $state(false);
+	let leftPanelWidth = $state(280);
+	let rightPanelWidth = $state(320);
 </script>
 
 <svelte:head>
 	<title>{quest?.title ?? 'Quest'} - Semdragons</title>
 </svelte:head>
 
-<div class="quest-detail-page">
-	<header class="page-header">
-		<a href="/quests" class="back-link">Back to Quest Board</a>
-	</header>
+<ThreePanelLayout
+	{leftPanelOpen}
+	{rightPanelOpen}
+	{leftPanelWidth}
+	{rightPanelWidth}
+	onLeftWidthChange={(w) => (leftPanelWidth = w)}
+	onRightWidthChange={(w) => (rightPanelWidth = w)}
+	onToggleLeft={() => (leftPanelOpen = !leftPanelOpen)}
+	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
+>
+	{#snippet leftPanel()}
+		<ExplorerNav />
+	{/snippet}
 
-	{#if quest}
-		<div class="quest-content">
-			<div class="quest-header">
-				<h1>{quest.title}</h1>
-				<span class="status-badge" data-status={quest.status}>{quest.status}</span>
-			</div>
+	{#snippet centerPanel()}
+		<div class="quest-detail-page">
+			<header class="page-header">
+				<a href="/quests" class="back-link">Back to Quest Board</a>
+			</header>
 
-			<p class="quest-description">{quest.description}</p>
+			{#if quest}
+				<div class="quest-header">
+					<h1>{quest.title}</h1>
+					<span class="status-badge" data-status={quest.status}>{quest.status}</span>
+				</div>
 
-			<div class="quest-details">
-				<section class="detail-card">
-					<h2>Requirements</h2>
-					<dl>
-						<dt>Difficulty</dt>
-						<dd>
-							<span class="difficulty-badge" data-difficulty={quest.difficulty}>
-								{QuestDifficultyNames[quest.difficulty]}
-							</span>
-						</dd>
-						<dt>Min Tier</dt>
-						<dd>{TrustTierNames[quest.min_tier]}</dd>
-						<dt>Required Skills</dt>
-						<dd>{quest.required_skills.join(', ') || 'None'}</dd>
-						{#if quest.party_required}
-							<dt>Party Size</dt>
-							<dd>Min {quest.min_party_size} members</dd>
-						{/if}
-					</dl>
-				</section>
+				<p class="quest-description">{quest.description}</p>
 
-				<section class="detail-card">
-					<h2>Rewards</h2>
-					<dl>
-						<dt>Base XP</dt>
-						<dd class="xp-value">{quest.base_xp}</dd>
-						{#if quest.bonus_xp}
-							<dt>Bonus XP</dt>
-							<dd class="xp-value bonus">{quest.bonus_xp}</dd>
-						{/if}
-						{#if quest.guild_xp}
-							<dt>Guild XP</dt>
-							<dd>{quest.guild_xp}</dd>
-						{/if}
-					</dl>
-				</section>
-
-				<section class="detail-card">
-					<h2>Lifecycle</h2>
-					<dl>
-						<dt>Posted</dt>
-						<dd>{new Date(quest.posted_at).toLocaleString()}</dd>
-						{#if quest.claimed_at}
-							<dt>Claimed</dt>
-							<dd>{new Date(quest.claimed_at).toLocaleString()}</dd>
-						{/if}
-						{#if quest.started_at}
-							<dt>Started</dt>
-							<dd>{new Date(quest.started_at).toLocaleString()}</dd>
-						{/if}
-						{#if quest.completed_at}
-							<dt>Completed</dt>
-							<dd>{new Date(quest.completed_at).toLocaleString()}</dd>
-						{/if}
-						<dt>Attempts</dt>
-						<dd>{quest.attempts} / {quest.max_attempts}</dd>
-					</dl>
-				</section>
-
-				{#if quest.claimed_by}
+				<div class="quest-details">
 					<section class="detail-card">
-						<h2>Assignment</h2>
+						<h2>Requirements</h2>
 						<dl>
-							<dt>Claimed By</dt>
-							<dd><a href="/agents/{quest.claimed_by}">{quest.claimed_by}</a></dd>
-							{#if quest.party_id}
-								<dt>Party</dt>
-								<dd>{quest.party_id}</dd>
+							<dt>Difficulty</dt>
+							<dd>
+								<span class="difficulty-badge" data-difficulty={quest.difficulty}>
+									{QuestDifficultyNames[quest.difficulty]}
+								</span>
+							</dd>
+							<dt>Min Tier</dt>
+							<dd>{TrustTierNames[quest.min_tier]}</dd>
+							<dt>Required Skills</dt>
+							<dd>{quest.required_skills.join(', ') || 'None'}</dd>
+							{#if quest.party_required}
+								<dt>Party Size</dt>
+								<dd>Min {quest.min_party_size} members</dd>
 							{/if}
 						</dl>
 					</section>
-				{/if}
 
-				{#if quest.trajectory_id}
-					<section class="detail-card full-width">
-						<h2>Trajectory</h2>
-						<a href="/trajectories/{quest.trajectory_id}" class="trajectory-link">
-							View full trajectory timeline
-						</a>
+					<section class="detail-card">
+						<h2>Rewards</h2>
+						<dl>
+							<dt>Base XP</dt>
+							<dd class="xp-value">{quest.base_xp}</dd>
+							{#if quest.bonus_xp}
+								<dt>Bonus XP</dt>
+								<dd class="xp-value bonus">{quest.bonus_xp}</dd>
+							{/if}
+							{#if quest.guild_xp}
+								<dt>Guild XP</dt>
+								<dd>{quest.guild_xp}</dd>
+							{/if}
+						</dl>
 					</section>
-				{/if}
+
+					<section class="detail-card">
+						<h2>Lifecycle</h2>
+						<dl>
+							<dt>Posted</dt>
+							<dd>{new Date(quest.posted_at).toLocaleString()}</dd>
+							{#if quest.claimed_at}
+								<dt>Claimed</dt>
+								<dd>{new Date(quest.claimed_at).toLocaleString()}</dd>
+							{/if}
+							{#if quest.started_at}
+								<dt>Started</dt>
+								<dd>{new Date(quest.started_at).toLocaleString()}</dd>
+							{/if}
+							{#if quest.completed_at}
+								<dt>Completed</dt>
+								<dd>{new Date(quest.completed_at).toLocaleString()}</dd>
+							{/if}
+							<dt>Attempts</dt>
+							<dd>{quest.attempts} / {quest.max_attempts}</dd>
+						</dl>
+					</section>
+
+					{#if quest.claimed_by}
+						<section class="detail-card">
+							<h2>Assignment</h2>
+							<dl>
+								<dt>Claimed By</dt>
+								<dd><a href="/agents/{quest.claimed_by}">{quest.claimed_by}</a></dd>
+								{#if quest.party_id}
+									<dt>Party</dt>
+									<dd>{quest.party_id}</dd>
+								{/if}
+							</dl>
+						</section>
+					{/if}
+
+					{#if quest.trajectory_id}
+						<section class="detail-card full-width">
+							<h2>Trajectory</h2>
+							<a href="/trajectories/{quest.trajectory_id}" class="trajectory-link">
+								View full trajectory timeline
+							</a>
+						</section>
+					{/if}
+				</div>
+			{:else}
+				<div class="not-found">
+					<h2>Quest not found</h2>
+					<p>The quest with ID "{id}" could not be found.</p>
+					<a href="/quests">Back to Quest Board</a>
+				</div>
+			{/if}
+		</div>
+	{/snippet}
+
+	{#snippet rightPanel()}
+		<div class="details-panel">
+			<header class="panel-header">
+				<h2>Related</h2>
+			</header>
+			<div class="details-content">
+				<p class="empty-state">Quest context</p>
 			</div>
 		</div>
-	{:else}
-		<div class="not-found">
-			<h2>Quest not found</h2>
-			<p>The quest with ID "{id}" could not be found.</p>
-			<a href="/quests">Back to Quest Board</a>
-		</div>
-	{/if}
-</div>
+	{/snippet}
+</ThreePanelLayout>
 
 <style>
 	.quest-detail-page {
@@ -136,11 +177,6 @@
 	.back-link {
 		color: var(--ui-text-secondary);
 		font-size: 0.875rem;
-	}
-
-	.quest-content {
-		max-width: 900px;
-		margin: 0 auto;
 	}
 
 	.quest-header {
@@ -303,5 +339,36 @@
 	.not-found p {
 		color: var(--ui-text-secondary);
 		margin-bottom: var(--spacing-lg);
+	}
+
+	/* Right panel */
+	.details-panel {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.panel-header {
+		padding: var(--spacing-md);
+		background: var(--ui-surface-tertiary);
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.panel-header h2 {
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-secondary);
+		margin: 0;
+	}
+
+	.details-content {
+		padding: var(--spacing-md);
+	}
+
+	.empty-state {
+		color: var(--ui-text-tertiary);
+		font-size: 0.875rem;
 	}
 </style>

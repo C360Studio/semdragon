@@ -4,6 +4,7 @@
 	 */
 
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { QuestDifficultyNames, type Quest, type QuestStatus } from '$types';
 
@@ -33,13 +34,40 @@
 		return groups;
 	});
 
-	const kanbanColumns: { status: QuestStatus; label: string }[] = [
+	const allColumns: { status: QuestStatus; label: string }[] = [
 		{ status: 'posted', label: 'Posted' },
 		{ status: 'claimed', label: 'Claimed' },
 		{ status: 'in_progress', label: 'In Progress' },
 		{ status: 'in_review', label: 'In Review' },
-		{ status: 'completed', label: 'Completed' }
+		{ status: 'completed', label: 'Completed' },
+		{ status: 'failed', label: 'Failed' },
+		{ status: 'escalated', label: 'Escalated' },
+		{ status: 'cancelled', label: 'Cancelled' }
 	];
+
+	const defaultStatuses: Set<QuestStatus> = new Set([
+		'posted', 'claimed', 'in_progress', 'in_review', 'completed'
+	]);
+
+	let activeStatuses = $state<Set<QuestStatus>>(new Set(defaultStatuses));
+
+	function toggleStatus(status: QuestStatus) {
+		const next = new Set(activeStatuses);
+		if (next.has(status)) {
+			if (next.size > 1) next.delete(status);
+		} else {
+			next.add(status);
+		}
+		activeStatuses = next;
+	}
+
+	const kanbanColumns = $derived(
+		allColumns.filter((col) => activeStatuses.has(col.status))
+	);
+
+	const filteredQuestCount = $derived(
+		kanbanColumns.reduce((sum, col) => sum + questsByStatus[col.status].length, 0)
+	);
 
 	function selectQuest(quest: Quest) {
 		worldStore.selectQuest(quest.id);
@@ -61,21 +89,34 @@
 	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
 >
 	{#snippet leftPanel()}
-		<div class="filters-panel">
-			<header class="panel-header">
-				<h2>Filters</h2>
-			</header>
-			<div class="filters-content">
-				<p class="placeholder">Quest filters coming soon</p>
-			</div>
-		</div>
+		<ExplorerNav />
 	{/snippet}
 
 	{#snippet centerPanel()}
 		<div class="quest-board">
 			<header class="board-header">
-				<h1>Quest Board</h1>
-				<span class="quest-count">{worldStore.questList.length} quests</span>
+				<div class="board-title-row">
+					<h1>Quest Board</h1>
+					<span class="quest-count">{filteredQuestCount} / {worldStore.questList.length} quests</span>
+				</div>
+				<div class="status-filters" data-testid="quest-status-filters">
+					{#each allColumns as col}
+						{@const count = questsByStatus[col.status].length}
+						<button
+							type="button"
+							class="filter-chip"
+							class:active={activeStatuses.has(col.status)}
+							data-status={col.status}
+							onclick={() => toggleStatus(col.status)}
+							data-testid="filter-{col.status}"
+						>
+							{col.label}
+							{#if count > 0}
+								<span class="filter-count">{count}</span>
+							{/if}
+						</button>
+					{/each}
+				</div>
 			</header>
 
 			{#if worldStore.loading}
@@ -191,38 +232,6 @@
 </ThreePanelLayout>
 
 <style>
-	/* Filters Panel */
-	.filters-panel {
-		height: 100%;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.panel-header {
-		padding: var(--spacing-md);
-		background: var(--ui-surface-tertiary);
-		border-bottom: 1px solid var(--ui-border-subtle);
-	}
-
-	.panel-header h2 {
-		font-size: 0.875rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--ui-text-secondary);
-		margin: 0;
-	}
-
-	.filters-content {
-		flex: 1;
-		padding: var(--spacing-md);
-	}
-
-	.placeholder {
-		color: var(--ui-text-tertiary);
-		font-style: italic;
-	}
-
 	/* Quest Board */
 	.quest-board {
 		height: 100%;
@@ -233,13 +242,19 @@
 
 	.board-header {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
+		flex-direction: column;
+		gap: var(--spacing-sm);
 		padding: var(--spacing-md) var(--spacing-lg);
 		border-bottom: 1px solid var(--ui-border-subtle);
 	}
 
-	.board-header h1 {
+	.board-title-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.board-title-row h1 {
 		margin: 0;
 		font-size: 1.25rem;
 	}
@@ -247,6 +262,54 @@
 	.quest-count {
 		color: var(--ui-text-tertiary);
 		font-size: 0.875rem;
+	}
+
+	/* Status filter chips */
+	.status-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.filter-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 10px;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-full);
+		background: var(--ui-surface-primary);
+		color: var(--ui-text-tertiary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.filter-chip:hover {
+		border-color: var(--ui-border-interactive);
+		color: var(--ui-text-secondary);
+	}
+
+	.filter-chip.active {
+		background: var(--ui-surface-tertiary);
+		border-color: var(--ui-border-interactive);
+		color: var(--ui-text-primary);
+		font-weight: 500;
+	}
+
+	.filter-count {
+		font-size: 0.625rem;
+		padding: 0 5px;
+		border-radius: var(--radius-full);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-tertiary);
+		min-width: 16px;
+		text-align: center;
+	}
+
+	.filter-chip.active .filter-count {
+		background: var(--ui-interactive-primary);
+		color: var(--ui-text-on-primary);
 	}
 
 	/* Kanban Board */

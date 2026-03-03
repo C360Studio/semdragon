@@ -145,7 +145,9 @@
 			parts.push('auto'); // resize handle
 		}
 
+		parts.push('auto'); // left toggle button
 		parts.push('1fr'); // center always takes remaining space
+		parts.push('auto'); // right toggle button
 
 		if (rightPanelOpen) {
 			parts.push('auto'); // resize handle
@@ -171,9 +173,29 @@
 		<ResizeHandle direction="left" onResize={handleLeftResize} onResizeEnd={handleLeftResizeEnd} />
 	{/if}
 
+	<button
+		type="button"
+		class="panel-toggle panel-toggle-left"
+		onclick={() => onToggleLeft?.()}
+		title={leftPanelOpen ? 'Collapse left panel (Cmd+B)' : 'Expand left panel (Cmd+B)'}
+		data-testid="toggle-left-panel"
+	>
+		{leftPanelOpen ? '\u00AB' : '\u00BB'}
+	</button>
+
 	<main class="panel panel-center" data-testid="panel-center">
 		{@render centerPanel()}
 	</main>
+
+	<button
+		type="button"
+		class="panel-toggle panel-toggle-right"
+		onclick={() => onToggleRight?.()}
+		title={rightPanelOpen ? 'Collapse right panel (Cmd+J)' : 'Expand right panel (Cmd+J)'}
+		data-testid="toggle-right-panel"
+	>
+		{rightPanelOpen ? '\u00BB' : '\u00AB'}
+	</button>
 
 	{#if rightPanelOpen}
 		<ResizeHandle
@@ -221,5 +243,25 @@
 		background: var(--properties-background, var(--ui-surface-secondary));
 		border-left: 1px solid var(--ui-border-subtle);
 		min-width: 0;
+	}
+
+	/* Panel toggle buttons */
+	.panel-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		border: none;
+		background: var(--ui-surface-tertiary);
+		color: var(--ui-text-tertiary);
+		cursor: pointer;
+		font-size: 0.75rem;
+		padding: 0;
+		transition: background-color 150ms ease, color 150ms ease;
+	}
+
+	.panel-toggle:hover {
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-primary);
 	}
 </style>

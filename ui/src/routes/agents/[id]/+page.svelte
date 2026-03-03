@@ -5,157 +5,197 @@
 
 	import { page } from '$app/stores';
 	import { worldStore } from '$stores/worldStore.svelte';
-	import { TrustTierNames, type AgentID, agentId } from '$types';
+	import { pageContext } from '$lib/stores/pageContext.svelte';
+	import { TrustTierNames, agentId } from '$types';
+	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
 	const id = $derived(agentId($page.params.id ?? ''));
 	const agent = $derived(worldStore.agents.get(id));
 
-	function xpPercentage(): number {
-		if (!agent || agent.xp_to_level === 0) return 100;
-		return Math.min((agent.xp / agent.xp_to_level) * 100, 100);
-	}
+	$effect(() => {
+		if (agent) {
+			pageContext.set([{ type: 'agent', id: agent.id, label: agent.name }]);
+		}
+		return () => pageContext.clear();
+	});
+
+	let leftPanelOpen = $state(true);
+	let rightPanelOpen = $state(false);
+	let leftPanelWidth = $state(280);
+	let rightPanelWidth = $state(320);
+
+	const xpPercentage = $derived(
+		!agent || agent.xp_to_level === 0 ? 100 : Math.min((agent.xp / agent.xp_to_level) * 100, 100)
+	);
 </script>
 
 <svelte:head>
 	<title>{agent?.name ?? 'Agent'} - Semdragons</title>
 </svelte:head>
 
-<div class="agent-detail-page" data-testid="agent-detail-page">
-	<header class="page-header">
-		<a href="/agents" class="back-link">Back to Agent Roster</a>
-	</header>
+<ThreePanelLayout
+	{leftPanelOpen}
+	{rightPanelOpen}
+	{leftPanelWidth}
+	{rightPanelWidth}
+	onLeftWidthChange={(w) => (leftPanelWidth = w)}
+	onRightWidthChange={(w) => (rightPanelWidth = w)}
+	onToggleLeft={() => (leftPanelOpen = !leftPanelOpen)}
+	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
+>
+	{#snippet leftPanel()}
+		<ExplorerNav />
+	{/snippet}
 
-	{#if agent}
-		<div class="agent-content">
-			<div class="agent-header">
-				<div class="agent-identity">
-					<h1 data-testid="agent-name">{agent.name}</h1>
-					<span class="tier-badge" data-tier={agent.tier}>
-						{TrustTierNames[agent.tier]}
-					</span>
-				</div>
-				<div class="agent-status" data-status={agent.status}>
-					{agent.status.replace('_', ' ')}
-				</div>
-			</div>
+	{#snippet centerPanel()}
+		<div class="agent-detail-page" data-testid="agent-detail-page">
+			<header class="page-header">
+				<a href="/agents" class="back-link">Back to Agent Roster</a>
+			</header>
 
-			<div class="level-card" data-testid="agent-level">
-				<div class="level-info">
-					<span class="level-label">Level</span>
-					<span class="level-value">{agent.level}</span>
-				</div>
-				<div class="xp-info">
-					<div class="xp-bar">
-						<div class="xp-fill" style="width: {xpPercentage()}%"></div>
+			{#if agent}
+				<div class="agent-header">
+					<div class="agent-identity">
+						<h1 data-testid="agent-name">{agent.name}</h1>
+						<span class="tier-badge" data-tier={agent.tier}>
+							{TrustTierNames[agent.tier]}
+						</span>
 					</div>
-					<span class="xp-text">{agent.xp} / {agent.xp_to_level} XP to next level</span>
+					<div class="agent-status" data-status={agent.status}>
+						{agent.status.replaceAll('_', ' ')}
+					</div>
 				</div>
-			</div>
 
-			<div class="agent-details">
-				<section class="detail-card">
-					<h2>Skills</h2>
-					<div class="skills-grid">
-						{#each Object.keys(agent.skill_proficiencies || {}) as skill}
-							<span class="skill-tag">{skill.replace('_', ' ')}</span>
-						{:else}
-							<span class="empty-text">No skills</span>
-						{/each}
+				<div class="level-card" data-testid="agent-level">
+					<div class="level-info">
+						<span class="level-label">Level</span>
+						<span class="level-value">{agent.level}</span>
 					</div>
-				</section>
-
-				<section class="detail-card">
-					<h2>Equipment</h2>
-					<div class="equipment-list">
-						{#each agent.equipment as tool}
-							<div class="tool-item">
-								<span class="tool-name">{tool.name}</span>
-								<span class="tool-category">{tool.category}</span>
-							</div>
-						{:else}
-							<span class="empty-text">No equipment</span>
-						{/each}
+					<div class="xp-info">
+						<div class="xp-bar">
+							<div class="xp-fill" style="width: {xpPercentage}%"></div>
+						</div>
+						<span class="xp-text">{agent.xp} / {agent.xp_to_level} XP to next level</span>
 					</div>
-				</section>
+				</div>
 
-				<section class="detail-card">
-					<h2>Lifetime Stats</h2>
-					<dl class="stats-grid">
-						<dt>Quests Completed</dt>
-						<dd class="stat-success">{agent.stats.quests_completed}</dd>
-						<dt>Quests Failed</dt>
-						<dd class="stat-error">{agent.stats.quests_failed}</dd>
-						<dt>Bosses Defeated</dt>
-						<dd class="stat-success">{agent.stats.bosses_defeated}</dd>
-						<dt>Bosses Failed</dt>
-						<dd class="stat-error">{agent.stats.bosses_failed}</dd>
-						<dt>Total XP Earned</dt>
-						<dd>{agent.stats.total_xp_earned}</dd>
-						<dt>Avg Quality Score</dt>
-						<dd>{(agent.stats.avg_quality_score * 100).toFixed(1)}%</dd>
-						<dt>Avg Efficiency</dt>
-						<dd>{(agent.stats.avg_efficiency * 100).toFixed(1)}%</dd>
-						<dt>Parties Led</dt>
-						<dd>{agent.stats.parties_led}</dd>
-						<dt>Quests Decomposed</dt>
-						<dd>{agent.stats.quests_decomposed}</dd>
-					</dl>
-				</section>
-
-				<section class="detail-card">
-					<h2>Configuration</h2>
-					<dl class="config-list">
-						<dt>Provider</dt>
-						<dd>{agent.config.provider}</dd>
-						<dt>Model</dt>
-						<dd>{agent.config.model}</dd>
-						<dt>Temperature</dt>
-						<dd>{agent.config.temperature}</dd>
-						<dt>Max Tokens</dt>
-						<dd>{agent.config.max_tokens}</dd>
-					</dl>
-				</section>
-
-				{#if (agent.guilds?.length ?? 0) > 0}
+				<div class="agent-details">
 					<section class="detail-card">
-						<h2>Guilds</h2>
-						<div class="guilds-list">
-							{#each (agent.guilds ?? []) as guildId}
-								<a href="/guilds/{guildId}" class="guild-link">{guildId}</a>
+						<h2>Skills</h2>
+						<div class="skills-grid">
+							{#each Object.keys(agent.skill_proficiencies || {}) as skill}
+								<span class="skill-tag">{skill.replaceAll('_', ' ')}</span>
+							{:else}
+								<span class="empty-text">No skills</span>
 							{/each}
 						</div>
 					</section>
-				{/if}
 
-				<section class="detail-card">
-					<h2>Lifecycle</h2>
-					<dl class="lifecycle-list">
-						<dt>Created</dt>
-						<dd>{new Date(agent.created_at).toLocaleString()}</dd>
-						<dt>Last Updated</dt>
-						<dd>{new Date(agent.updated_at).toLocaleString()}</dd>
-						<dt>Deaths</dt>
-						<dd class="stat-error">{agent.death_count}</dd>
-						{#if agent.current_quest}
-							<dt>Current Quest</dt>
-							<dd><a href="/quests/{agent.current_quest}">{agent.current_quest}</a></dd>
-						{/if}
-						{#if agent.cooldown_until}
-							<dt>Cooldown Until</dt>
-							<dd>{new Date(agent.cooldown_until).toLocaleString()}</dd>
-						{/if}
-					</dl>
-				</section>
+					<section class="detail-card">
+						<h2>Equipment</h2>
+						<div class="equipment-list">
+							{#each agent.equipment as tool}
+								<div class="tool-item">
+									<span class="tool-name">{tool.name}</span>
+									<span class="tool-category">{tool.category}</span>
+								</div>
+							{:else}
+								<span class="empty-text">No equipment</span>
+							{/each}
+						</div>
+					</section>
+
+					<section class="detail-card">
+						<h2>Lifetime Stats</h2>
+						<dl class="stats-grid">
+							<dt>Quests Completed</dt>
+							<dd class="stat-success">{agent.stats.quests_completed}</dd>
+							<dt>Quests Failed</dt>
+							<dd class="stat-error">{agent.stats.quests_failed}</dd>
+							<dt>Bosses Defeated</dt>
+							<dd class="stat-success">{agent.stats.bosses_defeated}</dd>
+							<dt>Bosses Failed</dt>
+							<dd class="stat-error">{agent.stats.bosses_failed}</dd>
+							<dt>Total XP Earned</dt>
+							<dd>{agent.stats.total_xp_earned}</dd>
+							<dt>Avg Quality Score</dt>
+							<dd>{(agent.stats.avg_quality_score * 100).toFixed(1)}%</dd>
+							<dt>Avg Efficiency</dt>
+							<dd>{(agent.stats.avg_efficiency * 100).toFixed(1)}%</dd>
+							<dt>Parties Led</dt>
+							<dd>{agent.stats.parties_led}</dd>
+							<dt>Quests Decomposed</dt>
+							<dd>{agent.stats.quests_decomposed}</dd>
+						</dl>
+					</section>
+
+					<section class="detail-card">
+						<h2>Configuration</h2>
+						<dl class="config-list">
+							<dt>Provider</dt>
+							<dd>{agent.config.provider}</dd>
+							<dt>Model</dt>
+							<dd>{agent.config.model}</dd>
+							<dt>Temperature</dt>
+							<dd>{agent.config.temperature}</dd>
+							<dt>Max Tokens</dt>
+							<dd>{agent.config.max_tokens}</dd>
+						</dl>
+					</section>
+
+					{#if (agent.guilds?.length ?? 0) > 0}
+						<section class="detail-card">
+							<h2>Guilds</h2>
+							<div class="guilds-list">
+								{#each (agent.guilds ?? []) as guildId}
+									<a href="/guilds/{guildId}" class="guild-link">{guildId}</a>
+								{/each}
+							</div>
+						</section>
+					{/if}
+
+					<section class="detail-card">
+						<h2>Lifecycle</h2>
+						<dl class="lifecycle-list">
+							<dt>Created</dt>
+							<dd>{new Date(agent.created_at).toLocaleString()}</dd>
+							<dt>Last Updated</dt>
+							<dd>{new Date(agent.updated_at).toLocaleString()}</dd>
+							<dt>Deaths</dt>
+							<dd class="stat-error">{agent.death_count}</dd>
+							{#if agent.current_quest}
+								<dt>Current Quest</dt>
+								<dd><a href="/quests/{agent.current_quest}">{agent.current_quest}</a></dd>
+							{/if}
+							{#if agent.cooldown_until}
+								<dt>Cooldown Until</dt>
+								<dd>{new Date(agent.cooldown_until).toLocaleString()}</dd>
+							{/if}
+						</dl>
+					</section>
+				</div>
+			{:else}
+				<div class="not-found" data-testid="agent-not-found">
+					<h2>Agent not found</h2>
+					<p>The agent with ID "{id}" could not be found.</p>
+					<a href="/agents">Back to Agent Roster</a>
+				</div>
+			{/if}
+		</div>
+	{/snippet}
+
+	{#snippet rightPanel()}
+		<div class="details-panel">
+			<header class="panel-header">
+				<h2>Related</h2>
+			</header>
+			<div class="details-content">
+				<p class="empty-state">Agent context</p>
 			</div>
 		</div>
-	{:else}
-		<div class="not-found" data-testid="agent-not-found">
-			<h2>Agent not found</h2>
-			<p>The agent with ID "{id}" could not be found.</p>
-			<a href="/agents">Back to Agent Roster</a>
-		</div>
-	{/if}
-</div>
+	{/snippet}
+</ThreePanelLayout>
 
 <style>
 	.agent-detail-page {
@@ -172,11 +212,6 @@
 	.back-link {
 		color: var(--ui-text-secondary);
 		font-size: 0.875rem;
-	}
-
-	.agent-content {
-		max-width: 900px;
-		margin: 0 auto;
 	}
 
 	.agent-header {
@@ -420,5 +455,36 @@
 	.not-found p {
 		color: var(--ui-text-secondary);
 		margin-bottom: var(--spacing-lg);
+	}
+
+	/* Right panel */
+	.details-panel {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.panel-header {
+		padding: var(--spacing-md);
+		background: var(--ui-surface-tertiary);
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.panel-header h2 {
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-secondary);
+		margin: 0;
+	}
+
+	.details-content {
+		padding: var(--spacing-md);
+	}
+
+	.empty-state {
+		color: var(--ui-text-tertiary);
+		font-size: 0.875rem;
 	}
 </style>

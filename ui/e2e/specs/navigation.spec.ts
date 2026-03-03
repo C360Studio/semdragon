@@ -66,7 +66,7 @@ test.describe('Navigation - Cross-Page', () => {
 		await questsPage.goto();
 
 		await page.goto('/');
-		await expect(page.locator('.dashboard-header h1')).toContainText("The DM's Scrying Pool");
+		await expect(page.locator('.dashboard-header h1')).toContainText("DM Dashboard");
 	});
 });
 

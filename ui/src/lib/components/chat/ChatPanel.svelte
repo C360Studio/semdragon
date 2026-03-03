@@ -9,6 +9,7 @@
 
 	import { chatStore } from '$lib/stores/chatStore.svelte';
 	import type { QuestBrief, QuestChainBrief } from '$lib/stores/chatStore.svelte';
+	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import ChatMessageComponent from './ChatMessage.svelte';
 	import ContextChip from './ContextChip.svelte';
 	import VerticalResizeHandle from './VerticalResizeHandle.svelte';
@@ -68,6 +69,20 @@
 		/>
 	{/if}
 
+	<!-- Page context strip (shown even when collapsed) -->
+	{#if !chatStore.open && pageContext.items.length > 0}
+		<div class="page-context-strip" data-testid="page-context-strip">
+			{#each pageContext.items as item}
+				<ContextChip
+					type={item.type}
+					label={item.label}
+					variant="page"
+					onPin={() => chatStore.addContext({ type: item.type, id: item.id, label: item.label })}
+				/>
+			{/each}
+		</div>
+	{/if}
+
 	<!-- Collapsed bar / Header -->
 	<button
 		type="button"
@@ -114,7 +129,21 @@
 				{/if}
 			</div>
 
-			<!-- Context chips -->
+			<!-- Page context chips -->
+			{#if pageContext.items.length > 0}
+				<div class="page-context-bar" data-testid="page-context-bar">
+					{#each pageContext.items as item}
+						<ContextChip
+							type={item.type}
+							label={item.label}
+							variant="page"
+							onPin={() => chatStore.addContext({ type: item.type, id: item.id, label: item.label })}
+						/>
+					{/each}
+				</div>
+			{/if}
+
+			<!-- Pinned context chips -->
 			{#if chatStore.contextItems.length > 0}
 				<div class="context-bar" data-testid="context-bar">
 					{#each chatStore.contextItems as item}
@@ -237,6 +266,24 @@
 		padding: var(--spacing-sm);
 		background: var(--status-error-container);
 		border-radius: var(--radius-md);
+	}
+
+	/* Page context bars */
+	.page-context-strip {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		padding: 4px var(--spacing-sm);
+		background: var(--ui-surface-primary);
+		border-top: 1px solid var(--ui-border-subtle);
+	}
+
+	.page-context-bar {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		border-top: 1px solid var(--ui-border-subtle);
 	}
 
 	/* Context bar */

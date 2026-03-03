@@ -5,168 +5,209 @@
 
 	import { page } from '$app/stores';
 	import { worldStore } from '$stores/worldStore.svelte';
-	import { ReviewLevelNames, type BattleID, battleId } from '$types';
+	import { pageContext } from '$lib/stores/pageContext.svelte';
+	import { ReviewLevelNames, battleId } from '$types';
+	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
 	const id = $derived(battleId($page.params.id ?? ''));
 	const battle = $derived(worldStore.battles.get(id));
+
+	$effect(() => {
+		if (battle) {
+			pageContext.set([{ type: 'battle', id: battle.id, label: `Battle #${battle.id.slice(0, 8)}` }]);
+		}
+		return () => pageContext.clear();
+	});
+
+	let leftPanelOpen = $state(true);
+	let rightPanelOpen = $state(false);
+	let leftPanelWidth = $state(280);
+	let rightPanelWidth = $state(320);
 </script>
 
 <svelte:head>
 	<title>Battle {battle?.id.slice(0, 8) ?? ''} - Semdragons</title>
 </svelte:head>
 
-<div class="battle-detail-page">
-	<header class="page-header">
-		<a href="/battles" class="back-link">Back to Boss Battle Arena</a>
-	</header>
+<ThreePanelLayout
+	{leftPanelOpen}
+	{rightPanelOpen}
+	{leftPanelWidth}
+	{rightPanelWidth}
+	onLeftWidthChange={(w) => (leftPanelWidth = w)}
+	onRightWidthChange={(w) => (rightPanelWidth = w)}
+	onToggleLeft={() => (leftPanelOpen = !leftPanelOpen)}
+	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
+>
+	{#snippet leftPanel()}
+		<ExplorerNav />
+	{/snippet}
 
-	{#if battle}
-		<div class="battle-content">
-			<div class="battle-header">
-				<h1>Battle #{battle.id.slice(0, 8)}</h1>
-				<span class="battle-status" data-status={battle.status}>
-					{battle.status.toUpperCase()}
-				</span>
-			</div>
+	{#snippet centerPanel()}
+		<div class="battle-detail-page">
+			<header class="page-header">
+				<a href="/battles" class="back-link">Back to Boss Battle Arena</a>
+			</header>
 
-			<div class="battle-summary">
-				<div class="summary-item">
-					<span class="summary-label">Quest</span>
-					<a href="/quests/{battle.quest_id}" class="summary-value">{battle.quest_id}</a>
+			{#if battle}
+				<div class="battle-header">
+					<h1>Battle #{battle.id.slice(0, 8)}</h1>
+					<span class="battle-status" data-status={battle.status}>
+						{battle.status.toUpperCase()}
+					</span>
 				</div>
-				<div class="summary-item">
-					<span class="summary-label">Agent</span>
-					<a href="/agents/{battle.agent_id}" class="summary-value">{battle.agent_id}</a>
-				</div>
-				<div class="summary-item">
-					<span class="summary-label">Review Level</span>
-					<span class="summary-value">{ReviewLevelNames[battle.level]}</span>
-				</div>
-			</div>
 
-			<section class="criteria-section">
-				<h2>Review Criteria</h2>
-				<div class="criteria-grid">
-					{#each battle.criteria as criterion}
-						{@const result = (battle.results ?? []).find((r) => r.criterion_name === criterion.name)}
-						<div class="criterion-card" class:passed={result?.passed}>
-							<div class="criterion-header">
-								<span class="criterion-name">{criterion.name}</span>
-								{#if result}
-									<span class="criterion-badge" class:pass={result.passed}>
-										{result.passed ? 'PASS' : 'FAIL'}
-									</span>
+				<div class="battle-summary">
+					<div class="summary-item">
+						<span class="summary-label">Quest</span>
+						<a href="/quests/{battle.quest_id}" class="summary-value">{battle.quest_id}</a>
+					</div>
+					<div class="summary-item">
+						<span class="summary-label">Agent</span>
+						<a href="/agents/{battle.agent_id}" class="summary-value">{battle.agent_id}</a>
+					</div>
+					<div class="summary-item">
+						<span class="summary-label">Review Level</span>
+						<span class="summary-value">{ReviewLevelNames[battle.level]}</span>
+					</div>
+				</div>
+
+				<section class="criteria-section">
+					<h2>Review Criteria</h2>
+					<div class="criteria-grid">
+						{#each battle.criteria as criterion}
+							{@const result = (battle.results ?? []).find((r) => r.criterion_name === criterion.name)}
+							<div class="criterion-card" class:passed={result?.passed}>
+								<div class="criterion-header">
+									<span class="criterion-name">{criterion.name}</span>
+									{#if result}
+										<span class="criterion-badge" class:pass={result.passed}>
+											{result.passed ? 'PASS' : 'FAIL'}
+										</span>
+									{/if}
+								</div>
+
+								<p class="criterion-description">{criterion.description}</p>
+
+								<div class="criterion-bar">
+									<div
+										class="bar-fill"
+										class:passing={result && result.score >= criterion.threshold}
+										style="width: {(result?.score ?? 0) * 100}%"
+									></div>
+									<div class="bar-threshold" style="left: {criterion.threshold * 100}%">
+										<span class="threshold-label">{(criterion.threshold * 100).toFixed(0)}%</span>
+									</div>
+								</div>
+
+								<div class="criterion-meta">
+									<span>Score: {result ? (result.score * 100).toFixed(1) + '%' : 'Pending'}</span>
+									<span>Weight: {criterion.weight}</span>
+								</div>
+
+								{#if result?.reasoning}
+									<div class="criterion-reasoning">
+										<strong>Reasoning:</strong>
+										<p>{result.reasoning}</p>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</section>
+
+				{#if battle.verdict}
+					<section class="verdict-section">
+						<h2>Final Verdict</h2>
+						<div class="verdict-card" class:victory={battle.verdict.passed}>
+							<div class="verdict-banner">
+								{battle.verdict.passed ? 'VICTORY' : 'DEFEAT'}
+							</div>
+
+							<div class="verdict-stats">
+								<div class="stat-item">
+									<span class="stat-value">{(battle.verdict.quality_score * 100).toFixed(1)}%</span>
+									<span class="stat-label">Quality Score</span>
+								</div>
+								<div class="stat-item xp">
+									<span class="stat-value positive">+{battle.verdict.xp_awarded}</span>
+									<span class="stat-label">XP Awarded</span>
+								</div>
+								{#if battle.verdict.xp_penalty > 0}
+									<div class="stat-item xp">
+										<span class="stat-value negative">-{battle.verdict.xp_penalty}</span>
+										<span class="stat-label">XP Penalty</span>
+									</div>
+								{/if}
+								{#if battle.verdict.level_change !== 0}
+									<div class="stat-item">
+										<span
+											class="stat-value"
+											class:positive={battle.verdict.level_change > 0}
+											class:negative={battle.verdict.level_change < 0}
+										>
+											{battle.verdict.level_change > 0 ? '+' : ''}{battle.verdict.level_change}
+										</span>
+										<span class="stat-label">Level Change</span>
+									</div>
 								{/if}
 							</div>
 
-							<p class="criterion-description">{criterion.description}</p>
-
-							<div class="criterion-bar">
-								<div
-									class="bar-fill"
-									class:passing={result && result.score >= criterion.threshold}
-									style="width: {(result?.score ?? 0) * 100}%"
-								></div>
-								<div class="bar-threshold" style="left: {criterion.threshold * 100}%">
-									<span class="threshold-label">{(criterion.threshold * 100).toFixed(0)}%</span>
-								</div>
-							</div>
-
-							<div class="criterion-meta">
-								<span>Score: {result ? (result.score * 100).toFixed(1) + '%' : 'Pending'}</span>
-								<span>Weight: {criterion.weight}</span>
-							</div>
-
-							{#if result?.reasoning}
-								<div class="criterion-reasoning">
-									<strong>Reasoning:</strong>
-									<p>{result.reasoning}</p>
+							{#if battle.verdict.feedback}
+								<div class="verdict-feedback">
+									<h3>Feedback</h3>
+									<p>{battle.verdict.feedback}</p>
 								</div>
 							{/if}
 						</div>
-					{/each}
-				</div>
-			</section>
+					</section>
+				{/if}
 
-			{#if battle.verdict}
-				<section class="verdict-section">
-					<h2>Final Verdict</h2>
-					<div class="verdict-card" class:victory={battle.verdict.passed}>
-						<div class="verdict-banner">
-							{battle.verdict.passed ? 'VICTORY' : 'DEFEAT'}
-						</div>
-
-						<div class="verdict-stats">
-							<div class="stat-item">
-								<span class="stat-value">{(battle.verdict.quality_score * 100).toFixed(1)}%</span>
-								<span class="stat-label">Quality Score</span>
+				<section class="judges-section">
+					<h2>Judges</h2>
+					<div class="judges-list">
+						{#each battle.judges as judge}
+							<div class="judge-card">
+								<span class="judge-type">{judge.type}</span>
+								<span class="judge-id">{judge.id}</span>
 							</div>
-							<div class="stat-item xp">
-								<span class="stat-value positive">+{battle.verdict.xp_awarded}</span>
-								<span class="stat-label">XP Awarded</span>
-							</div>
-							{#if battle.verdict.xp_penalty > 0}
-								<div class="stat-item xp">
-									<span class="stat-value negative">-{battle.verdict.xp_penalty}</span>
-									<span class="stat-label">XP Penalty</span>
-								</div>
-							{/if}
-							{#if battle.verdict.level_change !== 0}
-								<div class="stat-item">
-									<span
-										class="stat-value"
-										class:positive={battle.verdict.level_change > 0}
-										class:negative={battle.verdict.level_change < 0}
-									>
-										{battle.verdict.level_change > 0 ? '+' : ''}{battle.verdict.level_change}
-									</span>
-									<span class="stat-label">Level Change</span>
-								</div>
-							{/if}
-						</div>
-
-						{#if battle.verdict.feedback}
-							<div class="verdict-feedback">
-								<h3>Feedback</h3>
-								<p>{battle.verdict.feedback}</p>
-							</div>
-						{/if}
+						{/each}
 					</div>
 				</section>
-			{/if}
 
-			<section class="judges-section">
-				<h2>Judges</h2>
-				<div class="judges-list">
-					{#each battle.judges as judge}
-						<div class="judge-card">
-							<span class="judge-type">{judge.type}</span>
-							<span class="judge-id">{judge.id}</span>
-						</div>
-					{/each}
+				<section class="timeline-section">
+					<h2>Timeline</h2>
+					<dl class="timeline-list">
+						<dt>Started</dt>
+						<dd>{new Date(battle.started_at).toLocaleString()}</dd>
+						{#if battle.completed_at}
+							<dt>Completed</dt>
+							<dd>{new Date(battle.completed_at).toLocaleString()}</dd>
+						{/if}
+					</dl>
+				</section>
+			{:else}
+				<div class="not-found">
+					<h2>Battle not found</h2>
+					<p>The battle with ID "{id}" could not be found.</p>
+					<a href="/battles">Back to Boss Battle Arena</a>
 				</div>
-			</section>
+			{/if}
+		</div>
+	{/snippet}
 
-			<section class="timeline-section">
-				<h2>Timeline</h2>
-				<dl class="timeline-list">
-					<dt>Started</dt>
-					<dd>{new Date(battle.started_at).toLocaleString()}</dd>
-					{#if battle.completed_at}
-						<dt>Completed</dt>
-						<dd>{new Date(battle.completed_at).toLocaleString()}</dd>
-					{/if}
-				</dl>
-			</section>
+	{#snippet rightPanel()}
+		<div class="details-panel">
+			<header class="panel-header">
+				<h2>Related</h2>
+			</header>
+			<div class="details-content">
+				<p class="empty-state">Battle context</p>
+			</div>
 		</div>
-	{:else}
-		<div class="not-found">
-			<h2>Battle not found</h2>
-			<p>The battle with ID "{id}" could not be found.</p>
-			<a href="/battles">Back to Boss Battle Arena</a>
-		</div>
-	{/if}
-</div>
+	{/snippet}
+</ThreePanelLayout>
 
 <style>
 	.battle-detail-page {
@@ -183,11 +224,6 @@
 	.back-link {
 		color: var(--ui-text-secondary);
 		font-size: 0.875rem;
-	}
-
-	.battle-content {
-		max-width: 900px;
-		margin: 0 auto;
 	}
 
 	.battle-header {
@@ -259,7 +295,10 @@
 		margin-bottom: var(--spacing-xl);
 	}
 
-	h2 {
+	.criteria-section h2,
+	.verdict-section h2,
+	.judges-section h2,
+	.timeline-section h2 {
 		font-size: 1rem;
 		margin-bottom: var(--spacing-md);
 	}
@@ -487,5 +526,36 @@
 	.not-found {
 		text-align: center;
 		padding: var(--spacing-xl);
+	}
+
+	/* Right panel */
+	.details-panel {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.panel-header {
+		padding: var(--spacing-md);
+		background: var(--ui-surface-tertiary);
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.panel-header h2 {
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-secondary);
+		margin: 0;
+	}
+
+	.details-content {
+		padding: var(--spacing-md);
+	}
+
+	.empty-state {
+		color: var(--ui-text-tertiary);
+		font-size: 0.875rem;
 	}
 </style>
