@@ -14,14 +14,30 @@
 	let leftPanelWidth = $state(280);
 	let rightPanelWidth = $state(320);
 
-	// Filter state
+	// Filter state — clicking the active chip resets to 'all'
 	let statusFilter = $state<string>('all');
+
+	const statusChips = [
+		{ status: 'all', label: 'All' },
+		{ status: 'forming', label: 'Forming' },
+		{ status: 'active', label: 'Active' },
+		{ status: 'disbanded', label: 'Disbanded' }
+	];
 
 	const filteredParties = $derived(
 		statusFilter === 'all'
 			? worldStore.partyList
 			: worldStore.partyList.filter((p) => p.status === statusFilter)
 	);
+
+	function countByStatus(status: string): number {
+		if (status === 'all') return worldStore.partyList.length;
+		return worldStore.partyList.filter((p) => p.status === status).length;
+	}
+
+	function selectFilter(status: string): void {
+		statusFilter = statusFilter === status ? 'all' : status;
+	}
 
 	function resolveAgentName(agentId: AgentID): string {
 		return worldStore.agents.get(agentId)?.name ?? agentId.slice(-8);
@@ -50,21 +66,26 @@
 		<div class="parties-content">
 			<header class="parties-header">
 				<h1>Parties</h1>
-				<div class="header-controls">
-					<select
-						bind:value={statusFilter}
-						class="inline-filter"
-						aria-label="Filter by status"
-						data-testid="party-status-filter"
-					>
-						<option value="all">All Status</option>
-						<option value="forming">Forming</option>
-						<option value="active">Active</option>
-						<option value="disbanded">Disbanded</option>
-					</select>
-					<span class="party-count" data-testid="party-count">{filteredParties.length} parties</span>
-				</div>
+				<span class="party-count" data-testid="party-count">{filteredParties.length} parties</span>
 			</header>
+			<div class="status-filters" data-testid="party-status-filters">
+				{#each statusChips as chip}
+					{@const count = countByStatus(chip.status)}
+					<button
+						type="button"
+						class="filter-chip"
+						class:active={statusFilter === chip.status}
+						data-status={chip.status}
+						onclick={() => selectFilter(chip.status)}
+						data-testid="filter-{chip.status}"
+					>
+						{chip.label}
+						{#if count > 0}
+							<span class="filter-count">{count}</span>
+						{/if}
+					</button>
+				{/each}
+			</div>
 
 			<div class="party-grid">
 				{#each filteredParties as party}
@@ -129,7 +150,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: var(--spacing-md) var(--spacing-lg);
-		border-bottom: 1px solid var(--ui-border-subtle);
+		border-bottom: none;
 		flex-shrink: 0;
 	}
 
@@ -138,24 +159,60 @@
 		font-size: 1.25rem;
 	}
 
-	.header-controls {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-md);
-	}
-
-	.inline-filter {
-		font-size: 0.875rem;
-		padding: var(--spacing-xs) var(--spacing-sm);
-		border: 1px solid var(--ui-border-subtle);
-		border-radius: var(--radius-md);
-		background: var(--ui-surface-secondary);
-		color: var(--ui-text-primary);
-	}
-
 	.party-count {
 		color: var(--ui-text-tertiary);
 		font-size: 0.875rem;
+	}
+
+	/* Status filter chips */
+	.status-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 0 var(--spacing-lg) var(--spacing-md);
+		border-bottom: 1px solid var(--ui-border-subtle);
+		flex-shrink: 0;
+	}
+
+	.filter-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 10px;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-full);
+		background: var(--ui-surface-primary);
+		color: var(--ui-text-tertiary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.filter-chip:hover {
+		border-color: var(--ui-border-interactive);
+		color: var(--ui-text-secondary);
+	}
+
+	.filter-chip.active {
+		background: var(--ui-surface-tertiary);
+		border-color: var(--ui-border-interactive);
+		color: var(--ui-text-primary);
+		font-weight: 500;
+	}
+
+	.filter-count {
+		font-size: 0.625rem;
+		padding: 0 5px;
+		border-radius: var(--radius-full);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-tertiary);
+		min-width: 16px;
+		text-align: center;
+	}
+
+	.filter-chip.active .filter-count {
+		background: var(--ui-interactive-primary);
+		color: var(--ui-text-on-primary);
 	}
 
 	/* Party Grid */

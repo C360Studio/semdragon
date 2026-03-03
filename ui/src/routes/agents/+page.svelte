@@ -17,6 +17,24 @@
 	// Filter state
 	let statusFilter = $state<string>('all');
 
+	const statusChips = [
+		{ status: 'all', label: 'All' },
+		{ status: 'idle', label: 'Idle' },
+		{ status: 'on_quest', label: 'On Quest' },
+		{ status: 'in_battle', label: 'In Battle' },
+		{ status: 'cooldown', label: 'Cooldown' },
+		{ status: 'retired', label: 'Retired' }
+	];
+
+	function agentCountForStatus(status: string): number {
+		if (status === 'all') return worldStore.agentList.length;
+		return worldStore.agentList.filter((a) => a.status === status).length;
+	}
+
+	function toggleStatusFilter(status: string) {
+		statusFilter = statusFilter === status ? 'all' : status;
+	}
+
 	const filteredAgents = $derived.by(() => {
 		if (statusFilter === 'all') return worldStore.agentList;
 		return worldStore.agentList.filter((a) => a.status === statusFilter);
@@ -53,17 +71,27 @@
 	{#snippet centerPanel()}
 		<div class="agent-roster">
 			<header class="roster-header">
-				<h1>Agent Roster</h1>
-				<div class="header-controls">
-					<select id="agent-status-filter" bind:value={statusFilter} class="inline-filter" data-testid="agent-status-filter" aria-label="Filter by status">
-						<option value="all">All Status</option>
-						<option value="idle">Idle</option>
-						<option value="on_quest">On Quest</option>
-						<option value="in_battle">In Battle</option>
-						<option value="cooldown">Cooldown</option>
-						<option value="retired">Retired</option>
-					</select>
+				<div class="roster-title-row">
+					<h1>Agent Roster</h1>
 					<span class="agent-count">{filteredAgents.length} agents</span>
+				</div>
+				<div class="status-filters" data-testid="agent-status-filters" data-testid-legacy="agent-status-filter">
+					{#each statusChips as chip}
+						{@const count = agentCountForStatus(chip.status)}
+						<button
+							type="button"
+							class="filter-chip"
+							class:active={statusFilter === chip.status}
+							data-status={chip.status}
+							onclick={() => toggleStatusFilter(chip.status)}
+							data-testid="filter-{chip.status}"
+						>
+							{chip.label}
+							{#if count > 0}
+								<span class="filter-count">{count}</span>
+							{/if}
+						</button>
+					{/each}
 				</div>
 			</header>
 
@@ -223,10 +251,16 @@
 
 	.roster-header {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
+		flex-direction: column;
+		gap: var(--spacing-sm);
 		padding: var(--spacing-md) var(--spacing-lg);
 		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.roster-title-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
 	}
 
 	.roster-header h1 {
@@ -234,24 +268,57 @@
 		font-size: 1.25rem;
 	}
 
-	.header-controls {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-md);
-	}
-
-	.inline-filter {
-		font-size: 0.875rem;
-		padding: var(--spacing-xs) var(--spacing-sm);
-		border: 1px solid var(--ui-border-subtle);
-		border-radius: var(--radius-md);
-		background: var(--ui-surface-secondary);
-		color: var(--ui-text-primary);
-	}
-
 	.agent-count {
 		color: var(--ui-text-tertiary);
 		font-size: 0.875rem;
+	}
+
+	/* Status filter chips */
+	.status-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.filter-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 10px;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-full);
+		background: var(--ui-surface-primary);
+		color: var(--ui-text-tertiary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.filter-chip:hover {
+		border-color: var(--ui-border-interactive);
+		color: var(--ui-text-secondary);
+	}
+
+	.filter-chip.active {
+		background: var(--ui-surface-tertiary);
+		border-color: var(--ui-border-interactive);
+		color: var(--ui-text-primary);
+		font-weight: 500;
+	}
+
+	.filter-count {
+		font-size: 0.625rem;
+		padding: 0 5px;
+		border-radius: var(--radius-full);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-tertiary);
+		min-width: 16px;
+		text-align: center;
+	}
+
+	.filter-chip.active .filter-count {
+		background: var(--ui-interactive-primary);
+		color: var(--ui-text-on-primary);
 	}
 
 	/* Agent Grid */
