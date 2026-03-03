@@ -17,7 +17,7 @@ import {
 	type TrustTier,
 	type QuestDifficulty,
 	type ReviewLevel
-} from './index';
+} from '$types';
 
 describe('Branded ID Functions', () => {
 	describe('agentId', () => {

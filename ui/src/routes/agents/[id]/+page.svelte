@@ -116,11 +116,11 @@
 					</dl>
 				</section>
 
-				{#if agent.guilds.length > 0}
+				{#if (agent.guilds?.length ?? 0) > 0}
 					<section class="detail-card">
 						<h2>Guilds</h2>
 						<div class="guilds-list">
-							{#each agent.guilds as guildId}
+							{#each (agent.guilds ?? []) as guildId}
 								<a href="/guilds/{guildId}" class="guild-link">{guildId}</a>
 							{/each}
 						</div>

@@ -168,7 +168,7 @@
 						<h4>Criteria</h4>
 						<div class="criteria-list">
 							{#each battle.criteria as criterion}
-								{@const result = battle.results.find((r) => r.criterion_name === criterion.name)}
+								{@const result = (battle.results ?? []).find((r) => r.criterion_name === criterion.name)}
 								<div class="criterion-item" class:passed={result?.passed}>
 									<div class="criterion-header">
 										<span class="criterion-name">{criterion.name}</span>

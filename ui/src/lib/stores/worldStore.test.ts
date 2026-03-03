@@ -38,6 +38,7 @@ function createTestAgent(overrides: Partial<Agent> = {}): Agent {
 	return {
 		id: agentId('agent-1'),
 		name: 'Test Agent',
+		display_name: '',
 		level: 5,
 		xp: 100,
 		xp_to_level: 500,
@@ -71,6 +72,7 @@ function createTestAgent(overrides: Partial<Agent> = {}): Agent {
 		},
 		created_at: new Date().toISOString(),
 		updated_at: new Date().toISOString(),
+		total_spent: 0,
 		...overrides
 	};
 }
@@ -96,6 +98,7 @@ function createTestQuest(overrides: Partial<Quest> = {}): Quest {
 		sub_quests: [],
 		escalated: false,
 		input: null,
+		output: null,
 		constraints: {
 			max_duration: 3600000000000,
 			max_cost: 1.0,
@@ -167,7 +170,6 @@ function createTestGuild(overrides: Partial<Guild> = {}): Guild {
 		quests_handled: 50,
 		success_rate: 0.9,
 		quests_failed: 5,
-		library: [],
 		shared_tools: [],
 		created_at: new Date().toISOString(),
 		...overrides

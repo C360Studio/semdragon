@@ -15,6 +15,18 @@ services:
       timeout: 3s
       retries: 5
 
+  mockllm:
+    build:
+      context: ..
+      dockerfile: ui/Dockerfile.mockllm
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
   backend:
     build:
       context: ..
@@ -22,8 +34,11 @@ services:
     depends_on:
       nats:
         condition: service_healthy
+      mockllm:
+        condition: service_healthy
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
+      SEMDRAGONS_CONFIG: /etc/semdragons/config-e2e.json
       SEED_E2E: "${SEED_E2E:-false}"
       SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
     ports:

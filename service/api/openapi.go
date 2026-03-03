@@ -1,6 +1,14 @@
 package api
 
 import (
+	"reflect"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/bossbattle"
+	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semdragons/service/agentsheet"
 	"github.com/c360studio/semstreams/service"
 )
 
@@ -33,7 +41,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Description: "Returns the complete game world state including agents, quests, parties, guilds, battles, and board statistics.",
 					Tags:        []string{"World"},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "World state snapshot", ContentType: "application/json"},
+						"200": {Description: "World state snapshot", ContentType: "application/json", SchemaRef: "#/components/schemas/WorldStateResponse"},
 					},
 				},
 			},
@@ -50,19 +58,21 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 						{Name: "guild_id", In: "query", Description: "Filter by guild priority", Schema: service.Schema{Type: "string"}},
 					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "List of quests", ContentType: "application/json"},
+						"200": {Description: "List of quests", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest", IsArray: true},
 					},
 				},
 				POST: &service.OperationSpec{
-					Summary: "Create quest",
-					Description: "Posts a new quest to the quest board.\n\n" +
-						"Request body: {title, description?, difficulty? (0-5), skills? [skill_tag...], " +
-						"acceptance? [string...], hints? {suggested_difficulty?, suggested_skills?, " +
-						"prefer_guild?, require_human_review?, budget?, deadline?}}",
-					Tags: []string{"Quests"},
+					Summary:     "Create quest",
+					Description: "Posts a new quest to the quest board.",
+					Tags:        []string{"Quests"},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Quest creation parameters",
+						SchemaRef:   "#/components/schemas/CreateQuestRequest",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"201": {Description: "Quest created", ContentType: "application/json"},
-						"400": {Description: "Invalid request body or missing title"},
+						"201": {Description: "Quest created", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
+						"400": {Description: "Invalid request body or missing objective"},
 					},
 				},
 			},
@@ -73,21 +83,23 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Tags:        []string{"Quests"},
 					Parameters:  []service.ParameterSpec{questIDParam},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Quest details", ContentType: "application/json"},
+						"200": {Description: "Quest details", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
 						"404": {Description: "Quest not found"},
 					},
 				},
 			},
 			"/quests/chain": {
 				POST: &service.OperationSpec{
-					Summary: "Create quest chain",
-					Description: "Posts multiple linked quests in a single request. Dependencies use " +
-						"0-based indices into the quests array, which are resolved to actual quest IDs.\n\n" +
-						"Request body: {quests: [{title, description?, difficulty?, skills?, " +
-						"acceptance?, depends_on? [index...], hints?}, ...]}",
-					Tags: []string{"Quests"},
+					Summary:     "Create quest chain",
+					Description: "Posts multiple linked quests in a single request. Dependencies use 0-based indices into the quests array, which are resolved to actual quest IDs.",
+					Tags:        []string{"Quests"},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Quest chain with interdependencies",
+						SchemaRef:   "#/components/schemas/QuestChainBrief",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"201": {Description: "Array of created quests with resolved dependency IDs", ContentType: "application/json"},
+						"201": {Description: "Array of created quests with resolved dependency IDs", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest", IsArray: true},
 						"400": {Description: "Invalid request, dependency cycle, or out-of-bounds index"},
 					},
 				},
@@ -96,14 +108,17 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			// ── Quest Lifecycle ──────────────────────────────────
 			"/quests/{id}/claim": {
 				POST: &service.OperationSpec{
-					Summary: "Claim quest",
-					Description: "Agent claims a posted quest. Validates that the agent meets " +
-						"tier and skill requirements.\n\n" +
-						"Request body: {agent_id (required)}",
-					Tags:       []string{"Quest Lifecycle"},
-					Parameters: []service.ParameterSpec{questIDParam},
+					Summary:     "Claim quest",
+					Description: "Agent claims a posted quest. Validates that the agent meets tier and skill requirements.",
+					Tags:        []string{"Quest Lifecycle"},
+					Parameters:  []service.ParameterSpec{questIDParam},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Agent claiming the quest",
+						SchemaRef:   "#/components/schemas/ClaimQuestRequest",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Quest claimed, status changed to 'claimed'", ContentType: "application/json"},
+						"200": {Description: "Quest claimed, status changed to 'claimed'", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
 						"400": {Description: "Missing agent_id"},
 						"403": {Description: "Agent tier too low or missing required skills"},
 						"404": {Description: "Quest or agent not found"},
@@ -118,7 +133,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Tags:        []string{"Quest Lifecycle"},
 					Parameters:  []service.ParameterSpec{questIDParam},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Quest started, status changed to 'in_progress'", ContentType: "application/json"},
+						"200": {Description: "Quest started, status changed to 'in_progress'", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
 						"404": {Description: "Quest not found"},
 						"409": {Description: "Quest not in 'claimed' status"},
 					},
@@ -126,15 +141,17 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			},
 			"/quests/{id}/submit": {
 				POST: &service.OperationSpec{
-					Summary: "Submit quest result",
-					Description: "Submits work output for a quest. If the quest requires review " +
-						"(require_review constraint), status transitions to 'in_review'. " +
-						"Otherwise transitions directly to 'completed'.\n\n" +
-						"Request body: {output (required)}",
-					Tags:       []string{"Quest Lifecycle"},
-					Parameters: []service.ParameterSpec{questIDParam},
+					Summary:     "Submit quest result",
+					Description: "Submits work output for a quest. If the quest requires review (require_review constraint), status transitions to 'in_review'. Otherwise transitions directly to 'completed'.",
+					Tags:        []string{"Quest Lifecycle"},
+					Parameters:  []service.ParameterSpec{questIDParam},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Quest result output",
+						SchemaRef:   "#/components/schemas/SubmitQuestRequest",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Result submitted, status changed to 'in_review' or 'completed'", ContentType: "application/json"},
+						"200": {Description: "Result submitted, status changed to 'in_review' or 'completed'", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
 						"400": {Description: "Missing output"},
 						"404": {Description: "Quest not found"},
 						"409": {Description: "Quest not in 'in_progress' status"},
@@ -148,7 +165,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Tags:        []string{"Quest Lifecycle"},
 					Parameters:  []service.ParameterSpec{questIDParam},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Quest completed, agent released", ContentType: "application/json"},
+						"200": {Description: "Quest completed, agent released", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
 						"404": {Description: "Quest not found"},
 						"409": {Description: "Quest not in 'in_review' or 'in_progress' status"},
 					},
@@ -156,15 +173,16 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			},
 			"/quests/{id}/fail": {
 				POST: &service.OperationSpec{
-					Summary: "Fail quest",
-					Description: "Records a quest failure. If attempts remain (< max_attempts), " +
-						"the quest is reposted to the board. Otherwise it is marked as permanently failed. " +
-						"The claiming agent is released in either case.\n\n" +
-						"Request body: {reason? (string)}",
-					Tags:       []string{"Quest Lifecycle"},
-					Parameters: []service.ParameterSpec{questIDParam},
+					Summary:     "Fail quest",
+					Description: "Records a quest failure. If attempts remain (< max_attempts), the quest is reposted to the board. Otherwise it is marked as permanently failed. The claiming agent is released in either case.",
+					Tags:        []string{"Quest Lifecycle"},
+					Parameters:  []service.ParameterSpec{questIDParam},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Failure reason",
+						SchemaRef:   "#/components/schemas/FailQuestRequest",
+					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Quest failed or reposted, agent released", ContentType: "application/json"},
+						"200": {Description: "Quest failed or reposted, agent released", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
 						"404": {Description: "Quest not found"},
 						"409": {Description: "Quest not in 'in_progress' or 'in_review' status"},
 					},
@@ -172,14 +190,16 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			},
 			"/quests/{id}/abandon": {
 				POST: &service.OperationSpec{
-					Summary: "Abandon quest",
-					Description: "Agent abandons a quest, returning it to the board as 'posted'. " +
-						"The claiming agent is released.\n\n" +
-						"Request body: {reason? (string)}",
-					Tags:       []string{"Quest Lifecycle"},
-					Parameters: []service.ParameterSpec{questIDParam},
+					Summary:     "Abandon quest",
+					Description: "Agent abandons a quest, returning it to the board as 'posted'. The claiming agent is released.",
+					Tags:        []string{"Quest Lifecycle"},
+					Parameters:  []service.ParameterSpec{questIDParam},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Abandonment reason",
+						SchemaRef:   "#/components/schemas/AbandonQuestRequest",
+					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Quest returned to board, agent released", ContentType: "application/json"},
+						"200": {Description: "Quest returned to board, agent released", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
 						"404": {Description: "Quest not found"},
 						"409": {Description: "Quest not in 'claimed' or 'in_progress' status"},
 					},
@@ -193,17 +213,20 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Description: "Returns all registered agents with their current status, level, skills, and stats.",
 					Tags:        []string{"Agents"},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "List of agents", ContentType: "application/json"},
+						"200": {Description: "List of agents", ContentType: "application/json", SchemaRef: "#/components/schemas/Agent", IsArray: true},
 					},
 				},
 				POST: &service.OperationSpec{
-					Summary: "Recruit agent",
-					Description: "Recruits a new agent into the game. Agents start at level 1 (Apprentice tier).\n\n" +
-						"Request body: {name (required), display_name?, persona?, skills? [skill_tag...], " +
-						"config? {model?, provider?, temperature?, max_tokens?}}",
-					Tags: []string{"Agents"},
+					Summary:     "Recruit agent",
+					Description: "Recruits a new agent into the game. Agents start at level 1 (Apprentice tier).",
+					Tags:        []string{"Agents"},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Agent recruitment parameters",
+						SchemaRef:   "#/components/schemas/RecruitAgentRequest",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"201": {Description: "Agent recruited", ContentType: "application/json"},
+						"201": {Description: "Agent recruited", ContentType: "application/json", SchemaRef: "#/components/schemas/Agent"},
 						"400": {Description: "Invalid request or missing name"},
 						"409": {Description: "Agent with this name already exists"},
 					},
@@ -216,7 +239,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Tags:        []string{"Agents"},
 					Parameters:  []service.ParameterSpec{agentIDParam},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Agent details", ContentType: "application/json"},
+						"200": {Description: "Agent details", ContentType: "application/json", SchemaRef: "#/components/schemas/Agent"},
 						"404": {Description: "Agent not found"},
 					},
 				},
@@ -240,7 +263,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Tags:        []string{"Peer Reviews"},
 					Parameters:  []service.ParameterSpec{agentIDParam},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "List of peer reviews involving this agent", ContentType: "application/json"},
+						"200": {Description: "List of peer reviews involving this agent", ContentType: "application/json", SchemaRef: "#/components/schemas/PeerReview", IsArray: true},
 					},
 				},
 			},
@@ -253,20 +276,24 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Tags:        []string{"Store"},
 					Parameters:  []service.ParameterSpec{agentIDParam},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Agent inventory", ContentType: "application/json"},
+						"200": {Description: "Agent inventory", ContentType: "application/json", SchemaRef: "#/components/schemas/AgentInventory"},
 					},
 				},
 			},
 			"/agents/{id}/inventory/use": {
 				POST: &service.OperationSpec{
-					Summary: "Use consumable",
-					Description: "Uses a consumable item from the agent's inventory, applying its effect.\n\n" +
-						"Request body: {item_id (required)}",
-					Tags:       []string{"Store"},
-					Parameters: []service.ParameterSpec{agentIDParam},
+					Summary:     "Use consumable",
+					Description: "Uses a consumable item from the agent's inventory, applying its effect.",
+					Tags:        []string{"Store"},
+					Parameters:  []service.ParameterSpec{agentIDParam},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Consumable to use",
+						SchemaRef:   "#/components/schemas/UseConsumableRequest",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Consumable used, effect applied", ContentType: "application/json"},
-						"400": {Description: "Missing item_id or item not consumable"},
+						"200": {Description: "Consumable used, effect applied", ContentType: "application/json", SchemaRef: "#/components/schemas/UseConsumableResponse"},
+						"400": {Description: "Missing consumable_id or item not consumable"},
 						"404": {Description: "Agent or item not found"},
 						"503": {Description: "Store component unavailable"},
 					},
@@ -279,7 +306,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Tags:        []string{"Store"},
 					Parameters:  []service.ParameterSpec{agentIDParam},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Active effects", ContentType: "application/json"},
+						"200": {Description: "Active effects", ContentType: "application/json", SchemaRef: "#/components/schemas/ActiveEffect", IsArray: true},
 					},
 				},
 			},
@@ -292,7 +319,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 						{Name: "agent_id", In: "query", Description: "Agent ID for personalized catalog (filters by tier eligibility)", Schema: service.Schema{Type: "string"}},
 					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Store catalog", ContentType: "application/json"},
+						"200": {Description: "Store catalog", ContentType: "application/json", SchemaRef: "#/components/schemas/StoreItem", IsArray: true},
 						"503": {Description: "Store component unavailable"},
 					},
 				},
@@ -306,7 +333,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 						{Name: "id", In: "path", Required: true, Description: "Item ID", Schema: service.Schema{Type: "string"}},
 					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Store item details", ContentType: "application/json"},
+						"200": {Description: "Store item details", ContentType: "application/json", SchemaRef: "#/components/schemas/StoreItem"},
 						"404": {Description: "Item not found"},
 						"503": {Description: "Store component unavailable"},
 					},
@@ -314,12 +341,16 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			},
 			"/store/purchase": {
 				POST: &service.OperationSpec{
-					Summary: "Purchase item",
-					Description: "Purchases an item from the store for an agent using XP.\n\n" +
-						"Request body: {agent_id (required), item_id (required)}",
-					Tags: []string{"Store"},
+					Summary:     "Purchase item",
+					Description: "Purchases an item from the store for an agent using XP.",
+					Tags:        []string{"Store"},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Purchase parameters",
+						SchemaRef:   "#/components/schemas/PurchaseItemRequest",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Purchase result with updated XP balance", ContentType: "application/json"},
+						"200": {Description: "Purchase result with updated XP balance", ContentType: "application/json", SchemaRef: "#/components/schemas/PurchaseResponse"},
 						"400": {Description: "Missing fields or insufficient XP"},
 						"404": {Description: "Agent or item not found"},
 						"503": {Description: "Store component unavailable"},
@@ -334,7 +365,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Description: "Returns all boss battles (automated review evaluations).",
 					Tags:        []string{"Battles"},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "List of battles", ContentType: "application/json"},
+						"200": {Description: "List of battles", ContentType: "application/json", SchemaRef: "#/components/schemas/BossBattle", IsArray: true},
 					},
 				},
 			},
@@ -347,7 +378,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 						{Name: "id", In: "path", Required: true, Description: "Battle ID", Schema: service.Schema{Type: "string"}},
 					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Battle details", ContentType: "application/json"},
+						"200": {Description: "Battle details", ContentType: "application/json", SchemaRef: "#/components/schemas/BossBattle"},
 						"404": {Description: "Battle not found"},
 					},
 				},
@@ -364,18 +395,20 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 						{Name: "quest_id", In: "query", Description: "Filter by quest ID", Schema: service.Schema{Type: "string"}},
 					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "List of peer reviews (blind-masked)", ContentType: "application/json"},
+						"200": {Description: "List of peer reviews (blind-masked)", ContentType: "application/json", SchemaRef: "#/components/schemas/PeerReview", IsArray: true},
 					},
 				},
 				POST: &service.OperationSpec{
-					Summary: "Create review",
-					Description: "Creates a new peer review for a quest. For party quests, leader and member " +
-						"review each other. For solo quests, set is_solo_task=true and only the leader submits.\n\n" +
-						"Request body: {quest_id (required), leader_id (required), member_id (required), " +
-						"party_id?, is_solo_task? (bool)}",
-					Tags: []string{"Peer Reviews"},
+					Summary:     "Create review",
+					Description: "Creates a new peer review for a quest. For party quests, leader and member review each other. For solo quests, set is_solo_task=true and only the leader submits.",
+					Tags:        []string{"Peer Reviews"},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Review creation parameters",
+						SchemaRef:   "#/components/schemas/CreateReviewRequest",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"201": {Description: "Peer review created with status 'pending'", ContentType: "application/json"},
+						"201": {Description: "Peer review created with status 'pending'", ContentType: "application/json", SchemaRef: "#/components/schemas/PeerReview"},
 						"400": {Description: "Missing required fields or leader_id == member_id for non-solo review"},
 					},
 				},
@@ -389,26 +422,26 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 						{Name: "id", In: "path", Required: true, Description: "Review ID", Schema: service.Schema{Type: "string"}},
 					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Peer review details (blind-masked)", ContentType: "application/json"},
+						"200": {Description: "Peer review details (blind-masked)", ContentType: "application/json", SchemaRef: "#/components/schemas/PeerReview"},
 						"404": {Description: "Review not found"},
 					},
 				},
 			},
 			"/reviews/{id}/submit": {
 				POST: &service.OperationSpec{
-					Summary: "Submit review",
-					Description: "Submits ratings for a peer review. Each party submits independently. " +
-						"Ratings are integers 1-5. If average rating < 3.0, an explanation is required. " +
-						"When both parties have submitted (or leader for solo), the review is marked completed " +
-						"and average ratings are computed.\n\n" +
-						"Request body: {reviewer_id (required), ratings: {q1: 1-5, q2: 1-5, q3: 1-5} (required), " +
-						"explanation? (required if avg < 3.0)}",
-					Tags: []string{"Peer Reviews"},
+					Summary:     "Submit review",
+					Description: "Submits ratings for a peer review. Each party submits independently. Ratings are integers 1-5. If average rating < 3.0, an explanation is required. When both parties have submitted (or leader for solo), the review is marked completed and average ratings are computed.",
+					Tags:        []string{"Peer Reviews"},
 					Parameters: []service.ParameterSpec{
 						{Name: "id", In: "path", Required: true, Description: "Review ID", Schema: service.Schema{Type: "string"}},
 					},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Review ratings and optional explanation",
+						SchemaRef:   "#/components/schemas/SubmitReviewRequest",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Review submission accepted (blind-masked response)", ContentType: "application/json"},
+						"200": {Description: "Review submission accepted (blind-masked response)", ContentType: "application/json", SchemaRef: "#/components/schemas/PeerReview"},
 						"400": {Description: "Missing fields, invalid ratings, or missing explanation for low ratings"},
 						"404": {Description: "Review not found"},
 						"409": {Description: "Review already completed or party already submitted"},
@@ -419,14 +452,16 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			// ── DM ───────────────────────────────────────────────
 			"/dm/chat": {
 				POST: &service.OperationSpec{
-					Summary: "DM chat",
-					Description: "Send a natural language message to the Dungeon Master. The DM can create quests, " +
-						"recruit agents, and manage the game world based on the conversation. " +
-						"Sessions persist across turns.\n\n" +
-						"Request body: {message (required), session_id? (string, hex, reuse for multi-turn)}",
-					Tags: []string{"DM"},
+					Summary:     "DM chat",
+					Description: "Send a natural language message to the Dungeon Master. The DM can create quests, recruit agents, and manage the game world based on the conversation. Sessions persist across turns.",
+					Tags:        []string{"DM"},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Chat message and optional context",
+						SchemaRef:   "#/components/schemas/DMChatRequest",
+						Required:    true,
+					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "DM response with optional actions taken", ContentType: "application/json"},
+						"200": {Description: "DM response with optional actions taken", ContentType: "application/json", SchemaRef: "#/components/schemas/DMChatResponse"},
 						"400": {Description: "Missing message"},
 						"503": {Description: "Model registry unavailable"},
 					},
@@ -441,7 +476,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 						{Name: "id", In: "path", Required: true, Description: "Session ID (hex string)", Schema: service.Schema{Type: "string"}},
 					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "DM chat session with turn history", ContentType: "application/json"},
+						"200": {Description: "DM chat session with turn history", ContentType: "application/json", SchemaRef: "#/components/schemas/DMChatSession"},
 						"400": {Description: "Invalid session ID format"},
 						"404": {Description: "Session not found"},
 					},
@@ -466,7 +501,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			"/trajectories/{id}": {
 				GET: &service.OperationSpec{
 					Summary:     "Get trajectory",
-					Description: "Returns trajectory events for a quest (not yet implemented).",
+					Description: "Returns trajectory events for a quest.",
 					Tags:        []string{"Observability"},
 					Parameters: []service.ParameterSpec{
 						{Name: "id", In: "path", Required: true, Description: "Trajectory ID", Schema: service.Schema{Type: "string"}},
@@ -488,6 +523,79 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			{Name: "DM", Description: "Dungeon Master interaction and chat sessions"},
 			{Name: "Store", Description: "Agent store, inventory, and consumable effects"},
 			{Name: "Observability", Description: "Trajectory and event tracing"},
+		},
+
+		// Response types — the generator reflects these to build components.schemas
+		ResponseTypes: []reflect.Type{
+			// Domain entities
+			reflect.TypeOf(domain.Quest{}),
+			reflect.TypeOf(domain.QuestConstraints{}),
+			reflect.TypeOf(domain.BattleVerdict{}),
+			reflect.TypeOf(domain.Guild{}),
+			reflect.TypeOf(domain.GuildMember{}),
+			reflect.TypeOf(domain.PeerReview{}),
+			reflect.TypeOf(domain.ReviewSubmission{}),
+			reflect.TypeOf(domain.ReviewRatings{}),
+			reflect.TypeOf(domain.WorldStats{}),
+
+			// Processor entities
+			reflect.TypeOf(agentprogression.Agent{}),
+			reflect.TypeOf(agentprogression.AgentStats{}),
+			reflect.TypeOf(agentprogression.AgentConfig{}),
+			reflect.TypeOf(agentprogression.AgentPersona{}),
+			reflect.TypeOf(bossbattle.BossBattle{}),
+			reflect.TypeOf(bossbattle.Judge{}),
+			reflect.TypeOf(domain.ReviewCriterion{}),
+			reflect.TypeOf(domain.ReviewResult{}),
+			reflect.TypeOf(partycoord.Party{}),
+			reflect.TypeOf(partycoord.PartyMember{}),
+
+			// Store types
+			reflect.TypeOf(agentstore.StoreItem{}),
+			reflect.TypeOf(agentstore.OwnedItem{}),
+			reflect.TypeOf(agentstore.AgentInventory{}),
+			reflect.TypeOf(agentstore.ActiveEffect{}),
+			reflect.TypeOf(agentstore.ConsumableEffect{}),
+
+			// Character sheet
+			reflect.TypeOf(agentsheet.CharacterSheet{}),
+			reflect.TypeOf(agentsheet.SkillBar{}),
+			reflect.TypeOf(agentsheet.DerivedStats{}),
+			reflect.TypeOf(agentsheet.GuildMembership{}),
+			reflect.TypeOf(agentsheet.EquippedItem{}),
+
+			// DM types
+			reflect.TypeOf(DMChatSession{}),
+			reflect.TypeOf(DMChatTurn{}),
+			reflect.TypeOf(domain.QuestBrief{}),
+			reflect.TypeOf(domain.QuestChainBrief{}),
+			reflect.TypeOf(domain.QuestChainEntry{}),
+			reflect.TypeOf(domain.QuestHints{}),
+
+			// API response types
+			reflect.TypeOf(WorldStateResponse{}),
+			reflect.TypeOf(DMChatResponse{}),
+			reflect.TypeOf(TraceInfoResponse{}),
+			reflect.TypeOf(PurchaseResponse{}),
+			reflect.TypeOf(UseConsumableResponse{}),
+		},
+
+		// Request body types — the generator reflects these to build components.schemas
+		RequestBodyTypes: []reflect.Type{
+			reflect.TypeOf(CreateQuestRequest{}),
+			reflect.TypeOf(CreateQuestHints{}),
+			reflect.TypeOf(ClaimQuestRequest{}),
+			reflect.TypeOf(SubmitQuestRequest{}),
+			reflect.TypeOf(FailQuestRequest{}),
+			reflect.TypeOf(AbandonQuestRequest{}),
+			reflect.TypeOf(RecruitAgentRequest{}),
+			reflect.TypeOf(PurchaseItemRequest{}),
+			reflect.TypeOf(UseConsumableRequest{}),
+			reflect.TypeOf(CreateReviewRequest{}),
+			reflect.TypeOf(SubmitReviewRequest{}),
+			reflect.TypeOf(DMChatRequest{}),
+			reflect.TypeOf(DMChatContextRef{}),
+			reflect.TypeOf(DMChatHistoryItem{}),
 		},
 	}
 }

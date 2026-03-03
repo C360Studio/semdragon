@@ -27,7 +27,12 @@ import type {
 	PeerReviewID,
 	PeerReviewStatus,
 	CreateReviewRequest,
-	SubmitReviewRequest
+	SubmitReviewRequest,
+	Trajectory,
+	ChatContextRef,
+	ChatHistoryMessage,
+	ChatResponse,
+	DMChatSession
 } from '$types';
 
 // =============================================================================
@@ -143,31 +148,6 @@ export async function getBattle(id: BattleID): Promise<BossBattle> {
 // TRAJECTORIES
 // =============================================================================
 
-export interface Trajectory {
-	loop_id: string;
-	start_time: string;
-	end_time?: string;
-	steps: TrajectoryStep[];
-	outcome?: string;
-	total_tokens_in: number;
-	total_tokens_out: number;
-	duration: number;
-}
-
-export interface TrajectoryStep {
-	timestamp: string;
-	step_type: 'model_call' | 'tool_call';
-	request_id?: string;
-	prompt?: string;
-	response?: string;
-	tokens_in?: number;
-	tokens_out?: number;
-	tool_name?: string;
-	tool_arguments?: Record<string, unknown>;
-	tool_result?: string;
-	duration: number; // milliseconds
-}
-
 export async function getTrajectory(id: string): Promise<Trajectory> {
 	return fetchJson<Trajectory>(`/game/trajectories/${id}`);
 }
@@ -175,60 +155,6 @@ export async function getTrajectory(id: string): Promise<Trajectory> {
 // =============================================================================
 // DUNGEON MASTER
 // =============================================================================
-
-export interface ChatHistoryMessage {
-	role: 'user' | 'dm';
-	content: string;
-}
-
-export interface ChatContextRef {
-	type: string;
-	id: string;
-}
-
-export interface TraceInfo {
-	trace_id?: string;
-	span_id?: string;
-	parent_span_id?: string;
-}
-
-export interface ChatResponse {
-	message: string;
-	quest_brief?: {
-		title: string;
-		description?: string;
-		difficulty?: number;
-		skills?: string[];
-		acceptance?: string[];
-	};
-	quest_chain?: {
-		quests: Array<{
-			title: string;
-			description?: string;
-			difficulty?: number;
-			skills?: string[];
-			acceptance?: string[];
-			depends_on?: number[];
-		}>;
-	};
-	session_id?: string;
-	trace_info?: TraceInfo;
-}
-
-export interface DMChatSession {
-	session_id: string;
-	created_at: string;
-	updated_at: string;
-	turns: DMChatTurn[];
-}
-
-export interface DMChatTurn {
-	user_message: string;
-	dm_response: string;
-	timestamp: string;
-	trace_id?: string;
-	span_id?: string;
-}
 
 export async function getDMSession(sessionId: string): Promise<DMChatSession | null> {
 	try {

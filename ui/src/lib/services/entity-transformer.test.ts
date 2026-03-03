@@ -624,7 +624,6 @@ describe('transformGuild', () => {
 		const guild = transformEntity('guild', GUILD_KEY, entity) as Guild;
 
 		expect(guild.members).toEqual([]);
-		expect(guild.library).toEqual([]);
 		expect(guild.shared_tools).toEqual([]);
 	});
 });
@@ -706,7 +705,7 @@ describe('transformParty', () => {
 		expect(party.status).toBe('forming');
 		expect(party.quest_id).toBe(questId(''));
 		expect(party.lead).toBe(agentId(''));
-		expect(party.strategy).toBe('');
+		expect(party.strategy).toBe('balanced');
 		expect(party.formed_at).toBe('');
 	});
 

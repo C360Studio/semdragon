@@ -6,11 +6,9 @@
  * Persists to localStorage for instant UI restore on page refresh.
  */
 
-import type { Quest, QuestDifficulty, SkillTag } from '$types';
+import type { Quest, QuestDifficulty, SkillTag, DMChatSession } from '$types';
 import { browser } from '$app/environment';
-import { sendDMChat, createQuest, postQuestChain, getDMSession } from '$lib/services/api';
-import type { DMChatSession } from '$lib/services/api';
-import { ApiError } from '$lib/services/api';
+import { sendDMChat, createQuest, postQuestChain, getDMSession, ApiError } from '$lib/services/api';
 
 // =============================================================================
 // TYPES

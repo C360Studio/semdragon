@@ -48,7 +48,7 @@
 				<h2>Review Criteria</h2>
 				<div class="criteria-grid">
 					{#each battle.criteria as criterion}
-						{@const result = battle.results.find((r) => r.criterion_name === criterion.name)}
+						{@const result = (battle.results ?? []).find((r) => r.criterion_name === criterion.name)}
 						<div class="criterion-card" class:passed={result?.passed}>
 							<div class="criterion-header">
 								<span class="criterion-name">{criterion.name}</span>

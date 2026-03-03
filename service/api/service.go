@@ -109,7 +109,7 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 	graph := semdragons.NewGraphClient(deps.NATSClient, boardConfig)
 	world := dmworldstate.NewWorldStateAggregator(graph, cfg.MaxEntities, logger)
 	store := resolveStoreComponent(deps, logger)
-	models := semdragons.DefaultModelRegistry()
+	models := resolveModelRegistry(deps)
 
 	sessions := &dmSessionStore{nats: deps.NATSClient, logger: logger}
 
@@ -156,6 +156,23 @@ func resolveStoreComponent(deps *service.Dependencies, logger *slog.Logger) Stor
 		return nil
 	}
 	return sp
+}
+
+// resolveModelRegistry retrieves the model registry from the config manager when
+// available, falling back to the default dev registry (local Ollama). This ensures
+// production deployments use provider endpoints defined in semdragons.json rather
+// than the hardcoded local-only defaults.
+func resolveModelRegistry(deps *service.Dependencies) ModelResolver {
+	if deps.Manager != nil {
+		cfg := deps.Manager.GetConfig()
+		if cfg != nil {
+			c := cfg.Get()
+			if c != nil && c.ModelRegistry != nil {
+				return c.ModelRegistry
+			}
+		}
+	}
+	return semdragons.DefaultModelRegistry()
 }
 
 // Start starts the API service.

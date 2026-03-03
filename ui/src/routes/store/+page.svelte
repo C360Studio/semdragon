@@ -141,14 +141,14 @@
 			}
 
 			// Update local inventory
-			inventory = response.inventory;
+			inventory = response.inventory as AgentInventory | null;
 
 			// Update agent XP in world store
 			const agent = worldStore.agents.get(selectedAgentId);
 			if (agent) {
 				worldStore.updateAgent({
 					...agent,
-					xp: response.xp_remaining
+					xp: response.xp_remaining ?? 0
 				});
 			}
 		} catch (err) {
@@ -180,7 +180,7 @@
 					...inventory,
 					consumables: {
 						...inventory.consumables,
-						[consumableId]: response.remaining
+						[consumableId]: response.remaining ?? 0
 					}
 				};
 			}

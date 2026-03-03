@@ -1,8 +1,12 @@
-.PHONY: build test test-integration test-all lint fmt tidy check schema check-schema e2e e2e-setup e2e-teardown e2e-headed e2e-clean
+.PHONY: build test test-integration test-all lint fmt tidy check schema check-schema openapi check-openapi e2e e2e-setup e2e-teardown e2e-headed e2e-clean mockllm
 
 # Build all packages
 build:
 	go build ./...
+
+# Run the mock LLM server locally (OpenAI-compatible stub on :9090)
+mockllm:
+	go run ./cmd/mockllm
 
 # Run unit tests only (fast, no Docker required)
 test:
@@ -61,6 +65,19 @@ check-schema:
 	@go run ./cmd/gen-entity-schema | grep -v generated_at > /tmp/schema-check-new.json
 	@grep -v generated_at ui/src/lib/services/entity-schema.generated.json > /tmp/schema-check-old.json
 	@diff /tmp/schema-check-new.json /tmp/schema-check-old.json && echo "Schema is up to date."
+
+# =============================================================================
+# OpenAPI Spec Codegen
+# =============================================================================
+
+# Generate OpenAPI 3.0 JSON spec from Go struct reflection
+openapi:
+	go run ./cmd/openapi-gen > ui/static/openapi.json
+
+# Check that committed spec matches current Go code
+check-openapi:
+	@go run ./cmd/openapi-gen > /tmp/openapi-check.json
+	@diff /tmp/openapi-check.json ui/static/openapi.json && echo "OpenAPI spec is up to date."
 
 # =============================================================================
 # E2E Testing (Playwright)

@@ -173,6 +173,7 @@ describe('API Service', () => {
 				sub_quests: [],
 				escalated: false,
 				input: null,
+				output: null,
 				constraints: createQuestConstraints(),
 				posted_at: '2024-01-01T00:00:00Z',
 				trajectory_id: 'traj-1'

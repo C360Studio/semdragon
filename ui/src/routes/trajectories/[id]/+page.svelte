@@ -5,7 +5,8 @@
 
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { api, type Trajectory, type TrajectoryStep } from '$services/api';
+	import { api } from '$services/api';
+	import type { Trajectory, TrajectoryStep } from '$types';
 	import { worldStore } from '$stores/worldStore.svelte';
 
 	const trajectoryId = $derived($page.params.id ?? '');

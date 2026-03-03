@@ -183,6 +183,7 @@ function transformAgent(key: string, entity: GraphEntity): Agent {
 		stats,
 		config: { provider: '', model: '', system_prompt: '', temperature: 0, max_tokens: 0, metadata: {} },
 		is_npc: m.get('agent.npc.flag') === true,
+		total_spent: 0,
 		created_at: str(m.get('agent.lifecycle.created_at')),
 		updated_at: str(m.get('agent.lifecycle.updated_at'))
 	};
@@ -210,6 +211,7 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 		bonus_xp: 0,
 		guild_xp: 0,
 		input: null,
+		output: null,
 		constraints: {
 			max_duration: 0,
 			max_cost: 0,
@@ -252,7 +254,6 @@ function transformGuild(key: string, entity: GraphEntity): Guild {
 		quests_handled: num(m.get('guild.stats.quests_handled')),
 		success_rate: num(m.get('guild.stats.success_rate')),
 		quests_failed: num(m.get('guild.stats.quests_failed')),
-		library: [],
 		shared_tools: [],
 		quest_types: questTypes.length > 0 ? questTypes : undefined,
 		created_at: str(m.get('guild.lifecycle.created_at'))
@@ -293,7 +294,7 @@ function transformParty(key: string, entity: GraphEntity): Party {
 		quest_id: questId(str(m.get('party.assignment.quest'))),
 		lead: agentId(str(m.get('party.membership.lead'))),
 		members: [],
-		strategy: str(m.get('party.coordination.strategy')),
+		strategy: (str(m.get('party.coordination.strategy'), 'balanced') as Party['strategy']),
 		sub_quest_map: {},
 		shared_context: [],
 		sub_results: {},
