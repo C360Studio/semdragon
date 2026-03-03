@@ -90,11 +90,12 @@
 		onclick={() => chatStore.toggle()}
 		data-testid="chat-toggle"
 	>
-		<span class="header-icon">{chatStore.open ? 'v' : '^'}</span>
-		<span class="header-text">Ask the DM...</span>
+		<span class="header-icon">{chatStore.open ? '\u25BE' : '\u25B4'}</span>
+		<span class="header-label">Ask the DM</span>
 		{#if chatStore.messages.length > 0}
 			<span class="header-count">{chatStore.messages.length}</span>
 		{/if}
+		<span class="header-hint">{chatStore.open ? '' : 'Click to chat'}</span>
 	</button>
 
 	{#if chatStore.open}
@@ -184,7 +185,7 @@
 <style>
 	.chat-panel {
 		flex-shrink: 0;
-		border-top: 1px solid var(--ui-border-subtle);
+		border-top: 2px solid var(--ui-interactive-primary);
 		background: var(--ui-surface-primary);
 		display: flex;
 		flex-direction: column;
@@ -195,29 +196,38 @@
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-sm);
-		padding: var(--spacing-xs) var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		border: none;
 		background: var(--ui-surface-tertiary);
 		cursor: pointer;
 		width: 100%;
 		text-align: left;
 		font-size: 0.875rem;
-		color: var(--ui-text-secondary);
+		color: var(--ui-text-primary);
 		transition: background-color 150ms ease;
-		min-height: 36px;
+		min-height: 40px;
 	}
 
 	.chat-header:hover {
-		background: var(--ui-surface-secondary);
+		background: var(--ui-interactive-secondary-hover);
 	}
 
 	.header-icon {
-		font-size: 0.75rem;
-		opacity: 0.6;
+		font-size: 0.625rem;
+		color: var(--ui-interactive-primary);
 	}
 
-	.header-text {
+	.header-label {
+		font-weight: 600;
+		color: var(--ui-text-primary);
+	}
+
+	.header-hint {
 		flex: 1;
+		text-align: right;
+		font-size: 0.75rem;
+		color: var(--ui-text-tertiary);
+		font-weight: 400;
 	}
 
 	.header-count {
@@ -226,6 +236,7 @@
 		border-radius: var(--radius-full);
 		background: var(--ui-interactive-primary);
 		color: var(--ui-text-on-primary);
+		font-weight: 600;
 	}
 
 	/* Chat body */
