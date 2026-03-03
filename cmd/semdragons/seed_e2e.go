@@ -14,6 +14,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
 )
 
@@ -69,7 +70,7 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 
 // extractBoardConfig reads org + platform from the platform config and board
 // from the "game" service config, matching what extractPlatformMeta does.
-func extractBoardConfig(cfg *config.Config) (*semdragons.BoardConfig, error) {
+func extractBoardConfig(cfg *config.Config) (*domain.BoardConfig, error) {
 	platformID := cfg.Platform.InstanceID
 	if platformID == "" {
 		platformID = cfg.Platform.ID
@@ -86,7 +87,7 @@ func extractBoardConfig(cfg *config.Config) (*semdragons.BoardConfig, error) {
 		}
 	}
 
-	return &semdragons.BoardConfig{
+	return &domain.BoardConfig{
 		Org:      cfg.Platform.Org,
 		Platform: platformID,
 		Board:    board,
@@ -94,7 +95,7 @@ func extractBoardConfig(cfg *config.Config) (*semdragons.BoardConfig, error) {
 }
 
 // seedGuilds creates the two E2E guilds and returns their full entity IDs.
-func seedGuilds(ctx context.Context, graph *semdragons.GraphClient, boardCfg *semdragons.BoardConfig) (dataWranglerID, codeSmithsID semdragons.GuildID, err error) {
+func seedGuilds(ctx context.Context, graph *semdragons.GraphClient, boardCfg *domain.BoardConfig) (dataWranglerID, codeSmithsID domain.GuildID, err error) {
 	now := time.Now()
 
 	specs := []struct {
@@ -104,7 +105,7 @@ func seedGuilds(ctx context.Context, graph *semdragons.GraphClient, boardCfg *se
 		motto       string
 		questTypes  []string
 		minLevel    int
-		idPtr       *semdragons.GuildID
+		idPtr       *domain.GuildID
 	}{
 		{
 			name:        "Data Wranglers",
@@ -130,15 +131,15 @@ func seedGuilds(ctx context.Context, graph *semdragons.GraphClient, boardCfg *se
 		instance := domain.GenerateInstance()
 		guildEntityID := boardCfg.GuildEntityID(instance)
 
-		guild := &semdragons.Guild{
-			ID:          semdragons.GuildID(guildEntityID),
+		guild := &domain.Guild{
+			ID:          domain.GuildID(guildEntityID),
 			Name:        spec.name,
 			Description: spec.description,
-			Status:      semdragons.GuildActive,
+			Status:      domain.GuildActive,
 			MaxMembers:  50,
 			MinLevel:    spec.minLevel,
 			Founded:     now,
-			FoundedBy:   semdragons.AgentID("system"),
+			FoundedBy:   domain.AgentID("system"),
 			Culture:     spec.culture,
 			Motto:       spec.motto,
 			Reputation:  0.8,
@@ -166,7 +167,7 @@ type agentSpec struct {
 	namePattern string // e.g. "apprentice-{n}" or a fixed name
 	level       int    // base level assigned
 	skills      []domain.SkillTag
-	guildID     semdragons.GuildID
+	guildID     domain.GuildID
 	isNPC       bool
 	count       int // how many to create (1 = single named agent)
 }
@@ -175,8 +176,8 @@ type agentSpec struct {
 func seedAgents(
 	ctx context.Context,
 	graph *semdragons.GraphClient,
-	boardCfg *semdragons.BoardConfig,
-	dataWranglerID, codeSmithsID semdragons.GuildID,
+	boardCfg *domain.BoardConfig,
+	dataWranglerID, codeSmithsID domain.GuildID,
 ) error {
 	specs := []agentSpec{
 		// 3 apprentices (level 1-5)
@@ -273,7 +274,7 @@ func resolveAgentName(pattern string, n int) string {
 func seedOneAgent(
 	ctx context.Context,
 	graph *semdragons.GraphClient,
-	boardCfg *semdragons.BoardConfig,
+	boardCfg *domain.BoardConfig,
 	name string,
 	spec agentSpec,
 	_ int, // index reserved for future use (e.g., trait variation)
@@ -291,9 +292,9 @@ func seedOneAgent(
 
 	// Build skill proficiencies — proficiency level roughly tracks tier.
 	profLevel := proficiencyForTier(tier)
-	skillProfs := make(map[semdragons.SkillTag]semdragons.SkillProficiency, len(spec.skills))
+	skillProfs := make(map[domain.SkillTag]domain.SkillProficiency, len(spec.skills))
 	for _, skill := range spec.skills {
-		skillProfs[skill] = semdragons.SkillProficiency{
+		skillProfs[skill] = domain.SkillProficiency{
 			Level:      profLevel,
 			Progress:   50,
 			TotalXP:    currentXP / int64(len(spec.skills)+1),
@@ -301,16 +302,16 @@ func seedOneAgent(
 		}
 	}
 
-	guilds := []semdragons.GuildID{}
+	guilds := []domain.GuildID{}
 	if spec.guildID != "" {
 		guilds = append(guilds, spec.guildID)
 	}
 
-	agent := &semdragons.Agent{
-		ID:                 semdragons.AgentID(agentEntityID),
+	agent := &agentprogression.Agent{
+		ID:                 domain.AgentID(agentEntityID),
 		Name:               name,
 		DisplayName:        name,
-		Status:             semdragons.AgentIdle,
+		Status:             domain.AgentIdle,
 		Level:              spec.level,
 		XP:                 currentXP,
 		XPToLevel:          xpToNext,
@@ -318,7 +319,7 @@ func seedOneAgent(
 		IsNPC:              spec.isNPC,
 		Guilds:             guilds,
 		SkillProficiencies: skillProfs,
-		Stats: semdragons.AgentStats{
+		Stats: agentprogression.AgentStats{
 			QuestsCompleted: spec.level * 5,
 			QuestsFailed:    spec.level,
 			TotalXPEarned:   currentXP * 3,
@@ -341,45 +342,45 @@ func seedOneAgent(
 }
 
 // seedQuests creates a few quests in various states for E2E lifecycle testing.
-func seedQuests(ctx context.Context, graph *semdragons.GraphClient, boardCfg *semdragons.BoardConfig) error {
+func seedQuests(ctx context.Context, graph *semdragons.GraphClient, boardCfg *domain.BoardConfig) error {
 	now := time.Now()
 
-	quests := []*semdragons.Quest{
+	quests := []*domain.Quest{
 		{
-			ID:          semdragons.QuestID(boardCfg.QuestEntityID("e2e-easy")),
+			ID:          domain.QuestID(boardCfg.QuestEntityID("e2e-easy")),
 			Title:       "E2E Easy Quest",
 			Description: "A simple quest for lifecycle testing",
-			Status:      semdragons.QuestPosted,
-			Difficulty:  semdragons.DifficultyEasy,
+			Status:      domain.QuestPosted,
+			Difficulty:  domain.DifficultyEasy,
 			BaseXP:      100,
 			MaxAttempts: 3,
 			PostedAt:    now,
 		},
 		{
-			ID:          semdragons.QuestID(boardCfg.QuestEntityID("e2e-review")),
+			ID:          domain.QuestID(boardCfg.QuestEntityID("e2e-review")),
 			Title:       "E2E Review Quest",
 			Description: "A quest that requires boss battle review",
-			Status:      semdragons.QuestPosted,
-			Difficulty:  semdragons.DifficultyModerate,
+			Status:      domain.QuestPosted,
+			Difficulty:  domain.DifficultyModerate,
 			BaseXP:      200,
 			MaxAttempts: 3,
 			PostedAt:    now,
-			Constraints: semdragons.QuestConstraints{
+			Constraints: domain.QuestConstraints{
 				RequireReview: true,
-				ReviewLevel:   semdragons.ReviewStandard,
+				ReviewLevel:   domain.ReviewStandard,
 			},
 		},
 		{
-			ID:          semdragons.QuestID(boardCfg.QuestEntityID("e2e-hard")),
+			ID:          domain.QuestID(boardCfg.QuestEntityID("e2e-hard")),
 			Title:       "E2E Hard Quest",
 			Description: "A hard quest requiring expert tier",
-			Status:      semdragons.QuestPosted,
-			Difficulty:  semdragons.DifficultyHard,
+			Status:      domain.QuestPosted,
+			Difficulty:  domain.DifficultyHard,
 			BaseXP:      500,
 			MaxAttempts: 2,
 			PostedAt:    now,
-			RequiredSkills: []semdragons.SkillTag{
-				semdragons.SkillCodeGen,
+			RequiredSkills: []domain.SkillTag{
+				domain.SkillCodeGen,
 			},
 		},
 	}

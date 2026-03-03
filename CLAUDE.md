@@ -176,7 +176,7 @@ The predicate index (3-part keys like `quest.status.claimed`) acts as event chan
 
 Processors cache last-known state in memory to detect what changed on each watch update.
 
-See `/docs/adr/entity-centric-architecture.md` for full details.
+See `/docs/DESIGN.md` for full details.
 
 ### Debugging: Message Logger, Traces, and Trajectories
 
@@ -209,28 +209,22 @@ quest.TrajectoryID = "traj-xyz"
 // - Parent/child relationships for sub-quests
 ```
 
-#### KV Watch for Live Debugging
-Watch state changes in real-time:
+#### Message Logger SSE for Live Debugging
+The backend exposes a Server-Sent Events endpoint that streams KV changes in real-time.
+No NATS CLI required — use curl or the dashboard:
 ```bash
-# NATS CLI - watch all quest state changes
-nats kv watch semdragons-org-platform-board "quest.state.>"
+# Watch all entity state changes
+curl -N http://localhost:8080/message-logger/kv/semdragons-local-dev-board1/watch?pattern=*
 
-# Watch specific quest
-nats kv watch semdragons-org-platform-board "quest.state.q-abc123"
+# Watch all quest state changes
+curl -N http://localhost:8080/message-logger/kv/semdragons-local-dev-board1/watch?pattern=quest.state.*
 
-# Watch all indices
-nats kv watch semdragons-org-platform-board "quest.status.>"
+# Watch a specific entity
+curl -N http://localhost:8080/message-logger/kv/semdragons-local-dev-board1/watch?pattern=quest.state.abc123
 ```
 
-#### Event Subscription for Debugging
-Subscribe to events during debugging:
-```bash
-# All quest lifecycle events
-nats sub "quest.lifecycle.>"
-
-# All events for a specific quest
-nats sub "*.*.*.quest.abc123"
-```
+The dashboard at `http://localhost:5173` subscribes to this same SSE endpoint automatically
+and displays live entity updates in the event feed.
 
 #### Debug Patterns
 1. **State not updating?** Check KV revisions - CAS conflicts mean concurrent updates
@@ -269,15 +263,23 @@ The root `semdragons` package re-exports type aliases from `domain/` and provide
 
 **`domain/`** is the authoritative source for all enum types (`SkillTag`, `TrustTier`, `QuestDifficulty`, `QuestStatus`, `DMMode`, etc.) and `BoardConfig`. Prefer importing from `domain/` directly in processors; root package aliases are for external consumer convenience.
 
-**`domains/`** (plural) contains three concrete domain implementations: `software.go`, `dnd.go`, `research.go`. Each defines a `DomainConfig` (vocabulary mapping) and a `DomainCatalog` (prompt fragments for `promptmanager`).
+**`domains/`** (plural) contains three concrete domain implementations: `software.go`, `dnd.go`, `research.go`. Each defines a `DomainConfig` (vocabulary mapping + skill taxonomy) and a `DomainCatalog` (prompt fragments for `promptmanager`). See `/docs/DOMAINS.md` for details.
 
-**`processor/`** contains 16 reactive components registered via `componentregistry/`, plus `promptmanager` which is a library (not a standalone component). Each processor follows the same structure: `component.go`, `config.go`, `register.go`, `handler.go`. See "Processor Architecture Patterns" below.
+**`processor/`** contains 17 reactive components registered via `componentregistry/`, plus `promptmanager` which is a library (not a standalone component). Each processor follows the same structure: `component.go`, `config.go`, `register.go`, `handler.go`. See "Processor Architecture Patterns" below.
 
 Two components form the **agentic integration layer** that bridges quest lifecycle to semstreams' event-driven LLM execution:
 - `questbridge` — Watches quest entities for `in_progress` transitions, assembles `TaskMessage` (prompt, tools, metadata), publishes to AGENT JetStream stream, handles loop completion/failure events. Uses KV twofer bootstrap protocol for crash recovery via QUEST_LOOPS bucket.
 - `questtools` — Consumes `tool.execute.*` from AGENT stream, enforces tier/skill/sandbox gates via `executor.ToolRegistry`, publishes `tool.result.*` back. Reconstructs agent/quest context from `ToolCall.Metadata` to avoid KV round-trips on the hot path.
 
-**`service/api/`** implements the REST API as a `service.Service` that registers HTTP handlers with the semstreams service manager. It reads entity state via `GraphClient` and delegates writes using `EmitEntity`/`EmitEntityUpdate`.
+**`processor/dmworldstate/`** aggregates all entity state into a single world-state snapshot consumed by the REST API's `/api/game/world` endpoint.
+
+**`service/api/`** implements the REST API as a `service.Service` that registers HTTP handlers with the semstreams service manager. It reads entity state via `GraphClient` and delegates writes using `EmitEntity`/`EmitEntityUpdate`. API docs are auto-generated from the OpenAPI spec in `service/api/openapi.go` and served at `/docs` (Swagger UI) and `/openapi.json`.
+
+**`config/`** contains two JSON config files:
+- `semdragons.json` — Default runtime config (platform, services, streams, components, model_registry)
+- `models.json` — Production model registry config with multi-provider endpoints and capability routing
+
+See `/docs/MODEL-REGISTRY.md` for LLM provider configuration details.
 
 **`componentregistry/`** is the single location that imports all processors and wires them into the semstreams component registry. Register new processors here.
 
@@ -285,7 +287,15 @@ Two components form the **agentic integration layer** that bridges quest lifecyc
 
 **`ui/`** is the SvelteKit 5 dashboard. Vite proxies `/game`, `/health`, and `/message-logger` to the backend. Uses a single `worldStore.svelte.ts` reactive store fed by SSE via the message-logger endpoint.
 
-Design documentation in `/docs/DESIGN.md`. Getting started in `/docs/GETTING-STARTED.md`.
+Documentation in `/docs/`:
+- `DESIGN.md` — Architecture, concept map, trust tiers, example flows, death mechanics
+- `GETTING-STARTED.md` — Prerequisites, Docker Compose quickstart, first quest walkthrough
+- `QUESTS.md` — Quest creation, lifecycle state machine, difficulty/XP, boss battles, chains
+- `PARTIES.md` — Party formation, roles, peer reviews, feedback loop into prompts
+- `BOIDS.md` — Emergent quest-claiming, six rules, guild/reputation integration, tuning guide
+- `DOMAINS.md` — Domain system, prompt catalogs, skill taxonomies
+- `MODEL-REGISTRY.md` — LLM provider configuration, capabilities, fallback chains
+- API docs served live at `/docs` (Swagger UI) and `/openapi.json` — defined in `service/api/openapi.go`
 
 ## Development Commands
 
@@ -397,11 +407,23 @@ API endpoints that return 501 Not Implemented:
 - `POST /api/game/dm/chat` — DM natural language chat interface (in active development: QuestBrief intake + `DependsOn`/`Acceptance` additions to Quest)
 - `POST /api/game/dm/intervene/{questId}` — DM quest intervention
 
+Components enabled in the default config (`config/semdragons.json`):
+- `graph-ingest`, `graph-index`, `graph-query` — semstreams entity persistence and indexing
+- `questboard` — quest lifecycle state machine
+- `bossbattle` — automated review evaluation
+- `agent_progression` — XP calculation and leveling
+- `agent_store` — XP marketplace (tools, consumables)
+- `guildformation` — auto guild clustering
+- `boidengine` — emergent quest-claiming suggestions
+- `agentic-loop`, `agentic-model` — semstreams event-driven LLM loop orchestration
+- `questbridge`, `questtools` — quest-to-LLM bridge (requires model_registry and AGENT stream)
+
 Processors registered but excluded from the default config (opt-in):
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)
-- `questbridge`, `questtools` — event-driven agentic execution via semstreams `agentic-loop` + `agentic-model`. Requires AGENT stream and model_registry in config. Included in default config.
 - `autonomy` — depends on executor; DM approval gate is implemented but untested with real LLM calls
 - `seeding` — requires explicit config; `ModeTrainingArena` needs LLM, `ModeTieredRoster` works without
+- `partycoord` — party lifecycle management (form, assign, merge, disband)
+- `dmworldstate` — world state aggregation (used by API but can run standalone)
 - `dmsession`, `dmapproval`, `dmpartyformation` — DM session management (functional, not in default config)
 
 **Adding a new processor**: implement in `processor/<name>/`, register in `componentregistry/register.go`, optionally add to `config/semdragons.json`.

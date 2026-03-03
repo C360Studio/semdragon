@@ -13,6 +13,10 @@ import (
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/bossbattle"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 const maxRequestBodySize = 1 << 20 // 1 MB
@@ -86,7 +90,7 @@ func (s *Service) handleListQuests(w http.ResponseWriter, r *http.Request) {
 	entities, err := s.graph.ListQuestsByPrefix(r.Context(), s.config.MaxEntities)
 	if err != nil {
 		if isBucketNotFound(err) {
-			s.writeJSON(w, []semdragons.Quest{})
+			s.writeJSON(w, []domain.Quest{})
 			return
 		}
 		s.writeError(w, "failed to list quests", http.StatusInternalServerError)
@@ -99,9 +103,9 @@ func (s *Service) handleListQuests(w http.ResponseWriter, r *http.Request) {
 	difficultyFilter := r.URL.Query().Get("difficulty")
 	guildFilter := r.URL.Query().Get("guild_id")
 
-	var quests []semdragons.Quest
+	var quests []domain.Quest
 	for _, entity := range entities {
-		quest := semdragons.QuestFromEntityState(&entity)
+		quest := domain.QuestFromEntityState(&entity)
 		if quest == nil {
 			continue
 		}
@@ -123,7 +127,7 @@ func (s *Service) handleListQuests(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if quests == nil {
-		quests = []semdragons.Quest{}
+		quests = []domain.Quest{}
 	}
 	s.writeJSON(w, quests)
 }
@@ -135,7 +139,7 @@ func (s *Service) handleGetQuest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entity, err := s.graph.GetQuest(r.Context(), semdragons.QuestID(id))
+	entity, err := s.graph.GetQuest(r.Context(), domain.QuestID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -146,7 +150,7 @@ func (s *Service) handleGetQuest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	quest := semdragons.QuestFromEntityState(entity)
+	quest := domain.QuestFromEntityState(entity)
 	if quest == nil {
 		http.NotFound(w, r)
 		return
@@ -181,15 +185,15 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build quest
-	instance := semdragons.GenerateShortInstance()
+	instance := domain.GenerateShortInstance()
 	questID := s.graph.Config().QuestEntityID(instance)
 
-	quest := &semdragons.Quest{
-		ID:          semdragons.QuestID(questID),
+	quest := &domain.Quest{
+		ID:          domain.QuestID(questID),
 		Title:       req.Objective,
 		Description: req.Objective,
-		Status:      semdragons.QuestPosted,
-		Difficulty:  semdragons.DifficultyModerate,
+		Status:      domain.QuestPosted,
+		Difficulty:  domain.DifficultyModerate,
 		BaseXP:      100,
 		MaxAttempts: 3,
 	}
@@ -198,25 +202,25 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 		if req.Hints.SuggestedDifficulty != nil {
 			d := *req.Hints.SuggestedDifficulty
 			// DifficultyTrivial=0 through DifficultyLegendary=5 (iota-based constants)
-			if d < int(semdragons.DifficultyTrivial) || d > int(semdragons.DifficultyLegendary) {
+			if d < int(domain.DifficultyTrivial) || d > int(domain.DifficultyLegendary) {
 				s.writeError(w, "difficulty must be between 0 and 5", http.StatusBadRequest)
 				return
 			}
-			quest.Difficulty = semdragons.QuestDifficulty(d)
+			quest.Difficulty = domain.QuestDifficulty(d)
 		}
 		for _, skill := range req.Hints.SuggestedSkills {
-			quest.RequiredSkills = append(quest.RequiredSkills, semdragons.SkillTag(skill))
+			quest.RequiredSkills = append(quest.RequiredSkills, domain.SkillTag(skill))
 		}
 		if req.Hints.PreferGuild != nil {
-			gid := semdragons.GuildID(*req.Hints.PreferGuild)
+			gid := domain.GuildID(*req.Hints.PreferGuild)
 			quest.GuildPriority = &gid
 		}
 		if req.Hints.RequireHumanReview {
 			quest.Constraints.RequireReview = true
 			if req.Hints.ReviewLevel != nil {
-				quest.Constraints.ReviewLevel = semdragons.ReviewLevel(*req.Hints.ReviewLevel)
+				quest.Constraints.ReviewLevel = domain.ReviewLevel(*req.Hints.ReviewLevel)
 			} else {
-				quest.Constraints.ReviewLevel = semdragons.ReviewStandard
+				quest.Constraints.ReviewLevel = domain.ReviewStandard
 			}
 		}
 	}
@@ -235,13 +239,13 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 
-	var chain semdragons.QuestChainBrief
+	var chain domain.QuestChainBrief
 	if err := json.NewDecoder(r.Body).Decode(&chain); err != nil {
 		s.writeError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if err := semdragons.ValidateQuestChainBrief(&chain); err != nil {
+	if err := domain.ValidateQuestChainBrief(&chain); err != nil {
 		s.writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -251,24 +255,24 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 
 	// First pass: post each quest (no DependsOn yet — we need real IDs first)
-	posted := make([]semdragons.Quest, 0, len(chain.Quests))
+	posted := make([]domain.Quest, 0, len(chain.Quests))
 	for _, entry := range chain.Quests {
-		instance := semdragons.GenerateShortInstance()
+		instance := domain.GenerateShortInstance()
 		questID := s.graph.Config().QuestEntityID(instance)
 
-		difficulty := semdragons.DifficultyModerate
+		difficulty := domain.DifficultyModerate
 		if entry.Difficulty != nil {
 			difficulty = *entry.Difficulty
 		}
 
-		quest := semdragons.Quest{
-			ID:          semdragons.QuestID(questID),
+		quest := domain.Quest{
+			ID:          domain.QuestID(questID),
 			Title:       entry.Title,
 			Description: entry.Description,
-			Status:      semdragons.QuestPosted,
+			Status:      domain.QuestPosted,
 			Difficulty:  difficulty,
-			BaseXP:      semdragons.DefaultXPForDifficulty(difficulty),
-			MinTier:     semdragons.TierFromDifficulty(difficulty),
+			BaseXP:      domain.DefaultXPForDifficulty(difficulty),
+			MinTier:     domain.TierFromDifficulty(difficulty),
 			MaxAttempts: 3,
 			PostedAt:    now,
 			Acceptance:  entry.Acceptance,
@@ -279,7 +283,7 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 		if entry.Hints != nil {
 			if entry.Hints.RequireHumanReview {
 				quest.Constraints.RequireReview = true
-				quest.Constraints.ReviewLevel = semdragons.ReviewStandard
+				quest.Constraints.ReviewLevel = domain.ReviewStandard
 			}
 			if entry.Hints.PreferGuild != nil {
 				quest.GuildPriority = entry.Hints.PreferGuild
@@ -301,7 +305,7 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		deps := make([]semdragons.QuestID, 0, len(entry.DependsOn))
+		deps := make([]domain.QuestID, 0, len(entry.DependsOn))
 		for _, idx := range entry.DependsOn {
 			deps = append(deps, posted[idx].ID)
 		}
@@ -346,7 +350,7 @@ func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Load quest
-	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	questEntity, err := s.graph.GetQuest(ctx, domain.QuestID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -355,19 +359,19 @@ func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
 		return
 	}
-	quest := semdragons.QuestFromEntityState(questEntity)
+	quest := domain.QuestFromEntityState(questEntity)
 	if quest == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if quest.Status != semdragons.QuestPosted {
+	if quest.Status != domain.QuestPosted {
 		s.writeError(w, "quest is not available for claiming (status: "+string(quest.Status)+")", http.StatusConflict)
 		return
 	}
 
 	// Load agent
-	agentEntity, err := s.graph.GetAgent(ctx, semdragons.AgentID(req.AgentID))
+	agentEntity, err := s.graph.GetAgent(ctx, domain.AgentID(req.AgentID))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			s.writeError(w, "agent not found", http.StatusNotFound)
@@ -376,14 +380,14 @@ func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, "failed to retrieve agent", http.StatusInternalServerError)
 		return
 	}
-	agent := semdragons.AgentFromEntityState(agentEntity)
+	agent := agentprogression.AgentFromEntityState(agentEntity)
 	if agent == nil {
 		s.writeError(w, "agent not found", http.StatusNotFound)
 		return
 	}
 
 	// Validate agent state
-	if agent.Status != semdragons.AgentIdle {
+	if agent.Status != domain.AgentIdle {
 		s.writeError(w, "agent is not idle (status: "+string(agent.Status)+")", http.StatusConflict)
 		return
 	}
@@ -391,7 +395,7 @@ func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
 	// Validate tier
 	minTier := quest.MinTier
 	if minTier == 0 {
-		minTier = semdragons.TierFromDifficulty(quest.Difficulty)
+		minTier = domain.TierFromDifficulty(quest.Difficulty)
 	}
 	if agent.Tier < minTier {
 		s.writeError(w, "agent tier too low for this quest", http.StatusForbidden)
@@ -409,7 +413,7 @@ func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
 	// Claim quest
 	now := time.Now()
 	agentID := agent.ID
-	quest.Status = semdragons.QuestClaimed
+	quest.Status = domain.QuestClaimed
 	quest.ClaimedBy = &agentID
 	quest.ClaimedAt = &now
 
@@ -421,7 +425,7 @@ func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
 
 	// Update agent status
 	questID := quest.ID
-	agent.Status = semdragons.AgentOnQuest
+	agent.Status = domain.AgentOnQuest
 	agent.CurrentQuest = &questID
 	agent.UpdatedAt = now
 
@@ -440,7 +444,7 @@ func (s *Service) handleStartQuest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	questEntity, err := s.graph.GetQuest(ctx, domain.QuestID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -449,19 +453,19 @@ func (s *Service) handleStartQuest(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
 		return
 	}
-	quest := semdragons.QuestFromEntityState(questEntity)
+	quest := domain.QuestFromEntityState(questEntity)
 	if quest == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if quest.Status != semdragons.QuestClaimed {
+	if quest.Status != domain.QuestClaimed {
 		s.writeError(w, "quest must be claimed before starting (status: "+string(quest.Status)+")", http.StatusConflict)
 		return
 	}
 
 	now := time.Now()
-	quest.Status = semdragons.QuestInProgress
+	quest.Status = domain.QuestInProgress
 	quest.StartedAt = &now
 
 	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
@@ -490,7 +494,7 @@ func (s *Service) handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	questEntity, err := s.graph.GetQuest(ctx, domain.QuestID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -499,13 +503,13 @@ func (s *Service) handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
 		return
 	}
-	quest := semdragons.QuestFromEntityState(questEntity)
+	quest := domain.QuestFromEntityState(questEntity)
 	if quest == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if quest.Status != semdragons.QuestInProgress {
+	if quest.Status != domain.QuestInProgress {
 		s.writeError(w, "quest must be in progress to submit (status: "+string(quest.Status)+")", http.StatusConflict)
 		return
 	}
@@ -513,10 +517,10 @@ func (s *Service) handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 	quest.Output = req.Output
 
 	if quest.Constraints.RequireReview {
-		quest.Status = semdragons.QuestInReview
+		quest.Status = domain.QuestInReview
 	} else {
 		now := time.Now()
-		quest.Status = semdragons.QuestCompleted
+		quest.Status = domain.QuestCompleted
 		quest.CompletedAt = &now
 	}
 
@@ -527,7 +531,7 @@ func (s *Service) handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If quest completed without review, release the agent
-	if quest.Status == semdragons.QuestCompleted && quest.ClaimedBy != nil {
+	if quest.Status == domain.QuestCompleted && quest.ClaimedBy != nil {
 		s.releaseAgent(ctx, *quest.ClaimedBy)
 	}
 
@@ -542,7 +546,7 @@ func (s *Service) handleCompleteQuest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	questEntity, err := s.graph.GetQuest(ctx, domain.QuestID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -551,19 +555,19 @@ func (s *Service) handleCompleteQuest(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
 		return
 	}
-	quest := semdragons.QuestFromEntityState(questEntity)
+	quest := domain.QuestFromEntityState(questEntity)
 	if quest == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if quest.Status != semdragons.QuestInReview && quest.Status != semdragons.QuestInProgress {
+	if quest.Status != domain.QuestInReview && quest.Status != domain.QuestInProgress {
 		s.writeError(w, "quest must be in_review or in_progress to complete (status: "+string(quest.Status)+")", http.StatusConflict)
 		return
 	}
 
 	now := time.Now()
-	quest.Status = semdragons.QuestCompleted
+	quest.Status = domain.QuestCompleted
 	quest.CompletedAt = &now
 
 	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.completed"); err != nil {
@@ -596,7 +600,7 @@ func (s *Service) handleFailQuest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	questEntity, err := s.graph.GetQuest(ctx, domain.QuestID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -605,13 +609,13 @@ func (s *Service) handleFailQuest(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
 		return
 	}
-	quest := semdragons.QuestFromEntityState(questEntity)
+	quest := domain.QuestFromEntityState(questEntity)
 	if quest == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if quest.Status != semdragons.QuestInProgress && quest.Status != semdragons.QuestInReview {
+	if quest.Status != domain.QuestInProgress && quest.Status != domain.QuestInReview {
 		s.writeError(w, "quest must be in_progress or in_review to fail (status: "+string(quest.Status)+")", http.StatusConflict)
 		return
 	}
@@ -624,10 +628,10 @@ func (s *Service) handleFailQuest(w http.ResponseWriter, r *http.Request) {
 	quest.Attempts++
 
 	if quest.MaxAttempts > 0 && quest.Attempts >= quest.MaxAttempts {
-		quest.Status = semdragons.QuestFailed
+		quest.Status = domain.QuestFailed
 	} else {
 		// Repost: reset assignment fields for another attempt
-		quest.Status = semdragons.QuestPosted
+		quest.Status = domain.QuestPosted
 		quest.ClaimedBy = nil
 		quest.ClaimedAt = nil
 		quest.StartedAt = nil
@@ -635,7 +639,7 @@ func (s *Service) handleFailQuest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eventType := "quest.failed"
-	if quest.Status == semdragons.QuestPosted {
+	if quest.Status == domain.QuestPosted {
 		eventType = "quest.reposted"
 	}
 
@@ -663,7 +667,7 @@ func (s *Service) handleAbandonQuest(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	ctx := r.Context()
-	questEntity, err := s.graph.GetQuest(ctx, semdragons.QuestID(id))
+	questEntity, err := s.graph.GetQuest(ctx, domain.QuestID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -672,13 +676,13 @@ func (s *Service) handleAbandonQuest(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
 		return
 	}
-	quest := semdragons.QuestFromEntityState(questEntity)
+	quest := domain.QuestFromEntityState(questEntity)
 	if quest == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if quest.Status != semdragons.QuestClaimed && quest.Status != semdragons.QuestInProgress {
+	if quest.Status != domain.QuestClaimed && quest.Status != domain.QuestInProgress {
 		s.writeError(w, "quest must be claimed or in_progress to abandon (status: "+string(quest.Status)+")", http.StatusConflict)
 		return
 	}
@@ -689,7 +693,7 @@ func (s *Service) handleAbandonQuest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return quest to board
-	quest.Status = semdragons.QuestPosted
+	quest.Status = domain.QuestPosted
 	quest.ClaimedBy = nil
 	quest.ClaimedAt = nil
 	quest.StartedAt = nil
@@ -705,18 +709,18 @@ func (s *Service) handleAbandonQuest(w http.ResponseWriter, r *http.Request) {
 }
 
 // releaseAgent sets an agent back to idle and clears their current quest.
-func (s *Service) releaseAgent(ctx context.Context, agentID semdragons.AgentID) {
+func (s *Service) releaseAgent(ctx context.Context, agentID domain.AgentID) {
 	agentEntity, err := s.graph.GetAgent(ctx, agentID)
 	if err != nil {
 		s.logger.Error("Failed to load agent for release", "agent_id", agentID, "error", err)
 		return
 	}
-	agent := semdragons.AgentFromEntityState(agentEntity)
+	agent := agentprogression.AgentFromEntityState(agentEntity)
 	if agent == nil {
 		return
 	}
 
-	agent.Status = semdragons.AgentIdle
+	agent.Status = domain.AgentIdle
 	agent.CurrentQuest = nil
 	agent.UpdatedAt = time.Now()
 
@@ -733,7 +737,7 @@ func (s *Service) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	entities, err := s.graph.ListAgentsByPrefix(r.Context(), s.config.MaxEntities)
 	if err != nil {
 		if isBucketNotFound(err) {
-			s.writeJSON(w, []semdragons.Agent{})
+			s.writeJSON(w, []agentprogression.Agent{})
 			return
 		}
 		s.writeError(w, "failed to list agents", http.StatusInternalServerError)
@@ -741,9 +745,9 @@ func (s *Service) handleListAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agents := make([]semdragons.Agent, 0, len(entities))
+	agents := make([]agentprogression.Agent, 0, len(entities))
 	for _, entity := range entities {
-		agent := semdragons.AgentFromEntityState(&entity)
+		agent := agentprogression.AgentFromEntityState(&entity)
 		if agent != nil {
 			agents = append(agents, *agent)
 		}
@@ -759,7 +763,7 @@ func (s *Service) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entity, err := s.graph.GetAgent(r.Context(), semdragons.AgentID(id))
+	entity, err := s.graph.GetAgent(r.Context(), domain.AgentID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -770,7 +774,7 @@ func (s *Service) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent := semdragons.AgentFromEntityState(entity)
+	agent := agentprogression.AgentFromEntityState(entity)
 	if agent == nil {
 		http.NotFound(w, r)
 		return
@@ -798,24 +802,24 @@ func (s *Service) handleRecruitAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	instance := semdragons.GenerateShortInstance()
+	instance := domain.GenerateShortInstance()
 	agentID := s.graph.Config().AgentEntityID(instance)
 
-	agent := &semdragons.Agent{
-		ID:                 semdragons.AgentID(agentID),
+	agent := &agentprogression.Agent{
+		ID:                 domain.AgentID(agentID),
 		Name:               req.Name,
 		DisplayName:        req.DisplayName,
-		Status:             semdragons.AgentIdle,
+		Status:             domain.AgentIdle,
 		Level:              1,
 		XP:                 0,
 		XPToLevel:          100,
-		Tier:               semdragons.TierApprentice,
+		Tier:               domain.TierApprentice,
 		IsNPC:              req.IsNPC,
-		SkillProficiencies: make(map[semdragons.SkillTag]semdragons.SkillProficiency),
+		SkillProficiencies: make(map[domain.SkillTag]domain.SkillProficiency),
 	}
 
 	for _, skill := range req.Skills {
-		agent.SkillProficiencies[semdragons.SkillTag(skill)] = semdragons.SkillProficiency{
+		agent.SkillProficiencies[domain.SkillTag(skill)] = domain.SkillProficiency{
 			Level: 1,
 		}
 	}
@@ -838,7 +842,7 @@ func (s *Service) handleRetireAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entity, err := s.graph.GetAgent(r.Context(), semdragons.AgentID(id))
+	entity, err := s.graph.GetAgent(r.Context(), domain.AgentID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -849,13 +853,13 @@ func (s *Service) handleRetireAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent := semdragons.AgentFromEntityState(entity)
+	agent := agentprogression.AgentFromEntityState(entity)
 	if agent == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	agent.Status = semdragons.AgentRetired
+	agent.Status = domain.AgentRetired
 
 	if err := s.graph.EmitEntityUpdate(r.Context(), agent, "agent.retired"); err != nil {
 		s.writeError(w, "failed to retire agent", http.StatusInternalServerError)
@@ -871,10 +875,10 @@ func (s *Service) handleRetireAgent(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 func (s *Service) handleListBattles(w http.ResponseWriter, r *http.Request) {
-	entities, err := s.graph.ListEntitiesByType(r.Context(), semdragons.EntityTypeBattle, s.config.MaxEntities)
+	entities, err := s.graph.ListEntitiesByType(r.Context(), domain.EntityTypeBattle, s.config.MaxEntities)
 	if err != nil {
 		if isBucketNotFound(err) {
-			s.writeJSON(w, []semdragons.BossBattle{})
+			s.writeJSON(w, []bossbattle.BossBattle{})
 			return
 		}
 		s.writeError(w, "failed to list battles", http.StatusInternalServerError)
@@ -882,9 +886,9 @@ func (s *Service) handleListBattles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	battles := make([]semdragons.BossBattle, 0, len(entities))
+	battles := make([]bossbattle.BossBattle, 0, len(entities))
 	for _, entity := range entities {
-		battle := semdragons.BattleFromEntityState(&entity)
+		battle := bossbattle.BattleFromEntityState(&entity)
 		if battle != nil {
 			battles = append(battles, *battle)
 		}
@@ -900,7 +904,7 @@ func (s *Service) handleGetBattle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entity, err := s.graph.GetBattle(r.Context(), semdragons.BattleID(id))
+	entity, err := s.graph.GetBattle(r.Context(), domain.BattleID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -911,7 +915,7 @@ func (s *Service) handleGetBattle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	battle := semdragons.BattleFromEntityState(entity)
+	battle := bossbattle.BattleFromEntityState(entity)
 	if battle == nil {
 		http.NotFound(w, r)
 		return
@@ -1029,11 +1033,11 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 
 	// Try to extract quest brief or chain from the response
 	resp := struct {
-		Message    string                      `json:"message"`
-		QuestBrief *semdragons.QuestBrief      `json:"quest_brief,omitempty"`
-		QuestChain *semdragons.QuestChainBrief `json:"quest_chain,omitempty"`
-		SessionID  string                      `json:"session_id"`
-		TraceInfo  semdragons.TraceInfo         `json:"trace_info"`
+		Message    string                  `json:"message"`
+		QuestBrief *domain.QuestBrief      `json:"quest_brief,omitempty"`
+		QuestChain *domain.QuestChainBrief `json:"quest_chain,omitempty"`
+		SessionID  string                  `json:"session_id"`
+		TraceInfo  semdragons.TraceInfo    `json:"trace_info"`
 	}{
 		Message:   llmResponse,
 		SessionID: sessionID,
@@ -1042,16 +1046,16 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 
 	// Check for tagged JSON blocks: ```json:quest_brief or ```json:quest_chain
 	if extracted := extractTaggedJSON(llmResponse, "quest_chain"); extracted != "" {
-		var chain semdragons.QuestChainBrief
+		var chain domain.QuestChainBrief
 		if err := json.Unmarshal([]byte(extracted), &chain); err == nil {
-			if semdragons.ValidateQuestChainBrief(&chain) == nil {
+			if domain.ValidateQuestChainBrief(&chain) == nil {
 				resp.QuestChain = &chain
 			}
 		}
 	} else if extracted := extractTaggedJSON(llmResponse, "quest_brief"); extracted != "" {
-		var brief semdragons.QuestBrief
+		var brief domain.QuestBrief
 		if err := json.Unmarshal([]byte(extracted), &brief); err == nil {
-			if semdragons.ValidateQuestBrief(&brief) == nil {
+			if domain.ValidateQuestBrief(&brief) == nil {
 				resp.QuestBrief = &brief
 			}
 		}
@@ -1060,15 +1064,15 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 		extracted := semdragons.ExtractJSONFromLLMResponse(llmResponse)
 		if extracted != "" && extracted != llmResponse {
 			// Try as chain first (has "quests" array), then as brief
-			var chain semdragons.QuestChainBrief
+			var chain domain.QuestChainBrief
 			if err := json.Unmarshal([]byte(extracted), &chain); err == nil && len(chain.Quests) > 0 {
-				if semdragons.ValidateQuestChainBrief(&chain) == nil {
+				if domain.ValidateQuestChainBrief(&chain) == nil {
 					resp.QuestChain = &chain
 				}
 			} else {
-				var brief semdragons.QuestBrief
+				var brief domain.QuestBrief
 				if err := json.Unmarshal([]byte(extracted), &brief); err == nil {
-					if semdragons.ValidateQuestBrief(&brief) == nil {
+					if domain.ValidateQuestBrief(&brief) == nil {
 						resp.QuestBrief = &brief
 					}
 				}
@@ -1198,7 +1202,7 @@ func (s *Service) handleListStore(w http.ResponseWriter, r *http.Request) {
 	agentIDParam := r.URL.Query().Get("agent_id")
 	if agentIDParam != "" {
 		// Look up agent to get tier for filtering
-		agentEntity, err := s.graph.GetAgent(r.Context(), semdragons.AgentID(agentIDParam))
+		agentEntity, err := s.graph.GetAgent(r.Context(), domain.AgentID(agentIDParam))
 		if err != nil {
 			if isBucketNotFound(err) || isKeyNotFound(err) {
 				s.writeError(w, "agent not found", http.StatusNotFound)
@@ -1208,7 +1212,7 @@ func (s *Service) handleListStore(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("Failed to retrieve agent for store listing", "agent_id", agentIDParam, "error", err)
 			return
 		}
-		agent := semdragons.AgentFromEntityState(agentEntity)
+		agent := agentprogression.AgentFromEntityState(agentEntity)
 		if agent == nil {
 			s.writeError(w, "agent not found", http.StatusNotFound)
 			return
@@ -1270,7 +1274,7 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 	// Normalize agent ID to instance portion — graph.GetAgent handles both
 	// full entity IDs and instance-only, but store methods use the ID as a
 	// sync.Map key so it must match what path-based handlers pass (instance only).
-	agentID := semdragons.AgentID(semdragons.ExtractInstance(req.AgentID))
+	agentID := domain.AgentID(domain.ExtractInstance(req.AgentID))
 
 	// Resolve agent state from graph
 	agentEntity, err := s.graph.GetAgent(ctx, agentID)
@@ -1283,7 +1287,7 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("Failed to retrieve agent for purchase", "agent_id", req.AgentID, "error", err)
 		return
 	}
-	agent := semdragons.AgentFromEntityState(agentEntity)
+	agent := agentprogression.AgentFromEntityState(agentEntity)
 	if agent == nil {
 		s.writeError(w, "agent not found", http.StatusNotFound)
 		return
@@ -1333,7 +1337,7 @@ func (s *Service) handleGetInventory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inv := s.store.GetInventory(semdragons.AgentID(id))
+	inv := s.store.GetInventory(domain.AgentID(id))
 	s.writeJSON(w, inv)
 }
 
@@ -1363,11 +1367,11 @@ func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agentID := semdragons.AgentID(id)
+	agentID := domain.AgentID(id)
 
-	var questIDPtr *semdragons.QuestID
+	var questIDPtr *domain.QuestID
 	if req.QuestID != "" {
-		qid := semdragons.QuestID(req.QuestID)
+		qid := domain.QuestID(req.QuestID)
 		questIDPtr = &qid
 	}
 
@@ -1402,7 +1406,7 @@ func (s *Service) handleGetEffects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	effects := s.store.GetActiveEffects(semdragons.AgentID(id))
+	effects := s.store.GetActiveEffects(domain.AgentID(id))
 	if effects == nil {
 		effects = make([]agentstore.ActiveEffect, 0)
 	}
@@ -1447,21 +1451,21 @@ func (s *Service) handleCreateReview(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	instance := semdragons.GenerateShortInstance()
+	instance := domain.GenerateShortInstance()
 	reviewID := s.graph.Config().PeerReviewEntityID(instance)
 	now := time.Now()
 
-	review := &semdragons.PeerReview{
-		ID:         semdragons.PeerReviewID(reviewID),
-		Status:     semdragons.PeerReviewPending,
-		QuestID:    semdragons.QuestID(req.QuestID),
-		LeaderID:   semdragons.AgentID(req.LeaderID),
-		MemberID:   semdragons.AgentID(req.MemberID),
+	review := &domain.PeerReview{
+		ID:         domain.PeerReviewID(reviewID),
+		Status:     domain.PeerReviewPending,
+		QuestID:    domain.QuestID(req.QuestID),
+		LeaderID:   domain.AgentID(req.LeaderID),
+		MemberID:   domain.AgentID(req.MemberID),
 		IsSoloTask: req.IsSoloTask,
 		CreatedAt:  now,
 	}
 	if req.PartyID != nil {
-		pid := semdragons.PartyID(*req.PartyID)
+		pid := domain.PartyID(*req.PartyID)
 		review.PartyID = &pid
 	}
 
@@ -1486,8 +1490,8 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 
 	var req struct {
-		ReviewerID  string `json:"reviewer_id"`
-		Ratings     struct {
+		ReviewerID string `json:"reviewer_id"`
+		Ratings    struct {
 			Q1 int `json:"q1"`
 			Q2 int `json:"q2"`
 			Q3 int `json:"q3"`
@@ -1504,7 +1508,7 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ratings := semdragons.ReviewRatings{Q1: req.Ratings.Q1, Q2: req.Ratings.Q2, Q3: req.Ratings.Q3}
+	ratings := domain.ReviewRatings{Q1: req.Ratings.Q1, Q2: req.Ratings.Q2, Q3: req.Ratings.Q3}
 	if err := ratings.Validate(req.Explanation); err != nil {
 		s.writeError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1513,7 +1517,7 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Load existing review
-	entity, err := s.graph.GetPeerReview(ctx, semdragons.PeerReviewID(id))
+	entity, err := s.graph.GetPeerReview(ctx, domain.PeerReviewID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -1524,18 +1528,18 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review := semdragons.PeerReviewFromEntityState(entity)
+	review := domain.PeerReviewFromEntityState(entity)
 	if review == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if review.Status == semdragons.PeerReviewCompleted {
+	if review.Status == domain.PeerReviewCompleted {
 		s.writeError(w, "review is already completed", http.StatusConflict)
 		return
 	}
 
-	reviewerID := semdragons.AgentID(req.ReviewerID)
+	reviewerID := domain.AgentID(req.ReviewerID)
 	now := time.Now()
 
 	switch reviewerID {
@@ -1544,10 +1548,10 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, "leader has already submitted a review", http.StatusConflict)
 			return
 		}
-		review.LeaderReview = &semdragons.ReviewSubmission{
+		review.LeaderReview = &domain.ReviewSubmission{
 			ReviewerID:  reviewerID,
 			RevieweeID:  review.MemberID,
-			Direction:   semdragons.ReviewDirectionLeaderToMember,
+			Direction:   domain.ReviewDirectionLeaderToMember,
 			Ratings:     ratings,
 			Explanation: req.Explanation,
 			SubmittedAt: now,
@@ -1561,10 +1565,10 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, "member has already submitted a review", http.StatusConflict)
 			return
 		}
-		review.MemberReview = &semdragons.ReviewSubmission{
+		review.MemberReview = &domain.ReviewSubmission{
 			ReviewerID:  reviewerID,
 			RevieweeID:  review.LeaderID,
-			Direction:   semdragons.ReviewDirectionMemberToLeader,
+			Direction:   domain.ReviewDirectionMemberToLeader,
 			Ratings:     ratings,
 			Explanation: req.Explanation,
 			SubmittedAt: now,
@@ -1585,7 +1589,7 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 
 	eventType := "review.lifecycle.submitted"
 	if completed {
-		review.Status = semdragons.PeerReviewCompleted
+		review.Status = domain.PeerReviewCompleted
 		review.CompletedAt = &now
 		eventType = "review.lifecycle.completed"
 
@@ -1598,7 +1602,7 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 			review.LeaderAvgRating = review.MemberReview.Ratings.Average()
 		}
 	} else {
-		review.Status = semdragons.PeerReviewPartial
+		review.Status = domain.PeerReviewPartial
 	}
 
 	if err := s.graph.EmitEntityUpdate(ctx, review, eventType); err != nil {
@@ -1614,8 +1618,8 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 
 // stripPartialSubmissions redacts both submissions from non-completed reviews
 // returned by unauthenticated GET/LIST endpoints to enforce blind review.
-func stripPartialSubmissions(review *semdragons.PeerReview) semdragons.PeerReview {
-	if review.Status == semdragons.PeerReviewCompleted {
+func stripPartialSubmissions(review *domain.PeerReview) domain.PeerReview {
+	if review.Status == domain.PeerReviewCompleted {
 		return *review
 	}
 	masked := *review
@@ -1629,8 +1633,8 @@ func stripPartialSubmissions(review *semdragons.PeerReview) semdragons.PeerRevie
 // blindMaskReview returns a copy of the review with the other party's submission
 // masked out if the review is not yet completed. This enforces blind review —
 // neither party can see the other's ratings until both have submitted.
-func blindMaskReview(review *semdragons.PeerReview, viewerID semdragons.AgentID) *semdragons.PeerReview {
-	if review.Status == semdragons.PeerReviewCompleted {
+func blindMaskReview(review *domain.PeerReview, viewerID domain.AgentID) *domain.PeerReview {
+	if review.Status == domain.PeerReviewCompleted {
 		return review
 	}
 	// Create shallow copy to avoid mutating original
@@ -1659,7 +1663,7 @@ func (s *Service) handleGetReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entity, err := s.graph.GetPeerReview(r.Context(), semdragons.PeerReviewID(id))
+	entity, err := s.graph.GetPeerReview(r.Context(), domain.PeerReviewID(id))
 	if err != nil {
 		if isBucketNotFound(err) || isKeyNotFound(err) {
 			http.NotFound(w, r)
@@ -1670,7 +1674,7 @@ func (s *Service) handleGetReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review := semdragons.PeerReviewFromEntityState(entity)
+	review := domain.PeerReviewFromEntityState(entity)
 	if review == nil {
 		http.NotFound(w, r)
 		return
@@ -1685,7 +1689,7 @@ func (s *Service) handleListReviews(w http.ResponseWriter, r *http.Request) {
 	entities, err := s.graph.ListPeerReviewsByPrefix(r.Context(), s.config.MaxEntities)
 	if err != nil {
 		if isBucketNotFound(err) {
-			s.writeJSON(w, []semdragons.PeerReview{})
+			s.writeJSON(w, []domain.PeerReview{})
 			return
 		}
 		s.writeError(w, "failed to list reviews", http.StatusInternalServerError)
@@ -1696,9 +1700,9 @@ func (s *Service) handleListReviews(w http.ResponseWriter, r *http.Request) {
 	statusFilter := r.URL.Query().Get("status")
 	questFilter := r.URL.Query().Get("quest_id")
 
-	var reviews []semdragons.PeerReview
+	var reviews []domain.PeerReview
 	for _, entity := range entities {
-		review := semdragons.PeerReviewFromEntityState(&entity)
+		review := domain.PeerReviewFromEntityState(&entity)
 		if review == nil {
 			continue
 		}
@@ -1712,7 +1716,7 @@ func (s *Service) handleListReviews(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if reviews == nil {
-		reviews = []semdragons.PeerReview{}
+		reviews = []domain.PeerReview{}
 	}
 	s.writeJSON(w, reviews)
 }
@@ -1724,12 +1728,12 @@ func (s *Service) handleListAgentReviews(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	agentID := semdragons.AgentID(id)
+	agentID := domain.AgentID(id)
 
 	entities, err := s.graph.ListPeerReviewsByPrefix(r.Context(), s.config.MaxEntities)
 	if err != nil {
 		if isBucketNotFound(err) {
-			s.writeJSON(w, []semdragons.PeerReview{})
+			s.writeJSON(w, []domain.PeerReview{})
 			return
 		}
 		s.writeError(w, "failed to list reviews", http.StatusInternalServerError)
@@ -1737,9 +1741,9 @@ func (s *Service) handleListAgentReviews(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var reviews []semdragons.PeerReview
+	var reviews []domain.PeerReview
 	for _, entity := range entities {
-		review := semdragons.PeerReviewFromEntityState(&entity)
+		review := domain.PeerReviewFromEntityState(&entity)
 		if review == nil {
 			continue
 		}
@@ -1750,7 +1754,7 @@ func (s *Service) handleListAgentReviews(w http.ResponseWriter, r *http.Request)
 	}
 
 	if reviews == nil {
-		reviews = []semdragons.PeerReview{}
+		reviews = []domain.PeerReview{}
 	}
 	s.writeJSON(w, reviews)
 }

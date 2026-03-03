@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/pkg/errs"
@@ -22,7 +21,7 @@ import (
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 	logger      *slog.Logger
 
 	// Approval infrastructure
@@ -183,7 +182,7 @@ func (c *Component) Initialize() error {
 		return errors.New("NATS client required")
 	}
 
-	c.boardConfig = &semdragons.BoardConfig{
+	c.boardConfig = &domain.BoardConfig{
 		Org:      c.config.Org,
 		Platform: c.config.Platform,
 		Board:    c.config.Board,

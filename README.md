@@ -70,8 +70,8 @@ See [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) for full setup, environme
 │   guildformation  partycoord    boidengine       │
 ├─────────────────────────────────────────────────┤
 │         QUEST BOARD + EXECUTION                  │
-│   questboard · bossbattle · executor             │
-│   agentprogression · agentstore · seeding        │
+│   questboard · bossbattle · agentprogression     │
+│   agentstore · questbridge · questtools          │
 ├─────────────────────────────────────────────────┤
 │              PROMPT ASSEMBLY                     │
 │   promptmanager · domains (software/dnd/research)│
@@ -88,6 +88,8 @@ See [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) for full setup, environme
 - **Emergent coordination**: Boids engine suggests claims without central scheduling
 - **Full observability**: All events map to semstreams trajectories
 - **Domain-configurable**: Software, D&D, and research themes ship out of the box
+- **Model registry**: Route LLM calls to Anthropic, OpenAI, or Ollama with capability-based fallback chains
+- **Event-driven execution**: questbridge + questtools bridge quest lifecycle to LLM loops via AGENT JetStream stream
 
 ## Development
 
@@ -107,10 +109,10 @@ make e2e                      # Full E2E suite (Playwright + Docker)
 semdragons/
 ├── cmd/semdragons/         # Binary entry point + CLI
 ├── componentregistry/      # Registers all processors with semstreams
-├── config/                 # Default runtime config (semdragons.json)
+├── config/                 # Runtime config + model registry (semdragons.json, models.json)
 ├── domain/                 # Enums, config types, vocabulary (source of truth)
 ├── domains/                # Domain implementations: software, dnd, research
-├── processor/              # 14 reactive event processors
+├── processor/              # 17 reactive event processors
 │   ├── agentprogression/   #   XP and leveling on quest outcome
 │   ├── agentstore/         #   XP marketplace: tools, consumables
 │   ├── autonomy/           #   Heartbeat-driven agent decision loop
@@ -125,13 +127,15 @@ semdragons/
 │   ├── partycoord/         #   Party lifecycle (form/assign/merge/disband)
 │   ├── promptmanager/      #   Fragment-based domain-aware prompts (library)
 │   ├── questboard/         #   Quest lifecycle state machine
+│   ├── questbridge/        #   Quest-to-LLM bridge (AGENT stream)
+│   ├── questtools/         #   Tool execution with tier/skill gates
 │   └── seeding/            #   Environment bootstrapping
 ├── service/api/            # REST API handlers
 ├── ui/                     # SvelteKit 5 dashboard + Playwright E2E
 │   ├── src/routes/         #   Pages: agents, quests, battles, store, guilds
 │   ├── e2e/specs/          #   12 Playwright specs
 │   └── docker-compose.yml  #   Full stack: nats + backend + ui
-├── docs/                   # Design docs + ADRs + getting started
+├── docs/                   # Design, getting started, quests, parties, boids, domains, model registry, API ref
 └── *.go                    # Core types, entity IDs, graph client, vocab
 ```
 

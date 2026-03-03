@@ -13,7 +13,6 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
@@ -38,26 +37,26 @@ func TestXPPreservesAgentData(t *testing.T) {
 
 	// Create an agent with rich state (name, skills, guilds).
 	// Use AgentOnQuest with CurrentQuest set — consistent with an agent actively working.
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.boardConfig.AgentEntityID(instance))
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(comp.boardConfig.QuestEntityID(questInstance))
-	agent := &semdragons.Agent{
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.boardConfig.AgentEntityID(instance))
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(comp.boardConfig.QuestEntityID(questInstance))
+	agent := &Agent{
 		ID:           agentID,
 		Name:         "xp-preserve-agent",
 		DisplayName:  "Shadow Weaver",
-		Status:       semdragons.AgentOnQuest,
+		Status:       domain.AgentOnQuest,
 		CurrentQuest: &questID,
 		Level:        5,
 		XP:           200,
 		XPToLevel:    300,
-		Tier:         semdragons.TierApprentice,
-		Guilds:       []semdragons.GuildID{"guild-alpha", "guild-beta"},
-		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
-			semdragons.SkillCodeGen:  {Level: semdragons.ProficiencyJourneyman},
-			semdragons.SkillAnalysis: {Level: semdragons.ProficiencyExpert},
+		Tier:         domain.TierApprentice,
+		Guilds:       []domain.GuildID{"guild-alpha", "guild-beta"},
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen:  {Level: domain.ProficiencyJourneyman},
+			domain.SkillAnalysis: {Level: domain.ProficiencyExpert},
 		},
-		Stats: semdragons.AgentStats{
+		Stats: AgentStats{
 			QuestsCompleted: 10,
 			QuestsFailed:    2,
 		},
@@ -68,11 +67,11 @@ func TestXPPreservesAgentData(t *testing.T) {
 
 	// Create a quest claimed by this agent, then transition it to completed.
 	// The component's KV watcher will detect the transition and process XP.
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID:          domain.QuestID(questID),
 		Title:       "XP Preserve Test Quest",
 		Status:      domain.QuestInProgress,
-		Difficulty:  semdragons.DifficultyTrivial,
+		Difficulty:  domain.DifficultyTrivial,
 		BaseXP:      50,
 		MaxAttempts: 3,
 		Attempts:    1,
@@ -99,7 +98,7 @@ func TestXPPreservesAgentData(t *testing.T) {
 	// For a trivial quest with BaseXP=50 and no verdict/streak, TotalXP == 50.
 	// Starting XP=200, XPToLevel=300, so the agent gains 50 XP → new XP=250 (no level-up).
 	updatedAgent := waitForAgentUpdate(t, gc, agentID,
-		func(a *semdragons.Agent) bool { return a.XP > 200 },
+		func(a *Agent) bool { return a.XP > 200 },
 		3*time.Second,
 		"agent XP to increase above 200 after quest completion")
 
@@ -112,8 +111,8 @@ func TestXPPreservesAgentData(t *testing.T) {
 		t.Errorf("Level should not have changed: got %d, want 5", updatedAgent.Level)
 	}
 	// Agent is reset to idle by the completion handler
-	if updatedAgent.Status != semdragons.AgentIdle {
-		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentIdle)
+	if updatedAgent.Status != domain.AgentIdle {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, domain.AgentIdle)
 	}
 
 	// CRITICAL: Verify all other fields are preserved (the overwrite bug regression)
@@ -147,18 +146,18 @@ func TestCompletionResetsAgent(t *testing.T) {
 	gc := comp.graph
 
 	// Create agent in on_quest status with CurrentQuest set
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.boardConfig.AgentEntityID(instance))
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(comp.boardConfig.QuestEntityID(questInstance))
-	agent := &semdragons.Agent{
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.boardConfig.AgentEntityID(instance))
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(comp.boardConfig.QuestEntityID(questInstance))
+	agent := &Agent{
 		ID:           agentID,
 		Name:         "completion-agent",
-		Status:       semdragons.AgentOnQuest,
+		Status:       domain.AgentOnQuest,
 		Level:        3,
 		XP:           100,
 		XPToLevel:    200,
-		Tier:         semdragons.TierApprentice,
+		Tier:         domain.TierApprentice,
 		CurrentQuest: &questID,
 	}
 	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
@@ -166,11 +165,11 @@ func TestCompletionResetsAgent(t *testing.T) {
 	}
 
 	// Create quest in_progress first, then complete it
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID:          domain.QuestID(questID),
 		Title:       "Completion Reset Test",
 		Status:      domain.QuestInProgress,
-		Difficulty:  semdragons.DifficultyTrivial,
+		Difficulty:  domain.DifficultyTrivial,
 		BaseXP:      50,
 		MaxAttempts: 3,
 		Attempts:    1,
@@ -192,12 +191,12 @@ func TestCompletionResetsAgent(t *testing.T) {
 
 	// Wait for the reactive handler to reset the agent to idle
 	updatedAgent := waitForAgentUpdate(t, gc, agentID,
-		func(a *semdragons.Agent) bool { return a.Status == semdragons.AgentIdle },
+		func(a *Agent) bool { return a.Status == domain.AgentIdle },
 		3*time.Second,
 		"agent Status to become idle after quest completion")
 
-	if updatedAgent.Status != semdragons.AgentIdle {
-		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentIdle)
+	if updatedAgent.Status != domain.AgentIdle {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, domain.AgentIdle)
 	}
 	if updatedAgent.CurrentQuest != nil {
 		t.Errorf("CurrentQuest should be nil, got %v", updatedAgent.CurrentQuest)
@@ -220,18 +219,18 @@ func TestFailureSetsAgentCooldown(t *testing.T) {
 	gc := comp.graph
 
 	// Create agent
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.boardConfig.AgentEntityID(instance))
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(comp.boardConfig.QuestEntityID(questInstance))
-	agent := &semdragons.Agent{
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.boardConfig.AgentEntityID(instance))
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(comp.boardConfig.QuestEntityID(questInstance))
+	agent := &Agent{
 		ID:           agentID,
 		Name:         "cooldown-agent",
-		Status:       semdragons.AgentOnQuest,
+		Status:       domain.AgentOnQuest,
 		Level:        3,
 		XP:           100,
 		XPToLevel:    200,
-		Tier:         semdragons.TierApprentice,
+		Tier:         domain.TierApprentice,
 		CurrentQuest: &questID,
 	}
 	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
@@ -239,16 +238,16 @@ func TestFailureSetsAgentCooldown(t *testing.T) {
 	}
 
 	// Create quest in_progress, then fail it permanently
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID:            domain.QuestID(questID),
 		Title:         "Cooldown Failure Test",
 		Status:        domain.QuestInProgress,
-		Difficulty:    semdragons.DifficultyTrivial,
+		Difficulty:    domain.DifficultyTrivial,
 		BaseXP:        100,
 		MaxAttempts:   1,
 		Attempts:      1,
 		ClaimedBy:     (*domain.AgentID)(&agentID),
-		FailureType:   questboard.FailureQuality,
+		FailureType:   domain.FailureQuality,
 		FailureReason: "quality too low",
 	}
 	if err := gc.PutEntityState(ctx, quest, "quest.started"); err != nil {
@@ -268,14 +267,14 @@ func TestFailureSetsAgentCooldown(t *testing.T) {
 	// difficulty scale = 1.0 + 0*0.2 = 1.0 (DifficultyTrivial == 0); XPLost = 12.
 	// Starting XP=100 → new XP should be ~88.
 	updatedAgent := waitForAgentUpdate(t, gc, agentID,
-		func(a *semdragons.Agent) bool { return a.Status == semdragons.AgentCooldown },
+		func(a *Agent) bool { return a.Status == domain.AgentCooldown },
 		3*time.Second,
 		"agent Status to become cooldown after quest failure")
 
 	// Default failure type is FailureSoft (from questboard.FailureQuality mapping),
 	// which has CooldownDur of 1 minute
-	if updatedAgent.Status != semdragons.AgentCooldown {
-		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentCooldown)
+	if updatedAgent.Status != domain.AgentCooldown {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, domain.AgentCooldown)
 	}
 	if updatedAgent.CooldownUntil == nil {
 		t.Error("CooldownUntil should be set")
@@ -304,13 +303,13 @@ func TestFailureSetsAgentCooldown(t *testing.T) {
 // This replaces fixed time.Sleep + manual read-back patterns. Polling at 50ms
 // intervals means the test responds as soon as the handler writes the update,
 // rather than waiting an arbitrary fixed duration.
-func waitForAgentUpdate(t *testing.T, gc *semdragons.GraphClient, agentID semdragons.AgentID, check func(*semdragons.Agent) bool, timeout time.Duration, msg string) *semdragons.Agent {
+func waitForAgentUpdate(t *testing.T, gc *semdragons.GraphClient, agentID domain.AgentID, check func(*Agent) bool, timeout time.Duration, msg string) *Agent {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		entity, err := gc.GetAgent(context.Background(), agentID)
 		if err == nil {
-			agent := semdragons.AgentFromEntityState(entity)
+			agent := AgentFromEntityState(entity)
 			if agent != nil && check(agent) {
 				return agent
 			}

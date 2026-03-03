@@ -18,7 +18,6 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/util"
-	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
@@ -36,7 +35,7 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	evaluator   BattleEvaluator
 	logger      *slog.Logger
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 
 	// KV watcher for quest entity state changes (entity-centric architecture)
 	questWatch  jetstream.KeyWatcher
@@ -66,7 +65,7 @@ type Component struct {
 // activeBattle tracks an in-progress battle.
 type activeBattle struct {
 	battle    *BossBattle
-	quest     *questboard.Quest
+	quest     *domain.Quest
 	output    any
 	startTime time.Time
 	cancel    context.CancelFunc

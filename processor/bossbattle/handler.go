@@ -12,7 +12,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/questboard"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -131,9 +131,9 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 	if quest.ClaimedBy != nil {
 		agentEntity, agentErr := c.graph.GetAgent(ctx, domain.AgentID(*quest.ClaimedBy))
 		if agentErr == nil {
-			agent := semdragons.AgentFromEntityState(agentEntity)
+			agent := agentprogression.AgentFromEntityState(agentEntity)
 			if agent != nil {
-				agent.Status = semdragons.AgentInBattle
+				agent.Status = domain.AgentInBattle
 				agent.UpdatedAt = time.Now()
 				if writeErr := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.in_battle"); writeErr != nil {
 					c.errorsCount.Add(1)
@@ -149,12 +149,12 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 }
 
 // questFromEntityStateForBattle reconstructs a questboard.Quest from entity state triples.
-func questFromEntityStateForBattle(entity *graph.EntityState) *questboard.Quest {
+func questFromEntityStateForBattle(entity *graph.EntityState) *domain.Quest {
 	if entity == nil {
 		return nil
 	}
 
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID: domain.QuestID(entity.ID),
 	}
 
@@ -220,7 +220,7 @@ func questFromEntityStateForBattle(entity *graph.EntityState) *questboard.Quest 
 // =============================================================================
 
 // StartBattle initiates a boss battle for a quest.
-func (c *Component) StartBattle(ctx context.Context, quest *questboard.Quest, output any) (*BossBattle, error) {
+func (c *Component) StartBattle(ctx context.Context, quest *domain.Quest, output any) (*BossBattle, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -261,7 +261,7 @@ func (c *Component) StartBattle(ctx context.Context, quest *questboard.Quest, ou
 }
 
 // buildBattle constructs a BossBattle from quest settings.
-func (c *Component) buildBattle(id domain.BattleID, quest *questboard.Quest) *BossBattle {
+func (c *Component) buildBattle(id domain.BattleID, quest *domain.Quest) *BossBattle {
 	now := time.Now()
 
 	reviewLevel := quest.Constraints.ReviewLevel
@@ -366,7 +366,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 
 		// Mark as failed with default verdict (defeat)
 		ab.battle.Status = domain.BattleDefeat
-		ab.battle.Verdict = &BattleVerdict{
+		ab.battle.Verdict = &domain.BattleVerdict{
 			Passed:       false,
 			QualityScore: 0,
 			Feedback:     fmt.Sprintf("Evaluation error: %v", err),
@@ -412,7 +412,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				verdictNow := time.Now()
 				ab.quest.Status = domain.QuestCompleted
 				ab.quest.CompletedAt = &verdictNow
-				ab.quest.Verdict = &questboard.BattleVerdict{
+				ab.quest.Verdict = &domain.BattleVerdict{
 					Passed:       ab.battle.Verdict.Passed,
 					QualityScore: ab.battle.Verdict.QualityScore,
 					XPAwarded:    ab.battle.Verdict.XPAwarded,
@@ -424,7 +424,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 			} else {
 				ab.quest.Status = domain.QuestFailed
 				ab.quest.FailureReason = ab.battle.Verdict.Feedback
-				ab.quest.FailureType = questboard.FailureQuality
+				ab.quest.FailureType = domain.FailureQuality
 			}
 			if questErr := c.graph.EmitEntityUpdate(persistCtx, ab.quest, "quest."+string(ab.quest.Status)); questErr != nil {
 				c.errorsCount.Add(1)
@@ -457,7 +457,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 
 // GetBattle retrieves a battle by ID.
 func (c *Component) GetBattle(ctx context.Context, id domain.BattleID) (*BossBattle, error) {
-	entity, err := c.graph.GetBattle(ctx, semdragons.BattleID(id))
+	entity, err := c.graph.GetBattle(ctx, domain.BattleID(id))
 	if err != nil {
 		return nil, err
 	}
@@ -519,7 +519,7 @@ func (c *Component) createGraphClient(_ context.Context) error {
 // =============================================================================
 
 func (c *Component) generateID() string {
-	return semdragons.GenerateInstance()
+	return domain.GenerateInstance()
 }
 
 func (c *Component) countActiveBattles() int {
@@ -537,7 +537,7 @@ func battleFromEntityState(entity *graph.EntityState) *BossBattle {
 		return nil
 	}
 	// Delegate to semdragons.BattleFromEntityState and convert
-	semBattle := semdragons.BattleFromEntityState(entity)
+	semBattle := BattleFromEntityState(entity)
 	if semBattle == nil {
 		return nil
 	}
@@ -582,7 +582,7 @@ func battleFromEntityState(entity *graph.EntityState) *BossBattle {
 	}
 	// Copy verdict
 	if semBattle.Verdict != nil {
-		battle.Verdict = &BattleVerdict{
+		battle.Verdict = &domain.BattleVerdict{
 			Passed:       semBattle.Verdict.Passed,
 			QualityScore: semBattle.Verdict.QualityScore,
 			XPAwarded:    semBattle.Verdict.XPAwarded,

@@ -16,6 +16,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semdragons/processor/dmapproval"
@@ -79,15 +80,15 @@ func TestCooldownExpiryTransitionsToIdle(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create agent in cooldown with expired CooldownUntil
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
 	expired := time.Now().Add(-1 * time.Hour) // Already expired
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            agentID,
 		Name:          "cooldown-agent",
-		Status:        semdragons.AgentCooldown,
+		Status:        domain.AgentCooldown,
 		Level:         3,
-		Tier:          semdragons.TierApprentice,
+		Tier:          domain.TierApprentice,
 		CooldownUntil: &expired,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
@@ -107,8 +108,8 @@ func TestCooldownExpiryTransitionsToIdle(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			updated := semdragons.AgentFromEntityState(entity)
-			if updated != nil && updated.Status == semdragons.AgentIdle {
+			updated := agentprogression.AgentFromEntityState(entity)
+			if updated != nil && updated.Status == domain.AgentIdle {
 				// Cooldown expired successfully
 				if updated.CooldownUntil != nil {
 					t.Error("CooldownUntil should be nil after expiry")
@@ -137,15 +138,15 @@ func TestCooldownNotExpiredStaysCooldown(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create agent in cooldown with future CooldownUntil
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
 	future := time.Now().Add(1 * time.Hour) // Not expired
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            agentID,
 		Name:          "future-cooldown-agent",
-		Status:        semdragons.AgentCooldown,
+		Status:        domain.AgentCooldown,
 		Level:         3,
-		Tier:          semdragons.TierApprentice,
+		Tier:          domain.TierApprentice,
 		CooldownUntil: &future,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
@@ -161,12 +162,12 @@ func TestCooldownNotExpiredStaysCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updated := semdragons.AgentFromEntityState(entity)
+	updated := agentprogression.AgentFromEntityState(entity)
 	if updated == nil {
 		t.Fatal("Failed to reconstruct agent")
 	}
-	if updated.Status != semdragons.AgentCooldown {
-		t.Errorf("Status = %v, want %v (cooldown not expired)", updated.Status, semdragons.AgentCooldown)
+	if updated.Status != domain.AgentCooldown {
+		t.Errorf("Status = %v, want %v (cooldown not expired)", updated.Status, domain.AgentCooldown)
 	}
 }
 
@@ -187,14 +188,14 @@ func TestBoidSuggestionCached(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create idle agent
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "boid-test-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -275,14 +276,14 @@ func TestHeartbeatStartsOnAgentCreation(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create agent
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "heartbeat-test-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     1,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -301,7 +302,7 @@ func TestHeartbeatStartsOnAgentCreation(t *testing.T) {
 			tracker, exists := comp.trackers[instance]
 			comp.trackersMu.RUnlock()
 			if exists {
-				expectedInterval := config.IntervalForStatus(semdragons.AgentIdle)
+				expectedInterval := config.IntervalForStatus(domain.AgentIdle)
 				if tracker.interval != expectedInterval {
 					t.Errorf("tracker interval = %v, want %v", tracker.interval, expectedInterval)
 				}
@@ -331,14 +332,14 @@ func TestHeartbeatCancelledOnRetire(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create idle agent first
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "retire-test-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     1,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -350,7 +351,7 @@ func TestHeartbeatCancelledOnRetire(t *testing.T) {
 	waitForTracker(t, comp, instance, 3*time.Second)
 
 	// Retire agent
-	agent.Status = semdragons.AgentRetired
+	agent.Status = domain.AgentRetired
 	agent.UpdatedAt = time.Now()
 	if err := gc.PutEntityState(ctx, agent, "agent.status.retired"); err != nil {
 		t.Fatalf("Failed to retire agent: %v", err)
@@ -395,29 +396,29 @@ func TestAutonomousQuestClaim(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create a posted quest
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
-	quest := &semdragons.Quest{
-		ID:        questID,
-		Title:     "Auto-claim test quest",
-		Status:    semdragons.QuestPosted,
-		PostedAt:  time.Now(),
-		MinTier:   semdragons.TierApprentice,
-		BaseXP:    100,
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
+	quest := &domain.Quest{
+		ID:       questID,
+		Title:    "Auto-claim test quest",
+		Status:   domain.QuestPosted,
+		PostedAt: time.Now(),
+		MinTier:  domain.TierApprentice,
+		BaseXP:   100,
 	}
 	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
 		t.Fatalf("Failed to create test quest: %v", err)
 	}
 
 	// Create idle agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "autoclaim-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -459,8 +460,8 @@ func TestAutonomousQuestClaim(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			updatedQuest := semdragons.QuestFromEntityState(questEntity)
-			if updatedQuest == nil || updatedQuest.Status != semdragons.QuestClaimed {
+			updatedQuest := domain.QuestFromEntityState(questEntity)
+			if updatedQuest == nil || updatedQuest.Status != domain.QuestClaimed {
 				continue
 			}
 
@@ -469,17 +470,17 @@ func TestAutonomousQuestClaim(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetAgent failed: %v", err)
 			}
-			updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+			updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 			if updatedAgent == nil {
 				t.Fatal("Failed to reconstruct agent")
 			}
-			if updatedAgent.Status != semdragons.AgentOnQuest {
-				t.Errorf("Agent status = %v, want %v", updatedAgent.Status, semdragons.AgentOnQuest)
+			if updatedAgent.Status != domain.AgentOnQuest {
+				t.Errorf("Agent status = %v, want %v", updatedAgent.Status, domain.AgentOnQuest)
 			}
 			if updatedAgent.CurrentQuest == nil || *updatedAgent.CurrentQuest != questID {
 				t.Errorf("Agent CurrentQuest = %v, want %v", updatedAgent.CurrentQuest, questID)
 			}
-			if updatedQuest.ClaimedBy == nil || semdragons.AgentID(*updatedQuest.ClaimedBy) != agentID {
+			if updatedQuest.ClaimedBy == nil || domain.AgentID(*updatedQuest.ClaimedBy) != agentID {
 				t.Errorf("Quest ClaimedBy = %v, want %v", updatedQuest.ClaimedBy, agentID)
 			}
 			return
@@ -505,14 +506,14 @@ func TestAutonomousQuestClaim_FallsThrough(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create a stale quest (already claimed — will be skipped)
-	staleInstance := semdragons.GenerateInstance()
-	staleQuestID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(staleInstance))
-	staleAgentID := semdragons.AgentID("some.other.agent")
+	staleInstance := domain.GenerateInstance()
+	staleQuestID := domain.QuestID(comp.BoardConfig().QuestEntityID(staleInstance))
+	staleAgentID := domain.AgentID("some.other.agent")
 	now := time.Now()
-	staleQuest := &semdragons.Quest{
+	staleQuest := &domain.Quest{
 		ID:        staleQuestID,
 		Title:     "Already claimed quest",
-		Status:    semdragons.QuestClaimed,
+		Status:    domain.QuestClaimed,
 		ClaimedBy: &staleAgentID,
 		ClaimedAt: &now,
 		PostedAt:  now,
@@ -522,14 +523,14 @@ func TestAutonomousQuestClaim_FallsThrough(t *testing.T) {
 	}
 
 	// Create a good quest (still posted — will be claimed as fallthrough)
-	goodInstance := semdragons.GenerateInstance()
-	goodQuestID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(goodInstance))
-	goodQuest := &semdragons.Quest{
+	goodInstance := domain.GenerateInstance()
+	goodQuestID := domain.QuestID(comp.BoardConfig().QuestEntityID(goodInstance))
+	goodQuest := &domain.Quest{
 		ID:       goodQuestID,
 		Title:    "Good fallthrough quest",
-		Status:   semdragons.QuestPosted,
+		Status:   domain.QuestPosted,
 		PostedAt: time.Now(),
-		MinTier:  semdragons.TierApprentice,
+		MinTier:  domain.TierApprentice,
 		BaseXP:   100,
 	}
 	if err := gc.PutEntityState(ctx, goodQuest, "quest.lifecycle.posted"); err != nil {
@@ -537,14 +538,14 @@ func TestAutonomousQuestClaim_FallsThrough(t *testing.T) {
 	}
 
 	// Create idle agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "fallthrough-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -576,9 +577,9 @@ func TestAutonomousQuestClaim_FallsThrough(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			updatedQuest := semdragons.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
-				if updatedQuest.ClaimedBy == nil || semdragons.AgentID(*updatedQuest.ClaimedBy) != agentID {
+			updatedQuest := domain.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
+				if updatedQuest.ClaimedBy == nil || domain.AgentID(*updatedQuest.ClaimedBy) != agentID {
 					t.Errorf("Good quest claimed by wrong agent: %v", updatedQuest.ClaimedBy)
 				}
 				return
@@ -605,14 +606,14 @@ func TestAutonomousQuestClaim_AllStale(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create stale quest
-	staleInstance := semdragons.GenerateInstance()
-	staleQuestID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(staleInstance))
-	otherAgent := semdragons.AgentID("other.agent")
+	staleInstance := domain.GenerateInstance()
+	staleQuestID := domain.QuestID(comp.BoardConfig().QuestEntityID(staleInstance))
+	otherAgent := domain.AgentID("other.agent")
 	claimTime := time.Now()
-	staleQuest := &semdragons.Quest{
+	staleQuest := &domain.Quest{
 		ID:        staleQuestID,
 		Title:     "Already claimed",
-		Status:    semdragons.QuestClaimed,
+		Status:    domain.QuestClaimed,
 		ClaimedBy: &otherAgent,
 		ClaimedAt: &claimTime,
 		PostedAt:  time.Now(),
@@ -622,14 +623,14 @@ func TestAutonomousQuestClaim_AllStale(t *testing.T) {
 	}
 
 	// Create idle agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "allstale-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -655,13 +656,13 @@ func TestAutonomousQuestClaim_AllStale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 	if updatedAgent == nil {
 		t.Fatal("Failed to reconstruct agent")
 	}
-	if updatedAgent.Status != semdragons.AgentIdle {
+	if updatedAgent.Status != domain.AgentIdle {
 		t.Errorf("Agent status = %v, want %v (should remain idle when all suggestions stale)",
-			updatedAgent.Status, semdragons.AgentIdle)
+			updatedAgent.Status, domain.AgentIdle)
 	}
 }
 
@@ -692,16 +693,16 @@ func TestAutonomousIdleShopping(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create idle agent with XP surplus (web_search costs 50 XP, apprentice tier)
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "shopper-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
 		XP:        500,
 		XPToLevel: 300, // surplus = 200 > threshold 50
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -722,7 +723,7 @@ func TestAutonomousIdleShopping(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			updated := semdragons.AgentFromEntityState(agentEntity)
+			updated := agentprogression.AgentFromEntityState(agentEntity)
 			if updated != nil && updated.TotalSpent > 0 {
 				t.Logf("agent purchased item, total_spent=%d", updated.TotalSpent)
 				return
@@ -753,15 +754,15 @@ func TestAutonomousCooldownSkip(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create agent in cooldown with future expiry and a cooldown_skip consumable
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
 	future := time.Now().Add(1 * time.Hour) // well above 30s threshold
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            agentID,
 		Name:          "cdskip-agent",
-		Status:        semdragons.AgentCooldown,
+		Status:        domain.AgentCooldown,
 		Level:         3,
-		Tier:          semdragons.TierApprentice,
+		Tier:          domain.TierApprentice,
 		CooldownUntil: &future,
 		Consumables:   map[string]int{"cooldown_skip": 1},
 		CreatedAt:     time.Now(),
@@ -788,8 +789,8 @@ func TestAutonomousCooldownSkip(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			updated := semdragons.AgentFromEntityState(agentEntity)
-			if updated != nil && updated.Status == semdragons.AgentIdle {
+			updated := agentprogression.AgentFromEntityState(agentEntity)
+			if updated != nil && updated.Status == domain.AgentIdle {
 				if updated.CooldownUntil != nil {
 					t.Error("CooldownUntil should be nil after skip")
 				}
@@ -820,14 +821,14 @@ func TestAutonomousConsumableUse_InBattle(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create agent in battle with quality_shield consumable
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:          agentID,
 		Name:        "battle-agent",
-		Status:      semdragons.AgentInBattle,
+		Status:      domain.AgentInBattle,
 		Level:       7,
-		Tier:        semdragons.TierJourneyman,
+		Tier:        domain.TierJourneyman,
 		Consumables: map[string]int{"quality_shield": 1},
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -880,16 +881,16 @@ func TestNoShoppingWhenNoSurplus(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create idle agent with no surplus (XP < XPToLevel)
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "poor-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     2,
 		XP:        50,
 		XPToLevel: 200, // no surplus
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -906,7 +907,7 @@ func TestNoShoppingWhenNoSurplus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updated := semdragons.AgentFromEntityState(agentEntity)
+	updated := agentprogression.AgentFromEntityState(agentEntity)
 	if updated == nil {
 		t.Fatal("Failed to reconstruct agent")
 	}
@@ -953,14 +954,14 @@ func TestAutonomousGuildJoining(t *testing.T) {
 	}
 
 	// Create idle, unguilded agent at level 5 (above GuildJoinMinLevel=3)
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "guild-joiner",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1028,14 +1029,14 @@ func TestNoGuildJoiningBelowMinLevel(t *testing.T) {
 	}
 
 	// Create low-level agent (level 3 < GuildJoinMinLevel 10)
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "lowlevel-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     3,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1095,15 +1096,15 @@ func TestNoGuildJoiningAtMaxGuilds(t *testing.T) {
 	}
 
 	// Create agent already in 1 guild (at max)
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "maxguild-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
-		Guilds:    []semdragons.GuildID{"existing-guild"}, // already at max (1)
+		Tier:      domain.TierApprentice,
+		Guilds:    []domain.GuildID{"existing-guild"}, // already at max (1)
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1141,14 +1142,14 @@ func TestNoGuildJoiningWithoutComponent(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create idle agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "no-guild-comp-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     10,
-		Tier:      semdragons.TierJourneyman,
+		Tier:      domain.TierJourneyman,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1187,16 +1188,16 @@ func TestNoShoppingWithoutStore(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create rich idle agent — should NOT shop because store is nil
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "no-store-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     10,
 		XP:        9999,
 		XPToLevel: 100,
-		Tier:      semdragons.TierJourneyman,
+		Tier:      domain.TierJourneyman,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1213,7 +1214,7 @@ func TestNoShoppingWithoutStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updated := semdragons.AgentFromEntityState(agentEntity)
+	updated := agentprogression.AgentFromEntityState(agentEntity)
 	if updated == nil {
 		t.Fatal("Failed to reconstruct agent")
 	}
@@ -1260,12 +1261,12 @@ func TestClaimIntentEmitted(t *testing.T) {
 	defer sub.Unsubscribe()
 
 	// Create a posted quest
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
-	quest := &semdragons.Quest{
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
+	quest := &domain.Quest{
 		ID:       questID,
 		Title:    "Intent Test Quest",
-		Status:   semdragons.QuestPosted,
+		Status:   domain.QuestPosted,
 		PostedAt: time.Now(),
 	}
 	if err := gc.PutEntityState(ctx, quest, "quest.posted"); err != nil {
@@ -1273,14 +1274,14 @@ func TestClaimIntentEmitted(t *testing.T) {
 	}
 
 	// Create idle agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "claim-intent-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1358,16 +1359,16 @@ func TestShopIntentEmitted(t *testing.T) {
 	defer sub.Unsubscribe()
 
 	// Create idle agent with XP surplus
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "shop-intent-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
 		XP:        500,
 		XPToLevel: 300,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1447,14 +1448,14 @@ func TestGuildIntentEmitted(t *testing.T) {
 	}
 
 	// Create idle unguilded agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "guild-intent-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1522,14 +1523,14 @@ func TestUseIntentEmitted(t *testing.T) {
 	defer sub.Unsubscribe()
 
 	// Create agent in battle with quality_shield consumable
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:          agentID,
 		Name:        "use-intent-agent",
-		Status:      semdragons.AgentInBattle,
+		Status:      domain.AgentInBattle,
 		Level:       7,
-		Tier:        semdragons.TierJourneyman,
+		Tier:        domain.TierJourneyman,
 		Consumables: map[string]int{"quality_shield": 1},
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -1553,8 +1554,8 @@ func TestUseIntentEmitted(t *testing.T) {
 		if payload.ConsumableID != "quality_shield" {
 			t.Errorf("UseIntent ConsumableID = %q, want %q", payload.ConsumableID, "quality_shield")
 		}
-		if payload.AgentStatus != semdragons.AgentInBattle {
-			t.Errorf("UseIntent AgentStatus = %q, want %q", payload.AgentStatus, semdragons.AgentInBattle)
+		if payload.AgentStatus != domain.AgentInBattle {
+			t.Errorf("UseIntent AgentStatus = %q, want %q", payload.AgentStatus, domain.AgentInBattle)
 		}
 		t.Log("use intent received: consumable=quality_shield")
 	case <-time.After(5 * time.Second):
@@ -1665,14 +1666,14 @@ func TestClaimApprovalGate_FullAuto(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create a posted quest
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
-	quest := &semdragons.Quest{
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
+	quest := &domain.Quest{
 		ID:       questID,
 		Title:    "FullAuto approval test quest",
-		Status:   semdragons.QuestPosted,
+		Status:   domain.QuestPosted,
 		PostedAt: time.Now(),
-		MinTier:  semdragons.TierApprentice,
+		MinTier:  domain.TierApprentice,
 		BaseXP:   100,
 	}
 	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
@@ -1680,14 +1681,14 @@ func TestClaimApprovalGate_FullAuto(t *testing.T) {
 	}
 
 	// Create idle agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "fullauto-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1720,8 +1721,8 @@ func TestClaimApprovalGate_FullAuto(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			updatedQuest := semdragons.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
+			updatedQuest := domain.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
 				return // success: claimed without approval
 			}
 		}
@@ -1770,14 +1771,14 @@ func TestClaimApprovalGate_Supervised_Approved(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, autonomyComp.BoardConfig())
 
 	// Create a posted quest
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(autonomyComp.BoardConfig().QuestEntityID(questInstance))
-	quest := &semdragons.Quest{
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(autonomyComp.BoardConfig().QuestEntityID(questInstance))
+	quest := &domain.Quest{
 		ID:       questID,
 		Title:    "Supervised approval test quest",
-		Status:   semdragons.QuestPosted,
+		Status:   domain.QuestPosted,
 		PostedAt: time.Now(),
-		MinTier:  semdragons.TierApprentice,
+		MinTier:  domain.TierApprentice,
 		BaseXP:   100,
 	}
 	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
@@ -1785,14 +1786,14 @@ func TestClaimApprovalGate_Supervised_Approved(t *testing.T) {
 	}
 
 	// Create idle agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(autonomyComp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(autonomyComp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "supervised-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1825,8 +1826,8 @@ func TestClaimApprovalGate_Supervised_Approved(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			updatedQuest := semdragons.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
+			updatedQuest := domain.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
 				return // success: approved and claimed
 			}
 		}
@@ -1860,7 +1861,7 @@ func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
 	sessionID := "test.integration.game.denysu.session.deny1"
 
 	// Subscribe to approval requests and auto-deny them
-	sessionInstance := semdragons.ExtractInstance(sessionID)
+	sessionInstance := domain.ExtractInstance(sessionID)
 	approvalSubject := "approval.request." + sessionInstance
 	denySub, subErr := client.Subscribe(ctx, approvalSubject, func(_ context.Context, msg *nats.Msg) {
 		var envelope struct {
@@ -1909,14 +1910,14 @@ func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, autonomyComp.BoardConfig())
 
 	// Create a posted quest
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(autonomyComp.BoardConfig().QuestEntityID(questInstance))
-	quest := &semdragons.Quest{
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(autonomyComp.BoardConfig().QuestEntityID(questInstance))
+	quest := &domain.Quest{
 		ID:       questID,
 		Title:    "Denied claim test quest",
-		Status:   semdragons.QuestPosted,
+		Status:   domain.QuestPosted,
 		PostedAt: time.Now(),
-		MinTier:  semdragons.TierApprentice,
+		MinTier:  domain.TierApprentice,
 		BaseXP:   100,
 	}
 	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
@@ -1924,14 +1925,14 @@ func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
 	}
 
 	// Create idle agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(autonomyComp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(autonomyComp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "denied-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1960,12 +1961,12 @@ func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetQuest failed: %v", err)
 	}
-	updatedQuest := semdragons.QuestFromEntityState(questEntity)
+	updatedQuest := domain.QuestFromEntityState(questEntity)
 	if updatedQuest == nil {
 		t.Fatal("Failed to reconstruct quest")
 	}
-	if updatedQuest.Status != semdragons.QuestPosted {
-		t.Errorf("Quest status = %v, want %v (claim should have been denied)", updatedQuest.Status, semdragons.QuestPosted)
+	if updatedQuest.Status != domain.QuestPosted {
+		t.Errorf("Quest status = %v, want %v (claim should have been denied)", updatedQuest.Status, domain.QuestPosted)
 	}
 
 	// Verify agent is still idle
@@ -1973,12 +1974,12 @@ func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 	if updatedAgent == nil {
 		t.Fatal("Failed to reconstruct agent")
 	}
-	if updatedAgent.Status != semdragons.AgentIdle {
-		t.Errorf("Agent status = %v, want %v (should stay idle after denied claim)", updatedAgent.Status, semdragons.AgentIdle)
+	if updatedAgent.Status != domain.AgentIdle {
+		t.Errorf("Agent status = %v, want %v (should stay idle after denied claim)", updatedAgent.Status, domain.AgentIdle)
 	}
 }
 
@@ -2008,19 +2009,19 @@ func TestStrategicShopping(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create a claimed quest for the agent to reference
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
 	claimedAt := time.Now()
-	quest := &semdragons.Quest{
+	quest := &domain.Quest{
 		ID:        questID,
 		Title:     "Strategic shopping test quest",
-		Status:    semdragons.QuestClaimed,
+		Status:    domain.QuestClaimed,
 		ClaimedBy: &agentID,
 		ClaimedAt: &claimedAt,
 		PostedAt:  time.Now(),
-		MinTier:   semdragons.TierApprentice,
+		MinTier:   domain.TierApprentice,
 		BaseXP:    100,
 	}
 	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.claimed"); err != nil {
@@ -2028,14 +2029,14 @@ func TestStrategicShopping(t *testing.T) {
 	}
 
 	// Create agent on quest: Level 7 (Journeyman), XP 500, no consumables
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:           agentID,
 		Name:         "strategic-shopper",
-		Status:       semdragons.AgentOnQuest,
+		Status:       domain.AgentOnQuest,
 		Level:        7,
 		XP:           500,
 		XPToLevel:    400,
-		Tier:         semdragons.TierJourneyman,
+		Tier:         domain.TierJourneyman,
 		CurrentQuest: &questID,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
@@ -2057,7 +2058,7 @@ func TestStrategicShopping(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			updated := semdragons.AgentFromEntityState(agentEntity)
+			updated := agentprogression.AgentFromEntityState(agentEntity)
 			if updated == nil {
 				continue
 			}
@@ -2092,28 +2093,28 @@ func TestFullLifecycle(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create two posted quests
-	quest1Instance := semdragons.GenerateInstance()
-	quest1ID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(quest1Instance))
-	quest1 := &semdragons.Quest{
+	quest1Instance := domain.GenerateInstance()
+	quest1ID := domain.QuestID(comp.BoardConfig().QuestEntityID(quest1Instance))
+	quest1 := &domain.Quest{
 		ID:       quest1ID,
 		Title:    "Lifecycle quest 1",
-		Status:   semdragons.QuestPosted,
+		Status:   domain.QuestPosted,
 		PostedAt: time.Now(),
-		MinTier:  semdragons.TierApprentice,
+		MinTier:  domain.TierApprentice,
 		BaseXP:   100,
 	}
 	if err := gc.PutEntityState(ctx, quest1, "quest.lifecycle.posted"); err != nil {
 		t.Fatalf("Failed to create quest1: %v", err)
 	}
 
-	quest2Instance := semdragons.GenerateInstance()
-	quest2ID := semdragons.QuestID(comp.BoardConfig().QuestEntityID(quest2Instance))
-	quest2 := &semdragons.Quest{
+	quest2Instance := domain.GenerateInstance()
+	quest2ID := domain.QuestID(comp.BoardConfig().QuestEntityID(quest2Instance))
+	quest2 := &domain.Quest{
 		ID:       quest2ID,
 		Title:    "Lifecycle quest 2",
-		Status:   semdragons.QuestPosted,
+		Status:   domain.QuestPosted,
 		PostedAt: time.Now(),
-		MinTier:  semdragons.TierApprentice,
+		MinTier:  domain.TierApprentice,
 		BaseXP:   100,
 	}
 	if err := gc.PutEntityState(ctx, quest2, "quest.lifecycle.posted"); err != nil {
@@ -2121,14 +2122,14 @@ func TestFullLifecycle(t *testing.T) {
 	}
 
 	// Create idle agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:        agentID,
 		Name:      "lifecycle-agent",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		Level:     5,
-		Tier:      semdragons.TierApprentice,
+		Tier:      domain.TierApprentice,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -2161,19 +2162,19 @@ func TestFullLifecycle(t *testing.T) {
 			if err != nil {
 				continue
 			}
-			updatedQuest := semdragons.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
+			updatedQuest := domain.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
 				// Verify agent is on_quest
 				agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
 				if err != nil {
 					t.Fatalf("GetAgent after quest1 claim failed: %v", err)
 				}
-				updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+				updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 				if updatedAgent == nil {
 					t.Fatal("Failed to reconstruct agent after quest1 claim")
 				}
-				if updatedAgent.Status != semdragons.AgentOnQuest {
-					t.Errorf("Agent status = %v after quest1 claim, want %v", updatedAgent.Status, semdragons.AgentOnQuest)
+				if updatedAgent.Status != domain.AgentOnQuest {
+					t.Errorf("Agent status = %v after quest1 claim, want %v", updatedAgent.Status, domain.AgentOnQuest)
 				}
 				goto quest1Claimed
 			}
@@ -2183,7 +2184,7 @@ quest1Claimed:
 	t.Log("quest1 claimed successfully")
 
 	// Step 3: Simulate quest completion — write agent back to idle (what agentprogression would do)
-	agent.Status = semdragons.AgentIdle
+	agent.Status = domain.AgentIdle
 	agent.CurrentQuest = nil
 	agent.UpdatedAt = time.Now()
 	if err := gc.EmitEntityUpdate(ctx, agent, "agent.progression.completed"); err != nil {
@@ -2216,9 +2217,9 @@ quest1Claimed:
 			if err != nil {
 				continue
 			}
-			updatedQuest := semdragons.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == semdragons.QuestClaimed {
-				if updatedQuest.ClaimedBy == nil || semdragons.AgentID(*updatedQuest.ClaimedBy) != agentID {
+			updatedQuest := domain.QuestFromEntityState(questEntity)
+			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
+				if updatedQuest.ClaimedBy == nil || domain.AgentID(*updatedQuest.ClaimedBy) != agentID {
 					t.Errorf("quest2 ClaimedBy = %v, want %v", updatedQuest.ClaimedBy, agentID)
 				}
 				t.Log("quest2 claimed successfully — full lifecycle complete")

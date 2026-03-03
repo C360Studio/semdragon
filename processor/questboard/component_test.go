@@ -13,6 +13,8 @@ import (
 	"github.com/c360studio/semstreams/natsclient"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -97,10 +99,10 @@ func TestComponent_PostQuest(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Post a quest
-	quest := Quest{
+	quest := domain.Quest{
 		Title:       "Test Quest",
 		Description: "A test quest for integration testing",
-		Difficulty:  semdragons.DifficultyModerate,
+		Difficulty:  domain.DifficultyModerate,
 		BaseXP:      100,
 	}
 
@@ -113,8 +115,8 @@ func TestComponent_PostQuest(t *testing.T) {
 	if posted.ID == "" {
 		t.Error("Quest ID should be set")
 	}
-	if posted.Status != semdragons.QuestPosted {
-		t.Errorf("Status = %v, want %v", posted.Status, semdragons.QuestPosted)
+	if posted.Status != domain.QuestPosted {
+		t.Errorf("Status = %v, want %v", posted.Status, domain.QuestPosted)
 	}
 	if posted.TrajectoryID == "" {
 		t.Error("TrajectoryID should be set")
@@ -145,9 +147,9 @@ func TestComponent_ClaimQuest(t *testing.T) {
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "claim-agent", 5)
 
 	// Post a quest
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Claimable Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -164,8 +166,8 @@ func TestComponent_ClaimQuest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetQuest failed: %v", err)
 	}
-	if claimed.Status != semdragons.QuestClaimed {
-		t.Errorf("Status = %v, want %v", claimed.Status, semdragons.QuestClaimed)
+	if claimed.Status != domain.QuestClaimed {
+		t.Errorf("Status = %v, want %v", claimed.Status, domain.QuestClaimed)
 	}
 	if claimed.ClaimedBy == nil || *claimed.ClaimedBy != agent.ID {
 		t.Error("ClaimedBy should be set to agent ID")
@@ -187,9 +189,9 @@ func TestComponent_QuestLifecycle(t *testing.T) {
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "lifecycle-agent", 5)
 
 	// Post quest
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Lifecycle Test Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -208,8 +210,8 @@ func TestComponent_QuestLifecycle(t *testing.T) {
 	}
 
 	started, _ := comp.GetQuest(ctx, quest.ID)
-	if started.Status != semdragons.QuestInProgress {
-		t.Errorf("Status = %v, want %v", started.Status, semdragons.QuestInProgress)
+	if started.Status != domain.QuestInProgress {
+		t.Errorf("Status = %v, want %v", started.Status, domain.QuestInProgress)
 	}
 	if started.StartedAt == nil {
 		t.Error("StartedAt should be set")
@@ -224,8 +226,8 @@ func TestComponent_QuestLifecycle(t *testing.T) {
 
 	// Since RequireReview defaults to false, quest should be completed directly
 	submitted, _ := comp.GetQuest(ctx, quest.ID)
-	if submitted.Status != semdragons.QuestCompleted {
-		t.Errorf("Status = %v, want %v (no review required)", submitted.Status, semdragons.QuestCompleted)
+	if submitted.Status != domain.QuestCompleted {
+		t.Errorf("Status = %v, want %v (no review required)", submitted.Status, domain.QuestCompleted)
 	}
 	t.Log("Quest completed directly (no review)")
 }
@@ -242,12 +244,12 @@ func TestComponent_QuestWithReview(t *testing.T) {
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "review-agent", 7)
 
 	// Post quest that requires review
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Review Required Quest",
-		Difficulty: semdragons.DifficultyModerate,
-		Constraints: QuestConstraints{
+		Difficulty: domain.DifficultyModerate,
+		Constraints: domain.QuestConstraints{
 			RequireReview: true,
-			ReviewLevel:   semdragons.ReviewStandard,
+			ReviewLevel:   domain.ReviewStandard,
 		},
 	})
 	if err != nil {
@@ -270,12 +272,12 @@ func TestComponent_QuestWithReview(t *testing.T) {
 
 	// Quest should be in review (bossbattle processor handles battle creation reactively)
 	inReview, _ := comp.GetQuest(ctx, quest.ID)
-	if inReview.Status != semdragons.QuestInReview {
-		t.Errorf("Status = %v, want %v", inReview.Status, semdragons.QuestInReview)
+	if inReview.Status != domain.QuestInReview {
+		t.Errorf("Status = %v, want %v", inReview.Status, domain.QuestInReview)
 	}
 
 	// Complete the quest with a passing verdict
-	verdict := BattleVerdict{
+	verdict := domain.BattleVerdict{
 		Passed:       true,
 		QualityScore: 0.85,
 		XPAwarded:    100,
@@ -286,8 +288,8 @@ func TestComponent_QuestWithReview(t *testing.T) {
 	}
 
 	completed, _ := comp.GetQuest(ctx, quest.ID)
-	if completed.Status != semdragons.QuestCompleted {
-		t.Errorf("Status = %v, want %v", completed.Status, semdragons.QuestCompleted)
+	if completed.Status != domain.QuestCompleted {
+		t.Errorf("Status = %v, want %v", completed.Status, domain.QuestCompleted)
 	}
 }
 
@@ -302,9 +304,9 @@ func TestComponent_FailQuest(t *testing.T) {
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "fail-agent", 5)
 
 	// Post quest with max attempts = 2
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:       "Fail Test Quest",
-		Difficulty:  semdragons.DifficultyTrivial,
+		Difficulty:  domain.DifficultyTrivial,
 		MaxAttempts: 2,
 	})
 	if err != nil {
@@ -323,8 +325,8 @@ func TestComponent_FailQuest(t *testing.T) {
 	}
 
 	failed1, _ := comp.GetQuest(ctx, quest.ID)
-	if failed1.Status != semdragons.QuestPosted {
-		t.Errorf("After fail 1: Status = %v, want %v (reposted)", failed1.Status, semdragons.QuestPosted)
+	if failed1.Status != domain.QuestPosted {
+		t.Errorf("After fail 1: Status = %v, want %v (reposted)", failed1.Status, domain.QuestPosted)
 	}
 	if failed1.Attempts != 1 {
 		t.Errorf("Attempts = %d, want 1", failed1.Attempts)
@@ -342,8 +344,8 @@ func TestComponent_FailQuest(t *testing.T) {
 	}
 
 	failed2, _ := comp.GetQuest(ctx, quest.ID)
-	if failed2.Status != semdragons.QuestFailed {
-		t.Errorf("After fail 2: Status = %v, want %v (permanent)", failed2.Status, semdragons.QuestFailed)
+	if failed2.Status != domain.QuestFailed {
+		t.Errorf("After fail 2: Status = %v, want %v (permanent)", failed2.Status, domain.QuestFailed)
 	}
 }
 
@@ -357,9 +359,9 @@ func TestComponent_AbandonQuest(t *testing.T) {
 
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "abandon-agent", 5)
 
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Abandon Test Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -375,8 +377,8 @@ func TestComponent_AbandonQuest(t *testing.T) {
 	}
 
 	abandoned, _ := comp.GetQuest(ctx, quest.ID)
-	if abandoned.Status != semdragons.QuestPosted {
-		t.Errorf("Status = %v, want %v (back to posted)", abandoned.Status, semdragons.QuestPosted)
+	if abandoned.Status != domain.QuestPosted {
+		t.Errorf("Status = %v, want %v (back to posted)", abandoned.Status, domain.QuestPosted)
 	}
 	if abandoned.ClaimedBy != nil {
 		t.Error("ClaimedBy should be nil after abandon")
@@ -394,9 +396,9 @@ func TestComponent_EscalateQuest(t *testing.T) {
 	// Create agent with level 7 (TierJourneyman) to be able to claim DifficultyModerate quests
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "escalate-agent", 7)
 
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Escalate Test Quest",
-		Difficulty: semdragons.DifficultyModerate,
+		Difficulty: domain.DifficultyModerate,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -416,8 +418,8 @@ func TestComponent_EscalateQuest(t *testing.T) {
 	}
 
 	escalated, _ := comp.GetQuest(ctx, quest.ID)
-	if escalated.Status != semdragons.QuestEscalated {
-		t.Errorf("Status = %v, want %v", escalated.Status, semdragons.QuestEscalated)
+	if escalated.Status != domain.QuestEscalated {
+		t.Errorf("Status = %v, want %v", escalated.Status, domain.QuestEscalated)
 	}
 	if !escalated.Escalated {
 		t.Error("Escalated flag should be true")
@@ -434,9 +436,9 @@ func TestComponent_BoardStats(t *testing.T) {
 
 	// Post some quests
 	for i := 0; i < 3; i++ {
-		_, err := comp.PostQuest(ctx, Quest{
+		_, err := comp.PostQuest(ctx, domain.Quest{
 			Title:      "Stats Test Quest",
-			Difficulty: semdragons.DifficultyTrivial,
+			Difficulty: domain.DifficultyTrivial,
 		})
 		if err != nil {
 			t.Fatalf("PostQuest %d failed: %v", i, err)
@@ -464,21 +466,21 @@ func TestComponent_AvailableQuests(t *testing.T) {
 
 	// Create agent with specific skills
 	agent := createTestAgentWithSkills(t, comp.GraphClient(), comp.BoardConfig(), "avail-agent", 5,
-		[]semdragons.SkillTag{semdragons.SkillCodeGen, semdragons.SkillAnalysis})
+		[]domain.SkillTag{domain.SkillCodeGen, domain.SkillAnalysis})
 
 	// Post quests with different difficulties
-	_, err := comp.PostQuest(ctx, Quest{
+	_, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Simple Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest (simple) failed: %v", err)
 	}
 
-	_, err = comp.PostQuest(ctx, Quest{
+	_, err = comp.PostQuest(ctx, domain.Quest{
 		Title:      "Epic Quest (too hard)",
-		Difficulty: semdragons.DifficultyEpic, // Requires higher tier
-		MinTier:    semdragons.TierMaster,
+		Difficulty: domain.DifficultyEpic, // Requires higher tier
+		MinTier:    domain.TierMaster,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest (epic) failed: %v", err)
@@ -569,9 +571,9 @@ func TestClaimSetsAgentOnQuest(t *testing.T) {
 
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "status-claim-agent", 5)
 
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Claim Status Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -586,18 +588,18 @@ func TestClaimSetsAgentOnQuest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 	if updatedAgent == nil {
 		t.Fatal("Failed to reconstruct agent from entity state")
 	}
 
-	if updatedAgent.Status != semdragons.AgentOnQuest {
-		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentOnQuest)
+	if updatedAgent.Status != domain.AgentOnQuest {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, domain.AgentOnQuest)
 	}
 	if updatedAgent.CurrentQuest == nil {
 		t.Fatal("CurrentQuest should be set after claim")
 	}
-	if *updatedAgent.CurrentQuest != semdragons.QuestID(quest.ID) {
+	if *updatedAgent.CurrentQuest != domain.QuestID(quest.ID) {
 		t.Errorf("CurrentQuest = %v, want %v", *updatedAgent.CurrentQuest, quest.ID)
 	}
 }
@@ -614,9 +616,9 @@ func TestAbandonResetsAgent(t *testing.T) {
 
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "status-abandon-agent", 5)
 
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Abandon Reset Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -636,13 +638,13 @@ func TestAbandonResetsAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 	if updatedAgent == nil {
 		t.Fatal("Failed to reconstruct agent from entity state")
 	}
 
-	if updatedAgent.Status != semdragons.AgentIdle {
-		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentIdle)
+	if updatedAgent.Status != domain.AgentIdle {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, domain.AgentIdle)
 	}
 	if updatedAgent.CurrentQuest != nil {
 		t.Errorf("CurrentQuest should be nil after abandon, got %v", updatedAgent.CurrentQuest)
@@ -661,9 +663,9 @@ func TestFailRepostResetsAgent(t *testing.T) {
 
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "status-repost-agent", 5)
 
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:       "Fail Repost Quest",
-		Difficulty:  semdragons.DifficultyTrivial,
+		Difficulty:  domain.DifficultyTrivial,
 		MaxAttempts: 3,
 	})
 	if err != nil {
@@ -683,7 +685,7 @@ func TestFailRepostResetsAgent(t *testing.T) {
 
 	// Verify quest was reposted
 	reposted, _ := comp.GetQuest(ctx, quest.ID)
-	if reposted.Status != semdragons.QuestPosted {
+	if reposted.Status != domain.QuestPosted {
 		t.Fatalf("Quest should be reposted, got %v", reposted.Status)
 	}
 
@@ -692,13 +694,13 @@ func TestFailRepostResetsAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 	if updatedAgent == nil {
 		t.Fatal("Failed to reconstruct agent from entity state")
 	}
 
-	if updatedAgent.Status != semdragons.AgentIdle {
-		t.Errorf("Status = %v, want %v (should reset on repost)", updatedAgent.Status, semdragons.AgentIdle)
+	if updatedAgent.Status != domain.AgentIdle {
+		t.Errorf("Status = %v, want %v (should reset on repost)", updatedAgent.Status, domain.AgentIdle)
 	}
 	if updatedAgent.CurrentQuest != nil {
 		t.Errorf("CurrentQuest should be nil after repost, got %v", updatedAgent.CurrentQuest)
@@ -723,16 +725,16 @@ func TestRejectsClaimWhenOnQuest(t *testing.T) {
 	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "busy-agent", 5)
 
 	// Post two quests
-	quest1, err := comp.PostQuest(ctx, Quest{
+	quest1, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "First Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest 1 failed: %v", err)
 	}
-	quest2, err := comp.PostQuest(ctx, Quest{
+	quest2, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Second Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest 2 failed: %v", err)
@@ -764,24 +766,24 @@ func TestRejectsClaimWhenOnCooldown(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create agent directly with cooldown status and future CooldownUntil
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(instance))
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
 	cooldownUntil := time.Now().Add(1 * time.Hour) // Far in the future
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            agentID,
 		Name:          "cooldown-agent",
 		Level:         5,
-		Tier:          semdragons.TierApprentice,
-		Status:        semdragons.AgentCooldown,
+		Tier:          domain.TierApprentice,
+		Status:        domain.AgentCooldown,
 		CooldownUntil: &cooldownUntil,
 	}
 	if err := comp.GraphClient().PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 		t.Fatalf("Failed to create test agent: %v", err)
 	}
 
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Cooldown Rejection Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -807,24 +809,24 @@ func TestAllowsClaimWhenCooldownExpired(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create agent with EXPIRED cooldown (CooldownUntil in the past)
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(instance))
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
 	cooldownUntil := time.Now().Add(-1 * time.Hour) // In the past
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            agentID,
 		Name:          "expired-cooldown-agent",
 		Level:         5,
-		Tier:          semdragons.TierApprentice,
-		Status:        semdragons.AgentCooldown,
+		Tier:          domain.TierApprentice,
+		Status:        domain.AgentCooldown,
 		CooldownUntil: &cooldownUntil,
 	}
 	if err := comp.GraphClient().PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 		t.Fatalf("Failed to create test agent: %v", err)
 	}
 
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Expired Cooldown Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -838,12 +840,12 @@ func TestAllowsClaimWhenCooldownExpired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 	if updatedAgent == nil {
 		t.Fatal("Failed to reconstruct agent")
 	}
-	if updatedAgent.Status != semdragons.AgentOnQuest {
-		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentOnQuest)
+	if updatedAgent.Status != domain.AgentOnQuest {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, domain.AgentOnQuest)
 	}
 	if updatedAgent.CurrentQuest == nil {
 		t.Error("CurrentQuest should be set after claim")
@@ -860,22 +862,22 @@ func TestRejectsClaimWhenRetired(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create agent directly with retired status
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(instance))
-	agent := &semdragons.Agent{
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
+	agent := &agentprogression.Agent{
 		ID:     agentID,
 		Name:   "retired-agent",
 		Level:  5,
-		Tier:   semdragons.TierApprentice,
-		Status: semdragons.AgentRetired,
+		Tier:   domain.TierApprentice,
+		Status: domain.AgentRetired,
 	}
 	if err := comp.GraphClient().PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 		t.Fatalf("Failed to create test agent: %v", err)
 	}
 
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Retired Rejection Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -900,22 +902,22 @@ func TestRejectsClaimWhenInBattle(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create agent directly with in_battle status
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.BoardConfig().AgentEntityID(instance))
-	agent := &semdragons.Agent{
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
+	agent := &agentprogression.Agent{
 		ID:     agentID,
 		Name:   "battle-agent",
 		Level:  5,
-		Tier:   semdragons.TierApprentice,
-		Status: semdragons.AgentInBattle,
+		Tier:   domain.TierApprentice,
+		Status: domain.AgentInBattle,
 	}
 	if err := comp.GraphClient().PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 		t.Fatalf("Failed to create test agent: %v", err)
 	}
 
-	quest, err := comp.PostQuest(ctx, Quest{
+	quest, err := comp.PostQuest(ctx, domain.Quest{
 		Title:      "Battle Rejection Quest",
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 	})
 	if err != nil {
 		t.Fatalf("PostQuest failed: %v", err)
@@ -970,32 +972,32 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 	return comp
 }
 
-func createTestAgent(t *testing.T, storage *semdragons.GraphClient, config *semdragons.BoardConfig, name string, level int) *semdragons.Agent {
+func createTestAgent(t *testing.T, storage *semdragons.GraphClient, config *domain.BoardConfig, name string, level int) *agentprogression.Agent {
 	t.Helper()
 	return createTestAgentWithSkills(t, storage, config, name, level, nil)
 }
 
-func createTestAgentWithSkills(t *testing.T, storage *semdragons.GraphClient, config *semdragons.BoardConfig, name string, level int, skills []semdragons.SkillTag) *semdragons.Agent {
+func createTestAgentWithSkills(t *testing.T, storage *semdragons.GraphClient, config *domain.BoardConfig, name string, level int, skills []domain.SkillTag) *agentprogression.Agent {
 	t.Helper()
 
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(config.AgentEntityID(instance))
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(config.AgentEntityID(instance))
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     agentID,
 		Name:   name,
 		Level:  level,
-		Tier:   semdragons.TierFromLevel(level),
-		Status: semdragons.AgentIdle,
+		Tier:   domain.TierFromLevel(level),
+		Status: domain.AgentIdle,
 		XP:     0,
 	}
 
 	// Set up skill proficiencies
 	if len(skills) > 0 {
-		agent.SkillProficiencies = make(map[semdragons.SkillTag]semdragons.SkillProficiency)
+		agent.SkillProficiencies = make(map[domain.SkillTag]domain.SkillProficiency)
 		for _, skill := range skills {
-			agent.SkillProficiencies[skill] = semdragons.SkillProficiency{
-				Level: semdragons.ProficiencyJourneyman,
+			agent.SkillProficiencies[skill] = domain.SkillProficiency{
+				Level: domain.ProficiencyJourneyman,
 			}
 		}
 	}

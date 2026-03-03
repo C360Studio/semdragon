@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/message"
 )
 
@@ -105,14 +105,14 @@ func TestTripleString(t *testing.T) {
 
 func TestBuildLegacySystemPrompt(t *testing.T) {
 	t.Run("agent config system prompt is prepended", func(t *testing.T) {
-		agent := &semdragons.Agent{
+		agent := &agentprogression.Agent{
 			ID:   "agent-1",
 			Name: "Coder",
-			Config: semdragons.AgentConfig{
+			Config: agentprogression.AgentConfig{
 				SystemPrompt: "You are a senior Go developer.",
 			},
 		}
-		quest := &semdragons.Quest{
+		quest := &domain.Quest{
 			ID:    "q-1",
 			Title: "Fix the bug",
 		}
@@ -128,17 +128,17 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("persona system prompt is included after agent config prompt", func(t *testing.T) {
-		agent := &semdragons.Agent{
+		agent := &agentprogression.Agent{
 			ID:   "agent-2",
 			Name: "Shadowweaver",
-			Config: semdragons.AgentConfig{
+			Config: agentprogression.AgentConfig{
 				SystemPrompt: "Base instructions.",
 			},
-			Persona: &semdragons.AgentPersona{
+			Persona: &agentprogression.AgentPersona{
 				SystemPrompt: "You are Shadowweaver, a cunning rogue.",
 			},
 		}
-		quest := &semdragons.Quest{
+		quest := &domain.Quest{
 			ID:    "q-2",
 			Title: "Infiltrate the server",
 		}
@@ -167,12 +167,12 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("nil persona does not panic", func(t *testing.T) {
-		agent := &semdragons.Agent{
+		agent := &agentprogression.Agent{
 			ID:      "agent-3",
 			Name:    "NoPers",
 			Persona: nil,
 		}
-		quest := &semdragons.Quest{
+		quest := &domain.Quest{
 			ID:    "q-3",
 			Title: "A simple task",
 		}
@@ -184,8 +184,8 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("quest description is included when non-empty", func(t *testing.T) {
-		agent := &semdragons.Agent{ID: "agent-4", Name: "Analyst"}
-		quest := &semdragons.Quest{
+		agent := &agentprogression.Agent{ID: "agent-4", Name: "Analyst"}
+		quest := &domain.Quest{
 			ID:          "q-4",
 			Title:       "Analyse logs",
 			Description: "Parse the access logs and identify anomalies.",
@@ -198,8 +198,8 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("quest description is omitted when empty", func(t *testing.T) {
-		agent := &semdragons.Agent{ID: "agent-5", Name: "Analyst"}
-		quest := &semdragons.Quest{
+		agent := &agentprogression.Agent{ID: "agent-5", Name: "Analyst"}
+		quest := &domain.Quest{
 			ID:          "q-5",
 			Title:       "Quick task",
 			Description: "",
@@ -212,11 +212,11 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("time limit is included when MaxDuration is set", func(t *testing.T) {
-		agent := &semdragons.Agent{ID: "agent-6", Name: "Timed"}
-		quest := &semdragons.Quest{
+		agent := &agentprogression.Agent{ID: "agent-6", Name: "Timed"}
+		quest := &domain.Quest{
 			ID:    "q-6",
 			Title: "Timed task",
-			Constraints: semdragons.QuestConstraints{
+			Constraints: domain.QuestConstraints{
 				MaxDuration: 30 * time.Minute,
 			},
 		}
@@ -228,11 +228,11 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("time limit is omitted when MaxDuration is zero", func(t *testing.T) {
-		agent := &semdragons.Agent{ID: "agent-7", Name: "Untimed"}
-		quest := &semdragons.Quest{
+		agent := &agentprogression.Agent{ID: "agent-7", Name: "Untimed"}
+		quest := &domain.Quest{
 			ID:    "q-7",
 			Title: "Untimed task",
-			Constraints: semdragons.QuestConstraints{
+			Constraints: domain.QuestConstraints{
 				MaxDuration: 0,
 			},
 		}
@@ -244,11 +244,11 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("token budget is included when MaxTokens is set", func(t *testing.T) {
-		agent := &semdragons.Agent{ID: "agent-8", Name: "Budgeted"}
-		quest := &semdragons.Quest{
+		agent := &agentprogression.Agent{ID: "agent-8", Name: "Budgeted"}
+		quest := &domain.Quest{
 			ID:    "q-8",
 			Title: "Budget task",
-			Constraints: semdragons.QuestConstraints{
+			Constraints: domain.QuestConstraints{
 				MaxTokens: 4096,
 			},
 		}
@@ -260,8 +260,8 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("token budget is omitted when MaxTokens is zero", func(t *testing.T) {
-		agent := &semdragons.Agent{ID: "agent-9", Name: "Unbudgeted"}
-		quest := &semdragons.Quest{
+		agent := &agentprogression.Agent{ID: "agent-9", Name: "Unbudgeted"}
+		quest := &domain.Quest{
 			ID:    "q-9",
 			Title: "No budget task",
 		}
@@ -273,8 +273,8 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("required skills are listed when present", func(t *testing.T) {
-		agent := &semdragons.Agent{ID: "agent-10", Name: "Skilled"}
-		quest := &semdragons.Quest{
+		agent := &agentprogression.Agent{ID: "agent-10", Name: "Skilled"}
+		quest := &domain.Quest{
 			ID:    "q-10",
 			Title: "Multi-skill task",
 			RequiredSkills: []domain.SkillTag{
@@ -296,8 +296,8 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("no skills section when RequiredSkills is empty", func(t *testing.T) {
-		agent := &semdragons.Agent{ID: "agent-11", Name: "Unskilled"}
-		quest := &semdragons.Quest{
+		agent := &agentprogression.Agent{ID: "agent-11", Name: "Unskilled"}
+		quest := &domain.Quest{
 			ID:             "q-11",
 			Title:          "Any-skill task",
 			RequiredSkills: nil,
@@ -310,14 +310,14 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 	})
 
 	t.Run("empty agent config system prompt omits blank section", func(t *testing.T) {
-		agent := &semdragons.Agent{
+		agent := &agentprogression.Agent{
 			ID:   "agent-12",
 			Name: "Blank",
-			Config: semdragons.AgentConfig{
+			Config: agentprogression.AgentConfig{
 				SystemPrompt: "",
 			},
 		}
-		quest := &semdragons.Quest{
+		quest := &domain.Quest{
 			ID:    "q-12",
 			Title: "Minimal quest",
 		}
@@ -340,13 +340,13 @@ func TestBuildLegacySystemPrompt(t *testing.T) {
 func TestBuildUserPrompt(t *testing.T) {
 	tests := []struct {
 		name        string
-		quest       *semdragons.Quest
+		quest       *domain.Quest
 		wantContain string
 		wantExact   string
 	}{
 		{
 			name: "nil input returns description",
-			quest: &semdragons.Quest{
+			quest: &domain.Quest{
 				ID:          "q-1",
 				Description: "Summarize this document.",
 				Input:       nil,
@@ -355,7 +355,7 @@ func TestBuildUserPrompt(t *testing.T) {
 		},
 		{
 			name: "string input returns the string directly",
-			quest: &semdragons.Quest{
+			quest: &domain.Quest{
 				ID:          "q-2",
 				Description: "Process this file.",
 				Input:       "Please analyse the logs in /var/log/app.log",
@@ -364,7 +364,7 @@ func TestBuildUserPrompt(t *testing.T) {
 		},
 		{
 			name: "non-string input wraps with quest description",
-			quest: &semdragons.Quest{
+			quest: &domain.Quest{
 				ID:          "q-3",
 				Description: "Transform the data.",
 				Input:       map[string]any{"key": "value"},
@@ -373,7 +373,7 @@ func TestBuildUserPrompt(t *testing.T) {
 		},
 		{
 			name: "non-string input includes Quest input prefix",
-			quest: &semdragons.Quest{
+			quest: &domain.Quest{
 				ID:          "q-4",
 				Description: "Handle this payload.",
 				Input:       42,
@@ -401,7 +401,7 @@ func TestBuildUserPrompt(t *testing.T) {
 // =============================================================================
 
 func TestAgentHasAnySkill(t *testing.T) {
-	agentWithSkills := &semdragons.Agent{
+	agentWithSkills := &agentprogression.Agent{
 		ID:   "agent-1",
 		Name: "Skilled",
 		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
@@ -410,13 +410,13 @@ func TestAgentHasAnySkill(t *testing.T) {
 		},
 	}
 
-	agentNoSkills := &semdragons.Agent{
+	agentNoSkills := &agentprogression.Agent{
 		ID:                 "agent-2",
 		Name:               "Unskilled",
 		SkillProficiencies: nil,
 	}
 
-	agentEmptySkills := &semdragons.Agent{
+	agentEmptySkills := &agentprogression.Agent{
 		ID:                 "agent-3",
 		Name:               "EmptySkills",
 		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{},
@@ -424,7 +424,7 @@ func TestAgentHasAnySkill(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		agent  *semdragons.Agent
+		agent  *agentprogression.Agent
 		skills []domain.SkillTag
 		want   bool
 	}{
@@ -578,7 +578,7 @@ func TestToolNameAllowed(t *testing.T) {
 
 func TestAgentSkillNames(t *testing.T) {
 	t.Run("returns all skill tag strings for agent with skills", func(t *testing.T) {
-		agent := &semdragons.Agent{
+		agent := &agentprogression.Agent{
 			ID:   "agent-1",
 			Name: "Skilled",
 			SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
@@ -611,7 +611,7 @@ func TestAgentSkillNames(t *testing.T) {
 	})
 
 	t.Run("returns empty slice for agent with nil skill proficiencies", func(t *testing.T) {
-		agent := &semdragons.Agent{
+		agent := &agentprogression.Agent{
 			ID:                 "agent-2",
 			Name:               "NoSkills",
 			SkillProficiencies: nil,
@@ -624,7 +624,7 @@ func TestAgentSkillNames(t *testing.T) {
 	})
 
 	t.Run("returns empty slice for agent with empty skill map", func(t *testing.T) {
-		agent := &semdragons.Agent{
+		agent := &agentprogression.Agent{
 			ID:                 "agent-3",
 			Name:               "EmptySkills",
 			SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{},
@@ -637,7 +637,7 @@ func TestAgentSkillNames(t *testing.T) {
 	})
 
 	t.Run("single skill returns single-element slice", func(t *testing.T) {
-		agent := &semdragons.Agent{
+		agent := &agentprogression.Agent{
 			ID:   "agent-4",
 			Name: "OneSkill",
 			SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
@@ -656,7 +656,7 @@ func TestAgentSkillNames(t *testing.T) {
 	})
 
 	t.Run("returned strings match SkillTag string values exactly", func(t *testing.T) {
-		agent := &semdragons.Agent{
+		agent := &agentprogression.Agent{
 			ID:   "agent-5",
 			Name: "StringCheck",
 			SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{

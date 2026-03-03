@@ -14,6 +14,7 @@ import (
 	"github.com/c360studio/semstreams/component"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/util"
 )
 
@@ -40,7 +41,7 @@ type Component struct {
 	logger *slog.Logger
 
 	// Internal state
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 	running     atomic.Bool
 	mu          sync.RWMutex
 

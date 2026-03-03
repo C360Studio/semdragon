@@ -1,8 +1,9 @@
 package executor
 
 import (
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/processor/promptmanager"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
@@ -41,8 +42,8 @@ func DefaultConfig() Config {
 }
 
 // ToBoardConfig converts processor config to domain BoardConfig.
-func (c *Config) ToBoardConfig() *semdragons.BoardConfig {
-	return &semdragons.BoardConfig{
+func (c *Config) ToBoardConfig() *domain.BoardConfig {
+	return &domain.BoardConfig{
 		Org:      c.Org,
 		Platform: c.Platform,
 		Board:    c.Board,

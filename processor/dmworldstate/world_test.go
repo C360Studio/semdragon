@@ -10,7 +10,10 @@ import (
 	"log/slog"
 	"testing"
 
-	semdragons "github.com/c360studio/semdragons"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -107,10 +110,10 @@ func newTestAggregator() *WorldStateAggregator {
 func TestComputeWorldStats_AllEmpty(t *testing.T) {
 	agg := newTestAggregator()
 	stats := agg.computeWorldStats(
-		[]*semdragons.Agent{},
-		[]semdragons.Quest{},
-		[]semdragons.Party{},
-		[]semdragons.Guild{},
+		[]*agentprogression.Agent{},
+		[]domain.Quest{},
+		[]partycoord.Party{},
+		[]domain.Guild{},
 	)
 
 	if stats.ActiveAgents != 0 {
@@ -151,8 +154,8 @@ func TestComputeWorldStats_AllEmpty(t *testing.T) {
 
 func TestComputeWorldStats_IdleAgent_CountsActiveAndIdle(t *testing.T) {
 	agg := newTestAggregator()
-	agents := []*semdragons.Agent{
-		{ID: "a1", Status: semdragons.AgentIdle},
+	agents := []*agentprogression.Agent{
+		{ID: "a1", Status: domain.AgentIdle},
 	}
 
 	stats := agg.computeWorldStats(agents, nil, nil, nil)
@@ -174,8 +177,8 @@ func TestComputeWorldStats_IdleAgent_CountsActiveAndIdle(t *testing.T) {
 
 func TestComputeWorldStats_OnQuestAgent_CountsActiveOnly(t *testing.T) {
 	agg := newTestAggregator()
-	agents := []*semdragons.Agent{
-		{ID: "a1", Status: semdragons.AgentOnQuest},
+	agents := []*agentprogression.Agent{
+		{ID: "a1", Status: domain.AgentOnQuest},
 	}
 
 	stats := agg.computeWorldStats(agents, nil, nil, nil)
@@ -190,8 +193,8 @@ func TestComputeWorldStats_OnQuestAgent_CountsActiveOnly(t *testing.T) {
 
 func TestComputeWorldStats_InBattleAgent_CountsActiveOnly(t *testing.T) {
 	agg := newTestAggregator()
-	agents := []*semdragons.Agent{
-		{ID: "a1", Status: semdragons.AgentInBattle},
+	agents := []*agentprogression.Agent{
+		{ID: "a1", Status: domain.AgentInBattle},
 	}
 
 	stats := agg.computeWorldStats(agents, nil, nil, nil)
@@ -206,8 +209,8 @@ func TestComputeWorldStats_InBattleAgent_CountsActiveOnly(t *testing.T) {
 
 func TestComputeWorldStats_CooldownAgent_CountsCooldownOnly(t *testing.T) {
 	agg := newTestAggregator()
-	agents := []*semdragons.Agent{
-		{ID: "a1", Status: semdragons.AgentCooldown},
+	agents := []*agentprogression.Agent{
+		{ID: "a1", Status: domain.AgentCooldown},
 	}
 
 	stats := agg.computeWorldStats(agents, nil, nil, nil)
@@ -222,8 +225,8 @@ func TestComputeWorldStats_CooldownAgent_CountsCooldownOnly(t *testing.T) {
 
 func TestComputeWorldStats_RetiredAgent_CountsRetiredOnly(t *testing.T) {
 	agg := newTestAggregator()
-	agents := []*semdragons.Agent{
-		{ID: "a1", Status: semdragons.AgentRetired},
+	agents := []*agentprogression.Agent{
+		{ID: "a1", Status: domain.AgentRetired},
 	}
 
 	stats := agg.computeWorldStats(agents, nil, nil, nil)
@@ -239,9 +242,9 @@ func TestComputeWorldStats_RetiredAgent_CountsRetiredOnly(t *testing.T) {
 func TestComputeWorldStats_NilAgentInSlice_IsSkipped(t *testing.T) {
 	agg := newTestAggregator()
 	// A nil pointer in the slice must not panic; it must be silently skipped.
-	agents := []*semdragons.Agent{
+	agents := []*agentprogression.Agent{
 		nil,
-		{ID: "a2", Status: semdragons.AgentIdle},
+		{ID: "a2", Status: domain.AgentIdle},
 		nil,
 	}
 
@@ -258,13 +261,13 @@ func TestComputeWorldStats_NilAgentInSlice_IsSkipped(t *testing.T) {
 
 func TestComputeWorldStats_MixedAgentStatuses(t *testing.T) {
 	agg := newTestAggregator()
-	agents := []*semdragons.Agent{
-		{ID: "idle-1", Status: semdragons.AgentIdle},
-		{ID: "idle-2", Status: semdragons.AgentIdle},
-		{ID: "on-quest", Status: semdragons.AgentOnQuest},
-		{ID: "in-battle", Status: semdragons.AgentInBattle},
-		{ID: "cooldown", Status: semdragons.AgentCooldown},
-		{ID: "retired", Status: semdragons.AgentRetired},
+	agents := []*agentprogression.Agent{
+		{ID: "idle-1", Status: domain.AgentIdle},
+		{ID: "idle-2", Status: domain.AgentIdle},
+		{ID: "on-quest", Status: domain.AgentOnQuest},
+		{ID: "in-battle", Status: domain.AgentInBattle},
+		{ID: "cooldown", Status: domain.AgentCooldown},
+		{ID: "retired", Status: domain.AgentRetired},
 	}
 
 	stats := agg.computeWorldStats(agents, nil, nil, nil)
@@ -290,8 +293,8 @@ func TestComputeWorldStats_MixedAgentStatuses(t *testing.T) {
 
 func TestComputeWorldStats_PostedQuest_CountsOpen(t *testing.T) {
 	agg := newTestAggregator()
-	quests := []semdragons.Quest{
-		{ID: "q1", Status: semdragons.QuestPosted},
+	quests := []domain.Quest{
+		{ID: "q1", Status: domain.QuestPosted},
 	}
 
 	stats := agg.computeWorldStats(nil, quests, nil, nil)
@@ -306,8 +309,8 @@ func TestComputeWorldStats_PostedQuest_CountsOpen(t *testing.T) {
 
 func TestComputeWorldStats_ClaimedQuest_CountsActive(t *testing.T) {
 	agg := newTestAggregator()
-	quests := []semdragons.Quest{
-		{ID: "q1", Status: semdragons.QuestClaimed},
+	quests := []domain.Quest{
+		{ID: "q1", Status: domain.QuestClaimed},
 	}
 
 	stats := agg.computeWorldStats(nil, quests, nil, nil)
@@ -322,8 +325,8 @@ func TestComputeWorldStats_ClaimedQuest_CountsActive(t *testing.T) {
 
 func TestComputeWorldStats_InProgressQuest_CountsActive(t *testing.T) {
 	agg := newTestAggregator()
-	quests := []semdragons.Quest{
-		{ID: "q1", Status: semdragons.QuestInProgress},
+	quests := []domain.Quest{
+		{ID: "q1", Status: domain.QuestInProgress},
 	}
 
 	stats := agg.computeWorldStats(nil, quests, nil, nil)
@@ -335,8 +338,8 @@ func TestComputeWorldStats_InProgressQuest_CountsActive(t *testing.T) {
 
 func TestComputeWorldStats_InReviewQuest_CountsActive(t *testing.T) {
 	agg := newTestAggregator()
-	quests := []semdragons.Quest{
-		{ID: "q1", Status: semdragons.QuestInReview},
+	quests := []domain.Quest{
+		{ID: "q1", Status: domain.QuestInReview},
 	}
 
 	stats := agg.computeWorldStats(nil, quests, nil, nil)
@@ -349,9 +352,9 @@ func TestComputeWorldStats_InReviewQuest_CountsActive(t *testing.T) {
 func TestComputeWorldStats_CompletedQuest_AffectsCompletionRate(t *testing.T) {
 	agg := newTestAggregator()
 	// Two quests total: one completed, one posted. Completion rate = 0.5.
-	quests := []semdragons.Quest{
-		{ID: "q1", Status: semdragons.QuestCompleted},
-		{ID: "q2", Status: semdragons.QuestPosted},
+	quests := []domain.Quest{
+		{ID: "q1", Status: domain.QuestCompleted},
+		{ID: "q2", Status: domain.QuestPosted},
 	}
 
 	stats := agg.computeWorldStats(nil, quests, nil, nil)
@@ -370,7 +373,7 @@ func TestComputeWorldStats_CompletionRate_ZeroGuard(t *testing.T) {
 	agg := newTestAggregator()
 
 	// An empty quest slice must not produce a NaN or divide-by-zero panic.
-	stats := agg.computeWorldStats(nil, []semdragons.Quest{}, nil, nil)
+	stats := agg.computeWorldStats(nil, []domain.Quest{}, nil, nil)
 
 	if stats.CompletionRate != 0.0 {
 		t.Errorf("CompletionRate = %f, want 0.0 when quest list is empty", stats.CompletionRate)
@@ -379,10 +382,10 @@ func TestComputeWorldStats_CompletionRate_ZeroGuard(t *testing.T) {
 
 func TestComputeWorldStats_CompletionRate_AllCompleted(t *testing.T) {
 	agg := newTestAggregator()
-	quests := []semdragons.Quest{
-		{ID: "q1", Status: semdragons.QuestCompleted},
-		{ID: "q2", Status: semdragons.QuestCompleted},
-		{ID: "q3", Status: semdragons.QuestCompleted},
+	quests := []domain.Quest{
+		{ID: "q1", Status: domain.QuestCompleted},
+		{ID: "q2", Status: domain.QuestCompleted},
+		{ID: "q3", Status: domain.QuestCompleted},
 	}
 
 	stats := agg.computeWorldStats(nil, quests, nil, nil)
@@ -394,9 +397,9 @@ func TestComputeWorldStats_CompletionRate_AllCompleted(t *testing.T) {
 
 func TestComputeWorldStats_CompletionRate_NoneCompleted(t *testing.T) {
 	agg := newTestAggregator()
-	quests := []semdragons.Quest{
-		{ID: "q1", Status: semdragons.QuestPosted},
-		{ID: "q2", Status: semdragons.QuestInProgress},
+	quests := []domain.Quest{
+		{ID: "q1", Status: domain.QuestPosted},
+		{ID: "q2", Status: domain.QuestInProgress},
 	}
 
 	stats := agg.computeWorldStats(nil, quests, nil, nil)
@@ -414,16 +417,16 @@ func TestComputeWorldStats_AvgQuality_OnlyAgentsWithCompletedQuests(t *testing.T
 	agg := newTestAggregator()
 	// Agent with QuestsCompleted > 0 contributes to avg quality.
 	// Agent with QuestsCompleted == 0 is excluded from the quality average.
-	agents := []*semdragons.Agent{
+	agents := []*agentprogression.Agent{
 		{
 			ID:     "a1",
-			Status: semdragons.AgentIdle,
-			Stats:  semdragons.AgentStats{QuestsCompleted: 5, AvgQualityScore: 0.8},
+			Status: domain.AgentIdle,
+			Stats:  agentprogression.AgentStats{QuestsCompleted: 5, AvgQualityScore: 0.8},
 		},
 		{
 			ID:     "a2",
-			Status: semdragons.AgentIdle,
-			Stats:  semdragons.AgentStats{QuestsCompleted: 0, AvgQualityScore: 0.9},
+			Status: domain.AgentIdle,
+			Stats:  agentprogression.AgentStats{QuestsCompleted: 0, AvgQualityScore: 0.9},
 		},
 	}
 
@@ -437,16 +440,16 @@ func TestComputeWorldStats_AvgQuality_OnlyAgentsWithCompletedQuests(t *testing.T
 
 func TestComputeWorldStats_AvgQuality_MultipleQualifiedAgents(t *testing.T) {
 	agg := newTestAggregator()
-	agents := []*semdragons.Agent{
+	agents := []*agentprogression.Agent{
 		{
 			ID:     "a1",
-			Status: semdragons.AgentIdle,
-			Stats:  semdragons.AgentStats{QuestsCompleted: 3, AvgQualityScore: 0.6},
+			Status: domain.AgentIdle,
+			Stats:  agentprogression.AgentStats{QuestsCompleted: 3, AvgQualityScore: 0.6},
 		},
 		{
 			ID:     "a2",
-			Status: semdragons.AgentIdle,
-			Stats:  semdragons.AgentStats{QuestsCompleted: 7, AvgQualityScore: 1.0},
+			Status: domain.AgentIdle,
+			Stats:  agentprogression.AgentStats{QuestsCompleted: 7, AvgQualityScore: 1.0},
 		},
 	}
 
@@ -462,11 +465,11 @@ func TestComputeWorldStats_AvgQuality_MultipleQualifiedAgents(t *testing.T) {
 func TestComputeWorldStats_AvgQuality_ZeroGuard_NoQualifiedAgents(t *testing.T) {
 	agg := newTestAggregator()
 	// All agents have zero completed quests — no division should occur.
-	agents := []*semdragons.Agent{
+	agents := []*agentprogression.Agent{
 		{
 			ID:     "a1",
-			Status: semdragons.AgentIdle,
-			Stats:  semdragons.AgentStats{QuestsCompleted: 0, AvgQualityScore: 0.9},
+			Status: domain.AgentIdle,
+			Stats:  agentprogression.AgentStats{QuestsCompleted: 0, AvgQualityScore: 0.9},
 		},
 	}
 
@@ -480,12 +483,12 @@ func TestComputeWorldStats_AvgQuality_ZeroGuard_NoQualifiedAgents(t *testing.T) 
 func TestComputeWorldStats_AvgQuality_NilAgentSkipped(t *testing.T) {
 	agg := newTestAggregator()
 	// Nil agents in the slice must not panic during quality computation.
-	agents := []*semdragons.Agent{
+	agents := []*agentprogression.Agent{
 		nil,
 		{
 			ID:     "a2",
-			Status: semdragons.AgentIdle,
-			Stats:  semdragons.AgentStats{QuestsCompleted: 2, AvgQualityScore: 0.75},
+			Status: domain.AgentIdle,
+			Stats:  agentprogression.AgentStats{QuestsCompleted: 2, AvgQualityScore: 0.75},
 		},
 	}
 
@@ -502,7 +505,7 @@ func TestComputeWorldStats_AvgQuality_NilAgentSkipped(t *testing.T) {
 
 func TestComputeWorldStats_PartyCounts(t *testing.T) {
 	agg := newTestAggregator()
-	parties := []semdragons.Party{
+	parties := []partycoord.Party{
 		{ID: "p1"},
 		{ID: "p2"},
 		{ID: "p3"},
@@ -517,7 +520,7 @@ func TestComputeWorldStats_PartyCounts(t *testing.T) {
 
 func TestComputeWorldStats_GuildCounts(t *testing.T) {
 	agg := newTestAggregator()
-	guilds := []semdragons.Guild{
+	guilds := []domain.Guild{
 		{ID: "g1"},
 		{ID: "g2"},
 	}
@@ -532,7 +535,7 @@ func TestComputeWorldStats_GuildCounts(t *testing.T) {
 func TestComputeWorldStats_EmptyPartiesAndGuilds(t *testing.T) {
 	agg := newTestAggregator()
 
-	stats := agg.computeWorldStats(nil, nil, []semdragons.Party{}, []semdragons.Guild{})
+	stats := agg.computeWorldStats(nil, nil, []partycoord.Party{}, []domain.Guild{})
 
 	if stats.ActiveParties != 0 {
 		t.Errorf("ActiveParties = %d, want 0", stats.ActiveParties)
@@ -551,26 +554,26 @@ func TestComputeWorldStats_EmptyPartiesAndGuilds(t *testing.T) {
 func TestComputeWorldStats_FullScenario(t *testing.T) {
 	agg := newTestAggregator()
 
-	agents := []*semdragons.Agent{
-		{ID: "idle-1", Status: semdragons.AgentIdle, Stats: semdragons.AgentStats{QuestsCompleted: 10, AvgQualityScore: 0.9}},
-		{ID: "idle-2", Status: semdragons.AgentIdle, Stats: semdragons.AgentStats{QuestsCompleted: 5, AvgQualityScore: 0.7}},
-		{ID: "on-quest", Status: semdragons.AgentOnQuest},
-		{ID: "in-battle", Status: semdragons.AgentInBattle},
-		{ID: "cooldown", Status: semdragons.AgentCooldown},
-		{ID: "retired", Status: semdragons.AgentRetired},
+	agents := []*agentprogression.Agent{
+		{ID: "idle-1", Status: domain.AgentIdle, Stats: agentprogression.AgentStats{QuestsCompleted: 10, AvgQualityScore: 0.9}},
+		{ID: "idle-2", Status: domain.AgentIdle, Stats: agentprogression.AgentStats{QuestsCompleted: 5, AvgQualityScore: 0.7}},
+		{ID: "on-quest", Status: domain.AgentOnQuest},
+		{ID: "in-battle", Status: domain.AgentInBattle},
+		{ID: "cooldown", Status: domain.AgentCooldown},
+		{ID: "retired", Status: domain.AgentRetired},
 	}
 
-	quests := []semdragons.Quest{
-		{ID: "q1", Status: semdragons.QuestPosted},
-		{ID: "q2", Status: semdragons.QuestClaimed},
-		{ID: "q3", Status: semdragons.QuestInProgress},
-		{ID: "q4", Status: semdragons.QuestInReview},
-		{ID: "q5", Status: semdragons.QuestCompleted},
-		{ID: "q6", Status: semdragons.QuestCompleted},
+	quests := []domain.Quest{
+		{ID: "q1", Status: domain.QuestPosted},
+		{ID: "q2", Status: domain.QuestClaimed},
+		{ID: "q3", Status: domain.QuestInProgress},
+		{ID: "q4", Status: domain.QuestInReview},
+		{ID: "q5", Status: domain.QuestCompleted},
+		{ID: "q6", Status: domain.QuestCompleted},
 	}
 
-	parties := []semdragons.Party{{ID: "p1"}, {ID: "p2"}}
-	guilds := []semdragons.Guild{{ID: "g1"}}
+	parties := []partycoord.Party{{ID: "p1"}, {ID: "p2"}}
+	guilds := []domain.Guild{{ID: "g1"}}
 
 	stats := agg.computeWorldStats(agents, quests, parties, guilds)
 

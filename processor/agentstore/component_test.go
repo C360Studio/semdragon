@@ -13,6 +13,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -35,15 +36,15 @@ func TestCooldownSkipClearsStatus(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Create agent in cooldown status with CooldownUntil in the future
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
 	cooldownUntil := time.Now().Add(1 * time.Hour)
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            agentID, // domain.AgentID IS semdragons.AgentID (type alias)
 		Name:          "cooldown-skip-agent",
-		Status:        semdragons.AgentCooldown,
+		Status:        domain.AgentCooldown,
 		Level:         5,
-		Tier:          semdragons.TierApprentice,
+		Tier:          domain.TierApprentice,
 		CooldownUntil: &cooldownUntil,
 	}
 	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
@@ -78,13 +79,13 @@ func TestCooldownSkipClearsStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 	if updatedAgent == nil {
 		t.Fatal("Failed to reconstruct agent from entity state")
 	}
 
-	if updatedAgent.Status != semdragons.AgentIdle {
-		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentIdle)
+	if updatedAgent.Status != domain.AgentIdle {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, domain.AgentIdle)
 	}
 	if updatedAgent.CooldownUntil != nil {
 		t.Errorf("CooldownUntil should be nil, got %v", updatedAgent.CooldownUntil)
@@ -105,14 +106,14 @@ func TestCooldownSkipWhenNotOnCooldown(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
 	// Setup: agent with Status=AgentIdle, no CooldownUntil
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(instance))
-	agent := &semdragons.Agent{
-		ID:    agentID, // domain.AgentID IS semdragons.AgentID (type alias)
-		Name:  "idle-agent",
-		Status: semdragons.AgentIdle,
-		Level: 3,
-		Tier:  semdragons.TierApprentice,
+	agent := &agentprogression.Agent{
+		ID:     agentID, // domain.AgentID IS semdragons.AgentID (type alias)
+		Name:   "idle-agent",
+		Status: domain.AgentIdle,
+		Level:  3,
+		Tier:   domain.TierApprentice,
 	}
 	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 		t.Fatalf("Failed to create test agent: %v", err)
@@ -146,13 +147,13 @@ func TestCooldownSkipWhenNotOnCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 	if updatedAgent == nil {
 		t.Fatal("Failed to reconstruct agent from entity state")
 	}
 
-	if updatedAgent.Status != semdragons.AgentIdle {
-		t.Errorf("Status = %v, want %v (idle agent must stay idle)", updatedAgent.Status, semdragons.AgentIdle)
+	if updatedAgent.Status != domain.AgentIdle {
+		t.Errorf("Status = %v, want %v (idle agent must stay idle)", updatedAgent.Status, domain.AgentIdle)
 	}
 	if updatedAgent.CooldownUntil != nil {
 		t.Errorf("CooldownUntil should be nil, got %v", updatedAgent.CooldownUntil)
@@ -179,14 +180,14 @@ func TestInventorySurvivesRestart(t *testing.T) {
 	// context_expander (rental tool, 10 uses): 200 XP (requires Journeyman)
 	// retry_token (consumable): 50 XP
 	// Total: 300 XP needed. Use Journeyman tier (level 6) for tier-gated items.
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp1.BoardConfig().AgentEntityID(instance))
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     agentID,
 		Name:   "restart-test-agent",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  8,
-		Tier:   semdragons.TierJourneyman,
+		Tier:   domain.TierJourneyman,
 		XP:     1000,
 	}
 	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {

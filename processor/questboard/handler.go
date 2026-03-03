@@ -12,6 +12,8 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -24,12 +26,12 @@ func (c *Component) GraphClient() *semdragons.GraphClient {
 }
 
 // BoardConfig returns the board configuration.
-func (c *Component) BoardConfig() *semdragons.BoardConfig {
+func (c *Component) BoardConfig() *domain.BoardConfig {
 	return c.boardConfig
 }
 
 // PostQuest adds a new quest to the board.
-func (c *Component) PostQuest(ctx context.Context, quest Quest) (*Quest, error) {
+func (c *Component) PostQuest(ctx context.Context, quest domain.Quest) (*domain.Quest, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -38,18 +40,18 @@ func (c *Component) PostQuest(ctx context.Context, quest Quest) (*Quest, error) 
 	c.messagesProcessed.Add(1)
 
 	// Generate instance ID if not provided
-	instance := semdragons.ExtractInstance(string(quest.ID))
+	instance := domain.ExtractInstance(string(quest.ID))
 	if instance == "" || instance == string(quest.ID) {
-		instance = semdragons.GenerateInstance()
+		instance = domain.GenerateInstance()
 	}
 
 	// Set full entity ID
 	quest.ID = domain.QuestID(c.boardConfig.QuestEntityID(instance))
 
 	// Create trace context for this quest
-	var tc = c.traces.StartQuestTrace(semdragons.QuestID(quest.ID))
+	var tc = c.traces.StartQuestTrace(quest.ID)
 	if quest.ParentQuest != nil {
-		tc = c.traces.StartQuestTraceWithParent(semdragons.QuestID(quest.ID), semdragons.QuestID(*quest.ParentQuest))
+		tc = c.traces.StartQuestTraceWithParent(quest.ID, *quest.ParentQuest)
 	}
 	quest.TrajectoryID = tc.TraceID
 
@@ -76,7 +78,7 @@ func (c *Component) PostQuest(ctx context.Context, quest Quest) (*Quest, error) 
 }
 
 // PostSubQuests decomposes a parent quest into sub-quests.
-func (c *Component) PostSubQuests(ctx context.Context, parentID domain.QuestID, subQuests []Quest, decomposer domain.AgentID) ([]Quest, error) {
+func (c *Component) PostSubQuests(ctx context.Context, parentID domain.QuestID, subQuests []domain.Quest, decomposer domain.AgentID) ([]domain.Quest, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -96,19 +98,19 @@ func (c *Component) PostSubQuests(ctx context.Context, parentID domain.QuestID, 
 	}
 
 	// Validate decomposer permissions
-	agent, err := c.getAgentByID(ctx, semdragons.AgentID(decomposer))
+	agent, err := c.getAgentByID(ctx, decomposer)
 	if err != nil {
 		c.errorsCount.Add(1)
 		return nil, errs.Wrap(err, "QuestBoard", "PostSubQuests", "load decomposer")
 	}
 
-	perms := semdragons.TierPermissionsFor(semdragons.TierFromLevel(agent.Level))
+	perms := domain.TierPermissionsFor(domain.TierFromLevel(agent.Level))
 	if !perms.CanDecomposeQuest {
 		return nil, errors.New("agent cannot decompose quests (requires Master+ tier)")
 	}
 
 	// Post each sub-quest
-	posted := make([]Quest, 0, len(subQuests))
+	posted := make([]domain.Quest, 0, len(subQuests))
 	subQuestIDs := make([]domain.QuestID, 0, len(subQuests))
 
 	for _, sq := range subQuests {
@@ -138,7 +140,7 @@ func (c *Component) PostSubQuests(ctx context.Context, parentID domain.QuestID, 
 
 // PostQuestChain validates and posts a chain of interdependent quests.
 // Index-based DependsOn entries in QuestChainEntry are resolved to real QuestIDs.
-func (c *Component) PostQuestChain(ctx context.Context, chain domain.QuestChainBrief) ([]Quest, error) {
+func (c *Component) PostQuestChain(ctx context.Context, chain domain.QuestChainBrief) ([]domain.Quest, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -151,9 +153,9 @@ func (c *Component) PostQuestChain(ctx context.Context, chain domain.QuestChainB
 	c.messagesProcessed.Add(1)
 
 	// First pass: post each quest without DependsOn (we don't have real IDs yet)
-	posted := make([]Quest, 0, len(chain.Quests))
+	posted := make([]domain.Quest, 0, len(chain.Quests))
 	for _, entry := range chain.Quests {
-		q := Quest{
+		q := domain.Quest{
 			Title:       entry.Title,
 			Description: entry.Description,
 			Acceptance:  entry.Acceptance,
@@ -215,29 +217,29 @@ type QuestFilter struct {
 }
 
 // AvailableQuests returns quests an agent is eligible to claim.
-func (c *Component) AvailableQuests(ctx context.Context, agentID domain.AgentID, opts QuestFilter) ([]Quest, error) {
+func (c *Component) AvailableQuests(ctx context.Context, agentID domain.AgentID, opts QuestFilter) ([]domain.Quest, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
 
 	c.lastActivity.Store(time.Now())
 
-	agent, err := c.getAgentByID(ctx, semdragons.AgentID(agentID))
+	agent, err := c.getAgentByID(ctx, agentID)
 	if err != nil {
 		return nil, errs.Wrap(err, "QuestBoard", "AvailableQuests", "load agent")
 	}
 
 	// Check agent can claim
 	switch agent.Status {
-	case semdragons.AgentRetired, semdragons.AgentInBattle:
-		return []Quest{}, nil
-	case semdragons.AgentCooldown:
+	case domain.AgentRetired, domain.AgentInBattle:
+		return []domain.Quest{}, nil
+	case domain.AgentCooldown:
 		if agent.CooldownUntil != nil && time.Now().Before(*agent.CooldownUntil) {
-			return []Quest{}, nil
+			return []domain.Quest{}, nil
 		}
 	}
 	if agent.CurrentQuest != nil {
-		return []Quest{}, nil
+		return []domain.Quest{}, nil
 	}
 
 	limit := opts.Limit
@@ -252,8 +254,8 @@ func (c *Component) AvailableQuests(ctx context.Context, agentID domain.AgentID,
 		return nil, errs.Wrap(err, "QuestBoard", "AvailableQuests", "list quests")
 	}
 
-	agentTier := semdragons.TierFromLevel(agent.Level)
-	available := make([]Quest, 0, limit)
+	agentTier := domain.TierFromLevel(agent.Level)
+	available := make([]domain.Quest, 0, limit)
 
 	// Build entity map for O(1) dependency status lookups
 	entityMap := make(map[string]*graph.EntityState, len(entities))
@@ -343,7 +345,7 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 	c.messagesProcessed.Add(1)
 
 	// Load agent
-	agent, err := c.getAgentByID(ctx, semdragons.AgentID(agentID))
+	agent, err := c.getAgentByID(ctx, agentID)
 	if err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "ClaimQuest", "load agent")
@@ -379,8 +381,8 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 
 	// Update agent status to on_quest
 	now2 := time.Now()
-	questIDRef := semdragons.QuestID(quest.ID)
-	agent.Status = semdragons.AgentOnQuest
+	questIDRef := quest.ID
+	agent.Status = domain.AgentOnQuest
 	agent.CurrentQuest = &questIDRef
 	agent.UpdatedAt = now2
 	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.on_quest"); err != nil {
@@ -400,19 +402,19 @@ func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.Quest
 	c.lastActivity.Store(time.Now())
 	c.messagesProcessed.Add(1)
 
-	party, err := c.getPartyByID(ctx, semdragons.PartyID(partyID))
+	party, err := c.getPartyByID(ctx, partyID)
 	if err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "ClaimQuestForParty", "load party")
 	}
 
-	agent, err := c.getAgentByID(ctx, party.Lead)
+	agent, err := c.getAgentByID(ctx, domain.AgentID(party.Lead))
 	if err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "ClaimQuestForParty", "load lead")
 	}
 
-	perms := semdragons.TierPermissionsFor(semdragons.TierFromLevel(agent.Level))
+	perms := domain.TierPermissionsFor(domain.TierFromLevel(agent.Level))
 	if !perms.CanLeadParty {
 		return errors.New("party lead cannot lead parties (requires Master+ tier)")
 	}
@@ -431,7 +433,7 @@ func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.Quest
 		return errors.New("party too small")
 	}
 
-	if domain.TrustTier(semdragons.TierFromLevel(agent.Level)) < quest.MinTier {
+	if domain.TierFromLevel(agent.Level) < quest.MinTier {
 		return errors.New("party lead tier too low")
 	}
 
@@ -476,9 +478,9 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 
 	// Reset agent status before clearing quest assignment
 	if quest.ClaimedBy != nil {
-		abandonAgent, agentErr := c.getAgentByID(ctx, semdragons.AgentID(*quest.ClaimedBy))
+		abandonAgent, agentErr := c.getAgentByID(ctx, *quest.ClaimedBy)
 		if agentErr == nil {
-			abandonAgent.Status = semdragons.AgentIdle
+			abandonAgent.Status = domain.AgentIdle
 			abandonAgent.CurrentQuest = nil
 			abandonAgent.UpdatedAt = time.Now()
 			if writeErr := c.graph.EmitEntityUpdate(ctx, abandonAgent, "agent.status.idle"); writeErr != nil {
@@ -579,14 +581,14 @@ func (c *Component) SubmitResult(ctx context.Context, questID domain.QuestID, re
 
 	// If quest completed directly (no review), end the trace
 	if !quest.Constraints.RequireReview {
-		c.traces.EndQuestTrace(semdragons.QuestID(questID))
+		c.traces.EndQuestTrace(questID)
 	}
 
 	return nil
 }
 
 // CompleteQuest marks a quest as successfully completed.
-func (c *Component) CompleteQuest(ctx context.Context, questID domain.QuestID, verdict BattleVerdict) error {
+func (c *Component) CompleteQuest(ctx context.Context, questID domain.QuestID, verdict domain.BattleVerdict) error {
 	if !c.running.Load() {
 		return errors.New("component not running")
 	}
@@ -620,7 +622,7 @@ func (c *Component) CompleteQuest(ctx context.Context, questID domain.QuestID, v
 	}
 
 	// End trace for this quest (terminal state)
-	c.traces.EndQuestTrace(semdragons.QuestID(questID))
+	c.traces.EndQuestTrace(questID)
 
 	return nil
 }
@@ -646,16 +648,16 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 
 	// Set failure context on quest entity (watchers see this in triples)
 	quest.FailureReason = reason
-	quest.FailureType = FailureQuality
+	quest.FailureType = domain.FailureQuality
 
 	reposted := quest.Attempts < quest.MaxAttempts
 	if reposted {
 		// Reset agent status before clearing quest assignment (agentprogression
 		// skips reposted quests because ClaimedBy is nil after repost)
 		if quest.ClaimedBy != nil {
-			repostAgent, agentErr := c.getAgentByID(ctx, semdragons.AgentID(*quest.ClaimedBy))
+			repostAgent, agentErr := c.getAgentByID(ctx, *quest.ClaimedBy)
 			if agentErr == nil {
-				repostAgent.Status = semdragons.AgentIdle
+				repostAgent.Status = domain.AgentIdle
 				repostAgent.CurrentQuest = nil
 				repostAgent.UpdatedAt = time.Now()
 				if writeErr := c.graph.EmitEntityUpdate(ctx, repostAgent, "agent.status.idle"); writeErr != nil {
@@ -682,7 +684,7 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 
 	// End trace if quest reached terminal state (not reposted)
 	if !reposted {
-		c.traces.EndQuestTrace(semdragons.QuestID(questID))
+		c.traces.EndQuestTrace(questID)
 	}
 
 	return nil
@@ -719,13 +721,13 @@ func (c *Component) EscalateQuest(ctx context.Context, questID domain.QuestID, r
 	}
 
 	// End trace for escalated quest (terminal state requiring DM attention)
-	c.traces.EndQuestTrace(semdragons.QuestID(questID))
+	c.traces.EndQuestTrace(questID)
 
 	return nil
 }
 
 // GetQuest returns a quest by ID.
-func (c *Component) GetQuest(ctx context.Context, questID domain.QuestID) (*Quest, error) {
+func (c *Component) GetQuest(ctx context.Context, questID domain.QuestID) (*domain.Quest, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -797,8 +799,8 @@ func (c *Component) BoardStats(ctx context.Context) (*BoardStats, error) {
 // =============================================================================
 
 // getQuestByID retrieves a quest from the graph and reconstructs it.
-func (c *Component) getQuestByID(ctx context.Context, questID domain.QuestID) (*Quest, error) {
-	entity, err := c.graph.GetQuest(ctx, semdragons.QuestID(questID))
+func (c *Component) getQuestByID(ctx context.Context, questID domain.QuestID) (*domain.Quest, error) {
+	entity, err := c.graph.GetQuest(ctx, questID)
 	if err != nil {
 		return nil, err
 	}
@@ -809,7 +811,7 @@ func (c *Component) getQuestByID(ctx context.Context, questID domain.QuestID) (*
 }
 
 // getAgentByID retrieves an agent from the graph and reconstructs it.
-func (c *Component) getAgentByID(ctx context.Context, agentID semdragons.AgentID) (*semdragons.Agent, error) {
+func (c *Component) getAgentByID(ctx context.Context, agentID domain.AgentID) (*agentprogression.Agent, error) {
 	entity, err := c.graph.GetAgent(ctx, agentID)
 	if err != nil {
 		return nil, err
@@ -817,11 +819,11 @@ func (c *Component) getAgentByID(ctx context.Context, agentID semdragons.AgentID
 	if entity == nil {
 		return nil, fmt.Errorf("agent not found: %s", agentID)
 	}
-	return semdragons.AgentFromEntityState(entity), nil
+	return agentprogression.AgentFromEntityState(entity), nil
 }
 
 // getPartyByID retrieves a party from the graph and reconstructs it.
-func (c *Component) getPartyByID(ctx context.Context, partyID semdragons.PartyID) (*semdragons.Party, error) {
+func (c *Component) getPartyByID(ctx context.Context, partyID domain.PartyID) (*partycoord.Party, error) {
 	entity, err := c.graph.GetParty(ctx, partyID)
 	if err != nil {
 		return nil, err
@@ -829,16 +831,16 @@ func (c *Component) getPartyByID(ctx context.Context, partyID semdragons.PartyID
 	if entity == nil {
 		return nil, fmt.Errorf("party not found: %s", partyID)
 	}
-	return semdragons.PartyFromEntityState(entity), nil
+	return partycoord.PartyFromEntityState(entity), nil
 }
 
 // questFromEntity reconstructs a Quest from a graph entity.
-func (c *Component) questFromEntity(entity *graph.EntityState) *Quest {
+func (c *Component) questFromEntity(entity *graph.EntityState) *domain.Quest {
 	if entity == nil {
 		return nil
 	}
 
-	quest := &Quest{
+	quest := &domain.Quest{
 		ID: domain.QuestID(entity.ID),
 	}
 
@@ -927,28 +929,28 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *Quest {
 		case "quest.verdict.passed":
 			if v, ok := triple.Object.(bool); ok {
 				if quest.Verdict == nil {
-					quest.Verdict = &BattleVerdict{}
+					quest.Verdict = &domain.BattleVerdict{}
 				}
 				quest.Verdict.Passed = v
 			}
 		case "quest.verdict.score":
 			if v, ok := triple.Object.(float64); ok {
 				if quest.Verdict == nil {
-					quest.Verdict = &BattleVerdict{}
+					quest.Verdict = &domain.BattleVerdict{}
 				}
 				quest.Verdict.QualityScore = v
 			}
 		case "quest.verdict.xp_awarded":
 			if v, ok := triple.Object.(float64); ok {
 				if quest.Verdict == nil {
-					quest.Verdict = &BattleVerdict{}
+					quest.Verdict = &domain.BattleVerdict{}
 				}
 				quest.Verdict.XPAwarded = int64(v)
 			}
 		case "quest.verdict.feedback":
 			if v, ok := triple.Object.(string); ok {
 				if quest.Verdict == nil {
-					quest.Verdict = &BattleVerdict{}
+					quest.Verdict = &domain.BattleVerdict{}
 				}
 				quest.Verdict.Feedback = v
 			}
@@ -962,7 +964,7 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *Quest {
 			}
 		case "quest.failure.type":
 			if v, ok := triple.Object.(string); ok {
-				quest.FailureType = FailureType(v)
+				quest.FailureType = domain.FailureType(v)
 			}
 		case "quest.duration":
 			if v, ok := triple.Object.(string); ok {
@@ -1000,14 +1002,6 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *Quest {
 	return quest
 }
 
-func (c *Component) validateAgentCanClaim(agent *semdragons.Agent, quest *Quest) error {
-	// Delegate to shared validation. Questboard Quest fields are domain type
-	// aliases identical to root types, so we construct directly.
-	rootQuest := &semdragons.Quest{
-		Status:         quest.Status,
-		MinTier:        quest.MinTier,
-		PartyRequired:  quest.PartyRequired,
-		RequiredSkills: quest.RequiredSkills,
-	}
-	return semdragons.ValidateAgentCanClaim(agent, rootQuest)
+func (c *Component) validateAgentCanClaim(agent *agentprogression.Agent, quest *domain.Quest) error {
+	return agentprogression.ValidateAgentCanClaim(agent, quest)
 }

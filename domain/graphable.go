@@ -1,6 +1,4 @@
-// Package semdragons provides Graphable implementations for domain entities.
-// These implementations enable entities to be stored in the semstreams graph system.
-package semdragons
+package domain
 
 import (
 	"fmt"
@@ -15,19 +13,13 @@ import (
 // Each entity type implements graph.Graphable interface:
 // - EntityID() string - Returns 6-part federated entity ID
 // - Triples() []message.Triple - Returns semantic facts about the entity
-//
-// Note: We return message.Triple (not graph.Triple) as that's what the
-// Graphable interface expects.
 // =============================================================================
 
 // -----------------------------------------------------------------------------
-// QUEST - Graphable implementation
+// QUEST
 // -----------------------------------------------------------------------------
 
 // EntityID returns the 6-part entity ID for this quest.
-// Format: org.platform.game.board.quest.instance
-// Note: Quest must have been created with a properly formatted ID that
-// includes the full entity ID path.
 func (q *Quest) EntityID() string {
 	return string(q.ID)
 }
@@ -157,207 +149,42 @@ func (q *Quest) Triples() []message.Triple {
 		Source: source, Timestamp: now, Confidence: 1.0,
 	})
 
-	return triples
-}
-
-// -----------------------------------------------------------------------------
-// AGENT - Graphable implementation
-// -----------------------------------------------------------------------------
-
-// EntityID returns the 6-part entity ID for this agent.
-func (a *Agent) EntityID() string {
-	return string(a.ID)
-}
-
-// Triples returns all semantic facts about this agent.
-func (a *Agent) Triples() []message.Triple {
-	now := time.Now()
-	source := "xpengine"
-	entityID := a.EntityID()
-
-	triples := []message.Triple{
-		// Identity
-		{Subject: entityID, Predicate: "agent.identity.name", Object: a.Name, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.identity.display_name", Object: a.DisplayName, Source: source, Timestamp: now, Confidence: 1.0},
-
-		// Status
-		{Subject: entityID, Predicate: "agent.status.state", Object: string(a.Status), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.npc.flag", Object: a.IsNPC, Source: source, Timestamp: now, Confidence: 1.0},
-
-		// Progression
-		{Subject: entityID, Predicate: "agent.progression.level", Object: a.Level, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.progression.xp.current", Object: a.XP, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.progression.xp.to_level", Object: a.XPToLevel, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.progression.tier", Object: int(a.Tier), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.progression.death_count", Object: a.DeathCount, Source: source, Timestamp: now, Confidence: 1.0},
-
-		// Stats
-		{Subject: entityID, Predicate: "agent.stats.quests_completed", Object: a.Stats.QuestsCompleted, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.stats.quests_failed", Object: a.Stats.QuestsFailed, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.stats.bosses_defeated", Object: a.Stats.BossesDefeated, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.stats.total_xp_earned", Object: a.Stats.TotalXPEarned, Source: source, Timestamp: now, Confidence: 1.0},
-
-		// Lifecycle
-		{Subject: entityID, Predicate: "agent.lifecycle.created_at", Object: a.CreatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.lifecycle.updated_at", Object: a.UpdatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
-	}
-
-	// Guild memberships
-	for _, guildID := range a.Guilds {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.membership.guild", Object: string(guildID),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	// Skill proficiencies
-	for skill, prof := range a.SkillProficiencies {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: fmt.Sprintf("agent.skill.%s.level", skill), Object: int(prof.Level),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: fmt.Sprintf("agent.skill.%s.total_xp", skill), Object: prof.TotalXP,
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	// Optional relationships
-	if a.CurrentQuest != nil {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.assignment.quest", Object: string(*a.CurrentQuest),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	if a.CurrentParty != nil {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.membership.party", Object: string(*a.CurrentParty),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	if a.CooldownUntil != nil {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.status.cooldown_until", Object: a.CooldownUntil.Format(time.RFC3339),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	// Owned tools — each tool creates a relationship edge to its storeitem entity
-	for itemID, tool := range a.OwnedTools {
-		prefix := fmt.Sprintf("agent.inventory.tool.%s", itemID)
+	// Verdict (set on completion after boss battle)
+	if q.Verdict != nil {
 		triples = append(triples,
-			message.Triple{Subject: entityID, Predicate: prefix, Object: tool.StoreItemID, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: prefix + ".xp_spent", Object: tool.XPSpent, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: prefix + ".uses", Object: tool.UsesRemaining, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: prefix + ".purchased_at", Object: tool.PurchasedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "quest.verdict.passed", Object: q.Verdict.Passed, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "quest.verdict.score", Object: q.Verdict.QualityScore, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "quest.verdict.xp_awarded", Object: q.Verdict.XPAwarded, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "quest.verdict.feedback", Object: q.Verdict.Feedback, Source: source, Timestamp: now, Confidence: 1.0},
 		)
 	}
 
-	// Consumables — count owned per item
-	for itemID, count := range a.Consumables {
+	// Escalation
+	if q.Escalated {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: fmt.Sprintf("agent.inventory.consumable.%s", itemID), Object: count,
+			Subject: entityID, Predicate: "quest.failure.escalated", Object: true,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 
-	// Total XP spent in store
-	if a.TotalSpent > 0 {
+	// Failure info
+	if q.FailureReason != "" {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.inventory.total_spent", Object: a.TotalSpent,
+			Subject: entityID, Predicate: "quest.failure.reason", Object: q.FailureReason,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.FailureType != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.failure.type", Object: string(q.FailureType),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 
-	// Active consumable effects
-	for _, eff := range a.ActiveEffects {
-		prefix := fmt.Sprintf("agent.effects.%s", eff.EffectType)
+	// Duration
+	if q.Duration > 0 {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: prefix + ".remaining", Object: eff.QuestsRemaining,
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-		if eff.QuestID != nil {
-			triples = append(triples, message.Triple{
-				Subject: entityID, Predicate: prefix + ".quest", Object: string(*eff.QuestID),
-				Source: source, Timestamp: now, Confidence: 1.0,
-			})
-		}
-	}
-
-	// Peer review reputation
-	if a.Stats.PeerReviewCount > 0 {
-		triples = append(triples,
-			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_avg", Object: a.Stats.PeerReviewAvg, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_count", Object: a.Stats.PeerReviewCount, Source: source, Timestamp: now, Confidence: 1.0},
-		)
-	}
-
-	return triples
-}
-
-// -----------------------------------------------------------------------------
-// BOSS BATTLE - Graphable implementation
-// -----------------------------------------------------------------------------
-
-// EntityID returns the 6-part entity ID for this battle.
-func (b *BossBattle) EntityID() string {
-	return string(b.ID)
-}
-
-// Triples returns all semantic facts about this battle.
-func (b *BossBattle) Triples() []message.Triple {
-	now := time.Now()
-	source := "bossbattle"
-	entityID := b.EntityID()
-
-	triples := []message.Triple{
-		// Relationships
-		{Subject: entityID, Predicate: "battle.assignment.quest", Object: string(b.QuestID), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "battle.assignment.agent", Object: string(b.AgentID), Source: source, Timestamp: now, Confidence: 1.0},
-
-		// Status
-		{Subject: entityID, Predicate: "battle.status.state", Object: string(b.Status), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "battle.review.level", Object: int(b.Level), Source: source, Timestamp: now, Confidence: 1.0},
-
-		// Lifecycle
-		{Subject: entityID, Predicate: "battle.lifecycle.started_at", Object: b.StartedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
-	}
-
-	if b.CompletedAt != nil {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "battle.lifecycle.completed_at", Object: b.CompletedAt.Format(time.RFC3339),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	// Verdict if available
-	if b.Verdict != nil {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "battle.verdict.passed", Object: b.Verdict.Passed,
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "battle.verdict.score", Object: b.Verdict.QualityScore,
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "battle.verdict.xp_awarded", Object: b.Verdict.XPAwarded,
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-		if b.Verdict.Feedback != "" {
-			triples = append(triples, message.Triple{
-				Subject: entityID, Predicate: "battle.verdict.feedback", Object: b.Verdict.Feedback,
-				Source: source, Timestamp: now, Confidence: 1.0,
-			})
-		}
-	}
-
-	// Judges
-	for _, judge := range b.Judges {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "battle.judge.id", Object: judge.ID,
+			Subject: entityID, Predicate: "quest.duration", Object: q.Duration.String(),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -366,76 +193,7 @@ func (b *BossBattle) Triples() []message.Triple {
 }
 
 // -----------------------------------------------------------------------------
-// PARTY - Graphable implementation
-// -----------------------------------------------------------------------------
-
-// EntityID returns the 6-part entity ID for this party.
-func (p *Party) EntityID() string {
-	return string(p.ID)
-}
-
-// Triples returns all semantic facts about this party.
-func (p *Party) Triples() []message.Triple {
-	now := time.Now()
-	source := "guildformation"
-	entityID := p.EntityID()
-
-	triples := []message.Triple{
-		// Identity
-		{Subject: entityID, Predicate: "party.identity.name", Object: p.Name, Source: source, Timestamp: now, Confidence: 1.0},
-
-		// Status
-		{Subject: entityID, Predicate: "party.status.state", Object: string(p.Status), Source: source, Timestamp: now, Confidence: 1.0},
-
-		// Relationships
-		{Subject: entityID, Predicate: "party.assignment.quest", Object: string(p.QuestID), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "party.membership.lead", Object: string(p.Lead), Source: source, Timestamp: now, Confidence: 1.0},
-
-		// Lifecycle
-		{Subject: entityID, Predicate: "party.lifecycle.formed_at", Object: p.FormedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
-	}
-
-	// Strategy if set
-	if p.Strategy != "" {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "party.coordination.strategy", Object: p.Strategy,
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	// Members
-	for _, member := range p.Members {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "party.membership.member", Object: string(member.AgentID),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: fmt.Sprintf("party.member.%s.role", member.AgentID), Object: string(member.Role),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	// Sub-quest assignments
-	for questID, agentID := range p.SubQuestMap {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: fmt.Sprintf("party.subquest.%s.agent", questID), Object: string(agentID),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	// Disbanded timestamp if set
-	if p.DisbandedAt != nil {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "party.lifecycle.disbanded_at", Object: p.DisbandedAt.Format(time.RFC3339),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
-	return triples
-}
-
-// -----------------------------------------------------------------------------
-// GUILD - Graphable implementation
+// GUILD
 // -----------------------------------------------------------------------------
 
 // EntityID returns the 6-part entity ID for this guild.
@@ -534,7 +292,7 @@ func (g *Guild) Triples() []message.Triple {
 }
 
 // -----------------------------------------------------------------------------
-// PEER REVIEW - Graphable implementation
+// PEER REVIEW
 // -----------------------------------------------------------------------------
 
 // EntityID returns the 6-part entity ID for this peer review.

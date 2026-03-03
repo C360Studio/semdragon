@@ -19,6 +19,10 @@ import (
 	"github.com/c360studio/semstreams/natsclient"
 
 	semdragons "github.com/c360studio/semdragons"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/bossbattle"
 )
 
 // =============================================================================
@@ -171,13 +175,13 @@ func TestWorldState_AgentCounts_Accurate(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.boardConfig)
 
 	// Create two idle, one on-quest, one retired, one cooldown.
-	putTestAgent(t, ctx, gc, comp.boardConfig, "idle-1", semdragons.AgentIdle, nil)
-	putTestAgent(t, ctx, gc, comp.boardConfig, "idle-2", semdragons.AgentIdle, nil)
-	putTestAgent(t, ctx, gc, comp.boardConfig, "on-quest", semdragons.AgentOnQuest, nil)
-	putTestAgent(t, ctx, gc, comp.boardConfig, "retired-agent", semdragons.AgentRetired, nil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "idle-1", domain.AgentIdle, nil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "idle-2", domain.AgentIdle, nil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "on-quest", domain.AgentOnQuest, nil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "retired-agent", domain.AgentRetired, nil)
 
 	cooldownUntil := time.Now().Add(1 * time.Hour)
-	putTestAgent(t, ctx, gc, comp.boardConfig, "cooldown-agent", semdragons.AgentCooldown, &cooldownUntil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "cooldown-agent", domain.AgentCooldown, &cooldownUntil)
 
 	state, err := comp.WorldState(ctx)
 	if err != nil {
@@ -211,14 +215,14 @@ func TestWorldState_QuestCounts_Accurate(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.boardConfig)
 
 	// Create quests in various active states (only active statuses appear in world state).
-	putTestQuest(t, ctx, gc, comp.boardConfig, "posted-1", semdragons.QuestPosted)
-	putTestQuest(t, ctx, gc, comp.boardConfig, "posted-2", semdragons.QuestPosted)
-	putTestQuest(t, ctx, gc, comp.boardConfig, "in-progress", semdragons.QuestInProgress)
-	putTestQuest(t, ctx, gc, comp.boardConfig, "in-review", semdragons.QuestInReview)
-	putTestQuest(t, ctx, gc, comp.boardConfig, "escalated", semdragons.QuestEscalated)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "posted-1", domain.QuestPosted)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "posted-2", domain.QuestPosted)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "in-progress", domain.QuestInProgress)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "in-review", domain.QuestInReview)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "escalated", domain.QuestEscalated)
 	// Completed quests are not included in active quest list.
-	putTestQuest(t, ctx, gc, comp.boardConfig, "completed", semdragons.QuestCompleted)
-	putTestQuest(t, ctx, gc, comp.boardConfig, "failed-q", semdragons.QuestFailed)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "completed", domain.QuestCompleted)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "failed-q", domain.QuestFailed)
 
 	state, err := comp.WorldState(ctx)
 	if err != nil {
@@ -244,7 +248,7 @@ func TestWorldState_Agents_PopulatedInState(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.boardConfig)
-	putTestAgent(t, ctx, gc, comp.boardConfig, "agent-for-list", semdragons.AgentIdle, nil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "agent-for-list", domain.AgentIdle, nil)
 
 	state, err := comp.WorldState(ctx)
 	if err != nil {
@@ -270,14 +274,14 @@ func TestGetIdleAgents_ReturnsOnlyIdle(t *testing.T) {
 
 	gc := semdragons.NewGraphClient(client, comp.boardConfig)
 
-	putTestAgent(t, ctx, gc, comp.boardConfig, "idle-a", semdragons.AgentIdle, nil)
-	putTestAgent(t, ctx, gc, comp.boardConfig, "idle-b", semdragons.AgentIdle, nil)
-	putTestAgent(t, ctx, gc, comp.boardConfig, "on-quest-c", semdragons.AgentOnQuest, nil)
-	putTestAgent(t, ctx, gc, comp.boardConfig, "retired-d", semdragons.AgentRetired, nil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "idle-a", domain.AgentIdle, nil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "idle-b", domain.AgentIdle, nil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "on-quest-c", domain.AgentOnQuest, nil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "retired-d", domain.AgentRetired, nil)
 
 	// Idle agent with active cooldown should NOT be returned.
 	cooldownUntil := time.Now().Add(1 * time.Hour)
-	putTestAgent(t, ctx, gc, comp.boardConfig, "cooldown-e", semdragons.AgentCooldown, &cooldownUntil)
+	putTestAgent(t, ctx, gc, comp.boardConfig, "cooldown-e", domain.AgentCooldown, &cooldownUntil)
 
 	idle, err := comp.GetIdleAgents(ctx)
 	if err != nil {
@@ -288,8 +292,8 @@ func TestGetIdleAgents_ReturnsOnlyIdle(t *testing.T) {
 		t.Errorf("idle agent count = %d, want 2", len(idle))
 	}
 	for _, a := range idle {
-		if a.Status != semdragons.AgentIdle {
-			t.Errorf("agent %v has status %v, want %v", a.ID, a.Status, semdragons.AgentIdle)
+		if a.Status != domain.AgentIdle {
+			t.Errorf("agent %v has status %v, want %v", a.ID, a.Status, domain.AgentIdle)
 		}
 		if a.CooldownUntil != nil {
 			t.Errorf("idle agent %v should have nil CooldownUntil", a.ID)
@@ -328,10 +332,10 @@ func TestGetEscalatedQuests_ReturnsOnlyEscalated(t *testing.T) {
 
 	gc := semdragons.NewGraphClient(client, comp.boardConfig)
 
-	putTestQuest(t, ctx, gc, comp.boardConfig, "escalated-q1", semdragons.QuestEscalated)
-	putTestQuest(t, ctx, gc, comp.boardConfig, "escalated-q2", semdragons.QuestEscalated)
-	putTestQuest(t, ctx, gc, comp.boardConfig, "posted-q", semdragons.QuestPosted)
-	putTestQuest(t, ctx, gc, comp.boardConfig, "in-progress-q", semdragons.QuestInProgress)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "escalated-q1", domain.QuestEscalated)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "escalated-q2", domain.QuestEscalated)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "posted-q", domain.QuestPosted)
+	putTestQuest(t, ctx, gc, comp.boardConfig, "in-progress-q", domain.QuestInProgress)
 
 	escalated, err := comp.GetEscalatedQuests(ctx)
 	if err != nil {
@@ -342,8 +346,8 @@ func TestGetEscalatedQuests_ReturnsOnlyEscalated(t *testing.T) {
 		t.Errorf("escalated quest count = %d, want 2", len(escalated))
 	}
 	for _, q := range escalated {
-		if q.Status != semdragons.QuestEscalated {
-			t.Errorf("quest %v has status %v, want %v", q.ID, q.Status, semdragons.QuestEscalated)
+		if q.Status != domain.QuestEscalated {
+			t.Errorf("quest %v has status %v, want %v", q.ID, q.Status, domain.QuestEscalated)
 		}
 	}
 }
@@ -397,9 +401,9 @@ func TestGetPendingBattles_ActiveBattleWithNoVerdict_Returned(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.boardConfig)
 
 	// Put an active BossBattle with no verdict into KV.
-	putTestBattle(t, ctx, gc, comp.boardConfig, "active-battle", semdragons.BattleActive, false)
+	putTestBattle(t, ctx, gc, comp.boardConfig, "active-battle", domain.BattleActive, false)
 	// Put a completed battle (has verdict) - should not appear.
-	putTestBattle(t, ctx, gc, comp.boardConfig, "completed-battle", semdragons.BattleVictory, true)
+	putTestBattle(t, ctx, gc, comp.boardConfig, "completed-battle", domain.BattleVictory, true)
 
 	battles, err := comp.GetPendingBattles(ctx)
 	if err != nil {
@@ -409,8 +413,8 @@ func TestGetPendingBattles_ActiveBattleWithNoVerdict_Returned(t *testing.T) {
 	if len(battles) != 1 {
 		t.Errorf("pending battle count = %d, want 1 (active without verdict)", len(battles))
 	}
-	if len(battles) > 0 && battles[0].Status != semdragons.BattleActive {
-		t.Errorf("pending battle status = %v, want %v", battles[0].Status, semdragons.BattleActive)
+	if len(battles) > 0 && battles[0].Status != domain.BattleActive {
+		t.Errorf("pending battle status = %v, want %v", battles[0].Status, domain.BattleActive)
 	}
 }
 
@@ -483,21 +487,21 @@ func putTestAgent(
 	t *testing.T,
 	ctx context.Context,
 	gc *semdragons.GraphClient,
-	config *semdragons.BoardConfig,
+	config *domain.BoardConfig,
 	name string,
-	status semdragons.AgentStatus,
+	status domain.AgentStatus,
 	cooldownUntil *time.Time,
-) *semdragons.Agent {
+) *agentprogression.Agent {
 	t.Helper()
 
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(config.AgentEntityID(instance))
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(config.AgentEntityID(instance))
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            agentID,
 		Name:          name,
 		Level:         5,
-		Tier:          semdragons.TierApprentice,
+		Tier:          domain.TierApprentice,
 		Status:        status,
 		CooldownUntil: cooldownUntil,
 	}
@@ -512,20 +516,20 @@ func putTestQuest(
 	t *testing.T,
 	ctx context.Context,
 	gc *semdragons.GraphClient,
-	config *semdragons.BoardConfig,
+	config *domain.BoardConfig,
 	title string,
-	status semdragons.QuestStatus,
-) *semdragons.Quest {
+	status domain.QuestStatus,
+) *domain.Quest {
 	t.Helper()
 
-	instance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(config.QuestEntityID(instance))
+	instance := domain.GenerateInstance()
+	questID := domain.QuestID(config.QuestEntityID(instance))
 
-	escalated := status == semdragons.QuestEscalated
-	quest := &semdragons.Quest{
+	escalated := status == domain.QuestEscalated
+	quest := &domain.Quest{
 		ID:         questID,
 		Title:      title,
-		Difficulty: semdragons.DifficultyTrivial,
+		Difficulty: domain.DifficultyTrivial,
 		Status:     status,
 		Escalated:  escalated,
 	}
@@ -540,23 +544,23 @@ func putTestBattle(
 	t *testing.T,
 	ctx context.Context,
 	gc *semdragons.GraphClient,
-	config *semdragons.BoardConfig,
+	config *domain.BoardConfig,
 	name string,
-	status semdragons.BattleStatus,
+	status domain.BattleStatus,
 	hasVerdict bool,
-) *semdragons.BossBattle {
+) *bossbattle.BossBattle {
 	t.Helper()
 
-	instance := semdragons.GenerateInstance()
-	battleID := semdragons.BattleID(config.BattleEntityID(instance))
+	instance := domain.GenerateInstance()
+	battleID := domain.BattleID(config.BattleEntityID(instance))
 
-	battle := &semdragons.BossBattle{
+	battle := &bossbattle.BossBattle{
 		ID:     battleID,
 		Status: status,
 	}
 
 	if hasVerdict {
-		verdict := semdragons.BattleVerdict{
+		verdict := domain.BattleVerdict{
 			Passed:       true,
 			QualityScore: 0.9,
 			XPAwarded:    100,

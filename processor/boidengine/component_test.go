@@ -12,6 +12,9 @@ import (
 	"github.com/c360studio/semstreams/natsclient"
 
 	semdragons "github.com/c360studio/semdragons"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -190,13 +193,13 @@ func TestComponent_ComputeAttractionsNow(t *testing.T) {
 
 	// Create test agents
 	for i := 0; i < 3; i++ {
-		instance := semdragons.GenerateInstance()
-		agentID := semdragons.AgentID(comp.boardConfig.AgentEntityID(instance))
-		agent := &semdragons.Agent{
+		instance := domain.GenerateInstance()
+		agentID := domain.AgentID(comp.boardConfig.AgentEntityID(instance))
+		agent := &agentprogression.Agent{
 			ID:     agentID,
 			Name:   "test-agent",
 			Level:  5,
-			Status: semdragons.AgentIdle,
+			Status: domain.AgentIdle,
 		}
 		if err := graph.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 			t.Fatalf("Failed to create agent %d: %v", i, err)
@@ -205,12 +208,12 @@ func TestComponent_ComputeAttractionsNow(t *testing.T) {
 
 	// Create test quests
 	for i := 0; i < 3; i++ {
-		instance := semdragons.GenerateInstance()
-		quest := &semdragons.Quest{
-			ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID(instance)),
+		instance := domain.GenerateInstance()
+		quest := &domain.Quest{
+			ID:         domain.QuestID(comp.boardConfig.QuestEntityID(instance)),
 			Title:      "Test Quest",
-			Difficulty: semdragons.DifficultyTrivial,
-			Status:     semdragons.QuestPosted,
+			Difficulty: domain.DifficultyTrivial,
+			Status:     domain.QuestPosted,
 		}
 		if err := graph.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
 			t.Fatalf("Failed to create quest %d: %v", i, err)

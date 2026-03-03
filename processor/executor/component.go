@@ -12,7 +12,6 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/promptmanager"
-	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/pkg/errs"
@@ -31,7 +30,7 @@ type Component struct {
 	deps        component.Dependencies
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 
 	// Execution infrastructure
 	registry     model.RegistryReader
@@ -303,7 +302,7 @@ func (c *Component) createGraphClient(_ context.Context) error {
 // =============================================================================
 
 // Execute runs a quest for an agent and returns the result.
-func (c *Component) Execute(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error) {
+func (c *Component) Execute(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) (*ExecutionResult, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}

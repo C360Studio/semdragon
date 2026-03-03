@@ -10,6 +10,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semstreams/agentic"
@@ -33,7 +34,7 @@ import (
 
 // watchLoop implements the KV twofer bootstrap protocol for quest entity watching.
 func (c *Component) watchLoop(ctx context.Context) {
-	watcher, err := c.graph.WatchEntityType(ctx, semdragons.EntityTypeQuest)
+	watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeQuest)
 	if err != nil {
 		c.logger.Error("failed to start quest watcher", "error", err)
 		c.errorsCount.Add(1)
@@ -140,7 +141,7 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 		c.errorsCount.Add(1)
 		return
 	}
-	quest := semdragons.QuestFromEntityState(questEntity)
+	quest := domain.QuestFromEntityState(questEntity)
 	if quest == nil {
 		c.logger.Error("quest reconstruction returned nil", "quest_id", questID)
 		c.errorsCount.Add(1)
@@ -154,7 +155,7 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 		c.errorsCount.Add(1)
 		return
 	}
-	agent := semdragons.AgentFromEntityState(agentEntity)
+	agent := agentprogression.AgentFromEntityState(agentEntity)
 	if agent == nil {
 		c.logger.Error("agent reconstruction returned nil", "agent_id", agentID)
 		c.errorsCount.Add(1)
@@ -534,14 +535,14 @@ func (c *Component) cleanupMapping(ctx context.Context, questID string) {
 
 // buildSystemPrompt builds the system prompt using the assembler when available,
 // falling back to the legacy string concatenation path.
-func (c *Component) buildSystemPrompt(agent *semdragons.Agent, quest *semdragons.Quest) string {
+func (c *Component) buildSystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
 	if c.promptAssembler != nil {
 		return c.buildAssembledSystemPrompt(agent, quest)
 	}
 	return buildLegacySystemPrompt(agent, quest)
 }
 
-func (c *Component) buildAssembledSystemPrompt(agent *semdragons.Agent, quest *semdragons.Quest) string {
+func (c *Component) buildAssembledSystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
 	var personaPrompt string
 	if agent.Persona != nil {
 		personaPrompt = agent.Persona.SystemPrompt
@@ -583,7 +584,7 @@ func (c *Component) buildAssembledSystemPrompt(agent *semdragons.Agent, quest *s
 }
 
 // buildLegacySystemPrompt is the fallback string concatenation path.
-func buildLegacySystemPrompt(agent *semdragons.Agent, quest *semdragons.Quest) string {
+func buildLegacySystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
 	var sb strings.Builder
 
 	if agent.Config.SystemPrompt != "" {
@@ -623,7 +624,7 @@ func buildLegacySystemPrompt(agent *semdragons.Agent, quest *semdragons.Quest) s
 }
 
 // buildUserPrompt constructs the user prompt from quest input.
-func buildUserPrompt(quest *semdragons.Quest) string {
+func buildUserPrompt(quest *domain.Quest) string {
 	if quest.Input == nil {
 		return quest.Description
 	}
@@ -639,7 +640,7 @@ func buildUserPrompt(quest *semdragons.Quest) string {
 
 // resolveCapability builds a capability key from the agent tier and quest primary skill.
 // Falls back through tier-only and then bare "agent-work" keys.
-func (c *Component) resolveCapability(agent *semdragons.Agent, quest *semdragons.Quest) string {
+func (c *Component) resolveCapability(agent *agentprogression.Agent, quest *domain.Quest) string {
 	if c.registry == nil {
 		return "agent-work"
 	}
@@ -671,7 +672,7 @@ func (c *Component) resolveCapability(agent *semdragons.Agent, quest *semdragons
 // this quest. Filters by agent trust tier, required skills, and the quest's
 // AllowedTools whitelist. Uses only root semdragons types to avoid subpackage
 // coupling.
-func (c *Component) toolsForQuest(quest *semdragons.Quest, agent *semdragons.Agent) []agentic.ToolDefinition {
+func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.Agent) []agentic.ToolDefinition {
 	if c.toolRegistry == nil {
 		return nil
 	}
@@ -700,7 +701,7 @@ func (c *Component) toolsForQuest(quest *semdragons.Quest, agent *semdragons.Age
 	return result
 }
 
-func agentHasAnySkill(agent *semdragons.Agent, skills []domain.SkillTag) bool {
+func agentHasAnySkill(agent *agentprogression.Agent, skills []domain.SkillTag) bool {
 	for _, skill := range skills {
 		if agent.HasSkill(skill) {
 			return true
@@ -719,7 +720,7 @@ func toolNameAllowed(allowed []string, name string) bool {
 }
 
 // agentSkillNames returns a list of skill tag strings for the agent.
-func agentSkillNames(agent *semdragons.Agent) []string {
+func agentSkillNames(agent *agentprogression.Agent) []string {
 	names := make([]string, 0, len(agent.SkillProficiencies))
 	for skill := range agent.SkillProficiencies {
 		names = append(names, string(skill))
@@ -744,4 +745,3 @@ func tripleString(triples []message.Triple, predicate string) string {
 	}
 	return ""
 }
-

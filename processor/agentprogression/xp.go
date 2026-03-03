@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
@@ -28,23 +27,23 @@ type XPEngine interface {
 
 // XPContext provides context for XP calculation.
 type XPContext struct {
-	Quest           questboard.Quest          `json:"quest"`
-	Agent           Agent                     `json:"agent"`
-	BattleResult    *questboard.BattleVerdict `json:"battle_result,omitempty"`
-	Duration        time.Duration             `json:"duration"`
-	Streak          int                       `json:"streak"`
-	IsGuildQuest    bool                      `json:"is_guild_quest"`
-	GuildRank       domain.GuildRank          `json:"guild_rank,omitempty"`
-	Attempt         int                       `json:"attempt"`
-	PeerReviewScore *float64                  `json:"peer_review_score,omitempty"`
+	Quest           domain.Quest          `json:"quest"`
+	Agent           Agent                 `json:"agent"`
+	BattleResult    *domain.BattleVerdict `json:"battle_result,omitempty"`
+	Duration        time.Duration         `json:"duration"`
+	Streak          int                   `json:"streak"`
+	IsGuildQuest    bool                  `json:"is_guild_quest"`
+	GuildRank       domain.GuildRank      `json:"guild_rank,omitempty"`
+	Attempt         int                   `json:"attempt"`
+	PeerReviewScore *float64              `json:"peer_review_score,omitempty"`
 }
 
 // PenaltyContext provides context for penalty calculation.
 type PenaltyContext struct {
-	Quest       questboard.Quest `json:"quest"`
-	Agent       Agent            `json:"agent"`
-	FailureType FailureType      `json:"failure_type"`
-	Attempt     int              `json:"attempt"`
+	Quest       domain.Quest `json:"quest"`
+	Agent       Agent        `json:"agent"`
+	FailureType FailureType  `json:"failure_type"`
+	Attempt     int          `json:"attempt"`
 }
 
 // LevelEvent records a level change.

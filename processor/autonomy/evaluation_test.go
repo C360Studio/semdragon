@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semdragons/processor/dmapproval"
@@ -34,7 +34,7 @@ func newTestComponent() *Component {
 
 func TestActionsForState_Idle(t *testing.T) {
 	c := newTestComponent()
-	actions := c.actionsForState(semdragons.AgentIdle)
+	actions := c.actionsForState(domain.AgentIdle)
 	want := []string{"claim_quest", "use_consumable", "shop", "join_guild"}
 
 	if len(actions) != len(want) {
@@ -50,7 +50,7 @@ func TestActionsForState_Idle(t *testing.T) {
 
 func TestActionsForState_OnQuest(t *testing.T) {
 	c := newTestComponent()
-	actions := c.actionsForState(semdragons.AgentOnQuest)
+	actions := c.actionsForState(domain.AgentOnQuest)
 	want := []string{"shop_strategic", "use_consumable"}
 
 	if len(actions) != len(want) {
@@ -66,7 +66,7 @@ func TestActionsForState_OnQuest(t *testing.T) {
 
 func TestActionsForState_InBattle(t *testing.T) {
 	c := newTestComponent()
-	actions := c.actionsForState(semdragons.AgentInBattle)
+	actions := c.actionsForState(domain.AgentInBattle)
 	want := []string{"use_consumable"}
 
 	if len(actions) != len(want) {
@@ -80,7 +80,7 @@ func TestActionsForState_InBattle(t *testing.T) {
 
 func TestActionsForState_Cooldown(t *testing.T) {
 	c := newTestComponent()
-	actions := c.actionsForState(semdragons.AgentCooldown)
+	actions := c.actionsForState(domain.AgentCooldown)
 	want := []string{"use_cooldown_skip", "shop", "join_guild"}
 
 	if len(actions) != len(want) {
@@ -96,7 +96,7 @@ func TestActionsForState_Cooldown(t *testing.T) {
 
 func TestActionsForState_Retired(t *testing.T) {
 	c := newTestComponent()
-	actions := c.actionsForState(semdragons.AgentRetired)
+	actions := c.actionsForState(domain.AgentRetired)
 	if actions != nil {
 		t.Errorf("retired actions: got %v, want nil", actions)
 	}
@@ -114,9 +114,9 @@ func TestActions_ReturnFalseWithoutStore(t *testing.T) {
 		c.joinGuildAction(), // nil guilds guard
 	}
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.nilstore",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  5,
 		XP:     9999,
 		Consumables: map[string]int{
@@ -143,9 +143,9 @@ func TestClaimQuestAction_ShouldExecute_WithSuggestions(t *testing.T) {
 	c := newTestComponent()
 	act := c.claimQuestAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.claim1",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  5,
 	}
 	tracker := &agentTracker{
@@ -164,9 +164,9 @@ func TestClaimQuestAction_ShouldExecute_NoSuggestions(t *testing.T) {
 	c := newTestComponent()
 	act := c.claimQuestAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.claim2",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  5,
 	}
 	tracker := &agentTracker{agent: agent}
@@ -180,9 +180,9 @@ func TestClaimQuestAction_ShouldExecute_NotIdle(t *testing.T) {
 	c := newTestComponent()
 	act := c.claimQuestAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.claim3",
-		Status: semdragons.AgentOnQuest,
+		Status: domain.AgentOnQuest,
 		Level:  5,
 	}
 	tracker := &agentTracker{
@@ -218,9 +218,9 @@ func TestShopAction_ShouldExecute_IdleWithSurplus(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.shopAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:        "test.local.game.board1.agent.shop1",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		XP:        500,
 		XPToLevel: 400, // surplus = 100, threshold = 50
 	}
@@ -235,9 +235,9 @@ func TestShopAction_ShouldExecute_IdleNoSurplus(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.shopAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:        "test.local.game.board1.agent.shop2",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		XP:        300,
 		XPToLevel: 400, // surplus = -100 (negative)
 	}
@@ -252,9 +252,9 @@ func TestShopAction_ShouldExecute_CooldownWithXP(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.shopAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.shop3",
-		Status: semdragons.AgentCooldown,
+		Status: domain.AgentCooldown,
 		XP:     100, // above CooldownShopMinXP (25)
 	}
 	tracker := &agentTracker{agent: agent}
@@ -268,9 +268,9 @@ func TestShopAction_ShouldExecute_CooldownLowXP(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.shopAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.shop4",
-		Status: semdragons.AgentCooldown,
+		Status: domain.AgentCooldown,
 		XP:     10, // below CooldownShopMinXP (25)
 	}
 	tracker := &agentTracker{agent: agent}
@@ -284,9 +284,9 @@ func TestShopAction_ShouldExecute_NilStore(t *testing.T) {
 	c := newTestComponent() // no store
 	act := c.shopAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:        "test.local.game.board1.agent.shop5",
-		Status:    semdragons.AgentIdle,
+		Status:    domain.AgentIdle,
 		XP:        9999,
 		XPToLevel: 100,
 	}
@@ -301,9 +301,9 @@ func TestShopAction_ShouldExecute_OnQuestIsFalse(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.shopAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.shop6",
-		Status: semdragons.AgentOnQuest,
+		Status: domain.AgentOnQuest,
 		XP:     9999,
 	}
 	tracker := &agentTracker{agent: agent}
@@ -323,11 +323,11 @@ func TestShopStrategic_ShouldExecute_OnQuestMissingShield(t *testing.T) {
 	c.store.SeedCatalog(agentstore.DefaultCatalog())
 	act := c.shopStrategicAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.strat1",
-		Status: semdragons.AgentOnQuest,
+		Status: domain.AgentOnQuest,
 		XP:     500,
-		Tier:   semdragons.TierJourneyman, // quality_shield requires Journeyman
+		Tier:   domain.TierJourneyman, // quality_shield requires Journeyman
 	}
 	tracker := &agentTracker{agent: agent}
 
@@ -342,11 +342,11 @@ func TestShopStrategic_ShouldExecute_HasBoth(t *testing.T) {
 	// before reaching ListItems. Both consumables are already owned.
 	act := c.shopStrategicAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.strat2",
-		Status: semdragons.AgentOnQuest,
+		Status: domain.AgentOnQuest,
 		XP:     500,
-		Tier:   semdragons.TierJourneyman,
+		Tier:   domain.TierJourneyman,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableQualityShield): 1,
 			string(agentstore.ConsumableXPBoost):       1,
@@ -363,9 +363,9 @@ func TestShopStrategic_ShouldExecute_NotOnQuest(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.shopStrategicAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.strat3",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		XP:     500,
 	}
 	tracker := &agentTracker{agent: agent}
@@ -383,9 +383,9 @@ func TestUseConsumable_ShouldExecute_IdleWithBoostAndSuggestions(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.useConsumableAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.use1",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableXPBoost): 1,
 		},
@@ -406,9 +406,9 @@ func TestUseConsumable_ShouldExecute_IdleNoConsumables(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.useConsumableAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.use2",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 	}
 	tracker := &agentTracker{
 		agent: agent,
@@ -426,9 +426,9 @@ func TestUseConsumable_ShouldExecute_IdleNoSuggestions(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.useConsumableAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.use3",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableXPBoost): 1,
 		},
@@ -444,9 +444,9 @@ func TestUseConsumable_ShouldExecute_OnQuestWithBoost(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.useConsumableAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.use4",
-		Status: semdragons.AgentOnQuest,
+		Status: domain.AgentOnQuest,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableXPBoost): 1,
 		},
@@ -462,13 +462,13 @@ func TestUseConsumable_ShouldExecute_OnQuestBoostAlreadyActive(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.useConsumableAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.use5",
-		Status: semdragons.AgentOnQuest,
+		Status: domain.AgentOnQuest,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableXPBoost): 1,
 		},
-		ActiveEffects: []semdragons.AgentEffect{
+		ActiveEffects: []agentprogression.AgentEffect{
 			{EffectType: string(agentstore.ConsumableXPBoost), QuestsRemaining: 1},
 		},
 	}
@@ -483,9 +483,9 @@ func TestUseConsumable_ShouldExecute_InBattleWithShield(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.useConsumableAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.use6",
-		Status: semdragons.AgentInBattle,
+		Status: domain.AgentInBattle,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableQualityShield): 1,
 		},
@@ -501,13 +501,13 @@ func TestUseConsumable_ShouldExecute_InBattleShieldAlreadyActive(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.useConsumableAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.use7",
-		Status: semdragons.AgentInBattle,
+		Status: domain.AgentInBattle,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableQualityShield): 1,
 		},
-		ActiveEffects: []semdragons.AgentEffect{
+		ActiveEffects: []agentprogression.AgentEffect{
 			{EffectType: string(agentstore.ConsumableQualityShield), QuestsRemaining: 1},
 		},
 	}
@@ -527,9 +527,9 @@ func TestUseCooldownSkip_ShouldExecute_CooldownWithSkip(t *testing.T) {
 	act := c.useCooldownSkipAction()
 
 	future := time.Now().Add(5 * time.Minute) // 5min remaining > 30s threshold
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            "test.local.game.board1.agent.skip1",
-		Status:        semdragons.AgentCooldown,
+		Status:        domain.AgentCooldown,
 		CooldownUntil: &future,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableCooldownSkip): 1,
@@ -547,9 +547,9 @@ func TestUseCooldownSkip_ShouldExecute_AlmostDone(t *testing.T) {
 	act := c.useCooldownSkipAction()
 
 	soon := time.Now().Add(5 * time.Second) // 5s remaining < 30s threshold
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            "test.local.game.board1.agent.skip2",
-		Status:        semdragons.AgentCooldown,
+		Status:        domain.AgentCooldown,
 		CooldownUntil: &soon,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableCooldownSkip): 1,
@@ -567,9 +567,9 @@ func TestUseCooldownSkip_ShouldExecute_NoConsumable(t *testing.T) {
 	act := c.useCooldownSkipAction()
 
 	future := time.Now().Add(5 * time.Minute)
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            "test.local.game.board1.agent.skip3",
-		Status:        semdragons.AgentCooldown,
+		Status:        domain.AgentCooldown,
 		CooldownUntil: &future,
 	}
 	tracker := &agentTracker{agent: agent}
@@ -583,9 +583,9 @@ func TestUseCooldownSkip_ShouldExecute_NilCooldownUntil(t *testing.T) {
 	c := newTestComponentWithStore()
 	act := c.useCooldownSkipAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.skip4",
-		Status: semdragons.AgentCooldown,
+		Status: domain.AgentCooldown,
 		Consumables: map[string]int{
 			string(agentstore.ConsumableCooldownSkip): 1,
 		},
@@ -603,8 +603,8 @@ func TestUseCooldownSkip_ShouldExecute_NilCooldownUntil(t *testing.T) {
 // =============================================================================
 
 func TestHasActiveEffect_Found(t *testing.T) {
-	agent := &semdragons.Agent{
-		ActiveEffects: []semdragons.AgentEffect{
+	agent := &agentprogression.Agent{
+		ActiveEffects: []agentprogression.AgentEffect{
 			{EffectType: "xp_boost", QuestsRemaining: 1},
 		},
 	}
@@ -614,8 +614,8 @@ func TestHasActiveEffect_Found(t *testing.T) {
 }
 
 func TestHasActiveEffect_Expired(t *testing.T) {
-	agent := &semdragons.Agent{
-		ActiveEffects: []semdragons.AgentEffect{
+	agent := &agentprogression.Agent{
+		ActiveEffects: []agentprogression.AgentEffect{
 			{EffectType: "xp_boost", QuestsRemaining: 0},
 		},
 	}
@@ -625,14 +625,14 @@ func TestHasActiveEffect_Expired(t *testing.T) {
 }
 
 func TestHasActiveEffect_NotPresent(t *testing.T) {
-	agent := &semdragons.Agent{}
+	agent := &agentprogression.Agent{}
 	if hasActiveEffect(agent, "xp_boost") {
 		t.Error("hasActiveEffect should return false when no effects present")
 	}
 }
 
 func TestHasConsumable_Found(t *testing.T) {
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		Consumables: map[string]int{"xp_boost": 2},
 	}
 	if !hasConsumable(agent, "xp_boost") {
@@ -641,7 +641,7 @@ func TestHasConsumable_Found(t *testing.T) {
 }
 
 func TestHasConsumable_Zero(t *testing.T) {
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		Consumables: map[string]int{"xp_boost": 0},
 	}
 	if hasConsumable(agent, "xp_boost") {
@@ -650,7 +650,7 @@ func TestHasConsumable_Zero(t *testing.T) {
 }
 
 func TestHasConsumable_NilMap(t *testing.T) {
-	agent := &semdragons.Agent{}
+	agent := &agentprogression.Agent{}
 	if hasConsumable(agent, "xp_boost") {
 		t.Error("hasConsumable should return false when Consumables map is nil")
 	}
@@ -661,7 +661,7 @@ func TestPickBestItem_PrefersToolsOverConsumables(t *testing.T) {
 		{ID: "cheap_consumable", ItemType: agentstore.ItemTypeConsumable, XPCost: 50},
 		{ID: "expensive_tool", ItemType: agentstore.ItemTypeTool, XPCost: 200},
 	}
-	agent := &semdragons.Agent{}
+	agent := &agentprogression.Agent{}
 	result := pickBestItem(agent, items, 300)
 	if result == nil || result.ID != "expensive_tool" {
 		t.Errorf("pickBestItem should prefer tool, got %v", result)
@@ -673,8 +673,8 @@ func TestPickBestItem_SkipsOwnedTools(t *testing.T) {
 		{ID: "owned_tool", ItemType: agentstore.ItemTypeTool, XPCost: 200},
 		{ID: "new_consumable", ItemType: agentstore.ItemTypeConsumable, XPCost: 50},
 	}
-	agent := &semdragons.Agent{
-		OwnedTools: map[string]semdragons.OwnedTool{
+	agent := &agentprogression.Agent{
+		OwnedTools: map[string]agentprogression.OwnedTool{
 			"owned_tool": {},
 		},
 	}
@@ -688,7 +688,7 @@ func TestPickBestItem_CapsConsumableAt2(t *testing.T) {
 	items := []agentstore.StoreItem{
 		{ID: "stocked_consumable", ItemType: agentstore.ItemTypeConsumable, XPCost: 50},
 	}
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		Consumables: map[string]int{"stocked_consumable": 2},
 	}
 	result := pickBestItem(agent, items, 300)
@@ -702,7 +702,7 @@ func TestPickBestItem_PicksMostExpensiveTool(t *testing.T) {
 		{ID: "cheap_tool", ItemType: agentstore.ItemTypeTool, XPCost: 50},
 		{ID: "expensive_tool", ItemType: agentstore.ItemTypeTool, XPCost: 200},
 	}
-	agent := &semdragons.Agent{}
+	agent := &agentprogression.Agent{}
 	result := pickBestItem(agent, items, 300)
 	if result == nil || result.ID != "expensive_tool" {
 		t.Errorf("pickBestItem should pick most expensive affordable tool, got %v", result)
@@ -714,7 +714,7 @@ func TestPickBestItem_RespectsBudgetLimit(t *testing.T) {
 		{ID: "too_expensive", ItemType: agentstore.ItemTypeTool, XPCost: 500},
 		{ID: "affordable", ItemType: agentstore.ItemTypeConsumable, XPCost: 50},
 	}
-	agent := &semdragons.Agent{}
+	agent := &agentprogression.Agent{}
 	result := pickBestItem(agent, items, 100)
 	if result == nil || result.ID != "affordable" {
 		t.Errorf("pickBestItem should skip items over budget, got %v", result)
@@ -725,7 +725,7 @@ func TestPickBestItem_NothingAffordable(t *testing.T) {
 	items := []agentstore.StoreItem{
 		{ID: "expensive", ItemType: agentstore.ItemTypeTool, XPCost: 500},
 	}
-	agent := &semdragons.Agent{}
+	agent := &agentprogression.Agent{}
 	result := pickBestItem(agent, items, 100)
 	if result != nil {
 		t.Errorf("pickBestItem should return nil when nothing is affordable, got %v", result)
@@ -733,7 +733,7 @@ func TestPickBestItem_NothingAffordable(t *testing.T) {
 }
 
 func TestPickBestItem_EmptyItems(t *testing.T) {
-	agent := &semdragons.Agent{}
+	agent := &agentprogression.Agent{}
 	result := pickBestItem(agent, nil, 300)
 	if result != nil {
 		t.Errorf("pickBestItem should return nil for empty items, got %v", result)
@@ -744,14 +744,14 @@ func TestIntervalForStatus(t *testing.T) {
 	cfg := DefaultConfig()
 
 	tests := []struct {
-		status semdragons.AgentStatus
+		status domain.AgentStatus
 		want   time.Duration
 	}{
-		{semdragons.AgentIdle, 5 * time.Second},
-		{semdragons.AgentOnQuest, 30 * time.Second},
-		{semdragons.AgentInBattle, 60 * time.Second},
-		{semdragons.AgentCooldown, 15 * time.Second},
-		{semdragons.AgentRetired, 0},
+		{domain.AgentIdle, 5 * time.Second},
+		{domain.AgentOnQuest, 30 * time.Second},
+		{domain.AgentInBattle, 60 * time.Second},
+		{domain.AgentCooldown, 15 * time.Second},
+		{domain.AgentRetired, 0},
 	}
 
 	for _, tt := range tests {
@@ -823,18 +823,18 @@ func TestBackoffOnlyIdle(t *testing.T) {
 		trackers: make(map[string]*agentTracker),
 	}
 
-	idleInterval := cfg.IntervalForStatus(semdragons.AgentIdle)
+	idleInterval := cfg.IntervalForStatus(domain.AgentIdle)
 
 	// Set up idle agent tracker
 	comp.trackers["idle-agent"] = &agentTracker{
-		agent:    &semdragons.Agent{Status: semdragons.AgentIdle},
+		agent:    &agentprogression.Agent{Status: domain.AgentIdle},
 		interval: idleInterval,
 	}
 
 	// Set up on_quest agent tracker
-	questInterval := cfg.IntervalForStatus(semdragons.AgentOnQuest)
+	questInterval := cfg.IntervalForStatus(domain.AgentOnQuest)
 	comp.trackers["quest-agent"] = &agentTracker{
-		agent:    &semdragons.Agent{Status: semdragons.AgentOnQuest},
+		agent:    &agentprogression.Agent{Status: domain.AgentOnQuest},
 		interval: questInterval,
 	}
 
@@ -866,7 +866,7 @@ func TestBackoffCapsAtMax(t *testing.T) {
 
 	// Start with interval already near max
 	comp.trackers["agent"] = &agentTracker{
-		agent:    &semdragons.Agent{Status: semdragons.AgentIdle},
+		agent:    &agentprogression.Agent{Status: domain.AgentIdle},
 		interval: 9 * time.Second,
 	}
 
@@ -1340,12 +1340,12 @@ func TestResetHeartbeatInterval_ResetsBackedOffInterval(t *testing.T) {
 		trackers: make(map[string]*agentTracker),
 	}
 
-	idleInterval := cfg.IntervalForStatus(semdragons.AgentIdle)
+	idleInterval := cfg.IntervalForStatus(domain.AgentIdle)
 
 	// Create a tracker whose interval has been backed off twice.
 	backedOff := time.Duration(float64(idleInterval) * cfg.BackoffFactor * cfg.BackoffFactor)
 	comp.trackers["agent"] = &agentTracker{
-		agent:    &semdragons.Agent{Status: semdragons.AgentIdle},
+		agent:    &agentprogression.Agent{Status: domain.AgentIdle},
 		interval: backedOff,
 	}
 
@@ -1363,11 +1363,11 @@ func TestResetHeartbeatInterval_NoopWhenAlreadyAtBase(t *testing.T) {
 		trackers: make(map[string]*agentTracker),
 	}
 
-	idleInterval := cfg.IntervalForStatus(semdragons.AgentIdle)
+	idleInterval := cfg.IntervalForStatus(domain.AgentIdle)
 
 	// Tracker already at the base idle interval — reset should leave it unchanged.
 	comp.trackers["agent"] = &agentTracker{
-		agent:    &semdragons.Agent{Status: semdragons.AgentIdle},
+		agent:    &agentprogression.Agent{Status: domain.AgentIdle},
 		interval: idleInterval,
 	}
 
@@ -1390,9 +1390,9 @@ func TestCheckCooldownExpiry_NilCooldownUntil(t *testing.T) {
 
 	// An agent in cooldown with no CooldownUntil set must return false
 	// without touching the graph client (which is nil here).
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            "test.local.game.board1.agent.nilcd",
-		Status:        semdragons.AgentCooldown,
+		Status:        domain.AgentCooldown,
 		CooldownUntil: nil,
 	}
 
@@ -1410,9 +1410,9 @@ func TestCheckCooldownExpiry_FutureCooldownUntil(t *testing.T) {
 
 	// Cooldown that expires one hour from now should not be cleared.
 	future := time.Now().Add(1 * time.Hour)
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:            "test.local.game.board1.agent.futurecd",
-		Status:        semdragons.AgentCooldown,
+		Status:        domain.AgentCooldown,
 		CooldownUntil: &future,
 	}
 
@@ -1475,9 +1475,9 @@ func TestJoinGuild_ShouldExecute_IdleUnguilded(t *testing.T) {
 	c := newTestComponentWithGuilds()
 	act := c.joinGuildAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.guild1",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  5, // above GuildJoinMinLevel (3)
 	}
 	tracker := &agentTracker{agent: agent}
@@ -1491,9 +1491,9 @@ func TestJoinGuild_ShouldExecute_CooldownUnguilded(t *testing.T) {
 	c := newTestComponentWithGuilds()
 	act := c.joinGuildAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.guild2",
-		Status: semdragons.AgentCooldown,
+		Status: domain.AgentCooldown,
 		Level:  5,
 	}
 	tracker := &agentTracker{agent: agent}
@@ -1507,9 +1507,9 @@ func TestJoinGuild_ShouldExecute_OnQuest(t *testing.T) {
 	c := newTestComponentWithGuilds()
 	act := c.joinGuildAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.guild3",
-		Status: semdragons.AgentOnQuest,
+		Status: domain.AgentOnQuest,
 		Level:  5,
 	}
 	tracker := &agentTracker{agent: agent}
@@ -1523,9 +1523,9 @@ func TestJoinGuild_ShouldExecute_InBattle(t *testing.T) {
 	c := newTestComponentWithGuilds()
 	act := c.joinGuildAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.guild4",
-		Status: semdragons.AgentInBattle,
+		Status: domain.AgentInBattle,
 		Level:  5,
 	}
 	tracker := &agentTracker{agent: agent}
@@ -1539,9 +1539,9 @@ func TestJoinGuild_ShouldExecute_NilGuilds(t *testing.T) {
 	c := newTestComponent() // no guilds component
 	act := c.joinGuildAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.guild5",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  10,
 	}
 	tracker := &agentTracker{agent: agent}
@@ -1555,9 +1555,9 @@ func TestJoinGuild_ShouldExecute_BelowMinLevel(t *testing.T) {
 	c := newTestComponentWithGuilds()
 	act := c.joinGuildAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.guild6",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  1, // below GuildJoinMinLevel (3)
 	}
 	tracker := &agentTracker{agent: agent}
@@ -1571,9 +1571,9 @@ func TestJoinGuild_ShouldExecute_AtMinLevel(t *testing.T) {
 	c := newTestComponentWithGuilds()
 	act := c.joinGuildAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.guild7",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  3, // exactly at GuildJoinMinLevel (3)
 	}
 	tracker := &agentTracker{agent: agent}
@@ -1587,11 +1587,11 @@ func TestJoinGuild_ShouldExecute_MaxGuildsReached(t *testing.T) {
 	c := newTestComponentWithGuilds()
 	act := c.joinGuildAction()
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     "test.local.game.board1.agent.guild8",
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  5,
-		Guilds: []semdragons.GuildID{"guild1", "guild2", "guild3"}, // 3 = MaxGuildsPerAgent
+		Guilds: []domain.GuildID{"guild1", "guild2", "guild3"}, // 3 = MaxGuildsPerAgent
 	}
 	tracker := &agentTracker{agent: agent}
 
@@ -1606,17 +1606,17 @@ func TestJoinGuild_ShouldExecute_MaxGuildsReached(t *testing.T) {
 
 func TestScoreGuilds_FiltersFullGuilds(t *testing.T) {
 	c := newTestComponentWithGuilds()
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score1",
 		Level: 5,
 	}
-	guilds := []*semdragons.Guild{
+	guilds := []*domain.Guild{
 		{
 			ID:         "guild.full",
 			Name:       "Full Guild",
 			Status:     "active",
 			MaxMembers: 2,
-			Members:    []semdragons.GuildMember{{}, {}}, // full
+			Members:    []domain.GuildMember{{}, {}}, // full
 			Reputation: 0.9,
 		},
 	}
@@ -1628,11 +1628,11 @@ func TestScoreGuilds_FiltersFullGuilds(t *testing.T) {
 
 func TestScoreGuilds_FiltersBelowMinLevel(t *testing.T) {
 	c := newTestComponentWithGuilds()
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score2",
 		Level: 3,
 	}
-	guilds := []*semdragons.Guild{
+	guilds := []*domain.Guild{
 		{
 			ID:         "guild.highlevel",
 			Name:       "High Level Guild",
@@ -1650,11 +1650,11 @@ func TestScoreGuilds_FiltersBelowMinLevel(t *testing.T) {
 
 func TestScoreGuilds_FiltersExistingMembers(t *testing.T) {
 	c := newTestComponentWithGuilds()
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score3",
 		Level: 5,
 	}
-	guilds := []*semdragons.Guild{
+	guilds := []*domain.Guild{
 		{
 			ID:         "guild.already",
 			Name:       "Already Member",
@@ -1672,11 +1672,11 @@ func TestScoreGuilds_FiltersExistingMembers(t *testing.T) {
 
 func TestScoreGuilds_RanksByScore(t *testing.T) {
 	c := newTestComponentWithGuilds()
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score4",
 		Level: 5,
 	}
-	guilds := []*semdragons.Guild{
+	guilds := []*domain.Guild{
 		{
 			ID:          "guild.low",
 			Name:        "Low Rep",
@@ -1714,14 +1714,14 @@ func TestScoreGuilds_ReturnsTopN(t *testing.T) {
 		trackers: make(map[string]*agentTracker),
 		guilds:   &guildformation.Component{},
 	}
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score5",
 		Level: 5,
 	}
-	guilds := make([]*semdragons.Guild, 5)
+	guilds := make([]*domain.Guild, 5)
 	for i := range guilds {
-		guilds[i] = &semdragons.Guild{
-			ID:         semdragons.GuildID(fmt.Sprintf("guild.%d", i)),
+		guilds[i] = &domain.Guild{
+			ID:         domain.GuildID(fmt.Sprintf("guild.%d", i)),
 			Name:       fmt.Sprintf("Guild %d", i),
 			Status:     "active",
 			MaxMembers: 20,
@@ -1736,7 +1736,7 @@ func TestScoreGuilds_ReturnsTopN(t *testing.T) {
 
 func TestScoreGuilds_EmptyList(t *testing.T) {
 	c := newTestComponentWithGuilds()
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score6",
 		Level: 5,
 	}
@@ -1748,15 +1748,15 @@ func TestScoreGuilds_EmptyList(t *testing.T) {
 
 func TestScoreGuilds_SkillAffinity(t *testing.T) {
 	c := newTestComponentWithGuilds()
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score7",
 		Level: 5,
-		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"analysis":  {},
 			"synthesis": {},
 		},
 	}
-	guilds := []*semdragons.Guild{
+	guilds := []*domain.Guild{
 		{
 			ID:          "guild.match",
 			Name:        "Matching Guild",
@@ -1950,12 +1950,12 @@ func TestConfigSchema_ApprovalProperties(t *testing.T) {
 // =============================================================================
 
 func TestGuildSkillAffinity_FullOverlap(t *testing.T) {
-	agent := &semdragons.Agent{
-		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+	agent := &agentprogression.Agent{
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"analysis": {},
 		},
 	}
-	guild := &semdragons.Guild{
+	guild := &domain.Guild{
 		QuestTypes: []string{"analysis"},
 	}
 	got := guildSkillAffinity(agent, guild)
@@ -1965,12 +1965,12 @@ func TestGuildSkillAffinity_FullOverlap(t *testing.T) {
 }
 
 func TestGuildSkillAffinity_NoOverlap(t *testing.T) {
-	agent := &semdragons.Agent{
-		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+	agent := &agentprogression.Agent{
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"analysis": {},
 		},
 	}
-	guild := &semdragons.Guild{
+	guild := &domain.Guild{
 		QuestTypes: []string{"combat"},
 	}
 	got := guildSkillAffinity(agent, guild)
@@ -1980,13 +1980,13 @@ func TestGuildSkillAffinity_NoOverlap(t *testing.T) {
 }
 
 func TestGuildSkillAffinity_PartialOverlap(t *testing.T) {
-	agent := &semdragons.Agent{
-		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+	agent := &agentprogression.Agent{
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"analysis":  {},
 			"synthesis": {},
 		},
 	}
-	guild := &semdragons.Guild{
+	guild := &domain.Guild{
 		QuestTypes: []string{"analysis", "combat"},
 	}
 	got := guildSkillAffinity(agent, guild)
@@ -1996,12 +1996,12 @@ func TestGuildSkillAffinity_PartialOverlap(t *testing.T) {
 }
 
 func TestGuildSkillAffinity_NoQuestTypes(t *testing.T) {
-	agent := &semdragons.Agent{
-		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+	agent := &agentprogression.Agent{
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"analysis": {},
 		},
 	}
-	guild := &semdragons.Guild{} // no QuestTypes
+	guild := &domain.Guild{} // no QuestTypes
 	got := guildSkillAffinity(agent, guild)
 	if got != 0.5 {
 		t.Errorf("guildSkillAffinity = %.2f, want 0.5 (neutral) for empty QuestTypes", got)
@@ -2009,8 +2009,8 @@ func TestGuildSkillAffinity_NoQuestTypes(t *testing.T) {
 }
 
 func TestGuildSkillAffinity_NoAgentSkills(t *testing.T) {
-	agent := &semdragons.Agent{} // no skills
-	guild := &semdragons.Guild{
+	agent := &agentprogression.Agent{} // no skills
+	guild := &domain.Guild{
 		QuestTypes: []string{"analysis"},
 	}
 	got := guildSkillAffinity(agent, guild)
@@ -2020,12 +2020,12 @@ func TestGuildSkillAffinity_NoAgentSkills(t *testing.T) {
 }
 
 func TestScoreGuild_HighReputation(t *testing.T) {
-	agent := &semdragons.Agent{Level: 5}
-	guild := &semdragons.Guild{
+	agent := &agentprogression.Agent{Level: 5}
+	guild := &domain.Guild{
 		Reputation:  0.9,
 		SuccessRate: 0.5,
 		MaxMembers:  20,
-		Members:     []semdragons.GuildMember{{}}, // 1 member, 19 open
+		Members:     []domain.GuildMember{{}}, // 1 member, 19 open
 	}
 	score, reason := scoreGuild(agent, guild)
 	if score <= 0 {
@@ -2037,8 +2037,8 @@ func TestScoreGuild_HighReputation(t *testing.T) {
 }
 
 func TestScoreGuild_NoCapacity(t *testing.T) {
-	agent := &semdragons.Agent{Level: 5}
-	guild := &semdragons.Guild{
+	agent := &agentprogression.Agent{Level: 5}
+	guild := &domain.Guild{
 		Reputation: 0.5,
 		MaxMembers: 0, // no cap
 	}

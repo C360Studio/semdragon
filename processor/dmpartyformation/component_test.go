@@ -20,6 +20,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -165,9 +166,9 @@ func TestFormParty_Balanced_SingleAgent(t *testing.T) {
 	comp := setupPartyComponent(t, client, "form-balanced-single")
 	defer comp.Stop(5 * time.Second)
 
-	quest := buildQuest(comp.boardConfig, "solo-quest", semdragons.DifficultyTrivial, nil, 1)
-	agents := []semdragons.Agent{
-		buildAgent(comp.boardConfig, "lead-agent", 16, semdragons.TierMaster, nil),
+	quest := buildQuest(comp.boardConfig, "solo-quest", domain.DifficultyTrivial, nil, 1)
+	agents := []agentprogression.Agent{
+		buildAgent(comp.boardConfig, "lead-agent", 16, domain.TierMaster, nil),
 	}
 
 	party, err := comp.FormParty(ctx, quest, domain.PartyStrategyBalanced, agents)
@@ -198,16 +199,16 @@ func TestFormParty_Balanced_MultipleAgents_CoverSkills(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Quest requires both CodeGen and Analysis.
-	quest := buildQuest(comp.boardConfig, "multi-skill-quest", semdragons.DifficultyModerate,
-		[]semdragons.SkillTag{semdragons.SkillCodeGen, semdragons.SkillAnalysis}, 2)
+	quest := buildQuest(comp.boardConfig, "multi-skill-quest", domain.DifficultyModerate,
+		[]domain.SkillTag{domain.SkillCodeGen, domain.SkillAnalysis}, 2)
 
-	agents := []semdragons.Agent{
-		buildAgentWithSkills(comp.boardConfig, "coder-agent", 16, semdragons.TierMaster,
-			[]semdragons.SkillTag{semdragons.SkillCodeGen}),
-		buildAgentWithSkills(comp.boardConfig, "analyst-agent", 7, semdragons.TierJourneyman,
-			[]semdragons.SkillTag{semdragons.SkillAnalysis}),
-		buildAgentWithSkills(comp.boardConfig, "reviewer-agent", 5, semdragons.TierApprentice,
-			[]semdragons.SkillTag{semdragons.SkillCodeReview}),
+	agents := []agentprogression.Agent{
+		buildAgentWithSkills(comp.boardConfig, "coder-agent", 16, domain.TierMaster,
+			[]domain.SkillTag{domain.SkillCodeGen}),
+		buildAgentWithSkills(comp.boardConfig, "analyst-agent", 7, domain.TierJourneyman,
+			[]domain.SkillTag{domain.SkillAnalysis}),
+		buildAgentWithSkills(comp.boardConfig, "reviewer-agent", 5, domain.TierApprentice,
+			[]domain.SkillTag{domain.SkillCodeReview}),
 	}
 
 	party, err := comp.FormParty(ctx, quest, domain.PartyStrategyBalanced, agents)
@@ -233,7 +234,7 @@ func TestFormParty_NoAgents_Errors(t *testing.T) {
 	comp := setupPartyComponent(t, client, "form-no-agents")
 	defer comp.Stop(5 * time.Second)
 
-	quest := buildQuest(comp.boardConfig, "empty-party-quest", semdragons.DifficultyTrivial, nil, 1)
+	quest := buildQuest(comp.boardConfig, "empty-party-quest", domain.DifficultyTrivial, nil, 1)
 
 	_, err := comp.FormParty(ctx, quest, domain.PartyStrategyBalanced, nil)
 	if err == nil {
@@ -253,14 +254,14 @@ func TestFormParty_Specialist_PrefersGuildAgents(t *testing.T) {
 	comp := setupPartyComponent(t, client, "form-specialist")
 	defer comp.Stop(5 * time.Second)
 
-	guildID := semdragons.GuildID(comp.boardConfig.GuildEntityID("code-guild"))
+	guildID := domain.GuildID(comp.boardConfig.GuildEntityID("code-guild"))
 
-	quest := buildQuestWithGuild(comp.boardConfig, "specialist-quest", semdragons.DifficultyModerate, guildID)
+	quest := buildQuestWithGuild(comp.boardConfig, "specialist-quest", domain.DifficultyModerate, guildID)
 
-	guildAgent := buildAgentInGuild(comp.boardConfig, "guild-coder", 16, semdragons.TierMaster, guildID)
-	nonGuildAgent := buildAgent(comp.boardConfig, "random-agent", 12, semdragons.TierExpert, nil)
+	guildAgent := buildAgentInGuild(comp.boardConfig, "guild-coder", 16, domain.TierMaster, guildID)
+	nonGuildAgent := buildAgent(comp.boardConfig, "random-agent", 12, domain.TierExpert, nil)
 
-	agents := []semdragons.Agent{guildAgent, nonGuildAgent}
+	agents := []agentprogression.Agent{guildAgent, nonGuildAgent}
 
 	party, err := comp.FormParty(ctx, quest, domain.PartyStrategySpecialist, agents)
 	if err != nil {
@@ -287,14 +288,14 @@ func TestFormParty_Mentor_RequiresMasterLead(t *testing.T) {
 	comp := setupPartyComponent(t, client, "form-mentor")
 	defer comp.Stop(5 * time.Second)
 
-	quest := buildQuest(comp.boardConfig, "mentor-quest", semdragons.DifficultyEpic, nil, 2)
+	quest := buildQuest(comp.boardConfig, "mentor-quest", domain.DifficultyEpic, nil, 2)
 
 	// One master who can lead, plus two apprentices.
-	mentor := buildAgent(comp.boardConfig, "master-agent", 16, semdragons.TierMaster, nil)
-	apprentice1 := buildAgent(comp.boardConfig, "apprentice-1", 3, semdragons.TierApprentice, nil)
-	apprentice2 := buildAgent(comp.boardConfig, "apprentice-2", 5, semdragons.TierApprentice, nil)
+	mentor := buildAgent(comp.boardConfig, "master-agent", 16, domain.TierMaster, nil)
+	apprentice1 := buildAgent(comp.boardConfig, "apprentice-1", 3, domain.TierApprentice, nil)
+	apprentice2 := buildAgent(comp.boardConfig, "apprentice-2", 5, domain.TierApprentice, nil)
 
-	agents := []semdragons.Agent{mentor, apprentice1, apprentice2}
+	agents := []agentprogression.Agent{mentor, apprentice1, apprentice2}
 
 	party, err := comp.FormParty(ctx, quest, domain.PartyStrategyMentor, agents)
 	if err != nil {
@@ -314,12 +315,12 @@ func TestFormParty_Mentor_NoLeadCapable_Errors(t *testing.T) {
 	comp := setupPartyComponent(t, client, "form-mentor-nomaster")
 	defer comp.Stop(5 * time.Second)
 
-	quest := buildQuest(comp.boardConfig, "no-master-quest", semdragons.DifficultyModerate, nil, 2)
+	quest := buildQuest(comp.boardConfig, "no-master-quest", domain.DifficultyModerate, nil, 2)
 
 	// Only apprentices - none can lead.
-	agents := []semdragons.Agent{
-		buildAgent(comp.boardConfig, "appr-1", 3, semdragons.TierApprentice, nil),
-		buildAgent(comp.boardConfig, "appr-2", 5, semdragons.TierApprentice, nil),
+	agents := []agentprogression.Agent{
+		buildAgent(comp.boardConfig, "appr-1", 3, domain.TierApprentice, nil),
+		buildAgent(comp.boardConfig, "appr-2", 5, domain.TierApprentice, nil),
 	}
 
 	_, err := comp.FormParty(ctx, quest, domain.PartyStrategyMentor, agents)
@@ -340,14 +341,14 @@ func TestFormParty_Minimal_SingleMemberIfNoPartyRequired(t *testing.T) {
 	comp := setupPartyComponent(t, client, "form-minimal")
 	defer comp.Stop(5 * time.Second)
 
-	quest := buildQuest(comp.boardConfig, "minimal-quest", semdragons.DifficultyTrivial, nil, 1)
+	quest := buildQuest(comp.boardConfig, "minimal-quest", domain.DifficultyTrivial, nil, 1)
 	// Ensure PartyRequired is false and MinPartySize = 1.
 	quest.PartyRequired = false
 	quest.MinPartySize = 1
 
-	agents := []semdragons.Agent{
-		buildAgent(comp.boardConfig, "solo-master", 16, semdragons.TierMaster, nil),
-		buildAgent(comp.boardConfig, "extra-agent", 12, semdragons.TierExpert, nil),
+	agents := []agentprogression.Agent{
+		buildAgent(comp.boardConfig, "solo-master", 16, domain.TierMaster, nil),
+		buildAgent(comp.boardConfig, "extra-agent", 12, domain.TierExpert, nil),
 	}
 
 	party, err := comp.FormParty(ctx, quest, domain.PartyStrategyMinimal, agents)
@@ -371,13 +372,13 @@ func TestRankAgentsForQuest_ReturnsRankedList(t *testing.T) {
 	comp := setupPartyComponent(t, client, "rank-agents")
 	defer comp.Stop(5 * time.Second)
 
-	quest := buildQuest(comp.boardConfig, "ranking-quest", semdragons.DifficultyModerate,
-		[]semdragons.SkillTag{semdragons.SkillCodeGen}, 1)
+	quest := buildQuest(comp.boardConfig, "ranking-quest", domain.DifficultyModerate,
+		[]domain.SkillTag{domain.SkillCodeGen}, 1)
 
-	agents := []semdragons.Agent{
-		buildAgentWithSkills(comp.boardConfig, "skilled-coder", 12, semdragons.TierExpert,
-			[]semdragons.SkillTag{semdragons.SkillCodeGen}),
-		buildAgent(comp.boardConfig, "no-match-agent", 8, semdragons.TierJourneyman, nil),
+	agents := []agentprogression.Agent{
+		buildAgentWithSkills(comp.boardConfig, "skilled-coder", 12, domain.TierExpert,
+			[]domain.SkillTag{domain.SkillCodeGen}),
+		buildAgent(comp.boardConfig, "no-match-agent", 8, domain.TierJourneyman, nil),
 	}
 
 	ranked := comp.RankAgentsForQuest(agents, quest)
@@ -405,9 +406,9 @@ func TestRankAgentsForQuest_NotRunning_ReturnsNil(t *testing.T) {
 	}
 	// Intentionally do NOT call Start.
 
-	quest := buildQuest(comp.boardConfig, "unstarted-quest", semdragons.DifficultyTrivial, nil, 1)
-	agents := []semdragons.Agent{
-		buildAgent(comp.boardConfig, "idle-agent", 5, semdragons.TierApprentice, nil),
+	quest := buildQuest(comp.boardConfig, "unstarted-quest", domain.DifficultyTrivial, nil, 1)
+	agents := []agentprogression.Agent{
+		buildAgent(comp.boardConfig, "idle-agent", 5, domain.TierApprentice, nil),
 	}
 
 	ranked := comp.RankAgentsForQuest(agents, quest)
@@ -427,13 +428,13 @@ func TestSuggestPartyMembers_ReturnsSortedByScore(t *testing.T) {
 	comp := setupPartyComponent(t, client, "suggest-members")
 	defer comp.Stop(5 * time.Second)
 
-	quest := buildQuest(comp.boardConfig, "suggest-quest", semdragons.DifficultyModerate,
-		[]semdragons.SkillTag{semdragons.SkillCodeGen}, 2)
+	quest := buildQuest(comp.boardConfig, "suggest-quest", domain.DifficultyModerate,
+		[]domain.SkillTag{domain.SkillCodeGen}, 2)
 
-	agents := []semdragons.Agent{
-		buildAgentWithSkills(comp.boardConfig, "perfect-match", 12, semdragons.TierExpert,
-			[]semdragons.SkillTag{semdragons.SkillCodeGen}),
-		buildAgent(comp.boardConfig, "no-match", 5, semdragons.TierApprentice, nil),
+	agents := []agentprogression.Agent{
+		buildAgentWithSkills(comp.boardConfig, "perfect-match", 12, domain.TierExpert,
+			[]domain.SkillTag{domain.SkillCodeGen}),
+		buildAgent(comp.boardConfig, "no-match", 5, domain.TierApprentice, nil),
 	}
 
 	suggestions, err := comp.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)
@@ -459,11 +460,11 @@ func TestSuggestPartyMembers_CanLeadFlagAccurate(t *testing.T) {
 	comp := setupPartyComponent(t, client, "suggest-canlead")
 	defer comp.Stop(5 * time.Second)
 
-	quest := buildQuest(comp.boardConfig, "canlead-quest", semdragons.DifficultyModerate, nil, 2)
+	quest := buildQuest(comp.boardConfig, "canlead-quest", domain.DifficultyModerate, nil, 2)
 
-	masterAgent := buildAgent(comp.boardConfig, "master-dm", 16, semdragons.TierMaster, nil)
-	apprenticeAgent := buildAgent(comp.boardConfig, "appr-dm", 3, semdragons.TierApprentice, nil)
-	agents := []semdragons.Agent{masterAgent, apprenticeAgent}
+	masterAgent := buildAgent(comp.boardConfig, "master-dm", 16, domain.TierMaster, nil)
+	apprenticeAgent := buildAgent(comp.boardConfig, "appr-dm", 3, domain.TierApprentice, nil)
+	agents := []agentprogression.Agent{masterAgent, apprenticeAgent}
 
 	suggestions, err := comp.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)
 	if err != nil {
@@ -471,7 +472,7 @@ func TestSuggestPartyMembers_CanLeadFlagAccurate(t *testing.T) {
 	}
 
 	for _, s := range suggestions {
-		perms := semdragons.TierPermissionsFor(s.Agent.Tier)
+		perms := domain.TierPermissionsFor(s.Agent.Tier)
 		if s.CanLead != perms.CanLeadParty {
 			t.Errorf("Agent %v: CanLead = %v, want %v based on tier permissions",
 				s.Agent.ID, s.CanLead, perms.CanLeadParty)
@@ -486,15 +487,15 @@ func TestSuggestPartyMembers_SkillsCoveredPopulated(t *testing.T) {
 	comp := setupPartyComponent(t, client, "suggest-skills")
 	defer comp.Stop(5 * time.Second)
 
-	requiredSkills := []semdragons.SkillTag{semdragons.SkillCodeGen, semdragons.SkillCodeReview}
-	quest := buildQuest(comp.boardConfig, "skills-quest", semdragons.DifficultyModerate, requiredSkills, 2)
+	requiredSkills := []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview}
+	quest := buildQuest(comp.boardConfig, "skills-quest", domain.DifficultyModerate, requiredSkills, 2)
 
 	// Agent covers both required skills.
-	fullCoverage := buildAgentWithSkills(comp.boardConfig, "full-coverage", 12, semdragons.TierExpert, requiredSkills)
+	fullCoverage := buildAgentWithSkills(comp.boardConfig, "full-coverage", 12, domain.TierExpert, requiredSkills)
 	// Agent covers none.
-	noCoverage := buildAgent(comp.boardConfig, "no-coverage", 8, semdragons.TierJourneyman, nil)
+	noCoverage := buildAgent(comp.boardConfig, "no-coverage", 8, domain.TierJourneyman, nil)
 
-	suggestions, err := comp.SuggestPartyMembers([]semdragons.Agent{fullCoverage, noCoverage}, quest, domain.PartyStrategyBalanced)
+	suggestions, err := comp.SuggestPartyMembers([]agentprogression.Agent{fullCoverage, noCoverage}, quest, domain.PartyStrategyBalanced)
 	if err != nil {
 		t.Fatalf("SuggestPartyMembers failed: %v", err)
 	}
@@ -537,9 +538,9 @@ func TestFormParty_FailsWhenNotRunning(t *testing.T) {
 	}
 	// Intentionally do NOT call Start.
 
-	quest := buildQuest(comp.boardConfig, "blocked-quest", semdragons.DifficultyTrivial, nil, 1)
-	agents := []semdragons.Agent{
-		buildAgent(comp.boardConfig, "idle", 16, semdragons.TierMaster, nil),
+	quest := buildQuest(comp.boardConfig, "blocked-quest", domain.DifficultyTrivial, nil, 1)
+	agents := []agentprogression.Agent{
+		buildAgent(comp.boardConfig, "idle", 16, domain.TierMaster, nil),
 	}
 
 	_, err = comp.FormParty(ctx, quest, domain.PartyStrategyBalanced, agents)
@@ -583,21 +584,21 @@ func setupPartyComponent(t *testing.T, client *natsclient.Client, boardName stri
 	return comp
 }
 
-func buildQuest(config *semdragons.BoardConfig, name string, difficulty semdragons.QuestDifficulty, skills []semdragons.SkillTag, minPartySize int) *semdragons.Quest {
-	instance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(config.QuestEntityID(instance))
-	return &semdragons.Quest{
+func buildQuest(config *domain.BoardConfig, name string, difficulty domain.QuestDifficulty, skills []domain.SkillTag, minPartySize int) *domain.Quest {
+	instance := domain.GenerateInstance()
+	questID := domain.QuestID(config.QuestEntityID(instance))
+	return &domain.Quest{
 		ID:             questID,
 		Title:          name,
 		Difficulty:     difficulty,
 		RequiredSkills: skills,
 		MinPartySize:   minPartySize,
 		PartyRequired:  minPartySize > 1,
-		Status:         semdragons.QuestPosted,
+		Status:         domain.QuestPosted,
 	}
 }
 
-func buildQuestWithGuild(config *semdragons.BoardConfig, name string, difficulty semdragons.QuestDifficulty, guildID semdragons.GuildID) *semdragons.Quest {
+func buildQuestWithGuild(config *domain.BoardConfig, name string, difficulty domain.QuestDifficulty, guildID domain.GuildID) *domain.Quest {
 	q := buildQuest(config, name, difficulty, nil, 2)
 	q.GuildPriority = &guildID
 	return q
@@ -605,29 +606,29 @@ func buildQuestWithGuild(config *semdragons.BoardConfig, name string, difficulty
 
 // buildAgent creates a test agent without skills or guild membership.
 // The guilds parameter is reserved for future use.
-func buildAgent(config *semdragons.BoardConfig, name string, level int, tier semdragons.TrustTier, guilds []semdragons.GuildID) semdragons.Agent {
+func buildAgent(config *domain.BoardConfig, name string, level int, tier domain.TrustTier, guilds []domain.GuildID) agentprogression.Agent {
 	agent := buildAgentWithSkills(config, name, level, tier, nil)
 	agent.Guilds = guilds
 	return agent
 }
 
-func buildAgentWithSkills(config *semdragons.BoardConfig, name string, level int, tier semdragons.TrustTier, skills []semdragons.SkillTag) semdragons.Agent {
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(config.AgentEntityID(instance))
+func buildAgentWithSkills(config *domain.BoardConfig, name string, level int, tier domain.TrustTier, skills []domain.SkillTag) agentprogression.Agent {
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(config.AgentEntityID(instance))
 
-	agent := semdragons.Agent{
+	agent := agentprogression.Agent{
 		ID:     agentID,
 		Name:   name,
 		Level:  level,
 		Tier:   tier,
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 	}
 
 	if len(skills) > 0 {
-		agent.SkillProficiencies = make(map[semdragons.SkillTag]semdragons.SkillProficiency)
+		agent.SkillProficiencies = make(map[domain.SkillTag]domain.SkillProficiency)
 		for _, skill := range skills {
-			agent.SkillProficiencies[skill] = semdragons.SkillProficiency{
-				Level: semdragons.ProficiencyJourneyman,
+			agent.SkillProficiencies[skill] = domain.SkillProficiency{
+				Level: domain.ProficiencyJourneyman,
 			}
 		}
 	}
@@ -635,8 +636,8 @@ func buildAgentWithSkills(config *semdragons.BoardConfig, name string, level int
 	return agent
 }
 
-func buildAgentInGuild(config *semdragons.BoardConfig, name string, level int, tier semdragons.TrustTier, guildID semdragons.GuildID) semdragons.Agent {
+func buildAgentInGuild(config *domain.BoardConfig, name string, level int, tier domain.TrustTier, guildID domain.GuildID) agentprogression.Agent {
 	agent := buildAgent(config, name, level, tier, nil)
-	agent.Guilds = []semdragons.GuildID{guildID}
+	agent.Guilds = []domain.GuildID{guildID}
 	return agent
 }

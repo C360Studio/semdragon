@@ -8,6 +8,9 @@ import (
 	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -44,7 +47,7 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 	}
 
 	key := entry.Key()
-	instance := semdragons.ExtractInstance(key)
+	instance := domain.ExtractInstance(key)
 	if instance == "" || instance == key {
 		c.logger.Warn("agent watch entry has unexpected key format", "key", key)
 		return
@@ -64,7 +67,7 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	agent := semdragons.AgentFromEntityState(entityState)
+	agent := agentprogression.AgentFromEntityState(entityState)
 	if agent == nil {
 		c.logger.Warn("failed to reconstruct agent from entity state", "instance", instance)
 		return
@@ -109,7 +112,7 @@ func (c *Component) handleBoidSuggestion(ctx context.Context, msg *nats.Msg) {
 
 	// Extract instance from the NATS subject (boid.suggestions.<instance>)
 	// or from the first suggestion's agent ID
-	instance := semdragons.ExtractInstance(string(suggestions[0].AgentID))
+	instance := domain.ExtractInstance(string(suggestions[0].AgentID))
 	if instance == "" {
 		c.logger.Warn("boid suggestion has invalid agent ID", "agent_id", suggestions[0].AgentID)
 		return
@@ -125,7 +128,7 @@ func (c *Component) handleBoidSuggestion(ctx context.Context, msg *nats.Msg) {
 	}
 
 	// Only cache suggestions for idle agents
-	if tracker.agent != nil && tracker.agent.Status == semdragons.AgentIdle {
+	if tracker.agent != nil && tracker.agent.Status == domain.AgentIdle {
 		tracker.suggestions = suggestions
 		c.resetHeartbeatInterval(instance)
 		c.logger.Debug("boid suggestions cached for agent",

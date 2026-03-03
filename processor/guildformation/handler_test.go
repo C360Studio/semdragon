@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/message"
 )
 
@@ -61,12 +61,12 @@ func TestDefaultConfig_ToBoardConfig(t *testing.T) {
 func TestGenerateGuildName(t *testing.T) {
 	tests := []struct {
 		name        string
-		founder     *semdragons.Agent
+		founder     *agentprogression.Agent
 		wantContain string
 	}{
 		{
 			name: "uses DisplayName when set",
-			founder: &semdragons.Agent{
+			founder: &agentprogression.Agent{
 				ID:          "agent-1",
 				Name:        "alpha",
 				DisplayName: "Shadowweaver",
@@ -75,7 +75,7 @@ func TestGenerateGuildName(t *testing.T) {
 		},
 		{
 			name: "falls back to Name when DisplayName is empty",
-			founder: &semdragons.Agent{
+			founder: &agentprogression.Agent{
 				ID:          "agent-2",
 				Name:        "coder-bot",
 				DisplayName: "",
@@ -84,7 +84,7 @@ func TestGenerateGuildName(t *testing.T) {
 		},
 		{
 			name: "DisplayName takes priority over Name when both set",
-			founder: &semdragons.Agent{
+			founder: &agentprogression.Agent{
 				ID:          "agent-3",
 				Name:        "system-name",
 				DisplayName: "TrueTitle",
@@ -93,7 +93,7 @@ func TestGenerateGuildName(t *testing.T) {
 		},
 		{
 			name: "apostrophe-s suffix appended",
-			founder: &semdragons.Agent{
+			founder: &agentprogression.Agent{
 				ID:          "agent-4",
 				Name:        "Ironclad",
 				DisplayName: "",
@@ -116,19 +116,19 @@ func TestGenerateGuildName(t *testing.T) {
 // selectDiverseCandidates
 // =============================================================================
 
-func agentWithSkills(id domain.AgentID, skills ...domain.SkillTag) *semdragons.Agent {
+func agentWithSkills(id domain.AgentID, skills ...domain.SkillTag) *agentprogression.Agent {
 	profs := make(map[domain.SkillTag]domain.SkillProficiency, len(skills))
 	for _, s := range skills {
 		profs[s] = domain.SkillProficiency{Level: domain.ProficiencyNovice}
 	}
-	return &semdragons.Agent{
+	return &agentprogression.Agent{
 		ID:                 id,
 		Name:               string(id),
 		SkillProficiencies: profs,
 	}
 }
 
-func containsAgent(selected []*semdragons.Agent, id domain.AgentID) bool {
+func containsAgent(selected []*agentprogression.Agent, id domain.AgentID) bool {
 	for _, a := range selected {
 		if a.ID == id {
 			return true
@@ -146,7 +146,7 @@ func TestSelectDiverseCandidates_EmptyInput(t *testing.T) {
 
 func TestSelectDiverseCandidates_OnlyFounder(t *testing.T) {
 	founder := agentWithSkills("founder-1", domain.SkillCodeGen)
-	candidates := []*semdragons.Agent{founder}
+	candidates := []*agentprogression.Agent{founder}
 
 	result := selectDiverseCandidates(candidates, 3, "founder-1")
 
@@ -164,7 +164,7 @@ func TestSelectDiverseCandidates_FounderAlwaysFirst(t *testing.T) {
 	a1 := agentWithSkills("agent-1", domain.SkillAnalysis)
 	a2 := agentWithSkills("agent-2", domain.SkillResearch)
 	founder := agentWithSkills("founder-1", domain.SkillCodeGen)
-	candidates := []*semdragons.Agent{a1, a2, founder}
+	candidates := []*agentprogression.Agent{a1, a2, founder}
 
 	result := selectDiverseCandidates(candidates, 3, "founder-1")
 
@@ -182,7 +182,7 @@ func TestSelectDiverseCandidates_DistinctSkillsIncluded(t *testing.T) {
 	a2 := agentWithSkills("agent-2", domain.SkillAnalysis)
 	// agent-3 also distinct (Research) — should be included.
 	a3 := agentWithSkills("agent-3", domain.SkillResearch)
-	candidates := []*semdragons.Agent{founder, a2, a3}
+	candidates := []*agentprogression.Agent{founder, a2, a3}
 
 	result := selectDiverseCandidates(candidates, 3, "founder-1")
 
@@ -206,7 +206,7 @@ func TestSelectDiverseCandidates_OverlappingSkillsExcluded(t *testing.T) {
 	a2 := agentWithSkills("agent-2", domain.SkillCodeGen)
 	// agent-3 is distinct.
 	a3 := agentWithSkills("agent-3", domain.SkillAnalysis)
-	candidates := []*semdragons.Agent{founder, a2, a3}
+	candidates := []*agentprogression.Agent{founder, a2, a3}
 
 	result := selectDiverseCandidates(candidates, 3, "founder-1")
 
@@ -224,7 +224,7 @@ func TestSelectDiverseCandidates_OverlappingSkillsExcluded(t *testing.T) {
 func TestSelectDiverseCandidates_CountBoundary_Zero(t *testing.T) {
 	founder := agentWithSkills("founder-1", domain.SkillCodeGen)
 	a2 := agentWithSkills("agent-2", domain.SkillAnalysis)
-	candidates := []*semdragons.Agent{founder, a2}
+	candidates := []*agentprogression.Agent{founder, a2}
 
 	// count=0: loop stops immediately after adding founder (len >= 0), so
 	// founder is added before the break condition is checked at iteration start.
@@ -244,7 +244,7 @@ func TestSelectDiverseCandidates_CountBoundary_ExactMatch(t *testing.T) {
 	a3 := agentWithSkills("agent-3", domain.SkillResearch)
 	// 4 candidates, count=3 — should stop at 3.
 	a4 := agentWithSkills("agent-4", domain.SkillPlanning)
-	candidates := []*semdragons.Agent{founder, a2, a3, a4}
+	candidates := []*agentprogression.Agent{founder, a2, a3, a4}
 
 	result := selectDiverseCandidates(candidates, 3, "founder-1")
 
@@ -256,7 +256,7 @@ func TestSelectDiverseCandidates_CountBoundary_ExactMatch(t *testing.T) {
 func TestSelectDiverseCandidates_CountLargerThanCandidates(t *testing.T) {
 	founder := agentWithSkills("founder-1", domain.SkillCodeGen)
 	a2 := agentWithSkills("agent-2", domain.SkillAnalysis)
-	candidates := []*semdragons.Agent{founder, a2}
+	candidates := []*agentprogression.Agent{founder, a2}
 
 	// count=10 but only 2 candidates exist.
 	result := selectDiverseCandidates(candidates, 10, "founder-1")
@@ -270,7 +270,7 @@ func TestSelectDiverseCandidates_FounderNotInCandidateList(t *testing.T) {
 	// founderID is not present in candidates — function should not panic.
 	a1 := agentWithSkills("agent-1", domain.SkillCodeGen)
 	a2 := agentWithSkills("agent-2", domain.SkillAnalysis)
-	candidates := []*semdragons.Agent{a1, a2}
+	candidates := []*agentprogression.Agent{a1, a2}
 
 	// Should not panic; founder is simply absent from the result.
 	result := selectDiverseCandidates(candidates, 3, "missing-founder")
@@ -288,7 +288,7 @@ func TestSelectDiverseCandidates_FounderNotInCandidateList(t *testing.T) {
 
 func TestGuildCreatedPayload_Validate_Valid(t *testing.T) {
 	p := &GuildCreatedPayload{
-		Guild:     semdragons.Guild{ID: "guild-1"},
+		Guild:     domain.Guild{ID: "guild-1"},
 		FounderID: "agent-1",
 		Timestamp: time.Now(),
 	}
@@ -299,7 +299,7 @@ func TestGuildCreatedPayload_Validate_Valid(t *testing.T) {
 
 func TestGuildCreatedPayload_Validate_MissingGuildID(t *testing.T) {
 	p := &GuildCreatedPayload{
-		Guild:     semdragons.Guild{ID: ""},
+		Guild:     domain.Guild{ID: ""},
 		FounderID: "agent-1",
 		Timestamp: time.Now(),
 	}
@@ -310,7 +310,7 @@ func TestGuildCreatedPayload_Validate_MissingGuildID(t *testing.T) {
 
 func TestGuildCreatedPayload_Validate_MissingFounderID(t *testing.T) {
 	p := &GuildCreatedPayload{
-		Guild:     semdragons.Guild{ID: "guild-1"},
+		Guild:     domain.Guild{ID: "guild-1"},
 		FounderID: "",
 		Timestamp: time.Now(),
 	}
@@ -321,7 +321,7 @@ func TestGuildCreatedPayload_Validate_MissingFounderID(t *testing.T) {
 
 func TestGuildCreatedPayload_Validate_ZeroTimestamp(t *testing.T) {
 	p := &GuildCreatedPayload{
-		Guild:     semdragons.Guild{ID: "guild-1"},
+		Guild:     domain.Guild{ID: "guild-1"},
 		FounderID: "agent-1",
 		Timestamp: time.Time{},
 	}
@@ -486,7 +486,7 @@ func TestGuildDisbandedPayload_Validate_EmptyReasonOK(t *testing.T) {
 
 func TestGuildCreatedPayload_Triples(t *testing.T) {
 	now := time.Now()
-	guild := semdragons.Guild{
+	guild := domain.Guild{
 		ID:     "guild-abc",
 		Name:   "Ironclad's Guild",
 		Status: domain.GuildActive,
@@ -526,7 +526,7 @@ func TestGuildCreatedPayload_Triples(t *testing.T) {
 
 func TestGuildCreatedPayload_EntityID(t *testing.T) {
 	p := &GuildCreatedPayload{
-		Guild: semdragons.Guild{ID: "guild-xyz"},
+		Guild: domain.Guild{ID: "guild-xyz"},
 	}
 	if got := p.EntityID(); got != "guild-xyz" {
 		t.Errorf("EntityID() = %q; want %q", got, "guild-xyz")
@@ -714,11 +714,13 @@ func TestGuildDisbandedPayload_EntityID(t *testing.T) {
 
 func TestPayload_Schema(t *testing.T) {
 	tests := []struct {
-		name            string
-		schema          func() interface{ Schema() interface{ GetDomain() string } }
-		wantDomain      string
-		wantCategory    string
-		wantVersion     string
+		name   string
+		schema func() interface {
+			Schema() interface{ GetDomain() string }
+		}
+		wantDomain   string
+		wantCategory string
+		wantVersion  string
 	}{
 		// We test Schema() values directly through the concrete types.
 	}
@@ -841,8 +843,8 @@ func TestTriples_ConfidenceIsOne(t *testing.T) {
 // =============================================================================
 
 func TestIsMember(t *testing.T) {
-	guild := &semdragons.Guild{
-		Members: []semdragons.GuildMember{
+	guild := &domain.Guild{
+		Members: []domain.GuildMember{
 			{AgentID: "agent-1", Rank: domain.GuildRankMaster},
 			{AgentID: "agent-2", Rank: domain.GuildRankInitiate},
 		},
@@ -860,15 +862,15 @@ func TestIsMember(t *testing.T) {
 }
 
 func TestIsMember_EmptyMembers(t *testing.T) {
-	guild := &semdragons.Guild{Members: nil}
+	guild := &domain.Guild{Members: nil}
 	if isMember(guild, "agent-1") {
 		t.Error("isMember: expected false for empty members slice, got true")
 	}
 }
 
 func TestGetMember_ReturnsPointerToSliceElement(t *testing.T) {
-	guild := &semdragons.Guild{
-		Members: []semdragons.GuildMember{
+	guild := &domain.Guild{
+		Members: []domain.GuildMember{
 			{AgentID: "agent-1", Rank: domain.GuildRankInitiate},
 		},
 	}
@@ -885,8 +887,8 @@ func TestGetMember_ReturnsPointerToSliceElement(t *testing.T) {
 }
 
 func TestGetMember_NilForAbsentAgent(t *testing.T) {
-	guild := &semdragons.Guild{
-		Members: []semdragons.GuildMember{
+	guild := &domain.Guild{
+		Members: []domain.GuildMember{
 			{AgentID: "agent-1"},
 		},
 	}

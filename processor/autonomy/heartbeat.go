@@ -3,8 +3,10 @@ package autonomy
 import (
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/processor/boidengine"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -18,7 +20,7 @@ import (
 
 // agentTracker holds per-agent heartbeat state.
 type agentTracker struct {
-	agent       *semdragons.Agent
+	agent       *agentprogression.Agent
 	idleSince   time.Time                   // Process-local, not persisted
 	heartbeat   *time.Timer                 // Per-agent timer
 	interval    time.Duration               // Current heartbeat interval
@@ -27,7 +29,7 @@ type agentTracker struct {
 
 // resetHeartbeatForAgent creates or updates the heartbeat timer for an agent.
 // Caller must NOT hold trackersMu.
-func (c *Component) resetHeartbeatForAgent(instance string, agent *semdragons.Agent) {
+func (c *Component) resetHeartbeatForAgent(instance string, agent *agentprogression.Agent) {
 	interval := c.config.IntervalForStatus(agent.Status)
 
 	c.trackersMu.Lock()
@@ -48,14 +50,14 @@ func (c *Component) resetHeartbeatForAgent(instance string, agent *semdragons.Ag
 	tracker.interval = interval
 
 	// Track when agent became idle (process-local)
-	if agent.Status == semdragons.AgentIdle && tracker.idleSince.IsZero() {
+	if agent.Status == domain.AgentIdle && tracker.idleSince.IsZero() {
 		tracker.idleSince = time.Now()
-	} else if agent.Status != semdragons.AgentIdle {
+	} else if agent.Status != domain.AgentIdle {
 		tracker.idleSince = time.Time{}
 	}
 
 	// Clear suggestion cache when agent is not idle
-	if agent.Status != semdragons.AgentIdle {
+	if agent.Status != domain.AgentIdle {
 		tracker.suggestions = nil
 	}
 
@@ -107,7 +109,7 @@ func (c *Component) resetHeartbeatInterval(instance string) {
 		return
 	}
 
-	baseInterval := c.config.IntervalForStatus(semdragons.AgentIdle)
+	baseInterval := c.config.IntervalForStatus(domain.AgentIdle)
 	if tracker.interval > baseInterval {
 		tracker.interval = baseInterval
 		if tracker.heartbeat != nil {
@@ -131,7 +133,7 @@ func (c *Component) backoffHeartbeat(instance string) {
 	}
 
 	// Only backoff idle agents
-	if tracker.agent.Status != semdragons.AgentIdle {
+	if tracker.agent.Status != domain.AgentIdle {
 		return
 	}
 

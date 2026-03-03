@@ -13,6 +13,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -812,29 +813,29 @@ func TestComponent_AutoFormPartyOnQuestClaimed(t *testing.T) {
 	gc := semdragons.NewGraphClient(client, comp.boardConfig)
 
 	// Create an agent
-	agentInstance := "autoform-agent-" + semdragons.GenerateInstance()
+	agentInstance := "autoform-agent-" + domain.GenerateInstance()
 	agentID := domain.AgentID(comp.boardConfig.AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     agentID,
 		Name:   "autoform-agent",
 		Level:  5,
-		Tier:   semdragons.TierApprentice,
-		Status: semdragons.AgentIdle,
+		Tier:   domain.TierApprentice,
+		Status: domain.AgentIdle,
 	}
 	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 		t.Fatalf("Failed to create test agent: %v", err)
 	}
 
 	// Create a party-required quest in "claimed" state, simulating what questboard would do
-	questInstance := "autoform-quest-" + semdragons.GenerateInstance()
+	questInstance := "autoform-quest-" + domain.GenerateInstance()
 	questID := domain.QuestID(comp.boardConfig.QuestEntityID(questInstance))
 	now := time.Now()
 	claimedBy := agentID
-	quest := &semdragons.Quest{
+	quest := &domain.Quest{
 		ID:            questID,
 		Title:         "Multi-Agent Task",
-		Status:        semdragons.QuestClaimed,
-		Difficulty:    semdragons.DifficultyModerate,
+		Status:        domain.QuestClaimed,
+		Difficulty:    domain.DifficultyModerate,
 		PartyRequired: true,
 		ClaimedBy:     &claimedBy,
 		ClaimedAt:     &now,
@@ -882,19 +883,19 @@ func TestComponent_AutoFormSkipsNonPartyQuests(t *testing.T) {
 
 	gc := semdragons.NewGraphClient(client, comp.boardConfig)
 
-	agentInstance := "skip-agent-" + semdragons.GenerateInstance()
+	agentInstance := "skip-agent-" + domain.GenerateInstance()
 	agentID := domain.AgentID(comp.boardConfig.AgentEntityID(agentInstance))
 	claimedBy := agentID
 
 	// A regular (non-party-required) quest
-	questInstance := "skip-quest-" + semdragons.GenerateInstance()
+	questInstance := "skip-quest-" + domain.GenerateInstance()
 	questID := domain.QuestID(comp.boardConfig.QuestEntityID(questInstance))
 	now := time.Now()
-	quest := &semdragons.Quest{
+	quest := &domain.Quest{
 		ID:            questID,
 		Title:         "Solo Task",
-		Status:        semdragons.QuestClaimed,
-		Difficulty:    semdragons.DifficultyTrivial,
+		Status:        domain.QuestClaimed,
+		Difficulty:    domain.DifficultyTrivial,
 		PartyRequired: false, // Should NOT trigger auto-formation
 		ClaimedBy:     &claimedBy,
 		ClaimedAt:     &now,
@@ -978,15 +979,15 @@ func setupPartyComponent(t *testing.T, client *natsclient.Client, board string) 
 }
 
 // makePartyAgentID constructs a fully-qualified agent entity ID for tests.
-func makePartyAgentID(t *testing.T, cfg *semdragons.BoardConfig, suffix string) domain.AgentID {
+func makePartyAgentID(t *testing.T, cfg *domain.BoardConfig, suffix string) domain.AgentID {
 	t.Helper()
-	instance := suffix + "-" + semdragons.GenerateInstance()
+	instance := suffix + "-" + domain.GenerateInstance()
 	return domain.AgentID(cfg.AgentEntityID(instance))
 }
 
 // makePartyQuestID constructs a fully-qualified quest entity ID for tests.
-func makePartyQuestID(t *testing.T, cfg *semdragons.BoardConfig, suffix string) domain.QuestID {
+func makePartyQuestID(t *testing.T, cfg *domain.BoardConfig, suffix string) domain.QuestID {
 	t.Helper()
-	instance := suffix + "-" + semdragons.GenerateInstance()
+	instance := suffix + "-" + domain.GenerateInstance()
 	return domain.QuestID(cfg.QuestEntityID(instance))
 }

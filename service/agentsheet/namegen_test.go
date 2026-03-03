@@ -1,29 +1,34 @@
 //go:build integration
 
-package semdragons
+package agentsheet_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/c360studio/semstreams/graph"
+	semgraph "github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/natsclient"
+
+	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/service/agentsheet"
 )
 
-func setupNameGenTestBoard(t *testing.T) (*GraphClient, func()) {
+func setupNameGenTestBoard(t *testing.T) (*semdragons.GraphClient, func()) {
 	t.Helper()
 	tc := natsclient.NewTestClient(t,
 		natsclient.WithKV(),
-		natsclient.WithKVBuckets(graph.BucketEntityStates),
+		natsclient.WithKVBuckets(semgraph.BucketEntityStates),
 	)
-	config := BoardConfig{
+	config := domain.BoardConfig{
 		Org:      "test",
 		Platform: "unit",
 		Board:    "namegen",
 	}
 
-	gc := NewGraphClient(tc.Client, &config)
+	gc := semdragons.NewGraphClient(tc.Client, &config)
 
 	// Ensure board-specific KV bucket exists (mirrors main.go startup)
 	if err := gc.EnsureBucket(context.Background()); err != nil {
@@ -41,14 +46,14 @@ func TestNameGenerator_GenerateName(t *testing.T) {
 	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(graph)
+	gen := agentsheet.NewNameGenerator(graph)
 
-	agent := &Agent{
+	agent := &agentprogression.Agent{
 		ID:   "test-agent",
 		Name: "test-agent",
-		Tier: TierApprentice,
-		SkillProficiencies: map[SkillTag]SkillProficiency{
-			SkillCodeGen: {Level: ProficiencyNovice},
+		Tier: domain.TierApprentice,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
 		},
 	}
 
@@ -70,15 +75,15 @@ func TestNameGenerator_SuggestNames(t *testing.T) {
 	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(graph)
+	gen := agentsheet.NewNameGenerator(graph)
 
-	agent := &Agent{
+	agent := &agentprogression.Agent{
 		ID:   "test-agent",
 		Name: "test-agent",
-		Tier: TierExpert,
-		SkillProficiencies: map[SkillTag]SkillProficiency{
-			SkillAnalysis: {Level: ProficiencyJourneyman},
-			SkillResearch: {Level: ProficiencyNovice},
+		Tier: domain.TierExpert,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillAnalysis: {Level: domain.ProficiencyJourneyman},
+			domain.SkillResearch: {Level: domain.ProficiencyNovice},
 		},
 	}
 
@@ -108,10 +113,10 @@ func TestNameGenerator_SetDisplayName(t *testing.T) {
 	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(graph)
+	gen := agentsheet.NewNameGenerator(graph)
 
 	t.Run("valid name", func(t *testing.T) {
-		agent := &Agent{ID: "agent-1", Name: "agent-1"}
+		agent := &agentprogression.Agent{ID: "agent-1", Name: "agent-1"}
 
 		err := gen.SetDisplayName(ctx, agent, "Shadowblade")
 		if err != nil {
@@ -123,7 +128,7 @@ func TestNameGenerator_SetDisplayName(t *testing.T) {
 	})
 
 	t.Run("empty name rejected", func(t *testing.T) {
-		agent := &Agent{ID: "agent-2", Name: "agent-2"}
+		agent := &agentprogression.Agent{ID: "agent-2", Name: "agent-2"}
 
 		err := gen.SetDisplayName(ctx, agent, "")
 		if err == nil {
@@ -132,7 +137,7 @@ func TestNameGenerator_SetDisplayName(t *testing.T) {
 	})
 
 	t.Run("too long name rejected", func(t *testing.T) {
-		agent := &Agent{ID: "agent-3", Name: "agent-3"}
+		agent := &agentprogression.Agent{ID: "agent-3", Name: "agent-3"}
 
 		longName := "ThisNameIsWayTooLongToBeAcceptableForACharacterName"
 		err := gen.SetDisplayName(ctx, agent, longName)
@@ -148,17 +153,17 @@ func TestNameGenerator_Uniqueness(t *testing.T) {
 	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(graph)
+	gen := agentsheet.NewNameGenerator(graph)
 
 	// Create first agent with a display name
-	instance1 := GenerateInstance()
-	agent1 := &Agent{
-		ID:          AgentID(graph.Config().AgentEntityID(instance1)),
+	instance1 := domain.GenerateInstance()
+	agent1 := &agentprogression.Agent{
+		ID:          domain.AgentID(graph.Config().AgentEntityID(instance1)),
 		Name:        "agent-1",
 		DisplayName: "Codewarden",
-		Status:      AgentIdle,
+		Status:      domain.AgentIdle,
 		Level:       1,
-		Tier:        TierApprentice,
+		Tier:        domain.TierApprentice,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -167,7 +172,7 @@ func TestNameGenerator_Uniqueness(t *testing.T) {
 	}
 
 	// Try to give another agent the same name
-	agent2 := &Agent{ID: "agent-2", Name: "agent-2"}
+	agent2 := &agentprogression.Agent{ID: "agent-2", Name: "agent-2"}
 
 	err := gen.SetDisplayName(ctx, agent2, "Codewarden")
 	if err == nil {
@@ -193,24 +198,24 @@ func TestNameGenerator_SkillBasedPrefixes(t *testing.T) {
 	graph, cleanup := setupNameGenTestBoard(t)
 	defer cleanup()
 
-	gen := NewNameGenerator(graph)
+	gen := agentsheet.NewNameGenerator(graph)
 
 	// Test that different skills produce different name styles
-	codeAgent := &Agent{
+	codeAgent := &agentprogression.Agent{
 		ID:   "code-agent",
-		Tier: TierJourneyman,
-		SkillProficiencies: map[SkillTag]SkillProficiency{
-			SkillCodeGen:    {Level: ProficiencyNovice},
-			SkillCodeReview: {Level: ProficiencyNovice},
+		Tier: domain.TierJourneyman,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen:    {Level: domain.ProficiencyNovice},
+			domain.SkillCodeReview: {Level: domain.ProficiencyNovice},
 		},
 	}
 
-	researchAgent := &Agent{
+	researchAgent := &agentprogression.Agent{
 		ID:   "research-agent",
-		Tier: TierJourneyman,
-		SkillProficiencies: map[SkillTag]SkillProficiency{
-			SkillResearch: {Level: ProficiencyNovice},
-			SkillAnalysis: {Level: ProficiencyNovice},
+		Tier: domain.TierJourneyman,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillResearch: {Level: domain.ProficiencyNovice},
+			domain.SkillAnalysis: {Level: domain.ProficiencyNovice},
 		},
 	}
 

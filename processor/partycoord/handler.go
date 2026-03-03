@@ -364,9 +364,9 @@ func (c *Component) loadInitialQuestState(ctx context.Context) error {
 
 	c.questsMu.Lock()
 	for _, entity := range questEntities {
-		quest := semdragons.QuestFromEntityState(&entity)
+		quest := domain.QuestFromEntityState(&entity)
 		if quest != nil {
-			instance := semdragons.ExtractInstance(string(quest.ID))
+			instance := domain.ExtractInstance(string(quest.ID))
 			c.quests[instance] = quest
 		}
 	}
@@ -433,7 +433,7 @@ func (c *Component) processQuestWatchUpdates() {
 // org.platform.game.board.quest.instance
 func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 	key := entry.Key()
-	instance := semdragons.ExtractInstance(key)
+	instance := domain.ExtractInstance(key)
 	if instance == "" || instance == key {
 		// Key did not contain a dot separator — not a valid entity ID.
 		c.logger.Warn("quest watch entry has unexpected key format", "key", key)
@@ -454,7 +454,7 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	quest := semdragons.QuestFromEntityState(entityState)
+	quest := domain.QuestFromEntityState(entityState)
 	if quest == nil {
 		c.logger.Warn("failed to reconstruct quest from entity state", "instance", instance)
 		return
@@ -477,20 +477,20 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 
 // maybeFormParty inspects the quest state transition and auto-forms a party
 // when a party-required quest is claimed and no party has been assigned yet.
-func (c *Component) maybeFormParty(prev, curr *semdragons.Quest) {
+func (c *Component) maybeFormParty(prev, curr *domain.Quest) {
 	if !curr.PartyRequired {
 		return
 	}
 
 	// Only react to the transition into "claimed" status
-	prevStatus := semdragons.QuestStatus("")
+	prevStatus := domain.QuestStatus("")
 	if prev != nil {
 		prevStatus = prev.Status
 	}
 	if prevStatus == curr.Status {
 		return // No status change; nothing to do
 	}
-	if curr.Status != semdragons.QuestClaimed {
+	if curr.Status != domain.QuestClaimed {
 		return
 	}
 	if curr.ClaimedBy == nil {

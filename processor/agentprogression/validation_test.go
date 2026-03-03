@@ -1,13 +1,15 @@
-package semdragons
+package agentprogression
 
 import (
 	"testing"
 	"time"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 func TestValidateAgentCanClaim_Retired(t *testing.T) {
-	agent := &Agent{Status: AgentRetired}
-	quest := &Quest{Status: QuestPosted}
+	agent := &Agent{Status: domain.AgentRetired}
+	quest := &domain.Quest{Status: domain.QuestPosted}
 
 	err := ValidateAgentCanClaim(agent, quest)
 	if err == nil {
@@ -19,8 +21,8 @@ func TestValidateAgentCanClaim_Retired(t *testing.T) {
 }
 
 func TestValidateAgentCanClaim_InBattle(t *testing.T) {
-	agent := &Agent{Status: AgentInBattle}
-	quest := &Quest{Status: QuestPosted}
+	agent := &Agent{Status: domain.AgentInBattle}
+	quest := &domain.Quest{Status: domain.QuestPosted}
 
 	err := ValidateAgentCanClaim(agent, quest)
 	if err == nil {
@@ -34,10 +36,10 @@ func TestValidateAgentCanClaim_InBattle(t *testing.T) {
 func TestValidateAgentCanClaim_ActiveCooldown(t *testing.T) {
 	future := time.Now().Add(1 * time.Hour)
 	agent := &Agent{
-		Status:        AgentCooldown,
+		Status:        domain.AgentCooldown,
 		CooldownUntil: &future,
 	}
-	quest := &Quest{Status: QuestPosted}
+	quest := &domain.Quest{Status: domain.QuestPosted}
 
 	err := ValidateAgentCanClaim(agent, quest)
 	if err == nil {
@@ -51,11 +53,11 @@ func TestValidateAgentCanClaim_ActiveCooldown(t *testing.T) {
 func TestValidateAgentCanClaim_ExpiredCooldown(t *testing.T) {
 	past := time.Now().Add(-1 * time.Hour)
 	agent := &Agent{
-		Status:        AgentCooldown,
+		Status:        domain.AgentCooldown,
 		Level:         5,
 		CooldownUntil: &past,
 	}
-	quest := &Quest{Status: QuestPosted}
+	quest := &domain.Quest{Status: domain.QuestPosted}
 
 	err := ValidateAgentCanClaim(agent, quest)
 	if err != nil {
@@ -64,13 +66,13 @@ func TestValidateAgentCanClaim_ExpiredCooldown(t *testing.T) {
 }
 
 func TestValidateAgentCanClaim_AlreadyOnQuest(t *testing.T) {
-	questID := QuestID("some.quest.id")
+	questID := domain.QuestID("some.quest.id")
 	agent := &Agent{
-		Status:       AgentIdle,
+		Status:       domain.AgentIdle,
 		Level:        5,
 		CurrentQuest: &questID,
 	}
-	quest := &Quest{Status: QuestPosted}
+	quest := &domain.Quest{Status: domain.QuestPosted}
 
 	err := ValidateAgentCanClaim(agent, quest)
 	if err == nil {
@@ -83,12 +85,12 @@ func TestValidateAgentCanClaim_AlreadyOnQuest(t *testing.T) {
 
 func TestValidateAgentCanClaim_TierTooLow(t *testing.T) {
 	agent := &Agent{
-		Status: AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  1, // Apprentice
 	}
-	quest := &Quest{
-		Status:  QuestPosted,
-		MinTier: TierExpert, // Requires Expert
+	quest := &domain.Quest{
+		Status:  domain.QuestPosted,
+		MinTier: domain.TierExpert, // Requires Expert
 	}
 
 	err := ValidateAgentCanClaim(agent, quest)
@@ -102,11 +104,11 @@ func TestValidateAgentCanClaim_TierTooLow(t *testing.T) {
 
 func TestValidateAgentCanClaim_PartyRequired(t *testing.T) {
 	agent := &Agent{
-		Status: AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  5,
 	}
-	quest := &Quest{
-		Status:        QuestPosted,
+	quest := &domain.Quest{
+		Status:        domain.QuestPosted,
 		PartyRequired: true,
 	}
 
@@ -121,15 +123,15 @@ func TestValidateAgentCanClaim_PartyRequired(t *testing.T) {
 
 func TestValidateAgentCanClaim_SkillsMismatch(t *testing.T) {
 	agent := &Agent{
-		Status: AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  5,
-		SkillProficiencies: map[SkillTag]SkillProficiency{
-			SkillCodeGen: {Level: 1},
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen: {Level: 1},
 		},
 	}
-	quest := &Quest{
-		Status:         QuestPosted,
-		RequiredSkills: []SkillTag{SkillResearch}, // Agent doesn't have this
+	quest := &domain.Quest{
+		Status:         domain.QuestPosted,
+		RequiredSkills: []domain.SkillTag{domain.SkillResearch}, // Agent doesn't have this
 	}
 
 	err := ValidateAgentCanClaim(agent, quest)
@@ -143,16 +145,16 @@ func TestValidateAgentCanClaim_SkillsMismatch(t *testing.T) {
 
 func TestValidateAgentCanClaim_Success(t *testing.T) {
 	agent := &Agent{
-		Status: AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  5,
-		SkillProficiencies: map[SkillTag]SkillProficiency{
-			SkillCodeGen: {Level: 2},
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen: {Level: 2},
 		},
 	}
-	quest := &Quest{
-		Status:         QuestPosted,
-		MinTier:        TierApprentice,
-		RequiredSkills: []SkillTag{SkillCodeGen},
+	quest := &domain.Quest{
+		Status:         domain.QuestPosted,
+		MinTier:        domain.TierApprentice,
+		RequiredSkills: []domain.SkillTag{domain.SkillCodeGen},
 	}
 
 	err := ValidateAgentCanClaim(agent, quest)
@@ -163,11 +165,11 @@ func TestValidateAgentCanClaim_Success(t *testing.T) {
 
 func TestValidateAgentCanClaim_NoRequiredSkills(t *testing.T) {
 	agent := &Agent{
-		Status: AgentIdle,
+		Status: domain.AgentIdle,
 		Level:  5,
 	}
-	quest := &Quest{
-		Status: QuestPosted,
+	quest := &domain.Quest{
+		Status: domain.QuestPosted,
 	}
 
 	err := ValidateAgentCanClaim(agent, quest)

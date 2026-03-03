@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go"
@@ -38,12 +37,12 @@ type ApprovalRouter interface {
 // NATSApprovalRouter implements ApprovalRouter using NATS.
 type NATSApprovalRouter struct {
 	client *natsclient.Client
-	config *semdragons.BoardConfig
+	config *domain.BoardConfig
 	logger *slog.Logger
 }
 
 // NewNATSApprovalRouter creates a new NATS-based approval router.
-func NewNATSApprovalRouter(client *natsclient.Client, config *semdragons.BoardConfig, logger *slog.Logger) *NATSApprovalRouter {
+func NewNATSApprovalRouter(client *natsclient.Client, config *domain.BoardConfig, logger *slog.Logger) *NATSApprovalRouter {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -77,13 +76,13 @@ func (r *NATSApprovalRouter) approvalResponseSubject(sessionInstance, approvalID
 // RequestApproval sends an approval request and waits for response.
 func (r *NATSApprovalRouter) RequestApproval(ctx context.Context, req domain.ApprovalRequest) (*domain.ApprovalResponse, error) {
 	if req.ID == "" {
-		req.ID = semdragons.GenerateInstance()
+		req.ID = domain.GenerateInstance()
 	}
 	if req.CreatedAt.IsZero() {
 		req.CreatedAt = time.Now()
 	}
 
-	sessionInstance := semdragons.ExtractInstance(req.SessionID)
+	sessionInstance := domain.ExtractInstance(req.SessionID)
 
 	// Store pending request in KV
 	if err := r.storePendingApproval(ctx, sessionInstance, &req); err != nil {
@@ -155,7 +154,7 @@ func (r *NATSApprovalRouter) WatchApprovals(ctx context.Context, filter domain.A
 
 	var subject string
 	if filter.SessionID != "" {
-		sessionInstance := semdragons.ExtractInstance(filter.SessionID)
+		sessionInstance := domain.ExtractInstance(filter.SessionID)
 		subject = fmt.Sprintf("approval.response.%s.>", sessionInstance)
 	} else {
 		subject = "approval.response.>"
@@ -196,7 +195,7 @@ func (r *NATSApprovalRouter) WatchApprovals(ctx context.Context, filter domain.A
 
 // GetPendingApprovals returns all pending approval requests for a session.
 func (r *NATSApprovalRouter) GetPendingApprovals(ctx context.Context, sessionID string) ([]domain.ApprovalRequest, error) {
-	sessionInstance := semdragons.ExtractInstance(sessionID)
+	sessionInstance := domain.ExtractInstance(sessionID)
 	prefix := fmt.Sprintf("approval.pending.%s.", sessionInstance)
 
 	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
@@ -233,7 +232,7 @@ func (r *NATSApprovalRouter) GetPendingApprovals(ctx context.Context, sessionID 
 
 // RespondToApproval allows external systems to respond to pending approvals.
 func (r *NATSApprovalRouter) RespondToApproval(ctx context.Context, sessionID, approvalID string, resp domain.ApprovalResponse) error {
-	sessionInstance := semdragons.ExtractInstance(sessionID)
+	sessionInstance := domain.ExtractInstance(sessionID)
 	pendingKey := r.approvalPendingKey(sessionInstance, approvalID)
 
 	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
@@ -321,7 +320,7 @@ func (r *NATSApprovalRouter) storeResolvedApproval(ctx context.Context, sessionI
 
 // WaitForPendingApprovals waits until all pending approvals are resolved.
 func (r *NATSApprovalRouter) WaitForPendingApprovals(ctx context.Context, sessionID string) error {
-	sessionInstance := semdragons.ExtractInstance(sessionID)
+	sessionInstance := domain.ExtractInstance(sessionID)
 	prefix := fmt.Sprintf("approval.pending.%s.", sessionInstance)
 
 	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
@@ -358,7 +357,7 @@ func (r *NATSApprovalRouter) WaitForPendingApprovals(ctx context.Context, sessio
 
 // GetResolvedApproval retrieves a resolved approval by ID.
 func (r *NATSApprovalRouter) GetResolvedApproval(ctx context.Context, sessionID, approvalID string) (*domain.ApprovalResponse, error) {
-	sessionInstance := semdragons.ExtractInstance(sessionID)
+	sessionInstance := domain.ExtractInstance(sessionID)
 	key := r.approvalResolvedKey(sessionInstance, approvalID)
 
 	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())

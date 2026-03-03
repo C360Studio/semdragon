@@ -4,10 +4,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/pkg/types"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
@@ -37,11 +38,11 @@ type TraceInfo struct {
 
 // BattleRetreatPayload contains data for agent retreat events.
 type BattleRetreatPayload struct {
-	Battle      BossBattle       `json:"battle"`
-	Quest       questboard.Quest `json:"quest"`
-	Reason      string           `json:"reason"`
-	RetreatedAt time.Time        `json:"retreated_at"`
-	Trace       TraceInfo        `json:"trace,omitempty"`
+	Battle      BossBattle   `json:"battle"`
+	Quest       domain.Quest `json:"quest"`
+	Reason      string       `json:"reason"`
+	RetreatedAt time.Time    `json:"retreated_at"`
+	Trace       TraceInfo    `json:"trace,omitempty"`
 }
 
 // EntityID returns the entity ID for this event.

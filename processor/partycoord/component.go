@@ -33,13 +33,13 @@ type Component struct {
 	deps        component.Dependencies
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 
 	// KV watch for quest state changes (facts about the world)
 	questWatch jetstream.KeyWatcher
 
 	// Cached quest state for reactive auto-formation decisions
-	quests   map[string]*semdragons.Quest
+	quests   map[string]*domain.Quest
 	questsMu sync.RWMutex
 
 	// Party tracking
@@ -237,7 +237,7 @@ func (c *Component) Initialize() error {
 	}
 
 	c.boardConfig = c.config.ToBoardConfig()
-	c.quests = make(map[string]*semdragons.Quest)
+	c.quests = make(map[string]*domain.Quest)
 	c.stopChan = make(chan struct{})
 	c.watchDoneCh = make(chan struct{})
 

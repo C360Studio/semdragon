@@ -10,7 +10,6 @@ import (
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
-	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
@@ -128,13 +127,13 @@ func (c *Component) publishResult(ctx context.Context, callID string, result *ag
 //	"skills"      – []any of string → Agent.SkillProficiencies (level 1 each)
 //	"quest_id"    – string  → Quest.ID
 //	"sandbox_dir" – string  → overrides the component-level sandbox directory
-func (c *Component) buildContextFromMetadata(call *agentic.ToolCall) (*agentprogression.Agent, *questboard.Quest) {
+func (c *Component) buildContextFromMetadata(call *agentic.ToolCall) (*agentprogression.Agent, *domain.Quest) {
 	agent := &agentprogression.Agent{
 		// Default to the most-restricted tier so unidentified callers cannot
 		// accidentally exercise higher-privilege tools.
 		Tier: domain.TierApprentice,
 	}
-	quest := &questboard.Quest{}
+	quest := &domain.Quest{}
 
 	if call.Metadata == nil {
 		return agent, quest

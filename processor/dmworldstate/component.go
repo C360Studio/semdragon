@@ -10,6 +10,8 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/bossbattle"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/pkg/errs"
 )
@@ -22,7 +24,7 @@ import (
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 
@@ -157,7 +159,7 @@ func (c *Component) Initialize() error {
 		return errors.New("NATS client required")
 	}
 
-	c.boardConfig = &semdragons.BoardConfig{
+	c.boardConfig = &domain.BoardConfig{
 		Org:      c.config.Org,
 		Platform: c.config.Platform,
 		Board:    c.config.Board,
@@ -235,7 +237,7 @@ func (c *Component) WorldState(ctx context.Context) (*domain.WorldState, error) 
 }
 
 // GetIdleAgents returns all agents available to claim quests.
-func (c *Component) GetIdleAgents(ctx context.Context) ([]semdragons.Agent, error) {
+func (c *Component) GetIdleAgents(ctx context.Context) ([]agentprogression.Agent, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -253,7 +255,7 @@ func (c *Component) GetIdleAgents(ctx context.Context) ([]semdragons.Agent, erro
 }
 
 // GetEscalatedQuests returns all quests needing DM attention.
-func (c *Component) GetEscalatedQuests(ctx context.Context) ([]semdragons.Quest, error) {
+func (c *Component) GetEscalatedQuests(ctx context.Context) ([]domain.Quest, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -271,7 +273,7 @@ func (c *Component) GetEscalatedQuests(ctx context.Context) ([]semdragons.Quest,
 }
 
 // GetPendingBattles returns boss battles awaiting verdict.
-func (c *Component) GetPendingBattles(ctx context.Context) ([]semdragons.BossBattle, error) {
+func (c *Component) GetPendingBattles(ctx context.Context) ([]bossbattle.BossBattle, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}

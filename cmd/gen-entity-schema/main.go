@@ -14,8 +14,10 @@ import (
 	"strings"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/bossbattle"
+	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semstreams/message"
 )
 
@@ -165,10 +167,10 @@ func classify(minimal, full []message.Triple) EntitySchema {
 func extractAgent() EntitySchema {
 	now := time.Now()
 	cooldown := now.Add(time.Hour)
-	questID := semdragons.QuestID("test-quest")
-	partyID := semdragons.PartyID("test-party")
+	questID := domain.QuestID("test-quest")
+	partyID := domain.PartyID("test-party")
 
-	minimal := &semdragons.Agent{
+	minimal := &agentprogression.Agent{
 		ID:                 "test-agent",
 		Name:               "test",
 		DisplayName:        "Test",
@@ -180,13 +182,13 @@ func extractAgent() EntitySchema {
 		Tier:               domain.TierApprentice,
 		Guilds:             nil,
 		SkillProficiencies: nil,
-		Stats:              semdragons.AgentStats{},
+		Stats:              agentprogression.AgentStats{},
 		IsNPC:              false,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
 
-	full := &semdragons.Agent{
+	full := &agentprogression.Agent{
 		ID:          "test-agent",
 		Name:        "test",
 		DisplayName: "Test Full",
@@ -196,15 +198,15 @@ func extractAgent() EntitySchema {
 		XPToLevel:   8000,
 		DeathCount:  2,
 		Tier:        domain.TierJourneyman,
-		Guilds:      []semdragons.GuildID{"guild-1", "guild-2"},
-		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
-			semdragons.SkillTag(markerSkillA): {Level: 3, TotalXP: 5000},
-			semdragons.SkillTag(markerSkillB): {Level: 2, TotalXP: 2000},
+		Guilds:      []domain.GuildID{"guild-1", "guild-2"},
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillTag(markerSkillA): {Level: 3, TotalXP: 5000},
+			domain.SkillTag(markerSkillB): {Level: 2, TotalXP: 2000},
 		},
 		CurrentQuest:  &questID,
 		CurrentParty:  &partyID,
 		CooldownUntil: &cooldown,
-		Stats: semdragons.AgentStats{
+		Stats: agentprogression.AgentStats{
 			QuestsCompleted: 10,
 			QuestsFailed:    2,
 			BossesDefeated:  8,
@@ -223,12 +225,12 @@ func extractQuest() EntitySchema {
 	claimedAt := now.Add(time.Minute)
 	startedAt := now.Add(2 * time.Minute)
 	completedAt := now.Add(time.Hour)
-	agentID := semdragons.AgentID("test-agent")
-	partyID := semdragons.PartyID("test-party")
-	guildID := semdragons.GuildID("test-guild")
-	parentID := semdragons.QuestID("parent-quest")
+	agentID := domain.AgentID("test-agent")
+	partyID := domain.PartyID("test-party")
+	guildID := domain.GuildID("test-guild")
+	parentID := domain.QuestID("parent-quest")
 
-	minimal := &semdragons.Quest{
+	minimal := &domain.Quest{
 		ID:          "test-quest",
 		Title:       "test",
 		Description: "test",
@@ -239,16 +241,16 @@ func extractQuest() EntitySchema {
 		PostedAt:    now,
 		Attempts:    0,
 		MaxAttempts: 3,
-		Constraints: semdragons.QuestConstraints{ReviewLevel: domain.ReviewStandard},
+		Constraints: domain.QuestConstraints{ReviewLevel: domain.ReviewStandard},
 	}
 
-	full := &semdragons.Quest{
+	full := &domain.Quest{
 		ID:             "test-quest",
 		Title:          "Full Quest",
 		Description:    "A fully-populated quest",
 		Status:         domain.QuestInProgress,
 		Difficulty:     domain.DifficultyEpic,
-		RequiredSkills: []semdragons.SkillTag{domain.SkillAnalysis, domain.SkillCodeGen},
+		RequiredSkills: []domain.SkillTag{domain.SkillAnalysis, domain.SkillCodeGen},
 		RequiredTools:  []string{"tool-a", "tool-b"},
 		MinTier:        domain.TierExpert,
 		BaseXP:         500,
@@ -263,7 +265,7 @@ func extractQuest() EntitySchema {
 		Attempts:       1,
 		MaxAttempts:    5,
 		TrajectoryID:   "traj-123",
-		Constraints:    semdragons.QuestConstraints{ReviewLevel: domain.ReviewStrict},
+		Constraints:    domain.QuestConstraints{ReviewLevel: domain.ReviewStrict},
 	}
 
 	return classify(minimal.Triples(), full.Triples())
@@ -273,7 +275,7 @@ func extractBattle() EntitySchema {
 	now := time.Now()
 	completedAt := now.Add(time.Hour)
 
-	minimal := &semdragons.BossBattle{
+	minimal := &bossbattle.BossBattle{
 		ID:        "test-battle",
 		QuestID:   "test-quest",
 		AgentID:   "test-agent",
@@ -282,7 +284,7 @@ func extractBattle() EntitySchema {
 		StartedAt: now,
 	}
 
-	full := &semdragons.BossBattle{
+	full := &bossbattle.BossBattle{
 		ID:          "test-battle",
 		QuestID:     "test-quest",
 		AgentID:     "test-agent",
@@ -290,13 +292,13 @@ func extractBattle() EntitySchema {
 		Level:       domain.ReviewStrict,
 		StartedAt:   now,
 		CompletedAt: &completedAt,
-		Verdict: &semdragons.BattleVerdict{
+		Verdict: &domain.BattleVerdict{
 			Passed:       true,
 			QualityScore: 0.95,
 			XPAwarded:    500,
 			Feedback:     "Great work",
 		},
-		Judges: []semdragons.Judge{
+		Judges: []bossbattle.Judge{
 			{ID: "judge-1", Type: domain.JudgeLLM},
 			{ID: "judge-2", Type: domain.JudgeAutomated},
 		},
@@ -309,7 +311,7 @@ func extractParty() EntitySchema {
 	now := time.Now()
 	disbanded := now.Add(time.Hour)
 
-	minimal := &semdragons.Party{
+	minimal := &partycoord.Party{
 		ID:       "test-party",
 		Name:     "Test Party",
 		Status:   domain.PartyForming,
@@ -318,20 +320,20 @@ func extractParty() EntitySchema {
 		FormedAt: now,
 	}
 
-	full := &semdragons.Party{
+	full := &partycoord.Party{
 		ID:       "test-party",
 		Name:     "Full Party",
 		Status:   domain.PartyActive,
 		QuestID:  "test-quest",
 		Lead:     "test-agent",
 		Strategy: "balanced",
-		Members: []semdragons.PartyMember{
-			{AgentID: semdragons.AgentID(markerAgentA), Role: domain.RoleExecutor},
-			{AgentID: semdragons.AgentID(markerAgentB), Role: domain.RoleReviewer},
+		Members: []partycoord.PartyMember{
+			{AgentID: domain.AgentID(markerAgentA), Role: domain.RoleExecutor},
+			{AgentID: domain.AgentID(markerAgentB), Role: domain.RoleReviewer},
 		},
-		SubQuestMap: map[semdragons.QuestID]semdragons.AgentID{
-			semdragons.QuestID(markerQuestA): "agent-a",
-			semdragons.QuestID(markerQuestB): "agent-b",
+		SubQuestMap: map[domain.QuestID]domain.AgentID{
+			domain.QuestID(markerQuestA): "agent-a",
+			domain.QuestID(markerQuestB): "agent-b",
 		},
 		FormedAt:    now,
 		DisbandedAt: &disbanded,
@@ -343,7 +345,7 @@ func extractParty() EntitySchema {
 func extractGuild() EntitySchema {
 	now := time.Now()
 
-	minimal := &semdragons.Guild{
+	minimal := &domain.Guild{
 		ID:            "test-guild",
 		Name:          "Test Guild",
 		Description:   "test",
@@ -359,7 +361,7 @@ func extractGuild() EntitySchema {
 		CreatedAt:     now,
 	}
 
-	full := &semdragons.Guild{
+	full := &domain.Guild{
 		ID:          "test-guild",
 		Name:        "Full Guild",
 		Description: "A fully-populated guild",
@@ -370,9 +372,9 @@ func extractGuild() EntitySchema {
 		FoundedBy:   "founder",
 		Culture:     "excellence",
 		Motto:       "ship it",
-		Members: []semdragons.GuildMember{
-			{AgentID: semdragons.AgentID(markerAgentA), Rank: domain.GuildRankMember, Contribution: 100},
-			{AgentID: semdragons.AgentID(markerAgentB), Rank: domain.GuildRankVeteran, Contribution: 500},
+		Members: []domain.GuildMember{
+			{AgentID: domain.AgentID(markerAgentA), Rank: domain.GuildRankMember, Contribution: 100},
+			{AgentID: domain.AgentID(markerAgentB), Rank: domain.GuildRankVeteran, Contribution: 500},
 		},
 		SharedTools:      []string{"tool-1", "tool-2"},
 		QuestTypes:       []string{"analysis", "code_review"},

@@ -10,6 +10,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/component"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -41,7 +42,7 @@ type Component struct {
 	watchDoneCh chan struct{}
 
 	// Agent state cache for detecting level/XP transitions that trigger clustering
-	agents   map[string]*semdragons.Agent
+	agents   map[string]*agentprogression.Agent
 	agentsMu sync.RWMutex
 
 	// Internal state
@@ -217,7 +218,7 @@ func (c *Component) Initialize() error {
 	}
 
 	c.boardConfig = c.config.ToBoardConfig()
-	c.agents = make(map[string]*semdragons.Agent)
+	c.agents = make(map[string]*agentprogression.Agent)
 	c.stopChan = make(chan struct{})
 
 	return nil

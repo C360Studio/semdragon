@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 func TestTraceManager_StartQuestTrace(t *testing.T) {
 	tm := NewTraceManager()
 
-	questID := QuestID("test.quest.1")
+	questID := domain.QuestID("test.quest.1")
 	tc := tm.StartQuestTrace(questID)
 
 	if tc == nil {
@@ -44,8 +46,8 @@ func TestTraceManager_StartQuestTrace(t *testing.T) {
 func TestTraceManager_StartQuestTraceWithParent(t *testing.T) {
 	tm := NewTraceManager()
 
-	parentID := QuestID("test.quest.parent")
-	childID := QuestID("test.quest.child")
+	parentID := domain.QuestID("test.quest.parent")
+	childID := domain.QuestID("test.quest.child")
 
 	// Start parent trace
 	parentTC := tm.StartQuestTrace(parentID)
@@ -84,8 +86,8 @@ func TestTraceManager_StartQuestTraceWithParent_NoParent(t *testing.T) {
 	tm := NewTraceManager()
 
 	// Start child trace with non-existent parent
-	childID := QuestID("test.quest.orphan")
-	nonExistentParent := QuestID("test.quest.missing")
+	childID := domain.QuestID("test.quest.orphan")
+	nonExistentParent := domain.QuestID("test.quest.missing")
 
 	childTC := tm.StartQuestTraceWithParent(childID, nonExistentParent)
 
@@ -103,7 +105,7 @@ func TestTraceManager_NewEventSpan(t *testing.T) {
 	tm := NewTraceManager()
 	ctx := context.Background()
 
-	questID := QuestID("test.quest.1")
+	questID := domain.QuestID("test.quest.1")
 	rootTC := tm.StartQuestTrace(questID)
 
 	// Create event span
@@ -135,7 +137,7 @@ func TestTraceManager_NewEventSpan_NoTrace(t *testing.T) {
 	ctx := context.Background()
 
 	// No trace registered
-	questID := QuestID("test.quest.missing")
+	questID := domain.QuestID("test.quest.missing")
 
 	newCtx, eventTC := tm.NewEventSpan(ctx, questID)
 
@@ -151,7 +153,7 @@ func TestTraceManager_NewEventSpan_NoTrace(t *testing.T) {
 func TestTraceManager_EndQuestTrace(t *testing.T) {
 	tm := NewTraceManager()
 
-	questID := QuestID("test.quest.1")
+	questID := domain.QuestID("test.quest.1")
 	tm.StartQuestTrace(questID)
 
 	if tm.ActiveTraces() != 1 {
@@ -175,7 +177,7 @@ func TestTraceManager_ContextWithQuestTrace(t *testing.T) {
 	tm := NewTraceManager()
 	ctx := context.Background()
 
-	questID := QuestID("test.quest.1")
+	questID := domain.QuestID("test.quest.1")
 	tc := tm.StartQuestTrace(questID)
 
 	// Get context with trace
@@ -198,7 +200,7 @@ func TestTraceManager_ContextWithQuestTrace_NoTrace(t *testing.T) {
 	ctx := context.Background()
 
 	// No trace registered
-	questID := QuestID("test.quest.missing")
+	questID := domain.QuestID("test.quest.missing")
 
 	traceCtx := tm.ContextWithQuestTrace(ctx, questID)
 
@@ -211,7 +213,7 @@ func TestTraceManager_ContextWithQuestTrace_NoTrace(t *testing.T) {
 func TestTraceInfo(t *testing.T) {
 	tm := NewTraceManager()
 
-	questID := QuestID("test.quest.1")
+	questID := domain.QuestID("test.quest.1")
 	tc := tm.StartQuestTrace(questID)
 
 	info := TraceInfoFromTraceContext(tc)
@@ -245,7 +247,7 @@ func TestTraceManager_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			questID := QuestID(fmt.Sprintf("quest.%d", n))
+			questID := domain.QuestID(fmt.Sprintf("quest.%d", n))
 
 			// Start trace
 			tm.StartQuestTrace(questID)

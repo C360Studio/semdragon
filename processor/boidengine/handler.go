@@ -7,6 +7,9 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -22,9 +25,9 @@ func (c *Component) loadInitialState(ctx context.Context) error {
 	}
 	c.agentsMu.Lock()
 	for _, entity := range agentEntities {
-		agent := semdragons.AgentFromEntityState(&entity)
+		agent := agentprogression.AgentFromEntityState(&entity)
 		if agent != nil {
-			instance := semdragons.ExtractInstance(string(agent.ID))
+			instance := domain.ExtractInstance(string(agent.ID))
 			c.agents[instance] = agent
 		}
 	}
@@ -37,9 +40,9 @@ func (c *Component) loadInitialState(ctx context.Context) error {
 	}
 	c.questsMu.Lock()
 	for _, entity := range questEntities {
-		quest := semdragons.QuestFromEntityState(&entity)
-		if quest != nil && quest.Status == semdragons.QuestPosted {
-			instance := semdragons.ExtractInstance(string(quest.ID))
+		quest := domain.QuestFromEntityState(&entity)
+		if quest != nil && quest.Status == domain.QuestPosted {
+			instance := domain.ExtractInstance(string(quest.ID))
 			c.quests[instance] = quest
 		}
 	}
@@ -53,9 +56,9 @@ func (c *Component) loadInitialState(ctx context.Context) error {
 	} else {
 		c.guildsMu.Lock()
 		for _, entity := range guildEntities {
-			guild := semdragons.GuildFromEntityState(&entity)
+			guild := domain.GuildFromEntityState(&entity)
 			if guild != nil {
-				instance := semdragons.ExtractInstance(string(guild.ID))
+				instance := domain.ExtractInstance(string(guild.ID))
 				c.guilds[instance] = guild
 			}
 		}
@@ -176,7 +179,7 @@ func (c *Component) processWatchUpdates() {
 // org.platform.game.board.agent.instance (e.g., test.integration.game.board1.agent.abc123)
 func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 	key := entry.Key()
-	instance := semdragons.ExtractInstance(key)
+	instance := domain.ExtractInstance(key)
 	if instance == "" || instance == key {
 		// Key did not contain a dot separator — not a valid entity ID.
 		c.logger.Warn("agent watch entry has unexpected key format", "key", key)
@@ -197,7 +200,7 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 		c.logger.Warn("failed to decode agent entity state", "instance", instance, "error", err)
 		return
 	}
-	agent := semdragons.AgentFromEntityState(entityState)
+	agent := agentprogression.AgentFromEntityState(entityState)
 	if agent == nil {
 		c.logger.Warn("failed to reconstruct agent from entity state", "instance", instance)
 		return
@@ -215,7 +218,7 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 // org.platform.game.board.quest.instance (e.g., test.integration.game.board1.quest.abc123)
 func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 	key := entry.Key()
-	instance := semdragons.ExtractInstance(key)
+	instance := domain.ExtractInstance(key)
 	if instance == "" || instance == key {
 		// Key did not contain a dot separator — not a valid entity ID.
 		c.logger.Warn("quest watch entry has unexpected key format", "key", key)
@@ -236,7 +239,7 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 		c.logger.Warn("failed to decode quest entity state", "instance", instance, "error", err)
 		return
 	}
-	quest := semdragons.QuestFromEntityState(entityState)
+	quest := domain.QuestFromEntityState(entityState)
 	if quest == nil {
 		c.logger.Warn("failed to reconstruct quest from entity state", "instance", instance)
 		return
@@ -244,7 +247,7 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 
 	c.questsMu.Lock()
 	// Only track posted quests for boid calculations.
-	if quest.Status == semdragons.QuestPosted {
+	if quest.Status == domain.QuestPosted {
 		c.quests[instance] = quest
 	} else {
 		// Remove non-posted quests from cache.
@@ -258,7 +261,7 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 // handleGuildUpdate processes a guild state change from KV.
 func (c *Component) handleGuildUpdate(entry jetstream.KeyValueEntry) {
 	key := entry.Key()
-	instance := semdragons.ExtractInstance(key)
+	instance := domain.ExtractInstance(key)
 	if instance == "" || instance == key {
 		c.logger.Warn("guild watch entry has unexpected key format", "key", key)
 		return
@@ -277,7 +280,7 @@ func (c *Component) handleGuildUpdate(entry jetstream.KeyValueEntry) {
 		c.logger.Warn("failed to decode guild entity state", "instance", instance, "error", err)
 		return
 	}
-	guild := semdragons.GuildFromEntityState(entityState)
+	guild := domain.GuildFromEntityState(entityState)
 	if guild == nil {
 		c.logger.Warn("failed to reconstruct guild from entity state", "instance", instance)
 		return
@@ -322,17 +325,17 @@ func (c *Component) computeAndPublish() {
 
 	// Gather current state
 	c.agentsMu.RLock()
-	agents := make([]semdragons.Agent, 0, len(c.agents))
+	agents := make([]agentprogression.Agent, 0, len(c.agents))
 	for _, agent := range c.agents {
 		agents = append(agents, *agent)
 	}
 	c.agentsMu.RUnlock()
 
 	c.questsMu.RLock()
-	quests := make([]semdragons.Quest, 0, len(c.quests))
+	quests := make([]domain.Quest, 0, len(c.quests))
 	for _, quest := range c.quests {
 		// Only include posted (available) quests
-		if quest.Status == semdragons.QuestPosted {
+		if quest.Status == domain.QuestPosted {
 			quests = append(quests, *quest)
 		}
 	}
@@ -344,7 +347,7 @@ func (c *Component) computeAndPublish() {
 
 	// Provide guild context for rank/reputation scoring
 	c.guildsMu.RLock()
-	guildCtx := make(map[semdragons.GuildID]*semdragons.Guild, len(c.guilds))
+	guildCtx := make(map[domain.GuildID]*domain.Guild, len(c.guilds))
 	for _, guild := range c.guilds {
 		guildCtx[guild.ID] = guild
 	}
@@ -374,7 +377,7 @@ func (c *Component) computeAndPublish() {
 	ctx := context.Background()
 	totalPublished := 0
 	for agentID, suggestions := range topN {
-		subject := "boid.suggestions." + semdragons.ExtractInstance(string(agentID))
+		subject := "boid.suggestions." + domain.ExtractInstance(string(agentID))
 		data, err := json.Marshal(suggestions)
 		if err != nil {
 			c.errorsCount.Add(1)
@@ -423,16 +426,16 @@ func (c *Component) GetRules() BoidRules {
 // ComputeAttractionsNow computes attractions immediately without waiting for the periodic loop.
 func (c *Component) ComputeAttractionsNow() []QuestAttraction {
 	c.agentsMu.RLock()
-	agents := make([]semdragons.Agent, 0, len(c.agents))
+	agents := make([]agentprogression.Agent, 0, len(c.agents))
 	for _, agent := range c.agents {
 		agents = append(agents, *agent)
 	}
 	c.agentsMu.RUnlock()
 
 	c.questsMu.RLock()
-	quests := make([]semdragons.Quest, 0, len(c.quests))
+	quests := make([]domain.Quest, 0, len(c.quests))
 	for _, quest := range c.quests {
-		if quest.Status == semdragons.QuestPosted {
+		if quest.Status == domain.QuestPosted {
 			quests = append(quests, *quest)
 		}
 	}
@@ -440,7 +443,7 @@ func (c *Component) ComputeAttractionsNow() []QuestAttraction {
 
 	// Provide guild context for rank/reputation scoring
 	c.guildsMu.RLock()
-	guildCtx := make(map[semdragons.GuildID]*semdragons.Guild, len(c.guilds))
+	guildCtx := make(map[domain.GuildID]*domain.Guild, len(c.guilds))
 	for _, guild := range c.guilds {
 		guildCtx[guild.ID] = guild
 	}

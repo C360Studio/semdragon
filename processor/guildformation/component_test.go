@@ -212,7 +212,7 @@ func TestComponent_CreateGuild(t *testing.T) {
 	if guild.Status != domain.GuildActive {
 		t.Errorf("Status = %v, want %v", guild.Status, domain.GuildActive)
 	}
-	if guild.FoundedBy != semdragons.AgentID(founderID) {
+	if guild.FoundedBy != domain.AgentID(founderID) {
 		t.Errorf("FoundedBy = %v, want %v", guild.FoundedBy, founderID)
 	}
 	if guild.Founded.IsZero() {
@@ -223,7 +223,7 @@ func TestComponent_CreateGuild(t *testing.T) {
 	if len(guild.Members) != 1 {
 		t.Fatalf("Members count = %d, want 1 (founder)", len(guild.Members))
 	}
-	if guild.Members[0].AgentID != semdragons.AgentID(founderID) {
+	if guild.Members[0].AgentID != domain.AgentID(founderID) {
 		t.Errorf("Founder should be first member")
 	}
 	if guild.Members[0].Rank != domain.GuildRankMaster {
@@ -319,9 +319,9 @@ func TestComponent_JoinGuild(t *testing.T) {
 	}
 
 	// New member should have Initiate rank
-	var newMember *semdragons.GuildMember
+	var newMember *domain.GuildMember
 	for i := range updated.Members {
-		if updated.Members[i].AgentID == semdragons.AgentID(memberID) {
+		if updated.Members[i].AgentID == domain.AgentID(memberID) {
 			newMember = &updated.Members[i]
 			break
 		}
@@ -474,7 +474,7 @@ func TestComponent_LeaveGuild(t *testing.T) {
 		t.Errorf("Members count = %d, want 1 (only founder)", len(updated.Members))
 	}
 	for _, m := range updated.Members {
-		if m.AgentID == semdragons.AgentID(memberID) {
+		if m.AgentID == domain.AgentID(memberID) {
 			t.Error("Departed member should not be in Members list")
 		}
 	}
@@ -547,7 +547,7 @@ func TestComponent_PromoteMember(t *testing.T) {
 	}
 
 	for _, m := range updated.Members {
-		if m.AgentID == semdragons.AgentID(memberID) {
+		if m.AgentID == domain.AgentID(memberID) {
 			if m.Rank != domain.GuildRankOfficer {
 				t.Errorf("Rank = %v, want %v", m.Rank, domain.GuildRankOfficer)
 			}
@@ -795,6 +795,6 @@ func setupGuildComponent(t *testing.T, client *natsclient.Client, board string) 
 // makeAgentID constructs a fully-qualified agent entity ID for tests.
 func makeAgentID(t *testing.T, cfg *domain.BoardConfig, suffix string) domain.AgentID {
 	t.Helper()
-	instance := suffix + "-" + semdragons.GenerateInstance()
+	instance := suffix + "-" + domain.GenerateInstance()
 	return domain.AgentID(cfg.AgentEntityID(instance))
 }

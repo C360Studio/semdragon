@@ -16,6 +16,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -33,7 +36,7 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	boidEngine  BoidEngine
 	logger      *slog.Logger
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 	rules       BoidRules
 
 	// KV watches for real-time state updates
@@ -42,9 +45,9 @@ type Component struct {
 	guildWatch jetstream.KeyWatcher
 
 	// Cached state
-	agents   map[string]*semdragons.Agent
-	quests   map[string]*semdragons.Quest
-	guilds   map[string]*semdragons.Guild
+	agents   map[string]*agentprogression.Agent
+	quests   map[string]*domain.Quest
+	guilds   map[string]*domain.Guild
 	agentsMu sync.RWMutex
 	questsMu sync.RWMutex
 	guildsMu sync.RWMutex
@@ -276,9 +279,9 @@ func (c *Component) Initialize() error {
 	c.boardConfig = c.config.ToBoardConfig()
 	c.rules = c.config.ToBoidRules()
 	c.boidEngine = NewDefaultBoidEngine()
-	c.agents = make(map[string]*semdragons.Agent)
-	c.quests = make(map[string]*semdragons.Quest)
-	c.guilds = make(map[string]*semdragons.Guild)
+	c.agents = make(map[string]*agentprogression.Agent)
+	c.quests = make(map[string]*domain.Quest)
+	c.guilds = make(map[string]*domain.Guild)
 	c.stopChan = make(chan struct{})
 	c.doneChan = make(chan struct{})
 	c.watchDoneCh = make(chan struct{})

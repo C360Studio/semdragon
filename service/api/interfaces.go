@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semstreams/graph"
@@ -13,11 +12,11 @@ import (
 // GraphQuerier abstracts GraphClient read/write operations used by handlers.
 // Extracting this interface enables handlers to be tested without a live NATS connection.
 type GraphQuerier interface {
-	Config() *semdragons.BoardConfig
-	GetQuest(ctx context.Context, id semdragons.QuestID) (*graph.EntityState, error)
-	GetAgent(ctx context.Context, id semdragons.AgentID) (*graph.EntityState, error)
-	GetBattle(ctx context.Context, id semdragons.BattleID) (*graph.EntityState, error)
-	GetPeerReview(ctx context.Context, id semdragons.PeerReviewID) (*graph.EntityState, error)
+	Config() *domain.BoardConfig
+	GetQuest(ctx context.Context, id domain.QuestID) (*graph.EntityState, error)
+	GetAgent(ctx context.Context, id domain.AgentID) (*graph.EntityState, error)
+	GetBattle(ctx context.Context, id domain.BattleID) (*graph.EntityState, error)
+	GetPeerReview(ctx context.Context, id domain.PeerReviewID) (*graph.EntityState, error)
 	ListQuestsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
 	ListAgentsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
 	ListPeerReviewsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)

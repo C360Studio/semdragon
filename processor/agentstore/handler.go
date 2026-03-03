@@ -7,6 +7,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -52,7 +53,7 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 	}
 
 	key := entry.Key()
-	instance := semdragons.ExtractInstance(key)
+	instance := domain.ExtractInstance(key)
 	if instance == "" || instance == key {
 		// Key did not contain a dot separator — not a valid entity ID.
 		c.logger.Warn("agent watch entry has unexpected key format", "key", key)
@@ -71,7 +72,7 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 		c.logger.Warn("failed to decode agent entity state", "instance", instance, "error", err)
 		return
 	}
-	agent := semdragons.AgentFromEntityState(entityState)
+	agent := agentprogression.AgentFromEntityState(entityState)
 	if agent == nil {
 		c.logger.Warn("failed to reconstruct agent from entity state", "instance", instance)
 		return
@@ -119,7 +120,7 @@ func (c *Component) loadInitialInventories(ctx context.Context) error {
 
 	loaded := 0
 	for _, entity := range agentEntities {
-		agent := semdragons.AgentFromEntityState(&entity)
+		agent := agentprogression.AgentFromEntityState(&entity)
 		if agent == nil {
 			continue
 		}
@@ -140,7 +141,7 @@ func (c *Component) loadInitialInventories(ctx context.Context) error {
 // reconstructed Agent into the local caches. Uses merge (not replace) because
 // the watcher may reflect our own stale KV writes back — a full replacement
 // would overwrite more recent local state from Purchase/UseConsumable calls.
-func (c *Component) syncInventoryFromAgent(agent *semdragons.Agent) {
+func (c *Component) syncInventoryFromAgent(agent *agentprogression.Agent) {
 	hasInventory := len(agent.OwnedTools) > 0 || len(agent.Consumables) > 0 || agent.TotalSpent > 0
 	hasEffects := len(agent.ActiveEffects) > 0
 
@@ -211,7 +212,7 @@ func (c *Component) syncInventoryFromAgent(agent *semdragons.Agent) {
 
 // logNewlyAffordableItems logs store items that became affordable after an XP change.
 // This is observability — the actual purchase remains an explicit caller action.
-func (c *Component) logNewlyAffordableItems(agent *semdragons.Agent) {
+func (c *Component) logNewlyAffordableItems(agent *agentprogression.Agent) {
 	affordable := c.ListItems(agent.Tier)
 	for _, item := range affordable {
 		if agent.XP >= item.XPCost {
@@ -230,12 +231,12 @@ func (c *Component) logNewlyAffordableItems(agent *semdragons.Agent) {
 func (c *Component) AgentXP(agentID domain.AgentID) (int64, bool) {
 	// The cache key is the full entity ID stored in the KV bucket.
 	// We need to search by instance suffix since we cache by full key.
-	instance := semdragons.ExtractInstance(string(agentID))
+	instance := domain.ExtractInstance(string(agentID))
 	var found int64
 	var ok bool
 	c.agentXPCache.Range(func(k, v any) bool {
 		key := k.(string)
-		if semdragons.ExtractInstance(key) == instance {
+		if domain.ExtractInstance(key) == instance {
 			found = v.(int64)
 			ok = true
 			return false // Stop iteration
@@ -252,7 +253,7 @@ func (c *Component) AgentXPFromGraph(ctx context.Context, agentID domain.AgentID
 	if err != nil {
 		return 0, 0, errs.Wrap(err, "agent_store", "AgentXPFromGraph", "get agent")
 	}
-	agent := semdragons.AgentFromEntityState(entity)
+	agent := agentprogression.AgentFromEntityState(entity)
 	if agent == nil {
 		return 0, 0, errors.New("agent not found")
 	}
@@ -423,11 +424,11 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 	// Read-modify-write agent entity to KV (source of truth)
 	agentEntity, agentErr := c.graph.GetAgent(ctx, agentID)
 	if agentErr == nil && agentEntity != nil {
-		agent := semdragons.AgentFromEntityState(agentEntity)
+		agent := agentprogression.AgentFromEntityState(agentEntity)
 		if agent != nil {
 			// Ensure maps are initialized
 			if agent.OwnedTools == nil {
-				agent.OwnedTools = make(map[string]semdragons.OwnedTool)
+				agent.OwnedTools = make(map[string]agentprogression.OwnedTool)
 			}
 			if agent.Consumables == nil {
 				agent.Consumables = make(map[string]int)
@@ -439,7 +440,7 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 				if item.PurchaseType == PurchaseRental {
 					usesRemaining = item.RentalUses
 				}
-				agent.OwnedTools[itemID] = semdragons.OwnedTool{
+				agent.OwnedTools[itemID] = agentprogression.OwnedTool{
 					StoreItemID:   item.EntityID(),
 					XPSpent:       effectiveCost,
 					UsesRemaining: usesRemaining,
@@ -590,7 +591,7 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 	// Read-modify-write agent entity to KV (source of truth)
 	agentEntity, agentErr := c.graph.GetAgent(ctx, agentID)
 	if agentErr == nil && agentEntity != nil {
-		agent := semdragons.AgentFromEntityState(agentEntity)
+		agent := agentprogression.AgentFromEntityState(agentEntity)
 		if agent != nil {
 			if agent.Consumables == nil {
 				agent.Consumables = make(map[string]int)
@@ -603,21 +604,21 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 			}
 
 			// Add active effect to agent entity
-			agent.ActiveEffects = append(agent.ActiveEffects, semdragons.AgentEffect{
+			agent.ActiveEffects = append(agent.ActiveEffects, agentprogression.AgentEffect{
 				EffectType:      string(item.Effect.Type),
 				QuestsRemaining: item.Effect.Duration,
 				QuestID:         questID,
 			})
 
 			// Handle cooldown_skip: transition agent back to idle
-			if item.Effect.Type == ConsumableCooldownSkip && agent.Status == semdragons.AgentCooldown {
-				agent.Status = semdragons.AgentIdle
+			if item.Effect.Type == ConsumableCooldownSkip && agent.Status == domain.AgentCooldown {
+				agent.Status = domain.AgentIdle
 				agent.CooldownUntil = nil
 			}
 
 			agent.UpdatedAt = now
 			eventType := "agent.consumable.used"
-			if item.Effect.Type == ConsumableCooldownSkip && agent.Status == semdragons.AgentIdle {
+			if item.Effect.Type == ConsumableCooldownSkip && agent.Status == domain.AgentIdle {
 				eventType = "agent.status.idle"
 			}
 			if writeErr := c.graph.EmitEntityUpdate(ctx, agent, eventType); writeErr != nil {

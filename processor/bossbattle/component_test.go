@@ -12,7 +12,9 @@ import (
 	"github.com/c360studio/semstreams/natsclient"
 
 	semdragons "github.com/c360studio/semdragons"
-	"github.com/c360studio/semdragons/processor/questboard"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -162,14 +164,14 @@ func TestComponent_StartBattle(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create a test quest
-	quest := &questboard.Quest{
-		ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
+	quest := &domain.Quest{
+		ID:         domain.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
 		Title:      "Test Quest",
-		Difficulty: semdragons.DifficultyModerate,
+		Difficulty: domain.DifficultyModerate,
 		BaseXP:     100,
-		Constraints: questboard.QuestConstraints{
+		Constraints: domain.QuestConstraints{
 			RequireReview: true,
-			ReviewLevel:   semdragons.ReviewStandard,
+			ReviewLevel:   domain.ReviewStandard,
 		},
 	}
 
@@ -191,8 +193,8 @@ func TestComponent_StartBattle(t *testing.T) {
 		t.Errorf("Battle.QuestID = %v, want %v", battle.QuestID, quest.ID)
 	}
 
-	if battle.Status != semdragons.BattleActive {
-		t.Errorf("Battle.Status = %v, want %v", battle.Status, semdragons.BattleActive)
+	if battle.Status != domain.BattleActive {
+		t.Errorf("Battle.Status = %v, want %v", battle.Status, domain.BattleActive)
 	}
 
 	// Check battle has criteria and judges
@@ -219,13 +221,13 @@ func TestComponent_ListActiveBattles(t *testing.T) {
 	}
 
 	// Start a battle
-	quest := &questboard.Quest{
-		ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
+	quest := &domain.Quest{
+		ID:         domain.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
 		Title:      "Test Quest",
-		Difficulty: semdragons.DifficultyModerate,
-		Constraints: questboard.QuestConstraints{
+		Difficulty: domain.DifficultyModerate,
+		Constraints: domain.QuestConstraints{
 			RequireReview: true,
-			ReviewLevel:   semdragons.ReviewHuman, // Human review so it stays active
+			ReviewLevel:   domain.ReviewHuman, // Human review so it stays active
 		},
 	}
 
@@ -256,13 +258,13 @@ func TestComponent_Stats(t *testing.T) {
 	}
 
 	// Start a battle
-	quest := &questboard.Quest{
-		ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
+	quest := &domain.Quest{
+		ID:         domain.QuestID(comp.boardConfig.QuestEntityID("test-quest")),
 		Title:      "Test Quest",
-		Difficulty: semdragons.DifficultyModerate,
-		Constraints: questboard.QuestConstraints{
+		Difficulty: domain.DifficultyModerate,
+		Constraints: domain.QuestConstraints{
 			RequireReview: true,
-			ReviewLevel:   semdragons.ReviewStandard,
+			ReviewLevel:   domain.ReviewStandard,
 		},
 	}
 
@@ -308,33 +310,33 @@ func TestBattleStartSetsInBattle(t *testing.T) {
 	gc := comp.Graph()
 
 	// Create agent
-	agentInstance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(comp.boardConfig.AgentEntityID(agentInstance))
-	agent := &semdragons.Agent{
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.boardConfig.AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
 		ID:     agentID,
 		Name:   "battle-agent",
-		Status: semdragons.AgentOnQuest,
+		Status: domain.AgentOnQuest,
 		Level:  7,
-		Tier:   semdragons.TierJourneyman,
+		Tier:   domain.TierJourneyman,
 	}
 	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
 		t.Fatalf("Failed to create test agent: %v", err)
 	}
 
 	// Create a quest that requires review and transition it to in_review
-	questInstance := semdragons.GenerateInstance()
-	questID := semdragons.QuestID(comp.boardConfig.QuestEntityID(questInstance))
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(comp.boardConfig.QuestEntityID(questInstance))
 	claimedBy := agentID
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID:         questID,
 		Title:      "Battle Start Quest",
-		Status:     semdragons.QuestInProgress,
-		Difficulty: semdragons.DifficultyModerate,
+		Status:     domain.QuestInProgress,
+		Difficulty: domain.DifficultyModerate,
 		BaseXP:     100,
 		ClaimedBy:  &claimedBy,
-		Constraints: questboard.QuestConstraints{
+		Constraints: domain.QuestConstraints{
 			RequireReview: true,
-			ReviewLevel:   semdragons.ReviewStandard,
+			ReviewLevel:   domain.ReviewStandard,
 		},
 	}
 
@@ -347,7 +349,7 @@ func TestBattleStartSetsInBattle(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Transition quest to in_review — this triggers battle start via KV watcher
-	quest.Status = semdragons.QuestInReview
+	quest.Status = domain.QuestInReview
 	quest.Output = map[string]any{"result": "test output"}
 	if err := gc.EmitEntityUpdate(ctx, quest, "quest.in_review"); err != nil {
 		t.Fatalf("Failed to transition quest to in_review: %v", err)
@@ -359,8 +361,8 @@ func TestBattleStartSetsInBattle(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		updatedAgent := semdragons.AgentFromEntityState(agentEntity)
-		return updatedAgent != nil && updatedAgent.Status == semdragons.AgentInBattle
+		updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
+		return updatedAgent != nil && updatedAgent.Status == domain.AgentInBattle
 	}, "agent status to become AgentInBattle")
 
 	// Final read to produce a clear error message if the poll somehow passed early.
@@ -368,13 +370,13 @@ func TestBattleStartSetsInBattle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent failed: %v", err)
 	}
-	updatedAgent := semdragons.AgentFromEntityState(agentEntity)
+	updatedAgent := agentprogression.AgentFromEntityState(agentEntity)
 	if updatedAgent == nil {
 		t.Fatal("Failed to reconstruct agent from entity state")
 	}
 
-	if updatedAgent.Status != semdragons.AgentInBattle {
-		t.Errorf("Status = %v, want %v", updatedAgent.Status, semdragons.AgentInBattle)
+	if updatedAgent.Status != domain.AgentInBattle {
+		t.Errorf("Status = %v, want %v", updatedAgent.Status, domain.AgentInBattle)
 	}
 }
 
@@ -391,15 +393,15 @@ func TestBattleVerdictTransitionsQuest(t *testing.T) {
 	gc := comp.Graph()
 
 	// Start a battle directly (not via watcher, for deterministic control)
-	quest := &questboard.Quest{
-		ID:         semdragons.QuestID(comp.boardConfig.QuestEntityID("verdict-quest")),
+	quest := &domain.Quest{
+		ID:         domain.QuestID(comp.boardConfig.QuestEntityID("verdict-quest")),
 		Title:      "Verdict Bridge Quest",
-		Difficulty: semdragons.DifficultyModerate,
+		Difficulty: domain.DifficultyModerate,
 		BaseXP:     100,
-		Status:     semdragons.QuestInReview,
-		Constraints: questboard.QuestConstraints{
+		Status:     domain.QuestInReview,
+		Constraints: domain.QuestConstraints{
 			RequireReview: true,
-			ReviewLevel:   semdragons.ReviewStandard,
+			ReviewLevel:   domain.ReviewStandard,
 		},
 	}
 
@@ -442,8 +444,8 @@ func TestBattleVerdictTransitionsQuest(t *testing.T) {
 
 	// DefaultBattleEvaluator always passes with ReviewStandard, so the quest
 	// must be completed (not failed).
-	if questStatus != string(semdragons.QuestCompleted) {
-		t.Errorf("Quest status = %q after victory verdict, want %q", questStatus, semdragons.QuestCompleted)
+	if questStatus != string(domain.QuestCompleted) {
+		t.Errorf("Quest status = %q after victory verdict, want %q", questStatus, domain.QuestCompleted)
 	}
 
 	// Verify battle reached terminal state (already ensured by waitFor above).

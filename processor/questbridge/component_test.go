@@ -17,7 +17,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/questboard"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/natsclient"
@@ -636,18 +636,18 @@ func setupComponent(t *testing.T, client *natsclient.Client, board string) (*Com
 
 // createTestAgent writes an idle agent entity into the board KV bucket.
 // level determines the trust tier (see domain.TierFromLevel).
-func createTestAgent(t *testing.T, gc *semdragons.GraphClient, boardCfg *semdragons.BoardConfig, name string, level int) *semdragons.Agent {
+func createTestAgent(t *testing.T, gc *semdragons.GraphClient, boardCfg *domain.BoardConfig, name string, level int) *agentprogression.Agent {
 	t.Helper()
 
-	instance := semdragons.GenerateInstance()
-	agentID := semdragons.AgentID(boardCfg.AgentEntityID(instance))
+	instance := domain.GenerateInstance()
+	agentID := domain.AgentID(boardCfg.AgentEntityID(instance))
 
-	agent := &semdragons.Agent{
+	agent := &agentprogression.Agent{
 		ID:     agentID,
 		Name:   name,
 		Level:  level,
-		Tier:   semdragons.TierFromLevel(level),
-		Status: semdragons.AgentIdle,
+		Tier:   domain.TierFromLevel(level),
+		Status: domain.AgentIdle,
 	}
 
 	ctx := context.Background()
@@ -665,21 +665,21 @@ func createTestAgent(t *testing.T, gc *semdragons.GraphClient, boardCfg *semdrag
 // The quest is first written as "claimed" so the questCache has a prior non-
 // in_progress entry, then the caller invokes writeQuestInProgress to trigger
 // the transition detection. This helper returns the full entity ID.
-func createInProgressQuest(t *testing.T, gc *semdragons.GraphClient, boardCfg *semdragons.BoardConfig, agentID semdragons.AgentID, title string) semdragons.QuestID {
+func createInProgressQuest(t *testing.T, gc *semdragons.GraphClient, boardCfg *domain.BoardConfig, agentID domain.AgentID, title string) domain.QuestID {
 	t.Helper()
 
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	entityID := boardCfg.QuestEntityID(instance)
-	questID := semdragons.QuestID(entityID)
+	questID := domain.QuestID(entityID)
 
 	// Write as "claimed" so questCache records a non-in_progress status.
 	// writeQuestInProgress will then trigger the transition.
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID:          domain.QuestID(questID),
 		Title:       title,
 		Description: "Integration test quest",
 		Status:      domain.QuestClaimed,
-		Difficulty:  semdragons.DifficultyTrivial,
+		Difficulty:  domain.DifficultyTrivial,
 		BaseXP:      100,
 		MaxAttempts: 3,
 		Attempts:    1,
@@ -696,19 +696,19 @@ func createInProgressQuest(t *testing.T, gc *semdragons.GraphClient, boardCfg *s
 
 // createInProgressQuestDirect writes a quest directly as in_progress into KV.
 // Used by the bootstrap test to pre-populate KV before the component starts.
-func createInProgressQuestDirect(t *testing.T, gc *semdragons.GraphClient, boardCfg *semdragons.BoardConfig, agentID semdragons.AgentID, title string) semdragons.QuestID {
+func createInProgressQuestDirect(t *testing.T, gc *semdragons.GraphClient, boardCfg *domain.BoardConfig, agentID domain.AgentID, title string) domain.QuestID {
 	t.Helper()
 
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	entityID := boardCfg.QuestEntityID(instance)
-	questID := semdragons.QuestID(entityID)
+	questID := domain.QuestID(entityID)
 
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID:          domain.QuestID(questID),
 		Title:       title,
 		Description: "Pre-existing in_progress quest for bootstrap test",
 		Status:      domain.QuestInProgress,
-		Difficulty:  semdragons.DifficultyTrivial,
+		Difficulty:  domain.DifficultyTrivial,
 		BaseXP:      100,
 		MaxAttempts: 3,
 		Attempts:    1,
@@ -726,16 +726,16 @@ func createInProgressQuestDirect(t *testing.T, gc *semdragons.GraphClient, board
 // writeQuestInProgress updates an existing quest to in_progress status in KV.
 // This triggers the questbridge watchLoop's live-update path, which detects the
 // transition from the prior cached status and calls handleQuestStarted.
-func writeQuestInProgress(t *testing.T, gc *semdragons.GraphClient, boardCfg *semdragons.BoardConfig, questID semdragons.QuestID, agentID semdragons.AgentID) {
+func writeQuestInProgress(t *testing.T, gc *semdragons.GraphClient, boardCfg *domain.BoardConfig, questID domain.QuestID, agentID domain.AgentID) {
 	t.Helper()
 
 	now := time.Now()
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID:          domain.QuestID(questID),
 		Title:       "In Progress Quest",
 		Description: "Quest transitioned to in_progress",
 		Status:      domain.QuestInProgress,
-		Difficulty:  semdragons.DifficultyTrivial,
+		Difficulty:  domain.DifficultyTrivial,
 		BaseXP:      100,
 		MaxAttempts: 3,
 		Attempts:    1,

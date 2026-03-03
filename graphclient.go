@@ -11,6 +11,8 @@ import (
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // GraphClient provides access to the semstreams graph system for semdragons components.
@@ -22,12 +24,12 @@ import (
 // which acts as both the source of truth and the event stream (the NATS KV "Twofer").
 type GraphClient struct {
 	nats   *natsclient.Client
-	config *BoardConfig
+	config *domain.BoardConfig
 	bucket jetstream.KeyValue // cached after EnsureBucket
 }
 
 // NewGraphClient creates a new graph client for interacting with the semstreams graph system.
-func NewGraphClient(nats *natsclient.Client, config *BoardConfig) *GraphClient {
+func NewGraphClient(nats *natsclient.Client, config *domain.BoardConfig) *GraphClient {
 	return &GraphClient{
 		nats:   nats,
 		config: config,
@@ -35,7 +37,7 @@ func NewGraphClient(nats *natsclient.Client, config *BoardConfig) *GraphClient {
 }
 
 // Config returns the board configuration.
-func (gc *GraphClient) Config() *BoardConfig {
+func (gc *GraphClient) Config() *domain.BoardConfig {
 	return gc.config
 }
 
@@ -147,36 +149,36 @@ func (gc *GraphClient) GetEntityDirect(ctx context.Context, entityID string) (*g
 // =============================================================================
 
 // GetQuest retrieves a quest by its quest ID (instance portion).
-func (gc *GraphClient) GetQuest(ctx context.Context, questID QuestID) (*graph.EntityState, error) {
-	instance := ExtractInstance(string(questID))
+func (gc *GraphClient) GetQuest(ctx context.Context, questID domain.QuestID) (*graph.EntityState, error) {
+	instance := domain.ExtractInstance(string(questID))
 	entityID := gc.config.QuestEntityID(instance)
 	return gc.GetEntityDirect(ctx, entityID)
 }
 
 // GetAgent retrieves an agent by its agent ID (instance portion).
-func (gc *GraphClient) GetAgent(ctx context.Context, agentID AgentID) (*graph.EntityState, error) {
-	instance := ExtractInstance(string(agentID))
+func (gc *GraphClient) GetAgent(ctx context.Context, agentID domain.AgentID) (*graph.EntityState, error) {
+	instance := domain.ExtractInstance(string(agentID))
 	entityID := gc.config.AgentEntityID(instance)
 	return gc.GetEntityDirect(ctx, entityID)
 }
 
 // GetParty retrieves a party by its party ID (instance portion).
-func (gc *GraphClient) GetParty(ctx context.Context, partyID PartyID) (*graph.EntityState, error) {
-	instance := ExtractInstance(string(partyID))
+func (gc *GraphClient) GetParty(ctx context.Context, partyID domain.PartyID) (*graph.EntityState, error) {
+	instance := domain.ExtractInstance(string(partyID))
 	entityID := gc.config.PartyEntityID(instance)
 	return gc.GetEntityDirect(ctx, entityID)
 }
 
 // GetGuild retrieves a guild by its guild ID (instance portion).
-func (gc *GraphClient) GetGuild(ctx context.Context, guildID GuildID) (*graph.EntityState, error) {
-	instance := ExtractInstance(string(guildID))
+func (gc *GraphClient) GetGuild(ctx context.Context, guildID domain.GuildID) (*graph.EntityState, error) {
+	instance := domain.ExtractInstance(string(guildID))
 	entityID := gc.config.GuildEntityID(instance)
 	return gc.GetEntityDirect(ctx, entityID)
 }
 
 // GetBattle retrieves a battle by its battle ID (instance portion).
-func (gc *GraphClient) GetBattle(ctx context.Context, battleID BattleID) (*graph.EntityState, error) {
-	instance := ExtractInstance(string(battleID))
+func (gc *GraphClient) GetBattle(ctx context.Context, battleID domain.BattleID) (*graph.EntityState, error) {
+	instance := domain.ExtractInstance(string(battleID))
 	entityID := gc.config.BattleEntityID(instance)
 	return gc.GetEntityDirect(ctx, entityID)
 }
@@ -189,19 +191,19 @@ func (gc *GraphClient) GetStoreItem(ctx context.Context, itemID string) (*graph.
 
 // ListStoreItemsByPrefix retrieves all store items on this board from KV.
 func (gc *GraphClient) ListStoreItemsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	return gc.ListEntitiesByType(ctx, EntityTypeStoreItem, limit)
+	return gc.ListEntitiesByType(ctx, domain.EntityTypeStoreItem, limit)
 }
 
 // GetPeerReview retrieves a peer review by its review ID (instance portion).
-func (gc *GraphClient) GetPeerReview(ctx context.Context, reviewID PeerReviewID) (*graph.EntityState, error) {
-	instance := ExtractInstance(string(reviewID))
+func (gc *GraphClient) GetPeerReview(ctx context.Context, reviewID domain.PeerReviewID) (*graph.EntityState, error) {
+	instance := domain.ExtractInstance(string(reviewID))
 	entityID := gc.config.PeerReviewEntityID(instance)
 	return gc.GetEntityDirect(ctx, entityID)
 }
 
 // ListPeerReviewsByPrefix retrieves all peer reviews on this board from KV.
 func (gc *GraphClient) ListPeerReviewsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	return gc.ListEntitiesByType(ctx, EntityTypePeerReview, limit)
+	return gc.ListEntitiesByType(ctx, domain.EntityTypePeerReview, limit)
 }
 
 // ListEntitiesByType retrieves all entities of a given type directly from the
@@ -244,22 +246,22 @@ func (gc *GraphClient) ListEntitiesByType(ctx context.Context, entityType string
 
 // ListQuestsByPrefix retrieves all quests on this board from KV.
 func (gc *GraphClient) ListQuestsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	return gc.ListEntitiesByType(ctx, EntityTypeQuest, limit)
+	return gc.ListEntitiesByType(ctx, domain.EntityTypeQuest, limit)
 }
 
 // ListAgentsByPrefix retrieves all agents on this board from KV.
 func (gc *GraphClient) ListAgentsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	return gc.ListEntitiesByType(ctx, EntityTypeAgent, limit)
+	return gc.ListEntitiesByType(ctx, domain.EntityTypeAgent, limit)
 }
 
 // ListGuildsByPrefix retrieves all guilds on this board from KV.
 func (gc *GraphClient) ListGuildsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	return gc.ListEntitiesByType(ctx, EntityTypeGuild, limit)
+	return gc.ListEntitiesByType(ctx, domain.EntityTypeGuild, limit)
 }
 
 // ListPartiesByPrefix retrieves all parties on this board from KV.
 func (gc *GraphClient) ListPartiesByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error) {
-	return gc.ListEntitiesByType(ctx, EntityTypeParty, limit)
+	return gc.ListEntitiesByType(ctx, domain.EntityTypeParty, limit)
 }
 
 // =============================================================================

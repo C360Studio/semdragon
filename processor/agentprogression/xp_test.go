@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
@@ -16,8 +15,8 @@ import (
 // =============================================================================
 
 // baseQuest returns a minimal Quest suitable for XP calculations.
-func baseQuest() questboard.Quest {
-	return questboard.Quest{
+func baseQuest() domain.Quest {
+	return domain.Quest{
 		ID:         "quest-test-001",
 		Title:      "Test Quest",
 		Difficulty: domain.DifficultyModerate,
@@ -206,13 +205,13 @@ func TestXPCalculation_PeerReviewWithOtherBonuses(t *testing.T) {
 	quest.GuildXP = 80
 
 	ctx := XPContext{
-		Quest:  quest,
-		Agent:  baseAgent(),
-		Streak: 3,        // streak bonus: 2 * 0.1 * 100 = 20
-		Attempt: 1,
+		Quest:        quest,
+		Agent:        baseAgent(),
+		Streak:       3, // streak bonus: 2 * 0.1 * 100 = 20
+		Attempt:      1,
 		IsGuildQuest: true,
 		GuildRank:    domain.GuildRankMember, // multiplier 1.0; guild bonus = 80 * 1.0 * 0.15 = 12
-		BattleResult: &questboard.BattleVerdict{
+		BattleResult: &domain.BattleVerdict{
 			Passed:       true,
 			QualityScore: 1.0, // quality bonus = 100 * 1.0 * 2.0 = 200
 		},

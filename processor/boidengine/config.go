@@ -3,7 +3,7 @@ package boidengine
 import (
 	"errors"
 
-	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
 )
 
 // Config holds the component configuration.
@@ -33,15 +33,15 @@ type Config struct {
 func DefaultConfig() Config {
 	rules := DefaultBoidRules()
 	return Config{
-		Org:              "default",
-		Platform:         "local",
-		Board:            "main",
-		SeparationWeight: rules.SeparationWeight,
-		AlignmentWeight:  rules.AlignmentWeight,
-		CohesionWeight:   rules.CohesionWeight,
-		HungerWeight:     rules.HungerWeight,
-		AffinityWeight:   rules.AffinityWeight,
-		CautionWeight:    rules.CautionWeight,
+		Org:                    "default",
+		Platform:               "local",
+		Board:                  "main",
+		SeparationWeight:       rules.SeparationWeight,
+		AlignmentWeight:        rules.AlignmentWeight,
+		CohesionWeight:         rules.CohesionWeight,
+		HungerWeight:           rules.HungerWeight,
+		AffinityWeight:         rules.AffinityWeight,
+		CautionWeight:          rules.CautionWeight,
 		UpdateIntervalMs:       1000,
 		NeighborRadius:         rules.NeighborRadius,
 		MaxSuggestionsPerAgent: 3,
@@ -49,8 +49,8 @@ func DefaultConfig() Config {
 }
 
 // ToBoardConfig converts component config to semdragons BoardConfig.
-func (c *Config) ToBoardConfig() *semdragons.BoardConfig {
-	return &semdragons.BoardConfig{
+func (c *Config) ToBoardConfig() *domain.BoardConfig {
+	return &domain.BoardConfig{
 		Org:      c.Org,
 		Platform: c.Platform,
 		Board:    c.Board,

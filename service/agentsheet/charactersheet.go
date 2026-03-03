@@ -1,9 +1,16 @@
-package semdragons
+// Package agentsheet provides character sheet projections for agent entities.
+// It combines data from the agentprogression processor with guild membership
+// data from the graph for UI display and decision-making.
+package agentsheet
 
 import (
 	"context"
 	"fmt"
 	"sort"
+
+	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -15,46 +22,46 @@ import (
 
 // CharacterSheet is a complete projection of an agent's state.
 type CharacterSheet struct {
-	Agent        Agent             `json:"agent"`
-	SkillBars    []SkillBar        `json:"skill_bars"`
-	DerivedStats DerivedStats      `json:"derived_stats"`
-	Memberships  []GuildMembership `json:"memberships"`
-	Equipment    []EquippedItem    `json:"equipment"`
-	Inventory    any               `json:"inventory,omitempty"` // *agentstore.AgentInventory, populated separately
+	Agent        agentprogression.Agent `json:"agent"`
+	SkillBars    []SkillBar             `json:"skill_bars"`
+	DerivedStats DerivedStats           `json:"derived_stats"`
+	Memberships  []GuildMembership      `json:"memberships"`
+	Equipment    []EquippedItem         `json:"equipment"`
+	Inventory    any                    `json:"inventory,omitempty"` // *agentstore.AgentInventory, populated separately
 }
 
 // SkillBar represents a skill with its proficiency for UI display.
 type SkillBar struct {
-	Skill           SkillTag         `json:"skill"`
-	SkillName       string           `json:"skill_name"`
-	Level           ProficiencyLevel `json:"level"`
-	LevelName       string           `json:"level_name"`
-	Progress        int              `json:"progress"` // 0-99
-	ProgressPercent float64          `json:"progress_percent"`
-	TotalXP         int64            `json:"total_xp"`
-	QuestsUsed      int              `json:"quests_used"`
-	IsMaxLevel      bool             `json:"is_max_level"`
+	Skill           domain.SkillTag         `json:"skill"`
+	SkillName       string                  `json:"skill_name"`
+	Level           domain.ProficiencyLevel `json:"level"`
+	LevelName       string                  `json:"level_name"`
+	Progress        int                     `json:"progress"` // 0-99
+	ProgressPercent float64                 `json:"progress_percent"`
+	TotalXP         int64                   `json:"total_xp"`
+	QuestsUsed      int                     `json:"quests_used"`
+	IsMaxLevel      bool                    `json:"is_max_level"`
 }
 
 // DerivedStats contains computed statistics about an agent.
 type DerivedStats struct {
-	AvgProficiency   float64  `json:"avg_proficiency"`
-	StrongestSkill   SkillTag `json:"strongest_skill,omitempty"`
-	WeakestSkill     SkillTag `json:"weakest_skill,omitempty"`
-	QuestSuccessRate float64  `json:"quest_success_rate"`
-	BattleWinRate    float64  `json:"battle_win_rate"`
-	TotalSkills      int      `json:"total_skills"`
-	MasterSkills     int      `json:"master_skills"` // Skills at max level
-	XPEfficiency     float64  `json:"xp_efficiency"` // XP earned per quest
+	AvgProficiency   float64         `json:"avg_proficiency"`
+	StrongestSkill   domain.SkillTag `json:"strongest_skill,omitempty"`
+	WeakestSkill     domain.SkillTag `json:"weakest_skill,omitempty"`
+	QuestSuccessRate float64         `json:"quest_success_rate"`
+	BattleWinRate    float64         `json:"battle_win_rate"`
+	TotalSkills      int             `json:"total_skills"`
+	MasterSkills     int             `json:"master_skills"` // Skills at max level
+	XPEfficiency     float64         `json:"xp_efficiency"` // XP earned per quest
 }
 
 // GuildMembership represents an agent's status in a guild.
 type GuildMembership struct {
-	GuildID      GuildID   `json:"guild_id"`
-	GuildName    string    `json:"guild_name"`
-	Rank         GuildRank `json:"rank"`
-	Contribution float64   `json:"contribution"` // XP contributed via guild quests
-	JoinedAt     string    `json:"joined_at"`
+	GuildID      domain.GuildID   `json:"guild_id"`
+	GuildName    string           `json:"guild_name"`
+	Rank         domain.GuildRank `json:"rank"`
+	Contribution float64          `json:"contribution"` // XP contributed via guild quests
+	JoinedAt     string           `json:"joined_at"`
 }
 
 // EquippedItem represents a tool the agent has equipped.
@@ -68,23 +75,23 @@ type EquippedItem struct {
 	UsesLeft    *int   `json:"uses_left,omitempty"` // For rentals
 }
 
-// CharacterSheetService creates character sheet projections.
-type CharacterSheetService struct {
-	graph *GraphClient
+// Service creates character sheet projections.
+type Service struct {
+	graph *semdragons.GraphClient
 }
 
-// NewCharacterSheetService creates a new character sheet service.
-func NewCharacterSheetService(graph *GraphClient) *CharacterSheetService {
-	return &CharacterSheetService{graph: graph}
+// NewService creates a new character sheet service.
+func NewService(graph *semdragons.GraphClient) *Service {
+	return &Service{graph: graph}
 }
 
 // GetCharacterSheet builds a complete character sheet for an agent.
-func (s *CharacterSheetService) GetCharacterSheet(ctx context.Context, agentID AgentID) (*CharacterSheet, error) {
+func (s *Service) GetCharacterSheet(ctx context.Context, agentID domain.AgentID) (*CharacterSheet, error) {
 	entity, err := s.graph.GetAgent(ctx, agentID)
 	if err != nil {
 		return nil, err
 	}
-	agent := AgentFromEntityState(entity)
+	agent := agentprogression.AgentFromEntityState(entity)
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found: %s", agentID)
 	}
@@ -115,8 +122,8 @@ func (s *CharacterSheetService) GetCharacterSheet(ctx context.Context, agentID A
 }
 
 // buildSkillBars creates skill bar data from agent proficiencies.
-func (s *CharacterSheetService) buildSkillBars(agent *Agent) []SkillBar {
-	if agent.SkillProficiencies == nil || len(agent.SkillProficiencies) == 0 {
+func (s *Service) buildSkillBars(agent *agentprogression.Agent) []SkillBar {
+	if len(agent.SkillProficiencies) == 0 {
 		return nil // No skills to display
 	}
 
@@ -126,12 +133,12 @@ func (s *CharacterSheetService) buildSkillBars(agent *Agent) []SkillBar {
 			Skill:           skill,
 			SkillName:       skillTagToName(skill),
 			Level:           prof.Level,
-			LevelName:       ProficiencyLevelName(prof.Level),
+			LevelName:       domain.ProficiencyLevelName(prof.Level),
 			Progress:        prof.Progress,
 			ProgressPercent: prof.ProgressPercent(),
 			TotalXP:         prof.TotalXP,
 			QuestsUsed:      prof.QuestsUsed,
-			IsMaxLevel:      prof.Level >= ProficiencyMaster,
+			IsMaxLevel:      prof.Level >= domain.ProficiencyMaster,
 		})
 	}
 
@@ -147,7 +154,7 @@ func (s *CharacterSheetService) buildSkillBars(agent *Agent) []SkillBar {
 }
 
 // calculateDerivedStats computes aggregate statistics.
-func (s *CharacterSheetService) calculateDerivedStats(agent *Agent, skillBars []SkillBar) DerivedStats {
+func (s *Service) calculateDerivedStats(agent *agentprogression.Agent, skillBars []SkillBar) DerivedStats {
 	stats := DerivedStats{
 		TotalSkills: len(skillBars),
 	}
@@ -159,8 +166,8 @@ func (s *CharacterSheetService) calculateDerivedStats(agent *Agent, skillBars []
 	// Calculate average proficiency and find strongest/weakest
 	var totalLevel float64
 	var strongest, weakest SkillBar
-	strongest.Level = ProficiencyNovice
-	weakest.Level = ProficiencyMaster
+	strongest.Level = domain.ProficiencyNovice
+	weakest.Level = domain.ProficiencyMaster
 
 	for _, bar := range skillBars {
 		totalLevel += float64(bar.Level)
@@ -199,7 +206,7 @@ func (s *CharacterSheetService) calculateDerivedStats(agent *Agent, skillBars []
 }
 
 // getGuildMemberships retrieves guild membership details.
-func (s *CharacterSheetService) getGuildMemberships(ctx context.Context, agent *Agent) []GuildMembership {
+func (s *Service) getGuildMemberships(ctx context.Context, agent *agentprogression.Agent) []GuildMembership {
 	memberships := make([]GuildMembership, 0, len(agent.Guilds))
 
 	for _, guildID := range agent.Guilds {
@@ -207,7 +214,7 @@ func (s *CharacterSheetService) getGuildMemberships(ctx context.Context, agent *
 		if err != nil {
 			continue
 		}
-		guild := GuildFromEntityState(entity)
+		guild := domain.GuildFromEntityState(entity)
 		if guild == nil {
 			continue
 		}
@@ -231,7 +238,7 @@ func (s *CharacterSheetService) getGuildMemberships(ctx context.Context, agent *
 }
 
 // buildEquipmentList creates the equipment list from agent tools.
-func (s *CharacterSheetService) buildEquipmentList(agent *Agent) []EquippedItem {
+func (s *Service) buildEquipmentList(agent *agentprogression.Agent) []EquippedItem {
 	equipment := make([]EquippedItem, 0, len(agent.Equipment))
 
 	for _, tool := range agent.Equipment {
@@ -249,17 +256,17 @@ func (s *CharacterSheetService) buildEquipmentList(agent *Agent) []EquippedItem 
 }
 
 // skillTagToName converts a skill tag to a human-readable name.
-func skillTagToName(skill SkillTag) string {
-	names := map[SkillTag]string{
-		SkillCodeGen:       "Code Generation",
-		SkillCodeReview:    "Code Review",
-		SkillDataTransform: "Data Transformation",
-		SkillSummarization: "Summarization",
-		SkillResearch:      "Research",
-		SkillPlanning:      "Planning",
-		SkillCustomerComms: "Customer Communications",
-		SkillAnalysis:      "Analysis",
-		SkillTraining:      "Training",
+func skillTagToName(skill domain.SkillTag) string {
+	names := map[domain.SkillTag]string{
+		domain.SkillCodeGen:       "Code Generation",
+		domain.SkillCodeReview:    "Code Review",
+		domain.SkillDataTransform: "Data Transformation",
+		domain.SkillSummarization: "Summarization",
+		domain.SkillResearch:      "Research",
+		domain.SkillPlanning:      "Planning",
+		domain.SkillCustomerComms: "Customer Communications",
+		domain.SkillAnalysis:      "Analysis",
+		domain.SkillTraining:      "Training",
 	}
 	if name, ok := names[skill]; ok {
 		return name
@@ -268,18 +275,18 @@ func skillTagToName(skill SkillTag) string {
 }
 
 // GetSkillSummary returns a brief summary of an agent's skills.
-func (s *CharacterSheetService) GetSkillSummary(ctx context.Context, agentID AgentID) (map[SkillTag]ProficiencyLevel, error) {
+func (s *Service) GetSkillSummary(ctx context.Context, agentID domain.AgentID) (map[domain.SkillTag]domain.ProficiencyLevel, error) {
 	entity, err := s.graph.GetAgent(ctx, agentID)
 	if err != nil {
 		return nil, err
 	}
-	agent := AgentFromEntityState(entity)
+	agent := agentprogression.AgentFromEntityState(entity)
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found: %s", agentID)
 	}
 
 	if agent.SkillProficiencies != nil {
-		summary := make(map[SkillTag]ProficiencyLevel, len(agent.SkillProficiencies))
+		summary := make(map[domain.SkillTag]domain.ProficiencyLevel, len(agent.SkillProficiencies))
 		for skill, prof := range agent.SkillProficiencies {
 			summary[skill] = prof.Level
 		}
@@ -287,11 +294,11 @@ func (s *CharacterSheetService) GetSkillSummary(ctx context.Context, agentID Age
 	}
 
 	// No skills defined
-	return make(map[SkillTag]ProficiencyLevel), nil
+	return make(map[domain.SkillTag]domain.ProficiencyLevel), nil
 }
 
 // CompareAgents returns a comparison of two agents' character sheets.
-func (s *CharacterSheetService) CompareAgents(ctx context.Context, agentA, agentB AgentID) (*AgentComparison, error) {
+func (s *Service) CompareAgents(ctx context.Context, agentA, agentB domain.AgentID) (*AgentComparison, error) {
 	sheetA, err := s.GetCharacterSheet(ctx, agentA)
 	if err != nil {
 		return nil, err
@@ -319,26 +326,26 @@ type AgentComparison struct {
 	AgentB       *CharacterSheet   `json:"agent_b"`
 	LevelDiff    int               `json:"level_diff"` // A.Level - B.Level
 	XPDiff       int64             `json:"xp_diff"`    // A.XP - B.XP
-	SkillsAOnly  []SkillTag        `json:"skills_a_only"`
-	SkillsBOnly  []SkillTag        `json:"skills_b_only"`
+	SkillsAOnly  []domain.SkillTag `json:"skills_a_only"`
+	SkillsBOnly  []domain.SkillTag `json:"skills_b_only"`
 	CommonSkills []SkillComparison `json:"common_skills"`
 }
 
 // SkillComparison compares proficiency in a shared skill.
 type SkillComparison struct {
-	Skill     SkillTag         `json:"skill"`
-	LevelA    ProficiencyLevel `json:"level_a"`
-	LevelB    ProficiencyLevel `json:"level_b"`
-	LevelDiff int              `json:"level_diff"` // A.Level - B.Level
+	Skill     domain.SkillTag         `json:"skill"`
+	LevelA    domain.ProficiencyLevel `json:"level_a"`
+	LevelB    domain.ProficiencyLevel `json:"level_b"`
+	LevelDiff int                     `json:"level_diff"` // A.Level - B.Level
 }
 
-func findUniqueSkills(bars []SkillBar, other []SkillBar) []SkillTag {
-	otherSet := make(map[SkillTag]bool, len(other))
+func findUniqueSkills(bars []SkillBar, other []SkillBar) []domain.SkillTag {
+	otherSet := make(map[domain.SkillTag]bool, len(other))
 	for _, bar := range other {
 		otherSet[bar.Skill] = true
 	}
 
-	var unique []SkillTag
+	var unique []domain.SkillTag
 	for _, bar := range bars {
 		if !otherSet[bar.Skill] {
 			unique = append(unique, bar.Skill)
@@ -348,7 +355,7 @@ func findUniqueSkills(bars []SkillBar, other []SkillBar) []SkillTag {
 }
 
 func findCommonSkills(barsA, barsB []SkillBar) []SkillComparison {
-	mapA := make(map[SkillTag]ProficiencyLevel, len(barsA))
+	mapA := make(map[domain.SkillTag]domain.ProficiencyLevel, len(barsA))
 	for _, bar := range barsA {
 		mapA[bar.Skill] = bar.Level
 	}

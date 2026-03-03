@@ -15,6 +15,8 @@ import (
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
@@ -29,12 +31,12 @@ import (
 // QuestLoopMapping tracks the relationship between a quest and its agentic loop.
 // Persisted in the QUEST_LOOPS KV bucket for crash recovery.
 type QuestLoopMapping struct {
-	LoopID     string            `json:"loop_id"`
-	QuestID    semdragons.QuestID `json:"quest_id"`
-	AgentID    semdragons.AgentID `json:"agent_id"`
-	SandboxDir string            `json:"sandbox_dir,omitempty"`
-	TrustTier  semdragons.TrustTier `json:"trust_tier"`
-	StartedAt  time.Time         `json:"started_at"`
+	LoopID     string           `json:"loop_id"`
+	QuestID    domain.QuestID   `json:"quest_id"`
+	AgentID    domain.AgentID   `json:"agent_id"`
+	SandboxDir string           `json:"sandbox_dir,omitempty"`
+	TrustTier  domain.TrustTier `json:"trust_tier"`
+	StartedAt  time.Time        `json:"started_at"`
 }
 
 // Component implements the QuestBridge processor as a semstreams component.
@@ -43,7 +45,7 @@ type Component struct {
 	deps        component.Dependencies
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 
 	// Execution infrastructure
 	registry        model.RegistryReader
@@ -137,15 +139,15 @@ func (c *Component) OutputPorts() []component.Port {
 func (c *Component) ConfigSchema() component.ConfigSchema {
 	return component.ConfigSchema{
 		Properties: map[string]component.PropertySchema{
-			"org":                  {Type: "string", Description: "Organization namespace", Default: "default", Category: "basic"},
-			"platform":             {Type: "string", Description: "Platform/environment name", Default: "local", Category: "basic"},
-			"board":                {Type: "string", Description: "Quest board name", Default: "main", Category: "basic"},
-			"stream_name":          {Type: "string", Description: "AGENT stream name", Default: "AGENT", Category: "basic"},
-			"quest_loops_bucket":   {Type: "string", Description: "QUEST_LOOPS KV bucket name", Default: "QUEST_LOOPS", Category: "basic"},
-			"max_iterations":       {Type: "int", Description: "Max iterations per agentic loop", Default: 20, Category: "execution"},
-			"enable_builtins":      {Type: "bool", Description: "Register built-in tools", Default: true, Category: "execution"},
-			"default_role":         {Type: "string", Description: "Default agent role", Default: "general", Category: "execution"},
-			"sandbox_dir":          {Type: "string", Description: "Base directory for file operations", Default: "", Category: "execution"},
+			"org":                {Type: "string", Description: "Organization namespace", Default: "default", Category: "basic"},
+			"platform":           {Type: "string", Description: "Platform/environment name", Default: "local", Category: "basic"},
+			"board":              {Type: "string", Description: "Quest board name", Default: "main", Category: "basic"},
+			"stream_name":        {Type: "string", Description: "AGENT stream name", Default: "AGENT", Category: "basic"},
+			"quest_loops_bucket": {Type: "string", Description: "QUEST_LOOPS KV bucket name", Default: "QUEST_LOOPS", Category: "basic"},
+			"max_iterations":     {Type: "int", Description: "Max iterations per agentic loop", Default: 20, Category: "execution"},
+			"enable_builtins":    {Type: "bool", Description: "Register built-in tools", Default: true, Category: "execution"},
+			"default_role":       {Type: "string", Description: "Default agent role", Default: "general", Category: "execution"},
+			"sandbox_dir":        {Type: "string", Description: "Base directory for file operations", Default: "", Category: "execution"},
 		},
 		Required: []string{"org", "platform", "board"},
 	}

@@ -5,7 +5,6 @@ import (
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
-	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/model"
 )
 
@@ -67,8 +66,8 @@ func testAgent(tier domain.TrustTier, provider string) *agentprogression.Agent {
 	}
 }
 
-func testQuest(skills ...domain.SkillTag) *questboard.Quest {
-	return &questboard.Quest{
+func testQuest(skills ...domain.SkillTag) *domain.Quest {
+	return &domain.Quest{
 		ID:             "test-quest",
 		Title:          "Test Quest",
 		RequiredSkills: skills,

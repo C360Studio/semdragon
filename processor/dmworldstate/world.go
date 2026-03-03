@@ -6,6 +6,9 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semdragons/processor/bossbattle"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -41,31 +44,31 @@ func (w *WorldStateAggregator) WorldState(ctx context.Context) (*domain.WorldSta
 	agents, err := w.loadAllAgents(ctx)
 	if err != nil {
 		w.logger.Warn("failed to load agents for world state", "error", err)
-		agents = []*semdragons.Agent{}
+		agents = []*agentprogression.Agent{}
 	}
 
 	quests, err := w.loadActiveQuests(ctx)
 	if err != nil {
 		w.logger.Warn("failed to load quests for world state", "error", err)
-		quests = []semdragons.Quest{}
+		quests = []domain.Quest{}
 	}
 
 	parties, err := w.loadActiveParties(ctx)
 	if err != nil {
 		w.logger.Warn("failed to load parties for world state", "error", err)
-		parties = []semdragons.Party{}
+		parties = []partycoord.Party{}
 	}
 
 	guilds, err := w.loadGuilds(ctx)
 	if err != nil {
 		w.logger.Warn("failed to load guilds for world state", "error", err)
-		guilds = []semdragons.Guild{}
+		guilds = []domain.Guild{}
 	}
 
 	battles, err := w.loadActiveBattles(ctx)
 	if err != nil {
 		w.logger.Warn("failed to load battles for world state", "error", err)
-		battles = []semdragons.BossBattle{}
+		battles = []bossbattle.BossBattle{}
 	}
 
 	stats := w.computeWorldStats(agents, quests, parties, guilds)
@@ -112,15 +115,15 @@ func (w *WorldStateAggregator) WorldState(ctx context.Context) (*domain.WorldSta
 // ENTITY LOADING
 // =============================================================================
 
-func (w *WorldStateAggregator) loadAllAgents(ctx context.Context) ([]*semdragons.Agent, error) {
+func (w *WorldStateAggregator) loadAllAgents(ctx context.Context) ([]*agentprogression.Agent, error) {
 	entities, err := w.graph.ListAgentsByPrefix(ctx, w.maxEntities)
 	if err != nil {
 		return nil, err
 	}
 
-	agents := make([]*semdragons.Agent, 0, len(entities))
+	agents := make([]*agentprogression.Agent, 0, len(entities))
 	for _, entity := range entities {
-		agent := semdragons.AgentFromEntityState(&entity)
+		agent := agentprogression.AgentFromEntityState(&entity)
 		if agent != nil {
 			agents = append(agents, agent)
 		}
@@ -128,23 +131,23 @@ func (w *WorldStateAggregator) loadAllAgents(ctx context.Context) ([]*semdragons
 	return agents, nil
 }
 
-func (w *WorldStateAggregator) loadActiveQuests(ctx context.Context) ([]semdragons.Quest, error) {
+func (w *WorldStateAggregator) loadActiveQuests(ctx context.Context) ([]domain.Quest, error) {
 	entities, err := w.graph.ListQuestsByPrefix(ctx, w.maxEntities)
 	if err != nil {
 		return nil, err
 	}
 
-	activeStatuses := map[semdragons.QuestStatus]bool{
-		semdragons.QuestPosted:     true,
-		semdragons.QuestClaimed:    true,
-		semdragons.QuestInProgress: true,
-		semdragons.QuestInReview:   true,
-		semdragons.QuestEscalated:  true,
+	activeStatuses := map[domain.QuestStatus]bool{
+		domain.QuestPosted:     true,
+		domain.QuestClaimed:    true,
+		domain.QuestInProgress: true,
+		domain.QuestInReview:   true,
+		domain.QuestEscalated:  true,
 	}
 
-	var quests []semdragons.Quest
+	var quests []domain.Quest
 	for _, entity := range entities {
-		quest := semdragons.QuestFromEntityState(&entity)
+		quest := domain.QuestFromEntityState(&entity)
 		if quest != nil && activeStatuses[quest.Status] {
 			quests = append(quests, *quest)
 		}
@@ -153,17 +156,17 @@ func (w *WorldStateAggregator) loadActiveQuests(ctx context.Context) ([]semdrago
 	return quests, nil
 }
 
-func (w *WorldStateAggregator) loadActiveParties(ctx context.Context) ([]semdragons.Party, error) {
+func (w *WorldStateAggregator) loadActiveParties(ctx context.Context) ([]partycoord.Party, error) {
 	entities, err := w.graph.ListPartiesByPrefix(ctx, w.maxEntities)
 	if err != nil {
 		return nil, err
 	}
 
-	var parties []semdragons.Party
+	var parties []partycoord.Party
 	for _, entity := range entities {
-		party := semdragons.PartyFromEntityState(&entity)
+		party := partycoord.PartyFromEntityState(&entity)
 		if party != nil {
-			if party.Status == semdragons.PartyForming || party.Status == semdragons.PartyActive {
+			if party.Status == domain.PartyForming || party.Status == domain.PartyActive {
 				parties = append(parties, *party)
 			}
 		}
@@ -172,15 +175,15 @@ func (w *WorldStateAggregator) loadActiveParties(ctx context.Context) ([]semdrag
 	return parties, nil
 }
 
-func (w *WorldStateAggregator) loadGuilds(ctx context.Context) ([]semdragons.Guild, error) {
+func (w *WorldStateAggregator) loadGuilds(ctx context.Context) ([]domain.Guild, error) {
 	entities, err := w.graph.ListGuildsByPrefix(ctx, w.maxEntities)
 	if err != nil {
 		return nil, err
 	}
 
-	var guilds []semdragons.Guild
+	var guilds []domain.Guild
 	for _, entity := range entities {
-		guild := semdragons.GuildFromEntityState(&entity)
+		guild := domain.GuildFromEntityState(&entity)
 		if guild != nil {
 			guilds = append(guilds, *guild)
 		}
@@ -189,16 +192,16 @@ func (w *WorldStateAggregator) loadGuilds(ctx context.Context) ([]semdragons.Gui
 	return guilds, nil
 }
 
-func (w *WorldStateAggregator) loadActiveBattles(ctx context.Context) ([]semdragons.BossBattle, error) {
-	entities, err := w.graph.ListEntitiesByType(ctx, semdragons.EntityTypeBattle, w.maxEntities)
+func (w *WorldStateAggregator) loadActiveBattles(ctx context.Context) ([]bossbattle.BossBattle, error) {
+	entities, err := w.graph.ListEntitiesByType(ctx, domain.EntityTypeBattle, w.maxEntities)
 	if err != nil {
 		return nil, err
 	}
 
-	var battles []semdragons.BossBattle
+	var battles []bossbattle.BossBattle
 	for _, entity := range entities {
-		battle := semdragons.BattleFromEntityState(&entity)
-		if battle != nil && battle.Status == semdragons.BattleActive {
+		battle := bossbattle.BattleFromEntityState(&entity)
+		if battle != nil && battle.Status == domain.BattleActive {
 			battles = append(battles, *battle)
 		}
 	}
@@ -211,10 +214,10 @@ func (w *WorldStateAggregator) loadActiveBattles(ctx context.Context) ([]semdrag
 // =============================================================================
 
 func (w *WorldStateAggregator) computeWorldStats(
-	agents []*semdragons.Agent,
-	quests []semdragons.Quest,
-	parties []semdragons.Party,
-	guilds []semdragons.Guild,
+	agents []*agentprogression.Agent,
+	quests []domain.Quest,
+	parties []partycoord.Party,
+	guilds []domain.Guild,
 ) domain.WorldStats {
 	stats := domain.WorldStats{}
 
@@ -224,14 +227,14 @@ func (w *WorldStateAggregator) computeWorldStats(
 			continue
 		}
 		switch agent.Status {
-		case semdragons.AgentIdle:
+		case domain.AgentIdle:
 			stats.IdleAgents++
 			stats.ActiveAgents++
-		case semdragons.AgentOnQuest, semdragons.AgentInBattle:
+		case domain.AgentOnQuest, domain.AgentInBattle:
 			stats.ActiveAgents++
-		case semdragons.AgentCooldown:
+		case domain.AgentCooldown:
 			stats.CooldownAgents++
-		case semdragons.AgentRetired:
+		case domain.AgentRetired:
 			stats.RetiredAgents++
 		}
 	}
@@ -240,11 +243,11 @@ func (w *WorldStateAggregator) computeWorldStats(
 	var completedCount int
 	for _, quest := range quests {
 		switch quest.Status {
-		case semdragons.QuestPosted:
+		case domain.QuestPosted:
 			stats.OpenQuests++
-		case semdragons.QuestClaimed, semdragons.QuestInProgress, semdragons.QuestInReview:
+		case domain.QuestClaimed, domain.QuestInProgress, domain.QuestInReview:
 			stats.ActiveQuests++
-		case semdragons.QuestCompleted:
+		case domain.QuestCompleted:
 			completedCount++
 		}
 	}
@@ -282,15 +285,15 @@ func (w *WorldStateAggregator) computeWorldStats(
 // =============================================================================
 
 // GetIdleAgents returns all agents that are available to claim quests.
-func (w *WorldStateAggregator) GetIdleAgents(ctx context.Context) ([]semdragons.Agent, error) {
+func (w *WorldStateAggregator) GetIdleAgents(ctx context.Context) ([]agentprogression.Agent, error) {
 	agents, err := w.loadAllAgents(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var idle []semdragons.Agent
+	var idle []agentprogression.Agent
 	for _, agent := range agents {
-		if agent != nil && agent.Status == semdragons.AgentIdle {
+		if agent != nil && agent.Status == domain.AgentIdle {
 			if agent.CooldownUntil == nil {
 				idle = append(idle, *agent)
 			}
@@ -301,15 +304,15 @@ func (w *WorldStateAggregator) GetIdleAgents(ctx context.Context) ([]semdragons.
 }
 
 // GetEscalatedQuests returns all quests that need DM attention.
-func (w *WorldStateAggregator) GetEscalatedQuests(ctx context.Context) ([]semdragons.Quest, error) {
+func (w *WorldStateAggregator) GetEscalatedQuests(ctx context.Context) ([]domain.Quest, error) {
 	quests, err := w.loadActiveQuests(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var escalated []semdragons.Quest
+	var escalated []domain.Quest
 	for _, quest := range quests {
-		if quest.Status == semdragons.QuestEscalated {
+		if quest.Status == domain.QuestEscalated {
 			escalated = append(escalated, quest)
 		}
 	}
@@ -318,15 +321,15 @@ func (w *WorldStateAggregator) GetEscalatedQuests(ctx context.Context) ([]semdra
 }
 
 // GetPendingBattles returns boss battles awaiting verdict.
-func (w *WorldStateAggregator) GetPendingBattles(ctx context.Context) ([]semdragons.BossBattle, error) {
+func (w *WorldStateAggregator) GetPendingBattles(ctx context.Context) ([]bossbattle.BossBattle, error) {
 	battles, err := w.loadActiveBattles(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var pending []semdragons.BossBattle
+	var pending []bossbattle.BossBattle
 	for _, battle := range battles {
-		if battle.Status == semdragons.BattleActive && battle.Verdict == nil {
+		if battle.Status == domain.BattleActive && battle.Verdict == nil {
 			pending = append(pending, battle)
 		}
 	}
@@ -335,13 +338,13 @@ func (w *WorldStateAggregator) GetPendingBattles(ctx context.Context) ([]semdrag
 }
 
 // GetAgentsByTier returns agents filtered by trust tier.
-func (w *WorldStateAggregator) GetAgentsByTier(ctx context.Context, tier semdragons.TrustTier) ([]semdragons.Agent, error) {
+func (w *WorldStateAggregator) GetAgentsByTier(ctx context.Context, tier domain.TrustTier) ([]agentprogression.Agent, error) {
 	agents, err := w.loadAllAgents(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var filtered []semdragons.Agent
+	var filtered []agentprogression.Agent
 	for _, agent := range agents {
 		if agent != nil && agent.Tier == tier {
 			filtered = append(filtered, *agent)
@@ -352,13 +355,13 @@ func (w *WorldStateAggregator) GetAgentsByTier(ctx context.Context, tier semdrag
 }
 
 // GetAgentsBySkill returns agents that have a specific skill.
-func (w *WorldStateAggregator) GetAgentsBySkill(ctx context.Context, skill semdragons.SkillTag) ([]semdragons.Agent, error) {
+func (w *WorldStateAggregator) GetAgentsBySkill(ctx context.Context, skill domain.SkillTag) ([]agentprogression.Agent, error) {
 	agents, err := w.loadAllAgents(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var filtered []semdragons.Agent
+	var filtered []agentprogression.Agent
 	for _, agent := range agents {
 		if agent != nil && agent.HasSkill(skill) {
 			filtered = append(filtered, *agent)
@@ -369,13 +372,13 @@ func (w *WorldStateAggregator) GetAgentsBySkill(ctx context.Context, skill semdr
 }
 
 // GetQuestsByDifficulty returns quests filtered by difficulty level.
-func (w *WorldStateAggregator) GetQuestsByDifficulty(ctx context.Context, difficulty semdragons.QuestDifficulty) ([]semdragons.Quest, error) {
+func (w *WorldStateAggregator) GetQuestsByDifficulty(ctx context.Context, difficulty domain.QuestDifficulty) ([]domain.Quest, error) {
 	quests, err := w.loadActiveQuests(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var filtered []semdragons.Quest
+	var filtered []domain.Quest
 	for _, quest := range quests {
 		if quest.Difficulty == difficulty {
 			filtered = append(filtered, quest)

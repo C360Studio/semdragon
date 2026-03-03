@@ -19,6 +19,8 @@ import (
 	"github.com/c360studio/semdragons/processor/dmworldstate"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/service"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // Config holds configuration for the semdragons-api service.
@@ -98,7 +100,7 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 	}
 	logger = logger.With("service", "game")
 
-	boardConfig := &semdragons.BoardConfig{
+	boardConfig := &domain.BoardConfig{
 		Org:      org,
 		Platform: platform,
 		Board:    cfg.Board,
@@ -120,11 +122,11 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 	)
 
 	return &Service{
-		BaseService: baseService,
-		graph:       graph,
-		world:       world,
-		store:       store,
-		models:      models,
+		BaseService:     baseService,
+		graph:           graph,
+		world:           world,
+		store:           store,
+		models:          models,
 		nats:            deps.NATSClient,
 		trajectories:    &natsTrajectoryQuerier{nats: deps.NATSClient},
 		dmSessionReader: sessions,

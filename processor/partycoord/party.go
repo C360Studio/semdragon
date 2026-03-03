@@ -3,8 +3,10 @@ package partycoord
 import (
 	"time"
 
-	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
@@ -139,4 +141,82 @@ func (p *Party) Triples() []message.Triple {
 	})
 
 	return triples
+}
+
+// =============================================================================
+// RECONSTRUCTION
+// =============================================================================
+
+// PartyFromEntityState reconstructs a Party from graph EntityState.
+func PartyFromEntityState(entity *graph.EntityState) *Party {
+	if entity == nil {
+		return nil
+	}
+
+	p := &Party{
+		ID:          domain.PartyID(entity.ID),
+		SubQuestMap: make(map[domain.QuestID]domain.AgentID),
+	}
+
+	// Track member data by agent ID for reconstruction
+	memberRoles := make(map[domain.AgentID]domain.PartyRole)
+
+	for _, triple := range entity.Triples {
+		switch triple.Predicate {
+		// Identity
+		case "party.identity.name":
+			p.Name = domain.AsString(triple.Object)
+
+		// Status
+		case "party.status.state":
+			p.Status = domain.PartyStatus(domain.AsString(triple.Object))
+
+		// Relationships
+		case "party.assignment.quest", "party.quest":
+			p.QuestID = domain.QuestID(domain.AsString(triple.Object))
+		case "party.membership.lead", "party.lead":
+			p.Lead = domain.AgentID(domain.AsString(triple.Object))
+		case "party.membership.member":
+			agentID := domain.AgentID(domain.AsString(triple.Object))
+			memberRoles[agentID] = "" // Will be filled by role triple
+
+		// Coordination
+		case "party.coordination.strategy", "party.strategy":
+			p.Strategy = domain.AsString(triple.Object)
+
+		// Lifecycle
+		case "party.lifecycle.formed_at":
+			p.FormedAt = domain.AsTime(triple.Object)
+		case "party.lifecycle.disbanded_at":
+			t := domain.AsTime(triple.Object)
+			p.DisbandedAt = &t
+		}
+
+		// Handle dynamic predicates for member roles
+		// Format: party.member.{agent_id}.role
+		if len(triple.Predicate) > 13 && triple.Predicate[:13] == "party.member." {
+			rest := triple.Predicate[13:] // e.g., "agent123.role"
+			for i := len(rest) - 1; i >= 0; i-- {
+				if rest[i] == '.' {
+					agentID := domain.AgentID(rest[:i])
+					suffix := rest[i+1:]
+
+					if suffix == "role" {
+						memberRoles[agentID] = domain.PartyRole(domain.AsString(triple.Object))
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// Reconstruct members from collected data
+	for agentID, role := range memberRoles {
+		p.Members = append(p.Members, PartyMember{
+			AgentID: agentID,
+			Role:    role,
+		})
+	}
+
+	return p
 }

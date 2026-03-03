@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
@@ -25,20 +27,10 @@ type BossBattle struct {
 
 	Criteria    []domain.ReviewCriterion `json:"criteria"`
 	Results     []domain.ReviewResult    `json:"results,omitempty"`
-	Verdict     *BattleVerdict           `json:"verdict,omitempty"`
+	Verdict     *domain.BattleVerdict    `json:"verdict,omitempty"`
 	Judges      []Judge                  `json:"judges"`
 	StartedAt   time.Time                `json:"started_at"`
 	CompletedAt *time.Time               `json:"completed_at,omitempty"`
-}
-
-// BattleVerdict holds the outcome of a boss battle.
-type BattleVerdict struct {
-	Passed       bool    `json:"passed"`
-	QualityScore float64 `json:"quality_score"`
-	XPAwarded    int64   `json:"xp_awarded"`
-	XPPenalty    int64   `json:"xp_penalty"`
-	Feedback     string  `json:"feedback"`
-	LevelChange  int     `json:"level_change"`
 }
 
 // Judge represents an evaluator for boss battles.
@@ -64,7 +56,7 @@ func (b *BossBattle) Triples() []message.Triple {
 	entityID := b.EntityID()
 
 	triples := []message.Triple{
-		// Relationships — must match reconstruction predicates in reconstruction.go
+		// Relationships — must match reconstruction predicates in BattleFromEntityState
 		{Subject: entityID, Predicate: "battle.assignment.quest", Object: string(b.QuestID), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "battle.assignment.agent", Object: string(b.AgentID), Source: source, Timestamp: now, Confidence: 1.0},
 
@@ -134,4 +126,82 @@ func (b *BossBattle) Triples() []message.Triple {
 	}
 
 	return triples
+}
+
+// =============================================================================
+// RECONSTRUCTION
+// =============================================================================
+
+// BattleFromEntityState reconstructs a BossBattle from graph EntityState.
+func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
+	if entity == nil {
+		return nil
+	}
+
+	b := &BossBattle{
+		ID: domain.BattleID(entity.ID),
+	}
+
+	var judgeIDs []string
+
+	for _, triple := range entity.Triples {
+		switch triple.Predicate {
+		// Relationships
+		case "battle.assignment.quest":
+			b.QuestID = domain.QuestID(domain.AsString(triple.Object))
+		case "battle.assignment.agent":
+			b.AgentID = domain.AgentID(domain.AsString(triple.Object))
+
+		// Status
+		case "battle.status.state":
+			b.Status = domain.BattleStatus(domain.AsString(triple.Object))
+		case "battle.review.level":
+			b.Level = domain.ReviewLevel(domain.AsInt(triple.Object))
+
+		// Lifecycle
+		case "battle.lifecycle.started_at":
+			b.StartedAt = domain.AsTime(triple.Object)
+		case "battle.lifecycle.completed_at":
+			t := domain.AsTime(triple.Object)
+			b.CompletedAt = &t
+
+		// Verdict
+		case "battle.verdict.passed":
+			if b.Verdict == nil {
+				b.Verdict = &domain.BattleVerdict{}
+			}
+			b.Verdict.Passed = domain.AsBool(triple.Object)
+		case "battle.verdict.score", "battle.verdict.quality_score":
+			if b.Verdict == nil {
+				b.Verdict = &domain.BattleVerdict{}
+			}
+			b.Verdict.QualityScore = domain.AsFloat64(triple.Object)
+		case "battle.verdict.xp_awarded":
+			if b.Verdict == nil {
+				b.Verdict = &domain.BattleVerdict{}
+			}
+			b.Verdict.XPAwarded = domain.AsInt64(triple.Object)
+		case "battle.verdict.xp_penalty":
+			if b.Verdict == nil {
+				b.Verdict = &domain.BattleVerdict{}
+			}
+			b.Verdict.XPPenalty = domain.AsInt64(triple.Object)
+		case "battle.verdict.feedback":
+			if b.Verdict == nil {
+				b.Verdict = &domain.BattleVerdict{}
+			}
+			b.Verdict.Feedback = domain.AsString(triple.Object)
+
+		// Judges (legacy predicate — kept for backward compatibility)
+		case "battle.judge.id":
+			judgeIDs = append(judgeIDs, domain.AsString(triple.Object))
+		}
+	}
+
+	// Reconstruct judges (we only store IDs in triples)
+	for _, id := range judgeIDs {
+		b.Judges = append(b.Judges, Judge{ID: id})
+	}
+
+	return b
 }

@@ -11,6 +11,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go"
 )
@@ -25,7 +26,7 @@ import (
 // SessionManager handles DM session lifecycle.
 type SessionManager struct {
 	client      *natsclient.Client
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 
@@ -35,7 +36,7 @@ type SessionManager struct {
 }
 
 // NewSessionManager creates a new session manager.
-func NewSessionManager(client *natsclient.Client, boardConfig *semdragons.BoardConfig, logger *slog.Logger) *SessionManager {
+func NewSessionManager(client *natsclient.Client, boardConfig *domain.BoardConfig, logger *slog.Logger) *SessionManager {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -59,7 +60,7 @@ func (sm *SessionManager) SessionKey(instance string) string {
 
 // StartSession begins a new DM session.
 func (sm *SessionManager) StartSession(ctx context.Context, config domain.SessionConfig) (*domain.Session, error) {
-	instance := semdragons.GenerateInstance()
+	instance := domain.GenerateInstance()
 	sessionID := sm.boardConfig.EntityID("session", instance)
 
 	session := &domain.Session{
@@ -112,7 +113,7 @@ func (sm *SessionManager) EndSession(ctx context.Context, sessionID string) (*do
 	summary := sm.computeSessionSummary(ctx, sessionID)
 
 	// Update session in KV
-	instance := semdragons.ExtractInstance(sessionID)
+	instance := domain.ExtractInstance(sessionID)
 	if err := sm.putSession(ctx, instance, session); err != nil {
 		sm.logger.Warn("failed to update session state", "session_id", sessionID, "error", err)
 	}
@@ -147,7 +148,7 @@ func (sm *SessionManager) GetSession(ctx context.Context, sessionID string) (*do
 	}
 
 	// Try loading from storage
-	instance := semdragons.ExtractInstance(sessionID)
+	instance := domain.ExtractInstance(sessionID)
 	return sm.getSession(ctx, instance)
 }
 
@@ -214,7 +215,7 @@ func (sm *SessionManager) computeSessionSummary(ctx context.Context, sessionID s
 	agents, err := sm.loadAllAgents(ctx)
 	if err == nil {
 		for _, agent := range agents {
-			if agent.Status != semdragons.AgentRetired {
+			if agent.Status != domain.AgentRetired {
 				summary.AgentsActive++
 			}
 			summary.TotalXPAwarded += agent.Stats.TotalXPEarned
@@ -225,15 +226,15 @@ func (sm *SessionManager) computeSessionSummary(ctx context.Context, sessionID s
 }
 
 // loadAllAgents retrieves all agents from the graph system.
-func (sm *SessionManager) loadAllAgents(ctx context.Context) ([]*semdragons.Agent, error) {
+func (sm *SessionManager) loadAllAgents(ctx context.Context) ([]*agentprogression.Agent, error) {
 	entities, err := sm.graph.ListAgentsByPrefix(ctx, 1000)
 	if err != nil {
 		return nil, err
 	}
 
-	agents := make([]*semdragons.Agent, 0, len(entities))
+	agents := make([]*agentprogression.Agent, 0, len(entities))
 	for _, entity := range entities {
-		agent := semdragons.AgentFromEntityState(&entity)
+		agent := agentprogression.AgentFromEntityState(&entity)
 		if agent != nil {
 			agents = append(agents, agent)
 		}

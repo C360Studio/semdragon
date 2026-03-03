@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
@@ -14,13 +13,13 @@ import (
 // BattleEvaluator runs evaluation judges on quest outputs.
 type BattleEvaluator interface {
 	// Evaluate runs all judges and produces a verdict.
-	Evaluate(ctx context.Context, battle *BossBattle, quest *questboard.Quest, output any) (*EvaluationResult, error)
+	Evaluate(ctx context.Context, battle *BossBattle, quest *domain.Quest, output any) (*EvaluationResult, error)
 }
 
 // EvaluationResult holds the outcome of an evaluation.
 type EvaluationResult struct {
 	Results      []domain.ReviewResult `json:"results"`
-	Verdict      BattleVerdict         `json:"verdict"`
+	Verdict      domain.BattleVerdict  `json:"verdict"`
 	Pending      bool                  `json:"pending"`
 	PendingJudge string                `json:"pending_judge,omitempty"`
 }
@@ -34,7 +33,7 @@ func NewDefaultBattleEvaluator() *DefaultBattleEvaluator {
 }
 
 // Evaluate runs evaluation judges on the output.
-func (e *DefaultBattleEvaluator) Evaluate(ctx context.Context, battle *BossBattle, _ *questboard.Quest, output any) (*EvaluationResult, error) {
+func (e *DefaultBattleEvaluator) Evaluate(ctx context.Context, battle *BossBattle, _ *domain.Quest, output any) (*EvaluationResult, error) {
 	// Check for cancellation - will be used for LLM judge calls when implemented
 	select {
 	case <-ctx.Done():
@@ -82,7 +81,7 @@ func (e *DefaultBattleEvaluator) Evaluate(ctx context.Context, battle *BossBattl
 		}
 	}
 
-	verdict := BattleVerdict{
+	verdict := domain.BattleVerdict{
 		Passed:       allPassed,
 		QualityScore: totalScore,
 		Feedback:     "Automated evaluation complete",

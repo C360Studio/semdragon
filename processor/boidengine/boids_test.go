@@ -4,7 +4,9 @@ import (
 	"math"
 	"testing"
 
-	semdragons "github.com/c360studio/semdragons"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -28,7 +30,7 @@ func TestSuggestTopN_ReturnsRankedList(t *testing.T) {
 	}
 
 	// Agent1 should have 3 suggestions
-	agent1 := result[semdragons.AgentID("agent1")]
+	agent1 := result[domain.AgentID("agent1")]
 	if len(agent1) != 3 {
 		t.Fatalf("agent1 got %d suggestions, want 3", len(agent1))
 	}
@@ -45,7 +47,7 @@ func TestSuggestTopN_ReturnsRankedList(t *testing.T) {
 	}
 
 	// Agent2 should have 2 suggestions (only 2 quests available)
-	agent2 := result[semdragons.AgentID("agent2")]
+	agent2 := result[domain.AgentID("agent2")]
 	if len(agent2) != 2 {
 		t.Fatalf("agent2 got %d suggestions, want 2", len(agent2))
 	}
@@ -66,8 +68,8 @@ func TestSuggestTopN_MultipleAgentsSameQuest(t *testing.T) {
 	result := engine.SuggestTopN(attractions, 3)
 
 	// Both agents should have quest1 in their suggestions
-	agent1 := result[semdragons.AgentID("agent1")]
-	agent2 := result[semdragons.AgentID("agent2")]
+	agent1 := result[domain.AgentID("agent1")]
+	agent2 := result[domain.AgentID("agent2")]
 
 	if len(agent1) == 0 || agent1[0].QuestID != "quest1" {
 		t.Error("agent1 should have quest1 as top suggestion")
@@ -86,7 +88,7 @@ func TestSuggestTopN_ConfidenceCalculation(t *testing.T) {
 	}
 
 	result := engine.SuggestTopN(attractions, 3)
-	agent1 := result[semdragons.AgentID("agent1")]
+	agent1 := result[domain.AgentID("agent1")]
 
 	if len(agent1) != 2 {
 		t.Fatalf("got %d suggestions, want 2", len(agent1))
@@ -136,7 +138,7 @@ func TestSuggestTopN_LimitToN(t *testing.T) {
 	}
 
 	result := engine.SuggestTopN(attractions, 2)
-	agent1 := result[semdragons.AgentID("agent1")]
+	agent1 := result[domain.AgentID("agent1")]
 
 	if len(agent1) != 2 {
 		t.Fatalf("got %d suggestions, want 2 (limited by n)", len(agent1))
@@ -162,19 +164,19 @@ func TestSuggestTopN_LimitToN(t *testing.T) {
 // The agent has one matching skill (code_gen); no guild priority on the quest so
 // guildMatch=0. Expected base AffinityScore = 1.0 (one skill match) * AffinityWeight
 // (1.5) = 1.5.
-func baseAttractionFor(t *testing.T, agent semdragons.Agent) QuestAttraction {
+func baseAttractionFor(t *testing.T, agent agentprogression.Agent) QuestAttraction {
 	t.Helper()
 
 	engine := NewDefaultBoidEngine()
 	rules := DefaultBoidRules()
 
-	quest := semdragons.Quest{
+	quest := domain.Quest{
 		ID:             "q1",
-		Status:         semdragons.QuestPosted,
-		RequiredSkills: []semdragons.SkillTag{"code_gen"},
+		Status:         domain.QuestPosted,
+		RequiredSkills: []domain.SkillTag{"code_gen"},
 	}
-	agents := []semdragons.Agent{agent}
-	quests := []semdragons.Quest{quest}
+	agents := []agentprogression.Agent{agent}
+	quests := []domain.Quest{quest}
 
 	attractions := engine.ComputeAttractions(agents, quests, rules)
 	if len(attractions) == 0 {
@@ -185,11 +187,11 @@ func baseAttractionFor(t *testing.T, agent semdragons.Agent) QuestAttraction {
 
 // agentWithSkill creates an Agent with a single code_gen skill proficiency entry.
 // Agent.SkillProficiencies is the authoritative skill store used by HasSkill().
-func agentWithSkill(id semdragons.AgentID, stats semdragons.AgentStats) semdragons.Agent {
-	return semdragons.Agent{
+func agentWithSkill(id domain.AgentID, stats agentprogression.AgentStats) agentprogression.Agent {
+	return agentprogression.Agent{
 		ID:     id,
-		Status: semdragons.AgentIdle,
-		SkillProficiencies: map[semdragons.SkillTag]semdragons.SkillProficiency{
+		Status: domain.AgentIdle,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"code_gen": {},
 		},
 		Stats: stats,
@@ -199,7 +201,7 @@ func agentWithSkill(id semdragons.AgentID, stats semdragons.AgentStats) semdrago
 func TestAffinityScore_PositivePeerReputation(t *testing.T) {
 	// avg=5.0 → reputationMod = (5.0-3.0)/2.0 = 1.0 → multiplier = 1.0 + 1.0*0.3 = 1.3
 	// base AffinityScore = 1.5 → boosted = 1.5 * 1.3 = 1.95
-	agent := agentWithSkill("agent-pos", semdragons.AgentStats{
+	agent := agentWithSkill("agent-pos", agentprogression.AgentStats{
 		PeerReviewAvg:   5.0,
 		PeerReviewCount: 3,
 	})
@@ -215,7 +217,7 @@ func TestAffinityScore_PositivePeerReputation(t *testing.T) {
 func TestAffinityScore_NegativePeerReputation(t *testing.T) {
 	// avg=1.0 → reputationMod = (1.0-3.0)/2.0 = -1.0 → multiplier = 1.0 + (-1.0)*0.3 = 0.7
 	// base AffinityScore = 1.5 → reduced = 1.5 * 0.7 = 1.05
-	agent := agentWithSkill("agent-neg", semdragons.AgentStats{
+	agent := agentWithSkill("agent-neg", agentprogression.AgentStats{
 		PeerReviewAvg:   1.0,
 		PeerReviewCount: 2,
 	})
@@ -231,7 +233,7 @@ func TestAffinityScore_NegativePeerReputation(t *testing.T) {
 func TestAffinityScore_NeutralPeerReputation(t *testing.T) {
 	// avg=3.0 → reputationMod = (3.0-3.0)/2.0 = 0.0 → multiplier = 1.0
 	// AffinityScore is unchanged from its base value.
-	agent := agentWithSkill("agent-neutral", semdragons.AgentStats{
+	agent := agentWithSkill("agent-neutral", agentprogression.AgentStats{
 		PeerReviewAvg:   3.0,
 		PeerReviewCount: 5,
 	})
@@ -248,7 +250,7 @@ func TestAffinityScore_NeutralPeerReputation(t *testing.T) {
 func TestAffinityScore_NoPeerReviews(t *testing.T) {
 	// PeerReviewCount=0 → modifier branch is skipped entirely, no division by zero.
 	// AffinityScore equals the unmodified base value.
-	agent := agentWithSkill("agent-noreviews", semdragons.AgentStats{
+	agent := agentWithSkill("agent-noreviews", agentprogression.AgentStats{
 		PeerReviewAvg:   0.0, // zero-value; irrelevant when Count==0
 		PeerReviewCount: 0,
 	})

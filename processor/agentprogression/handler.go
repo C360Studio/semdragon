@@ -9,7 +9,6 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/questboard"
 )
 
 // =============================================================================
@@ -121,7 +120,7 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 		return
 	}
 
-	fullAgent := semdragons.AgentFromEntityState(agentEntity)
+	fullAgent := AgentFromEntityState(agentEntity)
 	if fullAgent == nil {
 		c.logger.Error("failed to decode agent from entity state",
 			"agent", agentID,
@@ -134,16 +133,16 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 	isGuildQuest := quest.GuildPriority != nil
 
 	// Read guild entity to populate GuildRank for XP multiplier (B1)
-	var guildForStats *semdragons.Guild
+	var guildForStats *domain.Guild
 	var guildRank domain.GuildRank
 	if isGuildQuest {
 		guildEntity, guildErr := c.graph.GetGuild(ctx, domain.GuildID(*quest.GuildPriority))
 		if guildErr == nil {
-			guild := semdragons.GuildFromEntityState(guildEntity)
+			guild := domain.GuildFromEntityState(guildEntity)
 			if guild != nil {
 				guildForStats = guild
 				for _, m := range guild.Members {
-					if m.AgentID == semdragons.AgentID(agentID) {
+					if m.AgentID == domain.AgentID(agentID) {
 						guildRank = m.Rank
 						break
 					}
@@ -188,7 +187,7 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 	fullAgent.XP = tempAgent.XP
 	fullAgent.XPToLevel = tempAgent.XPToLevel
 	fullAgent.Tier = tempAgent.Tier
-	fullAgent.Status = semdragons.AgentIdle
+	fullAgent.Status = domain.AgentIdle
 	fullAgent.CurrentQuest = nil
 	fullAgent.Stats.QuestsCompleted++
 	fullAgent.UpdatedAt = time.Now()
@@ -201,7 +200,7 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 
 	// Update guild reputation and member contribution on quest completion (B2)
 	if isGuildQuest && guildForStats != nil {
-		c.updateGuildStatsOnCompletion(ctx, guildForStats, semdragons.AgentID(agentID), award.TotalXP)
+		c.updateGuildStatsOnCompletion(ctx, guildForStats, domain.AgentID(agentID), award.TotalXP)
 	}
 
 	// Emit level up event if applicable
@@ -255,7 +254,7 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 		return
 	}
 
-	fullAgent := semdragons.AgentFromEntityState(agentEntity)
+	fullAgent := AgentFromEntityState(agentEntity)
 	if fullAgent == nil {
 		c.logger.Error("failed to decode agent from entity state",
 			"agent", agentID,
@@ -267,11 +266,11 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 	// Map failure type from quest entity
 	var failType FailureType
 	switch quest.FailureType {
-	case questboard.FailureTimeout:
+	case domain.FailureTimeout:
 		failType = FailureTimeout
-	case questboard.FailureAbandoned:
+	case domain.FailureAbandoned:
 		failType = FailureAbandon
-	case questboard.FailureError:
+	case domain.FailureError:
 		failType = FailureCatastrophic
 	default:
 		failType = FailureSoft
@@ -308,11 +307,11 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 
 	// Set status based on penalty cooldown
 	if penalty.CooldownDur > 0 {
-		fullAgent.Status = semdragons.AgentCooldown
+		fullAgent.Status = domain.AgentCooldown
 		cooldownUntil := time.Now().Add(penalty.CooldownDur)
 		fullAgent.CooldownUntil = &cooldownUntil
 	} else {
-		fullAgent.Status = semdragons.AgentIdle
+		fullAgent.Status = domain.AgentIdle
 	}
 	fullAgent.CurrentQuest = nil
 	fullAgent.Stats.QuestsFailed++
@@ -328,7 +327,7 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 	if quest.GuildPriority != nil {
 		guildEntity, guildErr := c.graph.GetGuild(ctx, domain.GuildID(*quest.GuildPriority))
 		if guildErr == nil {
-			guild := semdragons.GuildFromEntityState(guildEntity)
+			guild := domain.GuildFromEntityState(guildEntity)
 			if guild != nil {
 				c.updateGuildStatsOnFailure(ctx, guild)
 			}
@@ -347,12 +346,12 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 // =============================================================================
 
 // questFromEntityStateTriples reconstructs a questboard.Quest from entity state triples.
-func questFromEntityStateTriples(entity *semgraph.EntityState) *questboard.Quest {
+func questFromEntityStateTriples(entity *semgraph.EntityState) *domain.Quest {
 	if entity == nil {
 		return nil
 	}
 
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID: domain.QuestID(entity.ID),
 	}
 
@@ -399,21 +398,21 @@ func questFromEntityStateTriples(entity *semgraph.EntityState) *questboard.Quest
 		case "quest.verdict.passed":
 			if v, ok := triple.Object.(bool); ok {
 				if quest.Verdict == nil {
-					quest.Verdict = &questboard.BattleVerdict{}
+					quest.Verdict = &domain.BattleVerdict{}
 				}
 				quest.Verdict.Passed = v
 			}
 		case "quest.verdict.score":
 			if v, ok := triple.Object.(float64); ok {
 				if quest.Verdict == nil {
-					quest.Verdict = &questboard.BattleVerdict{}
+					quest.Verdict = &domain.BattleVerdict{}
 				}
 				quest.Verdict.QualityScore = v
 			}
 		case "quest.verdict.xp_awarded":
 			if v, ok := triple.Object.(float64); ok {
 				if quest.Verdict == nil {
-					quest.Verdict = &questboard.BattleVerdict{}
+					quest.Verdict = &domain.BattleVerdict{}
 				}
 				quest.Verdict.XPAwarded = int64(v)
 			}
@@ -423,7 +422,7 @@ func questFromEntityStateTriples(entity *semgraph.EntityState) *questboard.Quest
 			}
 		case "quest.failure.type":
 			if v, ok := triple.Object.(string); ok {
-				quest.FailureType = questboard.FailureType(v)
+				quest.FailureType = domain.FailureType(v)
 			}
 		case "quest.duration":
 			if v, ok := triple.Object.(string); ok {
@@ -462,7 +461,7 @@ func (c *Component) BoardConfig() *domain.BoardConfig {
 
 // updateGuildStatsOnCompletion increments guild reputation and member contribution
 // when a guild quest is completed successfully.
-func (c *Component) updateGuildStatsOnCompletion(ctx context.Context, guild *semdragons.Guild, agentID semdragons.AgentID, xpEarned int64) {
+func (c *Component) updateGuildStatsOnCompletion(ctx context.Context, guild *domain.Guild, agentID domain.AgentID, xpEarned int64) {
 	guild.QuestsHandled++
 	if guild.QuestsHandled > 0 {
 		guild.SuccessRate = float64(guild.QuestsHandled-guild.QuestsFailed) / float64(guild.QuestsHandled)
@@ -490,7 +489,7 @@ func (c *Component) updateGuildStatsOnCompletion(ctx context.Context, guild *sem
 
 // updateGuildStatsOnFailure increments failure counters and recalculates success rate
 // when a guild quest fails.
-func (c *Component) updateGuildStatsOnFailure(ctx context.Context, guild *semdragons.Guild) {
+func (c *Component) updateGuildStatsOnFailure(ctx context.Context, guild *domain.Guild) {
 	guild.QuestsHandled++
 	guild.QuestsFailed++
 	if guild.QuestsHandled > 0 {

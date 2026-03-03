@@ -9,9 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semstreams/component"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // Component consumes tool.execute.* messages from the AGENT JetStream stream,
@@ -24,7 +25,7 @@ type Component struct {
 	deps         component.Dependencies
 	toolRegistry *executor.ToolRegistry
 	logger       *slog.Logger
-	boardConfig  *semdragons.BoardConfig
+	boardConfig  *domain.BoardConfig
 
 	// Lifecycle
 	running   atomic.Bool
@@ -90,14 +91,14 @@ func (c *Component) OutputPorts() []component.Port {
 func (c *Component) ConfigSchema() component.ConfigSchema {
 	return component.ConfigSchema{
 		Properties: map[string]component.PropertySchema{
-			"org":               {Type: "string", Description: "Organization namespace", Default: "default", Category: "basic"},
-			"platform":          {Type: "string", Description: "Platform/environment name", Default: "local", Category: "basic"},
-			"board":             {Type: "string", Description: "Quest board name", Default: "main", Category: "basic"},
-			"stream_name":       {Type: "string", Description: "AGENT stream name", Default: "AGENT", Category: "basic"},
+			"org":                {Type: "string", Description: "Organization namespace", Default: "default", Category: "basic"},
+			"platform":           {Type: "string", Description: "Platform/environment name", Default: "local", Category: "basic"},
+			"board":              {Type: "string", Description: "Quest board name", Default: "main", Category: "basic"},
+			"stream_name":        {Type: "string", Description: "AGENT stream name", Default: "AGENT", Category: "basic"},
 			"quest_loops_bucket": {Type: "string", Description: "QUEST_LOOPS KV bucket name", Default: "QUEST_LOOPS", Category: "basic"},
-			"timeout":           {Type: "string", Description: "Tool execution timeout duration", Default: "60s", Category: "execution"},
-			"enable_builtins":   {Type: "bool", Description: "Register built-in file/search tools", Default: true, Category: "execution"},
-			"sandbox_dir":       {Type: "string", Description: "Restrict file ops to this directory", Default: "", Category: "execution"},
+			"timeout":            {Type: "string", Description: "Tool execution timeout duration", Default: "60s", Category: "execution"},
+			"enable_builtins":    {Type: "bool", Description: "Register built-in file/search tools", Default: true, Category: "execution"},
+			"sandbox_dir":        {Type: "string", Description: "Restrict file ops to this directory", Default: "", Category: "execution"},
 		},
 		Required: []string{"org", "platform", "board"},
 	}

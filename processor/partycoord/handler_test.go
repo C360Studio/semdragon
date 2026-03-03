@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/message"
 )
@@ -267,7 +266,7 @@ func TestParty_Triples_MemberRelationships(t *testing.T) {
 	now := time.Now()
 
 	party := &Party{
-		ID:      "c360.prod.game.board1.party.p004",
+		ID:       "c360.prod.game.board1.party.p004",
 		FormedAt: now,
 		Members: []PartyMember{
 			{AgentID: leadID, Role: domain.RoleLead, JoinedAt: now},
@@ -1086,11 +1085,11 @@ func TestPartyFormedPayload_Triples(t *testing.T) {
 	now := time.Now()
 
 	party := Party{
-		ID:      partyID,
-		Name:    "Test Party",
-		Status:  domain.PartyForming,
-		QuestID: questID,
-		Lead:    leadID,
+		ID:       partyID,
+		Name:     "Test Party",
+		Status:   domain.PartyForming,
+		QuestID:  questID,
+		Lead:     leadID,
 		FormedAt: now,
 	}
 	payload := &PartyFormedPayload{Party: party, FormedAt: now}
@@ -1667,9 +1666,9 @@ func TestMaybeFormParty_SkipsNonPartyRequired(t *testing.T) {
 	comp := &Component{}
 	comp.running.Store(true)
 
-	curr := &semdragons.Quest{
+	curr := &domain.Quest{
 		ID:            "c360.prod.game.board1.quest.q1",
-		Status:        semdragons.QuestClaimed,
+		Status:        domain.QuestClaimed,
 		PartyRequired: false, // Should skip
 	}
 
@@ -1687,14 +1686,14 @@ func TestMaybeFormParty_SkipsWhenStatusUnchanged(t *testing.T) {
 	comp := &Component{}
 	comp.running.Store(true)
 
-	prev := &semdragons.Quest{
+	prev := &domain.Quest{
 		ID:            "c360.prod.game.board1.quest.q2",
-		Status:        semdragons.QuestClaimed,
+		Status:        domain.QuestClaimed,
 		PartyRequired: true,
 	}
-	curr := &semdragons.Quest{
+	curr := &domain.Quest{
 		ID:            "c360.prod.game.board1.quest.q2",
-		Status:        semdragons.QuestClaimed, // Same status as prev — no transition
+		Status:        domain.QuestClaimed, // Same status as prev — no transition
 		PartyRequired: true,
 	}
 
@@ -1710,14 +1709,14 @@ func TestMaybeFormParty_SkipsWhenStatusIsNotClaimed(t *testing.T) {
 	comp := &Component{}
 	comp.running.Store(true)
 
-	prev := &semdragons.Quest{
+	prev := &domain.Quest{
 		ID:            "c360.prod.game.board1.quest.q3",
-		Status:        semdragons.QuestPosted,
+		Status:        domain.QuestPosted,
 		PartyRequired: true,
 	}
-	curr := &semdragons.Quest{
+	curr := &domain.Quest{
 		ID:            "c360.prod.game.board1.quest.q3",
-		Status:        semdragons.QuestInProgress, // Not "claimed"
+		Status:        domain.QuestInProgress, // Not "claimed"
 		PartyRequired: true,
 	}
 
@@ -1733,14 +1732,14 @@ func TestMaybeFormParty_SkipsWhenClaimedByNil(t *testing.T) {
 	comp := &Component{}
 	comp.running.Store(true)
 
-	prev := &semdragons.Quest{
+	prev := &domain.Quest{
 		ID:            "c360.prod.game.board1.quest.q4",
-		Status:        semdragons.QuestPosted,
+		Status:        domain.QuestPosted,
 		PartyRequired: true,
 	}
-	curr := &semdragons.Quest{
+	curr := &domain.Quest{
 		ID:            "c360.prod.game.board1.quest.q4",
-		Status:        semdragons.QuestClaimed,
+		Status:        domain.QuestClaimed,
 		PartyRequired: true,
 		ClaimedBy:     nil, // No claimer — should skip
 	}
@@ -1760,14 +1759,14 @@ func TestMaybeFormParty_SkipsWhenPartyAlreadyAssigned(t *testing.T) {
 	agent := domain.AgentID("c360.prod.game.board1.agent.a1")
 	existingParty := domain.PartyID("c360.prod.game.board1.party.existing")
 
-	prev := &semdragons.Quest{
+	prev := &domain.Quest{
 		ID:            "c360.prod.game.board1.quest.q5",
-		Status:        semdragons.QuestPosted,
+		Status:        domain.QuestPosted,
 		PartyRequired: true,
 	}
-	curr := &semdragons.Quest{
+	curr := &domain.Quest{
 		ID:            "c360.prod.game.board1.quest.q5",
-		Status:        semdragons.QuestClaimed,
+		Status:        domain.QuestClaimed,
 		PartyRequired: true,
 		ClaimedBy:     &agent,
 		PartyID:       &existingParty, // Party already assigned — should skip

@@ -10,7 +10,9 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/boidengine"
+	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/pkg/errs"
 )
@@ -23,7 +25,7 @@ import (
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 
@@ -185,7 +187,7 @@ func (c *Component) Initialize() error {
 		return errors.New("NATS client required")
 	}
 
-	c.boardConfig = &semdragons.BoardConfig{
+	c.boardConfig = &domain.BoardConfig{
 		Org:      c.config.Org,
 		Platform: c.config.Platform,
 		Board:    c.config.Board,
@@ -250,10 +252,10 @@ func (c *Component) Stop(_ time.Duration) error {
 // FormParty assembles a party for a quest using the specified strategy.
 func (c *Component) FormParty(
 	ctx context.Context,
-	quest *semdragons.Quest,
+	quest *domain.Quest,
 	strategy domain.PartyStrategy,
-	availableAgents []semdragons.Agent,
-) (*semdragons.Party, error) {
+	availableAgents []agentprogression.Agent,
+) (*partycoord.Party, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -272,8 +274,8 @@ func (c *Component) FormParty(
 
 // RankAgentsForQuest returns agents ranked by their suitability for a quest.
 func (c *Component) RankAgentsForQuest(
-	agents []semdragons.Agent,
-	quest *semdragons.Quest,
+	agents []agentprogression.Agent,
+	quest *domain.Quest,
 ) []boidengine.SuggestedClaim {
 	if !c.running.Load() {
 		return nil
@@ -284,8 +286,8 @@ func (c *Component) RankAgentsForQuest(
 
 // SuggestPartyMembers returns suggested party members with rankings.
 func (c *Component) SuggestPartyMembers(
-	agents []semdragons.Agent,
-	quest *semdragons.Quest,
+	agents []agentprogression.Agent,
+	quest *domain.Quest,
 	strategy domain.PartyStrategy,
 ) ([]PartyMemberSuggestion, error) {
 	if !c.running.Load() {

@@ -10,8 +10,8 @@ package dmpartyformation
 import (
 	"testing"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/boidengine"
 )
 
@@ -20,8 +20,8 @@ import (
 // =============================================================================
 
 // testBoardConfig returns a minimal BoardConfig for testing (no NATS required).
-func testBoardConfig() *semdragons.BoardConfig {
-	return &semdragons.BoardConfig{
+func testBoardConfig() *domain.BoardConfig {
+	return &domain.BoardConfig{
 		Org:      "test",
 		Platform: "unit",
 		Board:    "testboard",
@@ -38,19 +38,19 @@ func testEngine() *PartyFormationEngine {
 
 // makeAgent builds an Agent with the specified tier, level, and optional skills.
 // Status is AgentIdle so that boid ComputeAttractions includes the agent.
-func makeAgent(id semdragons.AgentID, tier semdragons.TrustTier, level int, skills ...semdragons.SkillTag) semdragons.Agent {
-	agent := semdragons.Agent{
+func makeAgent(id domain.AgentID, tier domain.TrustTier, level int, skills ...domain.SkillTag) agentprogression.Agent {
+	agent := agentprogression.Agent{
 		ID:     id,
 		Name:   string(id),
 		Tier:   tier,
 		Level:  level,
-		Status: semdragons.AgentIdle,
+		Status: domain.AgentIdle,
 	}
 	if len(skills) > 0 {
-		agent.SkillProficiencies = make(map[semdragons.SkillTag]semdragons.SkillProficiency)
+		agent.SkillProficiencies = make(map[domain.SkillTag]domain.SkillProficiency)
 		for _, skill := range skills {
-			agent.SkillProficiencies[skill] = semdragons.SkillProficiency{
-				Level: semdragons.ProficiencyJourneyman,
+			agent.SkillProficiencies[skill] = domain.SkillProficiency{
+				Level: domain.ProficiencyJourneyman,
 			}
 		}
 	}
@@ -58,12 +58,12 @@ func makeAgent(id semdragons.AgentID, tier semdragons.TrustTier, level int, skil
 }
 
 // makeQuest builds a minimal Quest for testing.
-func makeQuest(id semdragons.QuestID, skills []semdragons.SkillTag, minPartySize int) *semdragons.Quest {
-	return &semdragons.Quest{
+func makeQuest(id domain.QuestID, skills []domain.SkillTag, minPartySize int) *domain.Quest {
+	return &domain.Quest{
 		ID:             id,
 		Title:          string(id),
-		Status:         semdragons.QuestPosted,
-		Difficulty:     semdragons.DifficultyModerate,
+		Status:         domain.QuestPosted,
+		Difficulty:     domain.DifficultyModerate,
 		RequiredSkills: skills,
 		MinPartySize:   minPartySize,
 		PartyRequired:  minPartySize > 1,
@@ -120,7 +120,7 @@ func TestSelectLeadFromAgents_EmptySlice_ReturnsError(t *testing.T) {
 		t.Fatal("selectLeadFromAgents(nil) should return an error")
 	}
 
-	_, err = eng.selectLeadFromAgents([]semdragons.Agent{})
+	_, err = eng.selectLeadFromAgents([]agentprogression.Agent{})
 	if err == nil {
 		t.Fatal("selectLeadFromAgents([]) should return an error")
 	}
@@ -130,10 +130,10 @@ func TestSelectLeadFromAgents_NoCapableAgents_ReturnsError(t *testing.T) {
 	eng := testEngine()
 
 	// Apprentice and Journeyman tiers have CanLeadParty = false.
-	agents := []semdragons.Agent{
-		makeAgent("appr-1", semdragons.TierApprentice, 3),
-		makeAgent("jour-1", semdragons.TierJourneyman, 8),
-		makeAgent("expt-1", semdragons.TierExpert, 13),
+	agents := []agentprogression.Agent{
+		makeAgent("appr-1", domain.TierApprentice, 3),
+		makeAgent("jour-1", domain.TierJourneyman, 8),
+		makeAgent("expt-1", domain.TierExpert, 13),
 	}
 
 	_, err := eng.selectLeadFromAgents(agents)
@@ -145,10 +145,10 @@ func TestSelectLeadFromAgents_NoCapableAgents_ReturnsError(t *testing.T) {
 func TestSelectLeadFromAgents_OneCapableAgent_ReturnsThatAgent(t *testing.T) {
 	eng := testEngine()
 
-	agents := []semdragons.Agent{
-		makeAgent("appr-1", semdragons.TierApprentice, 3),
-		makeAgent("master-1", semdragons.TierMaster, 16),
-		makeAgent("jour-1", semdragons.TierJourneyman, 8),
+	agents := []agentprogression.Agent{
+		makeAgent("appr-1", domain.TierApprentice, 3),
+		makeAgent("master-1", domain.TierMaster, 16),
+		makeAgent("jour-1", domain.TierJourneyman, 8),
 	}
 
 	lead, err := eng.selectLeadFromAgents(agents)
@@ -164,10 +164,10 @@ func TestSelectLeadFromAgents_MultipleCapable_PicksHighestLevel(t *testing.T) {
 	eng := testEngine()
 
 	// Two Master agents and one Grandmaster; selectLeadFromAgents should pick highest level.
-	agents := []semdragons.Agent{
-		makeAgent("master-low", semdragons.TierMaster, 16),
-		makeAgent("grand-19", semdragons.TierGrandmaster, 19),
-		makeAgent("master-high", semdragons.TierMaster, 18),
+	agents := []agentprogression.Agent{
+		makeAgent("master-low", domain.TierMaster, 16),
+		makeAgent("grand-19", domain.TierGrandmaster, 19),
+		makeAgent("master-high", domain.TierMaster, 18),
 	}
 
 	lead, err := eng.selectLeadFromAgents(agents)
@@ -183,9 +183,9 @@ func TestSelectLeadFromAgents_TiedLevel_ReturnsEitherCandidate(t *testing.T) {
 	eng := testEngine()
 
 	// Both at level 17; either is a valid lead — just verify no error and one is returned.
-	agents := []semdragons.Agent{
-		makeAgent("master-a", semdragons.TierMaster, 17),
-		makeAgent("master-b", semdragons.TierMaster, 17),
+	agents := []agentprogression.Agent{
+		makeAgent("master-a", domain.TierMaster, 17),
+		makeAgent("master-b", domain.TierMaster, 17),
 	}
 
 	lead, err := eng.selectLeadFromAgents(agents)
@@ -204,8 +204,8 @@ func TestSelectLeadFromAgents_TiedLevel_ReturnsEitherCandidate(t *testing.T) {
 func TestIsGuildMatch_NilGuildPriority_ReturnsFalse(t *testing.T) {
 	eng := testEngine()
 
-	agent := makeAgent("agent-1", semdragons.TierJourneyman, 8)
-	agent.Guilds = []semdragons.GuildID{"guild-alpha"}
+	agent := makeAgent("agent-1", domain.TierJourneyman, 8)
+	agent.Guilds = []domain.GuildID{"guild-alpha"}
 
 	quest := makeQuest("q-1", nil, 1)
 	// GuildPriority is nil (zero value for *GuildID).
@@ -218,11 +218,11 @@ func TestIsGuildMatch_NilGuildPriority_ReturnsFalse(t *testing.T) {
 func TestIsGuildMatch_AgentNotInPriorityGuild_ReturnsFalse(t *testing.T) {
 	eng := testEngine()
 
-	agent := makeAgent("agent-1", semdragons.TierJourneyman, 8)
-	agent.Guilds = []semdragons.GuildID{"guild-alpha"}
+	agent := makeAgent("agent-1", domain.TierJourneyman, 8)
+	agent.Guilds = []domain.GuildID{"guild-alpha"}
 
 	quest := makeQuest("q-1", nil, 1)
-	priorityGuild := semdragons.GuildID("guild-beta")
+	priorityGuild := domain.GuildID("guild-beta")
 	quest.GuildPriority = &priorityGuild
 
 	if eng.isGuildMatch(agent, quest) {
@@ -233,9 +233,9 @@ func TestIsGuildMatch_AgentNotInPriorityGuild_ReturnsFalse(t *testing.T) {
 func TestIsGuildMatch_AgentInPriorityGuild_ReturnsTrue(t *testing.T) {
 	eng := testEngine()
 
-	agent := makeAgent("agent-1", semdragons.TierJourneyman, 8)
-	targetGuild := semdragons.GuildID("guild-alpha")
-	agent.Guilds = []semdragons.GuildID{"guild-other", targetGuild}
+	agent := makeAgent("agent-1", domain.TierJourneyman, 8)
+	targetGuild := domain.GuildID("guild-alpha")
+	agent.Guilds = []domain.GuildID{"guild-other", targetGuild}
 
 	quest := makeQuest("q-1", nil, 1)
 	quest.GuildPriority = &targetGuild
@@ -248,11 +248,11 @@ func TestIsGuildMatch_AgentInPriorityGuild_ReturnsTrue(t *testing.T) {
 func TestIsGuildMatch_AgentHasNoGuilds_ReturnsFalse(t *testing.T) {
 	eng := testEngine()
 
-	agent := makeAgent("agent-1", semdragons.TierJourneyman, 8)
+	agent := makeAgent("agent-1", domain.TierJourneyman, 8)
 	// agent.Guilds is nil (zero value).
 
 	quest := makeQuest("q-1", nil, 1)
-	priorityGuild := semdragons.GuildID("guild-alpha")
+	priorityGuild := domain.GuildID("guild-alpha")
 	quest.GuildPriority = &priorityGuild
 
 	if eng.isGuildMatch(agent, quest) {
@@ -267,12 +267,12 @@ func TestIsGuildMatch_AgentHasNoGuilds_ReturnsFalse(t *testing.T) {
 func TestRecommendRole_CanLeadParty_ReturnsRoleLead(t *testing.T) {
 	eng := testEngine()
 
-	agent := makeAgent("master-1", semdragons.TierMaster, 16)
-	perms := semdragons.TierPermissionsFor(semdragons.TierMaster)
+	agent := makeAgent("master-1", domain.TierMaster, 16)
+	perms := domain.TierPermissionsFor(domain.TierMaster)
 
 	role := eng.recommendRole(agent, perms)
-	if role != semdragons.RoleLead {
-		t.Errorf("recommendRole = %q, want %q (Master tier should be Lead)", role, semdragons.RoleLead)
+	if role != domain.RoleLead {
+		t.Errorf("recommendRole = %q, want %q (Master tier should be Lead)", role, domain.RoleLead)
 	}
 }
 
@@ -280,8 +280,8 @@ func TestRecommendRole_CodeReviewSkill_ReturnsRoleReviewer(t *testing.T) {
 	eng := testEngine()
 
 	// Expert tier: cannot lead, but has SkillCodeReview.
-	agent := makeAgent("reviewer-1", semdragons.TierExpert, 12, semdragons.SkillCodeReview)
-	perms := semdragons.TierPermissionsFor(semdragons.TierExpert)
+	agent := makeAgent("reviewer-1", domain.TierExpert, 12, domain.SkillCodeReview)
+	perms := domain.TierPermissionsFor(domain.TierExpert)
 
 	// Verify Expert cannot lead so we're testing the right branch.
 	if perms.CanLeadParty {
@@ -289,8 +289,8 @@ func TestRecommendRole_CodeReviewSkill_ReturnsRoleReviewer(t *testing.T) {
 	}
 
 	role := eng.recommendRole(agent, perms)
-	if role != semdragons.RoleReviewer {
-		t.Errorf("recommendRole = %q, want %q (code_review skill should map to Reviewer)", role, semdragons.RoleReviewer)
+	if role != domain.RoleReviewer {
+		t.Errorf("recommendRole = %q, want %q (code_review skill should map to Reviewer)", role, domain.RoleReviewer)
 	}
 }
 
@@ -298,12 +298,12 @@ func TestRecommendRole_ResearchSkill_ReturnsRoleScout(t *testing.T) {
 	eng := testEngine()
 
 	// Journeyman tier: cannot lead; has SkillResearch.
-	agent := makeAgent("scout-1", semdragons.TierJourneyman, 8, semdragons.SkillResearch)
-	perms := semdragons.TierPermissionsFor(semdragons.TierJourneyman)
+	agent := makeAgent("scout-1", domain.TierJourneyman, 8, domain.SkillResearch)
+	perms := domain.TierPermissionsFor(domain.TierJourneyman)
 
 	role := eng.recommendRole(agent, perms)
-	if role != semdragons.RoleScout {
-		t.Errorf("recommendRole = %q, want %q (research skill should map to Scout)", role, semdragons.RoleScout)
+	if role != domain.RoleScout {
+		t.Errorf("recommendRole = %q, want %q (research skill should map to Scout)", role, domain.RoleScout)
 	}
 }
 
@@ -311,24 +311,24 @@ func TestRecommendRole_NoSpecialSkill_ReturnsRoleExecutor(t *testing.T) {
 	eng := testEngine()
 
 	// Apprentice tier: cannot lead; only has SkillCodeGen (not code_review or research).
-	agent := makeAgent("exec-1", semdragons.TierApprentice, 3, semdragons.SkillCodeGen)
-	perms := semdragons.TierPermissionsFor(semdragons.TierApprentice)
+	agent := makeAgent("exec-1", domain.TierApprentice, 3, domain.SkillCodeGen)
+	perms := domain.TierPermissionsFor(domain.TierApprentice)
 
 	role := eng.recommendRole(agent, perms)
-	if role != semdragons.RoleExecutor {
-		t.Errorf("recommendRole = %q, want %q (no special skill defaults to Executor)", role, semdragons.RoleExecutor)
+	if role != domain.RoleExecutor {
+		t.Errorf("recommendRole = %q, want %q (no special skill defaults to Executor)", role, domain.RoleExecutor)
 	}
 }
 
 func TestRecommendRole_NoSkillsAtAll_ReturnsRoleExecutor(t *testing.T) {
 	eng := testEngine()
 
-	agent := makeAgent("bare-1", semdragons.TierJourneyman, 7)
-	perms := semdragons.TierPermissionsFor(semdragons.TierJourneyman)
+	agent := makeAgent("bare-1", domain.TierJourneyman, 7)
+	perms := domain.TierPermissionsFor(domain.TierJourneyman)
 
 	role := eng.recommendRole(agent, perms)
-	if role != semdragons.RoleExecutor {
-		t.Errorf("recommendRole = %q, want %q (agent with no skills defaults to Executor)", role, semdragons.RoleExecutor)
+	if role != domain.RoleExecutor {
+		t.Errorf("recommendRole = %q, want %q (agent with no skills defaults to Executor)", role, domain.RoleExecutor)
 	}
 }
 
@@ -338,9 +338,9 @@ func TestRecommendRole_NoSkillsAtAll_ReturnsRoleExecutor(t *testing.T) {
 func TestRecommendRole_CodeReviewBeatsResearch(t *testing.T) {
 	eng := testEngine()
 
-	agent := makeAgent("multi-1", semdragons.TierExpert, 12,
-		semdragons.SkillCodeReview, semdragons.SkillResearch)
-	perms := semdragons.TierPermissionsFor(semdragons.TierExpert)
+	agent := makeAgent("multi-1", domain.TierExpert, 12,
+		domain.SkillCodeReview, domain.SkillResearch)
+	perms := domain.TierPermissionsFor(domain.TierExpert)
 
 	if perms.CanLeadParty {
 		t.Skip("TierExpert can now lead; test assumptions need revisiting")
@@ -349,7 +349,7 @@ func TestRecommendRole_CodeReviewBeatsResearch(t *testing.T) {
 	// The function iterates GetSkillTags(), which returns map keys in arbitrary order.
 	// We only assert that the result is one of the two valid special roles, not Executor.
 	role := eng.recommendRole(agent, perms)
-	if role != semdragons.RoleReviewer && role != semdragons.RoleScout {
+	if role != domain.RoleReviewer && role != domain.RoleScout {
 		t.Errorf("recommendRole = %q; expected Reviewer or Scout for agent with both skills", role)
 	}
 }
@@ -360,7 +360,7 @@ func TestRecommendRole_CodeReviewBeatsResearch(t *testing.T) {
 
 func TestSuggestPartyMembers_EmptyAgents_ReturnsEmptySlice(t *testing.T) {
 	eng := testEngine()
-	quest := makeQuest("q-1", []semdragons.SkillTag{semdragons.SkillCodeGen}, 1)
+	quest := makeQuest("q-1", []domain.SkillTag{domain.SkillCodeGen}, 1)
 
 	suggestions, err := eng.SuggestPartyMembers(nil, quest, domain.PartyStrategyBalanced)
 	if err != nil {
@@ -373,12 +373,12 @@ func TestSuggestPartyMembers_EmptyAgents_ReturnsEmptySlice(t *testing.T) {
 
 func TestSuggestPartyMembers_ReturnsOneSuggestionPerAgent(t *testing.T) {
 	eng := testEngine()
-	quest := makeQuest("q-2", []semdragons.SkillTag{semdragons.SkillCodeGen}, 1)
+	quest := makeQuest("q-2", []domain.SkillTag{domain.SkillCodeGen}, 1)
 
-	agents := []semdragons.Agent{
-		makeAgent("a1", semdragons.TierMaster, 16, semdragons.SkillCodeGen),
-		makeAgent("a2", semdragons.TierJourneyman, 8, semdragons.SkillAnalysis),
-		makeAgent("a3", semdragons.TierApprentice, 3),
+	agents := []agentprogression.Agent{
+		makeAgent("a1", domain.TierMaster, 16, domain.SkillCodeGen),
+		makeAgent("a2", domain.TierJourneyman, 8, domain.SkillAnalysis),
+		makeAgent("a3", domain.TierApprentice, 3),
 	}
 
 	suggestions, err := eng.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)
@@ -394,9 +394,9 @@ func TestSuggestPartyMembers_CanLeadFlagMatchesTierPermissions(t *testing.T) {
 	eng := testEngine()
 	quest := makeQuest("q-3", nil, 1)
 
-	master := makeAgent("master-1", semdragons.TierMaster, 16)
-	apprentice := makeAgent("appr-1", semdragons.TierApprentice, 3)
-	agents := []semdragons.Agent{master, apprentice}
+	master := makeAgent("master-1", domain.TierMaster, 16)
+	apprentice := makeAgent("appr-1", domain.TierApprentice, 3)
+	agents := []agentprogression.Agent{master, apprentice}
 
 	suggestions, err := eng.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)
 	if err != nil {
@@ -404,7 +404,7 @@ func TestSuggestPartyMembers_CanLeadFlagMatchesTierPermissions(t *testing.T) {
 	}
 
 	for _, s := range suggestions {
-		wantCanLead := semdragons.TierPermissionsFor(s.Agent.Tier).CanLeadParty
+		wantCanLead := domain.TierPermissionsFor(s.Agent.Tier).CanLeadParty
 		if s.CanLead != wantCanLead {
 			t.Errorf("Agent %v: CanLead = %v, want %v", s.Agent.ID, s.CanLead, wantCanLead)
 		}
@@ -414,19 +414,19 @@ func TestSuggestPartyMembers_CanLeadFlagMatchesTierPermissions(t *testing.T) {
 func TestSuggestPartyMembers_SkillsCoveredReflectsQuestRequirements(t *testing.T) {
 	eng := testEngine()
 
-	requiredSkills := []semdragons.SkillTag{semdragons.SkillCodeGen, semdragons.SkillCodeReview}
+	requiredSkills := []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview}
 	quest := makeQuest("q-4", requiredSkills, 1)
 
 	// fullCoverage has both required skills.
-	fullCoverage := makeAgent("full-1", semdragons.TierExpert, 12,
-		semdragons.SkillCodeGen, semdragons.SkillCodeReview)
+	fullCoverage := makeAgent("full-1", domain.TierExpert, 12,
+		domain.SkillCodeGen, domain.SkillCodeReview)
 	// partialCoverage has one of the two required skills.
-	partialCoverage := makeAgent("partial-1", semdragons.TierJourneyman, 9,
-		semdragons.SkillCodeGen)
+	partialCoverage := makeAgent("partial-1", domain.TierJourneyman, 9,
+		domain.SkillCodeGen)
 	// noCoverage has neither required skill.
-	noCoverage := makeAgent("none-1", semdragons.TierApprentice, 4)
+	noCoverage := makeAgent("none-1", domain.TierApprentice, 4)
 
-	agents := []semdragons.Agent{fullCoverage, partialCoverage, noCoverage}
+	agents := []agentprogression.Agent{fullCoverage, partialCoverage, noCoverage}
 
 	suggestions, err := eng.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)
 	if err != nil {
@@ -454,17 +454,17 @@ func TestSuggestPartyMembers_SkillsCoveredReflectsQuestRequirements(t *testing.T
 func TestSuggestPartyMembers_GuildMatchFlagAccurate(t *testing.T) {
 	eng := testEngine()
 
-	targetGuild := semdragons.GuildID("test.unit.game.testboard.guild.guild01")
+	targetGuild := domain.GuildID("test.unit.game.testboard.guild.guild01")
 	quest := makeQuest("q-5", nil, 1)
 	quest.GuildPriority = &targetGuild
 
-	inGuild := makeAgent("in-guild", semdragons.TierJourneyman, 7)
-	inGuild.Guilds = []semdragons.GuildID{targetGuild}
+	inGuild := makeAgent("in-guild", domain.TierJourneyman, 7)
+	inGuild.Guilds = []domain.GuildID{targetGuild}
 
-	notInGuild := makeAgent("out-guild", semdragons.TierJourneyman, 9)
-	notInGuild.Guilds = []semdragons.GuildID{"some-other-guild"}
+	notInGuild := makeAgent("out-guild", domain.TierJourneyman, 9)
+	notInGuild.Guilds = []domain.GuildID{"some-other-guild"}
 
-	agents := []semdragons.Agent{inGuild, notInGuild}
+	agents := []agentprogression.Agent{inGuild, notInGuild}
 
 	suggestions, err := eng.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)
 	if err != nil {
@@ -489,13 +489,13 @@ func TestSuggestPartyMembers_SortedByScoreDescending(t *testing.T) {
 	eng := testEngine()
 
 	// The agent with matching skills should score higher than one with no match.
-	quest := makeQuest("q-6", []semdragons.SkillTag{semdragons.SkillCodeGen}, 1)
+	quest := makeQuest("q-6", []domain.SkillTag{domain.SkillCodeGen}, 1)
 
 	// skillMatch should outscore noMatch; both are idle so boids will score them.
-	skillMatch := makeAgent("skill-match", semdragons.TierExpert, 12, semdragons.SkillCodeGen)
-	noMatch := makeAgent("no-match", semdragons.TierJourneyman, 8)
+	skillMatch := makeAgent("skill-match", domain.TierExpert, 12, domain.SkillCodeGen)
+	noMatch := makeAgent("no-match", domain.TierJourneyman, 8)
 
-	agents := []semdragons.Agent{skillMatch, noMatch}
+	agents := []agentprogression.Agent{skillMatch, noMatch}
 
 	suggestions, err := eng.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)
 	if err != nil {
@@ -518,10 +518,10 @@ func TestSuggestPartyMembers_RecommendedRoleSetOnEachSuggestion(t *testing.T) {
 	eng := testEngine()
 	quest := makeQuest("q-7", nil, 1)
 
-	agents := []semdragons.Agent{
-		makeAgent("master-1", semdragons.TierMaster, 17),
-		makeAgent("reviewer-1", semdragons.TierJourneyman, 9, semdragons.SkillCodeReview),
-		makeAgent("executor-1", semdragons.TierApprentice, 4, semdragons.SkillCodeGen),
+	agents := []agentprogression.Agent{
+		makeAgent("master-1", domain.TierMaster, 17),
+		makeAgent("reviewer-1", domain.TierJourneyman, 9, domain.SkillCodeReview),
+		makeAgent("executor-1", domain.TierApprentice, 4, domain.SkillCodeGen),
 	}
 
 	suggestions, err := eng.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)

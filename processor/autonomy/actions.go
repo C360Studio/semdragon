@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/guildformation"
 )
@@ -71,8 +71,8 @@ func (c *Component) requestApproval(ctx context.Context, approvalType domain.App
 // data may ignore it (the signature is uniform for simplicity).
 type action struct {
 	name          string
-	shouldExecute func(*semdragons.Agent, *agentTracker) bool
-	execute       func(context.Context, *semdragons.Agent, *agentTracker) error
+	shouldExecute func(*agentprogression.Agent, *agentTracker) bool
+	execute       func(context.Context, *agentprogression.Agent, *agentTracker) error
 }
 
 // claimQuestAction returns the action for claiming quests from boid suggestions.
@@ -81,10 +81,10 @@ type action struct {
 func (c *Component) claimQuestAction() action {
 	return action{
 		name: "claim_quest",
-		shouldExecute: func(agent *semdragons.Agent, tracker *agentTracker) bool {
-			return agent.Status == semdragons.AgentIdle && len(tracker.suggestions) > 0
+		shouldExecute: func(agent *agentprogression.Agent, tracker *agentTracker) bool {
+			return agent.Status == domain.AgentIdle && len(tracker.suggestions) > 0
 		},
-		execute: func(ctx context.Context, agent *semdragons.Agent, tracker *agentTracker) error {
+		execute: func(ctx context.Context, agent *agentprogression.Agent, tracker *agentTracker) error {
 			return c.executeClaimQuest(ctx, agent, tracker)
 		},
 	}
@@ -93,10 +93,10 @@ func (c *Component) claimQuestAction() action {
 // executeClaimQuest iterates ranked suggestions and claims the first viable quest.
 // If a quest is stale (no longer posted) or fails validation, it falls through
 // to the next suggestion. KV write serialization handles concurrent claims.
-func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Agent, tracker *agentTracker) error {
+func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogression.Agent, tracker *agentTracker) error {
 	for i, suggestion := range tracker.suggestions {
 		// Read quest from KV
-		entity, err := c.graph.GetQuest(ctx, semdragons.QuestID(suggestion.QuestID))
+		entity, err := c.graph.GetQuest(ctx, domain.QuestID(suggestion.QuestID))
 		if err != nil {
 			c.logger.Debug("quest not found in KV, skipping suggestion",
 				"quest_id", suggestion.QuestID,
@@ -104,13 +104,13 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Age
 			continue
 		}
 
-		quest := semdragons.QuestFromEntityState(entity)
+		quest := domain.QuestFromEntityState(entity)
 		if quest == nil {
 			continue
 		}
 
 		// Only claim posted quests — if another agent claimed first, skip
-		if quest.Status != semdragons.QuestPosted {
+		if quest.Status != domain.QuestPosted {
 			c.logger.Debug("quest no longer posted, skipping",
 				"quest_id", suggestion.QuestID,
 				"status", quest.Status)
@@ -118,7 +118,7 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Age
 		}
 
 		// Pre-flight validation
-		if err := semdragons.ValidateAgentCanClaim(agent, quest); err != nil {
+		if err := agentprogression.ValidateAgentCanClaim(agent, quest); err != nil {
 			c.logger.Debug("agent cannot claim quest, trying next",
 				"quest_id", suggestion.QuestID,
 				"reason", err)
@@ -139,8 +139,8 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Age
 
 		// Write quest state: claimed
 		now := time.Now()
-		agentID := semdragons.AgentID(agent.ID)
-		quest.Status = semdragons.QuestClaimed
+		agentID := domain.AgentID(agent.ID)
+		quest.Status = domain.QuestClaimed
 		quest.ClaimedBy = &agentID
 		quest.ClaimedAt = &now
 		quest.Attempts++
@@ -155,8 +155,8 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Age
 
 		// Write agent state: on_quest
 		now2 := time.Now()
-		questIDRef := semdragons.QuestID(quest.ID)
-		agent.Status = semdragons.AgentOnQuest
+		questIDRef := domain.QuestID(quest.ID)
+		agent.Status = domain.AgentOnQuest
 		agent.CurrentQuest = &questIDRef
 		agent.UpdatedAt = now2
 
@@ -187,7 +187,7 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Age
 		// Clear cached suggestions eagerly so a second heartbeat firing before
 		// the KV watch update arrives doesn't attempt another claim.
 		c.trackersMu.Lock()
-		instance := semdragons.ExtractInstance(string(agent.ID))
+		instance := domain.ExtractInstance(string(agent.ID))
 		if t, ok := c.trackers[instance]; ok {
 			t.suggestions = nil
 		}
@@ -202,15 +202,15 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *semdragons.Age
 
 // shopBudget returns the XP budget for autonomous shopping based on agent status.
 // Returns 0 if the agent should not shop.
-func (c *Component) shopBudget(agent *semdragons.Agent) int64 {
+func (c *Component) shopBudget(agent *agentprogression.Agent) int64 {
 	switch agent.Status {
-	case semdragons.AgentIdle:
+	case domain.AgentIdle:
 		surplus := agent.XP - agent.XPToLevel
 		if surplus < c.config.MinXPSurplusForShopping {
 			return 0
 		}
 		return int64(float64(surplus) * c.config.MaxShopSpendRatio)
-	case semdragons.AgentCooldown:
+	case domain.AgentCooldown:
 		if agent.XP < c.config.CooldownShopMinXP {
 			return 0
 		}
@@ -226,20 +226,20 @@ func (c *Component) shopBudget(agent *semdragons.Agent) int64 {
 func (c *Component) shopAction() action {
 	return action{
 		name: "shop",
-		shouldExecute: func(agent *semdragons.Agent, _ *agentTracker) bool {
+		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
 			if c.store == nil {
 				return false
 			}
 			return c.shopBudget(agent) > 0
 		},
-		execute: func(ctx context.Context, agent *semdragons.Agent, _ *agentTracker) error {
+		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
 			return c.executeShop(ctx, agent)
 		},
 	}
 }
 
 // executeShop computes budget, lists affordable items, and purchases the best one.
-func (c *Component) executeShop(ctx context.Context, agent *semdragons.Agent) error {
+func (c *Component) executeShop(ctx context.Context, agent *agentprogression.Agent) error {
 	budget := c.shopBudget(agent)
 	if budget <= 0 {
 		return nil
@@ -297,8 +297,8 @@ func (c *Component) executeShop(ctx context.Context, agent *semdragons.Agent) er
 func (c *Component) shopStrategicAction() action {
 	return action{
 		name: "shop_strategic",
-		shouldExecute: func(agent *semdragons.Agent, _ *agentTracker) bool {
-			if c.store == nil || agent.Status != semdragons.AgentOnQuest {
+		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
+			if c.store == nil || agent.Status != domain.AgentOnQuest {
 				return false
 			}
 			needsShield := !hasConsumable(agent, string(agentstore.ConsumableQualityShield))
@@ -308,7 +308,7 @@ func (c *Component) shopStrategicAction() action {
 			}
 			return agent.XP > 0
 		},
-		execute: func(ctx context.Context, agent *semdragons.Agent, _ *agentTracker) error {
+		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
 			return c.executeShopStrategic(ctx, agent)
 		},
 	}
@@ -316,7 +316,7 @@ func (c *Component) shopStrategicAction() action {
 
 // executeShopStrategic buys quality_shield first (protects review), then xp_boost.
 // Cap at one purchase per heartbeat.
-func (c *Component) executeShopStrategic(ctx context.Context, agent *semdragons.Agent) error {
+func (c *Component) executeShopStrategic(ctx context.Context, agent *agentprogression.Agent) error {
 	items := c.store.ListItems(agent.Tier)
 
 	// Priority: quality_shield > xp_boost
@@ -385,11 +385,11 @@ func (c *Component) executeShopStrategic(ctx context.Context, agent *semdragons.
 
 // consumableForStatus returns the consumable ID to use for a given agent status,
 // or empty string if no consumable applies.
-func consumableForStatus(status semdragons.AgentStatus) string {
+func consumableForStatus(status domain.AgentStatus) string {
 	switch status {
-	case semdragons.AgentIdle, semdragons.AgentOnQuest:
+	case domain.AgentIdle, domain.AgentOnQuest:
 		return string(agentstore.ConsumableXPBoost)
-	case semdragons.AgentInBattle:
+	case domain.AgentInBattle:
 		return string(agentstore.ConsumableQualityShield)
 	default:
 		return ""
@@ -402,27 +402,27 @@ func consumableForStatus(status semdragons.AgentStatus) string {
 func (c *Component) useConsumableAction() action {
 	return action{
 		name: "use_consumable",
-		shouldExecute: func(agent *semdragons.Agent, tracker *agentTracker) bool {
+		shouldExecute: func(agent *agentprogression.Agent, tracker *agentTracker) bool {
 			if c.store == nil {
 				return false
 			}
 			switch agent.Status {
-			case semdragons.AgentIdle:
+			case domain.AgentIdle:
 				// Use xp_boost when about to claim (has suggestions)
 				return hasConsumable(agent, string(agentstore.ConsumableXPBoost)) &&
 					len(tracker.suggestions) > 0 &&
 					!hasActiveEffect(agent, string(agentstore.ConsumableXPBoost))
-			case semdragons.AgentOnQuest:
+			case domain.AgentOnQuest:
 				return hasConsumable(agent, string(agentstore.ConsumableXPBoost)) &&
 					!hasActiveEffect(agent, string(agentstore.ConsumableXPBoost))
-			case semdragons.AgentInBattle:
+			case domain.AgentInBattle:
 				return hasConsumable(agent, string(agentstore.ConsumableQualityShield)) &&
 					!hasActiveEffect(agent, string(agentstore.ConsumableQualityShield))
 			default:
 				return false
 			}
 		},
-		execute: func(ctx context.Context, agent *semdragons.Agent, _ *agentTracker) error {
+		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
 			consumableID := consumableForStatus(agent.Status)
 			if consumableID == "" {
 				return nil
@@ -471,8 +471,8 @@ func (c *Component) useConsumableAction() action {
 func (c *Component) useCooldownSkipAction() action {
 	return action{
 		name: "use_cooldown_skip",
-		shouldExecute: func(agent *semdragons.Agent, _ *agentTracker) bool {
-			if c.store == nil || agent.Status != semdragons.AgentCooldown {
+		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
+			if c.store == nil || agent.Status != domain.AgentCooldown {
 				return false
 			}
 			if !hasConsumable(agent, string(agentstore.ConsumableCooldownSkip)) {
@@ -484,7 +484,7 @@ func (c *Component) useCooldownSkipAction() action {
 			remaining := time.Until(*agent.CooldownUntil)
 			return remaining > c.config.CooldownSkipMinRemaining()
 		},
-		execute: func(ctx context.Context, agent *semdragons.Agent, _ *agentTracker) error {
+		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
 			// Approval gate: block in supervised/manual mode
 			if !c.requestApproval(ctx, domain.ApprovalAutonomyUse,
 				fmt.Sprintf("Agent %s wants to skip cooldown", agent.Name),
@@ -529,7 +529,7 @@ func (c *Component) useCooldownSkipAction() action {
 // =============================================================================
 
 // hasConsumable returns true if the agent owns at least one of the given consumable.
-func hasConsumable(agent *semdragons.Agent, consumableID string) bool {
+func hasConsumable(agent *agentprogression.Agent, consumableID string) bool {
 	if agent.Consumables == nil {
 		return false
 	}
@@ -538,7 +538,7 @@ func hasConsumable(agent *semdragons.Agent, consumableID string) bool {
 
 // hasActiveEffect returns true if the agent has an active effect of the given type
 // with quests remaining.
-func hasActiveEffect(agent *semdragons.Agent, effectType string) bool {
+func hasActiveEffect(agent *agentprogression.Agent, effectType string) bool {
 	for _, eff := range agent.ActiveEffects {
 		if eff.EffectType == effectType && eff.QuestsRemaining > 0 {
 			return true
@@ -553,7 +553,7 @@ const maxConsumableStock = 2
 // pickBestItem selects the best item to purchase within budget.
 // Priority: tools over consumables, most expensive tool first, skip owned tools,
 // cap consumable stock at maxConsumableStock per type.
-func pickBestItem(agent *semdragons.Agent, items []agentstore.StoreItem, budget int64) *agentstore.StoreItem {
+func pickBestItem(agent *agentprogression.Agent, items []agentstore.StoreItem, budget int64) *agentstore.StoreItem {
 	var bestTool *agentstore.StoreItem
 	var bestConsumable *agentstore.StoreItem
 
@@ -601,14 +601,14 @@ func pickBestItem(agent *semdragons.Agent, items []agentstore.StoreItem, budget 
 func (c *Component) joinGuildAction() action {
 	return action{
 		name: "join_guild",
-		shouldExecute: func(agent *semdragons.Agent, _ *agentTracker) bool {
+		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
 			if c.guilds == nil {
 				return false
 			}
 			if agent.Level < c.config.GuildJoinMinLevel {
 				return false
 			}
-			if agent.Status != semdragons.AgentIdle && agent.Status != semdragons.AgentCooldown {
+			if agent.Status != domain.AgentIdle && agent.Status != domain.AgentCooldown {
 				return false
 			}
 			// Use agent entity's Guilds field (from KV snapshot) for the guard.
@@ -617,7 +617,7 @@ func (c *Component) joinGuildAction() action {
 			// and handles "already a member" errors gracefully.
 			return len(agent.Guilds) < c.config.MaxGuildsPerAgent
 		},
-		execute: func(ctx context.Context, agent *semdragons.Agent, _ *agentTracker) error {
+		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
 			return c.executeJoinGuild(ctx, agent)
 		},
 	}
@@ -625,7 +625,7 @@ func (c *Component) joinGuildAction() action {
 
 // executeJoinGuild scores available guilds and joins the best match.
 // Logs all N choices for observability before picking.
-func (c *Component) executeJoinGuild(ctx context.Context, agent *semdragons.Agent) error {
+func (c *Component) executeJoinGuild(ctx context.Context, agent *agentprogression.Agent) error {
 	allGuilds := c.guilds.ListGuilds()
 	currentGuildIDs := c.guilds.GetAgentGuilds(domain.AgentID(agent.ID))
 
@@ -712,7 +712,7 @@ const (
 
 // GuildSuggestion represents a scored guild option for an agent.
 type GuildSuggestion struct {
-	GuildID   semdragons.GuildID
+	GuildID   domain.GuildID
 	GuildName string
 	Score     float64
 	Reason    string
@@ -720,10 +720,10 @@ type GuildSuggestion struct {
 
 // scoreGuilds filters, scores, and ranks guilds for an agent.
 // Returns top N suggestions sorted descending by score.
-func (c *Component) scoreGuilds(agent *semdragons.Agent, guilds []*semdragons.Guild, currentGuildIDs []domain.GuildID) []GuildSuggestion {
-	memberSet := make(map[semdragons.GuildID]bool, len(currentGuildIDs))
+func (c *Component) scoreGuilds(agent *agentprogression.Agent, guilds []*domain.Guild, currentGuildIDs []domain.GuildID) []GuildSuggestion {
+	memberSet := make(map[domain.GuildID]bool, len(currentGuildIDs))
 	for _, gid := range currentGuildIDs {
-		memberSet[semdragons.GuildID(gid)] = true
+		memberSet[domain.GuildID(gid)] = true
 	}
 
 	var suggestions []GuildSuggestion
@@ -764,7 +764,7 @@ func (c *Component) scoreGuilds(agent *semdragons.Agent, guilds []*semdragons.Gu
 }
 
 // scoreGuild computes a weighted score for how well a guild fits an agent.
-func scoreGuild(agent *semdragons.Agent, guild *semdragons.Guild) (float64, string) {
+func scoreGuild(agent *agentprogression.Agent, guild *domain.Guild) (float64, string) {
 	reputation := guild.Reputation // Already 0.0-1.0
 
 	successRate := guild.SuccessRate // Already 0.0-1.0
@@ -805,7 +805,7 @@ func scoreGuild(agent *semdragons.Agent, guild *semdragons.Guild) (float64, stri
 // guildSkillAffinity computes overlap between agent's skills and guild's QuestTypes.
 // Returns 0.0-1.0: higher means the guild handles quest types matching the agent's skills.
 // If the guild has no QuestTypes, returns 0.5 (neutral — no signal).
-func guildSkillAffinity(agent *semdragons.Agent, guild *semdragons.Guild) float64 {
+func guildSkillAffinity(agent *agentprogression.Agent, guild *domain.Guild) float64 {
 	if len(guild.QuestTypes) == 0 {
 		return 0.5 // No quest type signal — neutral
 	}

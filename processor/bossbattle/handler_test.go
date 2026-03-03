@@ -318,7 +318,7 @@ func TestBossBattle_Triples_NoJudges(t *testing.T) {
 
 func TestBossBattle_Triples_Verdict(t *testing.T) {
 	b := newTestBattle()
-	b.Verdict = &BattleVerdict{
+	b.Verdict = &domain.BattleVerdict{
 		Passed:       true,
 		QualityScore: 0.85,
 		XPAwarded:    150,
@@ -353,7 +353,7 @@ func TestBossBattle_Triples_Verdict(t *testing.T) {
 
 func TestBossBattle_Triples_VerdictNoFeedback(t *testing.T) {
 	b := newTestBattle()
-	b.Verdict = &BattleVerdict{
+	b.Verdict = &domain.BattleVerdict{
 		Passed:       false,
 		QualityScore: 0.4,
 		Feedback:     "", // empty — should be omitted

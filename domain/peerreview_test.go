@@ -1,4 +1,4 @@
-package semdragons
+package domain
 
 import (
 	"testing"
@@ -150,24 +150,24 @@ func TestReviewRatingsValidate_LowAvgWithExplanation(t *testing.T) {
 
 func TestPeerReviewTriples_Pending(t *testing.T) {
 	pr := &PeerReview{
-		ID:        PeerReviewID("test.dev.game.board1.peerreview.pr1"),
-		Status:    PeerReviewPending,
-		QuestID:   QuestID("test.dev.game.board1.quest.q1"),
-		LeaderID:  AgentID("test.dev.game.board1.agent.leader"),
-		MemberID:  AgentID("test.dev.game.board1.agent.member"),
+		ID:         PeerReviewID("test.dev.game.board1.peerreview.pr1"),
+		Status:     PeerReviewPending,
+		QuestID:    QuestID("test.dev.game.board1.quest.q1"),
+		LeaderID:   AgentID("test.dev.game.board1.agent.leader"),
+		MemberID:   AgentID("test.dev.game.board1.agent.member"),
 		IsSoloTask: false,
-		CreatedAt: time.Now(),
+		CreatedAt:  time.Now(),
 	}
 
 	triples := pr.Triples()
 
 	expected := map[string]bool{
-		"review.status.state":       false,
-		"review.assignment.quest":   false,
-		"review.assignment.leader":  false,
-		"review.assignment.member":  false,
-		"review.config.solo_task":   false,
-		"review.lifecycle.created_at": false,
+		"review.status.state":          false,
+		"review.assignment.quest":      false,
+		"review.assignment.leader":     false,
+		"review.assignment.member":     false,
+		"review.config.solo_task":      false,
+		"review.lifecycle.created_at":  false,
 	}
 
 	for _, triple := range triples {
@@ -196,10 +196,10 @@ func TestPeerReviewTriples_Completed(t *testing.T) {
 	partyID := PartyID("test.dev.game.board1.party.p1")
 
 	pr := &PeerReview{
-		ID:       PeerReviewID("test.dev.game.board1.peerreview.pr1"),
-		Status:   PeerReviewCompleted,
-		QuestID:  QuestID("test.dev.game.board1.quest.q1"),
-		PartyID:  &partyID,
+		ID:      PeerReviewID("test.dev.game.board1.peerreview.pr1"),
+		Status:  PeerReviewCompleted,
+		QuestID: QuestID("test.dev.game.board1.quest.q1"),
+		PartyID: &partyID,
 		LeaderID: AgentID("test.dev.game.board1.agent.leader"),
 		MemberID: AgentID("test.dev.game.board1.agent.member"),
 		LeaderReview: &ReviewSubmission{
@@ -272,12 +272,12 @@ func TestPeerReviewFromEntityState_RoundTrip(t *testing.T) {
 	partyID := PartyID("test.dev.game.board1.party.p1")
 
 	original := &PeerReview{
-		ID:       PeerReviewID("test.dev.game.board1.peerreview.pr1"),
-		Status:   PeerReviewCompleted,
-		QuestID:  QuestID("test.dev.game.board1.quest.q1"),
-		PartyID:  &partyID,
-		LeaderID: AgentID("test.dev.game.board1.agent.leader"),
-		MemberID: AgentID("test.dev.game.board1.agent.member"),
+		ID:         PeerReviewID("test.dev.game.board1.peerreview.pr1"),
+		Status:     PeerReviewCompleted,
+		QuestID:    QuestID("test.dev.game.board1.quest.q1"),
+		PartyID:    &partyID,
+		LeaderID:   AgentID("test.dev.game.board1.agent.leader"),
+		MemberID:   AgentID("test.dev.game.board1.agent.member"),
 		IsSoloTask: false,
 		LeaderReview: &ReviewSubmission{
 			Ratings:     ReviewRatings{Q1: 5, Q2: 4, Q3: 5},
@@ -441,111 +441,5 @@ func TestPeerReviewFromEntityState_SoloTask(t *testing.T) {
 func TestPeerReviewFromEntityState_NilReturnsNil(t *testing.T) {
 	if got := PeerReviewFromEntityState(nil); got != nil {
 		t.Errorf("PeerReviewFromEntityState(nil) = %v, want nil", got)
-	}
-}
-
-// =============================================================================
-// Agent reputation triples tests
-// =============================================================================
-
-func TestAgentReputationTriples(t *testing.T) {
-	tests := []struct {
-		name           string
-		peerReviewAvg  float64
-		peerReviewCount int
-		expectTriples  bool
-	}{
-		{
-			name:            "no peer reviews — no triples emitted",
-			peerReviewAvg:   0,
-			peerReviewCount: 0,
-			expectTriples:   false,
-		},
-		{
-			name:            "has peer reviews — triples emitted",
-			peerReviewAvg:   4.25,
-			peerReviewCount: 5,
-			expectTriples:   true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			a := &Agent{
-				ID:     AgentID("test.dev.game.board1.agent.a1"),
-				Name:   "rep-agent",
-				Status: AgentIdle,
-				Level:  10,
-				Stats: AgentStats{
-					PeerReviewAvg:   tt.peerReviewAvg,
-					PeerReviewCount: tt.peerReviewCount,
-				},
-			}
-
-			triples := a.Triples()
-
-			var foundAvg, foundCount bool
-			for _, triple := range triples {
-				switch triple.Predicate {
-				case "agent.reputation.peer_avg":
-					foundAvg = true
-					if got := triple.Object.(float64); got != tt.peerReviewAvg {
-						t.Errorf("peer_avg = %v, want %v", got, tt.peerReviewAvg)
-					}
-				case "agent.reputation.peer_count":
-					foundCount = true
-					if got := triple.Object.(int); got != tt.peerReviewCount {
-						t.Errorf("peer_count = %d, want %d", got, tt.peerReviewCount)
-					}
-				}
-			}
-
-			if tt.expectTriples {
-				if !foundAvg {
-					t.Error("agent.reputation.peer_avg triple not found")
-				}
-				if !foundCount {
-					t.Error("agent.reputation.peer_count triple not found")
-				}
-			} else {
-				if foundAvg {
-					t.Error("agent.reputation.peer_avg should not be emitted when count is 0")
-				}
-				if foundCount {
-					t.Error("agent.reputation.peer_count should not be emitted when count is 0")
-				}
-			}
-		})
-	}
-}
-
-func TestAgentReputationReconstruction(t *testing.T) {
-	original := &Agent{
-		ID:     AgentID("test.dev.game.board1.agent.a1"),
-		Name:   "rep-agent",
-		Status: AgentIdle,
-		Level:  12,
-		Tier:   TierExpert,
-		Stats: AgentStats{
-			QuestsCompleted: 20,
-			PeerReviewAvg:   4.5,
-			PeerReviewCount: 8,
-		},
-		CreatedAt: time.Now().Truncate(time.Second),
-		UpdatedAt: time.Now().Truncate(time.Second),
-	}
-
-	entity := &graph.EntityState{
-		ID:      string(original.ID),
-		Triples: original.Triples(),
-	}
-
-	r := AgentFromEntityState(entity)
-
-	if r.Stats.PeerReviewAvg != original.Stats.PeerReviewAvg {
-		t.Errorf("PeerReviewAvg = %v, want %v", r.Stats.PeerReviewAvg, original.Stats.PeerReviewAvg)
-	}
-	if r.Stats.PeerReviewCount != original.Stats.PeerReviewCount {
-		t.Errorf("PeerReviewCount = %d, want %d", r.Stats.PeerReviewCount, original.Stats.PeerReviewCount)
 	}
 }

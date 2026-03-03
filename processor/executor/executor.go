@@ -10,10 +10,11 @@ import (
 
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/promptmanager"
-	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/model"
 	agenticmodel "github.com/c360studio/semstreams/processor/agentic-model"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
@@ -23,7 +24,7 @@ import (
 // AgentExecutor executes quests using an agent's LLM configuration.
 type AgentExecutor interface {
 	// Execute runs the agent on a quest and returns the result.
-	Execute(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error)
+	Execute(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) (*ExecutionResult, error)
 }
 
 // Compile-time interface compliance checks.
@@ -130,7 +131,7 @@ func NewDefaultExecutor(registry model.RegistryReader, tools *ToolRegistry, opts
 }
 
 // Execute runs the agent on a quest and returns the result.
-func (e *DefaultExecutor) Execute(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error) {
+func (e *DefaultExecutor) Execute(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) (*ExecutionResult, error) {
 	startTime := time.Now()
 	loopID := fmt.Sprintf("%s-%s-%d", agent.ID, quest.ID, startTime.UnixNano())
 
@@ -281,7 +282,7 @@ func (e *DefaultExecutor) Execute(ctx context.Context, agent *agentprogression.A
 }
 
 // buildInitialMessages constructs the initial conversation for a quest.
-func (e *DefaultExecutor) buildInitialMessages(agent *agentprogression.Agent, quest *questboard.Quest) []agentic.ChatMessage {
+func (e *DefaultExecutor) buildInitialMessages(agent *agentprogression.Agent, quest *domain.Quest) []agentic.ChatMessage {
 	messages := make([]agentic.ChatMessage, 0, 2)
 
 	// System message: agent persona + quest context
@@ -304,7 +305,7 @@ func (e *DefaultExecutor) buildInitialMessages(agent *agentprogression.Agent, qu
 // buildSystemPrompt constructs the system prompt from agent persona and quest context.
 // When a promptAssembler is configured, it delegates to the domain-aware assembly pipeline.
 // Otherwise, falls back to the legacy string concatenation path.
-func (e *DefaultExecutor) buildSystemPrompt(agent *agentprogression.Agent, quest *questboard.Quest) string {
+func (e *DefaultExecutor) buildSystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
 	if e.promptAssembler != nil {
 		return e.buildAssembledSystemPrompt(agent, quest)
 	}
@@ -312,7 +313,7 @@ func (e *DefaultExecutor) buildSystemPrompt(agent *agentprogression.Agent, quest
 }
 
 // buildAssembledSystemPrompt uses the domain-aware prompt assembler.
-func (e *DefaultExecutor) buildAssembledSystemPrompt(agent *agentprogression.Agent, quest *questboard.Quest) string {
+func (e *DefaultExecutor) buildAssembledSystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
 	var personaPrompt string
 	if agent.Persona != nil {
 		personaPrompt = agent.Persona.SystemPrompt
@@ -355,7 +356,7 @@ func (e *DefaultExecutor) buildAssembledSystemPrompt(agent *agentprogression.Age
 
 // buildLegacySystemPrompt is the original string concatenation path.
 // Used when no promptAssembler is configured (backward compatibility).
-func (e *DefaultExecutor) buildLegacySystemPrompt(agent *agentprogression.Agent, quest *questboard.Quest) string {
+func (e *DefaultExecutor) buildLegacySystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
 	var prompt string
 
 	// Start with agent's system prompt if configured
@@ -398,7 +399,7 @@ func (e *DefaultExecutor) buildLegacySystemPrompt(agent *agentprogression.Agent,
 }
 
 // buildUserPrompt constructs the user prompt from quest input.
-func (e *DefaultExecutor) buildUserPrompt(quest *questboard.Quest) string {
+func (e *DefaultExecutor) buildUserPrompt(quest *domain.Quest) string {
 	if quest.Input == nil {
 		return quest.Description
 	}
@@ -413,7 +414,7 @@ func (e *DefaultExecutor) buildUserPrompt(quest *questboard.Quest) string {
 }
 
 // executeTool runs a tool call and returns the result.
-func (e *DefaultExecutor) executeTool(ctx context.Context, call agentic.ToolCall, quest *questboard.Quest, agent *agentprogression.Agent) agentic.ToolResult {
+func (e *DefaultExecutor) executeTool(ctx context.Context, call agentic.ToolCall, quest *domain.Quest, agent *agentprogression.Agent) agentic.ToolResult {
 	if e.toolRegistry == nil {
 		return agentic.ToolResult{
 			CallID: call.ID,
@@ -464,7 +465,7 @@ func (e *DefaultExecutor) getTemperature(agent *agentprogression.Agent) float64 
 //
 // Uses GetFallbackChain to detect whether a capability key exists in the registry.
 // GetFallbackChain returns nil for unknown keys, making it a reliable existence check.
-func (e *DefaultExecutor) resolveCapability(agent *agentprogression.Agent, quest *questboard.Quest) string {
+func (e *DefaultExecutor) resolveCapability(agent *agentprogression.Agent, quest *domain.Quest) string {
 	tier := agent.Tier.String()
 
 	// Try tier + primary skill first
@@ -491,11 +492,11 @@ func (e *DefaultExecutor) resolveCapability(agent *agentprogression.Agent, quest
 
 // MockExecutor is a test implementation of AgentExecutor.
 type MockExecutor struct {
-	ExecuteFunc func(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error)
+	ExecuteFunc func(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) (*ExecutionResult, error)
 }
 
 // Execute implements AgentExecutor.
-func (m *MockExecutor) Execute(ctx context.Context, agent *agentprogression.Agent, quest *questboard.Quest) (*ExecutionResult, error) {
+func (m *MockExecutor) Execute(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) (*ExecutionResult, error) {
 	if m.ExecuteFunc != nil {
 		return m.ExecuteFunc(ctx, agent, quest)
 	}

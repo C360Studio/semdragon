@@ -14,7 +14,9 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/nats-io/nats.go/jetstream"
@@ -27,48 +29,48 @@ import (
 // mockGraph implements GraphQuerier with function fields so each test case can
 // supply exactly the behavior it needs without coupling tests together.
 type mockGraph struct {
-	configFn               func() *semdragons.BoardConfig
-	getQuestFn             func(ctx context.Context, id semdragons.QuestID) (*graph.EntityState, error)
-	getAgentFn             func(ctx context.Context, id semdragons.AgentID) (*graph.EntityState, error)
-	getBattleFn            func(ctx context.Context, id semdragons.BattleID) (*graph.EntityState, error)
-	getPeerReviewFn        func(ctx context.Context, id semdragons.PeerReviewID) (*graph.EntityState, error)
-	listQuestsFn           func(ctx context.Context, limit int) ([]graph.EntityState, error)
-	listAgentsFn           func(ctx context.Context, limit int) ([]graph.EntityState, error)
-	listPeerReviewsFn      func(ctx context.Context, limit int) ([]graph.EntityState, error)
-	listEntitiesByTypeFn   func(ctx context.Context, entityType string, limit int) ([]graph.EntityState, error)
-	emitEntityFn           func(ctx context.Context, entity graph.Graphable, eventType string) error
-	emitEntityUpdateFn     func(ctx context.Context, entity graph.Graphable, eventType string) error
+	configFn             func() *domain.BoardConfig
+	getQuestFn           func(ctx context.Context, id domain.QuestID) (*graph.EntityState, error)
+	getAgentFn           func(ctx context.Context, id domain.AgentID) (*graph.EntityState, error)
+	getBattleFn          func(ctx context.Context, id domain.BattleID) (*graph.EntityState, error)
+	getPeerReviewFn      func(ctx context.Context, id domain.PeerReviewID) (*graph.EntityState, error)
+	listQuestsFn         func(ctx context.Context, limit int) ([]graph.EntityState, error)
+	listAgentsFn         func(ctx context.Context, limit int) ([]graph.EntityState, error)
+	listPeerReviewsFn    func(ctx context.Context, limit int) ([]graph.EntityState, error)
+	listEntitiesByTypeFn func(ctx context.Context, entityType string, limit int) ([]graph.EntityState, error)
+	emitEntityFn         func(ctx context.Context, entity graph.Graphable, eventType string) error
+	emitEntityUpdateFn   func(ctx context.Context, entity graph.Graphable, eventType string) error
 }
 
-func (m *mockGraph) Config() *semdragons.BoardConfig {
+func (m *mockGraph) Config() *domain.BoardConfig {
 	if m.configFn != nil {
 		return m.configFn()
 	}
-	return &semdragons.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
+	return &domain.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
 }
 
-func (m *mockGraph) GetQuest(ctx context.Context, id semdragons.QuestID) (*graph.EntityState, error) {
+func (m *mockGraph) GetQuest(ctx context.Context, id domain.QuestID) (*graph.EntityState, error) {
 	if m.getQuestFn != nil {
 		return m.getQuestFn(ctx, id)
 	}
 	return nil, jetstream.ErrKeyNotFound
 }
 
-func (m *mockGraph) GetAgent(ctx context.Context, id semdragons.AgentID) (*graph.EntityState, error) {
+func (m *mockGraph) GetAgent(ctx context.Context, id domain.AgentID) (*graph.EntityState, error) {
 	if m.getAgentFn != nil {
 		return m.getAgentFn(ctx, id)
 	}
 	return nil, jetstream.ErrKeyNotFound
 }
 
-func (m *mockGraph) GetBattle(ctx context.Context, id semdragons.BattleID) (*graph.EntityState, error) {
+func (m *mockGraph) GetBattle(ctx context.Context, id domain.BattleID) (*graph.EntityState, error) {
 	if m.getBattleFn != nil {
 		return m.getBattleFn(ctx, id)
 	}
 	return nil, jetstream.ErrKeyNotFound
 }
 
-func (m *mockGraph) GetPeerReview(ctx context.Context, id semdragons.PeerReviewID) (*graph.EntityState, error) {
+func (m *mockGraph) GetPeerReview(ctx context.Context, id domain.PeerReviewID) (*graph.EntityState, error) {
 	if m.getPeerReviewFn != nil {
 		return m.getPeerReviewFn(ctx, id)
 	}
@@ -137,13 +139,13 @@ func (m *mockWorld) WorldState(ctx context.Context) (*domain.WorldState, error) 
 
 // mockStore implements StoreProvider with function fields.
 type mockStore struct {
-	listItemsFn      func(agentTier domain.TrustTier) []agentstore.StoreItem
-	catalogFn        func() []agentstore.StoreItem
-	getItemFn        func(itemID string) (*agentstore.StoreItem, bool)
-	purchaseFn       func(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*agentstore.OwnedItem, error)
-	canAffordFn      func(itemID string, currentXP int64) (bool, int64)
-	getInventoryFn   func(agentID domain.AgentID) *agentstore.AgentInventory
-	useConsumableFn  func(ctx context.Context, agentID domain.AgentID, consumableID string, questID *domain.QuestID) error
+	listItemsFn        func(agentTier domain.TrustTier) []agentstore.StoreItem
+	catalogFn          func() []agentstore.StoreItem
+	getItemFn          func(itemID string) (*agentstore.StoreItem, bool)
+	purchaseFn         func(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*agentstore.OwnedItem, error)
+	canAffordFn        func(itemID string, currentXP int64) (bool, int64)
+	getInventoryFn     func(agentID domain.AgentID) *agentstore.AgentInventory
+	useConsumableFn    func(ctx context.Context, agentID domain.AgentID, consumableID string, questID *domain.QuestID) error
 	getActiveEffectsFn func(agentID domain.AgentID) []agentstore.ActiveEffect
 }
 
@@ -232,7 +234,7 @@ func newTestServiceWithStore(g GraphQuerier, w WorldStateProvider, s StoreProvid
 
 // makeQuestEntityState builds an EntityState whose Triples will reconstruct
 // to the supplied Quest via QuestFromEntityState.
-func makeQuestEntityState(q *semdragons.Quest) graph.EntityState {
+func makeQuestEntityState(q *domain.Quest) graph.EntityState {
 	return graph.EntityState{
 		ID:      string(q.ID),
 		Triples: q.Triples(),
@@ -241,7 +243,7 @@ func makeQuestEntityState(q *semdragons.Quest) graph.EntityState {
 
 // makeAgentEntityState builds an EntityState whose Triples will reconstruct
 // to the supplied Agent via AgentFromEntityState.
-func makeAgentEntityState(a *semdragons.Agent) graph.EntityState {
+func makeAgentEntityState(a *agentprogression.Agent) graph.EntityState {
 	return graph.EntityState{
 		ID:      string(a.ID),
 		Triples: a.Triples(),
@@ -250,7 +252,7 @@ func makeAgentEntityState(a *semdragons.Agent) graph.EntityState {
 
 // makeBattleEntityState builds an EntityState whose Triples will reconstruct
 // to the supplied BossBattle via BattleFromEntityState.
-func makeBattleEntityState(b *semdragons.BossBattle) graph.EntityState {
+func makeBattleEntityState(b *bossbattle.BossBattle) graph.EntityState {
 	return graph.EntityState{
 		ID:      string(b.ID),
 		Triples: b.Triples(),
@@ -258,40 +260,40 @@ func makeBattleEntityState(b *semdragons.BossBattle) graph.EntityState {
 }
 
 // sampleQuest returns a minimal Quest suitable for use in tests.
-func sampleQuest() *semdragons.Quest {
-	return &semdragons.Quest{
-		ID:          semdragons.QuestID("test.dev.game.board1.quest.q1"),
+func sampleQuest() *domain.Quest {
+	return &domain.Quest{
+		ID:          domain.QuestID("test.dev.game.board1.quest.q1"),
 		Title:       "Slay the Dragon",
 		Description: "A very dangerous quest",
-		Status:      semdragons.QuestPosted,
-		Difficulty:  semdragons.DifficultyModerate,
+		Status:      domain.QuestPosted,
+		Difficulty:  domain.DifficultyModerate,
 		BaseXP:      100,
 		MaxAttempts: 3,
 	}
 }
 
 // sampleAgent returns a minimal Agent suitable for use in tests.
-func sampleAgent() *semdragons.Agent {
-	return &semdragons.Agent{
-		ID:                 semdragons.AgentID("test.dev.game.board1.agent.a1"),
+func sampleAgent() *agentprogression.Agent {
+	return &agentprogression.Agent{
+		ID:                 domain.AgentID("test.dev.game.board1.agent.a1"),
 		Name:               "TestAgent",
-		Status:             semdragons.AgentIdle,
+		Status:             domain.AgentIdle,
 		Level:              1,
 		XP:                 0,
 		XPToLevel:          100,
-		Tier:               semdragons.TierApprentice,
-		SkillProficiencies: make(map[semdragons.SkillTag]semdragons.SkillProficiency),
+		Tier:               domain.TierApprentice,
+		SkillProficiencies: make(map[domain.SkillTag]domain.SkillProficiency),
 	}
 }
 
 // sampleBattle returns a minimal BossBattle suitable for use in tests.
-func sampleBattle() *semdragons.BossBattle {
-	return &semdragons.BossBattle{
-		ID:      semdragons.BattleID("test.dev.game.board1.battle.b1"),
-		QuestID: semdragons.QuestID("test.dev.game.board1.quest.q1"),
-		AgentID: semdragons.AgentID("test.dev.game.board1.agent.a1"),
-		Status:  semdragons.BattleActive,
-		Level:   semdragons.ReviewStandard,
+func sampleBattle() *bossbattle.BossBattle {
+	return &bossbattle.BossBattle{
+		ID:      domain.BattleID("test.dev.game.board1.battle.b1"),
+		QuestID: domain.QuestID("test.dev.game.board1.quest.q1"),
+		AgentID: domain.AgentID("test.dev.game.board1.agent.a1"),
+		Status:  domain.BattleActive,
+		Level:   domain.ReviewStandard,
 	}
 }
 
@@ -609,7 +611,7 @@ func TestHandleListQuests(t *testing.T) {
 			}
 
 			if tc.wantStatus == http.StatusOK {
-				var quests []semdragons.Quest
+				var quests []domain.Quest
 				decodeJSON(t, rr.Body.Bytes(), &quests)
 				if len(quests) != tc.wantLen {
 					t.Errorf("quest count: got %d, want %d", len(quests), tc.wantLen)
@@ -626,19 +628,19 @@ func TestHandleGetQuest(t *testing.T) {
 	tests := []struct {
 		name       string
 		pathID     string
-		getQuestFn func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		getQuestFn func(context.Context, domain.QuestID) (*graph.EntityState, error)
 		wantStatus int
 	}{
 		{
 			name:       "success",
 			pathID:     "q1",
-			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) { return &es, nil },
+			getQuestFn: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) { return &es, nil },
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:   "key not found returns 404",
 			pathID: "q1",
-			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuestFn: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrKeyNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -646,7 +648,7 @@ func TestHandleGetQuest(t *testing.T) {
 		{
 			name:   "bucket not found returns 404",
 			pathID: "q1",
-			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuestFn: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrBucketNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -655,7 +657,7 @@ func TestHandleGetQuest(t *testing.T) {
 			name:   "invalid id (contains dot) returns 400",
 			pathID: "c360.prod.game.board1.quest.abc",
 			// getQuestFn will not be called
-			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuestFn: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				return nil, errors.New("should not be called")
 			},
 			wantStatus: http.StatusBadRequest,
@@ -663,7 +665,7 @@ func TestHandleGetQuest(t *testing.T) {
 		{
 			name:   "server error returns 500",
 			pathID: "q1",
-			getQuestFn: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuestFn: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				return nil, errors.New("nats error")
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -687,7 +689,7 @@ func TestHandleGetQuest(t *testing.T) {
 			}
 
 			if tc.wantStatus == http.StatusOK {
-				var quest semdragons.Quest
+				var quest domain.Quest
 				decodeJSON(t, rr.Body.Bytes(), &quest)
 				if string(quest.ID) != string(q.ID) {
 					t.Errorf("quest ID: got %q, want %q", quest.ID, q.ID)
@@ -742,7 +744,7 @@ func TestHandleListAgents(t *testing.T) {
 			}
 
 			if tc.wantStatus == http.StatusOK {
-				var agents []semdragons.Agent
+				var agents []agentprogression.Agent
 				decodeJSON(t, rr.Body.Bytes(), &agents)
 				if len(agents) != tc.wantLen {
 					t.Errorf("agent count: got %d, want %d", len(agents), tc.wantLen)
@@ -759,19 +761,19 @@ func TestHandleGetAgent(t *testing.T) {
 	tests := []struct {
 		name       string
 		pathID     string
-		getAgentFn func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		getAgentFn func(context.Context, domain.AgentID) (*graph.EntityState, error)
 		wantStatus int
 	}{
 		{
 			name:       "success",
 			pathID:     "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) { return &es, nil },
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) { return &es, nil },
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:   "key not found returns 404",
 			pathID: "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrKeyNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -779,7 +781,7 @@ func TestHandleGetAgent(t *testing.T) {
 		{
 			name:   "invalid id (contains dot) returns 400",
 			pathID: "c360.prod.game.board1.agent.abc",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return nil, errors.New("should not be called")
 			},
 			wantStatus: http.StatusBadRequest,
@@ -787,7 +789,7 @@ func TestHandleGetAgent(t *testing.T) {
 		{
 			name:   "server error returns 500",
 			pathID: "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return nil, errors.New("io error")
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -810,7 +812,7 @@ func TestHandleGetAgent(t *testing.T) {
 			}
 
 			if tc.wantStatus == http.StatusOK {
-				var agent semdragons.Agent
+				var agent agentprogression.Agent
 				decodeJSON(t, rr.Body.Bytes(), &agent)
 				if agent.Name != a.Name {
 					t.Errorf("agent name: got %q, want %q", agent.Name, a.Name)
@@ -871,7 +873,7 @@ func TestHandleListBattles(t *testing.T) {
 			}
 
 			if tc.wantStatus == http.StatusOK {
-				var battles []semdragons.BossBattle
+				var battles []bossbattle.BossBattle
 				decodeJSON(t, rr.Body.Bytes(), &battles)
 				if len(battles) != tc.wantLen {
 					t.Errorf("battle count: got %d, want %d", len(battles), tc.wantLen)
@@ -888,19 +890,19 @@ func TestHandleGetBattle(t *testing.T) {
 	tests := []struct {
 		name        string
 		pathID      string
-		getBattleFn func(context.Context, semdragons.BattleID) (*graph.EntityState, error)
+		getBattleFn func(context.Context, domain.BattleID) (*graph.EntityState, error)
 		wantStatus  int
 	}{
 		{
 			name:        "success",
 			pathID:      "b1",
-			getBattleFn: func(_ context.Context, _ semdragons.BattleID) (*graph.EntityState, error) { return &es, nil },
+			getBattleFn: func(_ context.Context, _ domain.BattleID) (*graph.EntityState, error) { return &es, nil },
 			wantStatus:  http.StatusOK,
 		},
 		{
 			name:   "key not found returns 404",
 			pathID: "b1",
-			getBattleFn: func(_ context.Context, _ semdragons.BattleID) (*graph.EntityState, error) {
+			getBattleFn: func(_ context.Context, _ domain.BattleID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrKeyNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -908,7 +910,7 @@ func TestHandleGetBattle(t *testing.T) {
 		{
 			name:   "invalid id returns 400",
 			pathID: "c360.prod.game.board1.battle.b1",
-			getBattleFn: func(_ context.Context, _ semdragons.BattleID) (*graph.EntityState, error) {
+			getBattleFn: func(_ context.Context, _ domain.BattleID) (*graph.EntityState, error) {
 				return nil, errors.New("should not be called")
 			},
 			wantStatus: http.StatusBadRequest,
@@ -916,7 +918,7 @@ func TestHandleGetBattle(t *testing.T) {
 		{
 			name:   "server error returns 500",
 			pathID: "b1",
-			getBattleFn: func(_ context.Context, _ semdragons.BattleID) (*graph.EntityState, error) {
+			getBattleFn: func(_ context.Context, _ domain.BattleID) (*graph.EntityState, error) {
 				return nil, errors.New("io error")
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -946,7 +948,7 @@ func TestHandleGetBattle(t *testing.T) {
 // =============================================================================
 
 func TestHandleCreateQuest(t *testing.T) {
-	boardCfg := &semdragons.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
+	boardCfg := &domain.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
 
 	tests := []struct {
 		name         string
@@ -960,12 +962,12 @@ func TestHandleCreateQuest(t *testing.T) {
 			body:       map[string]any{"objective": "Defeat the lich king"},
 			wantStatus: http.StatusCreated,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
 				if q.Title != "Defeat the lich king" {
 					t.Errorf("title: got %q, want %q", q.Title, "Defeat the lich king")
 				}
-				if q.Status != semdragons.QuestPosted {
+				if q.Status != domain.QuestPosted {
 					t.Errorf("status: got %q, want posted", q.Status)
 				}
 			},
@@ -991,10 +993,10 @@ func TestHandleCreateQuest(t *testing.T) {
 			},
 			wantStatus: http.StatusCreated,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Difficulty != semdragons.DifficultyHard {
-					t.Errorf("difficulty: got %d, want %d", q.Difficulty, semdragons.DifficultyHard)
+				if q.Difficulty != domain.DifficultyHard {
+					t.Errorf("difficulty: got %d, want %d", q.Difficulty, domain.DifficultyHard)
 				}
 			},
 		},
@@ -1018,7 +1020,7 @@ func TestHandleCreateQuest(t *testing.T) {
 			emitFn := tc.emitEntityFn // may be nil → mockGraph default returns nil
 
 			g := &mockGraph{
-				configFn:     func() *semdragons.BoardConfig { return boardCfg },
+				configFn:     func() *domain.BoardConfig { return boardCfg },
 				emitEntityFn: emitFn,
 			}
 			svc := newTestService(g, &mockWorld{})
@@ -1055,7 +1057,7 @@ func TestHandleCreateQuest(t *testing.T) {
 // =============================================================================
 
 func TestHandleCreateQuest_ReviewHints(t *testing.T) {
-	boardCfg := &semdragons.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
+	boardCfg := &domain.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
 
 	tests := []struct {
 		name      string
@@ -1069,13 +1071,13 @@ func TestHandleCreateQuest_ReviewHints(t *testing.T) {
 				"hints":     map[string]any{"require_human_review": true},
 			},
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
 				if !q.Constraints.RequireReview {
 					t.Error("expected RequireReview to be true")
 				}
-				if q.Constraints.ReviewLevel != semdragons.ReviewStandard {
-					t.Errorf("ReviewLevel: got %d, want %d (ReviewStandard)", q.Constraints.ReviewLevel, semdragons.ReviewStandard)
+				if q.Constraints.ReviewLevel != domain.ReviewStandard {
+					t.Errorf("ReviewLevel: got %d, want %d (ReviewStandard)", q.Constraints.ReviewLevel, domain.ReviewStandard)
 				}
 			},
 		},
@@ -1086,10 +1088,10 @@ func TestHandleCreateQuest_ReviewHints(t *testing.T) {
 				"hints":     map[string]any{"require_human_review": true, "review_level": 2},
 			},
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Constraints.ReviewLevel != semdragons.ReviewStrict {
-					t.Errorf("ReviewLevel: got %d, want %d (ReviewStrict)", q.Constraints.ReviewLevel, semdragons.ReviewStrict)
+				if q.Constraints.ReviewLevel != domain.ReviewStrict {
+					t.Errorf("ReviewLevel: got %d, want %d (ReviewStrict)", q.Constraints.ReviewLevel, domain.ReviewStrict)
 				}
 			},
 		},
@@ -1099,7 +1101,7 @@ func TestHandleCreateQuest_ReviewHints(t *testing.T) {
 				"objective": "Normal quest",
 			},
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
 				if q.Constraints.RequireReview {
 					t.Error("expected RequireReview to be false")
@@ -1111,7 +1113,7 @@ func TestHandleCreateQuest_ReviewHints(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := &mockGraph{
-				configFn: func() *semdragons.BoardConfig { return boardCfg },
+				configFn: func() *domain.BoardConfig { return boardCfg },
 			}
 			svc := newTestService(g, &mockWorld{})
 
@@ -1139,30 +1141,30 @@ func TestHandleCreateQuest_ReviewHints(t *testing.T) {
 
 func TestHandleClaimQuest(t *testing.T) {
 	postedQuest := sampleQuest()
-	postedQuest.Difficulty = semdragons.DifficultyEasy // Apprentice can claim easy quests
+	postedQuest.Difficulty = domain.DifficultyEasy // Apprentice can claim easy quests
 
 	claimedQuest := sampleQuest()
-	claimedQuest.Status = semdragons.QuestClaimed
+	claimedQuest.Status = domain.QuestClaimed
 
 	idleAgent := sampleAgent()
 	busyAgent := sampleAgent()
-	busyAgent.Status = semdragons.AgentOnQuest
+	busyAgent.Status = domain.AgentOnQuest
 
 	lowTierAgent := sampleAgent()
-	lowTierAgent.Tier = semdragons.TierApprentice
+	lowTierAgent.Tier = domain.TierApprentice
 
 	skilledAgent := sampleAgent()
-	skilledAgent.Tier = semdragons.TierExpert
-	skilledAgent.SkillProficiencies = map[semdragons.SkillTag]semdragons.SkillProficiency{
-		semdragons.SkillCodeGen: {Level: 1},
+	skilledAgent.Tier = domain.TierExpert
+	skilledAgent.SkillProficiencies = map[domain.SkillTag]domain.SkillProficiency{
+		domain.SkillCodeGen: {Level: 1},
 	}
 
 	tests := []struct {
 		name       string
 		pathID     string
 		body       any
-		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
-		getAgent   func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		getQuest   func(context.Context, domain.QuestID) (*graph.EntityState, error)
+		getAgent   func(context.Context, domain.AgentID) (*graph.EntityState, error)
 		wantStatus int
 		checkBody  func(t *testing.T, body []byte)
 	}{
@@ -1170,19 +1172,19 @@ func TestHandleClaimQuest(t *testing.T) {
 			name:   "success claims posted quest",
 			pathID: "q1",
 			body:   map[string]any{"agent_id": "a1"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(postedQuest)
 				return &es, nil
 			},
-			getAgent: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgent: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				es := makeAgentEntityState(idleAgent)
 				return &es, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Status != semdragons.QuestClaimed {
+				if q.Status != domain.QuestClaimed {
 					t.Errorf("status: got %q, want claimed", q.Status)
 				}
 			},
@@ -1197,7 +1199,7 @@ func TestHandleClaimQuest(t *testing.T) {
 			name:   "quest not posted returns 409",
 			pathID: "q1",
 			body:   map[string]any{"agent_id": "a1"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(claimedQuest)
 				return &es, nil
 			},
@@ -1207,11 +1209,11 @@ func TestHandleClaimQuest(t *testing.T) {
 			name:   "agent not idle returns 409",
 			pathID: "q1",
 			body:   map[string]any{"agent_id": "a1"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(postedQuest)
 				return &es, nil
 			},
-			getAgent: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgent: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				es := makeAgentEntityState(busyAgent)
 				return &es, nil
 			},
@@ -1221,13 +1223,13 @@ func TestHandleClaimQuest(t *testing.T) {
 			name:   "agent tier too low returns 403",
 			pathID: "q1",
 			body:   map[string]any{"agent_id": "a1"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				q := sampleQuest()
-				q.Difficulty = semdragons.DifficultyHard // requires TierExpert
+				q.Difficulty = domain.DifficultyHard // requires TierExpert
 				es := makeQuestEntityState(q)
 				return &es, nil
 			},
-			getAgent: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgent: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				es := makeAgentEntityState(lowTierAgent)
 				return &es, nil
 			},
@@ -1237,13 +1239,13 @@ func TestHandleClaimQuest(t *testing.T) {
 			name:   "agent missing required skill returns 403",
 			pathID: "q1",
 			body:   map[string]any{"agent_id": "a1"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				q := sampleQuest()
-				q.RequiredSkills = []semdragons.SkillTag{semdragons.SkillAnalysis}
+				q.RequiredSkills = []domain.SkillTag{domain.SkillAnalysis}
 				es := makeQuestEntityState(q)
 				return &es, nil
 			},
-			getAgent: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgent: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				es := makeAgentEntityState(idleAgent)
 				return &es, nil
 			},
@@ -1286,29 +1288,29 @@ func TestHandleClaimQuest(t *testing.T) {
 
 func TestHandleStartQuest(t *testing.T) {
 	claimedQuest := sampleQuest()
-	claimedQuest.Status = semdragons.QuestClaimed
+	claimedQuest.Status = domain.QuestClaimed
 
 	postedQuest := sampleQuest()
 
 	tests := []struct {
 		name       string
 		pathID     string
-		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		getQuest   func(context.Context, domain.QuestID) (*graph.EntityState, error)
 		wantStatus int
 		checkBody  func(t *testing.T, body []byte)
 	}{
 		{
 			name:   "success starts claimed quest",
 			pathID: "q1",
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(claimedQuest)
 				return &es, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Status != semdragons.QuestInProgress {
+				if q.Status != domain.QuestInProgress {
 					t.Errorf("status: got %q, want in_progress", q.Status)
 				}
 			},
@@ -1316,7 +1318,7 @@ func TestHandleStartQuest(t *testing.T) {
 		{
 			name:   "quest not claimed returns 409",
 			pathID: "q1",
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(postedQuest)
 				return &es, nil
 			},
@@ -1353,18 +1355,18 @@ func TestHandleStartQuest(t *testing.T) {
 
 func TestHandleSubmitResult(t *testing.T) {
 	inProgressQuest := sampleQuest()
-	inProgressQuest.Status = semdragons.QuestInProgress
+	inProgressQuest.Status = domain.QuestInProgress
 
 	reviewQuest := sampleQuest()
-	reviewQuest.Status = semdragons.QuestInProgress
+	reviewQuest.Status = domain.QuestInProgress
 	reviewQuest.Constraints.RequireReview = true
 
 	tests := []struct {
 		name       string
 		pathID     string
 		body       any
-		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
-		getAgent   func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		getQuest   func(context.Context, domain.QuestID) (*graph.EntityState, error)
+		getAgent   func(context.Context, domain.AgentID) (*graph.EntityState, error)
 		wantStatus int
 		checkBody  func(t *testing.T, body []byte)
 	}{
@@ -1372,15 +1374,15 @@ func TestHandleSubmitResult(t *testing.T) {
 			name:   "submit without review completes quest",
 			pathID: "q1",
 			body:   map[string]any{"output": "result data"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(inProgressQuest)
 				return &es, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Status != semdragons.QuestCompleted {
+				if q.Status != domain.QuestCompleted {
 					t.Errorf("status: got %q, want completed", q.Status)
 				}
 			},
@@ -1389,15 +1391,15 @@ func TestHandleSubmitResult(t *testing.T) {
 			name:   "submit with review goes to in_review",
 			pathID: "q1",
 			body:   map[string]any{"output": "result data"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(reviewQuest)
 				return &es, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Status != semdragons.QuestInReview {
+				if q.Status != domain.QuestInReview {
 					t.Errorf("status: got %q, want in_review", q.Status)
 				}
 			},
@@ -1412,7 +1414,7 @@ func TestHandleSubmitResult(t *testing.T) {
 			name:   "quest not in_progress returns 409",
 			pathID: "q1",
 			body:   map[string]any{"output": "data"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(sampleQuest()) // status=posted
 				return &es, nil
 			},
@@ -1449,12 +1451,12 @@ func TestHandleSubmitResult(t *testing.T) {
 
 func TestHandleFailQuest(t *testing.T) {
 	inProgressQuest := sampleQuest()
-	inProgressQuest.Status = semdragons.QuestInProgress
+	inProgressQuest.Status = domain.QuestInProgress
 	inProgressQuest.MaxAttempts = 3
 	inProgressQuest.Attempts = 0
 
 	lastAttemptQuest := sampleQuest()
-	lastAttemptQuest.Status = semdragons.QuestInProgress
+	lastAttemptQuest.Status = domain.QuestInProgress
 	lastAttemptQuest.MaxAttempts = 3
 	lastAttemptQuest.Attempts = 2
 
@@ -1462,7 +1464,7 @@ func TestHandleFailQuest(t *testing.T) {
 		name       string
 		pathID     string
 		body       any
-		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		getQuest   func(context.Context, domain.QuestID) (*graph.EntityState, error)
 		wantStatus int
 		checkBody  func(t *testing.T, body []byte)
 	}{
@@ -1470,15 +1472,15 @@ func TestHandleFailQuest(t *testing.T) {
 			name:   "fail with retries reposts quest",
 			pathID: "q1",
 			body:   map[string]any{"reason": "timeout"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(inProgressQuest)
 				return &es, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Status != semdragons.QuestPosted {
+				if q.Status != domain.QuestPosted {
 					t.Errorf("status: got %q, want posted (repost)", q.Status)
 				}
 				if q.Attempts != 1 {
@@ -1490,15 +1492,15 @@ func TestHandleFailQuest(t *testing.T) {
 			name:   "fail on last attempt permanently fails",
 			pathID: "q1",
 			body:   map[string]any{"reason": "error"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(lastAttemptQuest)
 				return &es, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Status != semdragons.QuestFailed {
+				if q.Status != domain.QuestFailed {
 					t.Errorf("status: got %q, want failed", q.Status)
 				}
 				if q.Attempts != 3 {
@@ -1510,7 +1512,7 @@ func TestHandleFailQuest(t *testing.T) {
 			name:   "quest not in_progress returns 409",
 			pathID: "q1",
 			body:   map[string]any{"reason": "test"},
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(sampleQuest()) // posted
 				return &es, nil
 			},
@@ -1544,27 +1546,27 @@ func TestHandleFailQuest(t *testing.T) {
 
 func TestHandleAbandonQuest(t *testing.T) {
 	claimedQuest := sampleQuest()
-	claimedQuest.Status = semdragons.QuestClaimed
+	claimedQuest.Status = domain.QuestClaimed
 
 	tests := []struct {
 		name       string
 		pathID     string
-		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		getQuest   func(context.Context, domain.QuestID) (*graph.EntityState, error)
 		wantStatus int
 		checkBody  func(t *testing.T, body []byte)
 	}{
 		{
 			name:   "abandon returns quest to posted",
 			pathID: "q1",
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(claimedQuest)
 				return &es, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Status != semdragons.QuestPosted {
+				if q.Status != domain.QuestPosted {
 					t.Errorf("status: got %q, want posted", q.Status)
 				}
 			},
@@ -1572,7 +1574,7 @@ func TestHandleAbandonQuest(t *testing.T) {
 		{
 			name:   "abandon posted quest returns 409",
 			pathID: "q1",
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(sampleQuest())
 				return &es, nil
 			},
@@ -1604,27 +1606,27 @@ func TestHandleAbandonQuest(t *testing.T) {
 
 func TestHandleCompleteQuest(t *testing.T) {
 	inReviewQuest := sampleQuest()
-	inReviewQuest.Status = semdragons.QuestInReview
+	inReviewQuest.Status = domain.QuestInReview
 
 	tests := []struct {
 		name       string
 		pathID     string
-		getQuest   func(context.Context, semdragons.QuestID) (*graph.EntityState, error)
+		getQuest   func(context.Context, domain.QuestID) (*graph.EntityState, error)
 		wantStatus int
 		checkBody  func(t *testing.T, body []byte)
 	}{
 		{
 			name:   "complete in_review quest",
 			pathID: "q1",
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(inReviewQuest)
 				return &es, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var q semdragons.Quest
+				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Status != semdragons.QuestCompleted {
+				if q.Status != domain.QuestCompleted {
 					t.Errorf("status: got %q, want completed", q.Status)
 				}
 			},
@@ -1632,7 +1634,7 @@ func TestHandleCompleteQuest(t *testing.T) {
 		{
 			name:   "complete posted quest returns 409",
 			pathID: "q1",
-			getQuest: func(_ context.Context, _ semdragons.QuestID) (*graph.EntityState, error) {
+			getQuest: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
 				es := makeQuestEntityState(sampleQuest())
 				return &es, nil
 			},
@@ -1667,7 +1669,7 @@ func TestHandleCompleteQuest(t *testing.T) {
 // =============================================================================
 
 func TestHandleRecruitAgent(t *testing.T) {
-	boardCfg := &semdragons.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
+	boardCfg := &domain.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
 
 	tests := []struct {
 		name         string
@@ -1681,12 +1683,12 @@ func TestHandleRecruitAgent(t *testing.T) {
 			body:       map[string]any{"name": "Gandalf"},
 			wantStatus: http.StatusCreated,
 			checkBody: func(t *testing.T, body []byte) {
-				var a semdragons.Agent
+				var a agentprogression.Agent
 				decodeJSON(t, body, &a)
 				if a.Name != "Gandalf" {
 					t.Errorf("name: got %q, want %q", a.Name, "Gandalf")
 				}
-				if a.Status != semdragons.AgentIdle {
+				if a.Status != domain.AgentIdle {
 					t.Errorf("status: got %q, want idle", a.Status)
 				}
 				if a.Level != 1 {
@@ -1712,9 +1714,9 @@ func TestHandleRecruitAgent(t *testing.T) {
 			},
 			wantStatus: http.StatusCreated,
 			checkBody: func(t *testing.T, body []byte) {
-				var a semdragons.Agent
+				var a agentprogression.Agent
 				decodeJSON(t, body, &a)
-				if _, ok := a.SkillProficiencies[semdragons.SkillCodeGen]; !ok {
+				if _, ok := a.SkillProficiencies[domain.SkillCodeGen]; !ok {
 					t.Error("expected code_generation skill proficiency in response")
 				}
 			},
@@ -1732,7 +1734,7 @@ func TestHandleRecruitAgent(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := &mockGraph{
-				configFn:     func() *semdragons.BoardConfig { return boardCfg },
+				configFn:     func() *domain.BoardConfig { return boardCfg },
 				emitEntityFn: tc.emitEntityFn,
 			}
 			svc := newTestService(g, &mockWorld{})
@@ -1775,20 +1777,20 @@ func TestHandleRetireAgent(t *testing.T) {
 	tests := []struct {
 		name               string
 		pathID             string
-		getAgentFn         func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		getAgentFn         func(context.Context, domain.AgentID) (*graph.EntityState, error)
 		emitEntityUpdateFn func(context.Context, graph.Graphable, string) error
 		wantStatus         int
 	}{
 		{
 			name:       "success returns 204",
 			pathID:     "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) { return &es, nil },
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) { return &es, nil },
 			wantStatus: http.StatusNoContent,
 		},
 		{
 			name:   "agent not found returns 404",
 			pathID: "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrKeyNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -1796,7 +1798,7 @@ func TestHandleRetireAgent(t *testing.T) {
 		{
 			name:   "invalid id returns 400",
 			pathID: "c360.prod.game.board1.agent.abc",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return nil, errors.New("should not be called")
 			},
 			wantStatus: http.StatusBadRequest,
@@ -1804,7 +1806,7 @@ func TestHandleRetireAgent(t *testing.T) {
 		{
 			name:   "get agent error returns 500",
 			pathID: "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return nil, errors.New("io error")
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -1812,7 +1814,7 @@ func TestHandleRetireAgent(t *testing.T) {
 		{
 			name:       "emit update error returns 500",
 			pathID:     "a1",
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) { return &es, nil },
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) { return &es, nil },
 			emitEntityUpdateFn: func(_ context.Context, _ graph.Graphable, _ string) error {
 				return errors.New("write failed")
 			},
@@ -1941,14 +1943,14 @@ func TestHandleListStore(t *testing.T) {
 	agent := sampleAgent()
 	agent.XP = 500
 	agent.Level = 5
-	agent.Tier = semdragons.TierApprentice
+	agent.Tier = domain.TierApprentice
 	agentES := makeAgentEntityState(agent)
 
 	tests := []struct {
 		name       string
 		query      string
 		store      *mockStore
-		getAgentFn func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		getAgentFn func(context.Context, domain.AgentID) (*graph.EntityState, error)
 		wantStatus int
 		wantLen    int
 	}{
@@ -1967,7 +1969,7 @@ func TestHandleListStore(t *testing.T) {
 			store: &mockStore{
 				listItemsFn: func(_ domain.TrustTier) []agentstore.StoreItem { return []agentstore.StoreItem{tool} },
 			},
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return &agentES, nil
 			},
 			wantStatus: http.StatusOK,
@@ -1977,7 +1979,7 @@ func TestHandleListStore(t *testing.T) {
 			name:  "agent not found returns 404",
 			query: "?agent_id=missing",
 			store: &mockStore{},
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrKeyNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -2070,13 +2072,13 @@ func TestHandlePurchase(t *testing.T) {
 	agent := sampleAgent()
 	agent.XP = 200
 	agent.Level = 5
-	agent.Tier = semdragons.TierApprentice
+	agent.Tier = domain.TierApprentice
 	agentES := makeAgentEntityState(agent)
 
 	tests := []struct {
 		name       string
 		body       map[string]string
-		getAgentFn func(context.Context, semdragons.AgentID) (*graph.EntityState, error)
+		getAgentFn func(context.Context, domain.AgentID) (*graph.EntityState, error)
 		getItemFn  func(string) (*agentstore.StoreItem, bool)
 		purchaseFn func(context.Context, domain.AgentID, string, int64, int, []domain.GuildID) (*agentstore.OwnedItem, error)
 		wantStatus int
@@ -2085,7 +2087,7 @@ func TestHandlePurchase(t *testing.T) {
 		{
 			name: "successful purchase",
 			body: map[string]string{"agent_id": "a1", "item_id": "web_search"},
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return &agentES, nil
 			},
 			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
@@ -2109,7 +2111,7 @@ func TestHandlePurchase(t *testing.T) {
 		{
 			name: "insufficient XP",
 			body: map[string]string{"agent_id": "a1", "item_id": "web_search"},
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return &agentES, nil
 			},
 			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
@@ -2130,7 +2132,7 @@ func TestHandlePurchase(t *testing.T) {
 		{
 			name: "item not found",
 			body: map[string]string{"agent_id": "a1", "item_id": "nonexistent"},
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return &agentES, nil
 			},
 			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
@@ -2146,7 +2148,7 @@ func TestHandlePurchase(t *testing.T) {
 		{
 			name: "agent not found",
 			body: map[string]string{"agent_id": "missing", "item_id": "web_search"},
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrKeyNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -2159,7 +2161,7 @@ func TestHandlePurchase(t *testing.T) {
 		{
 			name: "tier gate blocks purchase",
 			body: map[string]string{"agent_id": "a1", "item_id": "deploy_access"},
-			getAgentFn: func(_ context.Context, _ semdragons.AgentID) (*graph.EntityState, error) {
+			getAgentFn: func(_ context.Context, _ domain.AgentID) (*graph.EntityState, error) {
 				return &agentES, nil // agent is TierApprentice
 			},
 			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
@@ -2342,7 +2344,7 @@ func TestHandleUseConsumable(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &mockStore{
-				useConsumableFn: tc.useFn,
+				useConsumableFn:    tc.useFn,
 				getActiveEffectsFn: tc.effectsFn,
 				getInventoryFn: func(id domain.AgentID) *agentstore.AgentInventory {
 					return agentstore.NewAgentInventory(id)
@@ -2721,7 +2723,7 @@ func TestHandleGetDMSession(t *testing.T) {
 
 // makePeerReviewEntityState builds an EntityState whose Triples will reconstruct
 // to the supplied PeerReview via PeerReviewFromEntityState.
-func makePeerReviewEntityState(pr *semdragons.PeerReview) graph.EntityState {
+func makePeerReviewEntityState(pr *domain.PeerReview) graph.EntityState {
 	return graph.EntityState{
 		ID:      string(pr.ID),
 		Triples: pr.Triples(),
@@ -2729,19 +2731,19 @@ func makePeerReviewEntityState(pr *semdragons.PeerReview) graph.EntityState {
 }
 
 // samplePeerReview returns a minimal PeerReview suitable for use in tests.
-func samplePeerReview() *semdragons.PeerReview {
-	return &semdragons.PeerReview{
-		ID:        semdragons.PeerReviewID("test.dev.game.board1.peerreview.r1"),
-		Status:    semdragons.PeerReviewPending,
-		QuestID:   semdragons.QuestID("test.dev.game.board1.quest.q1"),
-		LeaderID:  semdragons.AgentID("test.dev.game.board1.agent.leader1"),
-		MemberID:  semdragons.AgentID("test.dev.game.board1.agent.member1"),
+func samplePeerReview() *domain.PeerReview {
+	return &domain.PeerReview{
+		ID:        domain.PeerReviewID("test.dev.game.board1.peerreview.r1"),
+		Status:    domain.PeerReviewPending,
+		QuestID:   domain.QuestID("test.dev.game.board1.quest.q1"),
+		LeaderID:  domain.AgentID("test.dev.game.board1.agent.leader1"),
+		MemberID:  domain.AgentID("test.dev.game.board1.agent.member1"),
 		CreatedAt: time.Now(),
 	}
 }
 
 func TestHandleCreateReview(t *testing.T) {
-	boardCfg := &semdragons.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
+	boardCfg := &domain.BoardConfig{Org: "test", Platform: "dev", Board: "board1"}
 
 	tests := []struct {
 		name         string
@@ -2759,9 +2761,9 @@ func TestHandleCreateReview(t *testing.T) {
 			},
 			wantStatus: http.StatusCreated,
 			checkBody: func(t *testing.T, body []byte) {
-				var review semdragons.PeerReview
+				var review domain.PeerReview
 				decodeJSON(t, body, &review)
-				if review.Status != semdragons.PeerReviewPending {
+				if review.Status != domain.PeerReviewPending {
 					t.Errorf("status: got %q, want pending", review.Status)
 				}
 				if string(review.QuestID) != "q1" {
@@ -2779,7 +2781,7 @@ func TestHandleCreateReview(t *testing.T) {
 			},
 			wantStatus: http.StatusCreated,
 			checkBody: func(t *testing.T, body []byte) {
-				var review semdragons.PeerReview
+				var review domain.PeerReview
 				decodeJSON(t, body, &review)
 				if !review.IsSoloTask {
 					t.Error("expected is_solo_task=true")
@@ -2842,7 +2844,7 @@ func TestHandleCreateReview(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := &mockGraph{
-				configFn:     func() *semdragons.BoardConfig { return boardCfg },
+				configFn:     func() *domain.BoardConfig { return boardCfg },
 				emitEntityFn: tc.emitEntityFn,
 			}
 			svc := newTestService(g, &mockWorld{})
@@ -2880,12 +2882,12 @@ func TestHandleSubmitReview(t *testing.T) {
 
 	// Partial review — leader has already submitted
 	partialReview := samplePeerReview()
-	partialReview.Status = semdragons.PeerReviewPartial
-	partialReview.LeaderReview = &semdragons.ReviewSubmission{
+	partialReview.Status = domain.PeerReviewPartial
+	partialReview.LeaderReview = &domain.ReviewSubmission{
 		ReviewerID:  partialReview.LeaderID,
 		RevieweeID:  partialReview.MemberID,
-		Direction:   semdragons.ReviewDirectionLeaderToMember,
-		Ratings:     semdragons.ReviewRatings{Q1: 4, Q2: 5, Q3: 4},
+		Direction:   domain.ReviewDirectionLeaderToMember,
+		Ratings:     domain.ReviewRatings{Q1: 4, Q2: 5, Q3: 4},
 		SubmittedAt: time.Now(),
 	}
 	partialES := makePeerReviewEntityState(partialReview)
@@ -2896,13 +2898,13 @@ func TestHandleSubmitReview(t *testing.T) {
 	soloES := makePeerReviewEntityState(soloReview)
 
 	tests := []struct {
-		name             string
-		pathID           string
-		body             any
-		getPeerReviewFn  func(context.Context, semdragons.PeerReviewID) (*graph.EntityState, error)
+		name               string
+		pathID             string
+		body               any
+		getPeerReviewFn    func(context.Context, domain.PeerReviewID) (*graph.EntityState, error)
 		emitEntityUpdateFn func(context.Context, graph.Graphable, string) error
-		wantStatus       int
-		checkBody        func(t *testing.T, body []byte)
+		wantStatus         int
+		checkBody          func(t *testing.T, body []byte)
 	}{
 		{
 			name:   "leader submits first — status partial",
@@ -2911,14 +2913,14 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(pendingReview.LeaderID),
 				"ratings":     map[string]any{"q1": 4, "q2": 5, "q3": 3},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &pendingES, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var review semdragons.PeerReview
+				var review domain.PeerReview
 				decodeJSON(t, body, &review)
-				if review.Status != semdragons.PeerReviewPartial {
+				if review.Status != domain.PeerReviewPartial {
 					t.Errorf("status: got %q, want partial", review.Status)
 				}
 				if review.LeaderReview == nil {
@@ -2937,14 +2939,14 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(partialReview.MemberID),
 				"ratings":     map[string]any{"q1": 3, "q2": 4, "q3": 5},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &partialES, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var review semdragons.PeerReview
+				var review domain.PeerReview
 				decodeJSON(t, body, &review)
-				if review.Status != semdragons.PeerReviewCompleted {
+				if review.Status != domain.PeerReviewCompleted {
 					t.Errorf("status: got %q, want completed", review.Status)
 				}
 				if review.LeaderReview == nil {
@@ -2972,14 +2974,14 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(soloReview.LeaderID),
 				"ratings":     map[string]any{"q1": 5, "q2": 5, "q3": 5},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &soloES, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var review semdragons.PeerReview
+				var review domain.PeerReview
 				decodeJSON(t, body, &review)
-				if review.Status != semdragons.PeerReviewCompleted {
+				if review.Status != domain.PeerReviewCompleted {
 					t.Errorf("status: got %q, want completed", review.Status)
 				}
 			},
@@ -2991,7 +2993,7 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(soloReview.MemberID),
 				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 3},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &soloES, nil
 			},
 			wantStatus: http.StatusBadRequest,
@@ -3003,7 +3005,7 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(pendingReview.LeaderID),
 				"ratings":     map[string]any{"q1": 0, "q2": 5, "q3": 5},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &pendingES, nil
 			},
 			wantStatus: http.StatusBadRequest,
@@ -3015,7 +3017,7 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(pendingReview.LeaderID),
 				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 6},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &pendingES, nil
 			},
 			wantStatus: http.StatusBadRequest,
@@ -3027,7 +3029,7 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(pendingReview.LeaderID),
 				"ratings":     map[string]any{"q1": 1, "q2": 2, "q3": 1},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &pendingES, nil
 			},
 			wantStatus: http.StatusBadRequest,
@@ -3040,7 +3042,7 @@ func TestHandleSubmitReview(t *testing.T) {
 				"ratings":     map[string]any{"q1": 1, "q2": 2, "q3": 1},
 				"explanation": "Agent was unresponsive and missed deadlines",
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &pendingES, nil
 			},
 			wantStatus: http.StatusOK,
@@ -3052,7 +3054,7 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(partialReview.LeaderID),
 				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 3},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &partialES, nil
 			},
 			wantStatus: http.StatusConflict,
@@ -3064,7 +3066,7 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": "some-other-agent",
 				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 3},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &pendingES, nil
 			},
 			wantStatus: http.StatusForbidden,
@@ -3073,7 +3075,7 @@ func TestHandleSubmitReview(t *testing.T) {
 			name:   "missing reviewer_id returns 400",
 			pathID: "r1",
 			body:   map[string]any{"ratings": map[string]any{"q1": 3, "q2": 3, "q3": 3}},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &pendingES, nil
 			},
 			wantStatus: http.StatusBadRequest,
@@ -3085,7 +3087,7 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": "any",
 				"ratings":     map[string]any{"q1": 3, "q2": 3, "q3": 3},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrKeyNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -3106,14 +3108,14 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(pendingReview.MemberID),
 				"ratings":     map[string]any{"q1": 5, "q2": 4, "q3": 3},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &pendingES, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var review semdragons.PeerReview
+				var review domain.PeerReview
 				decodeJSON(t, body, &review)
-				if review.Status != semdragons.PeerReviewPartial {
+				if review.Status != domain.PeerReviewPartial {
 					t.Errorf("status: got %q, want partial", review.Status)
 				}
 				if review.MemberReview == nil {
@@ -3132,17 +3134,17 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(partialReview.LeaderID),
 				"ratings":     map[string]any{"q1": 5, "q2": 5, "q3": 5},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				// Build a completed review
 				completedReview := samplePeerReview()
-				completedReview.Status = semdragons.PeerReviewCompleted
-				completedReview.LeaderReview = &semdragons.ReviewSubmission{
+				completedReview.Status = domain.PeerReviewCompleted
+				completedReview.LeaderReview = &domain.ReviewSubmission{
 					ReviewerID: completedReview.LeaderID,
-					Ratings:    semdragons.ReviewRatings{Q1: 3, Q2: 3, Q3: 3},
+					Ratings:    domain.ReviewRatings{Q1: 3, Q2: 3, Q3: 3},
 				}
-				completedReview.MemberReview = &semdragons.ReviewSubmission{
+				completedReview.MemberReview = &domain.ReviewSubmission{
 					ReviewerID: completedReview.MemberID,
-					Ratings:    semdragons.ReviewRatings{Q1: 3, Q2: 3, Q3: 3},
+					Ratings:    domain.ReviewRatings{Q1: 3, Q2: 3, Q3: 3},
 				}
 				es := makePeerReviewEntityState(completedReview)
 				return &es, nil
@@ -3156,7 +3158,7 @@ func TestHandleSubmitReview(t *testing.T) {
 				"reviewer_id": string(pendingReview.LeaderID),
 				"ratings":     map[string]any{"q1": 4, "q2": 4, "q3": 4},
 			},
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &pendingES, nil
 			},
 			emitEntityUpdateFn: func(_ context.Context, _ graph.Graphable, _ string) error {
@@ -3210,12 +3212,12 @@ func TestHandleGetReview(t *testing.T) {
 
 	// Partial review with leader submission — GET should strip it
 	partialWithSubmission := samplePeerReview()
-	partialWithSubmission.Status = semdragons.PeerReviewPartial
-	partialWithSubmission.LeaderReview = &semdragons.ReviewSubmission{
+	partialWithSubmission.Status = domain.PeerReviewPartial
+	partialWithSubmission.LeaderReview = &domain.ReviewSubmission{
 		ReviewerID:  partialWithSubmission.LeaderID,
 		RevieweeID:  partialWithSubmission.MemberID,
-		Direction:   semdragons.ReviewDirectionLeaderToMember,
-		Ratings:     semdragons.ReviewRatings{Q1: 4, Q2: 5, Q3: 3},
+		Direction:   domain.ReviewDirectionLeaderToMember,
+		Ratings:     domain.ReviewRatings{Q1: 4, Q2: 5, Q3: 3},
 		SubmittedAt: time.Now(),
 	}
 	partialES := makePeerReviewEntityState(partialWithSubmission)
@@ -3223,14 +3225,14 @@ func TestHandleGetReview(t *testing.T) {
 	tests := []struct {
 		name            string
 		pathID          string
-		getPeerReviewFn func(context.Context, semdragons.PeerReviewID) (*graph.EntityState, error)
+		getPeerReviewFn func(context.Context, domain.PeerReviewID) (*graph.EntityState, error)
 		wantStatus      int
 		checkBody       func(t *testing.T, body []byte)
 	}{
 		{
 			name:   "success returns 200",
 			pathID: "r1",
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &es, nil
 			},
 			wantStatus: http.StatusOK,
@@ -3238,12 +3240,12 @@ func TestHandleGetReview(t *testing.T) {
 		{
 			name:   "partial review strips submissions (blind enforcement)",
 			pathID: "r1",
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return &partialES, nil
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
-				var review semdragons.PeerReview
+				var review domain.PeerReview
 				decodeJSON(t, body, &review)
 				if review.LeaderReview != nil {
 					t.Error("expected leader_review to be stripped from GET on partial review")
@@ -3256,7 +3258,7 @@ func TestHandleGetReview(t *testing.T) {
 		{
 			name:   "key not found returns 404",
 			pathID: "r1",
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrKeyNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -3264,7 +3266,7 @@ func TestHandleGetReview(t *testing.T) {
 		{
 			name:   "bucket not found returns 404",
 			pathID: "r1",
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return nil, jetstream.ErrBucketNotFound
 			},
 			wantStatus: http.StatusNotFound,
@@ -3272,7 +3274,7 @@ func TestHandleGetReview(t *testing.T) {
 		{
 			name:   "invalid id returns 400",
 			pathID: "bad.id",
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return nil, errors.New("should not be called")
 			},
 			wantStatus: http.StatusBadRequest,
@@ -3280,7 +3282,7 @@ func TestHandleGetReview(t *testing.T) {
 		{
 			name:   "server error returns 500",
 			pathID: "r1",
-			getPeerReviewFn: func(_ context.Context, _ semdragons.PeerReviewID) (*graph.EntityState, error) {
+			getPeerReviewFn: func(_ context.Context, _ domain.PeerReviewID) (*graph.EntityState, error) {
 				return nil, errors.New("nats error")
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -3311,9 +3313,9 @@ func TestHandleGetReview(t *testing.T) {
 func TestHandleListReviews(t *testing.T) {
 	pending := samplePeerReview()
 	completed := samplePeerReview()
-	completed.ID = semdragons.PeerReviewID("test.dev.game.board1.peerreview.r2")
-	completed.Status = semdragons.PeerReviewCompleted
-	completed.QuestID = semdragons.QuestID("test.dev.game.board1.quest.q2")
+	completed.ID = domain.PeerReviewID("test.dev.game.board1.peerreview.r2")
+	completed.Status = domain.PeerReviewCompleted
+	completed.QuestID = domain.QuestID("test.dev.game.board1.quest.q2")
 
 	entities := []graph.EntityState{
 		makePeerReviewEntityState(pending),
@@ -3391,7 +3393,7 @@ func TestHandleListReviews(t *testing.T) {
 			}
 
 			if tc.wantStatus == http.StatusOK {
-				var reviews []semdragons.PeerReview
+				var reviews []domain.PeerReview
 				decodeJSON(t, rr.Body.Bytes(), &reviews)
 				if len(reviews) != tc.wantCount {
 					t.Errorf("count: got %d, want %d", len(reviews), tc.wantCount)
@@ -3404,22 +3406,22 @@ func TestHandleListReviews(t *testing.T) {
 func TestHandleListAgentReviews(t *testing.T) {
 	// Use short IDs that match what r.PathValue("id") returns,
 	// since the handler constructs AgentID from the raw path value.
-	leaderID := semdragons.AgentID("leader1")
-	memberID := semdragons.AgentID("member1")
-	otherID := semdragons.AgentID("other1")
+	leaderID := domain.AgentID("leader1")
+	memberID := domain.AgentID("member1")
+	otherID := domain.AgentID("other1")
 
-	r1 := &semdragons.PeerReview{
-		ID:        semdragons.PeerReviewID("test.dev.game.board1.peerreview.r1"),
-		Status:    semdragons.PeerReviewPending,
-		QuestID:   semdragons.QuestID("test.dev.game.board1.quest.q1"),
+	r1 := &domain.PeerReview{
+		ID:        domain.PeerReviewID("test.dev.game.board1.peerreview.r1"),
+		Status:    domain.PeerReviewPending,
+		QuestID:   domain.QuestID("test.dev.game.board1.quest.q1"),
 		LeaderID:  leaderID,
 		MemberID:  memberID,
 		CreatedAt: time.Now(),
 	}
-	r2 := &semdragons.PeerReview{
-		ID:        semdragons.PeerReviewID("test.dev.game.board1.peerreview.r2"),
-		Status:    semdragons.PeerReviewPending,
-		QuestID:   semdragons.QuestID("test.dev.game.board1.quest.q2"),
+	r2 := &domain.PeerReview{
+		ID:        domain.PeerReviewID("test.dev.game.board1.peerreview.r2"),
+		Status:    domain.PeerReviewPending,
+		QuestID:   domain.QuestID("test.dev.game.board1.quest.q2"),
 		LeaderID:  otherID,
 		MemberID:  otherID,
 		CreatedAt: time.Now(),
@@ -3496,7 +3498,7 @@ func TestHandleListAgentReviews(t *testing.T) {
 			}
 
 			if tc.wantStatus == http.StatusOK {
-				var reviews []semdragons.PeerReview
+				var reviews []domain.PeerReview
 				decodeJSON(t, rr.Body.Bytes(), &reviews)
 				if len(reviews) != tc.wantCount {
 					t.Errorf("count: got %d, want %d", len(reviews), tc.wantCount)

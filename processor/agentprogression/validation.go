@@ -1,21 +1,23 @@
-package semdragons
+package agentprogression
 
 import (
 	"errors"
 	"time"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // ValidateAgentCanClaim checks whether an agent is eligible to claim a quest.
 // Returns nil if the agent can claim, or an error describing why not.
 // Used by both the questboard processor and autonomy processor to share
 // validation logic.
-func ValidateAgentCanClaim(agent *Agent, quest *Quest) error {
+func ValidateAgentCanClaim(agent *Agent, quest *domain.Quest) error {
 	switch agent.Status {
-	case AgentRetired:
+	case domain.AgentRetired:
 		return errors.New("agent is retired")
-	case AgentInBattle:
+	case domain.AgentInBattle:
 		return errors.New("agent is in battle")
-	case AgentCooldown:
+	case domain.AgentCooldown:
 		if agent.CooldownUntil != nil && time.Now().Before(*agent.CooldownUntil) {
 			return errors.New("agent on cooldown")
 		}
@@ -26,7 +28,7 @@ func ValidateAgentCanClaim(agent *Agent, quest *Quest) error {
 		return errors.New("agent already on a quest")
 	}
 
-	if TierFromLevel(agent.Level) < quest.MinTier {
+	if domain.TierFromLevel(agent.Level) < quest.MinTier {
 		return errors.New("agent tier too low")
 	}
 

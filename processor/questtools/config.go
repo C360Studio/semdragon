@@ -1,7 +1,8 @@
 package questtools
 
 import (
-	semdragons "github.com/c360studio/semdragons"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // Config holds all configuration for the questtools processor.
@@ -33,8 +34,8 @@ func DefaultConfig() Config {
 }
 
 // ToBoardConfig converts this Config into a BoardConfig for graph operations.
-func (c *Config) ToBoardConfig() *semdragons.BoardConfig {
-	return &semdragons.BoardConfig{
+func (c *Config) ToBoardConfig() *domain.BoardConfig {
+	return &domain.BoardConfig{
 		Org:      c.Org,
 		Platform: c.Platform,
 		Board:    c.Board,

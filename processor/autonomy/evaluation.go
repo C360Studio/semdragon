@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -65,7 +65,7 @@ func (c *Component) evaluateAutonomy(instance string) {
 	actionTaken := "none"
 
 	// Check cooldown expiry first (before action evaluation)
-	if agentStatus == semdragons.AgentCooldown {
+	if agentStatus == domain.AgentCooldown {
 		if c.checkCooldownExpiry(ctx, agent) {
 			actionTaken = "cooldown_expired"
 			c.cooldownsExpired.Add(1)
@@ -104,7 +104,7 @@ func (c *Component) evaluateAutonomy(instance string) {
 	}
 
 	// If idle and no action taken, backoff and emit idle event
-	if agentStatus == semdragons.AgentIdle && actionTaken == "none" {
+	if agentStatus == domain.AgentIdle && actionTaken == "none" {
 		c.trackersMu.Lock()
 		c.backoffHeartbeat(instance)
 		var backoffMs int64
@@ -136,7 +136,7 @@ func (c *Component) evaluateAutonomy(instance string) {
 }
 
 // emitEvaluated publishes an EvaluatedPayload event.
-func (c *Component) emitEvaluated(ctx context.Context, agent *semdragons.Agent, actionTaken string, interval time.Duration) {
+func (c *Component) emitEvaluated(ctx context.Context, agent *agentprogression.Agent, actionTaken string, interval time.Duration) {
 	if err := SubjectAutonomyEvaluated.Publish(ctx, c.deps.NATSClient, EvaluatedPayload{
 		AgentID:     agent.ID,
 		AgentStatus: agent.Status,
@@ -150,7 +150,7 @@ func (c *Component) emitEvaluated(ctx context.Context, agent *semdragons.Agent, 
 
 // checkCooldownExpiry checks if an agent's cooldown has expired and transitions
 // them back to idle if so. Returns true if the cooldown was expired.
-func (c *Component) checkCooldownExpiry(ctx context.Context, agent *semdragons.Agent) bool {
+func (c *Component) checkCooldownExpiry(ctx context.Context, agent *agentprogression.Agent) bool {
 	if agent.CooldownUntil == nil {
 		return false
 	}
@@ -160,7 +160,7 @@ func (c *Component) checkCooldownExpiry(ctx context.Context, agent *semdragons.A
 	}
 
 	// Cooldown has expired — transition to idle
-	agent.Status = semdragons.AgentIdle
+	agent.Status = domain.AgentIdle
 	agent.CooldownUntil = nil
 	agent.UpdatedAt = time.Now()
 
@@ -180,25 +180,25 @@ func (c *Component) checkCooldownExpiry(ctx context.Context, agent *semdragons.A
 
 // actionsForState returns the available actions for a given agent status,
 // ordered by priority. Each status gets a different set per the ADR action matrix.
-func (c *Component) actionsForState(status semdragons.AgentStatus) []action {
+func (c *Component) actionsForState(status domain.AgentStatus) []action {
 	switch status {
-	case semdragons.AgentIdle:
+	case domain.AgentIdle:
 		return []action{
 			c.claimQuestAction(),
 			c.useConsumableAction(),
 			c.shopAction(),
 			c.joinGuildAction(),
 		}
-	case semdragons.AgentOnQuest:
+	case domain.AgentOnQuest:
 		return []action{
 			c.shopStrategicAction(),
 			c.useConsumableAction(),
 		}
-	case semdragons.AgentInBattle:
+	case domain.AgentInBattle:
 		return []action{
 			c.useConsumableAction(),
 		}
-	case semdragons.AgentCooldown:
+	case domain.AgentCooldown:
 		return []action{
 			c.useCooldownSkipAction(),
 			c.shopAction(),

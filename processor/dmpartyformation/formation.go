@@ -9,7 +9,9 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/boidengine"
+	"github.com/c360studio/semdragons/processor/partycoord"
 )
 
 // =============================================================================
@@ -23,11 +25,11 @@ import (
 type PartyFormationEngine struct {
 	boids       *boidengine.DefaultBoidEngine
 	graph       *semdragons.GraphClient
-	boardConfig *semdragons.BoardConfig
+	boardConfig *domain.BoardConfig
 }
 
 // NewPartyFormationEngine creates a new party formation engine.
-func NewPartyFormationEngine(boids *boidengine.DefaultBoidEngine, graph *semdragons.GraphClient, config *semdragons.BoardConfig) *PartyFormationEngine {
+func NewPartyFormationEngine(boids *boidengine.DefaultBoidEngine, graph *semdragons.GraphClient, config *domain.BoardConfig) *PartyFormationEngine {
 	return &PartyFormationEngine{
 		boids:       boids,
 		graph:       graph,
@@ -38,17 +40,17 @@ func NewPartyFormationEngine(boids *boidengine.DefaultBoidEngine, graph *semdrag
 // FormParty assembles a party for a quest using the specified strategy.
 func (e *PartyFormationEngine) FormParty(
 	ctx context.Context,
-	quest *semdragons.Quest,
+	quest *domain.Quest,
 	strategy domain.PartyStrategy,
-	availableAgents []semdragons.Agent,
-) (*semdragons.Party, error) {
+	availableAgents []agentprogression.Agent,
+) (*partycoord.Party, error) {
 	if len(availableAgents) == 0 {
 		return nil, fmt.Errorf("no available agents for party formation")
 	}
 
 	// Compute attractions using boids
 	rules := boidengine.DefaultBoidRules()
-	attractions := e.boids.ComputeAttractions(availableAgents, []semdragons.Quest{*quest}, rules)
+	attractions := e.boids.ComputeAttractions(availableAgents, []domain.Quest{*quest}, rules)
 
 	switch strategy {
 	case domain.PartyStrategyBalanced:
@@ -70,27 +72,27 @@ func (e *PartyFormationEngine) FormParty(
 
 func (e *PartyFormationEngine) formBalancedParty(
 	ctx context.Context,
-	quest *semdragons.Quest,
-	agents []semdragons.Agent,
+	quest *domain.Quest,
+	agents []agentprogression.Agent,
 	attractions []boidengine.QuestAttraction,
-) (*semdragons.Party, error) {
+) (*partycoord.Party, error) {
 	lead, err := e.selectLead(agents)
 	if err != nil {
 		return nil, err
 	}
 
-	attrMap := make(map[semdragons.AgentID]float64)
+	attrMap := make(map[domain.AgentID]float64)
 	for _, a := range attractions {
 		attrMap[a.AgentID] = a.TotalScore
 	}
 
-	sortedAgents := make([]semdragons.Agent, len(agents))
+	sortedAgents := make([]agentprogression.Agent, len(agents))
 	copy(sortedAgents, agents)
 	sort.Slice(sortedAgents, func(i, j int) bool {
 		return attrMap[sortedAgents[i].ID] > attrMap[sortedAgents[j].ID]
 	})
 
-	neededSkills := make(map[semdragons.SkillTag]bool)
+	neededSkills := make(map[domain.SkillTag]bool)
 	for _, skill := range quest.RequiredSkills {
 		neededSkills[skill] = true
 	}
@@ -99,10 +101,10 @@ func (e *PartyFormationEngine) formBalancedParty(
 		delete(neededSkills, skill)
 	}
 
-	members := []semdragons.PartyMember{
+	members := []partycoord.PartyMember{
 		{
 			AgentID:  lead.ID,
-			Role:     semdragons.RoleLead,
+			Role:     domain.RoleLead,
 			Skills:   lead.GetSkillTags(),
 			JoinedAt: time.Now(),
 		},
@@ -128,9 +130,9 @@ func (e *PartyFormationEngine) formBalancedParty(
 		}
 
 		if coversNeeded || len(members) < quest.MinPartySize {
-			members = append(members, semdragons.PartyMember{
+			members = append(members, partycoord.PartyMember{
 				AgentID:  agent.ID,
-				Role:     semdragons.RoleExecutor,
+				Role:     domain.RoleExecutor,
 				Skills:   agent.GetSkillTags(),
 				JoinedAt: time.Now(),
 			})
@@ -150,19 +152,19 @@ func (e *PartyFormationEngine) formBalancedParty(
 
 func (e *PartyFormationEngine) formSpecialistParty(
 	ctx context.Context,
-	quest *semdragons.Quest,
-	agents []semdragons.Agent,
+	quest *domain.Quest,
+	agents []agentprogression.Agent,
 	attractions []boidengine.QuestAttraction,
-) (*semdragons.Party, error) {
-	guildAgents := make(map[semdragons.GuildID][]semdragons.Agent)
+) (*partycoord.Party, error) {
+	guildAgents := make(map[domain.GuildID][]agentprogression.Agent)
 	for _, agent := range agents {
 		for _, guildID := range agent.Guilds {
 			guildAgents[guildID] = append(guildAgents[guildID], agent)
 		}
 	}
 
-	var bestGuild semdragons.GuildID
-	var bestGuildAgents []semdragons.Agent
+	var bestGuild domain.GuildID
+	var bestGuildAgents []agentprogression.Agent
 
 	if quest.GuildPriority != nil {
 		if gAgents, ok := guildAgents[*quest.GuildPriority]; ok && len(gAgents) >= quest.MinPartySize {
@@ -192,10 +194,10 @@ func (e *PartyFormationEngine) formSpecialistParty(
 		}
 	}
 
-	members := []semdragons.PartyMember{
+	members := []partycoord.PartyMember{
 		{
 			AgentID:  lead.ID,
-			Role:     semdragons.RoleLead,
+			Role:     domain.RoleLead,
 			Skills:   lead.GetSkillTags(),
 			JoinedAt: time.Now(),
 		},
@@ -208,9 +210,9 @@ func (e *PartyFormationEngine) formSpecialistParty(
 		if len(members) >= max(quest.MinPartySize, 3) {
 			break
 		}
-		members = append(members, semdragons.PartyMember{
+		members = append(members, partycoord.PartyMember{
 			AgentID:  agent.ID,
-			Role:     semdragons.RoleExecutor,
+			Role:     domain.RoleExecutor,
 			Skills:   agent.GetSkillTags(),
 			JoinedAt: time.Now(),
 		})
@@ -225,11 +227,11 @@ func (e *PartyFormationEngine) formSpecialistParty(
 
 func (e *PartyFormationEngine) formMentorParty(
 	ctx context.Context,
-	quest *semdragons.Quest,
-	agents []semdragons.Agent,
+	quest *domain.Quest,
+	agents []agentprogression.Agent,
 	_ []boidengine.QuestAttraction,
-) (*semdragons.Party, error) {
-	var lead *semdragons.Agent
+) (*partycoord.Party, error) {
+	var lead *agentprogression.Agent
 	for _, agent := range agents {
 		select {
 		case <-ctx.Done():
@@ -237,7 +239,7 @@ func (e *PartyFormationEngine) formMentorParty(
 		default:
 		}
 
-		perms := semdragons.TierPermissionsFor(agent.Tier)
+		perms := domain.TierPermissionsFor(agent.Tier)
 		if perms.CanLeadParty {
 			if lead == nil || agent.Level > lead.Level {
 				agentCopy := agent
@@ -250,7 +252,7 @@ func (e *PartyFormationEngine) formMentorParty(
 		return nil, fmt.Errorf("no agent capable of leading a party")
 	}
 
-	var apprentices []semdragons.Agent
+	var apprentices []agentprogression.Agent
 	for _, agent := range agents {
 		select {
 		case <-ctx.Done():
@@ -261,7 +263,7 @@ func (e *PartyFormationEngine) formMentorParty(
 		if agent.ID == lead.ID {
 			continue
 		}
-		if agent.Tier <= semdragons.TierJourneyman {
+		if agent.Tier <= domain.TierJourneyman {
 			apprentices = append(apprentices, agent)
 		}
 	}
@@ -270,19 +272,19 @@ func (e *PartyFormationEngine) formMentorParty(
 		return apprentices[i].Level < apprentices[j].Level
 	})
 
-	members := []semdragons.PartyMember{
+	members := []partycoord.PartyMember{
 		{
 			AgentID:  lead.ID,
-			Role:     semdragons.RoleLead,
+			Role:     domain.RoleLead,
 			Skills:   lead.GetSkillTags(),
 			JoinedAt: time.Now(),
 		},
 	}
 
 	for i := 0; i < len(apprentices) && len(members) < max(quest.MinPartySize, 2); i++ {
-		members = append(members, semdragons.PartyMember{
+		members = append(members, partycoord.PartyMember{
 			AgentID:  apprentices[i].ID,
-			Role:     semdragons.RoleExecutor,
+			Role:     domain.RoleExecutor,
 			Skills:   apprentices[i].GetSkillTags(),
 			JoinedAt: time.Now(),
 		})
@@ -297,20 +299,20 @@ func (e *PartyFormationEngine) formMentorParty(
 
 func (e *PartyFormationEngine) formMinimalParty(
 	ctx context.Context,
-	quest *semdragons.Quest,
-	agents []semdragons.Agent,
+	quest *domain.Quest,
+	agents []agentprogression.Agent,
 	attractions []boidengine.QuestAttraction,
-) (*semdragons.Party, error) {
+) (*partycoord.Party, error) {
 	lead, err := e.selectLead(agents)
 	if err != nil {
 		return nil, err
 	}
 
 	if quest.MinPartySize <= 1 || !quest.PartyRequired {
-		members := []semdragons.PartyMember{
+		members := []partycoord.PartyMember{
 			{
 				AgentID:  lead.ID,
-				Role:     semdragons.RoleLead,
+				Role:     domain.RoleLead,
 				Skills:   lead.GetSkillTags(),
 				JoinedAt: time.Now(),
 			},
@@ -318,13 +320,13 @@ func (e *PartyFormationEngine) formMinimalParty(
 		return e.createParty(quest, lead.ID, members)
 	}
 
-	attrMap := make(map[semdragons.AgentID]float64)
+	attrMap := make(map[domain.AgentID]float64)
 	for _, a := range attractions {
 		attrMap[a.AgentID] = a.TotalScore
 	}
 
 	type scoredAgent struct {
-		agent semdragons.Agent
+		agent agentprogression.Agent
 		score float64
 	}
 
@@ -345,19 +347,19 @@ func (e *PartyFormationEngine) formMinimalParty(
 		return scored[i].score > scored[j].score
 	})
 
-	members := []semdragons.PartyMember{
+	members := []partycoord.PartyMember{
 		{
 			AgentID:  lead.ID,
-			Role:     semdragons.RoleLead,
+			Role:     domain.RoleLead,
 			Skills:   lead.GetSkillTags(),
 			JoinedAt: time.Now(),
 		},
 	}
 
 	for i := 0; i < len(scored) && len(members) < quest.MinPartySize; i++ {
-		members = append(members, semdragons.PartyMember{
+		members = append(members, partycoord.PartyMember{
 			AgentID:  scored[i].agent.ID,
-			Role:     semdragons.RoleExecutor,
+			Role:     domain.RoleExecutor,
 			Skills:   scored[i].agent.GetSkillTags(),
 			JoinedAt: time.Now(),
 		})
@@ -370,14 +372,14 @@ func (e *PartyFormationEngine) formMinimalParty(
 // HELPER METHODS
 // =============================================================================
 
-func (e *PartyFormationEngine) selectLead(agents []semdragons.Agent) (*semdragons.Agent, error) {
+func (e *PartyFormationEngine) selectLead(agents []agentprogression.Agent) (*agentprogression.Agent, error) {
 	return e.selectLeadFromAgents(agents)
 }
 
-func (e *PartyFormationEngine) selectLeadFromAgents(agents []semdragons.Agent) (*semdragons.Agent, error) {
-	var lead *semdragons.Agent
+func (e *PartyFormationEngine) selectLeadFromAgents(agents []agentprogression.Agent) (*agentprogression.Agent, error) {
+	var lead *agentprogression.Agent
 	for _, agent := range agents {
-		perms := semdragons.TierPermissionsFor(agent.Tier)
+		perms := domain.TierPermissionsFor(agent.Tier)
 		if perms.CanLeadParty {
 			if lead == nil || agent.Level > lead.Level {
 				agentCopy := agent
@@ -393,14 +395,14 @@ func (e *PartyFormationEngine) selectLeadFromAgents(agents []semdragons.Agent) (
 	return lead, nil
 }
 
-func (e *PartyFormationEngine) createParty(quest *semdragons.Quest, leadID semdragons.AgentID, members []semdragons.PartyMember) (*semdragons.Party, error) {
-	instance := semdragons.GenerateInstance()
-	partyID := semdragons.PartyID(e.boardConfig.PartyEntityID(instance))
+func (e *PartyFormationEngine) createParty(quest *domain.Quest, leadID domain.AgentID, members []partycoord.PartyMember) (*partycoord.Party, error) {
+	instance := domain.GenerateInstance()
+	partyID := domain.PartyID(e.boardConfig.PartyEntityID(instance))
 
-	return &semdragons.Party{
+	return &partycoord.Party{
 		ID:       partyID,
 		Name:     fmt.Sprintf("Party for %s", quest.Title),
-		Status:   semdragons.PartyForming,
+		Status:   domain.PartyForming,
 		QuestID:  quest.ID,
 		Lead:     leadID,
 		Members:  members,
@@ -414,35 +416,35 @@ func (e *PartyFormationEngine) createParty(quest *semdragons.Quest, leadID semdr
 
 // RankAgentsForQuest returns agents ranked by their suitability for a quest.
 func (e *PartyFormationEngine) RankAgentsForQuest(
-	agents []semdragons.Agent,
-	quest *semdragons.Quest,
+	agents []agentprogression.Agent,
+	quest *domain.Quest,
 ) []boidengine.SuggestedClaim {
 	rules := boidengine.DefaultBoidRules()
-	attractions := e.boids.ComputeAttractions(agents, []semdragons.Quest{*quest}, rules)
+	attractions := e.boids.ComputeAttractions(agents, []domain.Quest{*quest}, rules)
 	return e.boids.SuggestClaims(attractions)
 }
 
 // PartyMemberSuggestion represents a suggested party member with metadata.
 type PartyMemberSuggestion struct {
-	Agent          semdragons.Agent      `json:"agent"`
-	Score          float64               `json:"score"`
-	CanLead        bool                  `json:"can_lead"`
-	SkillsCovered  []semdragons.SkillTag `json:"skills_covered"`
-	GuildMatch     bool                  `json:"guild_match"`
-	RecommendedFor semdragons.PartyRole  `json:"recommended_for"`
+	Agent          agentprogression.Agent      `json:"agent"`
+	Score          float64           `json:"score"`
+	CanLead        bool              `json:"can_lead"`
+	SkillsCovered  []domain.SkillTag `json:"skills_covered"`
+	GuildMatch     bool              `json:"guild_match"`
+	RecommendedFor domain.PartyRole  `json:"recommended_for"`
 }
 
 // SuggestPartyMembers returns suggested party members with rankings.
 func (e *PartyFormationEngine) SuggestPartyMembers(
-	agents []semdragons.Agent,
-	quest *semdragons.Quest,
+	agents []agentprogression.Agent,
+	quest *domain.Quest,
 	strategy domain.PartyStrategy,
 ) ([]PartyMemberSuggestion, error) {
 	_ = strategy // Reserved for future strategy-specific suggestions
 	rules := boidengine.DefaultBoidRules()
-	attractions := e.boids.ComputeAttractions(agents, []semdragons.Quest{*quest}, rules)
+	attractions := e.boids.ComputeAttractions(agents, []domain.Quest{*quest}, rules)
 
-	attrMap := make(map[semdragons.AgentID]float64)
+	attrMap := make(map[domain.AgentID]float64)
 	for _, a := range attractions {
 		attrMap[a.AgentID] = a.TotalScore
 	}
@@ -450,9 +452,9 @@ func (e *PartyFormationEngine) SuggestPartyMembers(
 	var suggestions []PartyMemberSuggestion
 
 	for _, agent := range agents {
-		perms := semdragons.TierPermissionsFor(agent.Tier)
+		perms := domain.TierPermissionsFor(agent.Tier)
 
-		var coveredSkills []semdragons.SkillTag
+		var coveredSkills []domain.SkillTag
 		agentSkills := agent.GetSkillTags()
 		for _, skill := range quest.RequiredSkills {
 			if slices.Contains(agentSkills, skill) {
@@ -479,7 +481,7 @@ func (e *PartyFormationEngine) SuggestPartyMembers(
 	return suggestions, nil
 }
 
-func (e *PartyFormationEngine) isGuildMatch(agent semdragons.Agent, quest *semdragons.Quest) bool {
+func (e *PartyFormationEngine) isGuildMatch(agent agentprogression.Agent, quest *domain.Quest) bool {
 	if quest.GuildPriority == nil {
 		return false
 	}
@@ -491,17 +493,17 @@ func (e *PartyFormationEngine) isGuildMatch(agent semdragons.Agent, quest *semdr
 	return false
 }
 
-func (e *PartyFormationEngine) recommendRole(agent semdragons.Agent, perms semdragons.TierPermissions) semdragons.PartyRole {
+func (e *PartyFormationEngine) recommendRole(agent agentprogression.Agent, perms domain.TierPermissions) domain.PartyRole {
 	if perms.CanLeadParty {
-		return semdragons.RoleLead
+		return domain.RoleLead
 	}
 	for _, skill := range agent.GetSkillTags() {
-		if skill == semdragons.SkillCodeReview {
-			return semdragons.RoleReviewer
+		if skill == domain.SkillCodeReview {
+			return domain.RoleReviewer
 		}
-		if skill == semdragons.SkillResearch {
-			return semdragons.RoleScout
+		if skill == domain.SkillResearch {
+			return domain.RoleScout
 		}
 	}
-	return semdragons.RoleExecutor
+	return domain.RoleExecutor
 }

@@ -33,7 +33,6 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
-	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/graph"
@@ -406,7 +405,7 @@ func TestToolRegistrySkillGating(t *testing.T) {
 			Name:        "pipeline_tool",
 			Description: "Requires data transform skill",
 		},
-		Handler: func(_ context.Context, call agentic.ToolCall, _ *questboard.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+		Handler: func(_ context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
 			// Handler body is irrelevant; the skill gate is exercised before this.
 			return agentic.ToolResult{CallID: call.ID, Content: "ok"}
 		},
@@ -715,7 +714,7 @@ func TestBuildSystemPrompt(t *testing.T) {
 		},
 	}
 
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID:             "q-prompt",
 		Title:          "Write a parser",
 		Description:    "Parse JSON into a struct",
@@ -756,10 +755,10 @@ func TestBuildSystemPromptWithConstraints(t *testing.T) {
 		Tier: domain.TierExpert,
 	}
 
-	quest := &questboard.Quest{
+	quest := &domain.Quest{
 		ID:    "q-constrained",
 		Title: "Constrained Quest",
-		Constraints: questboard.QuestConstraints{
+		Constraints: domain.QuestConstraints{
 			MaxDuration: 30 * time.Minute,
 			MaxTokens:   2000,
 		},
@@ -808,7 +807,7 @@ func TestBuildUserPrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			quest := &questboard.Quest{
+			quest := &domain.Quest{
 				ID:          "q-up",
 				Title:       "User Prompt Test",
 				Description: tt.desc,
@@ -888,8 +887,8 @@ func makeAgent(tier domain.TrustTier, skills ...domain.SkillTag) *agentprogressi
 
 // makeQuest constructs a minimal questboard.Quest with an ID, title, and
 // optional required skills.
-func makeQuest(id, title string, skills ...domain.SkillTag) *questboard.Quest {
-	return &questboard.Quest{
+func makeQuest(id, title string, skills ...domain.SkillTag) *domain.Quest {
+	return &domain.Quest{
 		ID:             domain.QuestID(id),
 		Title:          title,
 		RequiredSkills: skills,

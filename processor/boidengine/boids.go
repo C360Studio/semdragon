@@ -6,7 +6,8 @@ package boidengine
 import (
 	"sort"
 
-	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // =============================================================================
@@ -20,7 +21,7 @@ import (
 type BoidEngine interface {
 	// ComputeAttractions calculates attraction scores for all agent-quest pairs.
 	// Returns a slice of attractions sorted by total score descending.
-	ComputeAttractions(agents []semdragons.Agent, quests []semdragons.Quest, rules BoidRules) []QuestAttraction
+	ComputeAttractions(agents []agentprogression.Agent, quests []domain.Quest, rules BoidRules) []QuestAttraction
 
 	// SuggestClaims returns the best quest for each agent to claim.
 	// Uses greedy assignment - highest scoring agent-quest pair first.
@@ -29,7 +30,7 @@ type BoidEngine interface {
 	// SuggestTopN returns up to n ranked quest suggestions per agent.
 	// Unlike SuggestClaims, quests are NOT removed from the pool —
 	// multiple agents may receive the same quest as a suggestion.
-	SuggestTopN(attractions []QuestAttraction, n int) map[semdragons.AgentID][]SuggestedClaim
+	SuggestTopN(attractions []QuestAttraction, n int) map[domain.AgentID][]SuggestedClaim
 
 	// UpdateRules allows dynamic adjustment of rule weights.
 	UpdateRules(rules BoidRules)
@@ -67,9 +68,9 @@ type BoidRules struct {
 
 // QuestAttraction represents an agent's computed attraction to a quest.
 type QuestAttraction struct {
-	AgentID    semdragons.AgentID `json:"agent_id"`
-	QuestID    semdragons.QuestID `json:"quest_id"`
-	TotalScore float64            `json:"total_score"`
+	AgentID    domain.AgentID `json:"agent_id"`
+	QuestID    domain.QuestID `json:"quest_id"`
+	TotalScore float64        `json:"total_score"`
 
 	// Individual rule contributions (for debugging/explanation)
 	SeparationScore float64 `json:"separation_score"`
@@ -82,11 +83,11 @@ type QuestAttraction struct {
 
 // SuggestedClaim is a recommendation for an agent to claim a quest.
 type SuggestedClaim struct {
-	AgentID    semdragons.AgentID `json:"agent_id"`
-	QuestID    semdragons.QuestID `json:"quest_id"`
-	Score      float64            `json:"score"`
-	Confidence float64            `json:"confidence"` // How much better than alternatives
-	Reason     string             `json:"reason"`     // Human-readable explanation
+	AgentID    domain.AgentID `json:"agent_id"`
+	QuestID    domain.QuestID `json:"quest_id"`
+	Score      float64        `json:"score"`
+	Confidence float64        `json:"confidence"` // How much better than alternatives
+	Reason     string         `json:"reason"`     // Human-readable explanation
 }
 
 // DefaultBoidRules returns sensible defaults for boid weights.
@@ -109,12 +110,12 @@ func DefaultBoidRules() BoidRules {
 // DefaultBoidEngine implements BoidEngine with standard flocking behavior.
 type DefaultBoidEngine struct {
 	rules  BoidRules
-	guilds map[semdragons.GuildID]*semdragons.Guild // Guild context for rank/reputation lookups
+	guilds map[domain.GuildID]*domain.Guild // Guild context for rank/reputation lookups
 }
 
 // SetGuildContext provides guild data for rank and reputation calculations.
 // Called by the component before each computation cycle.
-func (e *DefaultBoidEngine) SetGuildContext(guilds map[semdragons.GuildID]*semdragons.Guild) {
+func (e *DefaultBoidEngine) SetGuildContext(guilds map[domain.GuildID]*domain.Guild) {
 	e.guilds = guilds
 }
 
@@ -129,7 +130,7 @@ func (e *DefaultBoidEngine) UpdateRules(rules BoidRules) {
 }
 
 // ComputeAttractions calculates attraction scores for all agent-quest pairs.
-func (e *DefaultBoidEngine) ComputeAttractions(agents []semdragons.Agent, quests []semdragons.Quest, rules BoidRules) []QuestAttraction {
+func (e *DefaultBoidEngine) ComputeAttractions(agents []agentprogression.Agent, quests []domain.Quest, rules BoidRules) []QuestAttraction {
 	if len(agents) == 0 || len(quests) == 0 {
 		return nil
 	}
@@ -142,7 +143,7 @@ func (e *DefaultBoidEngine) ComputeAttractions(agents []semdragons.Agent, quests
 
 	for i := range agents {
 		agent := &agents[i]
-		if agent.Status != semdragons.AgentIdle {
+		if agent.Status != domain.AgentIdle {
 			continue // Only idle agents can claim
 		}
 
@@ -168,12 +169,12 @@ func (e *DefaultBoidEngine) ComputeAttractions(agents []semdragons.Agent, quests
 // (e.g., velocity matching, leader following) that will use direct peer proximity.
 // Currently peer influence is captured via crowding and skillClusters.
 func (e *DefaultBoidEngine) computeAttraction(
-	agent *semdragons.Agent,
-	quest *semdragons.Quest,
-	allAgents []semdragons.Agent,
+	agent *agentprogression.Agent,
+	quest *domain.Quest,
+	allAgents []agentprogression.Agent,
 	rules BoidRules,
-	crowding map[semdragons.QuestID]int,
-	skillClusters map[semdragons.SkillTag]int,
+	crowding map[domain.QuestID]int,
+	skillClusters map[domain.SkillTag]int,
 ) QuestAttraction {
 	// Track allAgents for future peer calculations (velocity matching, etc.)
 	_ = len(allAgents)
@@ -244,7 +245,7 @@ func (e *DefaultBoidEngine) computeAttraction(
 	// differentiates agents without drowning out skill/guild match.
 	if agent.Stats.PeerReviewCount > 0 {
 		reputationMod := (agent.Stats.PeerReviewAvg - 3.0) / 2.0 // -1.0 to +1.0
-		attr.AffinityScore *= (1.0 + reputationMod*0.3)           // ±30% affinity
+		attr.AffinityScore *= (1.0 + reputationMod*0.3)          // ±30% affinity
 	}
 
 	// Rule 6: Caution - avoid over-leveled quests
@@ -263,8 +264,8 @@ func (e *DefaultBoidEngine) computeAttraction(
 }
 
 // computeQuestCrowding counts how many agents are attracted to each quest.
-func (e *DefaultBoidEngine) computeQuestCrowding(agents []semdragons.Agent, quests []semdragons.Quest) map[semdragons.QuestID]int {
-	crowding := make(map[semdragons.QuestID]int)
+func (e *DefaultBoidEngine) computeQuestCrowding(agents []agentprogression.Agent, quests []domain.Quest) map[domain.QuestID]int {
+	crowding := make(map[domain.QuestID]int)
 	for _, agent := range agents {
 		if agent.CurrentQuest != nil {
 			// Count agents currently on quests (for avoiding completion conflicts)
@@ -281,8 +282,8 @@ func (e *DefaultBoidEngine) computeQuestCrowding(agents []semdragons.Agent, ques
 }
 
 // computeSkillClusters counts quest density per skill.
-func (e *DefaultBoidEngine) computeSkillClusters(quests []semdragons.Quest) map[semdragons.SkillTag]int {
-	clusters := make(map[semdragons.SkillTag]int)
+func (e *DefaultBoidEngine) computeSkillClusters(quests []domain.Quest) map[domain.SkillTag]int {
+	clusters := make(map[domain.SkillTag]int)
 	for _, quest := range quests {
 		for _, skill := range quest.RequiredSkills {
 			clusters[skill]++
@@ -298,8 +299,8 @@ func (e *DefaultBoidEngine) SuggestClaims(attractions []QuestAttraction) []Sugge
 	}
 
 	// Greedy assignment: take highest score, remove agent and quest from pool
-	assignedAgents := make(map[semdragons.AgentID]bool)
-	assignedQuests := make(map[semdragons.QuestID]bool)
+	assignedAgents := make(map[domain.AgentID]bool)
+	assignedQuests := make(map[domain.QuestID]bool)
 	var suggestions []SuggestedClaim
 
 	for _, attr := range attractions {
@@ -338,18 +339,18 @@ func (e *DefaultBoidEngine) SuggestClaims(attractions []QuestAttraction) []Sugge
 // SuggestTopN returns up to n ranked quest suggestions per agent.
 // Quests are not removed from the pool — multiple agents may target the same quest.
 // KV write serialization handles conflicts naturally at claim time.
-func (e *DefaultBoidEngine) SuggestTopN(attractions []QuestAttraction, n int) map[semdragons.AgentID][]SuggestedClaim {
+func (e *DefaultBoidEngine) SuggestTopN(attractions []QuestAttraction, n int) map[domain.AgentID][]SuggestedClaim {
 	if len(attractions) == 0 || n <= 0 {
 		return nil
 	}
 
 	// Group attractions by agent
-	byAgent := make(map[semdragons.AgentID][]QuestAttraction)
+	byAgent := make(map[domain.AgentID][]QuestAttraction)
 	for _, attr := range attractions {
 		byAgent[attr.AgentID] = append(byAgent[attr.AgentID], attr)
 	}
 
-	result := make(map[semdragons.AgentID][]SuggestedClaim, len(byAgent))
+	result := make(map[domain.AgentID][]SuggestedClaim, len(byAgent))
 	for agentID, agentAttrs := range byAgent {
 		// Sort by score descending (attractions may already be sorted globally,
 		// but we need per-agent ordering)

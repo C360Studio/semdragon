@@ -4,42 +4,43 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/c360studio/semdragons"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // allTrustTiers enumerates every defined TrustTier constant.
-var allTrustTiers = []semdragons.TrustTier{
-	semdragons.TierApprentice,
-	semdragons.TierJourneyman,
-	semdragons.TierExpert,
-	semdragons.TierMaster,
-	semdragons.TierGrandmaster,
+var allTrustTiers = []domain.TrustTier{
+	domain.TierApprentice,
+	domain.TierJourneyman,
+	domain.TierExpert,
+	domain.TierMaster,
+	domain.TierGrandmaster,
 }
 
 // allPartyRoles enumerates every defined PartyRole constant.
-var allPartyRoles = []semdragons.PartyRole{
-	semdragons.RoleLead,
-	semdragons.RoleExecutor,
-	semdragons.RoleReviewer,
-	semdragons.RoleScout,
+var allPartyRoles = []domain.PartyRole{
+	domain.RoleLead,
+	domain.RoleExecutor,
+	domain.RoleReviewer,
+	domain.RoleScout,
 }
 
 // domainEntry bundles a DomainConfig with its matching DomainCatalog for
 // table-driven tests that exercise both together.
 type domainEntry struct {
 	name    string
-	config  semdragons.DomainConfig
+	config  domain.Config
 	catalog *catalogEntry
 }
 
 // catalogEntry holds the promptmanager fields we care about without importing
 // promptmanager (the domains package already imports it; we re-use the vars).
 type catalogEntry struct {
-	domainID        semdragons.DomainID
+	domainID        domain.ID
 	systemBase      string
 	judgeSystemBase string
-	tierGuardrails  map[semdragons.TrustTier]string
-	skillFragments  map[semdragons.SkillTag]string
+	tierGuardrails  map[domain.TrustTier]string
+	skillFragments  map[domain.SkillTag]string
 }
 
 // allDomains is the single source of truth for all three concrete domains.
@@ -134,7 +135,7 @@ func TestDomainSkills_NoEmptyTags(t *testing.T) {
 func TestDomainSkills_NoDuplicateTags(t *testing.T) {
 	for _, d := range allDomains {
 		t.Run(d.name, func(t *testing.T) {
-			seen := make(map[semdragons.SkillTag]int)
+			seen := make(map[domain.SkillTag]int)
 			for _, skill := range d.config.Skills {
 				seen[skill.Tag]++
 			}
@@ -183,7 +184,7 @@ func TestDomainVocabulary_KeyTermsNonEmpty(t *testing.T) {
 // =============================================================================
 
 func TestDomains_UniqueIDs(t *testing.T) {
-	seen := make(map[semdragons.DomainID]string)
+	seen := make(map[domain.ID]string)
 	for _, d := range allDomains {
 		if prev, exists := seen[d.config.ID]; exists {
 			t.Errorf("domain ID %q is used by both %q and %q", d.config.ID, prev, d.name)
@@ -228,7 +229,7 @@ func TestDomainVocabulary_TierNamesCoversAllTiers(t *testing.T) {
 }
 
 func TestDomainVocabulary_TierNamesHasNoExtraEntries(t *testing.T) {
-	validTiers := make(map[semdragons.TrustTier]struct{})
+	validTiers := make(map[domain.TrustTier]struct{})
 	for _, tier := range allTrustTiers {
 		validTiers[tier] = struct{}{}
 	}
@@ -272,7 +273,7 @@ func TestDomainVocabulary_RoleNamesCoversAllRoles(t *testing.T) {
 }
 
 func TestDomainVocabulary_RoleNamesHasNoExtraEntries(t *testing.T) {
-	validRoles := make(map[semdragons.PartyRole]struct{})
+	validRoles := make(map[domain.PartyRole]struct{})
 	for _, role := range allPartyRoles {
 		validRoles[role] = struct{}{}
 	}
@@ -421,7 +422,7 @@ func TestDomainVocabulary_GetReturnsExpectedValues(t *testing.T) {
 	// domain — this exercises the Get switch in domain/config.go.
 	cases := []struct {
 		domain   string
-		vocab    semdragons.DomainVocabulary
+		vocab    domain.Vocabulary
 		key      string
 		wantText string
 	}{
@@ -450,7 +451,7 @@ func TestDomainVocabulary_GetReturnsExpectedValues(t *testing.T) {
 // default vocabulary when the domain does not override a key.  We construct a
 // minimal vocabulary with only Agent set so the other keys fall through.
 func TestDomainVocabulary_GetFallsBackToDefault(t *testing.T) {
-	partial := semdragons.DomainVocabulary{
+	partial := domain.Vocabulary{
 		Agent: "Tester",
 		// Quest, Party, etc. intentionally left blank.
 	}

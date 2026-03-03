@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/c360studio/semstreams/natsclient"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
@@ -27,20 +29,20 @@ import (
 // enabling child spans for lifecycle events.
 type TraceManager struct {
 	mu     sync.RWMutex
-	traces map[QuestID]*natsclient.TraceContext
+	traces map[domain.QuestID]*natsclient.TraceContext
 }
 
 // NewTraceManager creates a new trace manager.
 func NewTraceManager() *TraceManager {
 	return &TraceManager{
-		traces: make(map[QuestID]*natsclient.TraceContext),
+		traces: make(map[domain.QuestID]*natsclient.TraceContext),
 	}
 }
 
 // StartQuestTrace creates a new trace context for a quest.
 // This should be called when a quest is posted to the board.
 // Returns the trace context with the quest's root span.
-func (tm *TraceManager) StartQuestTrace(questID QuestID) *natsclient.TraceContext {
+func (tm *TraceManager) StartQuestTrace(questID domain.QuestID) *natsclient.TraceContext {
 	tc := natsclient.NewTraceContext()
 
 	tm.mu.Lock()
@@ -52,7 +54,7 @@ func (tm *TraceManager) StartQuestTrace(questID QuestID) *natsclient.TraceContex
 
 // StartQuestTraceWithParent creates a trace context that inherits from a parent.
 // This is used for sub-quests that should be linked to their parent quest's trace.
-func (tm *TraceManager) StartQuestTraceWithParent(questID QuestID, parentQuestID QuestID) *natsclient.TraceContext {
+func (tm *TraceManager) StartQuestTraceWithParent(questID domain.QuestID, parentQuestID domain.QuestID) *natsclient.TraceContext {
 	tm.mu.RLock()
 	parentTC := tm.traces[parentQuestID]
 	tm.mu.RUnlock()
@@ -75,7 +77,7 @@ func (tm *TraceManager) StartQuestTraceWithParent(questID QuestID, parentQuestID
 
 // GetQuestTrace returns the trace context for a quest.
 // Returns nil if no trace exists for the quest.
-func (tm *TraceManager) GetQuestTrace(questID QuestID) *natsclient.TraceContext {
+func (tm *TraceManager) GetQuestTrace(questID domain.QuestID) *natsclient.TraceContext {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
 	return tm.traces[questID]
@@ -84,7 +86,7 @@ func (tm *TraceManager) GetQuestTrace(questID QuestID) *natsclient.TraceContext 
 // NewEventSpan creates a child span for a quest lifecycle event.
 // The returned context contains the new span's trace context.
 // Returns the original context if no trace exists for the quest.
-func (tm *TraceManager) NewEventSpan(ctx context.Context, questID QuestID) (context.Context, *natsclient.TraceContext) {
+func (tm *TraceManager) NewEventSpan(ctx context.Context, questID domain.QuestID) (context.Context, *natsclient.TraceContext) {
 	tm.mu.RLock()
 	parentTC := tm.traces[questID]
 	tm.mu.RUnlock()
@@ -99,7 +101,7 @@ func (tm *TraceManager) NewEventSpan(ctx context.Context, questID QuestID) (cont
 
 // EndQuestTrace removes the trace context for a completed/failed quest.
 // This should be called when a quest reaches a terminal state.
-func (tm *TraceManager) EndQuestTrace(questID QuestID) {
+func (tm *TraceManager) EndQuestTrace(questID domain.QuestID) {
 	tm.mu.Lock()
 	delete(tm.traces, questID)
 	tm.mu.Unlock()
@@ -161,7 +163,7 @@ func (ti TraceInfo) IsEmpty() bool {
 
 // ContextWithQuestTrace returns a context with the quest's trace context.
 // If no trace exists for the quest, the original context is returned.
-func (tm *TraceManager) ContextWithQuestTrace(ctx context.Context, questID QuestID) context.Context {
+func (tm *TraceManager) ContextWithQuestTrace(ctx context.Context, questID domain.QuestID) context.Context {
 	tc := tm.GetQuestTrace(questID)
 	if tc == nil {
 		return ctx

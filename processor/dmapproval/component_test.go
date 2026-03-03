@@ -699,6 +699,6 @@ func setupApprovalComponent(t *testing.T, client *natsclient.Client, config Conf
 }
 
 // makeSessionID builds a valid entity session ID for test use.
-func makeSessionID(config *semdragons.BoardConfig, instance string) string {
+func makeSessionID(config *domain.BoardConfig, instance string) string {
 	return config.EntityID("session", instance)
 }

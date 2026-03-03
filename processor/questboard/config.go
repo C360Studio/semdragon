@@ -3,7 +3,7 @@ package questboard
 import (
 	"errors"
 
-	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
 )
 
 // Config holds the component configuration.
@@ -32,8 +32,8 @@ func DefaultConfig() Config {
 }
 
 // ToBoardConfig converts component config to semdragons BoardConfig.
-func (c *Config) ToBoardConfig() *semdragons.BoardConfig {
-	return &semdragons.BoardConfig{
+func (c *Config) ToBoardConfig() *domain.BoardConfig {
+	return &domain.BoardConfig{
 		Org:      c.Org,
 		Platform: c.Platform,
 		Board:    c.Board,

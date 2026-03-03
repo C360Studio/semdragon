@@ -3,10 +3,8 @@ package autonomy
 import (
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 )
-
 
 // =============================================================================
 // CONFIGURATION
@@ -103,15 +101,15 @@ func (c *Config) ToBoardConfig() *domain.BoardConfig {
 
 // IntervalForStatus returns the heartbeat interval for a given agent status.
 // Returns 0 for retired agents (no heartbeat needed).
-func (c *Config) IntervalForStatus(status semdragons.AgentStatus) time.Duration {
+func (c *Config) IntervalForStatus(status domain.AgentStatus) time.Duration {
 	switch status {
-	case semdragons.AgentIdle:
+	case domain.AgentIdle:
 		return time.Duration(c.IdleIntervalMs) * time.Millisecond
-	case semdragons.AgentOnQuest:
+	case domain.AgentOnQuest:
 		return time.Duration(c.OnQuestIntervalMs) * time.Millisecond
-	case semdragons.AgentInBattle:
+	case domain.AgentInBattle:
 		return time.Duration(c.InBattleIntervalMs) * time.Millisecond
-	case semdragons.AgentCooldown:
+	case domain.AgentCooldown:
 		return time.Duration(c.CooldownIntervalMs) * time.Millisecond
 	default:
 		// Retired or unknown — no heartbeat

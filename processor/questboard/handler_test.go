@@ -193,7 +193,7 @@ func TestConfig_ToBoardConfig_DefaultMaxAttemptsNotCarried(t *testing.T) {
 // =============================================================================
 
 func TestQuest_EntityID_ReturnsID(t *testing.T) {
-	q := Quest{
+	q := domain.Quest{
 		ID: domain.QuestID("c360.dev.game.board1.quest.abc123"),
 	}
 
@@ -203,7 +203,7 @@ func TestQuest_EntityID_ReturnsID(t *testing.T) {
 }
 
 func TestQuest_EntityID_EmptyID(t *testing.T) {
-	q := Quest{}
+	q := domain.Quest{}
 	if q.EntityID() != "" {
 		t.Errorf("EntityID() on zero-value quest = %q, want empty string", q.EntityID())
 	}
@@ -248,7 +248,7 @@ func TestQuest_PrimarySkill(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			q := Quest{RequiredSkills: tt.skills}
+			q := domain.Quest{RequiredSkills: tt.skills}
 			got := q.PrimarySkill()
 			if got != tt.want {
 				t.Errorf("PrimarySkill() = %q, want %q", got, tt.want)
@@ -282,7 +282,7 @@ func triplesForPredicate(triples []message.Triple, predicate string) []message.T
 }
 
 func TestQuest_Triples_MinimalQuest(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:       domain.QuestID("c360.dev.game.board1.quest.minimal"),
 		Title:    "Minimal Quest",
 		Status:   domain.QuestPosted,
@@ -344,14 +344,14 @@ func TestQuest_Triples_FullQuest(t *testing.T) {
 	claimedAt := time.Now().Add(-1 * time.Hour)
 	startedAt := time.Now().Add(-30 * time.Minute)
 	completedAt := time.Now()
-	verdict := &BattleVerdict{
+	verdict := &domain.BattleVerdict{
 		Passed:       true,
 		QualityScore: 0.92,
 		XPAwarded:    250,
 		Feedback:     "Excellent work",
 	}
 
-	q := &Quest{
+	q := &domain.Quest{
 		ID:             domain.QuestID("c360.dev.game.board1.quest.full"),
 		Title:          "Full Quest",
 		Description:    "A fully populated quest for testing",
@@ -364,7 +364,7 @@ func TestQuest_Triples_FullQuest(t *testing.T) {
 		BaseXP:         300,
 		BonusXP:        50,
 		GuildXP:        25,
-		Constraints: QuestConstraints{
+		Constraints: domain.QuestConstraints{
 			RequireReview: true,
 			ReviewLevel:   domain.ReviewStandard,
 			MaxTokens:     4000,
@@ -504,13 +504,13 @@ func TestQuest_Triples_FullQuest(t *testing.T) {
 }
 
 func TestQuest_Triples_EscalatedAndFailureInfo(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:            domain.QuestID("c360.dev.game.board1.quest.escalated"),
 		Title:         "Escalated Quest",
 		Status:        domain.QuestEscalated,
 		Escalated:     true,
 		FailureReason: "Something went wrong",
-		FailureType:   FailureQuality,
+		FailureType:   domain.FailureQuality,
 		PostedAt:      time.Now(),
 	}
 
@@ -523,13 +523,13 @@ func TestQuest_Triples_EscalatedAndFailureInfo(t *testing.T) {
 	if v, _ := idx["quest.failure.reason"].Object.(string); v != "Something went wrong" {
 		t.Errorf("quest.failure.reason = %q, want %q", v, "Something went wrong")
 	}
-	if v, _ := idx["quest.failure.type"].Object.(string); v != string(FailureQuality) {
-		t.Errorf("quest.failure.type = %q, want %q", v, FailureQuality)
+	if v, _ := idx["quest.failure.type"].Object.(string); v != string(domain.FailureQuality) {
+		t.Errorf("quest.failure.type = %q, want %q", v, domain.FailureQuality)
 	}
 }
 
 func TestQuest_Triples_NoEscalationWhenNotEscalated(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:       domain.QuestID("c360.dev.game.board1.quest.normal"),
 		Title:    "Normal Quest",
 		Status:   domain.QuestPosted,
@@ -547,7 +547,7 @@ func TestQuest_Triples_NoEscalationWhenNotEscalated(t *testing.T) {
 }
 
 func TestQuest_Triples_NoOptionalTimestampsWhenNil(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:       domain.QuestID("c360.dev.game.board1.quest.notimestamps"),
 		Title:    "No Timestamps Quest",
 		Status:   domain.QuestPosted,
@@ -570,7 +570,7 @@ func TestQuest_Triples_NoOptionalTimestampsWhenNil(t *testing.T) {
 }
 
 func TestQuest_Triples_NoVerdictWhenNil(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:       domain.QuestID("c360.dev.game.board1.quest.noeverdict"),
 		Title:    "No Verdict Quest",
 		Status:   domain.QuestInProgress,
@@ -590,7 +590,7 @@ func TestQuest_Triples_NoVerdictWhenNil(t *testing.T) {
 }
 
 func TestQuest_Triples_NoOptionalRelationshipsWhenNil(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:       domain.QuestID("c360.dev.game.board1.quest.norels"),
 		Title:    "No Relations Quest",
 		Status:   domain.QuestPosted,
@@ -616,7 +616,7 @@ func TestQuest_Triples_NoOptionalRelationshipsWhenNil(t *testing.T) {
 }
 
 func TestQuest_Triples_NoDurationWhenZero(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:       domain.QuestID("c360.dev.game.board1.quest.nodur"),
 		Title:    "No Duration Quest",
 		Status:   domain.QuestPosted,
@@ -633,7 +633,7 @@ func TestQuest_Triples_NoDurationWhenZero(t *testing.T) {
 }
 
 func TestQuest_Triples_NoFailureInfoWhenEmpty(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:            domain.QuestID("c360.dev.game.board1.quest.nofail"),
 		Title:         "No Failure Quest",
 		Status:        domain.QuestPosted,
@@ -649,7 +649,7 @@ func TestQuest_Triples_NoFailureInfoWhenEmpty(t *testing.T) {
 		t.Error("quest.failure.reason should not appear when FailureReason is empty")
 	}
 	if _, ok := idx["quest.failure.type"]; ok {
-		t.Error("quest.failure.type should not appear when FailureType is empty")
+		t.Error("quest.failure.type should not appear when domain.FailureType is empty")
 	}
 }
 
@@ -659,7 +659,7 @@ func TestQuest_Triples_MultipleSkills(t *testing.T) {
 		domain.SkillAnalysis,
 		domain.SkillResearch,
 	}
-	q := &Quest{
+	q := &domain.Quest{
 		ID:             domain.QuestID("c360.dev.game.board1.quest.multiskill"),
 		Title:          "Multi-Skill Quest",
 		Status:         domain.QuestPosted,
@@ -693,7 +693,7 @@ func TestQuest_Triples_MultipleDependencies(t *testing.T) {
 		"c360.dev.game.board1.quest.dep1",
 		"c360.dev.game.board1.quest.dep2",
 	}
-	q := &Quest{
+	q := &domain.Quest{
 		ID:        domain.QuestID("c360.dev.game.board1.quest.witheps"),
 		Title:     "Quest with Dependencies",
 		Status:    domain.QuestPosted,
@@ -722,7 +722,7 @@ func TestQuest_Triples_MultipleDependencies(t *testing.T) {
 }
 
 func TestQuest_Triples_SourceIsQuestboard(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:       domain.QuestID("c360.dev.game.board1.quest.srctest"),
 		Title:    "Source Test Quest",
 		Status:   domain.QuestPosted,
@@ -738,7 +738,7 @@ func TestQuest_Triples_SourceIsQuestboard(t *testing.T) {
 }
 
 func TestQuest_Triples_ConfidenceIsOne(t *testing.T) {
-	q := &Quest{
+	q := &domain.Quest{
 		ID:       domain.QuestID("c360.dev.game.board1.quest.conftest"),
 		Title:    "Confidence Test Quest",
 		Status:   domain.QuestPosted,
@@ -761,7 +761,7 @@ func TestQuest_Triples_TimestampsAreRFC3339(t *testing.T) {
 
 	claimedBy := domain.AgentID("c360.dev.game.board1.agent.a1")
 
-	q := &Quest{
+	q := &domain.Quest{
 		ID:          domain.QuestID("c360.dev.game.board1.quest.tstest"),
 		Title:       "Timestamp Test",
 		Status:      domain.QuestCompleted,
@@ -811,19 +811,19 @@ func TestQuest_Triples_TimestampsAreRFC3339(t *testing.T) {
 func TestFailureType_Constants(t *testing.T) {
 	tests := []struct {
 		name  string
-		value FailureType
+		value domain.FailureType
 		want  string
 	}{
-		{name: "quality", value: FailureQuality, want: "quality"},
-		{name: "timeout", value: FailureTimeout, want: "timeout"},
-		{name: "error", value: FailureError, want: "error"},
-		{name: "abandoned", value: FailureAbandoned, want: "abandoned"},
+		{name: "quality", value: domain.FailureQuality, want: "quality"},
+		{name: "timeout", value: domain.FailureTimeout, want: "timeout"},
+		{name: "error", value: domain.FailureError, want: "error"},
+		{name: "abandoned", value: domain.FailureAbandoned, want: "abandoned"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if string(tt.value) != tt.want {
-				t.Errorf("FailureType %q = %q, want %q", tt.name, tt.value, tt.want)
+				t.Errorf("domain.FailureType %q = %q, want %q", tt.name, tt.value, tt.want)
 			}
 		})
 	}
