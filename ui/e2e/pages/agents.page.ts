@@ -42,8 +42,8 @@ export class AgentsPage extends BasePage {
 		this.agentCount = page.locator('.agent-count');
 
 		// Filters - use data-testid
-		this.filtersPanel = page.locator('.filters-panel');
-		this.statusFilter = page.locator('[data-testid="agent-status-filter"]');
+		this.filtersPanel = page.locator('[data-testid="agent-status-filters"]');
+		this.statusFilter = page.locator('[data-testid="agent-status-filters"]');
 
 		// Agent grid - use data-testid
 		this.agentGrid = page.locator('.agent-grid');
@@ -97,9 +97,8 @@ export class AgentsPage extends BasePage {
 	 * Filter agents by status.
 	 */
 	async filterByStatus(status: AgentStatus | 'all'): Promise<void> {
-		await this.statusFilter.selectOption(status);
-		// Wait for the UI to update
-		await this.page.waitForTimeout(100);
+		const chip = this.page.locator(`[data-testid="filter-${status}"]`);
+		await chip.click();
 	}
 
 	/**

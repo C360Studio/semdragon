@@ -75,7 +75,7 @@
 					<h1>Agent Roster</h1>
 					<span class="agent-count">{filteredAgents.length} agents</span>
 				</div>
-				<div class="status-filters" data-testid="agent-status-filters" data-testid-legacy="agent-status-filter">
+				<div class="status-filters" data-testid="agent-status-filters">
 					{#each statusChips as chip}
 						{@const count = agentCountForStatus(chip.status)}
 						<button

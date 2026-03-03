@@ -230,10 +230,14 @@ test.describe('Agent Roster - Accessibility', () => {
 		}
 	});
 
-	test('status filter has label', async ({ agentsPage }) => {
+	test('status filter chips are visible', async ({ agentsPage }) => {
 		await agentsPage.goto();
 
-		const label = agentsPage.page.locator('label[for="agent-status-filter"]');
-		await expect(label).toBeVisible();
+		const filters = agentsPage.page.locator('[data-testid="agent-status-filters"]');
+		await expect(filters).toBeVisible();
+
+		// Should have filter chips (All + status options)
+		const chips = filters.locator('.filter-chip');
+		expect(await chips.count()).toBeGreaterThanOrEqual(2);
 	});
 });
