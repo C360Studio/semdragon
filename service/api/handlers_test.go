@@ -16,6 +16,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/boardcontrol"
 	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
@@ -3529,3 +3530,433 @@ var (
 // messageTripleUsed ensures the graph/message import is referenced so the
 // compiler doesn't complain. EntityState.Triples holds []message.Triple.
 var _ = message.Triple{}
+
+// =============================================================================
+// BOARD CONTROL HANDLER TESTS
+// =============================================================================
+
+// mockKeyValue implements jetstream.KeyValue with function fields so individual
+// test cases can supply exactly the behavior they need. All methods not set
+// return sensible zero-value defaults so the mock satisfies the interface
+// without requiring every test to stub every method.
+type mockKeyValue struct {
+	getFn    func(ctx context.Context, key string) (jetstream.KeyValueEntry, error)
+	putFn    func(ctx context.Context, key string, value []byte) (uint64, error)
+	watchFn  func(ctx context.Context, keys string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
+	bucketFn func() string
+}
+
+func (m *mockKeyValue) Get(ctx context.Context, key string) (jetstream.KeyValueEntry, error) {
+	if m.getFn != nil {
+		return m.getFn(ctx, key)
+	}
+	return nil, jetstream.ErrKeyNotFound
+}
+
+func (m *mockKeyValue) Put(ctx context.Context, key string, value []byte) (uint64, error) {
+	if m.putFn != nil {
+		return m.putFn(ctx, key, value)
+	}
+	return 1, nil
+}
+
+func (m *mockKeyValue) Watch(ctx context.Context, keys string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
+	if m.watchFn != nil {
+		return m.watchFn(ctx, keys, opts...)
+	}
+	return &mockKeyWatcher{updates: make(chan jetstream.KeyValueEntry)}, nil
+}
+
+// Remaining methods are required by the jetstream.KeyValue interface but are
+// not exercised by boardcontrol.Controller in these unit tests.
+
+func (m *mockKeyValue) GetRevision(_ context.Context, _ string, _ uint64) (jetstream.KeyValueEntry, error) {
+	return nil, jetstream.ErrKeyNotFound
+}
+
+func (m *mockKeyValue) PutString(_ context.Context, _ string, _ string) (uint64, error) {
+	return 0, nil
+}
+
+func (m *mockKeyValue) Create(_ context.Context, _ string, _ []byte, _ ...jetstream.KVCreateOpt) (uint64, error) {
+	return 0, nil
+}
+
+func (m *mockKeyValue) Update(_ context.Context, _ string, _ []byte, _ uint64) (uint64, error) {
+	return 0, nil
+}
+
+func (m *mockKeyValue) Delete(_ context.Context, _ string, _ ...jetstream.KVDeleteOpt) error {
+	return nil
+}
+
+func (m *mockKeyValue) Purge(_ context.Context, _ string, _ ...jetstream.KVDeleteOpt) error {
+	return nil
+}
+
+func (m *mockKeyValue) WatchAll(_ context.Context, _ ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
+	return &mockKeyWatcher{updates: make(chan jetstream.KeyValueEntry)}, nil
+}
+
+func (m *mockKeyValue) WatchFiltered(_ context.Context, _ []string, _ ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
+	return &mockKeyWatcher{updates: make(chan jetstream.KeyValueEntry)}, nil
+}
+
+func (m *mockKeyValue) Keys(_ context.Context, _ ...jetstream.WatchOpt) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockKeyValue) ListKeys(_ context.Context, _ ...jetstream.WatchOpt) (jetstream.KeyLister, error) {
+	return nil, nil
+}
+
+func (m *mockKeyValue) ListKeysFiltered(_ context.Context, _ ...string) (jetstream.KeyLister, error) {
+	return nil, nil
+}
+
+func (m *mockKeyValue) History(_ context.Context, _ string, _ ...jetstream.WatchOpt) ([]jetstream.KeyValueEntry, error) {
+	return nil, nil
+}
+
+func (m *mockKeyValue) Bucket() string {
+	if m.bucketFn != nil {
+		return m.bucketFn()
+	}
+	return "BOARD_CONTROL"
+}
+
+func (m *mockKeyValue) PurgeDeletes(_ context.Context, _ ...jetstream.KVPurgeOpt) error {
+	return nil
+}
+
+func (m *mockKeyValue) Status(_ context.Context) (jetstream.KeyValueStatus, error) {
+	return nil, nil
+}
+
+// mockKeyWatcher implements jetstream.KeyWatcher for tests that do not need
+// real KV watch behaviour (e.g. tests that skip Controller.Start).
+type mockKeyWatcher struct {
+	updates chan jetstream.KeyValueEntry
+}
+
+func (w *mockKeyWatcher) Updates() <-chan jetstream.KeyValueEntry {
+	return w.updates
+}
+
+func (w *mockKeyWatcher) Stop() error {
+	return nil
+}
+
+// newTestServiceWithBoard creates a Service whose board field is set to the
+// supplied Controller. Use this for handler tests that exercise the
+// board-available code paths.
+func newTestServiceWithBoard(ctrl *boardcontrol.Controller) *Service {
+	return &Service{
+		graph:  &mockGraph{},
+		world:  &mockWorld{},
+		config: Config{Board: "board1", MaxEntities: 100},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		board:  ctrl,
+	}
+}
+
+// newMockBucket returns a mockKeyValue where Put always succeeds and Get
+// returns ErrKeyNotFound (board starts in the running/un-paused state).
+func newMockBucket() *mockKeyValue {
+	return &mockKeyValue{}
+}
+
+// newTestController creates a boardcontrol.Controller backed by the supplied
+// mock bucket. It does NOT call Start so no watcher goroutine is launched,
+// which keeps tests synchronous and avoids teardown complexity.
+//
+// Because Start is skipped, callers must drive state changes through the
+// Controller's public methods (Pause, Resume) rather than relying on the
+// watcher to propagate KV changes.
+func newTestController(bucket jetstream.KeyValue) *boardcontrol.Controller {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// nats is nil here — callers must not exercise code paths that call
+	// c.nats.Publish (i.e. Controller.Resume). Those paths are covered by
+	// integration tests.
+	return boardcontrol.NewController(bucket, nil, logger)
+}
+
+// TestHandleBoardStatus verifies the GET /board/status handler under
+// different board availability scenarios.
+func TestHandleBoardStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func() *Service
+		wantPaused bool
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name: "board_nil_returns_default_running_state",
+			setup: func() *Service {
+				// newTestService leaves board as nil.
+				return newTestService(&mockGraph{}, &mockWorld{})
+			},
+			wantPaused: false,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp map[string]any
+				decodeJSON(t, body, &resp)
+				paused, _ := resp["paused"].(bool)
+				if paused {
+					t.Error("expected paused=false when board is nil")
+				}
+				// paused_at and paused_by should be null/absent.
+				if resp["paused_at"] != nil {
+					t.Errorf("expected paused_at=null, got %v", resp["paused_at"])
+				}
+				if resp["paused_by"] != nil {
+					t.Errorf("expected paused_by=null, got %v", resp["paused_by"])
+				}
+			},
+		},
+		{
+			name: "board_paused_returns_paused_state",
+			setup: func() *Service {
+				ctrl := newTestController(newMockBucket())
+				// Drive the controller into a paused state without going
+				// through the network: Pause writes to the mock KV bucket
+				// and updates the atomic fields immediately.
+				_, err := ctrl.Pause(context.Background(), "dm")
+				if err != nil {
+					// If Pause fails the test cannot proceed; surface the error.
+					t.Fatalf("ctrl.Pause: %v", err)
+				}
+				return newTestServiceWithBoard(ctrl)
+			},
+			wantPaused: true,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp boardcontrol.BoardState
+				decodeJSON(t, body, &resp)
+				if !resp.Paused {
+					t.Error("expected paused=true")
+				}
+				if resp.PausedAt == nil {
+					t.Error("expected paused_at to be non-null after Pause")
+				}
+				if resp.PausedBy == nil || *resp.PausedBy != "dm" {
+					t.Errorf("expected paused_by=dm, got %v", resp.PausedBy)
+				}
+			},
+		},
+		{
+			name: "board_running_returns_running_state",
+			setup: func() *Service {
+				ctrl := newTestController(newMockBucket())
+				// Controller starts in the running state (no Pause call).
+				return newTestServiceWithBoard(ctrl)
+			},
+			wantPaused: false,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp boardcontrol.BoardState
+				decodeJSON(t, body, &resp)
+				if resp.Paused {
+					t.Error("expected paused=false for a freshly created controller")
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := tc.setup()
+			req := httptest.NewRequest(http.MethodGet, "/board/status", nil)
+			rr := httptest.NewRecorder()
+			svc.handleBoardStatus(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status: got %d, want 200\nbody: %s", rr.Code, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+// TestHandleBoardPause verifies the POST /board/pause handler under different
+// board availability and request body scenarios.
+func TestHandleBoardPause(t *testing.T) {
+	tests := []struct {
+		name       string
+		board      *boardcontrol.Controller // nil means board unavailable
+		body       any                      // request body; nil means no body
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:       "board_nil_returns_503",
+			board:      nil,
+			wantStatus: http.StatusServiceUnavailable,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp map[string]string
+				decodeJSON(t, body, &resp)
+				if resp["error"] == "" {
+					t.Error("expected error field in 503 response")
+				}
+			},
+		},
+		{
+			name:       "pause_with_actor_returns_paused_state",
+			board:      newTestController(newMockBucket()),
+			body:       map[string]any{"actor": "dm-user"},
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp boardcontrol.BoardState
+				decodeJSON(t, body, &resp)
+				if !resp.Paused {
+					t.Error("expected paused=true in response")
+				}
+				if resp.PausedAt == nil {
+					t.Error("expected paused_at to be set")
+				}
+				if resp.PausedBy == nil || *resp.PausedBy != "dm-user" {
+					t.Errorf("expected paused_by=dm-user, got %v", resp.PausedBy)
+				}
+			},
+		},
+		{
+			name:       "pause_without_body_uses_empty_actor",
+			board:      newTestController(newMockBucket()),
+			body:       nil, // no body at all
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp boardcontrol.BoardState
+				decodeJSON(t, body, &resp)
+				if !resp.Paused {
+					t.Error("expected paused=true even with no body")
+				}
+				// Empty actor string → PausedBy should remain nil.
+				if resp.PausedBy != nil {
+					t.Errorf("expected paused_by=null for empty actor, got %v", resp.PausedBy)
+				}
+			},
+		},
+		{
+			name:       "pause_with_empty_json_body_uses_empty_actor",
+			board:      newTestController(newMockBucket()),
+			body:       map[string]any{}, // body present but actor omitted
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp boardcontrol.BoardState
+				decodeJSON(t, body, &resp)
+				if !resp.Paused {
+					t.Error("expected paused=true with empty body")
+				}
+				if resp.PausedBy != nil {
+					t.Errorf("expected paused_by=null, got %v", resp.PausedBy)
+				}
+			},
+		},
+		{
+			name: "pause_returns_500_when_bucket_put_fails",
+			board: newTestController(&mockKeyValue{
+				putFn: func(_ context.Context, _ string, _ []byte) (uint64, error) {
+					return 0, errors.New("nats: connection closed")
+				},
+			}),
+			body:       map[string]any{"actor": "dm"},
+			wantStatus: http.StatusInternalServerError,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp map[string]string
+				decodeJSON(t, body, &resp)
+				if resp["error"] == "" {
+					t.Error("expected error field in 500 response")
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &Service{
+				graph:  &mockGraph{},
+				world:  &mockWorld{},
+				config: Config{Board: "board1", MaxEntities: 100},
+				logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+				board:  tc.board,
+			}
+
+			var reqBody io.Reader
+			if tc.body != nil {
+				bodyBytes, err := json.Marshal(tc.body)
+				if err != nil {
+					t.Fatalf("marshal request body: %v", err)
+				}
+				reqBody = bytes.NewReader(bodyBytes)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/board/pause", reqBody)
+			if tc.body != nil {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rr := httptest.NewRecorder()
+			svc.handleBoardPause(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+// TestHandleBoardResume verifies the POST /board/resume handler under different
+// board availability scenarios.
+//
+// Note: the board-available happy path (resume_returns_running_state) requires
+// a real *natsclient.Client because boardcontrol.Controller.Resume calls
+// c.nats.Publish after updating KV state. Since natsclient.Client is a
+// concrete type (not an interface), it cannot be mocked without a live NATS
+// connection. That path is covered by the integration test suite:
+//
+//	processor/boardcontrol/component_test.go (build tag: integration)
+func TestHandleBoardResume(t *testing.T) {
+	tests := []struct {
+		name       string
+		board      *boardcontrol.Controller
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
+	}{
+		{
+			name:       "board_nil_returns_503",
+			board:      nil,
+			wantStatus: http.StatusServiceUnavailable,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp map[string]string
+				decodeJSON(t, body, &resp)
+				if resp["error"] == "" {
+					t.Error("expected error field in 503 response")
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &Service{
+				graph:  &mockGraph{},
+				world:  &mockWorld{},
+				config: Config{Board: "board1", MaxEntities: 100},
+				logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+				board:  tc.board,
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/board/resume", nil)
+			rr := httptest.NewRecorder()
+			svc.handleBoardResume(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("status: got %d, want %d\nbody: %s", rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.checkBody != nil {
+				tc.checkBody(t, rr.Body.Bytes())
+			}
+		})
+	}
+}

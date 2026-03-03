@@ -40,17 +40,17 @@
 	}
 </script>
 
-<div class="status-bar" class:paused={worldStore.boardPaused} role="status" aria-live="polite" aria-label="Game board status">
+<div class="status-bar" class:paused={worldStore.boardPaused} role="status" aria-live="polite" aria-label="Game board status" data-testid="game-status-bar">
 	<div class="status-left">
-		<span class="status-dot" class:running={!worldStore.boardPaused} class:paused={worldStore.boardPaused} aria-hidden="true"></span>
+		<span class="status-dot" class:running={!worldStore.boardPaused} class:paused={worldStore.boardPaused} aria-hidden="true" data-testid="status-dot"></span>
 		{#if worldStore.boardPaused}
-			<span class="status-label">Paused</span>
+			<span class="status-label" data-testid="status-label">Paused</span>
 			{#if pausedAgo}
-				<span class="status-detail">{pausedAgo}</span>
+				<span class="status-detail" data-testid="status-detail">{pausedAgo}</span>
 			{/if}
 		{:else}
-			<span class="status-label">Running</span>
-			<span class="status-detail">
+			<span class="status-label" data-testid="status-label">Running</span>
+			<span class="status-detail" data-testid="status-detail">
 				{worldStore.stats.active_agents + worldStore.stats.idle_agents} agents, {worldStore.stats.active_quests} quests active
 			</span>
 		{/if}
@@ -65,6 +65,7 @@
 			onclick={handleToggle}
 			disabled={toggling}
 			aria-label={worldStore.boardPaused ? 'Resume game board' : 'Pause game board'}
+			data-testid="board-toggle"
 		>
 			{worldStore.boardPaused ? 'Resume' : 'Pause'}
 		</button>

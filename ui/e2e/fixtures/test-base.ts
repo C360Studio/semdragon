@@ -199,6 +199,12 @@ export interface DMChatResponse {
 	trace_info?: { trace_id?: string; span_id?: string; parent_span_id?: string };
 }
 
+export interface BoardStatusResponse {
+	paused: boolean;
+	paused_at: string | null;
+	paused_by: string | null;
+}
+
 export interface UseConsumableResponse {
 	success: boolean;
 	remaining?: number;
@@ -258,6 +264,9 @@ export interface LifecycleApi {
 			depends_on?: number[];
 		}>;
 	}) => Promise<QuestResponse[]>;
+	getBoardStatus: () => Promise<BoardStatusResponse>;
+	pauseBoard: (actor?: string) => Promise<BoardStatusResponse>;
+	resumeBoard: () => Promise<BoardStatusResponse>;
 }
 
 /**
@@ -555,6 +564,32 @@ export const test = base.extend<{
 				const res = await apiContext.post('/game/quests/chain', { data: chain });
 				if (!res.ok()) {
 					throw new Error(`postQuestChain failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getBoardStatus: async () => {
+				const res = await apiContext.get('/game/board/status');
+				if (!res.ok()) {
+					throw new Error(`getBoardStatus failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			pauseBoard: async (actor?) => {
+				const data: Record<string, string> = {};
+				if (actor) data.actor = actor;
+				const res = await apiContext.post('/game/board/pause', { data });
+				if (!res.ok()) {
+					throw new Error(`pauseBoard failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			resumeBoard: async () => {
+				const res = await apiContext.post('/game/board/resume', { data: {} });
+				if (!res.ok()) {
+					throw new Error(`resumeBoard failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			}
