@@ -1,41 +1,59 @@
 <script lang="ts">
 	/**
-	 * Trajectory Timeline View - Full event timeline for a trajectory
+	 * Trajectory Timeline View - Step-by-step timeline for a trajectory
 	 */
 
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { api, type TrajectoryEvent } from '$services/api';
+	import { api, type Trajectory, type TrajectoryStep } from '$services/api';
 	import { worldStore } from '$stores/worldStore.svelte';
 
 	const trajectoryId = $derived($page.params.id ?? '');
 	const quest = $derived(worldStore.questList.find((q) => q.trajectory_id === trajectoryId));
 
-	let events = $state<TrajectoryEvent[]>([]);
+	let trajectory = $state<Trajectory | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+
+	const steps = $derived(trajectory?.steps ?? []);
+	const totalTokensIn = $derived(trajectory?.total_tokens_in ?? 0);
+	const totalTokensOut = $derived(trajectory?.total_tokens_out ?? 0);
 
 	onMount(async () => {
 		if (!trajectoryId) return;
 		try {
-			events = await api.getTrajectory(trajectoryId);
+			trajectory = await api.getTrajectory(trajectoryId);
 		} catch (err) {
 			console.error('Failed to load trajectory:', err);
-			error = 'Failed to load trajectory events';
+			error = 'Failed to load trajectory';
 		} finally {
 			loading = false;
 		}
 	});
 
-	function formatTime(timestamp: number): string {
+	function formatTime(timestamp: string): string {
 		return new Date(timestamp).toLocaleString();
 	}
 
-	function formatDuration(start: number, end: number): string {
-		const ms = end - start;
+	function formatMs(ms: number): string {
 		if (ms < 1000) return `${ms}ms`;
 		if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
 		return `${(ms / 60000).toFixed(1)}m`;
+	}
+
+	function stepLabel(step: TrajectoryStep): string {
+		if (step.step_type === 'tool_call') return step.tool_name ?? 'tool_call';
+		return 'model_call';
+	}
+
+	function stepDetail(step: TrajectoryStep): string | null {
+		if (step.step_type === 'tool_call' && step.tool_arguments) {
+			return JSON.stringify(step.tool_arguments, null, 2);
+		}
+		if (step.step_type === 'model_call' && step.response) {
+			return step.response.length > 500 ? step.response.slice(0, 500) + '...' : step.response;
+		}
+		return null;
 	}
 </script>
 
@@ -43,58 +61,79 @@
 	<title>Trajectory {trajectoryId.slice(0, 8)} - Semdragons</title>
 </svelte:head>
 
-<div class="trajectory-page">
+<div class="trajectory-page" data-testid="trajectory-detail-page">
 	<header class="page-header">
-		<a href="/trajectories" class="back-link">Back to Trajectories</a>
+		<a href="/trajectories" class="back-link" data-testid="trajectory-back-link">Back to Trajectories</a>
 	</header>
 
 	<div class="trajectory-content">
 		<div class="trajectory-header">
-			<h1>Trajectory Timeline</h1>
-			<span class="trajectory-id">{trajectoryId}</span>
+			<h1 data-testid="trajectory-heading">Trajectory Timeline</h1>
+			<span class="trajectory-id" data-testid="trajectory-id">{trajectoryId}</span>
 		</div>
 
 		{#if quest}
-			<div class="quest-context">
+			<div class="quest-context" data-testid="trajectory-quest-context">
 				<a href="/quests/{quest.id}" class="quest-link">
-					<span class="quest-title">{quest.title}</span>
-					<span class="quest-status" data-status={quest.status}>{quest.status}</span>
+					<span class="quest-title" data-testid="trajectory-quest-title">{quest.title}</span>
+					<span class="quest-status" data-testid="trajectory-quest-status" data-status={quest.status}>{quest.status}</span>
 				</a>
 			</div>
 		{/if}
 
 		{#if loading}
-			<div class="loading">Loading trajectory events...</div>
+			<div class="loading" data-testid="trajectory-loading">Loading trajectory...</div>
 		{:else if error}
-			<div class="error">{error}</div>
-		{:else if events.length === 0}
-			<div class="empty-state">
-				<p>No events found for this trajectory.</p>
-				<p>Events will appear here as the quest progresses.</p>
+			<div class="error" data-testid="trajectory-error">{error}</div>
+		{:else if !trajectory}
+			<div class="empty-state" data-testid="trajectory-not-found">
+				<p>Trajectory not found.</p>
 			</div>
 		{:else}
-			<div class="timeline">
-				{#each events as event, i}
-					{@const prevEvent = events[i - 1]}
-					<div class="timeline-event">
-						<div class="event-marker"></div>
-						<div class="event-content">
-							<div class="event-header">
-								<span class="event-type">{event.type}</span>
-								<span class="event-time">{formatTime(event.timestamp)}</span>
-								{#if prevEvent}
-									<span class="event-delta">
-										+{formatDuration(prevEvent.timestamp, event.timestamp)}
-									</span>
+			{#if trajectory.outcome || totalTokensIn > 0}
+				<div class="trajectory-summary" data-testid="trajectory-summary">
+					{#if trajectory.outcome}
+						<span class="summary-item" data-testid="trajectory-outcome">Outcome: <strong>{trajectory.outcome}</strong></span>
+					{/if}
+					{#if totalTokensIn > 0 || totalTokensOut > 0}
+						<span class="summary-item" data-testid="trajectory-tokens">Tokens: {totalTokensIn.toLocaleString()} in / {totalTokensOut.toLocaleString()} out</span>
+					{/if}
+					{#if trajectory.duration > 0}
+						<span class="summary-item" data-testid="trajectory-duration">Duration: {formatMs(trajectory.duration)}</span>
+					{/if}
+				</div>
+			{/if}
+
+			{#if steps.length === 0}
+				<div class="empty-state" data-testid="trajectory-empty-steps">
+					<p>No steps recorded yet.</p>
+					<p>Steps will appear here as the quest progresses.</p>
+				</div>
+			{:else}
+				<div class="timeline" data-testid="trajectory-timeline">
+					{#each steps as step, i}
+						{@const detail = stepDetail(step)}
+						<div class="timeline-event" data-testid="timeline-event" data-step-type={step.step_type}>
+							<div class="event-marker"></div>
+							<div class="event-content">
+								<div class="event-header">
+									<span class="event-type" data-testid="event-type">{stepLabel(step)}</span>
+									<span class="event-time" data-testid="event-time">{formatTime(step.timestamp)}</span>
+									{#if step.duration > 0}
+										<span class="event-delta" data-testid="event-duration">{formatMs(step.duration)}</span>
+									{/if}
+									{#if step.tokens_in || step.tokens_out}
+										<span class="event-tokens" data-testid="event-tokens">{step.tokens_in ?? 0}/{step.tokens_out ?? 0} tok</span>
+									{/if}
+								</div>
+								{#if detail}
+									<pre class="event-data" data-testid="event-data">{detail}</pre>
 								{/if}
 							</div>
-							{#if event.data}
-								<pre class="event-data">{JSON.stringify(event.data, null, 2)}</pre>
-							{/if}
 						</div>
-					</div>
-				{/each}
-			</div>
+					{/each}
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>
@@ -167,6 +206,23 @@
 		color: var(--quest-completed);
 	}
 
+	.trajectory-summary {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--spacing-md);
+		padding: var(--spacing-md);
+		background: var(--ui-surface-secondary);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		margin-bottom: var(--spacing-lg);
+		font-size: 0.875rem;
+		color: var(--ui-text-secondary);
+	}
+
+	.summary-item strong {
+		color: var(--ui-text-primary);
+	}
+
 	/* Timeline */
 	.timeline {
 		position: relative;
@@ -229,6 +285,12 @@
 		background: var(--ui-surface-tertiary);
 		padding: 2px 6px;
 		border-radius: var(--radius-sm);
+	}
+
+	.event-tokens {
+		font-size: 0.75rem;
+		color: var(--ui-text-tertiary);
+		font-family: monospace;
 	}
 
 	.event-data {

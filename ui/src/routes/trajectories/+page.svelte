@@ -15,28 +15,28 @@
 	<title>Trajectories - Semdragons</title>
 </svelte:head>
 
-<div class="trajectories-page">
+<div class="trajectories-page" data-testid="trajectories-page">
 	<header class="page-header">
-		<h1>Trajectory Explorer</h1>
+		<h1 data-testid="trajectories-heading">Trajectory Explorer</h1>
 		<p class="page-description">
 			Browse the full event timeline for quests. Each trajectory captures the complete history of a
 			quest from creation to completion.
 		</p>
 	</header>
 
-	<div class="trajectory-list">
+	<div class="trajectory-list" data-testid="trajectory-list">
 		<h2>Recent Trajectories</h2>
 		{#each trajectoryIds as trajectoryId}
 			{@const quest = worldStore.questList.find((q) => q.trajectory_id === trajectoryId)}
-			<a href="/trajectories/{trajectoryId}" class="trajectory-item">
-				<span class="trajectory-id">{trajectoryId.slice(0, 12)}...</span>
+			<a href="/trajectories/{trajectoryId}" class="trajectory-item" data-testid="trajectory-item">
+				<span class="trajectory-id" data-testid="trajectory-item-id">{trajectoryId.slice(0, 12)}...</span>
 				{#if quest}
-					<span class="trajectory-quest">{quest.title}</span>
-					<span class="trajectory-status" data-status={quest.status}>{quest.status}</span>
+					<span class="trajectory-quest" data-testid="trajectory-item-quest">{quest.title}</span>
+					<span class="trajectory-status" data-testid="trajectory-item-status" data-status={quest.status}>{quest.status}</span>
 				{/if}
 			</a>
 		{:else}
-			<div class="empty-state">
+			<div class="empty-state" data-testid="trajectory-empty-state">
 				<p>No trajectories found.</p>
 				<p>Trajectories are created when quests are posted to the board.</p>
 			</div>

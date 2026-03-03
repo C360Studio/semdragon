@@ -34,3 +34,9 @@ go.work.sum
 
 # Claude Code
 .claude/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Test runner artifacts
+test-results/
