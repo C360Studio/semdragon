@@ -16,6 +16,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/boardcontrol"
 	"github.com/c360studio/semdragons/processor/dmworldstate"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/service"
@@ -45,6 +46,7 @@ type Service struct {
 	nats            *natsclient.Client // direct NATS access for KV buckets outside graph
 	trajectories    TrajectoryQuerier  // trajectory KV lookups; nil before init
 	dmSessionReader DMSessionReader    // session reads (used by GET handler); nil before init
+	board           *boardcontrol.Controller // board play/pause control; nil before init
 	config          Config
 	logger          *slog.Logger
 
@@ -181,6 +183,19 @@ func (s *Service) Start(ctx context.Context) error {
 		return nil
 	})
 
+	// Initialize board control (play/pause).
+	bucket, err := boardcontrol.EnsureBucket(ctx, s.nats)
+	if err != nil {
+		s.logger.Warn("failed to create BOARD_CONTROL bucket; pause/resume disabled", "error", err)
+	} else {
+		ctrl := boardcontrol.NewController(bucket, s.nats, s.logger)
+		if startErr := ctrl.Start(ctx); startErr != nil {
+			s.logger.Warn("failed to start board controller; pause/resume disabled", "error", startErr)
+		} else {
+			s.board = ctrl
+		}
+	}
+
 	if err := s.BaseService.Start(ctx); err != nil {
 		return err
 	}
@@ -195,12 +210,22 @@ func (s *Service) Start(ctx context.Context) error {
 func (s *Service) Stop(timeout time.Duration) error {
 	s.logger.Info("Game API service stopping")
 
+	if s.board != nil {
+		s.board.Stop()
+	}
+
 	s.chatTracesMu.Lock()
 	s.chatTraces = make(map[string]*natsclient.TraceContext)
 	s.chatTracesOrder = nil
 	s.chatTracesMu.Unlock()
 
 	return s.BaseService.Stop(timeout)
+}
+
+// Board returns the board controller for pause-checking by components.
+// Returns nil if the controller could not be initialized.
+func (s *Service) Board() *boardcontrol.Controller {
+	return s.board
 }
 
 // RegisterHTTPHandlers registers domain REST endpoints with the HTTP mux.
@@ -282,6 +307,11 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"store", cors(s.handleListStore))
 	mux.HandleFunc("GET "+prefix+"store/{id}", cors(s.handleGetStoreItem))
 	mux.HandleFunc("POST "+prefix+"store/purchase", cors(requireAuth(apiKey, s.handlePurchase)))
+
+	// Board control (play/pause)
+	mux.HandleFunc("GET "+prefix+"board/status", cors(s.handleBoardStatus))
+	mux.HandleFunc("POST "+prefix+"board/pause", cors(requireAuth(apiKey, s.handleBoardPause)))
+	mux.HandleFunc("POST "+prefix+"board/resume", cors(requireAuth(apiKey, s.handleBoardResume)))
 
 	s.logger.Info("Game API HTTP handlers registered", "prefix", prefix)
 }

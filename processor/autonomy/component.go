@@ -20,6 +20,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/boardcontrol"
 	"github.com/c360studio/semdragons/processor/dmapproval"
 	"github.com/c360studio/semdragons/processor/guildformation"
 )
@@ -44,9 +45,10 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
-	store    *agentstore.Component      // Optional: nil disables shopping/consumable actions
-	guilds   *guildformation.Component // Optional: nil disables guild joining
-	approval *dmapproval.Component     // Optional: nil auto-approves all actions
+	store        *agentstore.Component      // Optional: nil disables shopping/consumable actions
+	guilds       *guildformation.Component // Optional: nil disables guild joining
+	approval     *dmapproval.Component     // Optional: nil auto-approves all actions
+	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
 
 	// KV watcher for agent entity state changes
 	agentWatch  jetstream.KeyWatcher
@@ -533,4 +535,17 @@ func (c *Component) SetApproval(approval *dmapproval.Component) {
 		return
 	}
 	c.approval = approval
+}
+
+// SetPauseChecker injects the board pause checker. When paused, heartbeat
+// callbacks skip evaluation and re-arm the timer for the next tick.
+// SetPauseChecker is ignored once the component is running.
+func (c *Component) SetPauseChecker(pc boardcontrol.PauseChecker) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetPauseChecker called while running; ignored")
+		return
+	}
+	c.pauseChecker = pc
 }

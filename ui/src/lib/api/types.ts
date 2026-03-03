@@ -585,3 +585,10 @@ export interface SessionSummary {
 	level_downs: number;
 	deaths: number;
 }
+
+/** Board play/pause status */
+export interface BoardStatus {
+	paused: boolean;
+	paused_at: string | null;
+	paused_by: string | null;
+}

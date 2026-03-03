@@ -119,6 +119,14 @@ func (c *Component) handleLiveUpdate(ctx context.Context, entry jetstream.KeyVal
 // handleQuestStarted is triggered when a quest transitions to in_progress.
 // It assembles a TaskMessage and publishes it to the AGENT stream.
 func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.EntityState) {
+	// When paused, skip dispatching. Quest stays in cache as in_progress;
+	// reconcileOrphanedQuests will pick it up on resume.
+	if c.pauseChecker != nil && c.pauseChecker.Paused() {
+		c.logger.Info("board paused, deferring quest dispatch",
+			"entity_id", entityState.ID)
+		return
+	}
+
 	// Use quest.identity.id triple when present; fall back to entity state ID.
 	questID := tripleString(entityState.Triples, "quest.identity.id")
 	if questID == "" {

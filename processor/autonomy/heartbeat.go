@@ -84,7 +84,10 @@ func (c *Component) onHeartbeatFired(instance string) {
 		return
 	}
 
-	c.evaluateAutonomy(instance)
+	// When paused, skip evaluation but still fall through to re-arm the timer.
+	if c.pauseChecker == nil || !c.pauseChecker.Paused() {
+		c.evaluateAutonomy(instance)
+	}
 
 	// Re-arm the timer under a single Lock to avoid a TOCTOU race: using
 	// separate RLock/RUnlock then Lock/Unlock would allow resetHeartbeatForAgent

@@ -16,6 +16,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/processor/boardcontrol"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
@@ -51,6 +52,9 @@ type Component struct {
 	agentsMu sync.RWMutex
 	questsMu sync.RWMutex
 	guildsMu sync.RWMutex
+
+	// Board pause integration
+	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
 
 	// Internal state
 	running     atomic.Bool
@@ -371,4 +375,16 @@ func (c *Component) Stop(timeout time.Duration) error {
 	c.logger.Info("boidengine component stopped")
 
 	return nil
+}
+
+// SetPauseChecker injects the board pause checker. When paused, the compute
+// loop skips suggestion computation. SetPauseChecker is ignored once running.
+func (c *Component) SetPauseChecker(pc boardcontrol.PauseChecker) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetPauseChecker called while running; ignored")
+		return
+	}
+	c.pauseChecker = pc
 }

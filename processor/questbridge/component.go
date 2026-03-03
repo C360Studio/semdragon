@@ -10,10 +10,13 @@ import (
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/processor/boardcontrol"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
+	"github.com/c360studio/semstreams/natsclient"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semdragons/domain"
@@ -54,6 +57,10 @@ type Component struct {
 
 	// QUEST_LOOPS KV bucket for crash recovery
 	questLoopsBucket jetstream.KeyValue
+
+	// Board pause integration
+	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
+	resumeSub    *natsclient.Subscription  // Subscription to board.control.resumed
 
 	// questCache stores the last-known status string keyed by entity KV key.
 	// Populated during bootstrap; used to detect in_progress transitions.
@@ -255,6 +262,19 @@ func (c *Component) Start(ctx context.Context) error {
 	}
 	c.questLoopsBucket = bucket
 
+	// Subscribe to board resume notifications for reconciliation.
+	if c.pauseChecker != nil {
+		sub, subErr := c.deps.NATSClient.Subscribe(ctx, boardcontrol.ResumeSubject(), func(msgCtx context.Context, _ *nats.Msg) {
+			c.logger.Info("board resumed, reconciling deferred quests")
+			c.reconcileOrphanedQuests(msgCtx)
+		})
+		if subErr != nil {
+			c.logger.Warn("failed to subscribe to resume notifications", "error", subErr)
+		} else {
+			c.resumeSub = sub
+		}
+	}
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
@@ -276,6 +296,19 @@ func (c *Component) Start(ctx context.Context) error {
 	return nil
 }
 
+// SetPauseChecker injects the board pause checker. When paused, quest
+// transitions to in_progress are deferred. On resume, reconciliation fires.
+// SetPauseChecker is ignored once the component is running.
+func (c *Component) SetPauseChecker(pc boardcontrol.PauseChecker) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetPauseChecker called while running; ignored")
+		return
+	}
+	c.pauseChecker = pc
+}
+
 // Stop gracefully shuts down the component.
 func (c *Component) Stop(timeout time.Duration) error {
 	c.mu.Lock()
@@ -287,6 +320,10 @@ func (c *Component) Stop(timeout time.Duration) error {
 
 	close(c.stopChan)
 	c.running.Store(false)
+
+	if c.resumeSub != nil {
+		c.resumeSub.Unsubscribe()
+	}
 
 	done := make(chan struct{})
 	go func() { c.wg.Wait(); close(done) }()

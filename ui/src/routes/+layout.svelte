@@ -7,6 +7,8 @@
 	import { browser } from '$app/environment';
 	import { env } from '$env/dynamic/public';
 	import type { Snippet } from 'svelte';
+	import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
+	import GameStatusBar from '$lib/components/layout/GameStatusBar.svelte';
 
 	interface LayoutProps {
 		children: Snippet;
@@ -29,6 +31,15 @@
 			worldStore.setLoading(true);
 			sseService.connect(baseUrl, sseBucket);
 
+			// Hydrate board pause state (graceful fallback if endpoint unavailable).
+			api.getBoardStatus()
+				.then((status) => {
+					worldStore.setBoardPaused(status.paused, status.paused_at, status.paused_by);
+				})
+				.catch(() => {
+					// Endpoint unavailable — treat as running.
+				});
+
 			// Fallback: clear loading if SSE never completes initial sync
 			const timeout = setTimeout(() => {
 				if (worldStore.loading) {
@@ -47,7 +58,11 @@
 </script>
 
 <div class="app">
-	{@render children()}
+	<GameStatusBar />
+	<div class="app-content">
+		{@render children()}
+	</div>
+	<ChatPanel />
 </div>
 
 <style>
@@ -56,6 +71,11 @@
 		width: 100vw;
 		display: flex;
 		flex-direction: column;
+		overflow: hidden;
+	}
+
+	.app-content {
+		flex: 1;
 		overflow: hidden;
 	}
 </style>

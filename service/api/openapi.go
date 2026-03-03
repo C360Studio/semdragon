@@ -449,6 +449,40 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 			},
 
+			// ── Board Control ────────────────────────────────────
+			"/board/status": {
+				GET: &service.OperationSpec{
+					Summary:     "Get board status",
+					Description: "Returns the current board play/pause status. When paused, autonomous actions (heartbeats, quest dispatch, boid suggestions) are suspended while manual operations continue.",
+					Tags:        []string{"Board Control"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Board status", ContentType: "application/json", SchemaRef: "#/components/schemas/BoardStatusResponse"},
+					},
+				},
+			},
+			"/board/pause": {
+				POST: &service.OperationSpec{
+					Summary:     "Pause the board",
+					Description: "Pauses autonomous processing. In-progress agentic loops complete gracefully. Manual operations continue. Idempotent — pausing an already-paused board returns the current state.",
+					Tags:        []string{"Board Control"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Board paused", ContentType: "application/json", SchemaRef: "#/components/schemas/BoardStatusResponse"},
+						"503": {Description: "Board controller unavailable"},
+					},
+				},
+			},
+			"/board/resume": {
+				POST: &service.OperationSpec{
+					Summary:     "Resume the board",
+					Description: "Resumes autonomous processing. Triggers reconciliation for any quests that transitioned to in_progress while paused. Idempotent.",
+					Tags:        []string{"Board Control"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Board resumed", ContentType: "application/json", SchemaRef: "#/components/schemas/BoardStatusResponse"},
+						"503": {Description: "Board controller unavailable"},
+					},
+				},
+			},
+
 			// ── DM ───────────────────────────────────────────────
 			"/dm/chat": {
 				POST: &service.OperationSpec{
@@ -514,6 +548,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			},
 		},
 		Tags: []service.TagSpec{
+			{Name: "Board Control", Description: "Board play/pause control"},
 			{Name: "World", Description: "Game world state"},
 			{Name: "Quests", Description: "Quest board operations"},
 			{Name: "Quest Lifecycle", Description: "Quest state transitions (claim, start, submit, complete, fail, abandon)"},
@@ -578,6 +613,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(TraceInfoResponse{}),
 			reflect.TypeOf(PurchaseResponse{}),
 			reflect.TypeOf(UseConsumableResponse{}),
+			reflect.TypeOf(BoardStatusResponse{}),
 		},
 
 		// Request body types — the generator reflects these to build components.schemas

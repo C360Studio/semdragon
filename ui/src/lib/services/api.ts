@@ -32,7 +32,8 @@ import type {
 	ChatContextRef,
 	ChatHistoryMessage,
 	ChatResponse,
-	DMChatSession
+	DMChatSession,
+	BoardStatus
 } from '$types';
 
 // =============================================================================
@@ -265,6 +266,22 @@ export async function getAgentReviews(agentId: AgentID): Promise<PeerReview[]> {
 }
 
 // =============================================================================
+// BOARD CONTROL (PLAY/PAUSE)
+// =============================================================================
+
+export async function getBoardStatus(): Promise<BoardStatus> {
+	return fetchJson<BoardStatus>('/game/board/status');
+}
+
+export async function pauseBoard(actor?: string): Promise<BoardStatus> {
+	return postJson<BoardStatus>('/game/board/pause', actor ? { actor } : {});
+}
+
+export async function resumeBoard(): Promise<BoardStatus> {
+	return postJson<BoardStatus>('/game/board/resume', {});
+}
+
+// =============================================================================
 // HEALTH (system endpoint — no /game/ prefix)
 // =============================================================================
 
@@ -301,5 +318,8 @@ export const api = {
 	getReview,
 	listReviews,
 	getAgentReviews,
+	getBoardStatus,
+	pauseBoard,
+	resumeBoard,
 	healthCheck
 };

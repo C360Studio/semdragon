@@ -57,6 +57,11 @@ let synced = $state(false);
 let loading = $state(false);
 let error = $state<string | null>(null);
 
+// Board control state
+let boardPaused = $state(false);
+let boardPausedAt = $state<string | null>(null);
+let boardPausedBy = $state<string | null>(null);
+
 // Selected entities
 let selectedAgentId = $state<AgentID | null>(null);
 let selectedQuestId = $state<QuestID | null>(null);
@@ -185,6 +190,12 @@ function setConnected(value: boolean) {
 
 function setSynced(value: boolean) {
 	synced = value;
+}
+
+function setBoardPaused(paused: boolean, pausedAt: string | null = null, pausedBy: string | null = null) {
+	boardPaused = paused;
+	boardPausedAt = pausedAt;
+	boardPausedBy = pausedBy;
 }
 
 function selectAgent(id: AgentID | null) {
@@ -343,6 +354,9 @@ export function createWorldStore() {
 		selectedAgentId: null as AgentID | null,
 		selectedQuestId: null as QuestID | null,
 		selectedBattleId: null as BattleID | null,
+		boardPaused: false,
+		boardPausedAt: null as string | null,
+		boardPausedBy: null as string | null,
 		storeItems: new Map<string, StoreItem>(),
 		inventories: new Map<AgentID, AgentInventory>(),
 		activeEffects: new Map<AgentID, ActiveEffect[]>(),
@@ -423,10 +437,19 @@ export function createWorldStore() {
 			return { won, lost, winRate: total > 0 ? (won / total) * 100 : 0 };
 		},
 
+		get boardPaused() { return state.boardPaused; },
+		get boardPausedAt() { return state.boardPausedAt; },
+		get boardPausedBy() { return state.boardPausedBy; },
+
 		setLoading(value: boolean) { state.loading = value; },
 		setError(message: string | null) { state.error = message; },
 		setConnected(value: boolean) { state.connected = value; },
 		setSynced(value: boolean) { state.synced = value; },
+		setBoardPaused(paused: boolean, pausedAt: string | null = null, pausedBy: string | null = null) {
+			state.boardPaused = paused;
+			state.boardPausedAt = pausedAt;
+			state.boardPausedBy = pausedBy;
+		},
 		selectAgent(id: AgentID | null) { state.selectedAgentId = id; },
 		selectQuest(id: QuestID | null) { state.selectedQuestId = id; },
 		selectBattle(id: BattleID | null) { state.selectedBattleId = id; },
@@ -546,6 +569,9 @@ export const worldStore = {
 	get synced() { return synced; },
 	get loading() { return loading; },
 	get error() { return error; },
+	get boardPaused() { return boardPaused; },
+	get boardPausedAt() { return boardPausedAt; },
+	get boardPausedBy() { return boardPausedBy; },
 
 	// Derived lists
 	get agentList() { return agentList; },
@@ -592,6 +618,7 @@ export const worldStore = {
 	setError,
 	setConnected,
 	setSynced,
+	setBoardPaused,
 	selectAgent,
 	selectQuest,
 	selectBattle,

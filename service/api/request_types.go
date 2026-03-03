@@ -153,3 +153,10 @@ type UseConsumableResponse struct {
 	ActiveEffects []any `json:"active_effects,omitempty" description:"Currently active effects"`
 	Error         string `json:"error,omitempty" description:"Error message if failed"`
 }
+
+// BoardStatusResponse is the response body for board control endpoints.
+type BoardStatusResponse struct {
+	Paused   bool    `json:"paused" description:"Whether the board is currently paused"`
+	PausedAt *string `json:"paused_at" description:"RFC 3339 timestamp when board was paused, or null"`
+	PausedBy *string `json:"paused_by" description:"Identifier of who paused the board, or null"`
+}

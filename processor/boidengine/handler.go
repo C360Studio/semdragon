@@ -321,6 +321,11 @@ func (c *Component) computeAndPublish() {
 		return
 	}
 
+	// When paused, skip computation. Timer still fires so we re-check next tick.
+	if c.pauseChecker != nil && c.pauseChecker.Paused() {
+		return
+	}
+
 	c.lastActivity.Store(time.Now())
 
 	// Gather current state

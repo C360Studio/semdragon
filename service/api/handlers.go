@@ -1760,6 +1760,66 @@ func (s *Service) handleListAgentReviews(w http.ResponseWriter, r *http.Request)
 }
 
 // =============================================================================
+// BOARD CONTROL (PLAY/PAUSE)
+// =============================================================================
+
+func (s *Service) handleBoardStatus(w http.ResponseWriter, _ *http.Request) {
+	if s.board == nil {
+		// No controller: report as running (not paused).
+		s.writeJSON(w, map[string]any{
+			"paused":    false,
+			"paused_at": nil,
+			"paused_by": nil,
+		})
+		return
+	}
+	s.writeJSON(w, s.board.State())
+}
+
+func (s *Service) handleBoardPause(w http.ResponseWriter, r *http.Request) {
+	if s.board == nil {
+		s.writeError(w, "board controller unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		Actor string `json:"actor,omitempty"`
+	}
+	// Body is optional — actor field is nice-to-have.
+	if r.Body != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	st, err := s.board.Pause(r.Context(), req.Actor)
+	if err != nil {
+		s.writeError(w, "failed to pause board", http.StatusInternalServerError)
+		s.logger.Error("Failed to pause board", "error", err)
+		return
+	}
+
+	s.logger.Info("Board paused", "actor", req.Actor)
+	s.writeJSON(w, st)
+}
+
+func (s *Service) handleBoardResume(w http.ResponseWriter, r *http.Request) {
+	if s.board == nil {
+		s.writeError(w, "board controller unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	st, err := s.board.Resume(r.Context())
+	if err != nil {
+		s.writeError(w, "failed to resume board", http.StatusInternalServerError)
+		s.logger.Error("Failed to resume board", "error", err)
+		return
+	}
+
+	s.logger.Info("Board resumed")
+	s.writeJSON(w, st)
+}
+
+// =============================================================================
 // HELPERS
 // =============================================================================
 
