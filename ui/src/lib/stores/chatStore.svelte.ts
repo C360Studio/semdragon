@@ -155,6 +155,12 @@ function addContext(item: ChatContextItem) {
 	if (!open) open = true;
 }
 
+function addContextQuiet(item: ChatContextItem) {
+	// Add without auto-opening chat — used by page navigation
+	if (contextItems.some((c) => c.type === item.type && c.id === item.id)) return;
+	contextItems = [...contextItems, item];
+}
+
 function removeContext(id: string) {
 	contextItems = contextItems.filter((c) => c.id !== id);
 }
@@ -322,6 +328,7 @@ export const chatStore = {
 	get sessionId() { return sessionId; },
 
 	addContext,
+	addContextQuiet,
 	removeContext,
 	clearContext,
 	toggle,

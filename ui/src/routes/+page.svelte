@@ -11,7 +11,7 @@
 
 	// Panel state
 	let leftPanelOpen = $state(true);
-	let rightPanelOpen = $state(true);
+	let rightPanelOpen = $state(false);
 	let leftPanelWidth = $state(280);
 	let rightPanelWidth = $state(320);
 
@@ -40,6 +40,8 @@
 	{#snippet leftPanel()}
 		<ExplorerNav showActivity={true} />
 	{/snippet}
+
+	{#snippet rightPanel()}{/snippet}
 
 	{#snippet centerPanel()}
 		<div class="dashboard">
@@ -181,46 +183,6 @@
 		</div>
 	{/snippet}
 
-	{#snippet rightPanel()}
-		<div class="details-panel" data-testid="details-panel">
-			<header class="panel-header">
-				<h2>Details</h2>
-			</header>
-			<div class="details-content">
-				{#if worldStore.selectedQuest}
-					<section class="detail-section">
-						<h3>Selected Quest</h3>
-						<dl class="detail-list">
-							<dt>Title</dt>
-							<dd>{worldStore.selectedQuest.title}</dd>
-							<dt>Status</dt>
-							<dd>{worldStore.selectedQuest.status}</dd>
-							<dt>Difficulty</dt>
-							<dd>{worldStore.selectedQuest.difficulty}</dd>
-							<dt>XP</dt>
-							<dd>{worldStore.selectedQuest.base_xp}</dd>
-						</dl>
-					</section>
-				{:else if worldStore.selectedAgent}
-					<section class="detail-section">
-						<h3>Selected Agent</h3>
-						<dl class="detail-list">
-							<dt>Name</dt>
-							<dd>{worldStore.selectedAgent.name}</dd>
-							<dt>Level</dt>
-							<dd>{worldStore.selectedAgent.level}</dd>
-							<dt>Status</dt>
-							<dd>{worldStore.selectedAgent.status}</dd>
-							<dt>XP</dt>
-							<dd>{worldStore.selectedAgent.xp} / {worldStore.selectedAgent.xp_to_level}</dd>
-						</dl>
-					</section>
-				{:else}
-					<p class="empty-state">Select an entity to view details</p>
-				{/if}
-			</div>
-		</div>
-	{/snippet}
 </ThreePanelLayout>
 
 <style>
@@ -445,54 +407,6 @@
 		font-size: 0.75rem;
 		font-weight: 600;
 		color: var(--status-success);
-	}
-
-	/* Details Panel */
-	.details-panel {
-		height: 100%;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.panel-header {
-		padding: var(--spacing-md);
-		background: var(--ui-surface-tertiary);
-		border-bottom: 1px solid var(--ui-border-subtle);
-	}
-
-	.panel-header h2 {
-		font-size: 0.875rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--ui-text-secondary);
-		margin: 0;
-	}
-
-	.details-content {
-		flex: 1;
-		overflow-y: auto;
-		padding: var(--spacing-md);
-	}
-
-	.detail-section h3 {
-		font-size: 0.875rem;
-		margin-bottom: var(--spacing-md);
-	}
-
-	.detail-list {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: var(--spacing-xs) var(--spacing-md);
-	}
-
-	.detail-list dt {
-		color: var(--ui-text-tertiary);
-		font-size: 0.75rem;
-	}
-
-	.detail-list dd {
-		margin: 0;
 	}
 
 	/* Utility */
