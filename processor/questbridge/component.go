@@ -105,6 +105,9 @@ func (c *Component) InputPorts() []component.Port {
 			Direction:   component.DirectionInput,
 			Required:    true,
 			Description: "Quest entity state changes via KV watch",
+			Config: &component.KVWatchPort{
+				Bucket: "", // ENTITY_STATES bucket, watched dynamically via graph client
+			},
 		},
 		{
 			Name:        "loop-completions",
