@@ -149,9 +149,10 @@ if (browser) {
 
 function addContext(item: ChatContextItem) {
 	// Don't add duplicates
-	if (contextItems.some((c) => c.type === item.type && c.id === item.id)) return;
-	contextItems = [...contextItems, item];
-	// Auto-open the chat when context is injected
+	if (!contextItems.some((c) => c.type === item.type && c.id === item.id)) {
+		contextItems = [...contextItems, item];
+	}
+	// Always open chat when explicitly pinning context
 	if (!open) open = true;
 }
 

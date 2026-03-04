@@ -222,6 +222,8 @@
 								<dd><a href="/trajectories/{quest.trajectory_id}">View</a></dd>
 							{/if}
 						</dl>
+
+						<a href="/quests/{quest.id}" class="view-full-link">View full quest</a>
 					</section>
 				{:else}
 					<p class="empty-state">Select a quest to view details</p>
@@ -518,6 +520,13 @@
 	.status-badge[data-status='failed'] {
 		background: var(--quest-failed-container);
 		color: var(--quest-failed);
+	}
+
+	.view-full-link {
+		display: block;
+		text-align: center;
+		padding: var(--spacing-sm);
+		margin-top: var(--spacing-md);
 	}
 
 	.empty-state {

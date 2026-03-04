@@ -38,6 +38,13 @@
 		chatStore.sendMessage(text);
 	}
 
+	// Pinned context items that aren't already shown as page context
+	let pinnedOnly = $derived(
+		chatStore.contextItems.filter(
+			(c) => !pageContext.items.some((p) => p.type === c.type && p.id === c.id)
+		)
+	);
+
 	function handleKeyDown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
@@ -144,10 +151,10 @@
 				</div>
 			{/if}
 
-			<!-- Pinned context chips -->
-			{#if chatStore.contextItems.length > 0}
+			<!-- Pinned context chips (exclude items already shown as page context) -->
+			{#if pinnedOnly.length > 0}
 				<div class="context-bar" data-testid="context-bar">
-					{#each chatStore.contextItems as item}
+					{#each pinnedOnly as item}
 						<ContextChip
 							type={item.type}
 							label={item.label}
