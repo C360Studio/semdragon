@@ -202,6 +202,7 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	loopID := fmt.Sprintf("quest-%s-%s", subjectSafeQuestID, nuid.Next())
 	taskMsg := agentic.TaskMessage{
 		TaskID: questID,
+		LoopID: loopID,
 		Role:   role,
 		Model:  modelKey,
 		Prompt: userPrompt,
@@ -220,7 +221,9 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 		},
 	}
 
-	data, err := json.Marshal(&taskMsg)
+	// Wrap in BaseMessage envelope (required by agentic-loop consumer).
+	baseMsg := message.NewBaseMessage(taskMsg.Schema(), &taskMsg, "questbridge")
+	data, err := json.Marshal(baseMsg)
 	if err != nil {
 		c.logger.Error("failed to marshal TaskMessage", "quest_id", questID, "error", err)
 		c.errorsCount.Add(1)
@@ -378,9 +381,17 @@ func (c *Component) handleCompletionMessage(ctx context.Context, msg jetstream.M
 
 // handleLoopCompleted emits an executor completion event for the finished loop.
 func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
-	var event agentic.LoopCompletedEvent
-	if err := json.Unmarshal(data, &event); err != nil {
-		c.logger.Error("failed to unmarshal LoopCompletedEvent", "error", err)
+	// Completion events are published by agentic-loop wrapped in BaseMessage.
+	var baseMsg message.BaseMessage
+	if err := json.Unmarshal(data, &baseMsg); err != nil {
+		c.logger.Error("failed to unmarshal completion BaseMessage", "error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+	event, ok := baseMsg.Payload().(*agentic.LoopCompletedEvent)
+	if !ok {
+		c.logger.Error("unexpected payload type in completion message",
+			"type", fmt.Sprintf("%T", baseMsg.Payload()))
 		c.errorsCount.Add(1)
 		return
 	}
@@ -392,6 +403,9 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 			"task_id", event.TaskID, "loop_id", event.LoopID)
 		return
 	}
+
+	// Transition quest to completed with the LLM output as result.
+	c.completeQuest(ctx, questID, mapping, event.Result)
 
 	now := time.Now()
 	if err := executor.SubjectExecutionCompleted.Publish(ctx, c.deps.NATSClient, executor.ExecutionCompletedPayload{
@@ -421,9 +435,17 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 
 // handleLoopFailed emits an executor failure event for the failed loop.
 func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
-	var event agentic.LoopFailedEvent
-	if err := json.Unmarshal(data, &event); err != nil {
-		c.logger.Error("failed to unmarshal LoopFailedEvent", "error", err)
+	// Failure events are published by agentic-loop wrapped in BaseMessage.
+	var baseMsg message.BaseMessage
+	if err := json.Unmarshal(data, &baseMsg); err != nil {
+		c.logger.Error("failed to unmarshal failure BaseMessage", "error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+	event, ok := baseMsg.Payload().(*agentic.LoopFailedEvent)
+	if !ok {
+		c.logger.Error("unexpected payload type in failure message",
+			"type", fmt.Sprintf("%T", baseMsg.Payload()))
 		c.errorsCount.Add(1)
 		return
 	}
@@ -435,6 +457,9 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 			"task_id", event.TaskID, "loop_id", event.LoopID)
 		return
 	}
+
+	// Transition quest to failed.
+	c.failQuest(ctx, questID, mapping, event.Error)
 
 	now := time.Now()
 	if err := executor.SubjectExecutionFailed.Publish(ctx, c.deps.NATSClient, executor.ExecutionFailedPayload{
@@ -459,6 +484,92 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 		"quest_id", questID,
 		"loop_id", event.LoopID,
 		"error", event.Error)
+}
+
+// =============================================================================
+// QUEST STATE TRANSITIONS
+// =============================================================================
+
+// completeQuest transitions the quest to in_review for DM-directed evaluation.
+// The agent is NOT released here — bossbattle auto-passes or runs evaluation,
+// then agentprogression handles agent release on the terminal quest status.
+func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, mapping *QuestLoopMapping, output string) {
+	questEntity, err := c.graph.GetQuest(ctx, questID)
+	if err != nil {
+		c.logger.Error("failed to load quest for completion", "quest_id", questID, "error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+	quest := domain.QuestFromEntityState(questEntity)
+	if quest == nil {
+		c.logger.Error("quest reconstruction returned nil for completion", "quest_id", questID)
+		c.errorsCount.Add(1)
+		return
+	}
+
+	quest.Output = output
+	quest.LoopID = mapping.LoopID
+
+	// All completed quests route through DM review.
+	// The domain config determines what happens: auto-pass, LLM judge, or human review.
+	quest.Status = domain.QuestInReview
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.submitted"); err != nil {
+		c.logger.Error("failed to emit quest submission for review",
+			"quest_id", questID, "error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+	c.logger.Info("quest submitted for review",
+		"quest_id", questID, "review_level", quest.Constraints.ReviewLevel)
+}
+
+// failQuest transitions the quest to failed and releases the agent.
+func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mapping *QuestLoopMapping, reason string) {
+	questEntity, err := c.graph.GetQuest(ctx, questID)
+	if err != nil {
+		c.logger.Error("failed to load quest for failure", "quest_id", questID, "error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+	quest := domain.QuestFromEntityState(questEntity)
+	if quest == nil {
+		c.logger.Error("quest reconstruction returned nil for failure", "quest_id", questID)
+		c.errorsCount.Add(1)
+		return
+	}
+
+	quest.Status = domain.QuestFailed
+	quest.LoopID = mapping.LoopID
+	quest.FailureReason = reason
+
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.failed"); err != nil {
+		c.logger.Error("failed to emit quest failure", "quest_id", questID, "error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+
+	c.releaseAgent(ctx, mapping.AgentID)
+}
+
+// releaseAgent sets the agent back to idle and clears its current quest.
+func (c *Component) releaseAgent(ctx context.Context, agentID domain.AgentID) {
+	agentEntity, err := c.graph.GetAgent(ctx, agentID)
+	if err != nil {
+		c.logger.Error("failed to load agent for release", "agent_id", agentID, "error", err)
+		return
+	}
+	agent := agentprogression.AgentFromEntityState(agentEntity)
+	if agent == nil {
+		return
+	}
+
+	agent.Status = domain.AgentIdle
+	agent.CurrentQuest = nil
+	agent.UpdatedAt = time.Now()
+
+	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.released"); err != nil {
+		c.logger.Error("failed to release agent", "agent_id", agentID, "error", err)
+	}
 }
 
 // =============================================================================

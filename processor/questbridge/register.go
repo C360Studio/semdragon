@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"reflect"
 
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/domains"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/pkg/errs"
 )
@@ -24,6 +26,11 @@ func Factory(rawConfig json.RawMessage, deps component.Dependencies) (component.
 		if err := json.Unmarshal(rawConfig, &config); err != nil {
 			return nil, errs.Wrap(err, "questbridge", "Factory", "unmarshal config")
 		}
+	}
+
+	// Resolve domain catalog from config
+	if config.Domain != "" {
+		config.DomainCatalog = domains.GetCatalog(domain.ID(config.Domain))
 	}
 
 	if deps.NATSClient == nil {

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semstreams/message"
 )
 
@@ -144,7 +144,7 @@ func newTestBattle() *BossBattle {
 			{Name: "correctness", Description: "Is it correct?", Weight: 0.5, Threshold: 0.7},
 			{Name: "completeness", Description: "Is it complete?", Weight: 0.5, Threshold: 0.6},
 		},
-		Judges: []Judge{
+		Judges: []domain.Judge{
 			{ID: "judge-auto", Type: domain.JudgeAutomated, Config: map[string]any{}},
 			{ID: "judge-llm-1", Type: domain.JudgeLLM, Config: map[string]any{}},
 		},
@@ -492,11 +492,11 @@ func TestBossBattle_EntityID(t *testing.T) {
 // newEvaluatorBattle builds a battle for evaluator unit tests using the
 // component's own defaultCriteria/defaultJudges to avoid duplication.
 // When judges are explicitly supplied they override the defaults.
-func newEvaluatorBattle(level domain.ReviewLevel, overrideJudges ...Judge) *BossBattle {
+func newEvaluatorBattle(level domain.ReviewLevel, overrideJudges ...domain.Judge) *BossBattle {
 	comp := &Component{config: &Config{}}
 	criteria := comp.defaultCriteria(level)
 
-	var judges []Judge
+	var judges []domain.Judge
 	if len(overrideJudges) > 0 {
 		judges = overrideJudges
 	} else {
@@ -649,7 +649,7 @@ func TestDefaultBattleEvaluator_Evaluate_WeightedScore(t *testing.T) {
 			{Name: "criterion-a", Weight: 0.6, Threshold: 0.5},
 			{Name: "criterion-b", Weight: 0.4, Threshold: 0.5},
 		},
-		Judges: []Judge{
+		Judges: []domain.Judge{
 			{ID: "judge-auto", Type: domain.JudgeAutomated},
 		},
 	}
@@ -698,7 +698,7 @@ func TestDefaultBattleEvaluator_Evaluate_AnyFailedVerdictFailed(t *testing.T) {
 func TestDefaultBattleEvaluator_Evaluate_HumanJudgePending(t *testing.T) {
 	e := NewDefaultBattleEvaluator()
 
-	humanJudge := Judge{ID: "judge-human", Type: domain.JudgeHuman}
+	humanJudge := domain.Judge{ID: "judge-human", Type: domain.JudgeHuman}
 	battle := newEvaluatorBattle(domain.ReviewHuman, humanJudge)
 
 	result, err := e.Evaluate(context.Background(), battle, nil, "output")
@@ -717,7 +717,7 @@ func TestDefaultBattleEvaluator_Evaluate_HumanJudgePendingVerdictZero(t *testing
 	e := NewDefaultBattleEvaluator()
 
 	// When pending the verdict struct should be its zero value (not filled in).
-	humanJudge := Judge{ID: "judge-human-2", Type: domain.JudgeHuman}
+	humanJudge := domain.Judge{ID: "judge-human-2", Type: domain.JudgeHuman}
 	battle := newEvaluatorBattle(domain.ReviewHuman, humanJudge)
 
 	result, err := e.Evaluate(context.Background(), battle, nil, "output")
@@ -786,7 +786,7 @@ func TestDefaultBattleEvaluator_Evaluate_EmptyCriteria(t *testing.T) {
 		Status:    domain.BattleActive,
 		StartedAt: time.Now(),
 		Criteria:  nil,
-		Judges:    []Judge{{ID: "judge-auto", Type: domain.JudgeAutomated}},
+		Judges:    []domain.Judge{{ID: "judge-auto", Type: domain.JudgeAutomated}},
 	}
 
 	result, err := e.Evaluate(context.Background(), battle, nil, "output")
@@ -1117,142 +1117,919 @@ func TestBattleRetreatPayload_Schema(t *testing.T) {
 }
 
 // =============================================================================
-// QUEST FROM ENTITY STATE FOR BATTLE TESTS
+// SHOULD AUTO PASS TESTS
 // =============================================================================
 
-func TestQuestFromEntityStateForBattle_NilEntity(t *testing.T) {
-	got := questFromEntityStateForBattle(nil)
-	if got != nil {
-		t.Errorf("questFromEntityStateForBattle(nil) = %v, want nil", got)
+func TestShouldAutoPass_NilCatalog(t *testing.T) {
+	comp := &Component{config: &Config{}, catalog: nil}
+	quest := &domain.Quest{Difficulty: domain.DifficultyTrivial}
+
+	if comp.shouldAutoPass(quest) {
+		t.Error("shouldAutoPass() = true, want false when catalog is nil")
 	}
 }
 
-func TestQuestFromEntityStateForBattle_IDPreserved(t *testing.T) {
-	entity := &graph.EntityState{
-		ID:      "c360.prod.game.board1.quest.abc",
-		Triples: []message.Triple{},
+func TestShouldAutoPass_NilReviewConfig(t *testing.T) {
+	comp := &Component{
+		config:  &Config{},
+		catalog: &promptmanager.DomainCatalog{ReviewConfig: nil},
 	}
-	quest := questFromEntityStateForBattle(entity)
+	quest := &domain.Quest{Difficulty: domain.DifficultyTrivial}
 
-	if quest == nil {
-		t.Fatal("questFromEntityStateForBattle() returned nil for non-nil entity")
-	}
-	if string(quest.ID) != entity.ID {
-		t.Errorf("quest.ID = %q, want %q", quest.ID, entity.ID)
+	if comp.shouldAutoPass(quest) {
+		t.Error("shouldAutoPass() = true, want false when ReviewConfig is nil")
 	}
 }
 
-func TestQuestFromEntityStateForBattle_ParsesTriples(t *testing.T) {
-	agentID := "c360.prod.game.board1.agent.warrior"
-	entity := &graph.EntityState{
-		ID: "c360.prod.game.board1.quest.q1",
-		Triples: []message.Triple{
-			{Predicate: "quest.identity.title", Object: "Kill the Dragon"},
-			{Predicate: "quest.identity.description", Object: "Slay the dragon"},
-			{Predicate: "quest.status.state", Object: "in_review"},
-			{Predicate: "quest.difficulty.level", Object: float64(2)},
-			{Predicate: "quest.tier.minimum", Object: float64(1)},
-			{Predicate: "quest.xp.base", Object: float64(100)},
-			{Predicate: "quest.assignment.agent", Object: agentID},
-			{Predicate: "quest.review.level", Object: float64(2)},
-			{Predicate: "quest.review.needs_review", Object: true},
-			{Predicate: "quest.attempts.current", Object: float64(1)},
-			{Predicate: "quest.attempts.max", Object: float64(3)},
-			{Predicate: "quest.observability.trajectory_id", Object: "traj-abc"},
+func TestShouldAutoPass_EmptyAutoPassDifficulties(t *testing.T) {
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				AutoPassDifficulties: []domain.QuestDifficulty{},
+			},
+		},
+	}
+	quest := &domain.Quest{Difficulty: domain.DifficultyTrivial}
+
+	if comp.shouldAutoPass(quest) {
+		t.Error("shouldAutoPass() = true, want false for empty AutoPassDifficulties")
+	}
+}
+
+func TestShouldAutoPass_DifficultyMatches(t *testing.T) {
+	tests := []struct {
+		name            string
+		autoPassList    []domain.QuestDifficulty
+		questDifficulty domain.QuestDifficulty
+		want            bool
+	}{
+		{
+			name:            "trivial in list",
+			autoPassList:    []domain.QuestDifficulty{domain.DifficultyTrivial, domain.DifficultyEasy},
+			questDifficulty: domain.DifficultyTrivial,
+			want:            true,
+		},
+		{
+			name:            "easy in list",
+			autoPassList:    []domain.QuestDifficulty{domain.DifficultyTrivial, domain.DifficultyEasy},
+			questDifficulty: domain.DifficultyEasy,
+			want:            true,
+		},
+		{
+			name:            "single-entry list matches",
+			autoPassList:    []domain.QuestDifficulty{domain.DifficultyModerate},
+			questDifficulty: domain.DifficultyModerate,
+			want:            true,
+		},
+		{
+			name:            "difficulty not in list",
+			autoPassList:    []domain.QuestDifficulty{domain.DifficultyTrivial, domain.DifficultyEasy},
+			questDifficulty: domain.DifficultyHard,
+			want:            false,
+		},
+		{
+			name:            "epic not in trivial-only list",
+			autoPassList:    []domain.QuestDifficulty{domain.DifficultyTrivial},
+			questDifficulty: domain.DifficultyEpic,
+			want:            false,
+		},
+		{
+			name:            "legendary not in any standard list",
+			autoPassList:    []domain.QuestDifficulty{domain.DifficultyTrivial, domain.DifficultyEasy, domain.DifficultyModerate},
+			questDifficulty: domain.DifficultyLegendary,
+			want:            false,
 		},
 	}
 
-	quest := questFromEntityStateForBattle(entity)
-	if quest == nil {
-		t.Fatal("questFromEntityStateForBattle() returned nil")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			comp := &Component{
+				config: &Config{},
+				catalog: &promptmanager.DomainCatalog{
+					ReviewConfig: &promptmanager.ReviewConfig{
+						AutoPassDifficulties: tt.autoPassList,
+					},
+				},
+			}
+			quest := &domain.Quest{Difficulty: tt.questDifficulty}
 
-	if quest.Title != "Kill the Dragon" {
-		t.Errorf("Title = %q, want %q", quest.Title, "Kill the Dragon")
-	}
-	if quest.Description != "Slay the dragon" {
-		t.Errorf("Description = %q, want %q", quest.Description, "Slay the dragon")
-	}
-	if quest.Status != domain.QuestInReview {
-		t.Errorf("Status = %q, want %q", quest.Status, domain.QuestInReview)
-	}
-	if quest.Difficulty != domain.QuestDifficulty(2) {
-		t.Errorf("Difficulty = %v, want %v", quest.Difficulty, domain.QuestDifficulty(2))
-	}
-	if quest.BaseXP != 100 {
-		t.Errorf("BaseXP = %d, want 100", quest.BaseXP)
-	}
-	if quest.ClaimedBy == nil || string(*quest.ClaimedBy) != agentID {
-		t.Errorf("ClaimedBy = %v, want %q", quest.ClaimedBy, agentID)
-	}
-	if quest.Constraints.ReviewLevel != domain.ReviewLevel(2) {
-		t.Errorf("Constraints.ReviewLevel = %v, want %v", quest.Constraints.ReviewLevel, domain.ReviewLevel(2))
-	}
-	if !quest.Constraints.RequireReview {
-		t.Error("Constraints.RequireReview should be true")
-	}
-	if quest.Attempts != 1 {
-		t.Errorf("Attempts = %d, want 1", quest.Attempts)
-	}
-	if quest.MaxAttempts != 3 {
-		t.Errorf("MaxAttempts = %d, want 3", quest.MaxAttempts)
-	}
-	if quest.TrajectoryID != "traj-abc" {
-		t.Errorf("TrajectoryID = %q, want %q", quest.TrajectoryID, "traj-abc")
+			got := comp.shouldAutoPass(quest)
+			if got != tt.want {
+				t.Errorf("shouldAutoPass() = %v, want %v (difficulty=%v, list=%v)",
+					got, tt.want, tt.questDifficulty, tt.autoPassList)
+			}
+		})
 	}
 }
 
-func TestQuestFromEntityStateForBattle_NonStringObjectsIgnored(t *testing.T) {
-	entity := &graph.EntityState{
-		ID: "quest-42",
-		Triples: []message.Triple{
-			// Wrong type for quest.identity.title — should be silently ignored.
-			{Predicate: "quest.identity.title", Object: 123},
+// =============================================================================
+// RESOLVE CRITERIA TESTS
+// =============================================================================
+
+func TestResolveCriteria_NilCatalog_FallsBackToDefaults(t *testing.T) {
+	comp := &Component{config: &Config{}, catalog: nil}
+
+	for _, level := range []domain.ReviewLevel{
+		domain.ReviewAuto,
+		domain.ReviewStandard,
+		domain.ReviewStrict,
+		domain.ReviewHuman,
+	} {
+		got := comp.resolveCriteria(level)
+		want := comp.defaultCriteria(level)
+
+		if len(got) != len(want) {
+			t.Errorf("level %d: resolveCriteria() len=%d, want %d (nil catalog fallback)",
+				level, len(got), len(want))
+			continue
+		}
+		for i := range got {
+			if got[i].Name != want[i].Name {
+				t.Errorf("level %d criteria[%d].Name = %q, want %q", level, i, got[i].Name, want[i].Name)
+			}
+		}
+	}
+}
+
+func TestResolveCriteria_NilReviewConfig_FallsBackToDefaults(t *testing.T) {
+	comp := &Component{
+		config:  &Config{},
+		catalog: &promptmanager.DomainCatalog{ReviewConfig: nil},
+	}
+
+	got := comp.resolveCriteria(domain.ReviewStandard)
+	want := comp.defaultCriteria(domain.ReviewStandard)
+
+	if len(got) != len(want) {
+		t.Fatalf("resolveCriteria() len=%d, want %d (nil ReviewConfig fallback)", len(got), len(want))
+	}
+}
+
+func TestResolveCriteria_EmptyCriteria_FallsBackToDefaults(t *testing.T) {
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultCriteria: []domain.ReviewCriterion{},
+			},
 		},
 	}
 
-	quest := questFromEntityStateForBattle(entity)
-	if quest == nil {
-		t.Fatal("questFromEntityStateForBattle() returned nil")
-	}
-	if quest.Title != "" {
-		t.Errorf("Title = %q, want empty string for non-string triple object", quest.Title)
+	got := comp.resolveCriteria(domain.ReviewStandard)
+	want := comp.defaultCriteria(domain.ReviewStandard)
+
+	if len(got) != len(want) {
+		t.Fatalf("resolveCriteria() len=%d, want %d (empty criteria fallback)", len(got), len(want))
 	}
 }
 
-func TestQuestFromEntityStateForBattle_EmptyTriples(t *testing.T) {
-	entity := &graph.EntityState{
-		ID:      "quest-empty",
-		Triples: []message.Triple{},
+func TestResolveCriteria_CatalogCriteriaReturned(t *testing.T) {
+	catalogCriteria := []domain.ReviewCriterion{
+		{Name: "domain-check", Description: "Domain-specific check", Weight: 0.6, Threshold: 0.75},
+		{Name: "domain-style", Description: "Domain-specific style", Weight: 0.4, Threshold: 0.65},
 	}
-
-	quest := questFromEntityStateForBattle(entity)
-	if quest == nil {
-		t.Fatal("questFromEntityStateForBattle() returned nil for empty triples")
-	}
-	// Fields should be zero values.
-	if quest.Title != "" {
-		t.Errorf("Title = %q, want empty", quest.Title)
-	}
-	if quest.ClaimedBy != nil {
-		t.Error("ClaimedBy should be nil for empty triples")
-	}
-}
-
-func TestQuestFromEntityStateForBattle_AgentIDNotSetWhenMissing(t *testing.T) {
-	entity := &graph.EntityState{
-		ID: "quest-noagent",
-		Triples: []message.Triple{
-			{Predicate: "quest.identity.title", Object: "Unassigned Quest"},
-			{Predicate: "quest.status.state", Object: "in_review"},
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultCriteria: catalogCriteria,
+			},
 		},
 	}
 
-	quest := questFromEntityStateForBattle(entity)
-	if quest == nil {
-		t.Fatal("questFromEntityStateForBattle() returned nil")
+	got := comp.resolveCriteria(domain.ReviewStandard)
+
+	if len(got) != len(catalogCriteria) {
+		t.Fatalf("resolveCriteria() len=%d, want %d", len(got), len(catalogCriteria))
 	}
-	if quest.ClaimedBy != nil {
-		t.Errorf("ClaimedBy = %v, want nil when quest.assignment.agent is absent", quest.ClaimedBy)
+	for i, want := range catalogCriteria {
+		if got[i].Name != want.Name {
+			t.Errorf("criteria[%d].Name = %q, want %q", i, got[i].Name, want.Name)
+		}
+		if got[i].Weight != want.Weight {
+			t.Errorf("criteria[%d].Weight = %f, want %f", i, got[i].Weight, want.Weight)
+		}
+		if got[i].Threshold != want.Threshold {
+			t.Errorf("criteria[%d].Threshold = %f, want %f", i, got[i].Threshold, want.Threshold)
+		}
+	}
+}
+
+func TestResolveCriteria_CatalogCriteriaReturnsCopy(t *testing.T) {
+	// Mutating the returned slice must not affect the catalog's original slice.
+	catalogCriteria := []domain.ReviewCriterion{
+		{Name: "original", Weight: 0.5, Threshold: 0.5},
+	}
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultCriteria: catalogCriteria,
+			},
+		},
+	}
+
+	got := comp.resolveCriteria(domain.ReviewStandard)
+	got[0].Name = "mutated"
+
+	// The catalog's original slice must be untouched.
+	if comp.catalog.ReviewConfig.DefaultCriteria[0].Name != "original" {
+		t.Error("resolveCriteria() returned the original slice instead of a copy; mutation affected the catalog")
+	}
+}
+
+func TestResolveCriteria_LevelIgnoredWhenCatalogHasCriteria(t *testing.T) {
+	// When the catalog provides criteria the level parameter is irrelevant —
+	// the same criteria must be returned regardless of which level is passed.
+	catalogCriteria := []domain.ReviewCriterion{
+		{Name: "catalog-criterion", Weight: 1.0, Threshold: 0.6},
+	}
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultCriteria: catalogCriteria,
+			},
+		},
+	}
+
+	for _, level := range []domain.ReviewLevel{
+		domain.ReviewAuto,
+		domain.ReviewStandard,
+		domain.ReviewStrict,
+		domain.ReviewHuman,
+	} {
+		got := comp.resolveCriteria(level)
+		if len(got) != 1 || got[0].Name != "catalog-criterion" {
+			t.Errorf("level %d: resolveCriteria() = %v, want catalog criteria regardless of level", level, got)
+		}
+	}
+}
+
+// =============================================================================
+// RESOLVE JUDGES TESTS
+// =============================================================================
+
+func TestResolveJudges_NilCatalog_FallsBackToDefaults(t *testing.T) {
+	comp := &Component{config: &Config{}, catalog: nil}
+
+	for _, level := range []domain.ReviewLevel{
+		domain.ReviewAuto,
+		domain.ReviewStandard,
+		domain.ReviewStrict,
+		domain.ReviewHuman,
+	} {
+		got := comp.resolveJudges(level)
+		want := comp.defaultJudges(level)
+
+		if len(got) != len(want) {
+			t.Errorf("level %d: resolveJudges() len=%d, want %d (nil catalog fallback)",
+				level, len(got), len(want))
+			continue
+		}
+		for i := range got {
+			if got[i].ID != want[i].ID {
+				t.Errorf("level %d judges[%d].ID = %q, want %q", level, i, got[i].ID, want[i].ID)
+			}
+		}
+	}
+}
+
+func TestResolveJudges_NilReviewConfig_FallsBackToDefaults(t *testing.T) {
+	comp := &Component{
+		config:  &Config{},
+		catalog: &promptmanager.DomainCatalog{ReviewConfig: nil},
+	}
+
+	got := comp.resolveJudges(domain.ReviewStandard)
+	want := comp.defaultJudges(domain.ReviewStandard)
+
+	if len(got) != len(want) {
+		t.Fatalf("resolveJudges() len=%d, want %d (nil ReviewConfig fallback)", len(got), len(want))
+	}
+}
+
+func TestResolveJudges_EmptyJudges_FallsBackToDefaults(t *testing.T) {
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultJudges: []domain.Judge{},
+			},
+		},
+	}
+
+	got := comp.resolveJudges(domain.ReviewStandard)
+	want := comp.defaultJudges(domain.ReviewStandard)
+
+	if len(got) != len(want) {
+		t.Fatalf("resolveJudges() len=%d, want %d (empty judges fallback)", len(got), len(want))
+	}
+}
+
+func TestResolveJudges_CatalogJudgesReturned(t *testing.T) {
+	catalogJudges := []domain.Judge{
+		{ID: "domain-judge-1", Type: domain.JudgeLLM, Config: map[string]any{"model": "gpt-4"}},
+		{ID: "domain-judge-2", Type: domain.JudgeAutomated, Config: map[string]any{}},
+	}
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultJudges: catalogJudges,
+			},
+		},
+	}
+
+	got := comp.resolveJudges(domain.ReviewStandard)
+
+	if len(got) != len(catalogJudges) {
+		t.Fatalf("resolveJudges() len=%d, want %d", len(got), len(catalogJudges))
+	}
+	for i, want := range catalogJudges {
+		if got[i].ID != want.ID {
+			t.Errorf("judges[%d].ID = %q, want %q", i, got[i].ID, want.ID)
+		}
+		if got[i].Type != want.Type {
+			t.Errorf("judges[%d].Type = %q, want %q", i, got[i].Type, want.Type)
+		}
+	}
+}
+
+func TestResolveJudges_CatalogJudgesReturnsCopy(t *testing.T) {
+	// Mutating the returned slice must not affect the catalog's original slice.
+	catalogJudges := []domain.Judge{
+		{ID: "original-judge", Type: domain.JudgeAutomated},
+	}
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultJudges: catalogJudges,
+			},
+		},
+	}
+
+	got := comp.resolveJudges(domain.ReviewStandard)
+	got[0].ID = "mutated-judge"
+
+	// The catalog's original slice must be untouched.
+	if comp.catalog.ReviewConfig.DefaultJudges[0].ID != "original-judge" {
+		t.Error("resolveJudges() returned the original slice instead of a copy; mutation affected the catalog")
+	}
+}
+
+func TestResolveJudges_LevelIgnoredWhenCatalogHasJudges(t *testing.T) {
+	// When the catalog provides judges the level parameter is irrelevant —
+	// the same judges must be returned regardless of which level is passed.
+	catalogJudges := []domain.Judge{
+		{ID: "catalog-judge", Type: domain.JudgeAutomated},
+	}
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultJudges: catalogJudges,
+			},
+		},
+	}
+
+	for _, level := range []domain.ReviewLevel{
+		domain.ReviewAuto,
+		domain.ReviewStandard,
+		domain.ReviewStrict,
+		domain.ReviewHuman,
+	} {
+		got := comp.resolveJudges(level)
+		if len(got) != 1 || got[0].ID != "catalog-judge" {
+			t.Errorf("level %d: resolveJudges() = %v, want catalog judges regardless of level", level, got)
+		}
+	}
+}
+
+// =============================================================================
+// PER-LEVEL CRITERIA/JUDGES OVERRIDE TESTS
+// =============================================================================
+
+func TestResolveCriteria_PerLevelOverrideTakesPrecedence(t *testing.T) {
+	defaultCriteria := []domain.ReviewCriterion{
+		{Name: "default-check", Weight: 1.0, Threshold: 0.5},
+	}
+	strictCriteria := []domain.ReviewCriterion{
+		{Name: "strict-precision", Weight: 0.6, Threshold: 0.9},
+		{Name: "strict-rigor", Weight: 0.4, Threshold: 0.85},
+	}
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultCriteria: defaultCriteria,
+				CriteriaByLevel: map[domain.ReviewLevel][]domain.ReviewCriterion{
+					domain.ReviewStrict: strictCriteria,
+				},
+			},
+		},
+	}
+
+	// Strict should use the per-level override
+	got := comp.resolveCriteria(domain.ReviewStrict)
+	if len(got) != 2 {
+		t.Fatalf("resolveCriteria(Strict) len=%d, want 2", len(got))
+	}
+	if got[0].Name != "strict-precision" {
+		t.Errorf("criteria[0].Name = %q, want %q", got[0].Name, "strict-precision")
+	}
+
+	// Standard should fall back to default criteria (no per-level override)
+	gotStd := comp.resolveCriteria(domain.ReviewStandard)
+	if len(gotStd) != 1 || gotStd[0].Name != "default-check" {
+		t.Errorf("resolveCriteria(Standard) = %v, want default criteria", gotStd)
+	}
+}
+
+func TestResolveCriteria_PerLevelOverrideReturnsCopy(t *testing.T) {
+	strictCriteria := []domain.ReviewCriterion{
+		{Name: "original", Weight: 1.0, Threshold: 0.5},
+	}
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				CriteriaByLevel: map[domain.ReviewLevel][]domain.ReviewCriterion{
+					domain.ReviewStrict: strictCriteria,
+				},
+			},
+		},
+	}
+
+	got := comp.resolveCriteria(domain.ReviewStrict)
+	got[0].Name = "mutated"
+
+	if comp.catalog.ReviewConfig.CriteriaByLevel[domain.ReviewStrict][0].Name != "original" {
+		t.Error("per-level criteria returned original slice instead of copy")
+	}
+}
+
+func TestResolveCriteria_EmptyPerLevelFallsToDefault(t *testing.T) {
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultCriteria: []domain.ReviewCriterion{
+					{Name: "default", Weight: 1.0, Threshold: 0.5},
+				},
+				CriteriaByLevel: map[domain.ReviewLevel][]domain.ReviewCriterion{
+					domain.ReviewStrict: {}, // empty per-level = fall through to default
+				},
+			},
+		},
+	}
+
+	got := comp.resolveCriteria(domain.ReviewStrict)
+	if len(got) != 1 || got[0].Name != "default" {
+		t.Errorf("empty per-level should fall through to DefaultCriteria, got %v", got)
+	}
+}
+
+func TestResolveJudges_PerLevelOverrideTakesPrecedence(t *testing.T) {
+	defaultJudges := []domain.Judge{
+		{ID: "default-judge", Type: domain.JudgeAutomated},
+	}
+	humanJudges := []domain.Judge{
+		{ID: "human-judge", Type: domain.JudgeHuman},
+		{ID: "llm-judge", Type: domain.JudgeLLM},
+	}
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultJudges: defaultJudges,
+				JudgesByLevel: map[domain.ReviewLevel][]domain.Judge{
+					domain.ReviewHuman: humanJudges,
+				},
+			},
+		},
+	}
+
+	// Human should use the per-level override
+	got := comp.resolveJudges(domain.ReviewHuman)
+	if len(got) != 2 {
+		t.Fatalf("resolveJudges(Human) len=%d, want 2", len(got))
+	}
+	if got[0].ID != "human-judge" {
+		t.Errorf("judges[0].ID = %q, want %q", got[0].ID, "human-judge")
+	}
+
+	// Standard should fall back to default judges
+	gotStd := comp.resolveJudges(domain.ReviewStandard)
+	if len(gotStd) != 1 || gotStd[0].ID != "default-judge" {
+		t.Errorf("resolveJudges(Standard) = %v, want default judges", gotStd)
+	}
+}
+
+func TestResolveJudges_PerLevelOverrideReturnsCopy(t *testing.T) {
+	humanJudges := []domain.Judge{
+		{ID: "original-judge", Type: domain.JudgeHuman},
+	}
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				JudgesByLevel: map[domain.ReviewLevel][]domain.Judge{
+					domain.ReviewHuman: humanJudges,
+				},
+			},
+		},
+	}
+
+	got := comp.resolveJudges(domain.ReviewHuman)
+	got[0].ID = "mutated-judge"
+
+	if comp.catalog.ReviewConfig.JudgesByLevel[domain.ReviewHuman][0].ID != "original-judge" {
+		t.Error("per-level judges returned original slice instead of copy")
+	}
+}
+
+// =============================================================================
+// DEFAULT REVIEW LEVEL TESTS
+// =============================================================================
+
+func TestBuildBattle_DefaultReviewLevel_UsedWhenQuestIsAuto(t *testing.T) {
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultReviewLevel: domain.ReviewStandard,
+				DefaultCriteria: []domain.ReviewCriterion{
+					{Name: "test", Weight: 1.0, Threshold: 0.5},
+				},
+				DefaultJudges: []domain.Judge{
+					{ID: "j1", Type: domain.JudgeAutomated},
+				},
+			},
+		},
+	}
+
+	quest := &domain.Quest{
+		ID:    "quest-1",
+		Title: "Test Quest",
+		Constraints: domain.QuestConstraints{
+			ReviewLevel: domain.ReviewAuto, // quest doesn't specify
+		},
+	}
+
+	battle := comp.buildBattle("battle-1", quest)
+
+	if battle.Level != domain.ReviewStandard {
+		t.Errorf("battle.Level = %d, want %d (domain default)", battle.Level, domain.ReviewStandard)
+	}
+}
+
+func TestBuildBattle_ExplicitReviewLevel_NotOverridden(t *testing.T) {
+	comp := &Component{
+		config: &Config{},
+		catalog: &promptmanager.DomainCatalog{
+			ReviewConfig: &promptmanager.ReviewConfig{
+				DefaultReviewLevel: domain.ReviewStandard,
+				DefaultCriteria: []domain.ReviewCriterion{
+					{Name: "test", Weight: 1.0, Threshold: 0.5},
+				},
+				DefaultJudges: []domain.Judge{
+					{ID: "j1", Type: domain.JudgeAutomated},
+				},
+			},
+		},
+	}
+
+	quest := &domain.Quest{
+		ID:    "quest-2",
+		Title: "Test Quest",
+		Constraints: domain.QuestConstraints{
+			ReviewLevel: domain.ReviewStrict, // quest specifies strict
+		},
+	}
+
+	battle := comp.buildBattle("battle-2", quest)
+
+	if battle.Level != domain.ReviewStrict {
+		t.Errorf("battle.Level = %d, want %d (quest-specified)", battle.Level, domain.ReviewStrict)
+	}
+}
+
+func TestBuildBattle_NoCatalog_KeepsAutoLevel(t *testing.T) {
+	comp := &Component{
+		config:  &Config{},
+		catalog: nil,
+	}
+
+	quest := &domain.Quest{
+		ID:    "quest-3",
+		Title: "Test Quest",
+		Constraints: domain.QuestConstraints{
+			ReviewLevel: domain.ReviewAuto,
+		},
+	}
+
+	battle := comp.buildBattle("battle-3", quest)
+
+	if battle.Level != domain.ReviewAuto {
+		t.Errorf("battle.Level = %d, want %d (no catalog, stays auto)", battle.Level, domain.ReviewAuto)
+	}
+}
+
+// =============================================================================
+// JSON PARSING & EVALUATOR HELPER TESTS
+// =============================================================================
+
+func TestExtractJSON_MarkdownCodeBlock(t *testing.T) {
+	input := "Here is my evaluation:\n```json\n{\"criteria\": []}\n```\nDone."
+	got := extractJSON(input)
+	if got != `{"criteria": []}` {
+		t.Errorf("extractJSON() = %q, want %q", got, `{"criteria": []}`)
+	}
+}
+
+func TestExtractJSON_BareJSON(t *testing.T) {
+	input := `Some text {"criteria": []} more text`
+	got := extractJSON(input)
+	if got != `{"criteria": []}` {
+		t.Errorf("extractJSON() = %q, want %q", got, `{"criteria": []}`)
+	}
+}
+
+func TestExtractJSON_NoJSON(t *testing.T) {
+	input := "No JSON here at all"
+	got := extractJSON(input)
+	if got != "" {
+		t.Errorf("extractJSON() = %q, want empty", got)
+	}
+}
+
+func TestClampScore(t *testing.T) {
+	tests := []struct {
+		input float64
+		want  float64
+	}{
+		{0.5, 0.5},
+		{0.0, 0.0},
+		{1.0, 1.0},
+		{-0.5, 0.0},
+		{1.5, 1.0},
+	}
+	for _, tt := range tests {
+		got := clampScore(tt.input)
+		if got != tt.want {
+			t.Errorf("clampScore(%f) = %f, want %f", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestFormatOutputForJudge_Nil(t *testing.T) {
+	got := formatOutputForJudge(nil)
+	if got != "No output was provided." {
+		t.Errorf("formatOutputForJudge(nil) = %q", got)
+	}
+}
+
+func TestFormatOutputForJudge_String(t *testing.T) {
+	got := formatOutputForJudge("hello")
+	if got != "## Quest Output\n\nhello" {
+		t.Errorf("formatOutputForJudge(string) = %q", got)
+	}
+}
+
+func TestFormatOutputForJudge_Map(t *testing.T) {
+	got := formatOutputForJudge(map[string]any{"key": "val"})
+	if got == "" || got == "No output was provided." {
+		t.Errorf("formatOutputForJudge(map) should format as JSON, got %q", got)
+	}
+}
+
+func TestParseJudgeResponse_ValidJSON(t *testing.T) {
+	battle := &BossBattle{
+		Criteria: []domain.ReviewCriterion{
+			{Name: "correctness", Threshold: 0.7},
+			{Name: "completeness", Threshold: 0.6},
+		},
+	}
+	content := `{"criteria": [{"name": "correctness", "score": 0.9, "reasoning": "Good"}, {"name": "completeness", "score": 0.5, "reasoning": "Missing parts"}], "overall_feedback": "Mostly good"}`
+
+	results, feedback, err := parseJudgeResponse(content, battle)
+	if err != nil {
+		t.Fatalf("parseJudgeResponse() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if feedback != "Mostly good" {
+		t.Errorf("feedback = %q, want %q", feedback, "Mostly good")
+	}
+
+	// correctness: 0.9 >= 0.7 → passed
+	if results[0].Score != 0.9 || !results[0].Passed {
+		t.Errorf("correctness: score=%f passed=%v, want 0.9/true", results[0].Score, results[0].Passed)
+	}
+	// completeness: 0.5 < 0.6 → failed
+	if results[1].Score != 0.5 || results[1].Passed {
+		t.Errorf("completeness: score=%f passed=%v, want 0.5/false", results[1].Score, results[1].Passed)
+	}
+}
+
+func TestParseJudgeResponse_WrappedInCodeBlock(t *testing.T) {
+	battle := &BossBattle{
+		Criteria: []domain.ReviewCriterion{
+			{Name: "quality", Threshold: 0.5},
+		},
+	}
+	content := "Here is my evaluation:\n```json\n{\"criteria\": [{\"name\": \"quality\", \"score\": 0.8, \"reasoning\": \"Good\"}], \"overall_feedback\": \"OK\"}\n```"
+
+	results, _, err := parseJudgeResponse(content, battle)
+	if err != nil {
+		t.Fatalf("parseJudgeResponse() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestParseJudgeResponse_NoJSON(t *testing.T) {
+	battle := &BossBattle{}
+	_, _, err := parseJudgeResponse("I cannot evaluate this.", battle)
+	if err == nil {
+		t.Error("parseJudgeResponse() should fail when no JSON present")
+	}
+}
+
+func TestParseJudgeResponse_UnknownCriterionSkipped(t *testing.T) {
+	battle := &BossBattle{
+		Criteria: []domain.ReviewCriterion{
+			{Name: "known", Threshold: 0.5},
+		},
+	}
+	content := `{"criteria": [{"name": "known", "score": 0.7, "reasoning": "OK"}, {"name": "unknown", "score": 0.9, "reasoning": "??"}]}`
+
+	results, _, err := parseJudgeResponse(content, battle)
+	if err != nil {
+		t.Fatalf("parseJudgeResponse() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1 (unknown should be skipped)", len(results))
+	}
+	if results[0].CriterionName != "known" {
+		t.Errorf("result[0].CriterionName = %q, want %q", results[0].CriterionName, "known")
+	}
+}
+
+func TestParseJudgeResponse_ClampScores(t *testing.T) {
+	battle := &BossBattle{
+		Criteria: []domain.ReviewCriterion{
+			{Name: "c1", Threshold: 0.5},
+			{Name: "c2", Threshold: 0.5},
+		},
+	}
+	content := `{"criteria": [{"name": "c1", "score": 1.5, "reasoning": "over"}, {"name": "c2", "score": -0.3, "reasoning": "under"}]}`
+
+	results, _, err := parseJudgeResponse(content, battle)
+	if err != nil {
+		t.Fatalf("parseJudgeResponse() error = %v", err)
+	}
+	if results[0].Score != 1.0 {
+		t.Errorf("clamped over score = %f, want 1.0", results[0].Score)
+	}
+	if results[1].Score != 0.0 {
+		t.Errorf("clamped under score = %f, want 0.0", results[1].Score)
+	}
+}
+
+// =============================================================================
+// DOMAIN-AWARE EVALUATOR FALLBACK TESTS
+// =============================================================================
+
+func TestDomainAwareEvaluator_NoLLMJudge_FallsBackToHeuristic(t *testing.T) {
+	catalog := &promptmanager.DomainCatalog{
+		JudgeSystemBase: "test judge",
+		ReviewConfig: &promptmanager.ReviewConfig{
+			DefaultCriteria: []domain.ReviewCriterion{
+				{Name: "test", Weight: 1.0, Threshold: 0.5},
+			},
+		},
+	}
+	e := NewDomainAwareEvaluator(catalog, nil, nil)
+
+	battle := &BossBattle{
+		ID:      "b1",
+		QuestID: "q1",
+		Criteria: []domain.ReviewCriterion{
+			{Name: "test", Weight: 1.0, Threshold: 0.5},
+		},
+		Judges: []domain.Judge{
+			{ID: "auto", Type: domain.JudgeAutomated}, // no LLM judge
+		},
+	}
+
+	result, err := e.Evaluate(context.Background(), battle, &domain.Quest{}, "output")
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	// Should use heuristic scoring (0.8 for non-nil output)
+	if result.Results[0].Score != 0.8 {
+		t.Errorf("Score = %f, want 0.8 (heuristic fallback)", result.Results[0].Score)
+	}
+}
+
+func TestDomainAwareEvaluator_NilRegistry_FallsBackToHeuristic(t *testing.T) {
+	catalog := &promptmanager.DomainCatalog{
+		JudgeSystemBase: "test judge",
+	}
+	e := NewDomainAwareEvaluator(catalog, nil, nil) // nil registry
+
+	battle := &BossBattle{
+		ID:      "b1",
+		QuestID: "q1",
+		Criteria: []domain.ReviewCriterion{
+			{Name: "test", Weight: 1.0, Threshold: 0.5},
+		},
+		Judges: []domain.Judge{
+			{ID: "llm", Type: domain.JudgeLLM}, // has LLM judge but no registry
+		},
+	}
+
+	result, err := e.Evaluate(context.Background(), battle, &domain.Quest{}, "output")
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if result.Results[0].Score != 0.8 {
+		t.Errorf("Score = %f, want 0.8 (heuristic fallback)", result.Results[0].Score)
+	}
+}
+
+func TestDomainAwareEvaluator_HasLLMJudge(t *testing.T) {
+	e := &DomainAwareEvaluator{}
+
+	noLLM := &BossBattle{
+		Judges: []domain.Judge{{ID: "auto", Type: domain.JudgeAutomated}},
+	}
+	if e.hasLLMJudge(noLLM) {
+		t.Error("hasLLMJudge() = true for automated-only battle")
+	}
+
+	withLLM := &BossBattle{
+		Judges: []domain.Judge{
+			{ID: "auto", Type: domain.JudgeAutomated},
+			{ID: "llm", Type: domain.JudgeLLM},
+		},
+	}
+	if !e.hasLLMJudge(withLLM) {
+		t.Error("hasLLMJudge() = false for battle with LLM judge")
+	}
+}
+
+func TestDomainAwareEvaluator_MergeResults_AllScored(t *testing.T) {
+	e := &DomainAwareEvaluator{}
+	battle := &BossBattle{
+		Criteria: []domain.ReviewCriterion{
+			{Name: "c1", Threshold: 0.5, Weight: 0.5},
+			{Name: "c2", Threshold: 0.5, Weight: 0.5},
+		},
+	}
+	llmResults := []domain.ReviewResult{
+		{CriterionName: "c1", Score: 0.9, Passed: true, JudgeID: "judge-llm"},
+		{CriterionName: "c2", Score: 0.7, Passed: true, JudgeID: "judge-llm"},
+	}
+
+	merged := e.mergeResults(battle, llmResults)
+	if len(merged) != 2 {
+		t.Fatalf("len(merged) = %d, want 2", len(merged))
+	}
+	for _, r := range merged {
+		if r.JudgeID != "judge-llm" {
+			t.Errorf("merged result %q should be from judge-llm, got %q", r.CriterionName, r.JudgeID)
+		}
+	}
+}
+
+func TestDomainAwareEvaluator_MergeResults_MissingFallsBack(t *testing.T) {
+	e := &DomainAwareEvaluator{}
+	battle := &BossBattle{
+		Criteria: []domain.ReviewCriterion{
+			{Name: "c1", Threshold: 0.5, Weight: 0.5},
+			{Name: "c2", Threshold: 0.5, Weight: 0.5},
+		},
+	}
+	llmResults := []domain.ReviewResult{
+		{CriterionName: "c1", Score: 0.9, Passed: true, JudgeID: "judge-llm"},
+		// c2 not scored by LLM
+	}
+
+	merged := e.mergeResults(battle, llmResults)
+	if len(merged) != 2 {
+		t.Fatalf("len(merged) = %d, want 2", len(merged))
+	}
+	if merged[0].JudgeID != "judge-llm" {
+		t.Errorf("c1 should be from LLM, got %q", merged[0].JudgeID)
+	}
+	if merged[1].JudgeID != "judge-auto" {
+		t.Errorf("c2 should fall back to heuristic, got %q", merged[1].JudgeID)
 	}
 }

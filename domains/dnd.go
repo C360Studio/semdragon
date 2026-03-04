@@ -91,4 +91,17 @@ var DnDPromptCatalog = promptmanager.DomainCatalog{
 	},
 
 	JudgeSystemBase: "You are an ancient sage evaluating an adventurer's quest performance.",
+
+	ReviewConfig: &promptmanager.ReviewConfig{
+		DefaultReviewLevel: domain.ReviewAuto,
+		DefaultCriteria: []domain.ReviewCriterion{
+			{Name: "narrative", Weight: 0.5, Threshold: 0.5, Description: "Story coherence and engagement"},
+			{Name: "rules", Weight: 0.3, Threshold: 0.6, Description: "Rule compliance"},
+			{Name: "creativity", Weight: 0.2, Threshold: 0.4, Description: "Creative problem-solving"},
+		},
+		AutoPassDifficulties: []domain.QuestDifficulty{domain.DifficultyTrivial, domain.DifficultyEasy},
+		DefaultJudges: []domain.Judge{
+			{ID: "judge-auto", Type: domain.JudgeAutomated},
+		},
+	},
 }

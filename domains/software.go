@@ -89,6 +89,20 @@ var SoftwarePromptCatalog = promptmanager.DomainCatalog{
 	},
 
 	JudgeSystemBase: "You are a senior code reviewer evaluating a developer's work output.",
+
+	ReviewConfig: &promptmanager.ReviewConfig{
+		DefaultReviewLevel: domain.ReviewStandard,
+		DefaultCriteria: []domain.ReviewCriterion{
+			{Name: "correctness", Weight: 0.4, Threshold: 0.7, Description: "Code produces correct results"},
+			{Name: "completeness", Weight: 0.3, Threshold: 0.6, Description: "All requirements addressed"},
+			{Name: "quality", Weight: 0.3, Threshold: 0.5, Description: "Code quality and maintainability"},
+		},
+		AutoPassDifficulties: []domain.QuestDifficulty{domain.DifficultyTrivial},
+		DefaultJudges: []domain.Judge{
+			{ID: "judge-auto", Type: domain.JudgeAutomated},
+			{ID: "judge-llm", Type: domain.JudgeLLM},
+		},
+	},
 }
 
 // SoftwareSkillCount returns the number of skills in the software domain.

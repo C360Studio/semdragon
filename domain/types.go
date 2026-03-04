@@ -261,6 +261,13 @@ type ReviewCriterion struct {
 	Threshold   float64 `json:"threshold"`
 }
 
+// Judge represents an evaluator for boss battles / review sessions.
+type Judge struct {
+	ID     string         `json:"id"`
+	Type   JudgeType      `json:"type"`
+	Config map[string]any `json:"config"`
+}
+
 // ReviewResult holds a judge's evaluation of a single criterion.
 type ReviewResult struct {
 	CriterionName string  `json:"criterion_name"`

@@ -94,21 +94,8 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 
 	c.lastActivity.Store(time.Now())
 
-	// Check if quest requires review
-	if !needsReview {
-		c.logger.Debug("skipping battle for quest without review requirement",
-			"quest", entry.Key())
-		return
-	}
-
-	if c.config.RequireReviewLevel && reviewLevel == domain.ReviewAuto {
-		c.logger.Debug("skipping battle for quest with auto review level",
-			"quest", entry.Key())
-		return
-	}
-
-	// Reconstruct quest from entity state for battle
-	quest := questFromEntityStateForBattle(entityState)
+	// Reconstruct quest from entity state
+	quest := domain.QuestFromEntityState(entityState)
 	if quest == nil {
 		c.logger.Warn("failed to reconstruct quest from entity state", "quest", entry.Key())
 		return
@@ -117,6 +104,14 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 	// Start battle with background context (watcher goroutine context)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Auto-pass: quests without review requirement, or with auto review level,
+	// or whose difficulty is in the domain's auto-pass list.
+	if !needsReview || c.shouldAutoPass(quest) ||
+		(c.config.RequireReviewLevel && reviewLevel == domain.ReviewAuto) {
+		c.autoPassQuest(ctx, quest)
+		return
+	}
 
 	battle, err := c.StartBattle(ctx, quest, quest.Output)
 	if err != nil {
@@ -148,73 +143,6 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 		"battle", battle.ID)
 }
 
-// questFromEntityStateForBattle reconstructs a questboard.Quest from entity state triples.
-func questFromEntityStateForBattle(entity *graph.EntityState) *domain.Quest {
-	if entity == nil {
-		return nil
-	}
-
-	quest := &domain.Quest{
-		ID: domain.QuestID(entity.ID),
-	}
-
-	for _, triple := range entity.Triples {
-		switch triple.Predicate {
-		case "quest.identity.title":
-			if v, ok := triple.Object.(string); ok {
-				quest.Title = v
-			}
-		case "quest.identity.description":
-			if v, ok := triple.Object.(string); ok {
-				quest.Description = v
-			}
-		case "quest.status.state":
-			if v, ok := triple.Object.(string); ok {
-				quest.Status = domain.QuestStatus(v)
-			}
-		case "quest.difficulty.level":
-			if v, ok := triple.Object.(float64); ok {
-				quest.Difficulty = domain.QuestDifficulty(int(v))
-			}
-		case "quest.tier.minimum":
-			if v, ok := triple.Object.(float64); ok {
-				quest.MinTier = domain.TrustTier(int(v))
-			}
-		case "quest.xp.base":
-			if v, ok := triple.Object.(float64); ok {
-				quest.BaseXP = int64(v)
-			}
-		case "quest.assignment.agent":
-			if v, ok := triple.Object.(string); ok {
-				agentID := domain.AgentID(v)
-				quest.ClaimedBy = &agentID
-			}
-		case "quest.review.level":
-			if v, ok := triple.Object.(float64); ok {
-				quest.Constraints.ReviewLevel = domain.ReviewLevel(int(v))
-			}
-		case "quest.review.needs_review":
-			if v, ok := triple.Object.(bool); ok {
-				quest.Constraints.RequireReview = v
-			}
-		case "quest.attempts.current":
-			if v, ok := triple.Object.(float64); ok {
-				quest.Attempts = int(v)
-			}
-		case "quest.attempts.max":
-			if v, ok := triple.Object.(float64); ok {
-				quest.MaxAttempts = int(v)
-			}
-		case "quest.observability.trajectory_id":
-			if v, ok := triple.Object.(string); ok {
-				quest.TrajectoryID = v
-			}
-		}
-	}
-
-	return quest
-}
-
 // =============================================================================
 // BATTLE OPERATIONS
 // =============================================================================
@@ -236,8 +164,9 @@ func (c *Component) StartBattle(ctx context.Context, quest *domain.Quest, output
 		return nil, errs.Wrap(err, "BossBattle", "StartBattle", "emit battle entity")
 	}
 
-	// Add to active battles
-	battleCtx, cancel := context.WithTimeout(ctx, c.config.DefaultTimeout)
+	// Add to active battles — use Background context so the goroutine
+	// isn't canceled when the caller (handleQuestStateChange) returns.
+	battleCtx, cancel := context.WithTimeout(context.Background(), c.config.DefaultTimeout)
 	ab := &activeBattle{
 		battle:    battle,
 		quest:     quest,
@@ -265,10 +194,14 @@ func (c *Component) buildBattle(id domain.BattleID, quest *domain.Quest) *BossBa
 	now := time.Now()
 
 	reviewLevel := quest.Constraints.ReviewLevel
+	// If quest doesn't specify a level, use domain default
+	if reviewLevel == domain.ReviewAuto && c.catalog != nil && c.catalog.ReviewConfig != nil {
+		reviewLevel = c.catalog.ReviewConfig.DefaultReviewLevel
+	}
 
-	// Default criteria based on review level
-	criteria := c.defaultCriteria(reviewLevel)
-	judges := c.defaultJudges(reviewLevel)
+	// Resolve criteria and judges: per-level overrides → domain defaults → hardcoded.
+	criteria := c.resolveCriteria(reviewLevel)
+	judges := c.resolveJudges(reviewLevel)
 
 	// Get agent ID (handle pointer)
 	var agentID domain.AgentID
@@ -319,30 +252,129 @@ func (c *Component) defaultCriteria(level domain.ReviewLevel) []domain.ReviewCri
 }
 
 // defaultJudges returns standard judges for a review level.
-func (c *Component) defaultJudges(level domain.ReviewLevel) []Judge {
+func (c *Component) defaultJudges(level domain.ReviewLevel) []domain.Judge {
 	switch level {
 	case domain.ReviewStrict:
-		return []Judge{
+		return []domain.Judge{
 			{ID: "judge-auto", Type: domain.JudgeAutomated, Config: map[string]any{}},
 			{ID: "judge-llm-1", Type: domain.JudgeLLM, Config: map[string]any{}},
 			{ID: "judge-llm-2", Type: domain.JudgeLLM, Config: map[string]any{}},
 		}
 	case domain.ReviewHuman:
-		return []Judge{
+		return []domain.Judge{
 			{ID: "judge-auto", Type: domain.JudgeAutomated, Config: map[string]any{}},
 			{ID: "judge-llm-1", Type: domain.JudgeLLM, Config: map[string]any{}},
 			{ID: "judge-human", Type: domain.JudgeHuman, Config: map[string]any{}},
 		}
 	case domain.ReviewStandard:
-		return []Judge{
+		return []domain.Judge{
 			{ID: "judge-auto", Type: domain.JudgeAutomated, Config: map[string]any{}},
 			{ID: "judge-llm-1", Type: domain.JudgeLLM, Config: map[string]any{}},
 		}
 	default: // ReviewAuto
-		return []Judge{
+		return []domain.Judge{
 			{ID: "judge-auto", Type: domain.JudgeAutomated, Config: nil},
 		}
 	}
+}
+
+// resolveCriteria returns criteria from the domain catalog if available,
+// checking per-level overrides first, then domain defaults, then hardcoded.
+func (c *Component) resolveCriteria(level domain.ReviewLevel) []domain.ReviewCriterion {
+	if c.catalog != nil && c.catalog.ReviewConfig != nil {
+		rc := c.catalog.ReviewConfig
+		// Per-level override takes precedence
+		if rc.CriteriaByLevel != nil {
+			if criteria, ok := rc.CriteriaByLevel[level]; ok && len(criteria) > 0 {
+				return copyReviewCriteria(criteria)
+			}
+		}
+		// Fall back to domain defaults
+		if len(rc.DefaultCriteria) > 0 {
+			return copyReviewCriteria(rc.DefaultCriteria)
+		}
+	}
+	return c.defaultCriteria(level)
+}
+
+// resolveJudges returns judges from the domain catalog if available,
+// checking per-level overrides first, then domain defaults, then hardcoded.
+func (c *Component) resolveJudges(level domain.ReviewLevel) []domain.Judge {
+	if c.catalog != nil && c.catalog.ReviewConfig != nil {
+		rc := c.catalog.ReviewConfig
+		// Per-level override takes precedence
+		if rc.JudgesByLevel != nil {
+			if judges, ok := rc.JudgesByLevel[level]; ok && len(judges) > 0 {
+				return copyJudges(judges)
+			}
+		}
+		// Fall back to domain defaults
+		if len(rc.DefaultJudges) > 0 {
+			return copyJudges(rc.DefaultJudges)
+		}
+	}
+	return c.defaultJudges(level)
+}
+
+// copyReviewCriteria returns a defensive copy of a criteria slice.
+func copyReviewCriteria(src []domain.ReviewCriterion) []domain.ReviewCriterion {
+	dst := make([]domain.ReviewCriterion, len(src))
+	copy(dst, src)
+	return dst
+}
+
+// copyJudges returns a defensive copy of a judges slice.
+// Deep-copies each Judge's Config map to prevent shared mutation.
+func copyJudges(src []domain.Judge) []domain.Judge {
+	dst := make([]domain.Judge, len(src))
+	for i, j := range src {
+		dst[i] = j
+		if j.Config != nil {
+			dst[i].Config = make(map[string]any, len(j.Config))
+			for k, v := range j.Config {
+				dst[i].Config[k] = v
+			}
+		}
+	}
+	return dst
+}
+
+// shouldAutoPass checks if this quest's difficulty is in the domain's auto-pass list.
+func (c *Component) shouldAutoPass(quest *domain.Quest) bool {
+	if c.catalog == nil || c.catalog.ReviewConfig == nil {
+		return false
+	}
+	for _, d := range c.catalog.ReviewConfig.AutoPassDifficulties {
+		if quest.Difficulty == d {
+			return true
+		}
+	}
+	return false
+}
+
+// autoPassQuest completes a quest directly with a synthetic victory,
+// bypassing the full battle pipeline.
+func (c *Component) autoPassQuest(ctx context.Context, quest *domain.Quest) {
+	now := time.Now()
+	quest.Status = domain.QuestCompleted
+	quest.CompletedAt = &now
+	if quest.StartedAt != nil {
+		quest.Duration = now.Sub(*quest.StartedAt)
+	}
+	quest.Verdict = &domain.BattleVerdict{
+		Passed:       true,
+		QualityScore: 1.0,
+		Feedback:     "Auto-passed: quest difficulty below review threshold",
+	}
+
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.completed"); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("failed to auto-pass quest", "quest_id", quest.ID, "error", err)
+		return
+	}
+
+	c.logger.Info("quest auto-passed review",
+		"quest_id", quest.ID, "difficulty", quest.Difficulty)
 }
 
 // runEvaluation performs the actual battle evaluation.
@@ -392,6 +424,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 	// KV write IS the event — watchers (e.g., questboard) are notified of battle completion.
 	if c.running.Load() {
 		persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		eventType := "battle.completed"
 		if ab.battle.Status == domain.BattleVictory {
 			eventType = "battle.victory"
@@ -434,8 +467,6 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 					"error", questErr)
 			}
 		}
-
-		cancel()
 	} else {
 		c.logger.Debug("skipping battle persistence after shutdown",
 			"battle", ab.battle.ID)
@@ -564,7 +595,7 @@ func battleFromEntityState(entity *graph.EntityState) *BossBattle {
 	}
 	// Copy judges
 	for _, j := range semBattle.Judges {
-		battle.Judges = append(battle.Judges, Judge{
+		battle.Judges = append(battle.Judges, domain.Judge{
 			ID:     j.ID,
 			Type:   domain.JudgeType(j.Type),
 			Config: j.Config,

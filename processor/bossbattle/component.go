@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/util"
+	"github.com/c360studio/semdragons/processor/promptmanager"
 )
 
 // =============================================================================
@@ -34,6 +36,9 @@ type Component struct {
 	deps        component.Dependencies
 	graph       *semdragons.GraphClient
 	evaluator   BattleEvaluator
+	catalog     *promptmanager.DomainCatalog
+	registry    model.RegistryReader
+	assembler   *promptmanager.PromptAssembler
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
 
@@ -259,7 +264,17 @@ func (c *Component) Initialize() error {
 	}
 
 	c.boardConfig = c.config.ToBoardConfig()
-	c.evaluator = NewDefaultBattleEvaluator()
+	c.catalog = c.config.DomainCatalog
+	c.registry = c.deps.ModelRegistry
+
+	if c.catalog != nil {
+		promptRegistry := promptmanager.NewPromptRegistry()
+		promptRegistry.RegisterProviderStyles()
+		c.assembler = promptmanager.NewPromptAssembler(promptRegistry)
+		c.evaluator = NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler)
+	} else {
+		c.evaluator = NewDefaultBattleEvaluator()
+	}
 	c.stopChan = make(chan struct{})
 
 	return nil

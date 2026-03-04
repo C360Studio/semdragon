@@ -36,7 +36,7 @@
     "endpoints": {
       "ollama-coder": {
         "provider": "ollama",
-        "url": "http://localhost:11434/v1",
+        "url": "http://host.docker.internal:11434/v1",
         "model": "qwen2.5-coder:7b",
         "max_tokens": 32768,
         "supports_tools": true,
@@ -44,7 +44,7 @@
       },
       "ollama-qwen3": {
         "provider": "ollama",
-        "url": "http://localhost:11434/v1",
+        "url": "http://host.docker.internal:11434/v1",
         "model": "qwen3:14b",
         "max_tokens": 40960,
         "supports_tools": false,
@@ -55,28 +55,11 @@
       }
     },
     "capabilities": {
-      "agent-work": {
-        "description": "Code generation and tool-calling quest execution",
-        "preferred": ["ollama-coder"],
-        "requires_tools": true
-      },
-      "boss-battle": {
-        "description": "Quest output evaluation by LLM judge",
-        "preferred": ["ollama-qwen3"],
-        "fallback": ["ollama-coder"],
-        "requires_tools": false
-      },
-      "quest-design": {
-        "description": "DM quest parameter decisions",
-        "preferred": ["ollama-qwen3"],
-        "fallback": ["ollama-coder"],
-        "requires_tools": false
-      }
+      "agent-work": { "preferred": ["ollama-coder"], "requires_tools": true },
+      "dm-chat": { "preferred": ["ollama-qwen3"], "fallback": ["ollama-coder"] },
+      "boss-battle": { "preferred": ["ollama-qwen3"], "fallback": ["ollama-coder"] }
     },
-    "defaults": {
-      "model": "ollama-coder",
-      "capability": "agent-work"
-    }
+    "defaults": { "model": "ollama-coder" }
   },
   "streams": {
     "GRAPH": {
@@ -257,9 +240,9 @@
       "enabled": true,
       "config": {
         "stream_name": "AGENT",
-        "timeout": "120s",
+        "timeout": "300s",
         "retry": {
-          "max_attempts": 3,
+          "max_attempts": 2,
           "backoff": "exponential"
         }
       }

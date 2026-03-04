@@ -132,9 +132,30 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
+	// Input and Output (stored as-is; typically strings from LLM I/O)
+	if q.Input != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.data.input", Object: q.Input,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.Output != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.data.output", Object: q.Output,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
 	if q.TrajectoryID != "" {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.observability.trajectory_id", Object: q.TrajectoryID,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	if q.LoopID != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.execution.loop_id", Object: q.LoopID,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}

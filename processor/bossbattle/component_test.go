@@ -431,8 +431,7 @@ func TestBattleVerdictTransitionsQuest(t *testing.T) {
 	}
 
 	// Reconstruct quest status from entity state triples.
-	// questFromEntityStateForBattle does not parse quest.lifecycle.completed_at,
-	// so we scan the triples directly for the status predicate.
+	// Scan triples directly for the status predicate.
 	var questStatus string
 	for _, triple := range questEntity.Triples {
 		if triple.Predicate == "quest.status.state" {

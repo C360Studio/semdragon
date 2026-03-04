@@ -298,7 +298,7 @@ func extractBattle() EntitySchema {
 			XPAwarded:    500,
 			Feedback:     "Great work",
 		},
-		Judges: []bossbattle.Judge{
+		Judges: []domain.Judge{
 			{ID: "judge-1", Type: domain.JudgeLLM},
 			{ID: "judge-2", Type: domain.JudgeAutomated},
 		},

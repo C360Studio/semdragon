@@ -8,8 +8,13 @@
 #   make e2e-down      — Stop Docker E2E stack
 #   make e2e-run       — Run Playwright tests (assumes stack is already up)
 #   make e2e-chromium  — Run Playwright on chromium only (fast iteration)
+#   make e2e-ollama    — Full Ollama E2E: start stack, run tests, tear down
+#   make e2e-ollama-up — Start Ollama E2E stack (requires host Ollama)
+#   make e2e-ollama-run — Run Ollama integration spec only
+#   make e2e-ollama-down — Stop Ollama E2E stack
 
-.PHONY: test check check-schema e2e e2e-up e2e-down e2e-run e2e-chromium e2e-install dev
+.PHONY: test check check-schema e2e e2e-up e2e-down e2e-run e2e-chromium e2e-install dev \
+       e2e-ollama e2e-ollama-up e2e-ollama-run e2e-ollama-down
 
 # ─── Unit Tests ───────────────────────────────────────────────────────
 
@@ -64,3 +69,23 @@ e2e-down:
 # Install Playwright browsers (first-time setup)
 e2e-install:
 	npx playwright install --with-deps chromium
+
+# ─── E2E: Ollama Integration (real LLM) ────────────────────────────
+
+OLLAMA_COMPOSE = -f docker-compose.yml -f docker-compose.ollama.yml
+
+e2e-ollama: e2e-install e2e-ollama-up e2e-wait e2e-ollama-run e2e-ollama-down
+
+# Start stack with Ollama config (no mockllm, points at host Ollama)
+e2e-ollama-up:
+	SEED_E2E=true docker compose $(OLLAMA_COMPOSE) up -d --build --wait
+	@echo "Ollama E2E stack is up. Backend: http://localhost:8080  UI: http://localhost:5173"
+
+# Run only the Ollama integration spec (chromium only — API-level tests)
+e2e-ollama-run:
+	E2E_OLLAMA=true npx playwright test ollama-integration --project=chromium
+
+# Stop the Ollama stack
+e2e-ollama-down:
+	docker compose $(OLLAMA_COMPOSE) down -v
+	@echo "Ollama E2E stack stopped."

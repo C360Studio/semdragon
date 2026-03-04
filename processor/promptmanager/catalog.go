@@ -38,4 +38,33 @@ type DomainCatalog struct {
 	// Example: "You are a senior code reviewer evaluating a developer's work output."
 	// Example: "You are a Fleet Command officer evaluating a crew member's mission report."
 	JudgeSystemBase string
+
+	// ReviewConfig provides domain-specific review defaults.
+	// When set, bossbattle uses these instead of hardcoded criteria/judges.
+	// nil = use hardcoded defaults for backward compatibility.
+	ReviewConfig *ReviewConfig
+}
+
+// ReviewConfig defines domain-specific defaults for quest review.
+type ReviewConfig struct {
+	// DefaultReviewLevel is used when a quest doesn't specify a review level.
+	DefaultReviewLevel domain.ReviewLevel
+
+	// DefaultCriteria provides domain-appropriate evaluation criteria.
+	DefaultCriteria []domain.ReviewCriterion
+
+	// CriteriaByLevel provides per-level criteria overrides.
+	// When set, criteria for the matching level take precedence over DefaultCriteria.
+	CriteriaByLevel map[domain.ReviewLevel][]domain.ReviewCriterion
+
+	// AutoPassDifficulties lists quest difficulties that skip full review
+	// and auto-pass with a synthetic victory (e.g., trivial quests).
+	AutoPassDifficulties []domain.QuestDifficulty
+
+	// DefaultJudges provides domain-appropriate judges.
+	DefaultJudges []domain.Judge
+
+	// JudgesByLevel provides per-level judge overrides.
+	// When set, judges for the matching level take precedence over DefaultJudges.
+	JudgesByLevel map[domain.ReviewLevel][]domain.Judge
 }

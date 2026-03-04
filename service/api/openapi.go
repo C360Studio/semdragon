@@ -9,6 +9,7 @@ import (
 	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semdragons/service/agentsheet"
+	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/service"
 )
 
@@ -535,14 +536,16 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			"/trajectories/{id}": {
 				GET: &service.OperationSpec{
 					Summary:     "Get trajectory",
-					Description: "Returns trajectory events for a quest.",
+					Description: "Returns the execution trajectory for an agentic loop, including all model calls, tool calls, token usage, and timing. The trajectory ID is the loop_id from a completed quest.",
 					Tags:        []string{"Observability"},
 					Parameters: []service.ParameterSpec{
-						{Name: "id", In: "path", Required: true, Description: "Trajectory ID", Schema: service.Schema{Type: "string"}},
+						{Name: "id", In: "path", Required: true, Description: "Trajectory/loop ID (from quest.loop_id)", Schema: service.Schema{Type: "string"}},
 					},
 					Responses: map[string]service.ResponseSpec{
-						"200": {Description: "Trajectory events", ContentType: "application/json"},
-						"501": {Description: "Not yet implemented"},
+						"200": {Description: "Trajectory with execution steps", ContentType: "application/json", SchemaRef: "#/components/schemas/Trajectory"},
+						"400": {Description: "Invalid trajectory ID format"},
+						"404": {Description: "Trajectory not found"},
+						"503": {Description: "Trajectory service unavailable"},
 					},
 				},
 			},
@@ -579,7 +582,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(agentprogression.AgentConfig{}),
 			reflect.TypeOf(agentprogression.AgentPersona{}),
 			reflect.TypeOf(bossbattle.BossBattle{}),
-			reflect.TypeOf(bossbattle.Judge{}),
+			reflect.TypeOf(domain.Judge{}),
 			reflect.TypeOf(domain.ReviewCriterion{}),
 			reflect.TypeOf(domain.ReviewResult{}),
 			reflect.TypeOf(partycoord.Party{}),
@@ -591,6 +594,10 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(agentstore.AgentInventory{}),
 			reflect.TypeOf(agentstore.ActiveEffect{}),
 			reflect.TypeOf(agentstore.ConsumableEffect{}),
+
+			// Trajectory types
+			reflect.TypeOf(agentic.Trajectory{}),
+			reflect.TypeOf(agentic.TrajectoryStep{}),
 
 			// Character sheet
 			reflect.TypeOf(agentsheet.CharacterSheet{}),

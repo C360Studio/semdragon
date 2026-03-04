@@ -95,6 +95,12 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 				q.Acceptance = append(q.Acceptance, v)
 			}
 
+		// Input and Output
+		case "quest.data.input":
+			q.Input = triple.Object
+		case "quest.data.output":
+			q.Output = triple.Object
+
 		// Skills and tools (collected separately)
 		case "quest.skill.required":
 			q.RequiredSkills = append(q.RequiredSkills, SkillTag(AsString(triple.Object)))
@@ -110,6 +116,8 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 		// Observability
 		case "quest.observability.trajectory_id":
 			q.TrajectoryID = AsString(triple.Object)
+		case "quest.execution.loop_id":
+			q.LoopID = AsString(triple.Object)
 
 		// Verdict (from boss battle)
 		case "quest.verdict.passed":

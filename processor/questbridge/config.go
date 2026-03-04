@@ -31,8 +31,11 @@ type Config struct {
 	// Useful in tests to avoid stale consumer state between runs.
 	DeleteConsumerOnStop bool `json:"delete_consumer_on_stop,omitempty"`
 
+	// Domain selects which DomainCatalog to inject (e.g. "software", "dnd", "research").
+	Domain string `json:"domain,omitempty"`
+
 	// DomainCatalog enables domain-aware prompt assembly when set.
-	// Not serialized to JSON — injected at construction time.
+	// Not serialized to JSON — resolved from Domain at construction time.
 	DomainCatalog *promptmanager.DomainCatalog `json:"-"`
 }
 

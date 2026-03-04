@@ -28,16 +28,9 @@ type BossBattle struct {
 	Criteria    []domain.ReviewCriterion `json:"criteria"`
 	Results     []domain.ReviewResult    `json:"results,omitempty"`
 	Verdict     *domain.BattleVerdict    `json:"verdict,omitempty"`
-	Judges      []Judge                  `json:"judges"`
+	Judges      []domain.Judge            `json:"judges"`
 	StartedAt   time.Time                `json:"started_at"`
 	CompletedAt *time.Time               `json:"completed_at,omitempty"`
-}
-
-// Judge represents an evaluator for boss battles.
-type Judge struct {
-	ID     string           `json:"id"`
-	Type   domain.JudgeType `json:"type"`
-	Config map[string]any   `json:"config"`
 }
 
 // =============================================================================
@@ -200,7 +193,7 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 
 	// Reconstruct judges (we only store IDs in triples)
 	for _, id := range judgeIDs {
-		b.Judges = append(b.Judges, Judge{ID: id})
+		b.Judges = append(b.Judges, domain.Judge{ID: id})
 	}
 
 	return b

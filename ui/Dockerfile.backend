@@ -14,6 +14,7 @@ RUN addgroup -S app && adduser -S app -G app
 COPY --from=builder /semdragons /semdragons
 COPY --from=builder /app/config/semdragons.json /etc/semdragons/config.json
 COPY --from=builder /app/config/semdragons-e2e.json /etc/semdragons/config-e2e.json
+COPY --from=builder /app/config/semdragons-e2e-ollama.json /etc/semdragons/config-e2e-ollama.json
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:8080/health || exit 1
 USER app

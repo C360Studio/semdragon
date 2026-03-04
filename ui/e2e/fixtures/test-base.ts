@@ -117,6 +117,7 @@ export interface QuestResponse {
 	require_human_review?: boolean;
 	review_level?: number;
 	trajectory_id?: string;
+	loop_id?: string;
 	[key: string]: unknown;
 }
 
@@ -131,11 +132,20 @@ export interface AgentResponse {
 	[key: string]: unknown;
 }
 
+export interface BattleVerdictResponse {
+	passed: boolean;
+	quality_score: number;
+	xp_awarded?: number;
+	xp_penalty?: number;
+	feedback?: string;
+}
+
 export interface BattleResponse {
 	id: string;
 	quest_id: string;
+	agent_id?: string;
 	status: string;
-	verdict?: string;
+	verdict?: BattleVerdictResponse;
 	[key: string]: unknown;
 }
 
@@ -213,6 +223,31 @@ export interface UseConsumableResponse {
 	[key: string]: unknown;
 }
 
+export interface TrajectoryStep {
+	timestamp: string;
+	step_type: 'model_call' | 'tool_call';
+	request_id?: string;
+	prompt?: string;
+	response?: string;
+	tokens_in?: number;
+	tokens_out?: number;
+	tool_name?: string;
+	tool_arguments?: Record<string, unknown>;
+	tool_result?: string;
+	duration: number;
+}
+
+export interface TrajectoryResponse {
+	loop_id: string;
+	start_time: string;
+	end_time?: string;
+	steps: TrajectoryStep[];
+	outcome?: string;
+	total_tokens_in: number;
+	total_tokens_out: number;
+	duration: number;
+}
+
 export interface WorldStateResponse {
 	agents?: AgentResponse[];
 	quests?: QuestResponse[];
@@ -264,6 +299,7 @@ export interface LifecycleApi {
 			depends_on?: number[];
 		}>;
 	}) => Promise<QuestResponse[]>;
+	getTrajectory: (loopId: string) => Promise<TrajectoryResponse>;
 	getBoardStatus: () => Promise<BoardStatusResponse>;
 	pauseBoard: (actor?: string) => Promise<BoardStatusResponse>;
 	resumeBoard: () => Promise<BoardStatusResponse>;
@@ -564,6 +600,14 @@ export const test = base.extend<{
 				const res = await apiContext.post('/game/quests/chain', { data: chain });
 				if (!res.ok()) {
 					throw new Error(`postQuestChain failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getTrajectory: async (loopId) => {
+				const res = await apiContext.get(`/game/trajectories/${loopId}`);
+				if (!res.ok()) {
+					throw new Error(`getTrajectory failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			},

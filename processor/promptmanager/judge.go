@@ -40,7 +40,12 @@ func (a *PromptAssembler) AssembleJudgePrompt(
 	instructions := "Evaluate the submission against each criterion. " +
 		"Score each criterion from 0.0 to 1.0. " +
 		"Provide specific reasoning for each score. " +
-		"A criterion passes if its score meets or exceeds its threshold."
+		"A criterion passes if its score meets or exceeds its threshold.\n\n" +
+		"Respond with ONLY a JSON object in this exact format:\n" +
+		"```json\n" +
+		"{\"criteria\": [{\"name\": \"<criterion_name>\", \"score\": <0.0-1.0>, \"reasoning\": \"<explanation>\"}], " +
+		"\"overall_feedback\": \"<summary>\"}\n" +
+		"```"
 	sections = append(sections, formatSection("Instructions", instructions, style))
 
 	// Quest context for judge

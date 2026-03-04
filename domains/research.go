@@ -91,6 +91,20 @@ var ResearchPromptCatalog = promptmanager.DomainCatalog{
 	},
 
 	JudgeSystemBase: "You are a peer reviewer evaluating a researcher's study output for methodological rigor and contribution.",
+
+	ReviewConfig: &promptmanager.ReviewConfig{
+		DefaultReviewLevel: domain.ReviewStandard,
+		DefaultCriteria: []domain.ReviewCriterion{
+			{Name: "methodology", Weight: 0.4, Threshold: 0.7, Description: "Sound methodology and approach"},
+			{Name: "evidence", Weight: 0.35, Threshold: 0.6, Description: "Evidence supports conclusions"},
+			{Name: "clarity", Weight: 0.25, Threshold: 0.5, Description: "Clear presentation of findings"},
+		},
+		AutoPassDifficulties: []domain.QuestDifficulty{domain.DifficultyTrivial},
+		DefaultJudges: []domain.Judge{
+			{ID: "judge-auto", Type: domain.JudgeAutomated},
+			{ID: "judge-llm", Type: domain.JudgeLLM},
+		},
+	},
 }
 
 // ResearchSkillCount returns the number of skills in the research domain.
