@@ -42,6 +42,8 @@ type Service struct {
 	graph           GraphQuerier       // concrete type is *semdragons.GraphClient
 	world           WorldStateProvider // concrete type is *dmworldstate.WorldStateAggregator
 	store           StoreProvider      // concrete type is *agentstore.Component; nil if unavailable
+	storeOnce       sync.Once          // guards lazy store resolution
+	componentDeps   *service.Dependencies // retained for lazy component resolution
 	models          ModelResolver      // concrete type is *model.Registry; nil if unavailable
 	nats            *natsclient.Client // direct NATS access for KV buckets outside graph
 	trajectories    TrajectoryQuerier  // trajectory KV lookups; nil before init
@@ -110,7 +112,6 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 
 	graph := semdragons.NewGraphClient(deps.NATSClient, boardConfig)
 	world := dmworldstate.NewWorldStateAggregator(graph, cfg.MaxEntities, logger)
-	store := resolveStoreComponent(deps, logger)
 	models := resolveModelRegistry(deps)
 
 	sessions := &dmSessionStore{nats: deps.NATSClient, logger: logger}
@@ -127,7 +128,7 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 		BaseService:     baseService,
 		graph:           graph,
 		world:           world,
-		store:           store,
+		componentDeps:   deps,
 		models:          models,
 		nats:            deps.NATSClient,
 		trajectories:    &natsTrajectoryQuerier{nats: deps.NATSClient},
@@ -137,6 +138,19 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 		logger:          logger,
 		chatTraces:      make(map[string]*natsclient.TraceContext),
 	}, nil
+}
+
+// getStore lazily resolves the agent_store component from the registry.
+// Components are created after services, so eager resolution at construction
+// time finds nothing. sync.Once ensures the lookup happens only once.
+// If store was set directly (e.g. in tests), the pre-set value is preserved.
+func (s *Service) getStore() StoreProvider {
+	s.storeOnce.Do(func() {
+		if s.store == nil {
+			s.store = resolveStoreComponent(s.componentDeps, s.logger)
+		}
+	})
+	return s.store
 }
 
 // resolveStoreComponent attempts to retrieve the agentstore component from the
@@ -288,6 +302,10 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"battles", cors(s.handleListBattles))
 	mux.HandleFunc("GET "+prefix+"battles/{id}", cors(s.handleGetBattle))
 
+	// Parties
+	mux.HandleFunc("GET "+prefix+"parties", cors(s.handleListParties))
+	mux.HandleFunc("GET "+prefix+"parties/{id}", cors(s.handleGetParty))
+
 	// Trajectories
 	mux.HandleFunc("GET "+prefix+"trajectories/{id}", cors(s.handleGetTrajectory))
 
@@ -312,6 +330,9 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"board/status", cors(s.handleBoardStatus))
 	mux.HandleFunc("POST "+prefix+"board/pause", cors(requireAuth(apiKey, s.handleBoardPause)))
 	mux.HandleFunc("POST "+prefix+"board/resume", cors(requireAuth(apiKey, s.handleBoardResume)))
+
+	// Model registry
+	mux.HandleFunc("GET "+prefix+"models", cors(s.handleGetModels))
 
 	s.logger.Info("Game API HTTP handlers registered", "prefix", prefix)
 }

@@ -71,6 +71,12 @@
         "preferred": ["ollama-qwen3"],
         "fallback": ["ollama-coder"],
         "requires_tools": false
+      },
+      "dm-chat": {
+        "description": "DM conversational assistance",
+        "preferred": ["ollama-qwen3"],
+        "fallback": ["ollama-coder"],
+        "requires_tools": false
       }
     },
     "defaults": {
@@ -233,7 +239,8 @@
       "config": {
         "org": "local",
         "platform": "dev",
-        "board": "board1"
+        "board": "board1",
+        "boid_suggestions_bucket": "BOID_SUGGESTIONS"
       }
     },
     "agentic-loop": {
@@ -292,6 +299,18 @@
         "quest_loops_bucket": "QUEST_LOOPS",
         "timeout": "60s",
         "enable_builtins": true
+      }
+    },
+    "partycoord": {
+      "type": "processor",
+      "name": "partycoord",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "auto_form_parties": true,
+        "require_lead_approval": false
       }
     }
   }

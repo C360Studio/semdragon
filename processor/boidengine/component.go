@@ -6,6 +6,7 @@ package boidengine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -52,6 +53,9 @@ type Component struct {
 	agentsMu sync.RWMutex
 	questsMu sync.RWMutex
 	guildsMu sync.RWMutex
+
+	// KV bucket for persisting boid suggestions (nil when disabled)
+	suggestionsBucket jetstream.KeyValue
 
 	// Board pause integration
 	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
@@ -209,6 +213,12 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Default:     5,
 				Category:    "timing",
 			},
+			"boid_suggestions_bucket": {
+				Type:        "string",
+				Description: "KV bucket for persisting boid suggestions per agent (empty disables)",
+				Default:     "BOID_SUGGESTIONS",
+				Category:    "observability",
+			},
 		},
 		Required: []string{"org", "platform", "board"},
 	}
@@ -305,6 +315,21 @@ func (c *Component) Start(ctx context.Context) error {
 	// Create graph client
 	if err := c.createGraphClient(ctx); err != nil {
 		return err
+	}
+
+	// Create BOID_SUGGESTIONS KV bucket when configured. Suggestions are ephemeral
+	// (TTL 5 minutes) and observable via the message-logger SSE infrastructure.
+	if c.config.BoidSuggestionsBucket != "" {
+		bucket, err := c.deps.NATSClient.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
+			Bucket:      c.config.BoidSuggestionsBucket,
+			Description: "Ephemeral boid suggestions per agent",
+			History:     5,
+			TTL:         5 * time.Minute,
+		})
+		if err != nil {
+			return fmt.Errorf("create boid suggestions bucket: %w", err)
+		}
+		c.suggestionsBucket = bucket
 	}
 
 	// Load initial state

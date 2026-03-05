@@ -27,6 +27,11 @@ type Config struct {
 
 	// Suggestions
 	MaxSuggestionsPerAgent int `json:"max_suggestions_per_agent" schema:"type:int,description:Max ranked suggestions per agent (default 3)"`
+
+	// Observability
+	// BoidSuggestionsBucket is the NATS KV bucket where suggestions are persisted per agent.
+	// Empty string disables KV persistence. Suggestions auto-expire after 5 minutes.
+	BoidSuggestionsBucket string `json:"boid_suggestions_bucket" schema:"type:string,description:KV bucket for persisting boid suggestions (empty disables)"`
 }
 
 // DefaultConfig returns a configuration with sensible defaults.
@@ -45,6 +50,7 @@ func DefaultConfig() Config {
 		UpdateIntervalMs:       1000,
 		NeighborRadius:         rules.NeighborRadius,
 		MaxSuggestionsPerAgent: 3,
+		BoidSuggestionsBucket:  "BOID_SUGGESTIONS",
 	}
 }
 

@@ -13,7 +13,7 @@ import (
 	"github.com/c360studio/semstreams/model"
 )
 
-const llmHTTPTimeout = 60 * time.Second
+const llmHTTPTimeout = 120 * time.Second
 
 // ChatMessage represents a single turn in the DM conversation.
 type ChatMessage struct {

@@ -15,8 +15,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/bossbattle"
+	"github.com/c360studio/semdragons/processor/partycoord"
 )
 
 const maxRequestBodySize = 1 << 20 // 1 MB
@@ -171,6 +172,8 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 			ReviewLevel         *int     `json:"review_level,omitempty"`
 			Budget              float64  `json:"budget"`
 			Deadline            string   `json:"deadline,omitempty"`
+			PartyRequired       bool     `json:"party_required"`
+			MinPartySize        *int     `json:"min_party_size,omitempty"`
 		} `json:"hints,omitempty"`
 	}
 
@@ -221,6 +224,13 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 				quest.Constraints.ReviewLevel = domain.ReviewLevel(*req.Hints.ReviewLevel)
 			} else {
 				quest.Constraints.ReviewLevel = domain.ReviewStandard
+			}
+		}
+		if req.Hints.PartyRequired {
+			quest.PartyRequired = true
+			quest.MinPartySize = 2 // default
+			if req.Hints.MinPartySize != nil && *req.Hints.MinPartySize >= 2 && *req.Hints.MinPartySize <= 5 {
+				quest.MinPartySize = *req.Hints.MinPartySize
 			}
 		}
 	}
@@ -925,6 +935,60 @@ func (s *Service) handleGetBattle(w http.ResponseWriter, r *http.Request) {
 }
 
 // =============================================================================
+// PARTIES
+// =============================================================================
+
+func (s *Service) handleListParties(w http.ResponseWriter, r *http.Request) {
+	entities, err := s.graph.ListEntitiesByType(r.Context(), domain.EntityTypeParty, s.config.MaxEntities)
+	if err != nil {
+		if isBucketNotFound(err) {
+			s.writeJSON(w, []partycoord.Party{})
+			return
+		}
+		s.writeError(w, "failed to list parties", http.StatusInternalServerError)
+		s.logger.Error("Failed to list parties", "error", err)
+		return
+	}
+
+	parties := make([]partycoord.Party, 0, len(entities))
+	for _, entity := range entities {
+		party := partycoord.PartyFromEntityState(&entity)
+		if party != nil {
+			parties = append(parties, *party)
+		}
+	}
+
+	s.writeJSON(w, parties)
+}
+
+func (s *Service) handleGetParty(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+
+	entity, err := s.graph.GetParty(r.Context(), domain.PartyID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve party", http.StatusInternalServerError)
+		s.logger.Error("Failed to get party", "id", id, "error", err)
+		return
+	}
+
+	party := partycoord.PartyFromEntityState(entity)
+	if party == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.writeJSON(w, party)
+}
+
+// =============================================================================
 // TRAJECTORIES
 // =============================================================================
 
@@ -970,6 +1034,13 @@ func (s *Service) handleGetTrajectory(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
+	// Extend the write deadline for LLM calls, which can take 60-120s.
+	// The default server WriteTimeout (10s) is too short for LLM inference.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Now().Add(llmHTTPTimeout + 15*time.Second)); err != nil {
+		s.logger.Warn("Failed to extend write deadline for DM chat", "error", err)
+	}
+
 	if s.models == nil {
 		s.writeError(w, "model registry not configured", http.StatusServiceUnavailable)
 		return
@@ -979,6 +1050,7 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Message   string              `json:"message"`
+		Mode      string              `json:"mode,omitempty"`
 		Context   []dmChatContextItem `json:"context,omitempty"`
 		History   []ChatMessage       `json:"history,omitempty"`
 		SessionID string              `json:"session_id,omitempty"`
@@ -997,11 +1069,26 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve LLM endpoint
-	endpointName := s.models.Resolve("dm-chat")
+	// Parse and validate chat mode (default: converse)
+	chatMode := domain.ChatModeConverse
+	if req.Mode != "" {
+		chatMode = domain.ChatMode(req.Mode)
+		if !domain.ValidChatMode(chatMode) {
+			s.writeError(w, "invalid mode: must be converse, quest, plan, or manage", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Route LLM capability by mode
+	capability := "dm-chat"
+	if chatMode == domain.ChatModeQuest || chatMode == domain.ChatModePlan {
+		capability = "quest-design"
+	}
+
+	endpointName := s.models.Resolve(capability)
 	endpoint := s.models.GetEndpoint(endpointName)
 	if endpoint == nil {
-		s.writeError(w, "no LLM endpoint available for dm-chat", http.StatusServiceUnavailable)
+		s.writeError(w, "no LLM endpoint available for "+capability, http.StatusServiceUnavailable)
 		return
 	}
 
@@ -1014,8 +1101,8 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 	sessionID, turnSpan := s.getOrCreateChatTrace(req.SessionID)
 	ctx = natsclient.ContextWithTrace(ctx, turnSpan)
 
-	// Build system prompt with world state and context
-	systemPrompt := s.buildDMSystemPrompt(ctx, req.Context)
+	// Build system prompt with world state, context, and mode
+	systemPrompt := s.buildDMSystemPrompt(ctx, chatMode, req.Context)
 
 	// Build conversation: history + new user message
 	messages := make([]ChatMessage, 0, len(req.History)+1)
@@ -1031,51 +1118,64 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try to extract quest brief or chain from the response
 	resp := struct {
 		Message    string                  `json:"message"`
+		Mode       string                  `json:"mode"`
 		QuestBrief *domain.QuestBrief      `json:"quest_brief,omitempty"`
 		QuestChain *domain.QuestChainBrief `json:"quest_chain,omitempty"`
 		SessionID  string                  `json:"session_id"`
 		TraceInfo  semdragons.TraceInfo    `json:"trace_info"`
 	}{
 		Message:   llmResponse,
+		Mode:      string(chatMode),
 		SessionID: sessionID,
 		TraceInfo: semdragons.TraceInfoFromTraceContext(turnSpan),
 	}
 
-	// Check for tagged JSON blocks: ```json:quest_brief or ```json:quest_chain
-	if extracted := extractTaggedJSON(llmResponse, "quest_chain"); extracted != "" {
-		var chain domain.QuestChainBrief
-		if err := json.Unmarshal([]byte(extracted), &chain); err == nil {
-			if domain.ValidateQuestChainBrief(&chain) == nil {
-				resp.QuestChain = &chain
-			}
-		}
-	} else if extracted := extractTaggedJSON(llmResponse, "quest_brief"); extracted != "" {
-		var brief domain.QuestBrief
-		if err := json.Unmarshal([]byte(extracted), &brief); err == nil {
-			if domain.ValidateQuestBrief(&brief) == nil {
-				resp.QuestBrief = &brief
-			}
-		}
-	} else {
-		// Fall back to generic JSON extraction
-		extracted := semdragons.ExtractJSONFromLLMResponse(llmResponse)
-		if extracted != "" && extracted != llmResponse {
-			// Try as chain first (has "quests" array), then as brief
-			var chain domain.QuestChainBrief
-			if err := json.Unmarshal([]byte(extracted), &chain); err == nil && len(chain.Quests) > 0 {
-				if domain.ValidateQuestChainBrief(&chain) == nil {
-					resp.QuestChain = &chain
+	// Extract quest briefs/chains when mode is quest, with retry on failure
+	if chatMode == domain.ChatModeQuest {
+		brief, chain := extractQuestOutput(llmResponse)
+		resp.QuestBrief = brief
+		resp.QuestChain = chain
+
+		// Retry once if quest mode produced no structured output.
+		// Append the LLM's response + a nudge message to the conversation
+		// so it sees its own output and gets a second chance.
+		const maxQuestRetries = 1
+		if brief == nil && chain == nil {
+			for attempt := 0; attempt < maxQuestRetries; attempt++ {
+				s.logger.Warn("Quest mode produced no structured output, retrying",
+					"attempt", attempt+1, "endpoint", endpointName)
+
+				retryMessages := make([]ChatMessage, len(messages)+2)
+				copy(retryMessages, messages)
+				retryMessages[len(messages)] = ChatMessage{Role: "assistant", Content: llmResponse}
+				retryMessages[len(messages)+1] = ChatMessage{
+					Role:    "user",
+					Content: "Please provide the quest specification as a JSON code block using the format from your instructions. Use ```json:quest_brief for a single quest or ```json:quest_chain for multiple quests.",
 				}
-			} else {
-				var brief domain.QuestBrief
-				if err := json.Unmarshal([]byte(extracted), &brief); err == nil {
-					if domain.ValidateQuestBrief(&brief) == nil {
-						resp.QuestBrief = &brief
-					}
+
+				retryResponse, retryErr := callLLM(ctx, endpoint, systemPrompt, retryMessages)
+				if retryErr != nil {
+					s.logger.Warn("Quest retry LLM call failed", "error", retryErr, "attempt", attempt+1)
+					break
 				}
+
+				brief, chain = extractQuestOutput(retryResponse)
+				if brief != nil || chain != nil {
+					// Combine responses so the user sees the full conversation
+					resp.Message = llmResponse + "\n\n" + retryResponse
+					resp.QuestBrief = brief
+					resp.QuestChain = chain
+					llmResponse = resp.Message
+					break
+				}
+
+				s.logger.Warn("Quest retry still produced no structured output",
+					"attempt", attempt+1, "endpoint", endpointName)
+				// Update for next iteration
+				llmResponse = llmResponse + "\n\n" + retryResponse
+				resp.Message = llmResponse
 			}
 		}
 	}
@@ -1132,6 +1232,49 @@ func (s *Service) getOrCreateChatTrace(sessionID string) (string, *natsclient.Tr
 	s.chatTracesMu.Unlock()
 
 	return sessionID, rootTrace.NewSpan()
+}
+
+// extractQuestOutput attempts to parse a quest_brief or quest_chain from an LLM response.
+// It tries tagged JSON blocks first, then falls back to generic JSON extraction.
+// Returns (brief, chain) — at most one will be non-nil.
+func extractQuestOutput(llmResponse string) (*domain.QuestBrief, *domain.QuestChainBrief) {
+	// Try tagged JSON blocks first
+	if extracted := extractTaggedJSON(llmResponse, "quest_chain"); extracted != "" {
+		var chain domain.QuestChainBrief
+		if err := json.Unmarshal([]byte(extracted), &chain); err == nil {
+			if domain.ValidateQuestChainBrief(&chain) == nil {
+				return nil, &chain
+			}
+		}
+	}
+	if extracted := extractTaggedJSON(llmResponse, "quest_brief"); extracted != "" {
+		var brief domain.QuestBrief
+		if err := json.Unmarshal([]byte(extracted), &brief); err == nil {
+			if domain.ValidateQuestBrief(&brief) == nil {
+				return &brief, nil
+			}
+		}
+	}
+
+	// Fall back to generic JSON extraction
+	extracted := semdragons.ExtractJSONFromLLMResponse(llmResponse)
+	if extracted == "" || extracted == llmResponse {
+		return nil, nil
+	}
+	// Try as chain first (has "quests" array), then as brief
+	var chain domain.QuestChainBrief
+	if err := json.Unmarshal([]byte(extracted), &chain); err == nil && len(chain.Quests) > 0 {
+		if domain.ValidateQuestChainBrief(&chain) == nil {
+			return nil, &chain
+		}
+	}
+	var brief domain.QuestBrief
+	if err := json.Unmarshal([]byte(extracted), &brief); err == nil {
+		if domain.ValidateQuestBrief(&brief) == nil {
+			return &brief, nil
+		}
+	}
+	return nil, nil
 }
 
 // extractTaggedJSON extracts JSON from a tagged code block like ```json:quest_brief
@@ -1194,7 +1337,7 @@ func (s *Service) handleGetDMSession(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 func (s *Service) handleListStore(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	if s.getStore() == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1217,15 +1360,15 @@ func (s *Service) handleListStore(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, "agent not found", http.StatusNotFound)
 			return
 		}
-		s.writeJSON(w, s.store.ListItems(agent.Tier))
+		s.writeJSON(w, s.getStore().ListItems(agent.Tier))
 		return
 	}
 
-	s.writeJSON(w, s.store.Catalog())
+	s.writeJSON(w, s.getStore().Catalog())
 }
 
 func (s *Service) handleGetStoreItem(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	if s.getStore() == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1236,7 +1379,7 @@ func (s *Service) handleGetStoreItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, ok := s.store.GetItem(id)
+	item, ok := s.getStore().GetItem(id)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -1246,7 +1389,7 @@ func (s *Service) handleGetStoreItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	if s.getStore() == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1294,7 +1437,7 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check tier gate before purchasing
-	item, itemOK := s.store.GetItem(req.ItemID)
+	item, itemOK := s.getStore().GetItem(req.ItemID)
 	if !itemOK {
 		s.writeError(w, "item not found", http.StatusNotFound)
 		return
@@ -1304,7 +1447,7 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owned, purchaseErr := s.store.Purchase(ctx, agentID, req.ItemID, agent.XP, agent.Level, agent.Guilds)
+	owned, purchaseErr := s.getStore().Purchase(ctx, agentID, req.ItemID, agent.XP, agent.Level, agent.Guilds)
 	if purchaseErr != nil {
 		s.logger.Warn("Purchase failed", "agent_id", agentID, "item_id", req.ItemID, "error", purchaseErr)
 		s.writeJSON(w, map[string]any{
@@ -1314,7 +1457,7 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inv := s.store.GetInventory(agentID)
+	inv := s.getStore().GetInventory(agentID)
 
 	s.writeJSON(w, map[string]any{
 		"success":      true,
@@ -1326,7 +1469,7 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleGetInventory(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	if s.getStore() == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1337,12 +1480,12 @@ func (s *Service) handleGetInventory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inv := s.store.GetInventory(domain.AgentID(id))
+	inv := s.getStore().GetInventory(domain.AgentID(id))
 	s.writeJSON(w, inv)
 }
 
 func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	if s.getStore() == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1375,7 +1518,7 @@ func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
 		questIDPtr = &qid
 	}
 
-	if err := s.store.UseConsumable(r.Context(), agentID, req.ConsumableID, questIDPtr); err != nil {
+	if err := s.getStore().UseConsumable(r.Context(), agentID, req.ConsumableID, questIDPtr); err != nil {
 		s.writeJSON(w, map[string]any{
 			"success": false,
 			"error":   err.Error(),
@@ -1383,9 +1526,9 @@ func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inv := s.store.GetInventory(agentID)
+	inv := s.getStore().GetInventory(agentID)
 	remaining := inv.ConsumableCount(req.ConsumableID)
-	effects := s.store.GetActiveEffects(agentID)
+	effects := s.getStore().GetActiveEffects(agentID)
 
 	s.writeJSON(w, map[string]any{
 		"success":        true,
@@ -1395,7 +1538,7 @@ func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleGetEffects(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	if s.getStore() == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1406,7 +1549,7 @@ func (s *Service) handleGetEffects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	effects := s.store.GetActiveEffects(domain.AgentID(id))
+	effects := s.getStore().GetActiveEffects(domain.AgentID(id))
 	if effects == nil {
 		effects = make([]agentstore.ActiveEffect, 0)
 	}
@@ -1817,6 +1960,61 @@ func (s *Service) handleBoardResume(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Info("Board resumed")
 	s.writeJSON(w, st)
+}
+
+// =============================================================================
+// MODEL REGISTRY
+// =============================================================================
+
+// handleGetModels returns model registry state. With ?resolve=capability, returns
+// the resolution result for a single capability. Without it, returns a full summary
+// of all endpoints and capabilities.
+func (s *Service) handleGetModels(w http.ResponseWriter, r *http.Request) {
+	if s.models == nil {
+		s.writeError(w, "model registry unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Single capability resolution
+	if capability := r.URL.Query().Get("resolve"); capability != "" {
+		name := s.models.Resolve(capability)
+		ep := s.models.GetEndpoint(name)
+
+		resp := ModelResolveResponse{
+			Capability:   capability,
+			EndpointName: name,
+		}
+		if ep != nil {
+			resp.Model = ep.Model
+			resp.Provider = ep.Provider
+		}
+		resp.FallbackChain = s.models.GetFallbackChain(capability)
+
+		s.writeJSON(w, resp)
+		return
+	}
+
+	// Full registry summary
+	endpointNames := s.models.ListEndpoints()
+	endpoints := make([]ModelEndpointSummary, 0, len(endpointNames))
+	for _, name := range endpointNames {
+		ep := s.models.GetEndpoint(name)
+		if ep == nil {
+			continue
+		}
+		endpoints = append(endpoints, ModelEndpointSummary{
+			Name:          name,
+			Provider:      ep.Provider,
+			Model:         ep.Model,
+			MaxTokens:     ep.MaxTokens,
+			SupportsTools: ep.SupportsTools,
+		})
+	}
+
+	s.writeJSON(w, ModelRegistrySummary{
+		Endpoints:    endpoints,
+		Capabilities: s.models.ListCapabilities(),
+	})
 }
 
 // =============================================================================

@@ -396,6 +396,12 @@ func (c *Component) computeAndPublish() {
 				"error", err)
 			continue
 		}
+		if c.suggestionsBucket != nil {
+			agentInstance := domain.ExtractInstance(string(agentID))
+			if _, putErr := c.suggestionsBucket.Put(ctx, agentInstance, data); putErr != nil {
+				c.logger.Warn("failed to persist boid suggestion to KV", "agent", agentID, "error", putErr)
+			}
+		}
 		totalPublished += len(suggestions)
 	}
 

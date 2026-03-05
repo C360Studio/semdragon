@@ -16,23 +16,81 @@ type dmChatContextItem struct {
 }
 
 // buildDMSystemPrompt constructs the system prompt for the DM chat assistant.
-// It includes the DM persona, available game options, world state summary,
-// context entities, and output format instructions.
-func (s *Service) buildDMSystemPrompt(ctx context.Context, contextItems []dmChatContextItem) string {
+// The prompt varies by chat mode:
+//   - converse: Q&A only, no structured output
+//   - quest: quest/chain creation with JSON schemas
+//   - plan: stub (converse + coming soon note)
+//   - manage: stub (converse + coming soon note)
+//
+// All modes share the DM persona, world state summary, and injected context.
+func (s *Service) buildDMSystemPrompt(ctx context.Context, mode domain.ChatMode, contextItems []dmChatContextItem) string {
 	var b strings.Builder
 
-	// DM persona
+	// DM persona (shared, mode-neutral)
 	b.WriteString(`You are the Dungeon Master of a quest-based agentic workflow system called Semdragons.
-Your role is to help users create quests and quest chains through natural conversation.
+You oversee agents, quests, parties, guilds, and boss battles.
+`)
+
+	// Mode-specific instructions
+	switch mode {
+	case domain.ChatModeQuest:
+		b.WriteString(`Your role is to help users create quests and quest chains through natural conversation.
 You should ask clarifying questions when the user's intent is unclear, and suggest
 appropriate difficulty levels, required skills, and acceptance criteria.
 
-When you have gathered enough information to create a quest, include a JSON block in your
-response with the quest specification. Use one of the two formats below.
+IMPORTANT: When the user describes work to be done, you MUST include a JSON block in your
+response with the quest specification. Do not just discuss the quest — always produce the
+structured JSON output. Use one of the two formats below.
+
+`)
+		s.writeQuestSchemaInstructions(&b)
+		s.writeAvailableOptions(&b)
+
+	case domain.ChatModePlan:
+		b.WriteString(`
+Plan mode is coming soon. For now, help the user think through their objective.
+Ask clarifying questions about scope, dependencies, and success criteria.
+Do NOT produce JSON blocks or structured output. Answer in natural language only.
 
 `)
 
-	// Quest schema instructions
+	case domain.ChatModeManage:
+		b.WriteString(`
+Manage mode is coming soon. For now, answer questions about agents, their status,
+levels, skills, and performance. Do NOT produce JSON blocks or structured output.
+Answer in natural language only.
+
+`)
+
+	default: // converse
+		b.WriteString(`
+Answer the user's questions about the game world, agents, quests, and system concepts.
+Do NOT produce JSON blocks or structured output. Answer in natural language only.
+
+`)
+	}
+
+	// World state summary (shared)
+	s.writeWorldState(ctx, &b)
+
+	// Context entities (shared)
+	if len(contextItems) > 0 {
+		b.WriteString("## Injected Context\n\n")
+		for _, item := range contextItems {
+			detail := s.resolveContextDetail(ctx, item)
+			if detail != "" {
+				b.WriteString(detail)
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+// writeQuestSchemaInstructions appends quest/chain JSON schema instructions to the builder.
+func (s *Service) writeQuestSchemaInstructions(b *strings.Builder) {
 	b.WriteString(`## Output Format
 
 For a SINGLE quest, include a JSON block tagged as quest_brief:
@@ -69,12 +127,16 @@ For MULTIPLE related quests (a chain), include a JSON block tagged as quest_chai
 }
 ` + "```" + `
 
-Only include the JSON block when you have enough information to create the quest(s).
-Keep conversing to gather details until the user's intent is clear.
+If the user's intent is unclear, ask ONE clarifying question — but still include your
+best-guess JSON block so the user can refine it. Prefer producing output over asking
+questions. Never respond without a JSON block unless you genuinely cannot determine any
+objective from the user's message.
 
 `)
+}
 
-	// Available options reference
+// writeAvailableOptions appends difficulty, skill, and review level references.
+func (s *Service) writeAvailableOptions(b *strings.Builder) {
 	b.WriteString("## Available Options\n\n")
 
 	b.WriteString("**Difficulty levels** (0-5): ")
@@ -96,8 +158,10 @@ Keep conversing to gather details until the user's intent is clear.
 	b.WriteString("\n\n")
 
 	b.WriteString("**Review levels**: 0=Auto, 1=Standard, 2=Strict, 3=Human\n\n")
+}
 
-	// World state summary
+// writeWorldState appends the current world state summary.
+func (s *Service) writeWorldState(ctx context.Context, b *strings.Builder) {
 	b.WriteString("## Current World State\n\n")
 	ws, err := s.world.WorldState(ctx)
 	if err == nil && ws != nil {
@@ -112,21 +176,6 @@ Keep conversing to gather details until the user's intent is clear.
 		b.WriteString("World state unavailable.\n")
 	}
 	b.WriteString("\n")
-
-	// Context entities
-	if len(contextItems) > 0 {
-		b.WriteString("## Injected Context\n\n")
-		for _, item := range contextItems {
-			detail := s.resolveContextDetail(ctx, item)
-			if detail != "" {
-				b.WriteString(detail)
-				b.WriteString("\n")
-			}
-		}
-		b.WriteString("\n")
-	}
-
-	return b.String()
 }
 
 // resolveContextDetail fetches a summary for an injected context entity.

@@ -403,8 +403,6 @@ Practical helpers in `.claude/skills/`:
 ## Open Items
 
 API endpoints that return 501 Not Implemented:
-- `GET /api/game/trajectories/{id}` — trajectory lookup from NATS KV
-- `POST /api/game/dm/chat` — DM natural language chat interface (in active development: QuestBrief intake + `DependsOn`/`Acceptance` additions to Quest)
 - `POST /api/game/dm/intervene/{questId}` — DM quest intervention
 
 Components enabled in the default config (`config/semdragons.json`):

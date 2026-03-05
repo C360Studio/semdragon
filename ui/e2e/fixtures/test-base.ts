@@ -186,8 +186,11 @@ export interface ActiveEffectResponse {
 	[key: string]: unknown;
 }
 
+export type ChatMode = 'converse' | 'quest' | 'plan' | 'manage';
+
 export interface DMChatResponse {
 	message: string;
+	mode: ChatMode;
 	quest_brief?: {
 		title: string;
 		description?: string;
@@ -209,10 +212,57 @@ export interface DMChatResponse {
 	trace_info?: { trace_id?: string; span_id?: string; parent_span_id?: string };
 }
 
+export interface ReviewResponse {
+	id: string;
+	status: string;
+	quest_id: string;
+	leader_id: string;
+	member_id: string;
+	is_solo_task: boolean;
+	leader_review?: {
+		reviewer_id: string;
+		ratings: { q1: number; q2: number; q3: number };
+		explanation?: string;
+	};
+	member_review?: {
+		reviewer_id: string;
+		ratings: { q1: number; q2: number; q3: number };
+		explanation?: string;
+	};
+	leader_avg_rating?: number;
+	member_avg_rating?: number;
+	created_at: string;
+	completed_at?: string;
+	[key: string]: unknown;
+}
+
+export interface DMSessionResponse {
+	session_id: string;
+	created_at?: string;
+	updated_at?: string;
+	turns?: Array<{
+		user_message: string;
+		dm_response: string;
+		timestamp: string;
+		trace_id?: string;
+		span_id?: string;
+	}>;
+	[key: string]: unknown;
+}
+
 export interface BoardStatusResponse {
 	paused: boolean;
 	paused_at: string | null;
 	paused_by: string | null;
+}
+
+export interface PartyResponse {
+	id: string;
+	quest_id: string;
+	lead_id?: string;
+	members?: Array<{ agent_id: string; role?: string }>;
+	status: string;
+	[key: string]: unknown;
 }
 
 export interface UseConsumableResponse {
@@ -287,7 +337,9 @@ export interface LifecycleApi {
 	getEffects: (agentId: string) => Promise<ActiveEffectResponse[]>;
 	sendDMChat: (
 		message: string,
-		sessionId?: string
+		sessionId?: string,
+		mode?: ChatMode,
+		timeoutMs?: number
 	) => Promise<DMChatResponse>;
 	postQuestChain: (chain: {
 		quests: Array<{
@@ -300,9 +352,28 @@ export interface LifecycleApi {
 		}>;
 	}) => Promise<QuestResponse[]>;
 	getTrajectory: (loopId: string) => Promise<TrajectoryResponse>;
+	createReview: (
+		questId: string,
+		leaderId: string,
+		memberId: string,
+		isSoloTask?: boolean
+	) => Promise<ReviewResponse>;
+	submitReview: (
+		reviewId: string,
+		reviewerId: string,
+		ratings: { q1: number; q2: number; q3: number },
+		explanation?: string
+	) => Promise<ReviewResponse>;
+	getReview: (reviewId: string) => Promise<ReviewResponse>;
+	listReviews: (status?: string, questId?: string) => Promise<ReviewResponse[]>;
+	getAgentReviews: (agentId: string) => Promise<ReviewResponse[]>;
+	getDMSession: (sessionId: string) => Promise<DMSessionResponse | null>;
 	getBoardStatus: () => Promise<BoardStatusResponse>;
 	pauseBoard: (actor?: string) => Promise<BoardStatusResponse>;
 	resumeBoard: () => Promise<BoardStatusResponse>;
+	listParties: () => Promise<PartyResponse[]>;
+	getParty: (id: string) => Promise<PartyResponse>;
+	createQuestWithParty: (objective: string, minPartySize?: number) => Promise<QuestResponse>;
 }
 
 /**
@@ -586,10 +657,14 @@ export const test = base.extend<{
 				return res.json();
 			},
 
-			sendDMChat: async (message, sessionId?) => {
+			sendDMChat: async (message, sessionId?, mode?, timeoutMs?) => {
 				const body: Record<string, unknown> = { message };
 				if (sessionId) body.session_id = sessionId;
-				const res = await apiContext.post('/game/dm/chat', { data: body });
+				if (mode) body.mode = mode;
+				const res = await apiContext.post('/game/dm/chat', {
+					data: body,
+					timeout: timeoutMs ?? 130_000
+				});
 				if (!res.ok()) {
 					throw new Error(`sendDMChat failed: ${res.status()} ${await res.text()}`);
 				}
@@ -608,6 +683,71 @@ export const test = base.extend<{
 				const res = await apiContext.get(`/game/trajectories/${loopId}`);
 				if (!res.ok()) {
 					throw new Error(`getTrajectory failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			createReview: async (questId, leaderId, memberId, isSoloTask = false) => {
+				const res = await apiContext.post('/game/reviews', {
+					data: {
+						quest_id: questId,
+						leader_id: leaderId,
+						member_id: memberId,
+						is_solo_task: isSoloTask
+					}
+				});
+				if (!res.ok()) {
+					throw new Error(`createReview failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			submitReview: async (reviewId, reviewerId, ratings, explanation?) => {
+				const data: Record<string, unknown> = {
+					reviewer_id: reviewerId,
+					ratings
+				};
+				if (explanation) data.explanation = explanation;
+				const res = await apiContext.post(`/game/reviews/${reviewId}/submit`, { data });
+				if (!res.ok()) {
+					throw new Error(`submitReview failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getReview: async (reviewId) => {
+				const res = await apiContext.get(`/game/reviews/${reviewId}`);
+				if (!res.ok()) {
+					throw new Error(`getReview failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			listReviews: async (status?, questId?) => {
+				const params = new URLSearchParams();
+				if (status) params.set('status', status);
+				if (questId) params.set('quest_id', questId);
+				const qs = params.toString();
+				const res = await apiContext.get(`/game/reviews${qs ? `?${qs}` : ''}`);
+				if (!res.ok()) {
+					throw new Error(`listReviews failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getAgentReviews: async (agentId) => {
+				const res = await apiContext.get(`/game/agents/${agentId}/reviews`);
+				if (!res.ok()) {
+					throw new Error(`getAgentReviews failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getDMSession: async (sessionId) => {
+				const res = await apiContext.get(`/game/dm/sessions/${sessionId}`);
+				if (res.status() === 404) return null;
+				if (!res.ok()) {
+					throw new Error(`getDMSession failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			},
@@ -634,6 +774,43 @@ export const test = base.extend<{
 				const res = await apiContext.post('/game/board/resume', { data: {} });
 				if (!res.ok()) {
 					throw new Error(`resumeBoard failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			listParties: async () => {
+				const res = await apiContext.get('/game/parties');
+				if (!res.ok()) {
+					throw new Error(`listParties failed: ${res.status()} ${await res.text()}`);
+				}
+				const data = await res.json();
+				return Array.isArray(data) ? data : (data.parties ?? data.items ?? []);
+			},
+
+			getParty: async (id) => {
+				const res = await apiContext.get(`/game/parties/${id}`);
+				if (!res.ok()) {
+					throw new Error(`getParty failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			createQuestWithParty: async (objective, minPartySize = 2) => {
+				const res = await apiContext.post('/game/quests', {
+					data: {
+						objective,
+						hints: {
+							suggested_difficulty: 1,
+							suggested_skills: [],
+							require_human_review: false,
+							party_required: true,
+							min_party_size: minPartySize,
+							budget: 100
+						}
+					}
+				});
+				if (!res.ok()) {
+					throw new Error(`createQuestWithParty failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			}

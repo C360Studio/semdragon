@@ -385,6 +385,32 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 			},
 
+			// ── Parties ──────────────────────────────────────────
+			"/parties": {
+				GET: &service.OperationSpec{
+					Summary:     "List parties",
+					Description: "Returns all parties including members, quest assignments, and formation status.",
+					Tags:        []string{"Parties"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "List of parties", ContentType: "application/json", SchemaRef: "#/components/schemas/Party", IsArray: true},
+					},
+				},
+			},
+			"/parties/{id}": {
+				GET: &service.OperationSpec{
+					Summary:     "Get party",
+					Description: "Returns a single party by ID including members, roles, and quest assignment.",
+					Tags:        []string{"Parties"},
+					Parameters: []service.ParameterSpec{
+						{Name: "id", In: "path", Required: true, Description: "Party ID", Schema: service.Schema{Type: "string"}},
+					},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Party details", ContentType: "application/json", SchemaRef: "#/components/schemas/Party"},
+						"404": {Description: "Party not found"},
+					},
+				},
+			},
+
 			// ── Peer Reviews ─────────────────────────────────────
 			"/reviews": {
 				GET: &service.OperationSpec{
@@ -484,11 +510,27 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 			},
 
+			// ── Model Registry ───────────────────────────────────
+			"/models": {
+				GET: &service.OperationSpec{
+					Summary:     "Get model registry",
+					Description: "Returns model registry state. With ?resolve=capability, returns the resolution result for a single capability including endpoint name, model, and provider. Without it, returns a full summary of all endpoints and capabilities.",
+					Tags:        []string{"Model Registry"},
+					Parameters: []service.ParameterSpec{
+						{Name: "resolve", In: "query", Description: "Capability key to resolve (e.g. 'agent-work.apprentice')", Schema: service.Schema{Type: "string"}},
+					},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Model registry summary or resolution result", ContentType: "application/json"},
+						"503": {Description: "Model registry unavailable"},
+					},
+				},
+			},
+
 			// ── DM ───────────────────────────────────────────────
 			"/dm/chat": {
 				POST: &service.OperationSpec{
 					Summary:     "DM chat",
-					Description: "Send a natural language message to the Dungeon Master. The DM can create quests, recruit agents, and manage the game world based on the conversation. Sessions persist across turns.",
+					Description: "Send a natural language message to the Dungeon Master. Supports four modes: 'converse' (default, Q&A), 'quest' (create quests/chains), 'plan' (stub), 'manage' (stub). Only quest mode produces structured quest_brief/quest_chain output. Sessions persist across turns.",
 					Tags:        []string{"DM"},
 					RequestBody: &service.RequestBodySpec{
 						Description: "Chat message and optional context",
@@ -551,6 +593,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			},
 		},
 		Tags: []service.TagSpec{
+			{Name: "Model Registry", Description: "Model registry introspection and capability resolution"},
 			{Name: "Board Control", Description: "Board play/pause control"},
 			{Name: "World", Description: "Game world state"},
 			{Name: "Quests", Description: "Quest board operations"},
@@ -558,6 +601,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			{Name: "Agents", Description: "Agent management"},
 			{Name: "Peer Reviews", Description: "Blind peer review between party members"},
 			{Name: "Battles", Description: "Boss battle (automated review) operations"},
+			{Name: "Parties", Description: "Party formation and management"},
 			{Name: "DM", Description: "Dungeon Master interaction and chat sessions"},
 			{Name: "Store", Description: "Agent store, inventory, and consumable effects"},
 			{Name: "Observability", Description: "Trajectory and event tracing"},
@@ -621,6 +665,11 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(PurchaseResponse{}),
 			reflect.TypeOf(UseConsumableResponse{}),
 			reflect.TypeOf(BoardStatusResponse{}),
+
+			// Model registry types
+			reflect.TypeOf(ModelResolveResponse{}),
+			reflect.TypeOf(ModelEndpointSummary{}),
+			reflect.TypeOf(ModelRegistrySummary{}),
 		},
 
 		// Request body types — the generator reflects these to build components.schemas

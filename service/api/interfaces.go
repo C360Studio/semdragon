@@ -16,6 +16,7 @@ type GraphQuerier interface {
 	GetQuest(ctx context.Context, id domain.QuestID) (*graph.EntityState, error)
 	GetAgent(ctx context.Context, id domain.AgentID) (*graph.EntityState, error)
 	GetBattle(ctx context.Context, id domain.BattleID) (*graph.EntityState, error)
+	GetParty(ctx context.Context, id domain.PartyID) (*graph.EntityState, error)
 	GetPeerReview(ctx context.Context, id domain.PeerReviewID) (*graph.EntityState, error)
 	ListQuestsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
 	ListAgentsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
@@ -36,6 +37,9 @@ type WorldStateProvider interface {
 type ModelResolver interface {
 	Resolve(capability string) string
 	GetEndpoint(name string) *model.EndpointConfig
+	GetFallbackChain(capability string) []string
+	ListCapabilities() []string
+	ListEndpoints() []string
 }
 
 // TrajectoryQuerier abstracts trajectory KV lookups for handler testing.

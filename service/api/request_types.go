@@ -23,6 +23,8 @@ type CreateQuestHints struct {
 	ReviewLevel         *int     `json:"review_level,omitempty" description:"Review level 0-3"`
 	Budget              float64  `json:"budget" description:"Cost budget for the quest"`
 	Deadline            string   `json:"deadline,omitempty" description:"ISO 8601 deadline"`
+	PartyRequired       bool     `json:"party_required" description:"Whether the quest requires a party"`
+	MinPartySize        *int     `json:"min_party_size,omitempty" description:"Minimum party size (2-5)"`
 }
 
 // CreateQuestChainRequest is the request body for POST /quests/chain.
@@ -88,6 +90,7 @@ type SubmitReviewRequest struct {
 // DMChatRequest is the request body for POST /dm/chat.
 type DMChatRequest struct {
 	Message   string              `json:"message" description:"User message to the DM"`
+	Mode      string              `json:"mode,omitempty" description:"Chat mode: converse, quest, plan, manage"`
 	Context   []DMChatContextRef  `json:"context,omitempty" description:"Entity references for context"`
 	History   []DMChatHistoryItem `json:"history,omitempty" description:"Previous conversation turns"`
 	SessionID string              `json:"session_id,omitempty" description:"Hex session ID for multi-turn"`
@@ -123,6 +126,7 @@ type WorldStateResponse struct {
 // DMChatResponse is the response body for POST /dm/chat.
 type DMChatResponse struct {
 	Message    string                  `json:"message" description:"DM response text"`
+	Mode       string                  `json:"mode" description:"Active chat mode"`
 	QuestBrief *domain.QuestBrief      `json:"quest_brief,omitempty" description:"Extracted quest brief if detected"`
 	QuestChain *domain.QuestChainBrief `json:"quest_chain,omitempty" description:"Extracted quest chain if detected"`
 	SessionID  string                  `json:"session_id" description:"Session ID for multi-turn"`
@@ -159,4 +163,28 @@ type BoardStatusResponse struct {
 	Paused   bool    `json:"paused" description:"Whether the board is currently paused"`
 	PausedAt *string `json:"paused_at" description:"RFC 3339 timestamp when board was paused, or null"`
 	PausedBy *string `json:"paused_by" description:"Identifier of who paused the board, or null"`
+}
+
+// ModelResolveResponse is the response body for GET /models?resolve=capability.
+type ModelResolveResponse struct {
+	Capability    string   `json:"capability" description:"The requested capability key"`
+	EndpointName  string   `json:"endpoint_name" description:"Resolved endpoint name"`
+	Model         string   `json:"model,omitempty" description:"Model identifier at the resolved endpoint"`
+	Provider      string   `json:"provider,omitempty" description:"Provider type (openai, ollama, anthropic, etc.)"`
+	FallbackChain []string `json:"fallback_chain,omitempty" description:"Ordered fallback endpoint names for this capability"`
+}
+
+// ModelEndpointSummary describes a single model endpoint in the registry.
+type ModelEndpointSummary struct {
+	Name          string `json:"name" description:"Endpoint name"`
+	Provider      string `json:"provider" description:"Provider type"`
+	Model         string `json:"model" description:"Model identifier"`
+	MaxTokens     int    `json:"max_tokens" description:"Maximum context window size"`
+	SupportsTools bool   `json:"supports_tools" description:"Whether the endpoint supports tool calling"`
+}
+
+// ModelRegistrySummary is the response body for GET /models (no query params).
+type ModelRegistrySummary struct {
+	Endpoints    []ModelEndpointSummary `json:"endpoints" description:"All configured model endpoints"`
+	Capabilities []string              `json:"capabilities" description:"All configured capability keys"`
 }
