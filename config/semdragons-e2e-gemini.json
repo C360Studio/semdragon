@@ -1,0 +1,271 @@
+{
+  "version": "1.0.0",
+  "platform": {
+    "org": "local",
+    "id": "dev",
+    "environment": "development"
+  },
+  "nats": {
+    "urls": ["nats://localhost:4222"]
+  },
+  "services": {
+    "service-manager": {
+      "enabled": true,
+      "config": {
+        "http_port": 8080,
+        "swagger_ui": true,
+        "server_info": {
+          "title": "Semdragons API",
+          "description": "Agentic workflow coordination framework",
+          "version": "0.1.0"
+        }
+      }
+    },
+    "component-manager": {
+      "enabled": true
+    },
+    "game": {
+      "enabled": true,
+      "config": {
+        "board": "board1",
+        "max_entities": 1000
+      }
+    }
+  },
+  "model_registry": {
+    "endpoints": {
+      "gemini-flash": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-flash",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 8192,
+        "supports_tools": true,
+        "reasoning_effort": "low"
+      }
+    },
+    "capabilities": {
+      "agent-work": { "preferred": ["gemini-flash"], "requires_tools": true },
+      "dm-chat": { "preferred": ["gemini-flash"] },
+      "boss-battle": { "preferred": ["gemini-flash"] }
+    },
+    "defaults": { "model": "gemini-flash" }
+  },
+  "streams": {
+    "GRAPH": {
+      "subjects": [
+        "graph.ingest.entity",
+        "graph.export.>"
+      ],
+      "max_age": "24h",
+      "storage": "file",
+      "replicas": 1
+    },
+    "AGENT": {
+      "subjects": [
+        "agent.task.*",
+        "agent.request.>",
+        "agent.response.>",
+        "agent.complete.*",
+        "agent.failed.*",
+        "agent.created.*",
+        "agent.signal.*",
+        "agent.context.compaction.*",
+        "agent.boid.>",
+        "tool.execute.*",
+        "tool.result.>"
+      ],
+      "max_age": "72h",
+      "storage": "file",
+      "replicas": 1
+    }
+  },
+  "components": {
+    "graph-ingest": {
+      "type": "processor",
+      "name": "graph-ingest",
+      "enabled": true,
+      "config": {
+        "ports": {
+          "inputs": [{
+            "name": "entities_in",
+            "subject": "graph.ingest.entity",
+            "type": "jetstream",
+            "stream_name": "GRAPH"
+          }],
+          "outputs": [{
+            "name": "entity_states",
+            "subject": "ENTITY_STATES",
+            "type": "kv-write"
+          }]
+        },
+        "enable_hierarchy": true
+      }
+    },
+    "graph-index": {
+      "type": "processor",
+      "name": "graph-index",
+      "enabled": true,
+      "config": {
+        "ports": {
+          "inputs": [{
+            "name": "entity_watch",
+            "subject": "ENTITY_STATES",
+            "type": "kv-watch"
+          }],
+          "outputs": [
+            {"name": "outgoing_index", "subject": "OUTGOING_INDEX", "type": "kv"},
+            {"name": "incoming_index", "subject": "INCOMING_INDEX", "type": "kv"},
+            {"name": "alias_index", "subject": "ALIAS_INDEX", "type": "kv"},
+            {"name": "predicate_index", "subject": "PREDICATE_INDEX", "type": "kv"}
+          ]
+        },
+        "workers": 2,
+        "batch_size": 50
+      }
+    },
+    "graph-query": {
+      "type": "processor",
+      "name": "graph-query",
+      "enabled": true,
+      "config": {
+        "ports": {
+          "inputs": [{
+            "name": "query_requests",
+            "subject": "graph.query.>",
+            "type": "nats-request"
+          }],
+          "outputs": []
+        },
+        "request_timeout": "5s",
+        "max_traversal_depth": 5,
+        "max_traversal_nodes": 100
+      }
+    },
+    "questboard": {
+      "type": "processor",
+      "name": "questboard",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "default_max_attempts": 3,
+        "enable_evaluation": true
+      }
+    },
+    "bossbattle": {
+      "type": "processor",
+      "name": "bossbattle",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "domain": "software",
+        "auto_start_on_submit": true,
+        "max_concurrent": 10
+      }
+    },
+    "agent_progression": {
+      "type": "processor",
+      "name": "agent_progression",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1"
+      }
+    },
+    "agent_store": {
+      "type": "processor",
+      "name": "agent_store",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "enable_guild_discounts": true,
+        "default_rental_uses": 10
+      }
+    },
+    "guildformation": {
+      "type": "processor",
+      "name": "guildformation",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1"
+      }
+    },
+    "boidengine": {
+      "type": "processor",
+      "name": "boidengine",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1"
+      }
+    },
+    "agentic-loop": {
+      "type": "processor",
+      "name": "agentic-loop",
+      "enabled": true,
+      "config": {
+        "max_iterations": 20,
+        "timeout": "300s",
+        "stream_name": "AGENT",
+        "loops_bucket": "AGENT_LOOPS",
+        "trajectories_bucket": "AGENT_TRAJECTORIES",
+        "context": {
+          "enabled": false
+        }
+      }
+    },
+    "agentic-model": {
+      "type": "processor",
+      "name": "agentic-model",
+      "enabled": true,
+      "config": {
+        "stream_name": "AGENT",
+        "timeout": "300s",
+        "retry": {
+          "max_attempts": 2,
+          "backoff": "exponential"
+        }
+      }
+    },
+    "questbridge": {
+      "type": "processor",
+      "name": "questbridge",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "domain": "software",
+        "stream_name": "AGENT",
+        "quest_loops_bucket": "QUEST_LOOPS",
+        "max_iterations": 20,
+        "enable_builtins": true,
+        "default_role": "general"
+      }
+    },
+    "questtools": {
+      "type": "processor",
+      "name": "questtools",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "stream_name": "AGENT",
+        "quest_loops_bucket": "QUEST_LOOPS",
+        "timeout": "60s",
+        "enable_builtins": true
+      }
+    }
+  }
+}

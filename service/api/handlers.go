@@ -800,6 +800,7 @@ func (s *Service) handleRecruitAgent(w http.ResponseWriter, r *http.Request) {
 		DisplayName string   `json:"display_name,omitempty"`
 		Skills      []string `json:"skills,omitempty"`
 		IsNPC       bool     `json:"is_npc"`
+		Level       *int     `json:"level,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -812,6 +813,11 @@ func (s *Service) handleRecruitAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	level := 1
+	if req.Level != nil && *req.Level >= 1 && *req.Level <= 20 {
+		level = *req.Level
+	}
+
 	instance := domain.GenerateShortInstance()
 	agentID := s.graph.Config().AgentEntityID(instance)
 
@@ -820,10 +826,10 @@ func (s *Service) handleRecruitAgent(w http.ResponseWriter, r *http.Request) {
 		Name:               req.Name,
 		DisplayName:        req.DisplayName,
 		Status:             domain.AgentIdle,
-		Level:              1,
+		Level:              level,
 		XP:                 0,
 		XPToLevel:          100,
-		Tier:               domain.TierApprentice,
+		Tier:               domain.TierFromLevel(level),
 		IsNPC:              req.IsNPC,
 		SkillProficiencies: make(map[domain.SkillTag]domain.SkillProficiency),
 	}
@@ -986,6 +992,60 @@ func (s *Service) handleGetParty(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, party)
+}
+
+// =============================================================================
+// GUILDS
+// =============================================================================
+
+func (s *Service) handleListGuilds(w http.ResponseWriter, r *http.Request) {
+	entities, err := s.graph.ListEntitiesByType(r.Context(), domain.EntityTypeGuild, s.config.MaxEntities)
+	if err != nil {
+		if isBucketNotFound(err) {
+			s.writeJSON(w, []domain.Guild{})
+			return
+		}
+		s.writeError(w, "failed to list guilds", http.StatusInternalServerError)
+		s.logger.Error("Failed to list guilds", "error", err)
+		return
+	}
+
+	guilds := make([]domain.Guild, 0, len(entities))
+	for _, entity := range entities {
+		guild := domain.GuildFromEntityState(&entity)
+		if guild != nil {
+			guilds = append(guilds, *guild)
+		}
+	}
+
+	s.writeJSON(w, guilds)
+}
+
+func (s *Service) handleGetGuild(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+
+	entity, err := s.graph.GetGuild(r.Context(), domain.GuildID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve guild", http.StatusInternalServerError)
+		s.logger.Error("Failed to get guild", "id", id, "error", err)
+		return
+	}
+
+	guild := domain.GuildFromEntityState(entity)
+	if guild == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.writeJSON(w, guild)
 }
 
 // =============================================================================
@@ -2003,11 +2063,12 @@ func (s *Service) handleGetModels(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		endpoints = append(endpoints, ModelEndpointSummary{
-			Name:          name,
-			Provider:      ep.Provider,
-			Model:         ep.Model,
-			MaxTokens:     ep.MaxTokens,
-			SupportsTools: ep.SupportsTools,
+			Name:            name,
+			Provider:        ep.Provider,
+			Model:           ep.Model,
+			MaxTokens:       ep.MaxTokens,
+			SupportsTools:   ep.SupportsTools,
+			ReasoningEffort: ep.ReasoningEffort,
 		})
 	}
 

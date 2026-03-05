@@ -17,6 +17,7 @@ type GraphQuerier interface {
 	GetAgent(ctx context.Context, id domain.AgentID) (*graph.EntityState, error)
 	GetBattle(ctx context.Context, id domain.BattleID) (*graph.EntityState, error)
 	GetParty(ctx context.Context, id domain.PartyID) (*graph.EntityState, error)
+	GetGuild(ctx context.Context, id domain.GuildID) (*graph.EntityState, error)
 	GetPeerReview(ctx context.Context, id domain.PeerReviewID) (*graph.EntityState, error)
 	ListQuestsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
 	ListAgentsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)

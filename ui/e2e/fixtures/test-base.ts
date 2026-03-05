@@ -265,6 +265,16 @@ export interface PartyResponse {
 	[key: string]: unknown;
 }
 
+export interface GuildResponse {
+	id: string;
+	name: string;
+	founder_id?: string;
+	specialization?: string;
+	members?: Array<{ agent_id: string; role?: string; joined_at?: string }>;
+	status?: string;
+	[key: string]: unknown;
+}
+
 export interface UseConsumableResponse {
 	success: boolean;
 	remaining?: number;
@@ -374,6 +384,9 @@ export interface LifecycleApi {
 	listParties: () => Promise<PartyResponse[]>;
 	getParty: (id: string) => Promise<PartyResponse>;
 	createQuestWithParty: (objective: string, minPartySize?: number) => Promise<QuestResponse>;
+	listGuilds: () => Promise<GuildResponse[]>;
+	getGuild: (id: string) => Promise<GuildResponse>;
+	recruitAgentAtLevel: (name: string, level: number, skills?: string[]) => Promise<AgentResponse>;
 }
 
 /**
@@ -811,6 +824,33 @@ export const test = base.extend<{
 				});
 				if (!res.ok()) {
 					throw new Error(`createQuestWithParty failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			listGuilds: async () => {
+				const res = await apiContext.get('/game/guilds');
+				if (!res.ok()) {
+					throw new Error(`listGuilds failed: ${res.status()} ${await res.text()}`);
+				}
+				const data = await res.json();
+				return Array.isArray(data) ? data : (data.guilds ?? data.items ?? []);
+			},
+
+			getGuild: async (id) => {
+				const res = await apiContext.get(`/game/guilds/${id}`);
+				if (!res.ok()) {
+					throw new Error(`getGuild failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			recruitAgentAtLevel: async (name, level, skills = []) => {
+				const res = await apiContext.post('/game/agents', {
+					data: { name, skills, is_npc: false, level }
+				});
+				if (!res.ok()) {
+					throw new Error(`recruitAgentAtLevel failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			}

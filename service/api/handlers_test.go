@@ -35,6 +35,7 @@ type mockGraph struct {
 	getAgentFn           func(ctx context.Context, id domain.AgentID) (*graph.EntityState, error)
 	getBattleFn          func(ctx context.Context, id domain.BattleID) (*graph.EntityState, error)
 	getPartyFn           func(ctx context.Context, id domain.PartyID) (*graph.EntityState, error)
+	getGuildFn           func(ctx context.Context, id domain.GuildID) (*graph.EntityState, error)
 	getPeerReviewFn      func(ctx context.Context, id domain.PeerReviewID) (*graph.EntityState, error)
 	listQuestsFn         func(ctx context.Context, limit int) ([]graph.EntityState, error)
 	listAgentsFn         func(ctx context.Context, limit int) ([]graph.EntityState, error)
@@ -75,6 +76,13 @@ func (m *mockGraph) GetBattle(ctx context.Context, id domain.BattleID) (*graph.E
 func (m *mockGraph) GetParty(ctx context.Context, id domain.PartyID) (*graph.EntityState, error) {
 	if m.getPartyFn != nil {
 		return m.getPartyFn(ctx, id)
+	}
+	return nil, jetstream.ErrKeyNotFound
+}
+
+func (m *mockGraph) GetGuild(ctx context.Context, id domain.GuildID) (*graph.EntityState, error) {
+	if m.getGuildFn != nil {
+		return m.getGuildFn(ctx, id)
 	}
 	return nil, jetstream.ErrKeyNotFound
 }

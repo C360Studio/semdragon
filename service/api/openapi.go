@@ -219,7 +219,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 				POST: &service.OperationSpec{
 					Summary:     "Recruit agent",
-					Description: "Recruits a new agent into the game. Agents start at level 1 (Apprentice tier).",
+					Description: "Recruits a new agent into the game. Agents start at level 1 (Apprentice tier) unless an initial level is specified.",
 					Tags:        []string{"Agents"},
 					RequestBody: &service.RequestBodySpec{
 						Description: "Agent recruitment parameters",
@@ -407,6 +407,32 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					Responses: map[string]service.ResponseSpec{
 						"200": {Description: "Party details", ContentType: "application/json", SchemaRef: "#/components/schemas/Party"},
 						"404": {Description: "Party not found"},
+					},
+				},
+			},
+
+			// ── Guilds ───────────────────────────────────────────
+			"/guilds": {
+				GET: &service.OperationSpec{
+					Summary:     "List guilds",
+					Description: "Returns all guilds including members, founder, and specialization.",
+					Tags:        []string{"Guilds"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "List of guilds", ContentType: "application/json", SchemaRef: "#/components/schemas/Guild", IsArray: true},
+					},
+				},
+			},
+			"/guilds/{id}": {
+				GET: &service.OperationSpec{
+					Summary:     "Get guild",
+					Description: "Returns a single guild by ID including members, founder, and specialization.",
+					Tags:        []string{"Guilds"},
+					Parameters: []service.ParameterSpec{
+						{Name: "id", In: "path", Required: true, Description: "Guild ID", Schema: service.Schema{Type: "string"}},
+					},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Guild details", ContentType: "application/json", SchemaRef: "#/components/schemas/Guild"},
+						"404": {Description: "Guild not found"},
 					},
 				},
 			},
@@ -602,6 +628,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			{Name: "Peer Reviews", Description: "Blind peer review between party members"},
 			{Name: "Battles", Description: "Boss battle (automated review) operations"},
 			{Name: "Parties", Description: "Party formation and management"},
+			{Name: "Guilds", Description: "Guild formation and management"},
 			{Name: "DM", Description: "Dungeon Master interaction and chat sessions"},
 			{Name: "Store", Description: "Agent store, inventory, and consumable effects"},
 			{Name: "Observability", Description: "Trajectory and event tracing"},

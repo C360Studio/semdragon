@@ -57,6 +57,7 @@ type RecruitAgentRequest struct {
 	DisplayName string   `json:"display_name,omitempty" description:"Character display name"`
 	Skills      []string `json:"skills,omitempty" description:"Initial skill tags"`
 	IsNPC       bool     `json:"is_npc" description:"Whether this is an NPC agent"`
+	Level       *int     `json:"level,omitempty" description:"Initial level (1-20, default 1). Higher levels grant higher trust tiers."`
 }
 
 // PurchaseItemRequest is the request body for POST /store/purchase.
@@ -176,11 +177,12 @@ type ModelResolveResponse struct {
 
 // ModelEndpointSummary describes a single model endpoint in the registry.
 type ModelEndpointSummary struct {
-	Name          string `json:"name" description:"Endpoint name"`
-	Provider      string `json:"provider" description:"Provider type"`
-	Model         string `json:"model" description:"Model identifier"`
-	MaxTokens     int    `json:"max_tokens" description:"Maximum context window size"`
-	SupportsTools bool   `json:"supports_tools" description:"Whether the endpoint supports tool calling"`
+	Name            string `json:"name" description:"Endpoint name"`
+	Provider        string `json:"provider" description:"Provider type"`
+	Model           string `json:"model" description:"Model identifier"`
+	MaxTokens       int    `json:"max_tokens" description:"Maximum context window size"`
+	SupportsTools   bool   `json:"supports_tools" description:"Whether the endpoint supports tool calling"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty" description:"Reasoning effort level (none, low, medium, high)"`
 }
 
 // ModelRegistrySummary is the response body for GET /models (no query params).

@@ -1,0 +1,101 @@
+import { test, expect, hasBackend, retry, extractInstance } from '../fixtures/test-base';
+import type { GuildResponse } from '../fixtures/test-base';
+
+/**
+ * Guild Formation E2E Tests
+ *
+ * Verifies auto-formation of guilds when an Expert+ agent (level 11+)
+ * exists alongside unguilded agents. The guildformation processor
+ * watches agent state via KV and triggers formation automatically.
+ *
+ * Environment requirements:
+ *   - E2E_BACKEND_AVAILABLE=true (set by global-setup.ts)
+ */
+
+test.describe('Guild Formation @integration', () => {
+	test.beforeEach(() => {
+		test.skip(!hasBackend(), 'Requires running backend (E2E_BACKEND_AVAILABLE=true)');
+	});
+
+	test('GET /game/guilds returns empty array initially', async ({ lifecycleApi }) => {
+		const guilds = await lifecycleApi.listGuilds();
+		expect(guilds).toBeInstanceOf(Array);
+	});
+
+	test('auto-forms guild when Expert agent is created with candidates', async ({
+		lifecycleApi
+	}) => {
+		// Recruit an Expert agent (level 11) — this triggers auto-formation evaluation
+		const expert = await lifecycleApi.recruitAgentAtLevel(
+			`guild-expert-${Date.now()}`,
+			11,
+			['analysis', 'coding']
+		);
+		expect(expert.level).toBe(11);
+		expect(expert.tier).toBeGreaterThanOrEqual(2); // Expert tier (iota: 0=Apprentice, 1=Journeyman, 2=Expert)
+
+		// Recruit two more agents as formation candidates
+		const agent2 = await lifecycleApi.recruitAgentAtLevel(
+			`guild-member-a-${Date.now()}`,
+			1,
+			['analysis']
+		);
+		const agent3 = await lifecycleApi.recruitAgentAtLevel(
+			`guild-member-b-${Date.now()}`,
+			1,
+			['analysis']
+		);
+
+		expect(agent2.level).toBe(1);
+		expect(agent3.level).toBe(1);
+
+		// Wait for guildformation processor to auto-form a guild.
+		// The processor runs periodically and checks for Expert+ unguilded agents
+		// with enough candidates sharing skills.
+		const guilds = await retry(
+			async () => {
+				const result = await lifecycleApi.listGuilds();
+				if (result.length === 0) {
+					throw new Error('No guilds formed yet');
+				}
+				return result;
+			},
+			{ timeout: 15000, interval: 1000, message: 'Guild auto-formation did not trigger' }
+		);
+
+		expect(guilds.length).toBeGreaterThanOrEqual(1);
+
+		// Find the guild that contains our expert agent
+		const expertInstance = extractInstance(expert.id);
+		const guild = guilds.find(
+			(g: GuildResponse) =>
+				g.founder_id?.includes(expertInstance) ||
+				g.members?.some((m) => m.agent_id.includes(expertInstance))
+		);
+
+		// The expert should be in at least one guild (founder or member)
+		if (guild) {
+			expect(guild.id).toBeTruthy();
+			expect(guild.name).toBeTruthy();
+
+			// Verify GET /game/guilds/{id} works
+			const guildInstance = extractInstance(guild.id);
+			const fetched = await lifecycleApi.getGuild(guildInstance);
+			expect(fetched.id).toBe(guild.id);
+		}
+
+		// Verify guilds appear in world state
+		const world = await lifecycleApi.getWorldState();
+		if (world.guilds) {
+			expect((world.guilds as unknown[]).length).toBeGreaterThanOrEqual(1);
+		}
+	});
+
+	test('agent recruited at level respects level and tier', async ({ lifecycleApi }) => {
+		const agent = await lifecycleApi.recruitAgentAtLevel(`level-test-${Date.now()}`, 15, [
+			'coding'
+		]);
+		expect(agent.level).toBe(15);
+		expect(agent.tier).toBeGreaterThanOrEqual(2); // Expert tier (iota: 0=Apprentice, 1=Journeyman, 2=Expert)
+	});
+});

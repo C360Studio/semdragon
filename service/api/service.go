@@ -306,6 +306,10 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"parties", cors(s.handleListParties))
 	mux.HandleFunc("GET "+prefix+"parties/{id}", cors(s.handleGetParty))
 
+	// Guilds
+	mux.HandleFunc("GET "+prefix+"guilds", cors(s.handleListGuilds))
+	mux.HandleFunc("GET "+prefix+"guilds/{id}", cors(s.handleGetGuild))
+
 	// Trajectories
 	mux.HandleFunc("GET "+prefix+"trajectories/{id}", cors(s.handleGetTrajectory))
 
