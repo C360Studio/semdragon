@@ -629,6 +629,18 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 			},
 
+			// ── SSE ─────────────────────────────────────────────
+			"/events": {
+				GET: &service.OperationSpec{
+					Summary:     "Real-time entity updates",
+					Description: "Server-Sent Events stream of entity state changes from the board KV bucket. Sends `event: connected` on connect, then `event: kv_change` for each entity create/update/delete. Includes `initial_sync_complete` operation after all existing entities are sent. Auto-reconnects via SSE `retry` directive.",
+					Tags:        []string{"Observability"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "SSE stream of KV change events", ContentType: "text/event-stream"},
+					},
+				},
+			},
+
 			// ── Observability ────────────────────────────────────
 			"/trajectories/{id}": {
 				GET: &service.OperationSpec{

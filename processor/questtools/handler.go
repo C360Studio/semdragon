@@ -11,6 +11,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/agentic"
+	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -39,13 +40,13 @@ func (c *Component) startConsumer(ctx context.Context) error {
 func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 	defer func() { _ = msg.Ack() }()
 
-	var call agentic.ToolCall
-	if err := json.Unmarshal(msg.Data(), &call); err != nil {
-		c.logger.Error("failed to unmarshal ToolCall",
+	// Unwrap the BaseMessage envelope that agentic-loop wraps around ToolCalls.
+	var baseMsg message.BaseMessage
+	if err := json.Unmarshal(msg.Data(), &baseMsg); err != nil {
+		c.logger.Error("failed to unmarshal ToolCall BaseMessage",
 			"subject", msg.Subject(),
 			"error", err)
 		c.errorsCount.Add(1)
-		// Attempt to publish an error result using the call ID from the subject.
 		if parts := strings.SplitN(msg.Subject(), ".", 3); len(parts) == 3 {
 			_ = c.publishResult(ctx, parts[2], &agentic.ToolResult{
 				CallID: parts[2],
@@ -54,6 +55,16 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 		}
 		return
 	}
+
+	callPtr, ok := baseMsg.Payload().(*agentic.ToolCall)
+	if !ok {
+		c.logger.Error("unexpected payload type in tool execute message",
+			"subject", msg.Subject(),
+			"type", fmt.Sprintf("%T", baseMsg.Payload()))
+		c.errorsCount.Add(1)
+		return
+	}
+	call := *callPtr
 
 	if err := call.Validate(); err != nil {
 		c.logger.Error("invalid ToolCall", "subject", msg.Subject(), "error", err)
@@ -100,13 +111,15 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 		"success", result.Error == "")
 }
 
-// publishResult serialises a ToolResult and publishes it to tool.result.{callID}.
+// publishResult wraps a ToolResult in a BaseMessage envelope and publishes it
+// to tool.result.{callID}. The agentic-loop consumer expects BaseMessage wrapping.
 func (c *Component) publishResult(ctx context.Context, callID string, result *agentic.ToolResult) error {
 	subject := fmt.Sprintf("tool.result.%s", callID)
 
-	data, err := json.Marshal(result)
+	baseMsg := message.NewBaseMessage(result.Schema(), result, "questtools")
+	data, err := json.Marshal(baseMsg)
 	if err != nil {
-		return fmt.Errorf("marshal ToolResult: %w", err)
+		return fmt.Errorf("marshal ToolResult BaseMessage: %w", err)
 	}
 
 	if err := c.deps.NATSClient.PublishToStream(ctx, subject, data); err != nil {

@@ -323,7 +323,7 @@ func (c *Component) consumeCompletions(ctx context.Context) {
 
 	consumer, err := js.CreateOrUpdateConsumer(ctx, c.config.StreamName, jetstream.ConsumerConfig{
 		Durable:        consumerName,
-		FilterSubjects: []string{"agent.complete.>", "agent.failed.>"},
+		FilterSubjects: []string{"agent.complete.*", "agent.failed.*"},
 		AckPolicy:      jetstream.AckExplicitPolicy,
 	})
 	if err != nil {

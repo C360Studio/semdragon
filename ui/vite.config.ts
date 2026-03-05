@@ -15,8 +15,7 @@ export default defineConfig({
 		host: true,
 		proxy: {
 			'/game': backendUrl,
-			'/health': backendUrl,
-			'/message-logger': backendUrl
+			'/health': backendUrl
 		}
 	}
 });

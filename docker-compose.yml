@@ -65,7 +65,6 @@ services:
     environment:
       BACKEND_URL: http://backend:8080
       PUBLIC_API_URL: ""
-      PUBLIC_SSE_BUCKET: semdragons-local-dev-board1
     ports:
       - "5173:5173"
     volumes:

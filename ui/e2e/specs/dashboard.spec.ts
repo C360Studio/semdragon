@@ -49,6 +49,8 @@ test.describe('Dashboard', () => {
 	});
 
 	test('event feed shows recent events', async ({ dashboardPage }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
+
 		await expect(dashboardPage.eventFeed).toBeVisible();
 		await expect(dashboardPage.eventList).toBeVisible();
 	});

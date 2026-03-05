@@ -53,6 +53,7 @@ type Service struct {
 	dmSessionReader DMSessionReader    // session reads (used by GET handler); nil before init
 	board           *boardcontrol.Controller // board play/pause control; nil before init
 	tokenLedger     *tokenbudget.TokenLedger // token budget tracking; nil before init
+	boardConfig     *domain.BoardConfig      // board identity for bucket name, entity IDs
 	config          Config
 	logger          *slog.Logger
 
@@ -138,6 +139,7 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 		trajectories:    &natsTrajectoryQuerier{nats: deps.NATSClient},
 		dmSessionReader: sessions,
 		dmSessions:      sessions,
+		boardConfig:     boardConfig,
 		config:          cfg,
 		logger:          logger,
 		chatTraces:      make(map[string]*natsclient.TraceContext),
@@ -414,6 +416,9 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 
 	// Model registry
 	mux.HandleFunc("GET "+prefix+"models", cors(s.handleGetModels))
+
+	// SSE — real-time entity updates
+	mux.HandleFunc("GET "+prefix+"events", cors(s.handleEvents))
 
 	s.logger.Info("Game API HTTP handlers registered", "prefix", prefix)
 }

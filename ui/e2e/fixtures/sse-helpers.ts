@@ -77,14 +77,14 @@ export class SSEHelper {
 	 * Useful for testing disconnection handling.
 	 */
 	async blockSSE(): Promise<void> {
-		await this.page.route('**/message-logger/**', (route) => route.abort());
+		await this.page.route('**/game/events', (route) => route.abort());
 	}
 
 	/**
 	 * Unblock SSE connections.
 	 */
 	async unblockSSE(): Promise<void> {
-		await this.page.unroute('**/message-logger/**');
+		await this.page.unroute('**/game/events');
 	}
 
 	/**

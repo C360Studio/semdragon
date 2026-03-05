@@ -40,14 +40,13 @@
 		if (browser) {
 			document.body.classList.add('hydrated');
 
-			// In dev, Vite proxies /game, /health, /message-logger to the backend.
+			// In dev, Vite proxies /game and /health to the backend.
 			// In Docker, PUBLIC_API_URL points to the backend container directly.
 			const baseUrl = env.PUBLIC_API_URL || '';
-			const sseBucket = env.PUBLIC_SSE_BUCKET || 'semdragons-local-dev-board1';
 			api.setApiUrl(baseUrl);
 
 			worldStore.setLoading(true);
-			sseService.connect(baseUrl, sseBucket);
+			sseService.connect(baseUrl);
 
 			// Hydrate board pause state (graceful fallback if endpoint unavailable).
 			api.getBoardStatus()

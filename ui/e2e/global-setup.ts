@@ -10,7 +10,6 @@
  *   test.skip(!hasBackend(), 'Requires backend');
  */
 const API_URL = process.env.API_URL || 'http://localhost:8080';
-const SSE_BUCKET = process.env.PUBLIC_SSE_BUCKET || 'semdragons-local-dev-board1';
 
 async function globalSetup(): Promise<void> {
 	const healthOk = await checkHealth(API_URL);
@@ -23,8 +22,8 @@ async function globalSetup(): Promise<void> {
 		return;
 	}
 
-	// Health is up, but check if SSE/KV bucket exists (data is seeded)
-	const sseOk = await checkSSE(API_URL, SSE_BUCKET);
+	// Health is up, but check if SSE endpoint works (KV bucket exists)
+	const sseOk = await checkSSE(API_URL);
 
 	if (sseOk) {
 		process.env.E2E_BACKEND_AVAILABLE = 'true';
@@ -32,7 +31,7 @@ async function globalSetup(): Promise<void> {
 	} else {
 		process.env.E2E_BACKEND_AVAILABLE = 'false';
 		console.log(
-			`[E2E Setup] Backend health OK but KV bucket "${SSE_BUCKET}" not found — backend-dependent tests will be skipped`
+			`[E2E Setup] Backend health OK but SSE endpoint not ready — backend-dependent tests will be skipped`
 		);
 	}
 }
@@ -53,17 +52,16 @@ async function checkHealth(baseURL: string, timeout = 5000): Promise<boolean> {
 	return false;
 }
 
-async function checkSSE(baseURL: string, bucket: string): Promise<boolean> {
+async function checkSSE(baseURL: string): Promise<boolean> {
 	try {
-		// The SSE endpoint returns an "error" event with "bucket not found" if the bucket doesn't exist.
+		// The SSE endpoint returns an "error" event if the KV bucket doesn't exist.
 		// A working endpoint returns a "connected" event first.
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), 3000);
 
-		const response = await fetch(
-			`${baseURL}/message-logger/kv/${bucket}/watch?pattern=*`,
-			{ signal: controller.signal }
-		);
+		const response = await fetch(`${baseURL}/game/events`, {
+			signal: controller.signal
+		});
 
 		clearTimeout(timeout);
 

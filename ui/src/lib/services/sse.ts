@@ -1,8 +1,7 @@
 /**
  * SSE Service - Server-Sent Events client for real-time entity updates
  *
- * Connects to the semstreams message-logger KV watch endpoint.
- * Replaces the WebSocket service with EventSource (auto-reconnect built in).
+ * Connects to the game service SSE endpoint for live entity state streaming.
  */
 
 import type {
@@ -50,13 +49,13 @@ export function createSSEService() {
 	let source: EventSource | null = null;
 	let synced = false;
 
-	function connect(baseUrl: string, bucket: string) {
+	function connect(baseUrl: string) {
 		if (source !== null) {
 			source.close();
 			source = null;
 		}
 
-		const url = `${baseUrl}/message-logger/kv/${bucket}/watch?pattern=*`;
+		const url = `${baseUrl}/game/events`;
 		source = new EventSource(url);
 
 		source.addEventListener('connected', () => {

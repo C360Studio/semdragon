@@ -299,21 +299,49 @@ func (c *Component) resolveCriteria(level domain.ReviewLevel) []domain.ReviewCri
 
 // resolveJudges returns judges from the domain catalog if available,
 // checking per-level overrides first, then domain defaults, then hardcoded.
+// ReviewHuman always includes a human judge — even when the catalog doesn't
+// define one — so that computeVerdict returns Pending and the quest parks
+// at in_review for manual resolution.
 func (c *Component) resolveJudges(level domain.ReviewLevel) []domain.Judge {
+	var judges []domain.Judge
+
 	if c.catalog != nil && c.catalog.ReviewConfig != nil {
 		rc := c.catalog.ReviewConfig
 		// Per-level override takes precedence
 		if rc.JudgesByLevel != nil {
-			if judges, ok := rc.JudgesByLevel[level]; ok && len(judges) > 0 {
-				return copyJudges(judges)
+			if lvl, ok := rc.JudgesByLevel[level]; ok && len(lvl) > 0 {
+				judges = copyJudges(lvl)
 			}
 		}
 		// Fall back to domain defaults
-		if len(rc.DefaultJudges) > 0 {
-			return copyJudges(rc.DefaultJudges)
+		if len(judges) == 0 && len(rc.DefaultJudges) > 0 {
+			judges = copyJudges(rc.DefaultJudges)
 		}
 	}
-	return c.defaultJudges(level)
+
+	if len(judges) == 0 {
+		judges = c.defaultJudges(level)
+	}
+
+	// ReviewHuman must always include a human judge so computeVerdict
+	// returns Pending. Append one if the resolved list lacks it.
+	if level == domain.ReviewHuman {
+		hasHuman := false
+		for _, j := range judges {
+			if j.Type == domain.JudgeHuman {
+				hasHuman = true
+				break
+			}
+		}
+		if !hasHuman {
+			judges = append(judges, domain.Judge{
+				ID:   "judge-human",
+				Type: domain.JudgeHuman,
+			})
+		}
+	}
+
+	return judges
 }
 
 // copyReviewCriteria returns a defensive copy of a criteria slice.
