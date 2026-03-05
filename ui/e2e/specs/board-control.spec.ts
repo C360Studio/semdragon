@@ -457,3 +457,73 @@ test.describe('Board Control', () => {
 });
 
 }); // end Board Control (outer serial wrapper)
+
+test.describe('Token Stats API', () => {
+	test('GET /game/board/tokens returns cost fields', async ({ lifecycleApi }) => {
+		if (!hasBackend()) test.skip();
+
+		const stats = await lifecycleApi.getTokenStats();
+
+		// Cost fields must be present and numeric
+		expect(typeof stats.hourly_cost_usd).toBe('number');
+		expect(typeof stats.total_cost_usd).toBe('number');
+		expect(stats.hourly_cost_usd).toBeGreaterThanOrEqual(0);
+		expect(stats.total_cost_usd).toBeGreaterThanOrEqual(0);
+	});
+
+	test('GET /game/board/tokens returns token budget fields', async ({ lifecycleApi }) => {
+		if (!hasBackend()) test.skip();
+
+		const stats = await lifecycleApi.getTokenStats();
+
+		expect(typeof stats.hourly_limit).toBe('number');
+		expect(typeof stats.budget_pct).toBe('number');
+		expect(typeof stats.breaker).toBe('string');
+		expect(stats.hourly_usage).toBeDefined();
+		expect(typeof stats.hourly_usage.total_tokens).toBe('number');
+	});
+});
+
+test.describe('World State - Cost Fields', () => {
+	test('GET /game/world includes cost fields in stats', async ({ lifecycleApi }) => {
+		if (!hasBackend()) test.skip();
+
+		const world = await lifecycleApi.getWorldState();
+		const stats = world as Record<string, unknown>;
+		const worldStats = (stats.stats ?? stats) as Record<string, unknown>;
+
+		expect(typeof worldStats.cost_used_hourly_usd).toBe('number');
+		expect(typeof worldStats.cost_total_usd).toBe('number');
+	});
+});
+
+test.describe('GameStatusBar - Token Chip', () => {
+	test('token chip has accessible aria-label with token usage info', async ({ page }) => {
+		if (!hasBackend()) test.skip();
+
+		await page.goto('/');
+		await waitForHydration(page);
+
+		const tokenChip = page.locator('[data-testid="token-chip"]');
+		// Chip may not be visible if tokens_used is 0 and limit is 0
+		const chipCount = await tokenChip.count();
+		if (chipCount > 0) {
+			await expect(tokenChip).toHaveAttribute('aria-label', /Token usage:/);
+		}
+	});
+
+	test('token chip title tooltip includes hourly limit info', async ({ page }) => {
+		if (!hasBackend()) test.skip();
+
+		await page.goto('/');
+		await waitForHydration(page);
+
+		const tokenChip = page.locator('[data-testid="token-chip"]');
+		const chipCount = await tokenChip.count();
+		if (chipCount > 0) {
+			const title = await tokenChip.getAttribute('title');
+			// Title should contain token count info
+			expect(title).toMatch(/tokens|hourly/i);
+		}
+	});
+});

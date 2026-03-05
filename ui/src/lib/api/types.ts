@@ -163,9 +163,19 @@ export type DMChatTurn = components['schemas']['DMChatTurn'];
 export type DMChatResponse = components['schemas']['DMChatResponse'];
 export type TraceInfoResponse = components['schemas']['TraceInfoResponse'];
 
+// Token breaker circuit-breaker state
+export type TokenBreakerState = 'ok' | 'warning' | 'tripped';
+
 // API response types
 export type WorldStateResponse = components['schemas']['WorldStateResponse'];
-export type WorldStats = components['schemas']['WorldStats'];
+export type WorldStats = components['schemas']['WorldStats'] & {
+	tokens_used_hourly?: number;
+	tokens_limit_hourly?: number;
+	token_budget_pct?: number;
+	token_breaker?: TokenBreakerState;
+	cost_used_hourly_usd?: number;
+	cost_total_usd?: number;
+};
 export type PurchaseResponse = components['schemas']['PurchaseResponse'];
 export type UseConsumableResponse = components['schemas']['UseConsumableResponse'];
 
@@ -412,6 +422,27 @@ export interface Intervention {
 	type: InterventionType;
 	reason: string;
 	payload?: unknown;
+}
+
+export interface TokenStats {
+	hourly_usage: {
+		prompt_tokens: number;
+		completion_tokens: number;
+		total_tokens: number;
+		estimated_cost_usd: number;
+	};
+	total_usage: {
+		prompt_tokens: number;
+		completion_tokens: number;
+		total_tokens: number;
+		estimated_cost_usd: number;
+	};
+	hourly_limit: number;
+	budget_pct: number;
+	breaker: TokenBreakerState;
+	hourly_epoch: number;
+	hourly_cost_usd: number;
+	total_cost_usd: number;
 }
 
 export interface Trajectory {

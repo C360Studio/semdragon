@@ -18,18 +18,21 @@ import (
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boardcontrol"
 	"github.com/c360studio/semdragons/processor/dmworldstate"
+	"github.com/c360studio/semdragons/processor/tokenbudget"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/service"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semdragons/domain"
 )
 
 // Config holds configuration for the semdragons-api service.
 type Config struct {
-	Board       string `json:"board"`        // Board name (default: "board1")
-	Org         string `json:"org"`          // Org namespace (default from platform)
-	Platform    string `json:"platform"`     // Platform ID (default from platform)
-	MaxEntities int    `json:"max_entities"` // Max entities per query (default: 1000)
+	Board       string                  `json:"board"`        // Board name (default: "board1")
+	Org         string                  `json:"org"`          // Org namespace (default from platform)
+	Platform    string                  `json:"platform"`     // Platform ID (default from platform)
+	MaxEntities int                     `json:"max_entities"` // Max entities per query (default: 1000)
+	TokenBudget *tokenbudget.BudgetConfig `json:"token_budget,omitempty"` // Token budget config
 }
 
 // maxChatSessions caps the number of in-memory DM chat session traces.
@@ -49,6 +52,7 @@ type Service struct {
 	trajectories    TrajectoryQuerier  // trajectory KV lookups; nil before init
 	dmSessionReader DMSessionReader    // session reads (used by GET handler); nil before init
 	board           *boardcontrol.Controller // board play/pause control; nil before init
+	tokenLedger     *tokenbudget.TokenLedger // token budget tracking; nil before init
 	config          Config
 	logger          *slog.Logger
 
@@ -210,6 +214,32 @@ func (s *Service) Start(ctx context.Context) error {
 		}
 	}
 
+	// Initialize token budget ledger.
+	s.tokenLedger = tokenbudget.NewTokenLedger(s.config.TokenBudget, s.logger)
+	tokenBucket, tbErr := s.nats.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
+		Bucket:      tokenbudget.BucketName,
+		Description: "Token budget tracking and limits",
+		History:     5,
+		TTL:         72 * time.Hour,
+	})
+	if tbErr != nil {
+		s.logger.Warn("failed to create TOKEN_BUDGET bucket; persistence disabled", "error", tbErr)
+	} else {
+		s.tokenLedger.SetBucket(tokenBucket)
+	}
+	if s.board != nil {
+		s.tokenLedger.SetBoardPauser(&boardPauserAdapter{ctrl: s.board})
+	}
+	if startErr := s.tokenLedger.Start(ctx); startErr != nil {
+		s.logger.Warn("failed to start token ledger", "error", startErr)
+	}
+
+	// Wire token ledger into components that need budget enforcement.
+	// Components are instantiated by the component-manager service; at this
+	// point they may not exist yet. Use lazy wiring: try now, but the
+	// components also accept the ledger when they first Initialize.
+	s.wireTokenLedgerToComponents()
+
 	if err := s.BaseService.Start(ctx); err != nil {
 		return err
 	}
@@ -240,6 +270,49 @@ func (s *Service) Stop(timeout time.Duration) error {
 // Returns nil if the controller could not be initialized.
 func (s *Service) Board() *boardcontrol.Controller {
 	return s.board
+}
+
+// TokenLedger returns the shared token ledger for components to wire up.
+func (s *Service) TokenLedger() *tokenbudget.TokenLedger {
+	return s.tokenLedger
+}
+
+// boardPauserAdapter wraps boardcontrol.Controller to satisfy tokenbudget.BoardPauser.
+type boardPauserAdapter struct {
+	ctrl *boardcontrol.Controller
+}
+
+func (a *boardPauserAdapter) PauseBoard(ctx context.Context, actor string) error {
+	_, err := a.ctrl.Pause(ctx, actor)
+	return err
+}
+
+// tokenLedgerSetter is implemented by components that accept a token ledger.
+type tokenLedgerSetter interface {
+	SetTokenLedger(l *tokenbudget.TokenLedger)
+}
+
+// wireTokenLedgerToComponents injects the token ledger into any registered
+// components that support it. Components may not be instantiated yet at
+// service Start time — in that case, they should call TokenLedger() during
+// their own initialization.
+func (s *Service) wireTokenLedgerToComponents() {
+	if s.componentDeps == nil || s.componentDeps.ComponentRegistry == nil || s.tokenLedger == nil {
+		return
+	}
+
+	// Component names that should receive the token ledger.
+	names := []string{"questbridge", "bossbattle"}
+	for _, name := range names {
+		comp := s.componentDeps.ComponentRegistry.Component(name)
+		if comp == nil {
+			continue
+		}
+		if setter, ok := comp.(tokenLedgerSetter); ok {
+			setter.SetTokenLedger(s.tokenLedger)
+			s.logger.Info("wired token ledger to component", "component", name)
+		}
+	}
 }
 
 // RegisterHTTPHandlers registers domain REST endpoints with the HTTP mux.
@@ -334,6 +407,10 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"board/status", cors(s.handleBoardStatus))
 	mux.HandleFunc("POST "+prefix+"board/pause", cors(requireAuth(apiKey, s.handleBoardPause)))
 	mux.HandleFunc("POST "+prefix+"board/resume", cors(requireAuth(apiKey, s.handleBoardResume)))
+
+	// Token budget
+	mux.HandleFunc("GET "+prefix+"board/tokens", cors(s.handleTokenStats))
+	mux.HandleFunc("POST "+prefix+"board/tokens/budget", cors(requireAuth(apiKey, s.handleSetTokenBudget)))
 
 	// Model registry
 	mux.HandleFunc("GET "+prefix+"models", cors(s.handleGetModels))

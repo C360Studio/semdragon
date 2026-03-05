@@ -109,6 +109,11 @@ type DMChatHistoryItem struct {
 	Content string `json:"content" description:"Message content"`
 }
 
+// SetTokenBudgetRequest is the request body for POST /board/tokens/budget.
+type SetTokenBudgetRequest struct {
+	GlobalHourlyLimit int64 `json:"global_hourly_limit" description:"New hourly token limit (0 = unlimited)"`
+}
+
 // =============================================================================
 // RESPONSE TYPES — Named structs for responses that use anonymous types in handlers
 // =============================================================================

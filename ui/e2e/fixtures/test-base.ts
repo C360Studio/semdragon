@@ -250,6 +250,17 @@ export interface DMSessionResponse {
 	[key: string]: unknown;
 }
 
+export interface TokenStatsResponse {
+	hourly_usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; estimated_cost_usd: number };
+	total_usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; estimated_cost_usd: number };
+	hourly_limit: number;
+	budget_pct: number;
+	breaker: string;
+	hourly_cost_usd: number;
+	total_cost_usd: number;
+	[key: string]: unknown;
+}
+
 export interface BoardStatusResponse {
 	paused: boolean;
 	paused_at: string | null;
@@ -378,6 +389,7 @@ export interface LifecycleApi {
 	listReviews: (status?: string, questId?: string) => Promise<ReviewResponse[]>;
 	getAgentReviews: (agentId: string) => Promise<ReviewResponse[]>;
 	getDMSession: (sessionId: string) => Promise<DMSessionResponse | null>;
+	getTokenStats: () => Promise<TokenStatsResponse>;
 	getBoardStatus: () => Promise<BoardStatusResponse>;
 	pauseBoard: (actor?: string) => Promise<BoardStatusResponse>;
 	resumeBoard: () => Promise<BoardStatusResponse>;
@@ -761,6 +773,14 @@ export const test = base.extend<{
 				if (res.status() === 404) return null;
 				if (!res.ok()) {
 					throw new Error(`getDMSession failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			getTokenStats: async () => {
+				const res = await apiContext.get('/game/board/tokens');
+				if (!res.ok()) {
+					throw new Error(`getTokenStats failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			},

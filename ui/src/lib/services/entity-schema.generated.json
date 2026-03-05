@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-01T20:45:52Z",
+  "generated_at": "2026-03-05T18:06:19Z",
   "entities": {
     "agent": {
       "static": [
@@ -36,21 +36,25 @@
       "static": [
         "battle.assignment.agent",
         "battle.assignment.quest",
+        "battle.criteria.count",
         "battle.lifecycle.started_at",
         "battle.review.level",
         "battle.status.state"
       ],
       "dynamic": [],
       "optional": [
+        "battle.judge.0.id",
+        "battle.judge.0.type",
+        "battle.judge.1.id",
+        "battle.judge.1.type",
         "battle.lifecycle.completed_at",
         "battle.verdict.feedback",
         "battle.verdict.passed",
-        "battle.verdict.score",
-        "battle.verdict.xp_awarded"
+        "battle.verdict.quality_score",
+        "battle.verdict.xp_awarded",
+        "battle.verdict.xp_penalty"
       ],
-      "multi_value": [
-        "battle.judge.id"
-      ]
+      "multi_value": []
     },
     "guild": {
       "static": [
@@ -84,19 +88,22 @@
     },
     "party": {
       "static": [
-        "party.assignment.quest",
+        "party.context.count",
         "party.identity.name",
+        "party.lead",
         "party.lifecycle.formed_at",
-        "party.membership.lead",
+        "party.membership.count",
+        "party.quest",
+        "party.results.count",
         "party.status.state"
       ],
       "dynamic": [
-        "party.member.{id}.role",
-        "party.subquest.{id}.agent"
+        "party.assignment.{id}",
+        "party.member.{id}.role"
       ],
       "optional": [
-        "party.coordination.strategy",
-        "party.lifecycle.disbanded_at"
+        "party.lifecycle.disbanded_at",
+        "party.strategy"
       ],
       "multi_value": [
         "party.membership.member"

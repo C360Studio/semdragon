@@ -127,6 +127,16 @@ type WorldStats struct {
 	AvgQuality     float64 `json:"avg_quality"`
 	ActiveParties  int     `json:"active_parties"`
 	ActiveGuilds   int     `json:"active_guilds"`
+
+	// Token budget (populated by API service when ledger is available)
+	TokensUsedHourly  int64   `json:"tokens_used_hourly"`
+	TokensLimitHourly int64   `json:"tokens_limit_hourly"`
+	TokenBudgetPct    float64 `json:"token_budget_pct"`
+	TokenBreaker      string  `json:"token_breaker"`
+
+	// Cost estimation (populated by API service when ledger + pricing is available)
+	CostUsedHourlyUSD float64 `json:"cost_used_hourly_usd"`
+	CostTotalUSD      float64 `json:"cost_total_usd"`
 }
 
 // =============================================================================

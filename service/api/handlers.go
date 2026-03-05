@@ -80,6 +80,18 @@ func (s *Service) handleWorldState(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("Failed to load world state", "error", err)
 		return
 	}
+
+	// Merge token budget stats into WorldStats.
+	if s.tokenLedger != nil {
+		ts := s.tokenLedger.Stats()
+		state.Stats.TokensUsedHourly = ts.HourlyUsage.TotalTokens
+		state.Stats.TokensLimitHourly = ts.HourlyLimit
+		state.Stats.TokenBudgetPct = ts.BudgetPct
+		state.Stats.TokenBreaker = ts.Breaker
+		state.Stats.CostUsedHourlyUSD = ts.HourlyCostUSD
+		state.Stats.CostTotalUSD = ts.TotalCostUSD
+	}
+
 	s.writeJSON(w, state)
 }
 
@@ -1169,14 +1181,29 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 	messages = append(messages, req.History...)
 	messages = append(messages, ChatMessage{Role: "user", Content: req.Message})
 
+	// Circuit breaker: reject if token budget exceeded.
+	if s.tokenLedger != nil {
+		if err := s.tokenLedger.Check(); err != nil {
+			s.writeError(w, "token budget exceeded", http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	// Call LLM
-	llmResponse, err := callLLM(ctx, endpoint, systemPrompt, messages)
+	llmResult, err := callLLM(ctx, endpoint, systemPrompt, messages)
 	if err != nil {
 		s.logger.Error("DM chat LLM call failed", "error", err, "endpoint", endpointName,
 			"trace_id", turnSpan.TraceID, "span_id", turnSpan.SpanID)
 		s.writeError(w, "LLM request failed", http.StatusBadGateway)
 		return
 	}
+
+	// Record token usage from primary call.
+	if s.tokenLedger != nil {
+		s.tokenLedger.Record(ctx, llmResult.PromptTokens, llmResult.CompletionTokens, "dm_chat", endpointName)
+	}
+
+	llmResponse := llmResult.Content
 
 	resp := struct {
 		Message    string                  `json:"message"`
@@ -1215,16 +1242,21 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 					Content: "Please provide the quest specification as a JSON code block using the format from your instructions. Use ```json:quest_brief for a single quest or ```json:quest_chain for multiple quests.",
 				}
 
-				retryResponse, retryErr := callLLM(ctx, endpoint, systemPrompt, retryMessages)
+				retryResult, retryErr := callLLM(ctx, endpoint, systemPrompt, retryMessages)
 				if retryErr != nil {
 					s.logger.Warn("Quest retry LLM call failed", "error", retryErr, "attempt", attempt+1)
 					break
 				}
 
-				brief, chain = extractQuestOutput(retryResponse)
+				// Record retry token usage.
+				if s.tokenLedger != nil {
+					s.tokenLedger.Record(ctx, retryResult.PromptTokens, retryResult.CompletionTokens, "dm_chat", endpointName)
+				}
+
+				brief, chain = extractQuestOutput(retryResult.Content)
 				if brief != nil || chain != nil {
 					// Combine responses so the user sees the full conversation
-					resp.Message = llmResponse + "\n\n" + retryResponse
+					resp.Message = llmResponse + "\n\n" + retryResult.Content
 					resp.QuestBrief = brief
 					resp.QuestChain = chain
 					llmResponse = resp.Message
@@ -1234,7 +1266,7 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 				s.logger.Warn("Quest retry still produced no structured output",
 					"attempt", attempt+1, "endpoint", endpointName)
 				// Update for next iteration
-				llmResponse = llmResponse + "\n\n" + retryResponse
+				llmResponse = llmResponse + "\n\n" + retryResult.Content
 				resp.Message = llmResponse
 			}
 		}
@@ -2020,6 +2052,40 @@ func (s *Service) handleBoardResume(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Info("Board resumed")
 	s.writeJSON(w, st)
+}
+
+// =============================================================================
+// TOKEN BUDGET
+// =============================================================================
+
+func (s *Service) handleTokenStats(w http.ResponseWriter, _ *http.Request) {
+	if s.tokenLedger == nil {
+		s.writeError(w, "token ledger not initialized", http.StatusServiceUnavailable)
+		return
+	}
+	s.writeJSON(w, s.tokenLedger.Stats())
+}
+
+func (s *Service) handleSetTokenBudget(w http.ResponseWriter, r *http.Request) {
+	if s.tokenLedger == nil {
+		s.writeError(w, "token ledger not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+
+	var req SetTokenBudgetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.tokenLedger.SetBudget(r.Context(), req.GlobalHourlyLimit); err != nil {
+		s.writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.writeJSON(w, s.tokenLedger.Stats())
 }
 
 // =============================================================================

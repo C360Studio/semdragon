@@ -1915,7 +1915,7 @@ func TestDomainAwareEvaluator_NoLLMJudge_FallsBackToHeuristic(t *testing.T) {
 			},
 		},
 	}
-	e := NewDomainAwareEvaluator(catalog, nil, nil)
+	e := NewDomainAwareEvaluator(catalog, nil, nil, nil)
 
 	battle := &BossBattle{
 		ID:      "b1",
@@ -1942,7 +1942,7 @@ func TestDomainAwareEvaluator_NilRegistry_FallsBackToHeuristic(t *testing.T) {
 	catalog := &promptmanager.DomainCatalog{
 		JudgeSystemBase: "test judge",
 	}
-	e := NewDomainAwareEvaluator(catalog, nil, nil) // nil registry
+	e := NewDomainAwareEvaluator(catalog, nil, nil, nil) // nil registry, nil tokenLedger
 
 	battle := &BossBattle{
 		ID:      "b1",

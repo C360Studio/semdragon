@@ -524,7 +524,7 @@
       },
       "post": {
         "summary": "Recruit agent",
-        "description": "Recruits a new agent into the game. Agents start at level 1 (Apprentice tier).",
+        "description": "Recruits a new agent into the game. Agents start at level 1 (Apprentice tier) unless an initial level is specified.",
         "tags": [
           "Agents"
         ],
@@ -835,10 +835,135 @@
         }
       }
     },
+    "/game/board/pause": {
+      "post": {
+        "summary": "Pause the board",
+        "description": "Pauses autonomous processing. In-progress agentic loops complete gracefully. Manual operations continue. Idempotent — pausing an already-paused board returns the current state.",
+        "tags": [
+          "Board Control"
+        ],
+        "responses": {
+          "200": {
+            "description": "Board paused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardStatusResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Board controller unavailable"
+          }
+        }
+      }
+    },
+    "/game/board/resume": {
+      "post": {
+        "summary": "Resume the board",
+        "description": "Resumes autonomous processing. Triggers reconciliation for any quests that transitioned to in_progress while paused. Idempotent.",
+        "tags": [
+          "Board Control"
+        ],
+        "responses": {
+          "200": {
+            "description": "Board resumed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardStatusResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Board controller unavailable"
+          }
+        }
+      }
+    },
+    "/game/board/status": {
+      "get": {
+        "summary": "Get board status",
+        "description": "Returns the current board play/pause status. When paused, autonomous actions (heartbeats, quest dispatch, boid suggestions) are suspended while manual operations continue.",
+        "tags": [
+          "Board Control"
+        ],
+        "responses": {
+          "200": {
+            "description": "Board status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/game/board/tokens": {
+      "get": {
+        "summary": "Get token usage stats",
+        "description": "Returns current token usage counters, hourly limit, budget percentage, and circuit breaker state. The breaker field is 'ok', 'warning' (\u003e=80%), or 'tripped' (\u003e=100%).",
+        "tags": [
+          "Board Control"
+        ],
+        "responses": {
+          "200": {
+            "description": "Token usage statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenStats"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/game/board/tokens/budget": {
+      "post": {
+        "summary": "Set token budget",
+        "description": "Updates the global hourly token limit. Set to 0 for unlimited. Persisted to KV for restart recovery.",
+        "tags": [
+          "Board Control"
+        ],
+        "requestBody": {
+          "description": "New hourly token limit",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTokenBudgetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Budget updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit value"
+          }
+        }
+      }
+    },
     "/game/dm/chat": {
       "post": {
         "summary": "DM chat",
-        "description": "Send a natural language message to the Dungeon Master. The DM can create quests, recruit agents, and manage the game world based on the conversation. Sessions persist across turns.",
+        "description": "Send a natural language message to the Dungeon Master. Supports four modes: 'converse' (default, Q\u0026A), 'quest' (create quests/chains), 'plan' (stub), 'manage' (stub). Only quest mode produces structured quest_brief/quest_chain output. Sessions persist across turns.",
         "tags": [
           "DM"
         ],
@@ -935,6 +1060,151 @@
           },
           "404": {
             "description": "Session not found"
+          }
+        }
+      }
+    },
+    "/game/guilds": {
+      "get": {
+        "summary": "List guilds",
+        "description": "Returns all guilds including members, founder, and specialization.",
+        "tags": [
+          "Guilds"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of guilds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Guild"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/game/guilds/{id}": {
+      "get": {
+        "summary": "Get guild",
+        "description": "Returns a single guild by ID including members, founder, and specialization.",
+        "tags": [
+          "Guilds"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Guild ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guild details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Guild"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guild not found"
+          }
+        }
+      }
+    },
+    "/game/models": {
+      "get": {
+        "summary": "Get model registry",
+        "description": "Returns model registry state. With ?resolve=capability, returns the resolution result for a single capability including endpoint name, model, and provider. Without it, returns a full summary of all endpoints and capabilities.",
+        "tags": [
+          "Model Registry"
+        ],
+        "parameters": [
+          {
+            "name": "resolve",
+            "in": "query",
+            "description": "Capability key to resolve (e.g. 'agent-work.apprentice')",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model registry summary or resolution result"
+          },
+          "503": {
+            "description": "Model registry unavailable"
+          }
+        }
+      }
+    },
+    "/game/parties": {
+      "get": {
+        "summary": "List parties",
+        "description": "Returns all parties including members, quest assignments, and formation status.",
+        "tags": [
+          "Parties"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of parties",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Party"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/game/parties/{id}": {
+      "get": {
+        "summary": "Get party",
+        "description": "Returns a single party by ID including members, roles, and quest assignment.",
+        "tags": [
+          "Parties"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Party ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Party details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Party"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Party not found"
           }
         }
       }
@@ -1655,7 +1925,7 @@
     "/game/trajectories/{id}": {
       "get": {
         "summary": "Get trajectory",
-        "description": "Returns trajectory events for a quest.",
+        "description": "Returns the execution trajectory for an agentic loop, including all model calls, tool calls, token usage, and timing. The trajectory ID is the loop_id from a completed quest.",
         "tags": [
           "Observability"
         ],
@@ -1664,7 +1934,7 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "description": "Trajectory ID",
+            "description": "Trajectory/loop ID (from quest.loop_id)",
             "schema": {
               "type": "string"
             }
@@ -1672,10 +1942,23 @@
         ],
         "responses": {
           "200": {
-            "description": "Trajectory events"
+            "description": "Trajectory with execution steps",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trajectory"
+                }
+              }
+            }
           },
-          "501": {
-            "description": "Not yet implemented"
+          "400": {
+            "description": "Invalid trajectory ID format"
+          },
+          "404": {
+            "description": "Trajectory not found"
+          },
+          "503": {
+            "description": "Trajectory service unavailable"
           }
         }
       }
@@ -2524,6 +2807,40 @@
         ],
         "type": "object"
       },
+      "BoardStatusResponse": {
+        "properties": {
+          "paused": {
+            "description": "Whether the board is currently paused",
+            "type": "boolean"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "RFC 3339 timestamp when board was paused, or null"
+          },
+          "paused_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identifier of who paused the board, or null"
+          }
+        },
+        "required": [
+          "paused"
+        ],
+        "type": "object"
+      },
       "BossBattle": {
         "properties": {
           "agent_id": {
@@ -3277,6 +3594,21 @@
             "description": "ISO 8601 deadline",
             "type": "string"
           },
+          "min_party_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minimum party size (2-5)"
+          },
+          "party_required": {
+            "description": "Whether the quest requires a party",
+            "type": "boolean"
+          },
           "prefer_guild": {
             "anyOf": [
               {
@@ -3324,7 +3656,8 @@
         },
         "required": [
           "require_human_review",
-          "budget"
+          "budget",
+          "party_required"
         ],
         "type": "object"
       },
@@ -3341,6 +3674,21 @@
                   "deadline": {
                     "description": "ISO 8601 deadline",
                     "type": "string"
+                  },
+                  "min_party_size": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Minimum party size (2-5)"
+                  },
+                  "party_required": {
+                    "description": "Whether the quest requires a party",
+                    "type": "boolean"
                   },
                   "prefer_guild": {
                     "anyOf": [
@@ -3389,7 +3737,8 @@
                 },
                 "required": [
                   "require_human_review",
-                  "budget"
+                  "budget",
+                  "party_required"
                 ],
                 "type": "object"
               },
@@ -3539,6 +3888,10 @@
             "description": "User message to the DM",
             "type": "string"
           },
+          "mode": {
+            "description": "Chat mode: converse, quest, plan, manage",
+            "type": "string"
+          },
           "session_id": {
             "description": "Hex session ID for multi-turn",
             "type": "string"
@@ -3553,6 +3906,10 @@
         "properties": {
           "message": {
             "description": "DM response text",
+            "type": "string"
+          },
+          "mode": {
+            "description": "Active chat mode",
             "type": "string"
           },
           "quest_brief": {
@@ -3793,6 +4150,7 @@
         },
         "required": [
           "message",
+          "mode",
           "session_id",
           "trace_info"
         ],
@@ -4478,6 +4836,130 @@
         ],
         "type": "object"
       },
+      "ModelEndpointSummary": {
+        "properties": {
+          "max_tokens": {
+            "description": "Maximum context window size",
+            "type": "integer"
+          },
+          "model": {
+            "description": "Model identifier",
+            "type": "string"
+          },
+          "name": {
+            "description": "Endpoint name",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Provider type",
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "description": "Reasoning effort level (none, low, medium, high)",
+            "type": "string"
+          },
+          "supports_tools": {
+            "description": "Whether the endpoint supports tool calling",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "model",
+          "max_tokens",
+          "supports_tools"
+        ],
+        "type": "object"
+      },
+      "ModelRegistrySummary": {
+        "properties": {
+          "capabilities": {
+            "description": "All configured capability keys",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "endpoints": {
+            "description": "All configured model endpoints",
+            "items": {
+              "properties": {
+                "max_tokens": {
+                  "description": "Maximum context window size",
+                  "type": "integer"
+                },
+                "model": {
+                  "description": "Model identifier",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Endpoint name",
+                  "type": "string"
+                },
+                "provider": {
+                  "description": "Provider type",
+                  "type": "string"
+                },
+                "reasoning_effort": {
+                  "description": "Reasoning effort level (none, low, medium, high)",
+                  "type": "string"
+                },
+                "supports_tools": {
+                  "description": "Whether the endpoint supports tool calling",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "provider",
+                "model",
+                "max_tokens",
+                "supports_tools"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "endpoints",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "ModelResolveResponse": {
+        "properties": {
+          "capability": {
+            "description": "The requested capability key",
+            "type": "string"
+          },
+          "endpoint_name": {
+            "description": "Resolved endpoint name",
+            "type": "string"
+          },
+          "fallback_chain": {
+            "description": "Ordered fallback endpoint names for this capability",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "Model identifier at the resolved endpoint",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Provider type (openai, ollama, anthropic, etc.)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "endpoint_name"
+        ],
+        "type": "object"
+      },
       "OwnedItem": {
         "properties": {
           "item_id": {
@@ -5052,6 +5534,9 @@
             "type": "string"
           },
           "input": {},
+          "loop_id": {
+            "type": "string"
+          },
           "max_attempts": {
             "type": "integer"
           },
@@ -5585,6 +6070,17 @@
             "description": "Whether this is an NPC agent",
             "type": "boolean"
           },
+          "level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Initial level (1-20, default 1). Higher levels grant higher trust tiers."
+          },
           "name": {
             "description": "Unique agent name",
             "type": "string"
@@ -5980,6 +6476,18 @@
         ],
         "type": "object"
       },
+      "SetTokenBudgetRequest": {
+        "properties": {
+          "global_hourly_limit": {
+            "description": "New hourly token limit (0 = unlimited)",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "global_hourly_limit"
+        ],
+        "type": "object"
+      },
       "SkillBar": {
         "properties": {
           "is_max_level": {
@@ -6212,6 +6720,85 @@
         ],
         "type": "object"
       },
+      "TokenStats": {
+        "properties": {
+          "breaker": {
+            "type": "string"
+          },
+          "budget_pct": {
+            "type": "number"
+          },
+          "hourly_cost_usd": {
+            "type": "number"
+          },
+          "hourly_epoch": {
+            "type": "integer"
+          },
+          "hourly_limit": {
+            "type": "integer"
+          },
+          "hourly_usage": {
+            "properties": {
+              "completion_tokens": {
+                "type": "integer"
+              },
+              "estimated_cost_usd": {
+                "type": "number"
+              },
+              "prompt_tokens": {
+                "type": "integer"
+              },
+              "total_tokens": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "prompt_tokens",
+              "completion_tokens",
+              "total_tokens",
+              "estimated_cost_usd"
+            ],
+            "type": "object"
+          },
+          "total_cost_usd": {
+            "type": "number"
+          },
+          "total_usage": {
+            "properties": {
+              "completion_tokens": {
+                "type": "integer"
+              },
+              "estimated_cost_usd": {
+                "type": "number"
+              },
+              "prompt_tokens": {
+                "type": "integer"
+              },
+              "total_tokens": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "prompt_tokens",
+              "completion_tokens",
+              "total_tokens",
+              "estimated_cost_usd"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "hourly_usage",
+          "total_usage",
+          "hourly_limit",
+          "budget_pct",
+          "breaker",
+          "hourly_epoch",
+          "hourly_cost_usd",
+          "total_cost_usd"
+        ],
+        "type": "object"
+      },
       "TraceInfoResponse": {
         "properties": {
           "parent_span_id": {
@@ -6227,6 +6814,165 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "Trajectory": {
+        "properties": {
+          "duration": {
+            "type": "integer"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loop_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "start_time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "properties": {
+                "duration": {
+                  "type": "integer"
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "request_id": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "step_type": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "tokens_in": {
+                  "type": "integer"
+                },
+                "tokens_out": {
+                  "type": "integer"
+                },
+                "tool_arguments": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "tool_name": {
+                  "type": "string"
+                },
+                "tool_result": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "timestamp",
+                "step_type",
+                "duration"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "total_tokens_in": {
+            "type": "integer"
+          },
+          "total_tokens_out": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "loop_id",
+          "start_time",
+          "steps",
+          "total_tokens_in",
+          "total_tokens_out",
+          "duration"
+        ],
+        "type": "object"
+      },
+      "TrajectoryStep": {
+        "properties": {
+          "duration": {
+            "type": "integer"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "response": {
+            "type": "string"
+          },
+          "step_type": {
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tokens_in": {
+            "type": "integer"
+          },
+          "tokens_out": {
+            "type": "integer"
+          },
+          "tool_arguments": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "tool_result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "timestamp",
+          "step_type",
+          "duration"
+        ],
+        "type": "object"
+      },
+      "UsageSnapshot": {
+        "properties": {
+          "completion_tokens": {
+            "type": "integer"
+          },
+          "estimated_cost_usd": {
+            "type": "number"
+          },
+          "prompt_tokens": {
+            "type": "integer"
+          },
+          "total_tokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens",
+          "estimated_cost_usd"
+        ],
         "type": "object"
       },
       "UseConsumableRequest": {
@@ -6321,6 +7067,12 @@
               "cooldown_agents": {
                 "type": "integer"
               },
+              "cost_total_usd": {
+                "type": "number"
+              },
+              "cost_used_hourly_usd": {
+                "type": "number"
+              },
               "idle_agents": {
                 "type": "integer"
               },
@@ -6328,6 +7080,18 @@
                 "type": "integer"
               },
               "retired_agents": {
+                "type": "integer"
+              },
+              "token_breaker": {
+                "type": "string"
+              },
+              "token_budget_pct": {
+                "type": "number"
+              },
+              "tokens_limit_hourly": {
+                "type": "integer"
+              },
+              "tokens_used_hourly": {
                 "type": "integer"
               }
             },
@@ -6341,7 +7105,13 @@
               "completion_rate",
               "avg_quality",
               "active_parties",
-              "active_guilds"
+              "active_guilds",
+              "tokens_used_hourly",
+              "tokens_limit_hourly",
+              "token_budget_pct",
+              "token_breaker",
+              "cost_used_hourly_usd",
+              "cost_total_usd"
             ],
             "type": "object"
           }
@@ -6379,6 +7149,12 @@
           "cooldown_agents": {
             "type": "integer"
           },
+          "cost_total_usd": {
+            "type": "number"
+          },
+          "cost_used_hourly_usd": {
+            "type": "number"
+          },
           "idle_agents": {
             "type": "integer"
           },
@@ -6386,6 +7162,18 @@
             "type": "integer"
           },
           "retired_agents": {
+            "type": "integer"
+          },
+          "token_breaker": {
+            "type": "string"
+          },
+          "token_budget_pct": {
+            "type": "number"
+          },
+          "tokens_limit_hourly": {
+            "type": "integer"
+          },
+          "tokens_used_hourly": {
             "type": "integer"
           }
         },
@@ -6399,7 +7187,13 @@
           "completion_rate",
           "avg_quality",
           "active_parties",
-          "active_guilds"
+          "active_guilds",
+          "tokens_used_hourly",
+          "tokens_limit_hourly",
+          "token_budget_pct",
+          "token_breaker",
+          "cost_used_hourly_usd",
+          "cost_total_usd"
         ],
         "type": "object"
       }
@@ -6413,6 +7207,10 @@
     {
       "name": "Battles",
       "description": "Boss battle (automated review) operations"
+    },
+    {
+      "name": "Board Control",
+      "description": "Board play/pause control"
     },
     {
       "name": "Components",
@@ -6435,12 +7233,24 @@
       "description": "Visual flow CRUD operations"
     },
     {
+      "name": "Guilds",
+      "description": "Guild formation and management"
+    },
+    {
       "name": "MessageLogger",
       "description": "Message observation and debugging endpoints"
     },
     {
+      "name": "Model Registry",
+      "description": "Model registry introspection and capability resolution"
+    },
+    {
       "name": "Observability",
       "description": "Trajectory and event tracing"
+    },
+    {
+      "name": "Parties",
+      "description": "Party formation and management"
     },
     {
       "name": "Peer Reviews",

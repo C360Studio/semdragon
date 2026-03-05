@@ -8,6 +8,7 @@
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
+	import { formatTokenCount, formatCostUSD } from '$lib/utils/format';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -95,6 +96,33 @@
 					<div class="stat-card" data-testid="stat-battle-win-rate">
 						<span class="stat-value">{worldStore.battleStats.winRate.toFixed(0)}%</span>
 						<span class="stat-label">Battle Win Rate</span>
+					</div>
+					<div
+						class="stat-card"
+						class:stat-warning={worldStore.stats.token_breaker === 'warning'}
+						class:stat-error={worldStore.stats.token_breaker === 'tripped'}
+						data-testid="stat-tokens-hour"
+					>
+						<span class="stat-value">{formatTokenCount(worldStore.stats.tokens_used_hourly ?? 0)}</span>
+						<span class="stat-label">Tokens / Hour</span>
+					</div>
+					<div
+						class="stat-card"
+						class:stat-warning={worldStore.stats.token_breaker === 'warning'}
+						class:stat-error={worldStore.stats.token_breaker === 'tripped'}
+						data-testid="stat-token-budget"
+					>
+						<span class="stat-value">{((worldStore.stats.token_budget_pct ?? 0) * 100).toFixed(0)}%</span>
+						<span class="stat-label">Token Budget</span>
+					</div>
+					<div
+						class="stat-card"
+						class:stat-warning={worldStore.stats.token_breaker === 'warning'}
+						class:stat-error={worldStore.stats.token_breaker === 'tripped'}
+						data-testid="stat-hourly-cost"
+					>
+						<span class="stat-value">{formatCostUSD(worldStore.stats.cost_used_hourly_usd ?? 0)}</span>
+						<span class="stat-label">Hourly Cost</span>
 					</div>
 				</div>
 
@@ -232,6 +260,14 @@
 		font-size: 1.5rem;
 		font-weight: 700;
 		color: var(--ui-interactive-primary);
+	}
+
+	.stat-card.stat-warning .stat-value {
+		color: var(--status-warning);
+	}
+
+	.stat-card.stat-error .stat-value {
+		color: var(--status-error);
 	}
 
 	.stat-label {

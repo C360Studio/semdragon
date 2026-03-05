@@ -22,6 +22,9 @@ export class DashboardPage extends BasePage {
 	readonly statActiveParties: Locator;
 	readonly statGuilds: Locator;
 	readonly statBattleWinRate: Locator;
+	readonly statTokensHour: Locator;
+	readonly statTokenBudget: Locator;
+	readonly statHourlyCost: Locator;
 
 	// Sections
 	readonly tierDistribution: Locator;
@@ -59,6 +62,9 @@ export class DashboardPage extends BasePage {
 		this.statActiveParties = page.locator('[data-testid="stat-active-parties"]');
 		this.statGuilds = page.locator('[data-testid="stat-guilds"]');
 		this.statBattleWinRate = page.locator('[data-testid="stat-battle-win-rate"]');
+		this.statTokensHour = page.locator('[data-testid="stat-tokens-hour"]');
+		this.statTokenBudget = page.locator('[data-testid="stat-token-budget"]');
+		this.statHourlyCost = page.locator('[data-testid="stat-hourly-cost"]');
 
 		// Sections
 		this.tierDistribution = page.locator('.dashboard-section').filter({
@@ -126,7 +132,10 @@ export class DashboardPage extends BasePage {
 			'Total XP Earned': 'stat-total-xp-earned',
 			'Active Parties': 'stat-active-parties',
 			'Guilds': 'stat-guilds',
-			'Battle Win Rate': 'stat-battle-win-rate'
+			'Battle Win Rate': 'stat-battle-win-rate',
+			'Tokens / Hour': 'stat-tokens-hour',
+			'Token Budget': 'stat-token-budget',
+			'Hourly Cost': 'stat-hourly-cost'
 		};
 
 		const testId = testIdMap[label];

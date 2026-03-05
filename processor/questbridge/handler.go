@@ -127,6 +127,16 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 		return
 	}
 
+	// When token budget is exceeded, defer dispatching. Quest stays in cache
+	// as in_progress; reconcileOrphanedQuests will pick it up on budget reset.
+	if c.tokenLedger != nil {
+		if err := c.tokenLedger.Check(); err != nil {
+			c.logger.Warn("token budget exceeded, deferring quest dispatch",
+				"entity_id", entityState.ID, "error", err)
+			return
+		}
+	}
+
 	// Use quest.identity.id triple when present; fall back to entity state ID.
 	questID := tripleString(entityState.Triples, "quest.identity.id")
 	if questID == "" {
@@ -404,6 +414,12 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 		return
 	}
 
+	// Record token usage from the completed loop.
+	if c.tokenLedger != nil && (event.TokensIn > 0 || event.TokensOut > 0) {
+		endpointName := c.resolveQuestEndpoint()
+		c.tokenLedger.Record(ctx, event.TokensIn, event.TokensOut, "quest", endpointName)
+	}
+
 	// Transition quest to completed with the LLM output as result.
 	c.completeQuest(ctx, questID, mapping, event.Result)
 
@@ -456,6 +472,12 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 		c.logger.Debug("no mapping found for failed loop",
 			"task_id", event.TaskID, "loop_id", event.LoopID)
 		return
+	}
+
+	// Record token usage from the failed loop.
+	if c.tokenLedger != nil && (event.TokensIn > 0 || event.TokensOut > 0) {
+		endpointName := c.resolveQuestEndpoint()
+		c.tokenLedger.Record(ctx, event.TokensIn, event.TokensOut, "quest", endpointName)
 	}
 
 	// Transition quest to failed.
@@ -863,6 +885,15 @@ func agentSkillNames(agent *agentprogression.Agent) []string {
 		names = append(names, string(skill))
 	}
 	return names
+}
+
+// resolveQuestEndpoint returns the best-effort endpoint name for quest execution.
+// Used for cost estimation when recording token usage from completed/failed loops.
+func (c *Component) resolveQuestEndpoint() string {
+	if c.registry == nil {
+		return ""
+	}
+	return c.registry.Resolve("agent-work")
 }
 
 // =============================================================================

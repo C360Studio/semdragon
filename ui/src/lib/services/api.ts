@@ -34,7 +34,8 @@ import type {
 	ChatMode,
 	ChatResponse,
 	DMChatSession,
-	BoardStatus
+	BoardStatus,
+	TokenStats
 } from '$types';
 
 // =============================================================================
@@ -285,6 +286,18 @@ export async function resumeBoard(): Promise<BoardStatus> {
 }
 
 // =============================================================================
+// TOKEN TRACKING
+// =============================================================================
+
+export async function getTokenStats(): Promise<TokenStats> {
+	return fetchJson<TokenStats>('/game/board/tokens');
+}
+
+export async function setTokenBudget(limit: number): Promise<TokenStats> {
+	return postJson<TokenStats>('/game/board/tokens/budget', { global_hourly_limit: limit });
+}
+
+// =============================================================================
 // HEALTH (system endpoint — no /game/ prefix)
 // =============================================================================
 
@@ -324,5 +337,7 @@ export const api = {
 	getBoardStatus,
 	pauseBoard,
 	resumeBoard,
+	getTokenStats,
+	setTokenBudget,
 	healthCheck
 };

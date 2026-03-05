@@ -13,6 +13,7 @@ import (
 	"github.com/c360studio/semdragons/processor/boardcontrol"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/promptmanager"
+	"github.com/c360studio/semdragons/processor/tokenbudget"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/natsclient"
@@ -61,6 +62,9 @@ type Component struct {
 	// Board pause integration
 	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
 	resumeSub    *natsclient.Subscription  // Subscription to board.control.resumed
+
+	// Token budget enforcement
+	tokenLedger *tokenbudget.TokenLedger
 
 	// questCache stores the last-known status string keyed by entity KV key.
 	// Populated during bootstrap; used to detect in_progress transitions.
@@ -294,6 +298,19 @@ func (c *Component) Start(ctx context.Context) error {
 		"max_iterations", c.config.MaxIterations)
 
 	return nil
+}
+
+// SetTokenLedger injects the shared token ledger for budget enforcement.
+// When the budget is exceeded, new quest dispatches are deferred.
+// Must be called before Start.
+func (c *Component) SetTokenLedger(l *tokenbudget.TokenLedger) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetTokenLedger called while running; ignored")
+		return
+	}
+	c.tokenLedger = l
 }
 
 // SetPauseChecker injects the board pause checker. When paused, quest

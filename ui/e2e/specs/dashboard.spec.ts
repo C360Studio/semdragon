@@ -27,6 +27,14 @@ test.describe('Dashboard', () => {
 		await expect(dashboardPage.statCompletionRate).toBeVisible();
 	});
 
+	test('displays token budget stat cards', async ({ dashboardPage }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
+
+		await expect(dashboardPage.statTokensHour).toBeVisible();
+		await expect(dashboardPage.statTokenBudget).toBeVisible();
+		await expect(dashboardPage.statHourlyCost).toBeVisible();
+	});
+
 	test('displays tier distribution section', async ({ dashboardPage }) => {
 		test.skip(!hasBackend(), 'Requires backend for SSE data');
 
@@ -108,5 +116,24 @@ test.describe('Dashboard - Stats Values', () => {
 
 		const avgQuality = await dashboardPage.getStatValue('Avg Quality');
 		expect(avgQuality).toMatch(/^\d+\.?\d*%$/);
+	});
+
+	test('hourly cost value has dollar format', async ({ dashboardPage }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
+
+		await dashboardPage.goto();
+
+		const hourlyCost = await dashboardPage.getStatValue('Hourly Cost');
+		// Should match $0.00, $1.23, $0.001, or <$0.001
+		expect(hourlyCost).toMatch(/^(\$\d+\.\d{2,3}|<\$0\.001)$/);
+	});
+
+	test('token budget value is a percentage', async ({ dashboardPage }) => {
+		test.skip(!hasBackend(), 'Requires backend for SSE data');
+
+		await dashboardPage.goto();
+
+		const tokenBudget = await dashboardPage.getStatValue('Token Budget');
+		expect(tokenBudget).toMatch(/^\d+%$/);
 	});
 });

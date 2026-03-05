@@ -13,6 +13,7 @@ import (
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/promptmanager"
+	"github.com/c360studio/semdragons/processor/tokenbudget"
 )
 
 // =============================================================================
@@ -124,23 +125,27 @@ const judgeCapability = "boss-battle"
 // a judge prompt using the domain's JudgeSystemBase and calls the LLM.
 // Falls back to heuristic evaluation when no LLM is available or on failure.
 type DomainAwareEvaluator struct {
-	catalog   *promptmanager.DomainCatalog
-	registry  model.RegistryReader
-	assembler *promptmanager.PromptAssembler
-	fallback  *DefaultBattleEvaluator
+	catalog     *promptmanager.DomainCatalog
+	registry    model.RegistryReader
+	assembler   *promptmanager.PromptAssembler
+	fallback    *DefaultBattleEvaluator
+	tokenLedger *tokenbudget.TokenLedger
 }
 
 // NewDomainAwareEvaluator creates an evaluator with domain catalog and model registry.
+// tokenLedger may be nil when token budget enforcement is not required.
 func NewDomainAwareEvaluator(
 	catalog *promptmanager.DomainCatalog,
 	registry model.RegistryReader,
 	assembler *promptmanager.PromptAssembler,
+	tokenLedger *tokenbudget.TokenLedger,
 ) *DomainAwareEvaluator {
 	return &DomainAwareEvaluator{
-		catalog:   catalog,
-		registry:  registry,
-		assembler: assembler,
-		fallback:  NewDefaultBattleEvaluator(),
+		catalog:     catalog,
+		registry:    registry,
+		assembler:   assembler,
+		fallback:    NewDefaultBattleEvaluator(),
+		tokenLedger: tokenLedger,
 	}
 }
 
@@ -149,6 +154,15 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 	// Check if any judge requires LLM evaluation
 	if !e.hasLLMJudge(battle) || e.registry == nil || e.assembler == nil {
 		return e.fallback.Evaluate(ctx, battle, quest, output)
+	}
+
+	// Check token budget before making LLM call.
+	if e.tokenLedger != nil {
+		if err := e.tokenLedger.Check(); err != nil {
+			slog.Warn("token budget exceeded, falling back to heuristic",
+				"error", err, "battle", battle.ID)
+			return e.fallback.Evaluate(ctx, battle, quest, output)
+		}
 	}
 
 	// Resolve the boss-battle endpoint
@@ -176,7 +190,13 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 	userMessage := formatOutputForJudge(output)
 
 	// Call the LLM
-	llmResults, feedback, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
+	llmResults, feedback, tokenUsage, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
+
+	// Record token usage regardless of success/failure.
+	if e.tokenLedger != nil && (tokenUsage.PromptTokens > 0 || tokenUsage.CompletionTokens > 0) {
+		e.tokenLedger.Record(ctx, tokenUsage.PromptTokens, tokenUsage.CompletionTokens, "boss_battle", endpointName)
+	}
+
 	if err != nil {
 		slog.Warn("LLM judge call failed, falling back to heuristic",
 			"error", err, "battle", battle.ID)
@@ -204,16 +224,16 @@ func (e *DomainAwareEvaluator) hasLLMJudge(battle *BossBattle) bool {
 }
 
 // callLLMJudge makes a one-shot LLM call and parses the response into review results.
-// Returns results, overall feedback from the LLM, and any error.
+// Returns results, overall feedback, token usage from the LLM, and any error.
 func (e *DomainAwareEvaluator) callLLMJudge(
 	ctx context.Context,
 	endpoint *model.EndpointConfig,
 	systemPrompt, userMessage string,
 	battle *BossBattle,
-) ([]domain.ReviewResult, string, error) {
+) ([]domain.ReviewResult, string, agentic.TokenUsage, error) {
 	client, err := agenticmodel.NewClient(endpoint)
 	if err != nil {
-		return nil, "", fmt.Errorf("create LLM client: %w", err)
+		return nil, "", agentic.TokenUsage{}, fmt.Errorf("create LLM client: %w", err)
 	}
 
 	req := agentic.AgentRequest{
@@ -228,15 +248,15 @@ func (e *DomainAwareEvaluator) callLLMJudge(
 
 	resp, err := client.ChatCompletion(ctx, req)
 	if err != nil {
-		return nil, "", fmt.Errorf("LLM chat completion: %w", err)
+		return nil, "", agentic.TokenUsage{}, fmt.Errorf("LLM chat completion: %w", err)
 	}
 
 	if resp.Status == agentic.StatusError {
-		return nil, "", fmt.Errorf("LLM returned error: %s", resp.Error)
+		return nil, "", resp.TokenUsage, fmt.Errorf("LLM returned error: %s", resp.Error)
 	}
 
 	results, feedback, parseErr := parseJudgeResponse(resp.Message.Content, battle)
-	return results, feedback, parseErr
+	return results, feedback, resp.TokenUsage, parseErr
 }
 
 // judgeResponse is the expected JSON structure from the LLM judge.

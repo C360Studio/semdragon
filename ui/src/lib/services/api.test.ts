@@ -527,6 +527,8 @@ describe('API Service Object', () => {
 		expect(api.purchase).toBeDefined();
 		expect(api.useConsumable).toBeDefined();
 		expect(api.getActiveEffects).toBeDefined();
+		expect(api.getTokenStats).toBeDefined();
+		expect(api.setTokenBudget).toBeDefined();
 		expect(api.healthCheck).toBeDefined();
 	});
 

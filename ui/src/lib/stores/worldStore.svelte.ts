@@ -20,7 +20,8 @@ import type {
 	GameEvent,
 	StoreItem,
 	AgentInventory,
-	ActiveEffect
+	ActiveEffect,
+	TokenBreakerState
 } from '$types';
 
 // =============================================================================
@@ -39,7 +40,13 @@ const defaultStats: WorldStats = {
 	completion_rate: 0,
 	avg_quality: 0,
 	active_parties: 0,
-	active_guilds: 0
+	active_guilds: 0,
+	tokens_used_hourly: 0,
+	tokens_limit_hourly: 0,
+	token_budget_pct: 0,
+	token_breaker: 'ok',
+	cost_used_hourly_usd: 0,
+	cost_total_usd: 0
 };
 
 // =============================================================================
@@ -61,6 +68,14 @@ let error = $state<string | null>(null);
 let boardPaused = $state(false);
 let boardPausedAt = $state<string | null>(null);
 let boardPausedBy = $state<string | null>(null);
+
+// Token tracking state (updated from backend poll or world state snapshot)
+let tokensUsedHourly = $state(0);
+let tokensLimitHourly = $state(0);
+let tokenBudgetPct = $state(0);
+let tokenBreaker = $state<TokenBreakerState>('ok');
+let costUsedHourlyUSD = $state(0);
+let costTotalUSD = $state(0);
 
 // Selected entities
 let selectedAgentId = $state<AgentID | null>(null);
@@ -103,7 +118,7 @@ const retiredAgents = $derived(agentList.filter((a) => a.status === 'retired'));
 // Active battles
 const activeBattles = $derived(battleList.filter((b) => b.status === 'active'));
 
-// Client-computed stats from entity Maps
+// Client-computed stats from entity Maps, with token fields from backend
 const computedStats = $derived<WorldStats>({
 	active_agents: agentList.filter((a) => a.status === 'on_quest' || a.status === 'in_battle').length,
 	idle_agents: idleAgents.length,
@@ -122,7 +137,13 @@ const computedStats = $derived<WorldStats>({
 		return scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
 	})(),
 	active_parties: partyList.filter((p) => p.status === 'active').length,
-	active_guilds: guildList.filter((g) => g.status === 'active').length
+	active_guilds: guildList.filter((g) => g.status === 'active').length,
+	tokens_used_hourly: tokensUsedHourly,
+	tokens_limit_hourly: tokensLimitHourly,
+	token_budget_pct: tokenBudgetPct,
+	token_breaker: tokenBreaker,
+	cost_used_hourly_usd: costUsedHourlyUSD,
+	cost_total_usd: costTotalUSD
 });
 
 // Tier distribution for agent breakdown
@@ -196,6 +217,15 @@ function setBoardPaused(paused: boolean, pausedAt: string | null = null, pausedB
 	boardPaused = paused;
 	boardPausedAt = pausedAt;
 	boardPausedBy = pausedBy;
+}
+
+function setTokenStats(usedHourly: number, limitHourly: number, budgetPct: number, breaker: TokenBreakerState, hourlyCost = 0, totalCost = 0) {
+	tokensUsedHourly = usedHourly;
+	tokensLimitHourly = limitHourly;
+	tokenBudgetPct = budgetPct;
+	tokenBreaker = breaker;
+	costUsedHourlyUSD = hourlyCost;
+	costTotalUSD = totalCost;
 }
 
 function selectAgent(id: AgentID | null) {
@@ -382,7 +412,13 @@ export function createWorldStore() {
 			completion_rate: total > 0 ? done / total : 0,
 			avg_quality: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
 			active_parties: partyList.filter((p) => p.status === 'active').length,
-			active_guilds: guildList.filter((g) => g.status === 'active').length
+			active_guilds: guildList.filter((g) => g.status === 'active').length,
+			tokens_used_hourly: 0,
+			tokens_limit_hourly: 0,
+			token_budget_pct: 0,
+			token_breaker: 'ok' as TokenBreakerState,
+			cost_used_hourly_usd: 0,
+			cost_total_usd: 0
 		};
 	}
 
@@ -619,6 +655,7 @@ export const worldStore = {
 	setConnected,
 	setSynced,
 	setBoardPaused,
+	setTokenStats,
 	selectAgent,
 	selectQuest,
 	selectBattle,

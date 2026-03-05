@@ -1,9 +1,30 @@
 <script lang="ts">
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { api } from '$services/api';
+	import { formatTokenCount, formatCostUSD } from '$lib/utils/format';
 
 	let toggling = $state(false);
 	let now = $state(Date.now());
+
+	const tokenBreaker = $derived(worldStore.stats.token_breaker ?? 'ok');
+	const tokensUsed = $derived(worldStore.stats.tokens_used_hourly ?? 0);
+	const tokensLimit = $derived(worldStore.stats.tokens_limit_hourly ?? 0);
+	const tokenBudgetPct = $derived(worldStore.stats.token_budget_pct ?? 0);
+	const hourlyCost = $derived(worldStore.stats.cost_used_hourly_usd ?? 0);
+	const tokenPrompt = $derived.by(() => {
+		let prompt = tokensLimit > 0
+			? `${formatTokenCount(tokensUsed)} / ${formatTokenCount(tokensLimit)} hourly limit (${(tokenBudgetPct * 100).toFixed(0)}%)`
+			: `${formatTokenCount(tokensUsed)} tokens this hour`;
+		if (hourlyCost > 0) {
+			prompt += ` — ${formatCostUSD(hourlyCost)} this hour`;
+		}
+		return prompt;
+	});
+	const tokenChipLabel = $derived(
+		hourlyCost > 0
+			? `${formatTokenCount(tokensUsed)} tok/h · ${formatCostUSD(hourlyCost)}`
+			: `${formatTokenCount(tokensUsed)} tok/h`
+	);
 
 	// Tick every 30s while paused so pausedAgo stays fresh.
 	$effect(() => {
@@ -56,6 +77,18 @@
 		{/if}
 	</div>
 	<div class="status-right">
+		{#if tokensUsed > 0 || tokensLimit > 0}
+			<span
+				class="token-chip"
+				class:token-warning={tokenBreaker === 'warning'}
+				class:token-tripped={tokenBreaker === 'tripped'}
+				title={tokenPrompt}
+				aria-label="Token usage: {tokenPrompt}"
+				data-testid="token-chip"
+			>
+				{tokenChipLabel}
+			</span>
+		{/if}
 		<span class="connection-indicator" class:connected={worldStore.connected} data-testid="connection-status">
 			{worldStore.connected ? 'Connected' : 'Disconnected'}
 		</span>
@@ -123,6 +156,25 @@
 
 	.status-detail {
 		color: var(--ui-text-secondary);
+	}
+
+	.token-chip {
+		padding: 2px 8px;
+		border-radius: var(--radius-full);
+		font-size: 0.675rem;
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-secondary);
+		cursor: default;
+	}
+
+	.token-chip.token-warning {
+		background: var(--status-warning-container);
+		color: var(--status-warning);
+	}
+
+	.token-chip.token-tripped {
+		background: var(--status-error-container);
+		color: var(--status-error);
 	}
 
 	.connection-indicator {

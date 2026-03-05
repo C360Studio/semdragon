@@ -20,6 +20,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/util"
 	"github.com/c360studio/semdragons/processor/promptmanager"
+	"github.com/c360studio/semdragons/processor/tokenbudget"
 )
 
 // =============================================================================
@@ -41,6 +42,9 @@ type Component struct {
 	assembler   *promptmanager.PromptAssembler
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
+
+	// Token budget enforcement
+	tokenLedger *tokenbudget.TokenLedger
 
 	// KV watcher for quest entity state changes (entity-centric architecture)
 	questWatch  jetstream.KeyWatcher
@@ -253,6 +257,18 @@ func (c *Component) DataFlow() component.FlowMetrics {
 // LIFECYCLE INTERFACE
 // =============================================================================
 
+// SetTokenLedger injects the shared token ledger for budget enforcement.
+// Must be called before Initialize. Ignored if the component is already running.
+func (c *Component) SetTokenLedger(l *tokenbudget.TokenLedger) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetTokenLedger called while running; ignored")
+		return
+	}
+	c.tokenLedger = l
+}
+
 // Initialize performs one-time setup. No I/O operations here.
 func (c *Component) Initialize() error {
 	if c.config == nil {
@@ -271,7 +287,7 @@ func (c *Component) Initialize() error {
 		promptRegistry := promptmanager.NewPromptRegistry()
 		promptRegistry.RegisterProviderStyles()
 		c.assembler = promptmanager.NewPromptAssembler(promptRegistry)
-		c.evaluator = NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler)
+		c.evaluator = NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler, c.tokenLedger)
 	} else {
 		c.evaluator = NewDefaultBattleEvaluator()
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semdragons/processor/tokenbudget"
 	"github.com/c360studio/semdragons/service/agentsheet"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/service"
@@ -536,6 +537,34 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 			},
 
+			// ── Token Budget ────────────────────────────────────
+			"/board/tokens": {
+				GET: &service.OperationSpec{
+					Summary:     "Get token usage stats",
+					Description: "Returns current token usage counters, hourly limit, budget percentage, and circuit breaker state. The breaker field is 'ok', 'warning' (>=80%), or 'tripped' (>=100%).",
+					Tags:        []string{"Board Control"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Token usage statistics", ContentType: "application/json", SchemaRef: "#/components/schemas/TokenStats"},
+					},
+				},
+			},
+			"/board/tokens/budget": {
+				POST: &service.OperationSpec{
+					Summary:     "Set token budget",
+					Description: "Updates the global hourly token limit. Set to 0 for unlimited. Persisted to KV for restart recovery.",
+					Tags:        []string{"Board Control"},
+					RequestBody: &service.RequestBodySpec{
+						Description: "New hourly token limit",
+						SchemaRef:   "#/components/schemas/SetTokenBudgetRequest",
+						Required:    true,
+					},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Budget updated", ContentType: "application/json", SchemaRef: "#/components/schemas/TokenStats"},
+						"400": {Description: "Invalid limit value"},
+					},
+				},
+			},
+
 			// ── Model Registry ───────────────────────────────────
 			"/models": {
 				GET: &service.OperationSpec{
@@ -697,6 +726,10 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(ModelResolveResponse{}),
 			reflect.TypeOf(ModelEndpointSummary{}),
 			reflect.TypeOf(ModelRegistrySummary{}),
+
+			// Token budget types
+			reflect.TypeOf(tokenbudget.TokenStats{}),
+			reflect.TypeOf(tokenbudget.UsageSnapshot{}),
 		},
 
 		// Request body types — the generator reflects these to build components.schemas
@@ -715,6 +748,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(DMChatRequest{}),
 			reflect.TypeOf(DMChatContextRef{}),
 			reflect.TypeOf(DMChatHistoryItem{}),
+			reflect.TypeOf(SetTokenBudgetRequest{}),
 		},
 	}
 }
