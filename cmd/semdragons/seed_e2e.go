@@ -18,27 +18,31 @@ import (
 	"github.com/c360studio/semdragons/processor/agentstore"
 )
 
-// maybeSeedE2E checks SEED_E2E and, when "true", writes a diverse set of
-// agents and guilds directly into the ENTITY_STATES KV bucket so that the
-// UI can display them immediately on startup.
+// maybeSeedE2E checks SEED_E2E and SEED_AGENTS to determine what data to
+// write into the ENTITY_STATES KV bucket on startup.
+//
+//   - SEED_E2E=true  → Full E2E dataset: guilds, agents (with guild refs), quests, store
+//   - SEED_AGENTS=true → Agents only (no guilds, quests, or store) — good for first-time use
 //
 // We write directly via GraphClient.EmitEntity (the same path the questboard
 // processor uses) rather than going through the seeding component's pub/sub
 // path, because other processors that would consume those events may not be
 // started yet and the KV writes must be synchronous before the UI connects.
 func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclient.Client) error {
-	if os.Getenv("SEED_E2E") != "true" {
+	fullSeed := os.Getenv("SEED_E2E") == "true"
+	agentsOnly := os.Getenv("SEED_AGENTS") == "true"
+
+	if !fullSeed && !agentsOnly {
 		return nil
 	}
 
-	slog.Info("SEED_E2E=true — seeding E2E test data")
-
 	boardCfg, err := extractBoardConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("seed e2e: resolve board config: %w", err)
+		return fmt.Errorf("seed: resolve board config: %w", err)
 	}
 
 	slog.Info("Seeding into board",
+		"mode", seedMode(fullSeed),
 		"org", boardCfg.Org,
 		"platform", boardCfg.Platform,
 		"board", boardCfg.Board,
@@ -46,26 +50,40 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 
 	graph := semdragons.NewGraphClient(natsClient, boardCfg)
 
-	// Seed guilds first — agents will reference their IDs.
-	dataWranglerID, codeSmithsID, err := seedGuilds(ctx, graph, boardCfg)
-	if err != nil {
-		return fmt.Errorf("seed e2e: seed guilds: %w", err)
+	if fullSeed {
+		// Full E2E: guilds first so agents can reference them.
+		dataWranglerID, codeSmithsID, err := seedGuilds(ctx, graph, boardCfg)
+		if err != nil {
+			return fmt.Errorf("seed e2e: seed guilds: %w", err)
+		}
+
+		if err := seedAgents(ctx, graph, boardCfg, dataWranglerID, codeSmithsID); err != nil {
+			return fmt.Errorf("seed e2e: seed agents: %w", err)
+		}
+
+		if err := seedQuests(ctx, graph, boardCfg); err != nil {
+			return fmt.Errorf("seed e2e: seed quests: %w", err)
+		}
+
+		if err := seedStore(ctx, graph); err != nil {
+			return fmt.Errorf("seed e2e: seed store: %w", err)
+		}
+	} else {
+		// Agents only — no guild refs, no quests, no store.
+		if err := seedAgents(ctx, graph, boardCfg, "", ""); err != nil {
+			return fmt.Errorf("seed agents: %w", err)
+		}
 	}
 
-	if err := seedAgents(ctx, graph, boardCfg, dataWranglerID, codeSmithsID); err != nil {
-		return fmt.Errorf("seed e2e: seed agents: %w", err)
-	}
-
-	if err := seedQuests(ctx, graph, boardCfg); err != nil {
-		return fmt.Errorf("seed e2e: seed quests: %w", err)
-	}
-
-	if err := seedStore(ctx, graph); err != nil {
-		return fmt.Errorf("seed e2e: seed store: %w", err)
-	}
-
-	slog.Info("E2E seed data written successfully")
+	slog.Info("Seed data written successfully", "mode", seedMode(fullSeed))
 	return nil
+}
+
+func seedMode(full bool) string {
+	if full {
+		return "e2e"
+	}
+	return "agents-only"
 }
 
 // extractBoardConfig reads org + platform from the platform config and board

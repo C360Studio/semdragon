@@ -262,6 +262,18 @@
         "timeout": "60s",
         "enable_builtins": true
       }
+    },
+    "partycoord": {
+      "type": "processor",
+      "name": "partycoord",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "auto_form_parties": true,
+        "require_lead_approval": false
+      }
     }
   }
 }

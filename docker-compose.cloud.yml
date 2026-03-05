@@ -25,6 +25,7 @@ services:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
       SEMDRAGONS_CONFIG: "${SEMDRAGONS_CONFIG:-/etc/semdragons/semdragons-e2e-gemini.json}"
       SEED_E2E: "${SEED_E2E:-false}"
+      SEED_AGENTS: "${SEED_AGENTS:-true}"
       SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"

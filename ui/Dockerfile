@@ -2,12 +2,10 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Install dependencies first for better caching
-COPY package.json package-lock.json* ./
-RUN npm install
+# Copy config files first so svelte-kit sync succeeds during npm install
+COPY package.json package-lock.json* tsconfig.json svelte.config.js vite.config.ts ./
 
-# Copy config files
-COPY tsconfig.json svelte.config.js vite.config.ts vitest.setup.ts ./
+RUN npm install
 
 # Source will be mounted as volume
 COPY src ./src
