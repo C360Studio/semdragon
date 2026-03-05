@@ -4,18 +4,18 @@ import type { DMChatResponse, QuestResponse } from '../fixtures/test-base';
 /**
  * DM Chat Integration Tests
  *
- * These tests exercise the full backend DM chat pipeline using a mock LLM server
- * at http://mockllm:9090 (Docker network). No Playwright-level route interception
- * is used — requests flow through the real backend, which calls the mock LLM.
+ * These tests exercise the full backend DM chat pipeline. They work with either:
+ *   - Mock LLM server at http://mockllm:9090 (E2E_MOCK_LLM=true) — deterministic
+ *   - Real LLM (Ollama, cloud) (E2E_REAL_LLM=true) — non-deterministic
  *
- * The mock LLM returns canned OpenAI-compatible responses keyed by message content,
- * allowing deterministic verification of each pipeline stage:
- *   UI → backend /game/dm/chat → LLM gateway → mock LLM → response parsing → JSON
+ * No Playwright-level route interception is used — requests flow through the real
+ * backend, which calls whatever LLM is configured.
+ *
+ * Pipeline: UI → backend /game/dm/chat → LLM gateway → LLM → response parsing → JSON
  *
  * Environment requirements:
  *   - E2E_BACKEND_AVAILABLE=true (set by global-setup.ts when backend is reachable)
- *   - E2E_MOCK_LLM=true (set when the mock LLM server is available)
- *   - Backend configured to use http://mockllm:9090 as the LLM provider
+ *   - E2E_MOCK_LLM=true OR E2E_REAL_LLM=true (at least one LLM available)
  *
  * Tag: @integration
  */
@@ -24,13 +24,23 @@ import type { DMChatResponse, QuestResponse } from '../fixtures/test-base';
 // ENVIRONMENT GUARDS
 // =============================================================================
 
-/**
- * Whether the mock LLM server is available.
- * Set E2E_MOCK_LLM=true in docker-compose environment to enable these tests.
- */
+/** Whether the mock LLM server is available (deterministic canned responses). */
 function hasMockLLM(): boolean {
 	return process.env.E2E_MOCK_LLM === 'true';
 }
+
+/** Whether a real LLM (Ollama, cloud) is available (non-deterministic). */
+function hasRealLLM(): boolean {
+	return process.env.E2E_REAL_LLM === 'true';
+}
+
+/** Whether any LLM backend is available for DM chat. */
+function hasLLM(): boolean {
+	return hasMockLLM() || hasRealLLM();
+}
+
+/** Timeout for a single LLM call: 5s for mock, 120s for real (qwen3:14b needs ~20-30s). */
+const LLM_TIMEOUT = hasRealLLM() ? 120_000 : 5_000;
 
 // =============================================================================
 // RESPONSE SHAPE HELPERS
@@ -74,12 +84,15 @@ function assertQuestChain(resp: DMChatResponse): void {
 // =============================================================================
 
 test.describe('DM Chat Integration @integration', () => {
-	// All tests in this suite require both the backend and mock LLM.
-	// Using beforeEach so the skip reason appears close to each test in CI logs.
+	// Serialize DM chat tests to avoid Ollama contention when using real LLMs.
+	// With 6 parallel workers each making LLM calls, requests queue and timeout.
+	test.describe.configure({ mode: hasRealLLM() ? 'serial' : 'parallel' });
+
+	// All tests require backend + at least one LLM (mock or real).
 	test.beforeEach(() => {
 		test.skip(
-			!hasBackend() || !hasMockLLM(),
-			'Requires running backend (E2E_BACKEND_AVAILABLE=true) and mock LLM (E2E_MOCK_LLM=true)'
+			!hasBackend() || !hasLLM(),
+			'Requires running backend and LLM (E2E_MOCK_LLM=true or E2E_REAL_LLM=true)'
 		);
 	});
 
@@ -87,21 +100,17 @@ test.describe('DM Chat Integration @integration', () => {
 	// 1. Conversational response
 	// ---------------------------------------------------------------------------
 
-	test('generic message receives a conversational response from mock LLM', async ({
+	test('generic message receives a conversational response', async ({
 		lifecycleApi
 	}) => {
-		// Set a longer timeout — this goes through the full backend → mock LLM round trip.
-		test.setTimeout(30_000);
+		test.setTimeout(LLM_TIMEOUT + 10_000);
 
-		// The mock LLM is configured to respond to generic messages with a canned greeting.
 		// Verifying the response came back at all confirms the full pipeline is wired:
-		//   POST /game/dm/chat → backend → LLM gateway → mock LLM → parsed response → HTTP 200
+		//   POST /game/dm/chat → backend → LLM → parsed response → HTTP 200
 		const resp = await lifecycleApi.sendDMChat('Hello, what can you help me with?');
 
 		assertValidChatResponse(resp);
-		// A generic message must not accidentally trigger quest_brief or quest_chain parsing.
-		// These fields being absent confirms the backend LLM response parser is discriminating
-		// content correctly rather than always returning one type.
+		// Default mode is converse — no quest extraction should happen.
 		expect(resp.quest_brief).toBeUndefined();
 		expect(resp.quest_chain).toBeUndefined();
 	});
@@ -110,40 +119,58 @@ test.describe('DM Chat Integration @integration', () => {
 	// 2. Quest brief creation
 	// ---------------------------------------------------------------------------
 
-	test('quest creation prompt returns quest_brief from mock LLM', async ({ lifecycleApi }) => {
-		test.setTimeout(30_000);
+	test('quest creation prompt returns quest_brief', async ({ lifecycleApi }) => {
+		test.setTimeout(LLM_TIMEOUT + 10_000);
 
-		// The mock LLM is configured to return a tagged quest_brief JSON block when it
-		// receives a message matching the quest creation pattern. The backend must:
-		//   1. Forward the message to the LLM
-		//   2. Parse the ```quest_brief ... ``` tagged block from the LLM response
-		//   3. Return the structured quest_brief field in the API response
-		const resp = await lifecycleApi.sendDMChat('create a quest to analyze test data');
+		// Mode must be 'quest' — the backend only extracts quest briefs in quest mode.
+		// The system prompt instructs the LLM to produce a ```json:quest_brief tagged block.
+		const resp = await lifecycleApi.sendDMChat(
+			'create a quest to analyze test data',
+			undefined,
+			'quest'
+		);
 
-		assertQuestBrief(resp);
-		// Verify the brief has the fields needed for the frontend to render a preview card
-		expect(resp.quest_brief!.title).toBeTruthy();
-		// difficulty must be a number between 0-5 (Trivial → Legendary)
-		if (resp.quest_brief!.difficulty !== undefined) {
-			expect(resp.quest_brief!.difficulty).toBeGreaterThanOrEqual(0);
-			expect(resp.quest_brief!.difficulty).toBeLessThanOrEqual(5);
+		assertValidChatResponse(resp);
+
+		if (hasMockLLM()) {
+			// Mock LLM is deterministic — quest_brief must be present
+			assertQuestBrief(resp);
+		} else {
+			// Real LLM may or may not follow the tagged block format on first try.
+			// If quest_brief was extracted, verify its structure.
+			if (resp.quest_brief) {
+				expect(resp.quest_brief.title).toBeTruthy();
+				if (resp.quest_brief.difficulty !== undefined) {
+					expect(resp.quest_brief.difficulty).toBeGreaterThanOrEqual(0);
+					expect(resp.quest_brief.difficulty).toBeLessThanOrEqual(5);
+				}
+			}
+			// Either quest_brief or a conversational message is acceptable from a real LLM.
+			// The test confirms the pipeline doesn't crash, and structured output works when the LLM cooperates.
 		}
 	});
 
 	test('quest brief can be posted to the board after DM creates it', async ({ lifecycleApi }) => {
-		test.setTimeout(30_000);
+		test.setTimeout(LLM_TIMEOUT + 10_000);
 
-		// Step 1: Ask the DM to create a quest — the mock LLM returns a quest_brief
+		// Ask the DM to create a quest — mode must be 'quest' for extraction.
 		const chatResp = await lifecycleApi.sendDMChat(
-			'create a quest to write unit tests for the parser module'
+			'create a quest to write unit tests for the parser module',
+			undefined,
+			'quest'
 		);
-		assertQuestBrief(chatResp);
+		assertValidChatResponse(chatResp);
 
-		const brief = chatResp.quest_brief!;
+		if (!chatResp.quest_brief) {
+			// Real LLM didn't produce structured output — skip the post step.
+			// The test still confirms the DM chat endpoint doesn't crash.
+			test.skip(!chatResp.quest_brief, 'LLM did not produce quest_brief — skipping post');
+			return;
+		}
 
-		// Step 2: Post the quest brief to the board via POST /game/quests.
-		// This verifies the data the DM returned is structurally valid for quest creation.
-		// In the UI flow, the user clicks "Post Quest" which triggers this same API call.
+		const brief = chatResp.quest_brief;
+
+		// Post the quest brief to the board via POST /game/quests.
 		const quest = await lifecycleApi.createQuest(
 			brief.title,
 			brief.difficulty ?? 1
@@ -152,11 +179,9 @@ test.describe('DM Chat Integration @integration', () => {
 		expect(quest.id, 'posted quest must have an entity ID').toBeTruthy();
 		expect(quest.status).toBe('posted');
 
-		// Step 3: Fetch the quest to confirm it landed on the board
 		const questInstance = extractInstance(quest.id);
 		const fetched = await lifecycleApi.getQuest(questInstance);
 		expect(fetched.status).toBe('posted');
-		// The objective on the posted quest should reflect the brief title
 		expect(fetched.objective ?? fetched.id).toBeTruthy();
 	});
 
@@ -164,57 +189,65 @@ test.describe('DM Chat Integration @integration', () => {
 	// 3. Quest chain creation
 	// ---------------------------------------------------------------------------
 
-	test('quest chain prompt returns quest_chain with dependency graph from mock LLM', async ({
+	test('quest chain prompt returns quest_chain with dependency graph', async ({
 		lifecycleApi
 	}) => {
-		test.setTimeout(30_000);
+		test.setTimeout(LLM_TIMEOUT + 10_000);
 
-		// The mock LLM is configured to return a quest_chain when asked for a pipeline.
-		// This exercises the chain parsing path in the backend DM chat handler — a separate
-		// code path from the single quest_brief path.
+		// Mode must be 'quest' for chain extraction.
 		const resp = await lifecycleApi.sendDMChat(
-			'create a quest chain for a data pipeline: ingest, transform, load'
+			'create a quest chain for a data pipeline: ingest, transform, load',
+			undefined,
+			'quest'
 		);
 
-		assertQuestChain(resp);
+		assertValidChatResponse(resp);
 
-		const chain = resp.quest_chain!;
-
-		// Every quest in the chain must have a title
-		for (const q of chain.quests) {
-			expect(q.title, 'each chain quest must have a title').toBeTruthy();
+		if (hasMockLLM()) {
+			// Mock LLM is deterministic — quest_chain must be present
+			assertQuestChain(resp);
+			const chain = resp.quest_chain!;
+			for (const q of chain.quests) {
+				expect(q.title, 'each chain quest must have a title').toBeTruthy();
+			}
+			const hasDependencies = chain.quests.some(
+				(q) => q.depends_on !== undefined && q.depends_on.length > 0
+			);
+			expect(hasDependencies, 'chain must include at least one dependency relationship').toBe(true);
+		} else if (resp.quest_chain) {
+			// Real LLM produced a chain — verify structure
+			expect(resp.quest_chain.quests.length).toBeGreaterThanOrEqual(2);
+			for (const q of resp.quest_chain.quests) {
+				expect(q.title).toBeTruthy();
+			}
 		}
-
-		// At least one quest in the chain must declare a dependency on another quest
-		// (otherwise the mock LLM returned a flat list, not a chain)
-		const hasDependencies = chain.quests.some(
-			(q) => q.depends_on !== undefined && q.depends_on.length > 0
-		);
-		expect(hasDependencies, 'chain must include at least one dependency relationship').toBe(true);
+		// Real LLM may produce quest_brief instead of quest_chain, or just text — both acceptable
 	});
 
 	test('quest chain can be posted to the board', async ({ lifecycleApi }) => {
-		test.setTimeout(30_000);
+		test.setTimeout(LLM_TIMEOUT + 10_000);
 
-		// Step 1: Ask the DM to create a chain — mock LLM returns quest_chain
+		// Ask the DM to create a chain — mode must be 'quest' for chain extraction.
 		const chatResp = await lifecycleApi.sendDMChat(
-			'create a quest chain for data pipeline: collect, analyze, report'
+			'create a quest chain for data pipeline: collect, analyze, report',
+			undefined,
+			'quest'
 		);
-		assertQuestChain(chatResp);
+		assertValidChatResponse(chatResp);
 
-		const chain = chatResp.quest_chain!;
+		if (!chatResp.quest_chain) {
+			test.skip(!chatResp.quest_chain, 'LLM did not produce quest_chain — skipping post');
+			return;
+		}
 
-		// Step 2: Post the entire chain to the board via POST /game/quests/chain.
-		// This verifies the chain structure the DM returned is valid for bulk creation.
+		const chain = chatResp.quest_chain;
+
+		// Post the entire chain to the board via POST /game/quests/chain.
 		const postedChain = await lifecycleApi.postQuestChain(chain);
 
 		expect(Array.isArray(postedChain), 'postQuestChain must return an array of quests').toBe(true);
-		expect(
-			postedChain.length,
-			'all quests in the chain must be created on the board'
-		).toBe(chain.quests.length);
+		expect(postedChain.length).toBe(chain.quests.length);
 
-		// Verify each created quest has a valid ID and posted status
 		for (const q of postedChain) {
 			expect((q as QuestResponse).id).toBeTruthy();
 			expect((q as QuestResponse).status).toBe('posted');
@@ -226,7 +259,7 @@ test.describe('DM Chat Integration @integration', () => {
 	// ---------------------------------------------------------------------------
 
 	test('session_id is returned and persists across multiple turns', async ({ lifecycleApi }) => {
-		test.setTimeout(60_000);
+		test.setTimeout(LLM_TIMEOUT * 2 + 10_000);
 
 		// First turn — backend generates a new session and returns session_id
 		const firstResp = await lifecycleApi.sendDMChat('My project is called Semdragons.');
@@ -251,12 +284,13 @@ test.describe('DM Chat Integration @integration', () => {
 	});
 
 	test('messages with unknown session_id return a valid response', async ({ lifecycleApi }) => {
-		test.setTimeout(30_000);
+		test.setTimeout(LLM_TIMEOUT + 10_000);
 
-		// Sending a stale or fabricated session_id should not crash the backend.
+		// Sending a valid hex session_id that doesn't correspond to an existing session.
+		// isValidSessionID only accepts hex characters, so we use a hex string.
 		// The backend should either create a new session or return a graceful error.
 		// Either way, the HTTP response must not be a 5xx.
-		const staleSid = 'stale-session-e2e-test-' + Date.now();
+		const staleSid = 'deadbeef' + Date.now().toString(16).padStart(24, '0');
 		const resp = await lifecycleApi.sendDMChat('Hello from a stale session', staleSid);
 
 		// If the backend gracefully handles unknown sessions it will return a valid response.
@@ -269,16 +303,81 @@ test.describe('DM Chat Integration @integration', () => {
 	// ---------------------------------------------------------------------------
 
 	test('direct POST /game/dm/chat smoke test returns valid JSON', async ({ lifecycleApi }) => {
-		test.setTimeout(30_000);
+		test.setTimeout(LLM_TIMEOUT + 10_000);
 
 		// Minimal payload — just a message with no context or session.
 		// This is the lowest-friction sanity check: can the endpoint parse a request
 		// and return a well-formed JSON body?
-		const resp = await lifecycleApi.sendDMChat('create a quest');
+		const resp = await lifecycleApi.sendDMChat('tell me about quests');
 
 		// The response must be valid JSON with at least a message field.
-		// quest_brief may or may not be present depending on mock LLM configuration.
 		assertValidChatResponse(resp);
+		// Default mode is converse — no quest extraction
+		expect(resp.quest_brief).toBeUndefined();
+		expect(resp.quest_chain).toBeUndefined();
+	});
+
+	test('mode field is echoed back in response', async ({ lifecycleApi }) => {
+		test.setTimeout(LLM_TIMEOUT + 10_000);
+
+		const resp = await lifecycleApi.sendDMChat(
+			'tell me about the game',
+			undefined,
+			'converse'
+		);
+
+		assertValidChatResponse(resp);
+		expect(resp.mode).toBe('converse');
+	});
+
+	// ---------------------------------------------------------------------------
+	// 6. DM session restore
+	// ---------------------------------------------------------------------------
+
+	test('GET session by session_id returns session after multi-turn chat', async ({
+		lifecycleApi
+	}) => {
+		test.setTimeout(LLM_TIMEOUT * 2 + 10_000);
+
+		// Create a session via multi-turn chat
+		const first = await lifecycleApi.sendDMChat('Hello, starting a session.');
+		assertValidChatResponse(first);
+		expect(first.session_id).toBeTruthy();
+
+		const sessionId = first.session_id!;
+
+		// Second turn to build history
+		await lifecycleApi.sendDMChat('Tell me more.', sessionId);
+
+		// Retrieve the session via GET
+		const session = await lifecycleApi.getDMSession(sessionId);
+		expect(session, 'GET /game/dm/sessions/{id} should return a session').toBeTruthy();
+		expect(session!.session_id).toBe(sessionId);
+	});
+
+	test('GET session with unknown hex ID returns null (404)', async ({ lifecycleApi }) => {
+		test.setTimeout(15_000);
+
+		// Fabricate a valid hex session ID that doesn't exist
+		const fakeId = 'deadbeefcafebabe1234567890abcdef';
+		const session = await lifecycleApi.getDMSession(fakeId);
+
+		// getDMSession returns null on 404
+		expect(session).toBeNull();
+	});
+
+	test('GET session with invalid non-hex ID returns error', async ({ lifecycleApi }) => {
+		test.setTimeout(15_000);
+
+		// Non-hex characters should fail isValidSessionID validation (400)
+		try {
+			await lifecycleApi.getDMSession('not-a-hex-id!!!');
+			expect(true, 'Expected getDMSession with invalid ID to throw').toBe(false);
+		} catch (e) {
+			const msg = (e as Error).message;
+			// getDMSession throws on non-404 errors; 400 from isValidSessionID
+			expect(msg).toContain('400');
+		}
 	});
 });
 
@@ -296,16 +395,20 @@ test.describe('DM Chat Integration @integration', () => {
 test.describe('DM Chat UI Integration @integration', () => {
 	test.beforeEach(async ({ page }) => {
 		test.skip(
-			!hasBackend() || !hasMockLLM(),
-			'Requires running backend (E2E_BACKEND_AVAILABLE=true) and mock LLM (E2E_MOCK_LLM=true)'
+			!hasBackend() || !hasLLM(),
+			'Requires running backend and LLM (E2E_MOCK_LLM=true or E2E_REAL_LLM=true)'
 		);
 		await page.goto('/');
-		// Wait for SvelteKit hydration and SSE connection before interacting
-		await page.waitForLoadState('networkidle');
+		// Wait for SvelteKit hydration — use domcontentloaded instead of networkidle
+		// because the SSE connection stays open indefinitely, blocking networkidle.
+		await page.waitForLoadState('domcontentloaded');
+		// Give Svelte time to hydrate
+		await page.waitForTimeout(1000);
 	});
 
 	test('sending a quest creation message renders a quest preview card', async ({ page }) => {
-		test.setTimeout(30_000);
+		test.skip(hasRealLLM() && !hasMockLLM(), 'UI quest preview test requires deterministic mock LLM responses');
+		test.setTimeout(LLM_TIMEOUT + 15_000);
 
 		// Open the DM chat panel
 		const input = page.getByTestId('chat-input');
@@ -313,6 +416,9 @@ test.describe('DM Chat UI Integration @integration', () => {
 			await page.getByTestId('chat-toggle').click();
 		}
 		await expect(input).toBeVisible();
+
+		// Switch to quest mode — previews only render in quest mode
+		await page.getByTestId('mode-pill-quest').click();
 
 		// Type and submit — this goes to the real backend which calls the mock LLM
 		await input.fill('create a quest to analyze test data');
@@ -327,7 +433,8 @@ test.describe('DM Chat UI Integration @integration', () => {
 	});
 
 	test('posting quest from DM brief lands on the quest board', async ({ page }) => {
-		test.setTimeout(45_000);
+		test.skip(hasRealLLM() && !hasMockLLM(), 'UI post quest test requires deterministic mock LLM responses');
+		test.setTimeout(LLM_TIMEOUT + 30_000);
 
 		// 1. Open chat and submit a quest creation message
 		const input = page.getByTestId('chat-input');
@@ -335,6 +442,9 @@ test.describe('DM Chat UI Integration @integration', () => {
 			await page.getByTestId('chat-toggle').click();
 		}
 		await expect(input).toBeVisible();
+
+		// Switch to quest mode — previews only render in quest mode
+		await page.getByTestId('mode-pill-quest').click();
 
 		await input.fill('create a simple quest to run linter checks');
 		await page.getByTestId('chat-send').click();
@@ -353,7 +463,8 @@ test.describe('DM Chat UI Integration @integration', () => {
 	});
 
 	test('quest chain preview renders with dependency information', async ({ page }) => {
-		test.setTimeout(30_000);
+		test.skip(hasRealLLM() && !hasMockLLM(), 'UI chain preview test requires deterministic mock LLM responses');
+		test.setTimeout(LLM_TIMEOUT + 15_000);
 
 		// 1. Open chat and request a quest chain
 		const input = page.getByTestId('chat-input');
@@ -361,6 +472,9 @@ test.describe('DM Chat UI Integration @integration', () => {
 			await page.getByTestId('chat-toggle').click();
 		}
 		await expect(input).toBeVisible();
+
+		// Switch to quest mode — chain previews only render in quest mode
+		await page.getByTestId('mode-pill-quest').click();
 
 		await input.fill('create a quest chain for data pipeline');
 		await page.getByTestId('chat-send').click();

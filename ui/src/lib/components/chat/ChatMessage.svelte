@@ -11,13 +11,14 @@
 	interface ChatMessageProps {
 		role: 'user' | 'dm';
 		content: string;
+		mode?: string;
 		questBrief?: QuestBrief | null;
 		questChain?: QuestChainBrief | null;
 		onPostQuest?: (brief: QuestBrief) => void;
 		onPostChain?: (chain: QuestChainBrief) => void;
 	}
 
-	let { role, content, questBrief, questChain, onPostQuest, onPostChain }: ChatMessageProps =
+	let { role, content, mode, questBrief, questChain, onPostQuest, onPostChain }: ChatMessageProps =
 		$props();
 
 	const QuestDifficultyNames: Record<number, string> = {
@@ -38,7 +39,7 @@
 		{content}
 	</div>
 
-	{#if questBrief}
+	{#if mode === 'quest' && questBrief}
 		<div class="quest-preview" data-testid="quest-preview">
 			<div class="preview-header">Quest Brief</div>
 			<div class="preview-title">{questBrief.title}</div>
@@ -77,7 +78,7 @@
 		</div>
 	{/if}
 
-	{#if questChain}
+	{#if mode === 'quest' && questChain}
 		<div class="quest-preview chain" data-testid="quest-chain-preview">
 			<div class="preview-header">Quest Chain ({questChain.quests.length} quests)</div>
 			{#each questChain.quests as entry, i}

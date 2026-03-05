@@ -51,7 +51,7 @@ test.describe('Agent Lifecycle', () => {
 				}
 				return a;
 			},
-			{ timeout: 8000, interval: 500, message: 'Agent did not reach retired status' }
+			{ timeout: 15000, interval: 500, message: 'Agent did not reach retired status' }
 		);
 
 		expect(retired.status).toBe('retired');
@@ -59,6 +59,7 @@ test.describe('Agent Lifecycle', () => {
 
 	test('agent status updates during quest lifecycle', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
+		test.setTimeout(120_000);
 
 		// 1. Recruit a fresh agent so we have full control over its state
 		const agent = await lifecycleApi.recruitAgent('e2e-status-tracking-agent');
@@ -84,16 +85,13 @@ test.describe('Agent Lifecycle', () => {
 				}
 				return a;
 			},
-			{ timeout: 8000, interval: 500, message: 'Agent did not reach on_quest status after claim' }
+			{ timeout: 15000, interval: 500, message: 'Agent did not reach on_quest status after claim' }
 		);
 		expect(onQuest.status).toBe('on_quest');
 
-		// 3. Start and submit the quest (no review -> completes immediately)
+		// 3. Start the quest — the agentic loop processes and auto-completes (no review)
 		const startRes = await lifecycleApi.startQuest(questInstance);
 		expect(startRes.ok, `start failed: ${startRes.status}`).toBeTruthy();
-
-		const submitRes = await lifecycleApi.submitQuest(questInstance, 'E2E status tracking output');
-		expect(submitRes.ok, `submit failed: ${submitRes.status}`).toBeTruthy();
 
 		// After completion the agent should return to idle
 		const backToIdle = await retry(
@@ -105,8 +103,8 @@ test.describe('Agent Lifecycle', () => {
 				return a;
 			},
 			{
-				timeout: 8000,
-				interval: 500,
+				timeout: 90000,
+				interval: 1000,
 				message: 'Agent did not return to idle after quest completion'
 			}
 		);

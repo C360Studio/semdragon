@@ -5,9 +5,10 @@ import type { Route } from '@playwright/test';
 // MOCK RESPONSE HELPERS
 // =============================================================================
 
-function mockSimpleResponse(message: string) {
+function mockSimpleResponse(message: string, mode: string = 'converse') {
 	return {
 		message,
+		mode,
 		session_id: 'mock-session-001',
 		trace_info: { trace_id: 'trace-mock', span_id: 'span-mock' }
 	};
@@ -16,6 +17,7 @@ function mockSimpleResponse(message: string) {
 function mockQuestBriefResponse() {
 	return {
 		message: 'I have crafted a quest for you.',
+		mode: 'quest',
 		quest_brief: {
 			title: 'Slay the Test Dragon',
 			description: 'Defeat the dragon terrorizing the test realm.',
@@ -31,6 +33,7 @@ function mockQuestBriefResponse() {
 function mockQuestChainResponse() {
 	return {
 		message: 'Here is a chain of quests for you.',
+		mode: 'quest',
 		quest_chain: {
 			quests: [
 				{
@@ -96,6 +99,10 @@ function chatMessages(page: Page) {
 
 function chatMessagesByRole(page: Page, role: 'user' | 'dm') {
 	return page.locator('[data-testid="chat-message"]').filter({ has: page.locator(`[data-role="${role}"]`) });
+}
+
+async function switchMode(page: Page, mode: 'converse' | 'quest' | 'plan' | 'manage') {
+	await page.getByTestId(`mode-pill-${mode}`).click();
 }
 
 // =============================================================================
@@ -236,6 +243,7 @@ test.describe('DM Chat - Mock LLM', () => {
 		});
 
 		await openChat(page);
+		await switchMode(page, 'quest');
 		await sendMessage(page, 'Create a quest to slay a dragon');
 
 		// Quest preview card should appear
@@ -275,6 +283,7 @@ test.describe('DM Chat - Mock LLM', () => {
 		});
 
 		await openChat(page);
+		await switchMode(page, 'quest');
 		await sendMessage(page, 'Create a quest chain');
 
 		// Chain preview should appear with 3 quests
@@ -400,6 +409,133 @@ test.describe('DM Chat - Mock LLM', () => {
 });
 
 // =============================================================================
+// MODE ROUTING TESTS
+// =============================================================================
+
+test.describe('DM Chat - Mode Routing', () => {
+	test.beforeEach(async ({ page }) => {
+		await page.goto('/');
+		await waitForHydration(page);
+	});
+
+	test('mode selector pills are visible when panel is open', async ({ page }) => {
+		await openChat(page);
+
+		const selector = page.getByTestId('mode-selector');
+		await expect(selector).toBeVisible();
+
+		// All four pills should be present
+		await expect(page.getByTestId('mode-pill-converse')).toBeVisible();
+		await expect(page.getByTestId('mode-pill-quest')).toBeVisible();
+		await expect(page.getByTestId('mode-pill-plan')).toBeVisible();
+		await expect(page.getByTestId('mode-pill-manage')).toBeVisible();
+
+		// Chat (converse) is the default active pill
+		await expect(page.getByTestId('mode-pill-converse')).toHaveClass(/active/);
+	});
+
+	test('switching mode changes active pill', async ({ page }) => {
+		await openChat(page);
+
+		// Switch to quest mode
+		await switchMode(page, 'quest');
+		await expect(page.getByTestId('mode-pill-quest')).toHaveClass(/active/);
+		await expect(page.getByTestId('mode-pill-converse')).not.toHaveClass(/active/);
+
+		// Switch back to converse
+		await switchMode(page, 'converse');
+		await expect(page.getByTestId('mode-pill-converse')).toHaveClass(/active/);
+		await expect(page.getByTestId('mode-pill-quest')).not.toHaveClass(/active/);
+	});
+
+	test('mode is passed in request body', async ({ page }) => {
+		const { bodyPromise } = interceptChat(page, mockSimpleResponse('Hello', 'quest'));
+
+		await openChat(page);
+		await switchMode(page, 'quest');
+		await sendMessage(page, 'Create something');
+
+		const body = await bodyPromise;
+		expect(body.mode).toBe('quest');
+	});
+
+	test('converse mode does not render quest previews even if response has them', async ({
+		page
+	}) => {
+		// Response includes quest_brief but mode is converse — preview should NOT render
+		const response = {
+			...mockQuestBriefResponse(),
+			mode: 'converse'
+		};
+		interceptChat(page, response);
+
+		await openChat(page);
+		// Stay in default converse mode
+		await sendMessage(page, 'Tell me about quests');
+
+		// DM response arrives
+		await expect(chatMessages(page)).toHaveCount(2, { timeout: 5000 });
+
+		// Quest preview should NOT be visible in converse mode
+		await expect(page.getByTestId('quest-preview')).not.toBeVisible();
+	});
+
+	test('quest mode renders quest preview from response', async ({ page }) => {
+		interceptChat(page, mockQuestBriefResponse());
+
+		await openChat(page);
+		await switchMode(page, 'quest');
+		await sendMessage(page, 'Create a quest');
+
+		// Quest preview should be visible in quest mode
+		const preview = page.getByTestId('quest-preview');
+		await expect(preview).toBeVisible({ timeout: 5000 });
+		await expect(preview).toContainText('Slay the Test Dragon');
+	});
+
+	test('stub modes (plan, manage) disable input and show coming soon', async ({ page }) => {
+		await openChat(page);
+
+		// Switch to plan mode
+		await switchMode(page, 'plan');
+		await expect(page.getByTestId('stub-overlay')).toBeVisible();
+		await expect(page.getByTestId('stub-overlay')).toContainText('Coming soon');
+		await expect(page.getByTestId('chat-input')).toBeDisabled();
+		await expect(page.getByTestId('chat-send')).toBeDisabled();
+
+		// Switch to manage mode
+		await switchMode(page, 'manage');
+		await expect(page.getByTestId('stub-overlay')).toBeVisible();
+		await expect(page.getByTestId('chat-input')).toBeDisabled();
+
+		// Switch back to converse — input re-enabled
+		await switchMode(page, 'converse');
+		await expect(page.getByTestId('stub-overlay')).not.toBeVisible();
+		await expect(page.getByTestId('chat-input')).toBeEnabled();
+	});
+
+	test('mode-specific placeholders update when switching', async ({ page }) => {
+		await openChat(page);
+		const input = page.getByTestId('chat-input');
+
+		// Converse mode placeholder
+		await expect(input).toHaveAttribute('placeholder', 'Ask the DM anything...');
+
+		// Quest mode placeholder
+		await switchMode(page, 'quest');
+		await expect(input).toHaveAttribute('placeholder', 'Describe the work you want done...');
+
+		// Plan mode placeholder
+		await switchMode(page, 'plan');
+		await expect(input).toHaveAttribute('placeholder', 'What do you want to build?');
+
+		// Manage mode placeholder
+		await switchMode(page, 'manage');
+		await expect(input).toHaveAttribute('placeholder', 'What do you need to do with agents?');
+	});
+});
+
+// =============================================================================
 // REAL LLM TESTS (opt-in: E2E_REAL_LLM=true + backend available)
 // =============================================================================
 
@@ -415,22 +551,23 @@ test.describe('DM Chat - Real LLM', () => {
 	});
 
 	test('send message and receive real DM response', async ({ page }) => {
-		test.setTimeout(60_000);
+		test.setTimeout(150_000);
 
 		await openChat(page);
 		await sendMessage(page, 'Hello DM, what can you help me with?');
 
-		// DM should respond with a non-empty message (30s timeout for LLM)
+		// DM should respond with a non-empty message (generous timeout for local LLMs)
 		const dmMessage = page.locator('[data-testid="chat-message"][data-role="dm"]');
-		await expect(dmMessage.first()).toBeVisible({ timeout: 30_000 });
+		await expect(dmMessage.first()).toBeVisible({ timeout: 130_000 });
 		const text = await dmMessage.first().textContent();
 		expect(text!.length).toBeGreaterThan(10);
 	});
 
 	test('quest creation prompt returns quest brief or chain', async ({ page }) => {
-		test.setTimeout(60_000);
+		test.setTimeout(150_000);
 
 		await openChat(page);
+		await switchMode(page, 'quest');
 		await sendMessage(
 			page,
 			'Create a quest: Write unit tests for the authentication module. Difficulty: moderate. Skills needed: testing, go.'
@@ -439,22 +576,22 @@ test.describe('DM Chat - Real LLM', () => {
 		// Should get either a quest_brief or quest_chain preview
 		const questPreview = page.getByTestId('quest-preview');
 		const chainPreview = page.getByTestId('quest-chain-preview');
-		await expect(questPreview.or(chainPreview).first()).toBeVisible({ timeout: 30_000 });
+		await expect(questPreview.or(chainPreview).first()).toBeVisible({ timeout: 130_000 });
 	});
 
 	test('session continuity — DM recalls previous context', async ({ page, lifecycleApi }) => {
-		test.setTimeout(90_000);
+		test.setTimeout(300_000);
 
 		await openChat(page);
 
 		// First turn: introduce a topic
 		await sendMessage(page, 'My agent is named "TestHero" and specializes in data analysis.');
 		const firstDM = page.locator('[data-testid="chat-message"][data-role="dm"]');
-		await expect(firstDM.first()).toBeVisible({ timeout: 30_000 });
+		await expect(firstDM.first()).toBeVisible({ timeout: 130_000 });
 
 		// Second turn: ask about the topic from the first turn
 		await sendMessage(page, 'What was my agent name again?');
-		await expect(firstDM).toHaveCount(2, { timeout: 30_000 });
+		await expect(firstDM).toHaveCount(2, { timeout: 130_000 });
 
 		// The second DM response should mention "TestHero"
 		const secondResponse = await firstDM.nth(1).textContent();
@@ -462,9 +599,10 @@ test.describe('DM Chat - Real LLM', () => {
 	});
 
 	test('post quest from brief — full flow', async ({ page, lifecycleApi }) => {
-		test.setTimeout(90_000);
+		test.setTimeout(150_000);
 
 		await openChat(page);
+		await switchMode(page, 'quest');
 		await sendMessage(
 			page,
 			'Create a simple quest: Run the linter on the utils package. Difficulty: easy. Skills: go.'
@@ -472,7 +610,7 @@ test.describe('DM Chat - Real LLM', () => {
 
 		// Wait for quest brief
 		const preview = page.getByTestId('quest-preview');
-		await expect(preview).toBeVisible({ timeout: 30_000 });
+		await expect(preview).toBeVisible({ timeout: 130_000 });
 
 		// Click Post Quest
 		await page.getByTestId('post-quest-button').click();

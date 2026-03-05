@@ -13,6 +13,7 @@ import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/te
 test.describe('Boss Battle - Auto Trigger', () => {
 	test('submitting quest with review triggers battle', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
+		test.setTimeout(120_000);
 
 		// 1. Create a quest that requires human review (difficulty=easy so fresh agent qualifies)
 		const quest = await lifecycleApi.createQuestWithReview(
@@ -32,10 +33,8 @@ test.describe('Boss Battle - Auto Trigger', () => {
 		const startRes = await lifecycleApi.startQuest(questInstance);
 		expect(startRes.ok, `start failed: ${startRes.status}`).toBeTruthy();
 
-		const submitRes = await lifecycleApi.submitQuest(questInstance, 'E2E boss battle output');
-		expect(submitRes.ok, `submit failed: ${submitRes.status}`).toBeTruthy();
-
-		// 3. Poll GET /battles until a battle matching this quest appears.
+		// 3. The agentic loop processes the quest and questbridge transitions it
+		//    to in_review. Poll GET /battles until a battle matching this quest appears.
 		//    Depending on processing speed, the battle may be active or already
 		//    resolved to victory — both are acceptable.
 		const battle = await retry(
@@ -51,7 +50,7 @@ test.describe('Boss Battle - Auto Trigger', () => {
 				}
 				return match;
 			},
-			{ timeout: 15000, interval: 1000, message: 'No battle was created for the reviewed quest' }
+			{ timeout: 90000, interval: 1000, message: 'No battle was created for the reviewed quest' }
 		);
 
 		expect(battle).toBeTruthy();
@@ -61,6 +60,7 @@ test.describe('Boss Battle - Auto Trigger', () => {
 
 	test('no battle created for quest without review', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
+		test.setTimeout(120_000);
 
 		// 1. Capture existing battles before the test
 		const battlesBefore = await lifecycleApi.listBattles();
@@ -80,10 +80,8 @@ test.describe('Boss Battle - Auto Trigger', () => {
 		const startRes = await lifecycleApi.startQuest(questInstance);
 		expect(startRes.ok, `start failed: ${startRes.status}`).toBeTruthy();
 
-		const submitRes = await lifecycleApi.submitQuest(questInstance, 'E2E no-review output');
-		expect(submitRes.ok, `submit failed: ${submitRes.status}`).toBeTruthy();
-
-		// 4. Wait for the quest to reach completed (confirming no review path taken)
+		// 4. The agentic loop processes the quest and auto-completes (no review).
+		//    Wait for the quest to reach completed.
 		await retry(
 			async () => {
 				const q = await lifecycleApi.getQuest(questInstance);
@@ -91,7 +89,7 @@ test.describe('Boss Battle - Auto Trigger', () => {
 					throw new Error(`Expected completed, got ${q.status}`);
 				}
 			},
-			{ timeout: 8000, interval: 500, message: 'Quest did not complete without review' }
+			{ timeout: 90000, interval: 1000, message: 'Quest did not complete without review' }
 		);
 
 		// 5. Give the system a moment to process any async events, then check battles.

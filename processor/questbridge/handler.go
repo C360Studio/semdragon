@@ -507,6 +507,15 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		return
 	}
 
+	// Guard: only transition quests that are still in_progress. If the quest
+	// was already failed/reposted/completed via the API while the agentic loop
+	// was running, skip the transition to avoid overwriting the API's decision.
+	if quest.Status != domain.QuestInProgress {
+		c.logger.Warn("skipping quest completion — quest is no longer in_progress",
+			"quest_id", questID, "current_status", quest.Status, "loop_id", mapping.LoopID)
+		return
+	}
+
 	quest.Output = output
 	quest.LoopID = mapping.LoopID
 
@@ -535,6 +544,15 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 	if quest == nil {
 		c.logger.Error("quest reconstruction returned nil for failure", "quest_id", questID)
 		c.errorsCount.Add(1)
+		return
+	}
+
+	// Guard: only transition quests that are still in_progress. If the quest
+	// was already failed/reposted/completed via the API while the agentic loop
+	// was running, skip the transition to avoid overwriting the API's decision.
+	if quest.Status != domain.QuestInProgress {
+		c.logger.Warn("skipping quest failure — quest is no longer in_progress",
+			"quest_id", questID, "current_status", quest.Status, "loop_id", mapping.LoopID)
 		return
 	}
 

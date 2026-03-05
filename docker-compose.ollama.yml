@@ -18,7 +18,7 @@ services:
         required: false
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
-      SEMDRAGONS_CONFIG: /etc/semdragons/config-e2e-ollama.json
+      SEMDRAGONS_CONFIG: /etc/semdragons/semdragons-e2e-ollama.json
       SEED_E2E: "${SEED_E2E:-false}"
       SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
     extra_hosts:

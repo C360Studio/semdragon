@@ -8,11 +8,21 @@
 	 */
 
 	import { chatStore } from '$lib/stores/chatStore.svelte';
-	import type { QuestBrief, QuestChainBrief } from '$lib/stores/chatStore.svelte';
+	import type { QuestBrief, QuestChainBrief, ChatMode } from '$lib/stores/chatStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import ChatMessageComponent from './ChatMessage.svelte';
 	import ContextChip from './ContextChip.svelte';
 	import VerticalResizeHandle from './VerticalResizeHandle.svelte';
+
+	const modes: { id: ChatMode; label: string; placeholder: string; stub: boolean }[] = [
+		{ id: 'converse', label: 'Chat', placeholder: 'Ask the DM anything...', stub: false },
+		{ id: 'quest', label: 'Quest', placeholder: 'Describe the work you want done...', stub: false },
+		{ id: 'plan', label: 'Plan', placeholder: 'What do you want to build?', stub: true },
+		{ id: 'manage', label: 'Manage', placeholder: 'What do you need to do with agents?', stub: true }
+	];
+
+	let currentMode = $derived(modes.find((m) => m.id === chatStore.mode) ?? modes[0]);
+	let isStubMode = $derived(currentMode.stub);
 
 	let input = $state('');
 	let messagesContainer: HTMLElement | undefined = $state();
@@ -106,6 +116,21 @@
 	</button>
 
 	{#if chatStore.open}
+		<!-- Mode selector pills -->
+		<div class="mode-selector" data-testid="mode-selector">
+			{#each modes as m}
+				<button
+					type="button"
+					class="mode-pill"
+					class:active={chatStore.mode === m.id}
+					onclick={() => chatStore.setMode(m.id)}
+					data-testid="mode-pill-{m.id}"
+				>
+					{m.label}
+				</button>
+			{/each}
+		</div>
+
 		<div class="chat-body" style="height: {chatStore.height}px">
 			<!-- Messages -->
 			<div class="messages-scroll" bind:this={messagesContainer}>
@@ -113,6 +138,7 @@
 					<ChatMessageComponent
 						role={msg.role}
 						content={msg.content}
+						mode={chatStore.mode}
 						questBrief={msg.questBrief}
 						questChain={msg.questChain}
 						onPostQuest={handlePostQuest}
@@ -120,7 +146,11 @@
 					/>
 				{:else}
 					<div class="empty-chat">
-						Start a conversation with the Dungeon Master to create quests.
+						{#if chatStore.mode === 'quest'}
+							Describe the work you want done and the DM will create a quest for you.
+						{:else}
+							Start a conversation with the Dungeon Master.
+						{/if}
 					</div>
 				{/each}
 
@@ -166,12 +196,15 @@
 
 			<!-- Input area -->
 			<div class="input-area">
+				{#if isStubMode}
+					<div class="stub-overlay" data-testid="stub-overlay">Coming soon</div>
+				{/if}
 				<textarea
 					class="chat-input"
-					placeholder="Type a message..."
+					placeholder={currentMode.placeholder}
 					bind:value={input}
 					onkeydown={handleKeyDown}
-					disabled={chatStore.loading}
+					disabled={chatStore.loading || isStubMode}
 					rows={1}
 					data-testid="chat-input"
 				></textarea>
@@ -179,7 +212,7 @@
 					type="button"
 					class="send-button"
 					onclick={handleSend}
-					disabled={!input.trim() || chatStore.loading}
+					disabled={!input.trim() || chatStore.loading || isStubMode}
 					data-testid="chat-send"
 				>
 					Send
@@ -244,6 +277,39 @@
 		background: var(--ui-interactive-primary);
 		color: var(--ui-text-on-primary);
 		font-weight: 600;
+	}
+
+	/* Mode selector */
+	.mode-selector {
+		display: flex;
+		gap: 2px;
+		padding: 4px var(--spacing-sm);
+		background: var(--ui-surface-secondary);
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.mode-pill {
+		padding: 2px 10px;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-full);
+		background: transparent;
+		color: var(--ui-text-secondary);
+		font-size: 0.75rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 150ms ease;
+		line-height: 1.3;
+	}
+
+	.mode-pill:hover {
+		background: var(--ui-interactive-secondary-hover);
+		color: var(--ui-text-primary);
+	}
+
+	.mode-pill.active {
+		background: var(--ui-interactive-primary);
+		color: var(--ui-text-on-primary);
+		border-color: var(--ui-interactive-primary);
 	}
 
 	/* Chat body */
@@ -313,8 +379,25 @@
 		border-top: 1px solid var(--ui-border-subtle);
 	}
 
+	/* Stub overlay */
+	.stub-overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--ui-surface-secondary);
+		opacity: 0.85;
+		color: var(--ui-text-tertiary);
+		font-size: 0.75rem;
+		font-style: italic;
+		z-index: 1;
+		border-radius: var(--radius-md);
+	}
+
 	/* Input area */
 	.input-area {
+		position: relative;
 		display: flex;
 		align-items: flex-end;
 		gap: var(--spacing-xs);

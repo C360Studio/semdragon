@@ -34,6 +34,34 @@ func ValidDMMode(mode DMMode) bool {
 }
 
 // =============================================================================
+// CHAT MODE - Which DM chat behavior is active
+// =============================================================================
+
+// ChatMode determines the behavior of the DM chat endpoint.
+type ChatMode string
+
+const (
+	// ChatModeConverse is the default mode: safe Q&A, no structured output.
+	ChatModeConverse ChatMode = "converse"
+	// ChatModeQuest enables quest/chain creation with structured JSON output.
+	ChatModeQuest ChatMode = "quest"
+	// ChatModePlan is a stub for future planning mode.
+	ChatModePlan ChatMode = "plan"
+	// ChatModeManage is a stub for future agent management mode.
+	ChatModeManage ChatMode = "manage"
+)
+
+// ValidChatMode returns true if the given ChatMode is one of the known constants.
+func ValidChatMode(m ChatMode) bool {
+	switch m {
+	case ChatModeConverse, ChatModeQuest, ChatModePlan, ChatModeManage:
+		return true
+	default:
+		return false
+	}
+}
+
+// =============================================================================
 // SESSION TYPES
 // =============================================================================
 

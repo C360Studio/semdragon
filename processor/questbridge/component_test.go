@@ -20,6 +20,7 @@ import (
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -212,11 +213,18 @@ func TestQuestStartedPublishesTaskMessage(t *testing.T) {
 	writeQuestInProgress(t, gc, comp.boardConfig, questID, agent.ID)
 
 	// Wait for the TaskMessage to arrive.
-	var taskMsg agentic.TaskMessage
+	// The component wraps TaskMessage in a BaseMessage envelope before publishing.
+	var taskMsg *agentic.TaskMessage
 	select {
 	case data := <-taskCh:
-		if err := json.Unmarshal(data, &taskMsg); err != nil {
-			t.Fatalf("Failed to unmarshal TaskMessage: %v", err)
+		var baseMsg message.BaseMessage
+		if err := json.Unmarshal(data, &baseMsg); err != nil {
+			t.Fatalf("Failed to unmarshal BaseMessage: %v", err)
+		}
+		var ok bool
+		taskMsg, ok = baseMsg.Payload().(*agentic.TaskMessage)
+		if !ok {
+			t.Fatalf("BaseMessage payload is %T, want *agentic.TaskMessage", baseMsg.Payload())
 		}
 	case <-time.After(8 * time.Second):
 		t.Fatal("Timed out waiting for TaskMessage on AGENT stream")
@@ -284,11 +292,18 @@ func TestTaskMessageToolFiltering(t *testing.T) {
 	taskCh := subscribeToAgentTasks(t, client, ctx)
 	writeQuestInProgress(t, gc, comp.boardConfig, questID, agent.ID)
 
-	var taskMsg agentic.TaskMessage
+	// The component wraps TaskMessage in a BaseMessage envelope before publishing.
+	var taskMsg *agentic.TaskMessage
 	select {
 	case data := <-taskCh:
-		if err := json.Unmarshal(data, &taskMsg); err != nil {
-			t.Fatalf("Failed to unmarshal TaskMessage: %v", err)
+		var baseMsg message.BaseMessage
+		if err := json.Unmarshal(data, &baseMsg); err != nil {
+			t.Fatalf("Failed to unmarshal BaseMessage: %v", err)
+		}
+		var ok bool
+		taskMsg, ok = baseMsg.Payload().(*agentic.TaskMessage)
+		if !ok {
+			t.Fatalf("BaseMessage payload is %T, want *agentic.TaskMessage", baseMsg.Payload())
 		}
 	case <-time.After(8 * time.Second):
 		t.Fatal("Timed out waiting for TaskMessage")
@@ -414,6 +429,8 @@ func TestLoopCompletionEmitsExecutorEvent(t *testing.T) {
 	beforeCompleted := comp.loopsCompleted.Load()
 
 	// Publish a LoopCompletedEvent on agent.complete.{loopID}.
+	// The component expects completion events wrapped in BaseMessage (same as
+	// agentic-loop publishes them in production).
 	completedEvent := agentic.LoopCompletedEvent{
 		LoopID:     mapping.LoopID,
 		TaskID:     questEntityID,
@@ -422,9 +439,10 @@ func TestLoopCompletionEmitsExecutorEvent(t *testing.T) {
 		TokensOut:  50,
 	}
 
-	data, err := json.Marshal(&completedEvent)
+	baseMsg := message.NewBaseMessage(completedEvent.Schema(), &completedEvent, "test")
+	data, err := json.Marshal(baseMsg)
 	if err != nil {
-		t.Fatalf("Failed to marshal LoopCompletedEvent: %v", err)
+		t.Fatalf("Failed to marshal LoopCompletedEvent BaseMessage: %v", err)
 	}
 
 	subject := "agent.complete." + mapping.LoopID
@@ -488,6 +506,8 @@ func TestLoopFailureEmitsExecutorEvent(t *testing.T) {
 	beforeFailed := comp.loopsFailed.Load()
 
 	// Publish a LoopFailedEvent on agent.failed.{loopID}.
+	// The component expects failure events wrapped in BaseMessage (same as
+	// agentic-loop publishes them in production).
 	failedEvent := agentic.LoopFailedEvent{
 		LoopID:     mapping.LoopID,
 		TaskID:     questEntityID,
@@ -495,9 +515,10 @@ func TestLoopFailureEmitsExecutorEvent(t *testing.T) {
 		Iterations: 20,
 	}
 
-	data, err := json.Marshal(&failedEvent)
+	baseMsg := message.NewBaseMessage(failedEvent.Schema(), &failedEvent, "test")
+	data, err := json.Marshal(baseMsg)
 	if err != nil {
-		t.Fatalf("Failed to marshal LoopFailedEvent: %v", err)
+		t.Fatalf("Failed to marshal LoopFailedEvent BaseMessage: %v", err)
 	}
 
 	subject := "agent.failed." + mapping.LoopID

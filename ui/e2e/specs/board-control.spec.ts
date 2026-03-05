@@ -110,7 +110,14 @@ test.describe('GameStatusBar - Layout', () => {
 	});
 });
 
-test.describe('Board Control - API', () => {
+// Board state is global — both API and UI tests mutate it. Wrap in an outer
+// serial describe so the two inner blocks never run on different workers.
+// Limit to chromium to prevent cross-browser contention over the shared backend.
+test.describe('Board Control', () => {
+	test.describe.configure({ mode: 'serial' });
+	test.skip(({ browserName }) => browserName !== 'chromium', 'Board mutation tests run on chromium only to avoid cross-browser state contention');
+
+	test.describe('Board Control - API', () => {
 	test('GET /game/board/status returns board status', async ({ lifecycleApi }) => {
 		if (!hasBackend()) test.skip();
 
@@ -209,7 +216,8 @@ test.describe('Board Control - API', () => {
 	});
 });
 
-test.describe('Board Control - UI Integration', () => {
+	test.describe('Board Control - UI Integration', () => {
+
 	test('status bar shows "Running" as initial label when board is running', async ({
 		page,
 		lifecycleApi
@@ -380,9 +388,10 @@ test.describe('Board Control - UI Integration', () => {
 
 		const toggleButton = page.locator('[data-testid="board-toggle"]');
 
-		// Intercept the pause request to delay it so we can observe the disabled state
+		// Intercept the pause request to delay it so we can observe the disabled state.
+		// Use a longer delay to give slow browsers (Firefox) time to assert.
 		await page.route('**/game/board/pause', async (route) => {
-			await new Promise((resolve) => setTimeout(resolve, 300));
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 			await route.continue();
 		});
 
@@ -446,3 +455,5 @@ test.describe('Board Control - UI Integration', () => {
 		await lifecycleApi.resumeBoard();
 	});
 });
+
+}); // end Board Control (outer serial wrapper)

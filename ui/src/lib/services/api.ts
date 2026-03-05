@@ -31,6 +31,7 @@ import type {
 	Trajectory,
 	ChatContextRef,
 	ChatHistoryMessage,
+	ChatMode,
 	ChatResponse,
 	DMChatSession,
 	BoardStatus
@@ -170,12 +171,14 @@ export async function getDMSession(sessionId: string): Promise<DMChatSession | n
 
 export async function sendDMChat(
 	message: string,
+	mode?: ChatMode,
 	context?: ChatContextRef[],
 	history?: ChatHistoryMessage[],
 	sessionId?: string
 ): Promise<ChatResponse> {
 	return postJson<ChatResponse>('/game/dm/chat', {
 		message,
+		mode,
 		context,
 		history,
 		session_id: sessionId

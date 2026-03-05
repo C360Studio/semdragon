@@ -107,6 +107,13 @@ make e2e                      # Full E2E suite (Playwright + Docker)
 
 ```
 semdragons/
+├── docker-compose.yml      # Full stack: nats + mockllm + backend + ui
+├── docker-compose.cloud.yml  # Cloud LLM override (Gemini/Anthropic/OpenAI)
+├── docker-compose.ollama.yml # Local Ollama override
+├── docker/                 # Dockerfiles + infrastructure config
+│   ├── backend.Dockerfile  #   Multi-stage Go build
+│   ├── mockllm.Dockerfile  #   Mock LLM server
+│   └── nats-server.conf    #   NATS JetStream config
 ├── cmd/semdragons/         # Binary entry point + CLI
 ├── componentregistry/      # Registers all processors with semstreams
 ├── config/                 # Runtime config + model registry (semdragons.json, models.json)
@@ -133,8 +140,7 @@ semdragons/
 ├── service/api/            # REST API handlers
 ├── ui/                     # SvelteKit 5 dashboard + Playwright E2E
 │   ├── src/routes/         #   Pages: agents, quests, battles, store, guilds
-│   ├── e2e/specs/          #   12 Playwright specs
-│   └── docker-compose.yml  #   Full stack: nats + backend + ui
+│   └── e2e/specs/          #   12 Playwright specs
 ├── docs/                   # Design, getting started, quests, parties, boids, domains, model registry, API ref
 └── *.go                    # Core types, entity IDs, graph client, vocab
 ```

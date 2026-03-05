@@ -1,0 +1,31 @@
+# Compose override for cloud LLM E2E tests (Gemini, Anthropic, OpenAI).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d
+#
+# Disables mockllm and passes through API key env vars.
+# Provider selected by SEMDRAGONS_CONFIG env var (default: Gemini).
+#
+# Examples:
+#   GEMINI_API_KEY=$GEMINI_API_KEY make e2e-cloud
+#   SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-e2e-anthropic.json ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY make e2e-cloud
+#   SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-e2e-openai.json OPENAI_API_KEY=$OPENAI_API_KEY make e2e-cloud
+
+services:
+  mockllm:
+    deploy:
+      replicas: 0
+
+  backend:
+    depends_on:
+      nats:
+        condition: service_healthy
+      mockllm:
+        condition: service_started
+        required: false
+    environment:
+      SEMDRAGONS_NATS_URLS: nats://nats:4222
+      SEMDRAGONS_CONFIG: "${SEMDRAGONS_CONFIG:-/etc/semdragons/semdragons-e2e-gemini.json}"
+      SEED_E2E: "${SEED_E2E:-false}"
+      SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"

@@ -34,7 +34,7 @@ route lower-tier agents to cheaper models.
 
 ## Quick Start with Docker Compose
 
-The `ui/docker-compose.yml` starts three containers:
+The root `docker-compose.yml` starts four containers:
 
 | Service | Image | Ports | Purpose |
 |---------|-------|-------|---------|
@@ -43,7 +43,6 @@ The `ui/docker-compose.yml` starts three containers:
 | ui | Node 22 dev server | 5173 | SvelteKit dashboard |
 
 ```bash
-cd ui
 docker compose up -d
 
 # Verify
@@ -71,10 +70,10 @@ For backend development, run each service outside Docker.
 
 ```bash
 # Using the included config (JetStream enabled, port 4222, monitor 8222)
-nats-server -c ui/nats-server.conf
+nats-server -c docker/nats-server.conf
 
 # Or via Docker alone
-cd ui && docker compose up nats -d
+docker compose up nats -d
 ```
 
 ### 2. Start the Backend
@@ -228,7 +227,6 @@ the reactive pipeline in action.
 
 ```bash
 # 1. Start with seeded data
-cd ui
 SEED_E2E=true docker compose up -d
 
 # Verify everything is running

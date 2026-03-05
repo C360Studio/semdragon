@@ -7,7 +7,7 @@ services:
     command: ["--config", "/etc/nats/nats-server.conf"]
     volumes:
       - nats-data:/data
-      - ./nats-server.conf:/etc/nats/nats-server.conf:ro
+      - ./docker/nats-server.conf:/etc/nats/nats-server.conf:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
@@ -17,8 +17,8 @@ services:
 
   mockllm:
     build:
-      context: ..
-      dockerfile: ui/Dockerfile.mockllm
+      context: .
+      dockerfile: docker/mockllm.Dockerfile
     ports:
       - "9090:9090"
     healthcheck:
@@ -29,8 +29,8 @@ services:
 
   backend:
     build:
-      context: ..
-      dockerfile: ui/Dockerfile.backend
+      context: .
+      dockerfile: docker/backend.Dockerfile
     depends_on:
       nats:
         condition: service_healthy
@@ -38,7 +38,7 @@ services:
         condition: service_healthy
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
-      SEMDRAGONS_CONFIG: /etc/semdragons/config-e2e.json
+      SEMDRAGONS_CONFIG: /etc/semdragons/semdragons-e2e.json
       SEED_E2E: "${SEED_E2E:-false}"
       SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
     ports:
@@ -52,8 +52,8 @@ services:
 
   ui:
     build:
-      context: .
-      dockerfile: Dockerfile.dev
+      context: ./ui
+      dockerfile: Dockerfile
     depends_on:
       backend:
         condition: service_healthy
@@ -64,8 +64,8 @@ services:
     ports:
       - "5173:5173"
     volumes:
-      - ./src:/app/src:ro
-      - ./static:/app/static:ro
+      - ./ui/src:/app/src:ro
+      - ./ui/static:/app/static:ro
     stdin_open: true
     tty: true
 

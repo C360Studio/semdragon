@@ -503,8 +503,11 @@ export interface TraceInfo {
 	parent_span_id?: string;
 }
 
+export type ChatMode = 'converse' | 'quest' | 'plan' | 'manage';
+
 export interface ChatResponse {
 	message: string;
+	mode: ChatMode;
 	quest_brief?: {
 		title: string;
 		description?: string;

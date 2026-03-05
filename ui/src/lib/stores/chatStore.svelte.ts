@@ -6,9 +6,11 @@
  * Persists to localStorage for instant UI restore on page refresh.
  */
 
-import type { Quest, QuestDifficulty, SkillTag, DMChatSession } from '$types';
+import type { Quest, QuestDifficulty, SkillTag, DMChatSession, ChatMode } from '$types';
 import { browser } from '$app/environment';
 import { sendDMChat, createQuest, postQuestChain, getDMSession, ApiError } from '$lib/services/api';
+
+export type { ChatMode };
 import { pageContext } from '$lib/stores/pageContext.svelte';
 
 // =============================================================================
@@ -60,6 +62,7 @@ const MAX_STORAGE_AGE_MS = 24 * 60 * 60 * 1000; // 24h
 interface PersistedChatState {
 	messages: ChatMessage[];
 	sessionId: string | null;
+	mode: ChatMode;
 	savedAt: number;
 }
 
@@ -68,6 +71,7 @@ function saveToLocalStorage() {
 		const state: PersistedChatState = {
 			messages,
 			sessionId,
+			mode,
 			savedAt: Date.now()
 		};
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -132,6 +136,7 @@ let height = $state(250);
 let loading = $state(false);
 let error = $state<string | null>(null);
 let sessionId = $state<string | null>(null);
+let mode = $state<ChatMode>('converse');
 
 // Restore from localStorage on module load — browser guard prevents SSR errors
 if (browser) {
@@ -139,6 +144,7 @@ if (browser) {
 	if (restored) {
 		messages = restored.messages;
 		sessionId = restored.sessionId;
+		if (restored.mode) mode = restored.mode;
 		if (messages.length > 0) open = true;
 	}
 }
@@ -178,6 +184,11 @@ function setHeight(h: number) {
 	height = Math.max(150, Math.min(h, window.innerHeight * 0.6));
 }
 
+function setMode(m: ChatMode) {
+	mode = m;
+	saveToLocalStorage();
+}
+
 async function sendMessage(text: string) {
 	if (!text.trim() || loading) return;
 
@@ -215,7 +226,7 @@ async function sendMessage(text: string) {
 			}
 		}
 
-		const response = await sendDMChat(text.trim(), context, history, sessionId ?? undefined);
+		const response = await sendDMChat(text.trim(), mode, context, history, sessionId ?? undefined);
 
 		// Track session for trace continuity across turns
 		if (response.session_id) {
@@ -327,6 +338,7 @@ export const chatStore = {
 	get loading() { return loading; },
 	get error() { return error; },
 	get sessionId() { return sessionId; },
+	get mode() { return mode; },
 
 	addContext,
 	addContextQuiet,
@@ -334,6 +346,7 @@ export const chatStore = {
 	clearContext,
 	toggle,
 	setHeight,
+	setMode,
 	sendMessage,
 	postQuest,
 	postChain,

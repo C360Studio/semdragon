@@ -118,3 +118,124 @@ test.describe('Store Lifecycle', () => {
 		expect(Array.isArray(effects)).toBe(true);
 	});
 });
+
+// =============================================================================
+// CONSUMABLE USAGE
+// =============================================================================
+
+test.describe('Consumable Usage', () => {
+	test('purchase consumable appears in inventory consumables map', async ({ lifecycleApi }) => {
+		test.skip(!hasBackend(), 'Requires running backend');
+
+		// Find an agent with enough XP for retry_token (50 XP, TierApprentice)
+		const world = await lifecycleApi.getWorldState();
+		const agents = (world.agents ?? []) as Array<{
+			id: string;
+			xp?: number;
+			level: number;
+			status: string;
+		}>;
+
+		const richAgent = agents.find((a) => (a.xp ?? 0) >= 50);
+		if (!richAgent) {
+			test.skip(true, 'No agent with sufficient XP found');
+			return;
+		}
+
+		const agentInstance = extractInstance(richAgent.id);
+		const result = await lifecycleApi.purchaseItem(richAgent.id, 'retry_token');
+
+		if (result.success) {
+			// Verify the consumable shows up in inventory
+			const inventory = await lifecycleApi.getInventory(agentInstance);
+			expect(inventory.consumables).toBeDefined();
+			expect(inventory.consumables['retry_token']).toBeGreaterThanOrEqual(1);
+		}
+		// If purchase failed (already owned or insufficient XP), check inventory directly
+		const inventory = await lifecycleApi.getInventory(agentInstance);
+		expect(inventory.agent_id).toBeTruthy();
+	});
+
+	test('use consumable returns success and decrements remaining', async ({ lifecycleApi }) => {
+		test.skip(!hasBackend(), 'Requires running backend');
+
+		// Find an agent with enough XP
+		const world = await lifecycleApi.getWorldState();
+		const agents = (world.agents ?? []) as Array<{
+			id: string;
+			xp?: number;
+			level: number;
+			status: string;
+		}>;
+
+		const richAgent = agents.find((a) => (a.xp ?? 0) >= 50);
+		if (!richAgent) {
+			test.skip(true, 'No agent with sufficient XP found');
+			return;
+		}
+
+		const agentInstance = extractInstance(richAgent.id);
+
+		// Ensure agent has a retry_token
+		await lifecycleApi.purchaseItem(richAgent.id, 'retry_token');
+
+		// Check inventory has the consumable
+		const invBefore = await lifecycleApi.getInventory(agentInstance);
+		const countBefore = invBefore.consumables?.['retry_token'] ?? 0;
+		if (countBefore === 0) {
+			test.skip(true, 'Agent has no retry_token to use');
+			return;
+		}
+
+		// Use the consumable (no quest_id needed for retry_token)
+		const result = await lifecycleApi.useConsumable(agentInstance, 'retry_token');
+		expect(result.success).toBe(true);
+
+		// Verify inventory count decremented
+		const invAfter = await lifecycleApi.getInventory(agentInstance);
+		const countAfter = invAfter.consumables?.['retry_token'] ?? 0;
+		expect(countAfter).toBe(countBefore - 1);
+	});
+
+	test('active effects appear after using consumable', async ({ lifecycleApi }) => {
+		test.skip(!hasBackend(), 'Requires running backend');
+
+		// Find an agent with enough XP for cooldown_skip (75 XP, TierApprentice)
+		const world = await lifecycleApi.getWorldState();
+		const agents = (world.agents ?? []) as Array<{
+			id: string;
+			xp?: number;
+			level: number;
+			status: string;
+		}>;
+
+		const richAgent = agents.find((a) => (a.xp ?? 0) >= 75);
+		if (!richAgent) {
+			test.skip(true, 'No agent with sufficient XP found');
+			return;
+		}
+
+		const agentInstance = extractInstance(richAgent.id);
+
+		// Purchase and use a cooldown_skip
+		await lifecycleApi.purchaseItem(richAgent.id, 'cooldown_skip');
+		const invCheck = await lifecycleApi.getInventory(agentInstance);
+		if ((invCheck.consumables?.['cooldown_skip'] ?? 0) === 0) {
+			test.skip(true, 'Agent has no cooldown_skip to use');
+			return;
+		}
+
+		await lifecycleApi.useConsumable(agentInstance, 'cooldown_skip');
+
+		// Check active effects
+		const effects = await lifecycleApi.getEffects(agentInstance);
+		expect(Array.isArray(effects)).toBe(true);
+		// After using cooldown_skip, there should be an active effect
+		const cooldownEffect = effects.find(
+			(e) => e.consumable_id === 'cooldown_skip'
+		);
+		if (cooldownEffect) {
+			expect(cooldownEffect.effect.type).toBe('cooldown_skip');
+		}
+	});
+});
