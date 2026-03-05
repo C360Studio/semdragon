@@ -23,7 +23,7 @@ Anthropic API key   export ANTHROPIC_API_KEY=sk-ant-...
 OpenAI API key      export OPENAI_API_KEY=sk-...
 ```
 
-The default config uses a local Ollama endpoint. See [MODEL-REGISTRY.md](MODEL-REGISTRY.md) for
+The default config uses a local Ollama endpoint. See [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) for
 switching providers.
 
 **Cost warning:** Every quest execution calls an LLM, and boss battle reviews call a second
@@ -142,7 +142,7 @@ formation, boid-driven quest claiming, and LLM-powered agent execution. You shou
 modify `components` unless you are adding custom processors.
 
 The `model_registry` section configures which LLM providers are available for agent execution.
-The default config uses a local Ollama endpoint. See [MODEL-REGISTRY.md](MODEL-REGISTRY.md)
+The default config uses a local Ollama endpoint. See [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md)
 for switching to Anthropic, OpenAI, or other providers.
 
 The KV bucket is named `semdragons-{org}-{platform}-{board}`. With the default config:
@@ -176,7 +176,7 @@ ships with a single Ollama endpoint:
 
 For production use with cloud providers, see `config/models.json` which defines Claude, GPT-4o,
 and Ollama endpoints with capability-based fallback chains. Full documentation in
-[MODEL-REGISTRY.md](MODEL-REGISTRY.md).
+[07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md).
 
 ### Domains
 
@@ -189,7 +189,7 @@ Semdragons ships with three domain themes that customize vocabulary, skills, and
 | **Research** | Researcher | Study | Peer Review | Analysis, Research, Synthesis, Statistics, ... |
 
 Each domain provides a `DomainConfig` (skill taxonomy + vocabulary) and a `DomainCatalog` (prompt
-fragments gated by trust tier and skill). See [DOMAINS.md](DOMAINS.md) for full details.
+fragments gated by trust tier and skill). See [06-DOMAINS.md](06-DOMAINS.md) for full details.
 
 ## Running Tests
 
@@ -372,10 +372,10 @@ The Vite dev proxy routes `/message-logger` to the backend, so the dashboard at
 
 ## Further Reading
 
-- [QUESTS.md](QUESTS.md) — Quest creation, lifecycle state machine, difficulty/XP table, boss battles
-- [PARTIES.md](PARTIES.md) — Party formation, roles, peer reviews, feedback loop
-- [BOIDS.md](BOIDS.md) — Emergent quest-claiming behavior, six rules, tuning guide
-- [DESIGN.md](DESIGN.md) — Architecture, concept map, trust tiers, death mechanics
-- [DOMAINS.md](DOMAINS.md) — Domain themes (software, D&D, research), prompt catalogs
-- [MODEL-REGISTRY.md](MODEL-REGISTRY.md) — LLM provider config, capabilities, fallback chains
+- [03-QUESTS.md](03-QUESTS.md) — Quest creation, lifecycle state machine, difficulty/XP table, boss battles
+- [04-PARTIES.md](04-PARTIES.md) — Party formation, roles, peer reviews, feedback loop
+- [05-BOIDS.md](05-BOIDS.md) — Emergent quest-claiming behavior, six rules, tuning guide
+- [02-DESIGN.md](02-DESIGN.md) — Architecture, concept map, trust tiers, death mechanics
+- [06-DOMAINS.md](06-DOMAINS.md) — Domain themes (software, D&D, research), prompt catalogs
+- [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) — LLM provider config, capabilities, fallback chains
 - [Swagger UI](/docs) — Live API documentation at `/docs`

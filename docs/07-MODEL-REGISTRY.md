@@ -44,13 +44,14 @@ Each key under `endpoints` is an arbitrary name used throughout the rest of the 
 
 | Field            | Type    | Required | Description                                              |
 |------------------|---------|----------|----------------------------------------------------------|
-| `provider`       | string  | yes      | `"anthropic"`, `"openai"`, or `"ollama"`                 |
-| `url`            | string  | no       | Base URL; defaults to provider standard if omitted       |
-| `model`          | string  | yes      | Provider model identifier                                |
-| `max_tokens`     | int     | yes      | Maximum tokens per request                               |
-| `supports_tools` | bool    | yes      | Whether this endpoint supports tool/function calling     |
-| `tool_format`    | string  | no       | `"anthropic"` or `"openai"`; required when tools enabled |
-| `api_key_env`    | string  | no       | Environment variable name holding the API key            |
+| `provider`          | string  | yes      | `"anthropic"`, `"openai"`, or `"ollama"`                 |
+| `url`               | string  | no       | Base URL; defaults to provider standard if omitted       |
+| `model`             | string  | yes      | Provider model identifier                                |
+| `max_tokens`        | int     | yes      | Maximum tokens per request                               |
+| `supports_tools`    | bool    | yes      | Whether this endpoint supports tool/function calling     |
+| `tool_format`       | string  | no       | `"anthropic"` or `"openai"`; required when tools enabled |
+| `api_key_env`       | string  | no       | Environment variable name holding the API key            |
+| `reasoning_effort`  | string  | no       | Reasoning effort level: `"none"`, `"low"`, `"medium"`, or `"high"` |
 
 **Example — three providers:**
 
@@ -86,6 +87,35 @@ Each key under `endpoints` is an arbitrary name used throughout the rest of the 
 
 The `url` field is optional for Anthropic (the SDK handles the base URL). It is required
 for OpenAI-compatible providers and Ollama.
+
+### Reasoning Effort
+
+The optional `reasoning_effort` field controls thinking budget for reasoning-capable models
+(OpenAI o3/o4-mini, Gemini 2.5 Flash/Pro). It is forwarded as the `reasoning_effort`
+parameter on OpenAI-compatible chat completion requests.
+
+| Value    | Behavior                                                    |
+|----------|-------------------------------------------------------------|
+| `"none"` | Disable reasoning entirely                                  |
+| `"low"`  | Minimal thinking — fast responses, lower cost               |
+| `"medium"` | Balanced thinking — good for most tasks                   |
+| `"high"` | Deep reasoning — thorough analysis, higher latency and cost |
+
+Not all models support reasoning effort. Models that don't (e.g., Gemini 2.0 Flash Lite,
+GPT-4o) silently ignore the field. The value is exposed in the `GET /game/models` API
+response for dashboard display.
+
+```json
+"gemini-flash": {
+  "provider": "openai",
+  "url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+  "model": "gemini-2.5-flash-preview-04-17",
+  "max_tokens": 65536,
+  "supports_tools": true,
+  "reasoning_effort": "low",
+  "api_key_env": "GEMINI_API_KEY"
+}
+```
 
 ---
 

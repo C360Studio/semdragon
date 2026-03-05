@@ -237,6 +237,6 @@ reputation formula in `boids.go`.
 
 ## Further Reading
 
-- [QUESTS.md](QUESTS.md) — Quest lifecycle and difficulty tiers
-- [PARTIES.md](PARTIES.md) — Peer reviews that feed into boid reputation
-- [DESIGN.md](DESIGN.md) — Architecture and coordination model
+- [03-QUESTS.md](03-QUESTS.md) — Quest lifecycle and difficulty tiers
+- [04-PARTIES.md](04-PARTIES.md) — Peer reviews that feed into boid reputation
+- [02-DESIGN.md](02-DESIGN.md) — Architecture and coordination model

@@ -176,7 +176,7 @@ The predicate index (3-part keys like `quest.status.claimed`) acts as event chan
 
 Processors cache last-known state in memory to detect what changed on each watch update.
 
-See `/docs/DESIGN.md` for full details.
+See `/docs/02-DESIGN.md` for full details.
 
 ### Debugging: Message Logger, Traces, and Trajectories
 
@@ -263,9 +263,9 @@ The root `semdragons` package re-exports type aliases from `domain/` and provide
 
 **`domain/`** is the authoritative source for all enum types (`SkillTag`, `TrustTier`, `QuestDifficulty`, `QuestStatus`, `DMMode`, etc.) and `BoardConfig`. Prefer importing from `domain/` directly in processors; root package aliases are for external consumer convenience.
 
-**`domains/`** (plural) contains three concrete domain implementations: `software.go`, `dnd.go`, `research.go`. Each defines a `DomainConfig` (vocabulary mapping + skill taxonomy) and a `DomainCatalog` (prompt fragments for `promptmanager`). See `/docs/DOMAINS.md` for details.
+**`domains/`** (plural) contains three concrete domain implementations: `software.go`, `dnd.go`, `research.go`. Each defines a `DomainConfig` (vocabulary mapping + skill taxonomy) and a `DomainCatalog` (prompt fragments for `promptmanager`). See `/docs/06-DOMAINS.md` for details.
 
-**`processor/`** contains 17 reactive components registered via `componentregistry/`, plus `promptmanager` which is a library (not a standalone component). Each processor follows the same structure: `component.go`, `config.go`, `register.go`, `handler.go`. See "Processor Architecture Patterns" below.
+**`processor/`** contains 16 reactive components registered via `componentregistry/`, plus `promptmanager` and `boardcontrol` which are libraries (not standalone components). Each processor follows the same structure: `component.go`, `config.go`, `register.go`, `handler.go`. See "Processor Architecture Patterns" below.
 
 Two components form the **agentic integration layer** that bridges quest lifecycle to semstreams' event-driven LLM execution:
 - `questbridge` — Watches quest entities for `in_progress` transitions, assembles `TaskMessage` (prompt, tools, metadata), publishes to AGENT JetStream stream, handles loop completion/failure events. Uses KV twofer bootstrap protocol for crash recovery via QUEST_LOOPS bucket.
@@ -279,7 +279,7 @@ Two components form the **agentic integration layer** that bridges quest lifecyc
 - `semdragons.json` — Default runtime config (platform, services, streams, components, model_registry)
 - `models.json` — Production model registry config with multi-provider endpoints and capability routing
 
-See `/docs/MODEL-REGISTRY.md` for LLM provider configuration details.
+See `/docs/07-MODEL-REGISTRY.md` for LLM provider configuration details.
 
 **`componentregistry/`** is the single location that imports all processors and wires them into the semstreams component registry. Register new processors here.
 
@@ -288,13 +288,14 @@ See `/docs/MODEL-REGISTRY.md` for LLM provider configuration details.
 **`ui/`** is the SvelteKit 5 dashboard. Vite proxies `/game`, `/health`, and `/message-logger` to the backend. Uses a single `worldStore.svelte.ts` reactive store fed by SSE via the message-logger endpoint.
 
 Documentation in `/docs/`:
-- `DESIGN.md` — Architecture, concept map, trust tiers, example flows, death mechanics
-- `GETTING-STARTED.md` — Prerequisites, Docker Compose quickstart, first quest walkthrough
-- `QUESTS.md` — Quest creation, lifecycle state machine, difficulty/XP, boss battles, chains
-- `PARTIES.md` — Party formation, roles, peer reviews, feedback loop into prompts
-- `BOIDS.md` — Emergent quest-claiming, six rules, guild/reputation integration, tuning guide
-- `DOMAINS.md` — Domain system, prompt catalogs, skill taxonomies
-- `MODEL-REGISTRY.md` — LLM provider configuration, capabilities, fallback chains
+- `01-GETTING-STARTED.md` — Prerequisites, Docker Compose quickstart, first quest walkthrough
+- `02-DESIGN.md` — Architecture, concept map, trust tiers, example flows, death mechanics
+- `03-QUESTS.md` — Quest creation, lifecycle state machine, difficulty/XP, boss battles, chains
+- `04-PARTIES.md` — Party formation, roles, peer reviews, feedback loop into prompts
+- `05-BOIDS.md` — Emergent quest-claiming, six rules, guild/reputation integration, tuning guide
+- `06-DOMAINS.md` — Domain system, prompt catalogs, skill taxonomies
+- `07-MODEL-REGISTRY.md` — LLM provider configuration, capabilities, fallback chains
+- `adr/001-dm-chat-routing.md` — DM chat mode routing and orchestration design
 - API docs served live at `/docs` (Swagger UI) and `/openapi.json` — defined in `service/api/openapi.go`
 
 ## Development Commands

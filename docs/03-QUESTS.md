@@ -114,6 +114,21 @@ all `completed` appear in the results.
 Cycle detection uses Kahn's algorithm (topological sort) during validation. If the sorted
 count doesn't match the chain size, a cycle exists and the chain is rejected.
 
+### Quest Data Flow
+
+Quests carry structured input and output data via the `quest.data.input` and
+`quest.data.output` predicates. These are stored as triples on the quest entity and
+reconstructed by `QuestFromEntityState`.
+
+- **Input** (`quest.data.input`): Data provided when the quest is created. Included in the
+  agent's prompt context so the LLM has material to work with.
+- **Output** (`quest.data.output`): The agent's result, set when the quest is submitted or
+  completed. Available for downstream quests in a chain.
+
+In quest chains, a downstream quest can reference its dependency's output as input. The
+`questbridge` processor reads the completed dependency's output and injects it into the
+dependent quest's `TaskMessage` before dispatching to the agentic loop.
+
 ## Lifecycle State Machine
 
 ```
@@ -225,8 +240,8 @@ Examples:
 
 ## Further Reading
 
-- [GETTING-STARTED.md](GETTING-STARTED.md) — Setup, walkthrough, debugging
-- [PARTIES.md](PARTIES.md) — Party formation and peer reviews
-- [BOIDS.md](BOIDS.md) — Emergent quest-claiming behavior
+- [01-GETTING-STARTED.md](01-GETTING-STARTED.md) — Setup, walkthrough, debugging
+- [04-PARTIES.md](04-PARTIES.md) — Party formation and peer reviews
+- [05-BOIDS.md](05-BOIDS.md) — Emergent quest-claiming behavior
 - [Swagger UI](/docs) — Live API documentation at `/docs`
-- [DESIGN.md](DESIGN.md) — Architecture and concept map
+- [02-DESIGN.md](02-DESIGN.md) — Architecture and concept map

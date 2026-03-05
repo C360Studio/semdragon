@@ -26,7 +26,7 @@ quest := semdragons.NewQuest("Analyze Q3 sales data").
 board.PostQuest(ctx, quest)
 ```
 
-See [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) for full setup, environment variables, and a first-quest walkthrough.
+See [docs/01-GETTING-STARTED.md](docs/01-GETTING-STARTED.md) for full setup, environment variables, and a first-quest walkthrough.
 
 ## Core Concepts
 
@@ -119,10 +119,11 @@ semdragons/
 ├── config/                 # Runtime config + model registry (semdragons.json, models.json)
 ├── domain/                 # Enums, config types, vocabulary (source of truth)
 ├── domains/                # Domain implementations: software, dnd, research
-├── processor/              # 17 reactive event processors
+├── processor/              # 16 reactive processors + 2 libraries
 │   ├── agentprogression/   #   XP and leveling on quest outcome
 │   ├── agentstore/         #   XP marketplace: tools, consumables
 │   ├── autonomy/           #   Heartbeat-driven agent decision loop
+│   ├── boardcontrol/       #   Play/pause board state (library)
 │   ├── boidengine/         #   Periodic boid attraction computation
 │   ├── bossbattle/         #   Review evaluation (automated + LLM + human)
 │   ├── dmapproval/         #   DM approval gate (NATS request/reply)
@@ -140,8 +141,8 @@ semdragons/
 ├── service/api/            # REST API handlers
 ├── ui/                     # SvelteKit 5 dashboard + Playwright E2E
 │   ├── src/routes/         #   Pages: agents, quests, battles, store, guilds
-│   └── e2e/specs/          #   12 Playwright specs
-├── docs/                   # Design, getting started, quests, parties, boids, domains, model registry, API ref
+│   └── e2e/specs/          #   23 Playwright specs
+├── docs/                   # Numbered guides (01-07) + adr/ for design proposals
 └── *.go                    # Core types, entity IDs, graph client, vocab
 ```
 

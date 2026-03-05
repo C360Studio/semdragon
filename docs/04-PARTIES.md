@@ -180,7 +180,7 @@ behaviors get explicit reminders to improve, and improvement shows up in future 
 
 ## Further Reading
 
-- [QUESTS.md](QUESTS.md) — Quest lifecycle and evaluation
-- [BOIDS.md](BOIDS.md) — How boid affinity uses peer review ratings
-- [DESIGN.md](DESIGN.md) — Architecture and death mechanics
+- [03-QUESTS.md](03-QUESTS.md) — Quest lifecycle and evaluation
+- [05-BOIDS.md](05-BOIDS.md) — How boid affinity uses peer review ratings
+- [02-DESIGN.md](02-DESIGN.md) — Architecture and death mechanics
 - [Swagger UI](/docs) — Live API documentation at `/docs`

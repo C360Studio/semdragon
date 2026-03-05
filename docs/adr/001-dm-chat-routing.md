@@ -574,16 +574,16 @@ preserves existing behavior.
 6. Persist mode to localStorage with the rest of the chat state.
 
 **Files changed**:
-- `/Users/coby/Code/c360/semdragon/domain/dm.go` -- add ChatMode type
-- `/Users/coby/Code/c360/semdragon/service/api/request_types.go` -- add mode to request/response
-- `/Users/coby/Code/c360/semdragon/service/api/dm_prompt.go` -- mode-aware prompt builder
-- `/Users/coby/Code/c360/semdragon/service/api/handlers.go` -- update handleDMChat
-- `/Users/coby/Code/c360/semdragon/service/api/openapi.go` -- update API spec
-- `/Users/coby/Code/c360/semdragon/config/semdragons.json` -- add dm-chat capability
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/stores/chatStore.svelte.ts` -- add mode state
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/components/chat/ChatPanel.svelte` -- mode selector
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/components/chat/ChatMessage.svelte` -- conditional rendering
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/services/api.ts` -- add mode param
+- `domain/dm.go` -- add ChatMode type
+- `service/api/request_types.go` -- add mode to request/response
+- `service/api/dm_prompt.go` -- mode-aware prompt builder
+- `service/api/handlers.go` -- update handleDMChat
+- `service/api/openapi.go` -- update API spec
+- `config/semdragons.json` -- add dm-chat capability
+- `ui/src/lib/stores/chatStore.svelte.ts` -- add mode state
+- `ui/src/lib/components/chat/ChatPanel.svelte` -- mode selector
+- `ui/src/lib/components/chat/ChatMessage.svelte` -- conditional rendering
+- `ui/src/lib/services/api.ts` -- add mode param
 
 **Tests**:
 - Unit test: mode-specific prompt building (dm_prompt_test.go)
@@ -613,15 +613,15 @@ to quest chains with a single click.
 4. Wire `postPlan` action in chatStore.
 
 **Files changed**:
-- `/Users/coby/Code/c360/semdragon/domain/dm.go` -- QuestPlan, PlanPhase types
-- `/Users/coby/Code/c360/semdragon/service/api/dm_prompt.go` -- plan mode prompt
-- `/Users/coby/Code/c360/semdragon/service/api/handlers.go` -- plan extraction, execute endpoint
-- `/Users/coby/Code/c360/semdragon/service/api/request_types.go` -- plan types
-- `/Users/coby/Code/c360/semdragon/service/api/openapi.go` -- plan endpoint spec
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/stores/chatStore.svelte.ts` -- plan actions
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/components/chat/PlanPreview.svelte` -- new
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/components/chat/ChatMessage.svelte` -- plan card
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/services/api.ts` -- executePlan call
+- `domain/dm.go` -- QuestPlan, PlanPhase types
+- `service/api/dm_prompt.go` -- plan mode prompt
+- `service/api/handlers.go` -- plan extraction, execute endpoint
+- `service/api/request_types.go` -- plan types
+- `service/api/openapi.go` -- plan endpoint spec
+- `ui/src/lib/stores/chatStore.svelte.ts` -- plan actions
+- `ui/src/lib/components/chat/PlanPreview.svelte` -- new
+- `ui/src/lib/components/chat/ChatMessage.svelte` -- plan card
+- `ui/src/lib/services/api.ts` -- executePlan call
 
 **Tests**:
 - Unit test: QuestPlan validation
@@ -650,12 +650,12 @@ to quest chains with a single click.
 4. Show agent roster summary in manage mode header.
 
 **Files changed**:
-- `/Users/coby/Code/c360/semdragon/service/api/dm_prompt.go` -- manage mode prompt
-- `/Users/coby/Code/c360/semdragon/service/api/handlers.go` -- action extraction, execute endpoint
-- `/Users/coby/Code/c360/semdragon/service/api/request_types.go` -- action types
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/components/chat/AgentActionCard.svelte` -- new
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/components/chat/ChatMessage.svelte` -- action card
-- `/Users/coby/Code/c360/semdragon/ui/src/lib/services/api.ts` -- executeAction call
+- `service/api/dm_prompt.go` -- manage mode prompt
+- `service/api/handlers.go` -- action extraction, execute endpoint
+- `service/api/request_types.go` -- action types
+- `ui/src/lib/components/chat/AgentActionCard.svelte` -- new
+- `ui/src/lib/components/chat/ChatMessage.svelte` -- action card
+- `ui/src/lib/services/api.ts` -- executeAction call
 
 **Tests**:
 - Unit test: action extraction, param validation
@@ -678,12 +678,12 @@ gated by DMMode.
 7. Register in `componentregistry/register.go`.
 
 **Files changed**:
-- `/Users/coby/Code/c360/semdragon/processor/questpromotion/component.go` -- new
-- `/Users/coby/Code/c360/semdragon/processor/questpromotion/config.go` -- new
-- `/Users/coby/Code/c360/semdragon/processor/questpromotion/handler.go` -- new
-- `/Users/coby/Code/c360/semdragon/processor/questpromotion/register.go` -- new
-- `/Users/coby/Code/c360/semdragon/componentregistry/register.go` -- register
-- `/Users/coby/Code/c360/semdragon/config/semdragons.json` -- optional config
+- `processor/questpromotion/component.go` -- new
+- `processor/questpromotion/config.go` -- new
+- `processor/questpromotion/handler.go` -- new
+- `processor/questpromotion/register.go` -- new
+- `componentregistry/register.go` -- register
+- `config/semdragons.json` -- optional config
 
 **Tests**:
 - Integration test: promotion pipeline with mock KV
