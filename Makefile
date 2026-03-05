@@ -102,7 +102,7 @@ OLLAMA_COMPOSE = -f docker-compose.yml -f docker-compose.ollama.yml
 
 # Start with mock LLM (no API key needed)
 up:
-	docker compose up -d --build --wait
+	docker compose --profile mock up -d --build --wait
 	@echo "Stack is up. Dashboard: http://localhost:5173  API: http://localhost:8080"
 
 # Start with cloud LLM (set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env)
@@ -115,9 +115,9 @@ up-ollama:
 	docker compose $(OLLAMA_COMPOSE) up -d --build --wait
 	@echo "Ollama stack is up. Dashboard: http://localhost:5173  API: http://localhost:8080"
 
-# Stop the stack
+# Stop the stack (--remove-orphans handles any profile/override combination)
 down:
-	docker compose down -v
+	docker compose --profile mock down -v --remove-orphans
 	@echo "Stack stopped."
 
 # =============================================================================
@@ -131,7 +131,7 @@ e2e: e2e-install e2e-up e2e-wait e2e-run e2e-down
 
 # Start the Docker stack (nats + mockllm + backend + ui)
 e2e-up:
-	SEED_E2E=true docker compose up -d --build --wait
+	SEED_E2E=true docker compose --profile mock up -d --build --wait
 	@echo "E2E stack is up. Backend: http://localhost:8080  UI: http://localhost:5173"
 
 # Wait for backend health (with retries)
@@ -164,12 +164,12 @@ e2e-ui: e2e-install e2e-up e2e-wait
 
 # Stop the Docker stack
 e2e-down:
-	docker compose down -v
+	docker compose --profile mock down -v --remove-orphans
 	@echo "E2E stack stopped."
 
 # Force clean slate (removes volumes)
 e2e-clean:
-	docker compose down -v
+	docker compose --profile mock down -v --remove-orphans
 
 # View E2E test report
 e2e-report:
@@ -199,7 +199,7 @@ e2e-cloud-run:
 
 # Stop the cloud stack
 e2e-cloud-down:
-	docker compose $(CLOUD_COMPOSE) down -v
+	docker compose $(CLOUD_COMPOSE) down -v --remove-orphans
 	@echo "Cloud E2E stack stopped."
 
 # ─── Cloud LLM E2E — Tiered (multi-model Gemini) ─────────────────────
@@ -222,7 +222,7 @@ e2e-cloud-tiered-run:
 
 # Stop the tiered stack
 e2e-cloud-tiered-down:
-	docker compose $(CLOUD_COMPOSE) down -v
+	docker compose $(CLOUD_COMPOSE) down -v --remove-orphans
 	@echo "Tiered E2E stack stopped."
 
 # ─── Ollama E2E (local LLM) ─────────────────────────────────────────
@@ -240,5 +240,5 @@ e2e-ollama-run:
 
 # Stop the Ollama stack
 e2e-ollama-down:
-	docker compose $(OLLAMA_COMPOSE) down -v
+	docker compose $(OLLAMA_COMPOSE) down -v --remove-orphans
 	@echo "Ollama E2E stack stopped."

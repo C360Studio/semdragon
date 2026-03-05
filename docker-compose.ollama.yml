@@ -1,21 +1,13 @@
-# Compose override for Ollama E2E tests.
+# Compose override for local Ollama LLM.
 # Usage: docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
 #
-# Disables mockllm and points the backend at host Ollama (qwen2.5-coder:7b).
-# Requires Ollama running on the host: curl http://localhost:11434/api/tags
+# The base compose mockllm service uses profiles: ["mock"], so it is
+# automatically excluded when this override is used (no --profile mock).
+#
+# Requires Ollama running on the host: ollama serve && ollama pull qwen2.5-coder:7b
 
 services:
-  mockllm:
-    deploy:
-      replicas: 0
-
   backend:
-    depends_on:
-      nats:
-        condition: service_healthy
-      mockllm:
-        condition: service_started
-        required: false
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
       SEMDRAGONS_CONFIG: /etc/semdragons/semdragons-e2e-ollama.json
