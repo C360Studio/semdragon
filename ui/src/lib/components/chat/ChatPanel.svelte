@@ -14,11 +14,56 @@
 	import ContextChip from './ContextChip.svelte';
 	import VerticalResizeHandle from './VerticalResizeHandle.svelte';
 
-	const modes: { id: ChatMode; label: string; placeholder: string; stub: boolean }[] = [
-		{ id: 'converse', label: 'Chat', placeholder: 'Ask the DM anything...', stub: false },
-		{ id: 'quest', label: 'Quest', placeholder: 'Describe the work you want done...', stub: false },
-		{ id: 'plan', label: 'Plan', placeholder: 'What do you want to build?', stub: true },
-		{ id: 'manage', label: 'Manage', placeholder: 'What do you need to do with agents?', stub: true }
+	interface ModeConfig {
+		id: ChatMode;
+		label: string;
+		placeholder: string;
+		stub: boolean;
+		description: string;
+		examples: string[];
+	}
+
+	const modes: ModeConfig[] = [
+		{
+			id: 'converse',
+			label: 'Chat',
+			placeholder: 'Ask the DM anything...',
+			stub: false,
+			description: 'Ask questions about the game world, your agents, quests, or strategies.',
+			examples: [
+				'What agents do I have and what are their levels?',
+				'Which quests are currently active?',
+				'How does the XP system work?'
+			]
+		},
+		{
+			id: 'quest',
+			label: 'Quest',
+			placeholder: 'Describe the work you want done...',
+			stub: false,
+			description: 'Describe work and the DM will draft a quest or quest chain for your agents.',
+			examples: [
+				'Analyze the sales data CSV and produce a summary report',
+				'Review the authentication module for security issues',
+				'Build a data pipeline that cleans and transforms user logs'
+			]
+		},
+		{
+			id: 'plan',
+			label: 'Plan',
+			placeholder: 'What do you want to build?',
+			stub: true,
+			description: 'Break down a project into a structured quest chain with dependencies.',
+			examples: []
+		},
+		{
+			id: 'manage',
+			label: 'Manage',
+			placeholder: 'What do you need to do with agents?',
+			stub: true,
+			description: 'Recruit, promote, or reassign agents across guilds and parties.',
+			examples: []
+		}
 	];
 
 	let currentMode = $derived(modes.find((m) => m.id === chatStore.mode) ?? modes[0]);
@@ -146,10 +191,22 @@
 					/>
 				{:else}
 					<div class="empty-chat">
-						{#if chatStore.mode === 'quest'}
-							Describe the work you want done and the DM will create a quest for you.
-						{:else}
-							Start a conversation with the Dungeon Master.
+						<p class="mode-description">{currentMode.description}</p>
+						{#if currentMode.examples.length > 0}
+							<div class="example-prompts">
+								{#each currentMode.examples as example}
+									<button
+										type="button"
+										class="example-prompt"
+										onclick={() => { input = example; }}
+									>
+										{example}
+									</button>
+								{/each}
+							</div>
+						{/if}
+						{#if isStubMode}
+							<p class="stub-note">Coming soon</p>
 						{/if}
 					</div>
 				{/each}
@@ -333,6 +390,48 @@
 		color: var(--ui-text-tertiary);
 		font-size: 0.75rem;
 		padding: var(--spacing-lg);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.mode-description {
+		margin: 0 0 var(--spacing-md);
+		color: var(--ui-text-secondary);
+		font-size: 0.8rem;
+	}
+
+	.example-prompts {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+		align-items: center;
+	}
+
+	.example-prompt {
+		padding: var(--spacing-xs) var(--spacing-md);
+		border: 1px dashed var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: transparent;
+		color: var(--ui-text-secondary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: all 150ms ease;
+		max-width: 400px;
+		text-align: left;
+	}
+
+	.example-prompt:hover {
+		border-color: var(--ui-interactive-primary);
+		color: var(--ui-text-primary);
+		background: var(--ui-surface-secondary);
+	}
+
+	.stub-note {
+		margin-top: var(--spacing-md);
+		font-style: italic;
+		color: var(--ui-text-tertiary);
+		font-size: 0.75rem;
 	}
 
 	.loading-indicator {

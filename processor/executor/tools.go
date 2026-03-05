@@ -1,16 +1,24 @@
 package executor
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/agentic"
+	"github.com/c360studio/semstreams/graph"
 )
 
 // =============================================================================
@@ -30,6 +38,14 @@ const (
 	maxSearchMatches = 50
 	// maxMatchLineLength is the maximum line length shown in search results.
 	maxMatchLineLength = 200
+	// maxHTTPResponseSize is the maximum bytes to return from an HTTP response.
+	maxHTTPResponseSize = 100000
+	// maxCommandOutput is the maximum bytes to capture from command output.
+	maxCommandOutput = 100000
+	// commandTimeout is the default timeout for shell commands.
+	commandTimeout = 60 * time.Second
+	// httpRequestTimeout is the timeout for HTTP requests.
+	httpRequestTimeout = 30 * time.Second
 )
 
 // ToolHandler executes a tool and returns the result.
@@ -207,20 +223,13 @@ func containsToolName(allowed []string, name string) bool {
 }
 
 // validatePath ensures a path is within the sandbox directory.
-// Returns the cleaned absolute path if valid, or an error if the path escapes the sandbox.
+// Resolves symlinks to prevent symlink-based sandbox escape (TOCTOU).
+// Returns the real absolute path if valid, or an error if the path escapes the sandbox.
 func validatePath(path, sandboxDir string) (string, error) {
-	// Clean and resolve to absolute path
 	cleanPath := filepath.Clean(path)
 
-	// If no sandbox, allow any path (but still clean it)
 	if sandboxDir == "" {
 		return cleanPath, nil
-	}
-
-	// Resolve both paths to absolute
-	absPath, err := filepath.Abs(cleanPath)
-	if err != nil {
-		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
 	absSandbox, err := filepath.Abs(sandboxDir)
@@ -228,18 +237,38 @@ func validatePath(path, sandboxDir string) (string, error) {
 		return "", fmt.Errorf("invalid sandbox directory: %w", err)
 	}
 
-	// Check if path is under sandbox using Rel
-	rel, err := filepath.Rel(absSandbox, absPath)
+	// Resolve symlinks in the sandbox itself.
+	realSandbox, err := filepath.EvalSymlinks(absSandbox)
+	if err != nil {
+		return "", fmt.Errorf("resolve sandbox path: %w", err)
+	}
+
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %w", err)
+	}
+
+	// Resolve symlinks in the target path.
+	// If the file doesn't exist yet (write_file, patch_file), resolve the parent.
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		parentReal, parentErr := filepath.EvalSymlinks(filepath.Dir(absPath))
+		if parentErr != nil {
+			return "", fmt.Errorf("resolve parent path: %w", parentErr)
+		}
+		realPath = filepath.Join(parentReal, filepath.Base(absPath))
+	}
+
+	rel, err := filepath.Rel(realSandbox, realPath)
 	if err != nil {
 		return "", fmt.Errorf("path validation failed: %w", err)
 	}
 
-	// If relative path starts with "..", it escapes the sandbox
 	if strings.HasPrefix(rel, "..") {
 		return "", fmt.Errorf("path escapes sandbox: %s", path)
 	}
 
-	return absPath, nil
+	return realPath, nil
 }
 
 // getSandboxDir extracts the sandbox directory from call arguments.
@@ -271,8 +300,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			},
 		},
 		Handler: readFileHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillResearch, domain.SkillAnalysis},
-		MinTier: domain.TierJourneyman, // Level 6+ can read files
+		MinTier: domain.TierApprentice, // Level 1+ — read-only, safe for all agents
 	})
 
 	r.Register(RegisteredTool{
@@ -315,8 +343,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			},
 		},
 		Handler: listDirectoryHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillResearch, domain.SkillAnalysis},
-		MinTier: domain.TierJourneyman,
+		MinTier: domain.TierApprentice, // Level 1+ — read-only, safe for all agents
 	})
 
 	r.Register(RegisteredTool{
@@ -339,8 +366,106 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			},
 		},
 		Handler: searchTextHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillResearch, domain.SkillAnalysis},
-		MinTier: domain.TierJourneyman,
+		MinTier: domain.TierApprentice, // Level 1+ — read-only, safe for all agents
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "patch_file",
+			Description: "Apply a targeted find-and-replace edit to a file. More precise than write_file for small changes.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "The file path to edit",
+					},
+					"old_text": map[string]any{
+						"type":        "string",
+						"description": "The exact text to find in the file",
+					},
+					"new_text": map[string]any{
+						"type":        "string",
+						"description": "The replacement text",
+					},
+				},
+				"required": []any{"path", "old_text", "new_text"},
+			},
+		},
+		Handler: patchFileHandler,
+		Skills:  []domain.SkillTag{domain.SkillCodeGen},
+		MinTier: domain.TierJourneyman, // Level 6+ — targeted edits require some trust
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "http_request",
+			Description: "Make an HTTP request to a URL. Supports GET and POST methods.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"url": map[string]any{
+						"type":        "string",
+						"description": "The URL to request",
+					},
+					"method": map[string]any{
+						"type":        "string",
+						"description": "HTTP method (GET or POST). Defaults to GET.",
+						"enum":        []any{"GET", "POST"},
+					},
+					"body": map[string]any{
+						"type":        "string",
+						"description": "Request body (for POST requests)",
+					},
+					"content_type": map[string]any{
+						"type":        "string",
+						"description": "Content-Type header value (for POST requests). Defaults to application/json.",
+					},
+				},
+				"required": []any{"url"},
+			},
+		},
+		Handler: httpRequestHandler,
+		MinTier: domain.TierJourneyman, // Level 6+ — network access requires trust
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "run_tests",
+			Description: "Run a test command in the workspace directory and return the output. Use for validating changes.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command": map[string]any{
+						"type":        "string",
+						"description": "The test command to run (e.g. 'go test ./...', 'npm test', 'pytest')",
+					},
+				},
+				"required": []any{"command"},
+			},
+		},
+		Handler: runTestsHandler,
+		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
+		MinTier: domain.TierExpert, // Level 11+ — test execution is a production capability
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "run_command",
+			Description: "Run an arbitrary shell command in the workspace directory. Use responsibly — this has full shell access within the sandbox.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command": map[string]any{
+						"type":        "string",
+						"description": "The shell command to execute",
+					},
+				},
+				"required": []any{"command"},
+			},
+		},
+		Handler: runCommandHandler,
+		MinTier: domain.TierMaster, // Level 16+ — unrestricted shell requires high trust
 	})
 }
 
@@ -645,4 +770,420 @@ func truncateLine(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func patchFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	select {
+	case <-ctx.Done():
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+	default:
+	}
+
+	path, _ := call.Arguments["path"].(string)
+	oldText, _ := call.Arguments["old_text"].(string)
+	newText, _ := call.Arguments["new_text"].(string)
+
+	if path == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
+	}
+	if oldText == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "old_text argument is required"}
+	}
+
+	sandboxDir := getSandboxDir(call)
+	cleanPath, err := validatePath(path, sandboxDir)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
+	}
+
+	content, err := os.ReadFile(cleanPath)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to read file: %v", err)}
+	}
+
+	fileContent := string(content)
+	if !strings.Contains(fileContent, oldText) {
+		return agentic.ToolResult{CallID: call.ID, Error: "old_text not found in file"}
+	}
+
+	count := strings.Count(fileContent, oldText)
+	if count > 1 {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("old_text is ambiguous: found %d occurrences (must be unique)", count)}
+	}
+
+	newContent := strings.Replace(fileContent, oldText, newText, 1)
+
+	if len(newContent) > maxFileWriteSize {
+		return agentic.ToolResult{
+			CallID: call.ID,
+			Error:  fmt.Sprintf("resulting file too large: %d bytes (max %d)", len(newContent), maxFileWriteSize),
+		}
+	}
+
+	if err := os.WriteFile(cleanPath, []byte(newContent), 0644); err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to write file: %v", err)}
+	}
+
+	msg := fmt.Sprintf("Successfully patched %s (%d bytes -> %d bytes)", cleanPath, len(oldText), len(newText))
+	if newText == "" {
+		msg = fmt.Sprintf("Successfully removed %d bytes from %s", len(oldText), cleanPath)
+	}
+
+	return agentic.ToolResult{
+		CallID:  call.ID,
+		Content: msg,
+	}
+}
+
+// isPrivateIP returns true if the IP is in a private, loopback, or link-local range.
+func isPrivateIP(ip net.IP) bool {
+	privateRanges := []string{
+		"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+		"169.254.0.0/16", "127.0.0.0/8",
+		"::1/128", "fc00::/7", "fe80::/10",
+	}
+	for _, cidr := range privateRanges {
+		_, network, _ := net.ParseCIDR(cidr)
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// httpToolClient is a dedicated HTTP client for agent tool requests.
+// It blocks connections to private/loopback IPs (SSRF prevention),
+// limits redirects, and sets a hard timeout.
+var httpToolClient = &http.Client{
+	Timeout: httpRequestTimeout,
+	Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid address: %w", err)
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, fmt.Errorf("DNS lookup failed: %w", err)
+			}
+			for _, ip := range ips {
+				if isPrivateIP(ip.IP) {
+					return nil, fmt.Errorf("requests to private/internal IPs are blocked (resolved %s to %s)", host, ip.IP)
+				}
+			}
+			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, net.JoinHostPort(host, port))
+		},
+	},
+	CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("stopped after 5 redirects")
+		}
+		return nil
+	},
+}
+
+func httpRequestHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	select {
+	case <-ctx.Done():
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+	default:
+	}
+
+	urlStr, _ := call.Arguments["url"].(string)
+	if urlStr == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "url argument is required"}
+	}
+	if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
+		return agentic.ToolResult{CallID: call.ID, Error: "url must start with http:// or https://"}
+	}
+
+	method, _ := call.Arguments["method"].(string)
+	if method == "" {
+		method = "GET"
+	}
+	if method != "GET" && method != "POST" {
+		return agentic.ToolResult{CallID: call.ID, Error: "method must be GET or POST"}
+	}
+
+	var reqBody io.Reader
+	if body, ok := call.Arguments["body"].(string); ok && body != "" {
+		reqBody = strings.NewReader(body)
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, httpRequestTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, method, urlStr, reqBody)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to create request: %v", err)}
+	}
+
+	req.Header.Set("User-Agent", "semdragons-agent/1.0")
+
+	if method == "POST" {
+		contentType, _ := call.Arguments["content_type"].(string)
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	resp, err := httpToolClient.Do(req)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("request failed: %v", err)}
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPResponseSize+1))
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to read response: %v", err)}
+	}
+
+	result := string(body)
+	truncated := ""
+	if len(body) > maxHTTPResponseSize {
+		result = result[:maxHTTPResponseSize]
+		truncated = "\n... (response truncated)"
+	}
+
+	return agentic.ToolResult{
+		CallID:  call.ID,
+		Content: fmt.Sprintf("HTTP %d %s\n\n%s%s", resp.StatusCode, resp.Status, result, truncated),
+	}
+}
+
+// cappedWriter limits how many bytes are buffered in memory.
+// Once the cap is reached, further writes are silently discarded.
+type cappedWriter struct {
+	buf bytes.Buffer
+	max int
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	remaining := w.max - w.buf.Len()
+	if remaining <= 0 {
+		return len(p), nil // discard but report success to avoid breaking the process
+	}
+	if len(p) > remaining {
+		p = p[:remaining]
+	}
+	return w.buf.Write(p)
+}
+
+func (w *cappedWriter) String() string { return w.buf.String() }
+func (w *cappedWriter) Len() int       { return w.buf.Len() }
+
+// runShellCommand is the shared implementation for run_tests and run_command.
+func runShellCommand(ctx context.Context, call agentic.ToolCall, timeout time.Duration) agentic.ToolResult {
+	select {
+	case <-ctx.Done():
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+	default:
+	}
+
+	command, _ := call.Arguments["command"].(string)
+	if command == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "command argument is required"}
+	}
+
+	sandboxDir := getSandboxDir(call)
+	if sandboxDir == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "shell commands require a configured sandbox directory"}
+	}
+
+	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, "sh", "-c", command)
+	cmd.Dir = sandboxDir
+	// Clean environment — only pass through PATH and HOME for basic operation.
+	cmd.Env = []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + os.Getenv("HOME"),
+	}
+
+	stdout := &cappedWriter{max: maxCommandOutput}
+	stderr := &cappedWriter{max: maxCommandOutput}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	err := cmd.Run()
+
+	var result strings.Builder
+	if stdout.Len() > 0 {
+		result.WriteString(stdout.String())
+		if stdout.Len() >= maxCommandOutput {
+			result.WriteString("\n... (stdout truncated)")
+		}
+	}
+	if stderr.Len() > 0 {
+		if result.Len() > 0 {
+			result.WriteString("\n\n--- stderr ---\n")
+		}
+		result.WriteString(stderr.String())
+		if stderr.Len() >= maxCommandOutput {
+			result.WriteString("\n... (stderr truncated)")
+		}
+	}
+
+	if err != nil {
+		if cmdCtx.Err() == context.DeadlineExceeded {
+			return agentic.ToolResult{
+				CallID:  call.ID,
+				Content: result.String(),
+				Error:   fmt.Sprintf("command timed out after %s", timeout),
+			}
+		}
+		return agentic.ToolResult{
+			CallID:  call.ID,
+			Content: result.String(),
+			Error:   fmt.Sprintf("command failed: %v", err),
+		}
+	}
+
+	if result.Len() == 0 {
+		result.WriteString("(no output)")
+	}
+
+	return agentic.ToolResult{
+		CallID:  call.ID,
+		Content: result.String(),
+	}
+}
+
+// allowedTestPrefixes are the commands that run_tests permits.
+// The tool validates that the command starts with one of these.
+var allowedTestPrefixes = []string{
+	"go test", "npm test", "npm run test", "npx vitest", "npx jest",
+	"pytest", "python -m pytest", "make test", "make check",
+	"cargo test", "dotnet test", "mvn test", "gradle test",
+}
+
+func runTestsHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	command, _ := call.Arguments["command"].(string)
+	allowed := false
+	for _, prefix := range allowedTestPrefixes {
+		if strings.HasPrefix(command, prefix) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return agentic.ToolResult{
+			CallID: call.ID,
+			Error:  fmt.Sprintf("run_tests only allows test commands (e.g. 'go test ./...', 'npm test'). Use run_command for general commands."),
+		}
+	}
+	return runShellCommand(ctx, call, commandTimeout)
+}
+
+func runCommandHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	return runShellCommand(ctx, call, commandTimeout)
+}
+
+// =============================================================================
+// GRAPH QUERY TOOL
+// =============================================================================
+
+// EntityQueryFunc queries entities by type and returns a formatted text summary.
+// The limit parameter caps the number of entities returned.
+type EntityQueryFunc func(ctx context.Context, entityType string, limit int) (string, error)
+
+// FormatEntitySummary formats a slice of EntityState into a compact text summary
+// suitable for returning to agents. Shared by both executor and questtools components.
+func FormatEntitySummary(entities []graph.EntityState, entityType string) string {
+	if len(entities) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Found %d %s(s):\n\n", len(entities), entityType))
+	for _, entity := range entities {
+		b.WriteString(fmt.Sprintf("--- %s ---\n", entity.ID))
+		tripleMap := make(map[string]any, len(entity.Triples))
+		for _, t := range entity.Triples {
+			tripleMap[t.Predicate] = t.Object
+		}
+		data, err := json.Marshal(tripleMap)
+		if err != nil {
+			b.WriteString("  (failed to serialize)\n")
+			continue
+		}
+		b.Write(data)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// RegisterGraphQuery adds the graph_query tool to the registry.
+// The queryFn is called at execution time to fetch entity data — typically
+// backed by GraphClient.ListEntitiesByType in the calling component.
+func (r *ToolRegistry) RegisterGraphQuery(queryFn EntityQueryFunc) {
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "graph_query",
+			Description: "Query the entity graph for agents, quests, guilds, parties, or battles. Returns a summary of matching entities.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"entity_type": map[string]any{
+						"type":        "string",
+						"description": "The type of entity to query",
+						"enum":        []any{"quest", "agent", "guild", "party", "battle"},
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Maximum number of entities to return (default 20)",
+					},
+				},
+				"required": []any{"entity_type"},
+			},
+		},
+		Handler: graphQueryHandler(queryFn),
+		MinTier: domain.TierApprentice, // Level 1+ — read-only graph access
+	})
+}
+
+// validGraphEntityTypes are the entity types permitted for graph_query.
+var validGraphEntityTypes = map[string]bool{
+	"quest": true, "agent": true, "guild": true, "party": true, "battle": true,
+}
+
+func graphQueryHandler(queryFn EntityQueryFunc) ToolHandler {
+	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+		select {
+		case <-ctx.Done():
+			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+		default:
+		}
+
+		entityType, _ := call.Arguments["entity_type"].(string)
+		if entityType == "" {
+			return agentic.ToolResult{CallID: call.ID, Error: "entity_type argument is required"}
+		}
+		if !validGraphEntityTypes[entityType] {
+			return agentic.ToolResult{
+				CallID: call.ID,
+				Error:  fmt.Sprintf("invalid entity_type: %q (must be one of quest, agent, guild, party, battle)", entityType),
+			}
+		}
+
+		limit := 20
+		if l, ok := call.Arguments["limit"].(float64); ok && l > 0 {
+			limit = int(l)
+			if limit > 100 {
+				limit = 100
+			}
+		}
+
+		result, err := queryFn(ctx, entityType, limit)
+		if err != nil {
+			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("query failed: %v", err)}
+		}
+
+		if result == "" {
+			return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("No %s entities found", entityType)}
+		}
+
+		return agentic.ToolResult{CallID: call.ID, Content: result}
+	}
 }

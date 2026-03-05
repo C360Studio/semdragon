@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 )
 
 // dmChatContextItem is an entity reference injected as context into the DM chat.
@@ -160,20 +162,108 @@ func (s *Service) writeAvailableOptions(b *strings.Builder) {
 	b.WriteString("**Review levels**: 0=Auto, 1=Standard, 2=Strict, 3=Human\n\n")
 }
 
-// writeWorldState appends the current world state summary.
+// writeWorldState appends the current world state summary including agent roster.
 func (s *Service) writeWorldState(ctx context.Context, b *strings.Builder) {
 	b.WriteString("## Current World State\n\n")
 	ws, err := s.world.WorldState(ctx)
-	if err == nil && ws != nil {
-		b.WriteString(fmt.Sprintf("- Agents: %d total (%d active, %d idle)\n",
-			ws.Stats.ActiveAgents+ws.Stats.IdleAgents+ws.Stats.CooldownAgents,
-			ws.Stats.ActiveAgents, ws.Stats.IdleAgents))
-		b.WriteString(fmt.Sprintf("- Quests: %d open, %d active\n",
-			ws.Stats.OpenQuests, ws.Stats.ActiveQuests))
-		b.WriteString(fmt.Sprintf("- Guilds: %d active\n", ws.Stats.ActiveGuilds))
-		b.WriteString(fmt.Sprintf("- Completion rate: %.0f%%\n", ws.Stats.CompletionRate*100))
-	} else {
-		b.WriteString("World state unavailable.\n")
+	if err != nil || ws == nil {
+		b.WriteString("World state unavailable.\n\n")
+		return
+	}
+
+	b.WriteString(fmt.Sprintf("- Agents: %d total (%d active, %d idle)\n",
+		ws.Stats.ActiveAgents+ws.Stats.IdleAgents+ws.Stats.CooldownAgents,
+		ws.Stats.ActiveAgents, ws.Stats.IdleAgents))
+	b.WriteString(fmt.Sprintf("- Quests: %d open, %d active\n",
+		ws.Stats.OpenQuests, ws.Stats.ActiveQuests))
+	b.WriteString(fmt.Sprintf("- Guilds: %d active\n", ws.Stats.ActiveGuilds))
+	b.WriteString(fmt.Sprintf("- Completion rate: %.0f%%\n\n", ws.Stats.CompletionRate*100))
+
+	writeAgentRoster(b, ws.Agents)
+	writeQuestList(b, ws.Quests)
+}
+
+// writeAgentRoster appends a compact agent roster sorted by level descending.
+func writeAgentRoster(b *strings.Builder, agents []any) {
+	if len(agents) == 0 {
+		return
+	}
+
+	// Type-assert and collect agent summaries.
+	type agentSummary struct {
+		name   string
+		level  int
+		tier   string
+		status string
+		skills []string
+	}
+
+	summaries := make([]agentSummary, 0, len(agents))
+	for _, a := range agents {
+		agent, ok := a.(agentprogression.Agent)
+		if !ok {
+			continue
+		}
+		skills := make([]string, 0, len(agent.SkillProficiencies))
+		for tag := range agent.SkillProficiencies {
+			skills = append(skills, string(tag))
+		}
+		sort.Strings(skills)
+		summaries = append(summaries, agentSummary{
+			name:   agent.Name,
+			level:  agent.Level,
+			tier:   agent.Tier.String(),
+			status: string(agent.Status),
+			skills: skills,
+		})
+	}
+
+	// Sort by level descending.
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].level > summaries[j].level
+	})
+
+	b.WriteString("### Agent Roster\n\n")
+	for _, s := range summaries {
+		b.WriteString(fmt.Sprintf("- **%s** — Level %d %s, %s, skills: %s\n",
+			s.name, s.level, s.tier, s.status, strings.Join(s.skills, ", ")))
+	}
+	b.WriteString("\n")
+}
+
+// writeQuestList appends active quests to the prompt.
+func writeQuestList(b *strings.Builder, quests []any) {
+	if len(quests) == 0 {
+		return
+	}
+
+	// Type-assert quest objects.
+	type questSummary struct {
+		title      string
+		status     string
+		difficulty string
+	}
+
+	var summaries []questSummary
+	for _, q := range quests {
+		quest, ok := q.(domain.Quest)
+		if !ok {
+			continue
+		}
+		summaries = append(summaries, questSummary{
+			title:      quest.Title,
+			status:     string(quest.Status),
+			difficulty: fmt.Sprintf("difficulty %d", quest.Difficulty),
+		})
+	}
+
+	if len(summaries) == 0 {
+		return
+	}
+
+	b.WriteString("### Active Quests\n\n")
+	for _, s := range summaries {
+		b.WriteString(fmt.Sprintf("- **%s** — %s (%s)\n", s.title, s.status, s.difficulty))
 	}
 	b.WriteString("\n")
 }

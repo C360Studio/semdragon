@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semstreams/component"
-
-	"github.com/c360studio/semdragons/domain"
 )
 
 // Component consumes tool.execute.* messages from the AGENT JetStream stream,
@@ -164,6 +164,10 @@ func (c *Component) Start(ctx context.Context) error {
 		c.toolRegistry.RegisterBuiltins()
 	}
 
+	// Register graph_query tool backed by the board KV bucket.
+	gc := semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
+	c.toolRegistry.RegisterGraphQuery(c.buildGraphQueryFunc(gc))
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
@@ -195,4 +199,16 @@ func (c *Component) Stop(_ time.Duration) error {
 	c.running.Store(false)
 	c.logger.Info("questtools component stopped")
 	return nil
+}
+
+// buildGraphQueryFunc returns an EntityQueryFunc that reads entities from the
+// board KV bucket and formats them as a compact text summary for agents.
+func (c *Component) buildGraphQueryFunc(gc *semdragons.GraphClient) executor.EntityQueryFunc {
+	return func(ctx context.Context, entityType string, limit int) (string, error) {
+		entities, err := gc.ListEntitiesByType(ctx, entityType, limit)
+		if err != nil {
+			return "", fmt.Errorf("list %s entities: %w", entityType, err)
+		}
+		return executor.FormatEntitySummary(entities, entityType), nil
+	}
 }

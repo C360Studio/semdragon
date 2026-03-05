@@ -17,6 +17,24 @@
 	let { children }: LayoutProps = $props();
 
 	const SSE_TIMEOUT_MS = 15_000;
+	const TOKEN_POLL_MS = 30_000;
+
+	function pollTokenStats() {
+		api.getTokenStats()
+			.then((ts) => {
+				worldStore.setTokenStats(
+					ts.hourly_usage.total_tokens,
+					ts.hourly_limit,
+					ts.budget_pct,
+					ts.breaker,
+					ts.hourly_cost_usd,
+					ts.total_cost_usd
+				);
+			})
+			.catch(() => {
+				// Token stats unavailable — leave defaults.
+			});
+	}
 
 	onMount(() => {
 		if (browser) {
@@ -40,6 +58,10 @@
 					// Endpoint unavailable — treat as running.
 				});
 
+			// Hydrate token stats and poll periodically.
+			pollTokenStats();
+			const tokenInterval = setInterval(pollTokenStats, TOKEN_POLL_MS);
+
 			// Fallback: clear loading if SSE never completes initial sync
 			const timeout = setTimeout(() => {
 				if (worldStore.loading) {
@@ -50,6 +72,7 @@
 
 			return () => {
 				clearTimeout(timeout);
+				clearInterval(tokenInterval);
 				sseService.disconnect();
 				document.body.classList.remove('hydrated');
 			};

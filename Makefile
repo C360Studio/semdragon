@@ -1,4 +1,5 @@
 .PHONY: build test test-integration test-all lint fmt tidy check schema check-schema openapi check-openapi mockllm \
+       up down up-cloud up-ollama \
        e2e e2e-up e2e-down e2e-run e2e-wait e2e-install e2e-chromium e2e-headed e2e-ui e2e-clean e2e-report \
        e2e-cloud e2e-cloud-up e2e-cloud-run e2e-cloud-down \
        e2e-cloud-tiered e2e-cloud-tiered-up e2e-cloud-tiered-run e2e-cloud-tiered-down \
@@ -93,11 +94,35 @@ check-openapi:
 	@diff /tmp/openapi-check.json ui/static/openapi.json && echo "OpenAPI spec is up to date."
 
 # =============================================================================
-# E2E Testing (Playwright + Docker Compose)
+# Docker Compose — Quick Start
 # =============================================================================
 
 CLOUD_COMPOSE  = -f docker-compose.yml -f docker-compose.cloud.yml
 OLLAMA_COMPOSE = -f docker-compose.yml -f docker-compose.ollama.yml
+
+# Start with mock LLM (no API key needed)
+up:
+	docker compose up -d --build --wait
+	@echo "Stack is up. Dashboard: http://localhost:5173  API: http://localhost:8080"
+
+# Start with cloud LLM (set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env)
+up-cloud:
+	docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@echo "Cloud stack is up. Dashboard: http://localhost:5173  API: http://localhost:8080"
+
+# Start with local Ollama (requires: ollama serve && ollama pull qwen2.5-coder:7b)
+up-ollama:
+	docker compose $(OLLAMA_COMPOSE) up -d --build --wait
+	@echo "Ollama stack is up. Dashboard: http://localhost:5173  API: http://localhost:8080"
+
+# Stop the stack
+down:
+	docker compose down -v
+	@echo "Stack stopped."
+
+# =============================================================================
+# E2E Testing (Playwright + Docker Compose)
+# =============================================================================
 
 # ─── Default E2E (mock LLM) ─────────────────────────────────────────
 

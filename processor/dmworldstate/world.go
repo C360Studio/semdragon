@@ -229,7 +229,6 @@ func (w *WorldStateAggregator) computeWorldStats(
 		switch agent.Status {
 		case domain.AgentIdle:
 			stats.IdleAgents++
-			stats.ActiveAgents++
 		case domain.AgentOnQuest, domain.AgentInBattle:
 			stats.ActiveAgents++
 		case domain.AgentCooldown:

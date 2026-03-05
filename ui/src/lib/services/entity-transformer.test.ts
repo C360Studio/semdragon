@@ -681,9 +681,9 @@ describe('transformParty', () => {
 		const entity = graphEntity(PARTY_KEY, [
 			triple('party.identity.name', 'Alpha Strike'),
 			triple('party.status.state', 'active'),
-			triple('party.assignment.quest', QUEST_KEY),
-			triple('party.membership.lead', AGENT_KEY),
-			triple('party.coordination.strategy', 'balanced'),
+			triple('party.quest', QUEST_KEY),
+			triple('party.lead', AGENT_KEY),
+			triple('party.strategy', 'balanced'),
 			triple('party.lifecycle.formed_at', '2026-01-14T12:00:00Z')
 		]);
 		const party = transformEntity('party', PARTY_KEY, entity) as Party;
@@ -980,10 +980,15 @@ describe('schema contract validation', () => {
 	const BATTLE_IGNORED: Record<string, string> = {
 		'battle.lifecycle.completed_at': 'battle detail view not yet built',
 		'battle.verdict.passed': 'verdict display not yet built',
-		'battle.verdict.score': 'verdict display not yet built',
+		'battle.verdict.quality_score': 'verdict display not yet built',
 		'battle.verdict.xp_awarded': 'verdict display not yet built',
+		'battle.verdict.xp_penalty': 'verdict display not yet built',
 		'battle.verdict.feedback': 'verdict display not yet built',
-		'battle.judge.id': 'judge list not displayed'
+		'battle.criteria.count': 'criteria count not displayed',
+		'battle.judge.0.id': 'judge list not displayed',
+		'battle.judge.0.type': 'judge list not displayed',
+		'battle.judge.1.id': 'judge list not displayed',
+		'battle.judge.1.type': 'judge list not displayed'
 	};
 
 	// -------------------------------------------------------------------------
@@ -993,17 +998,20 @@ describe('schema contract validation', () => {
 	const PARTY_HANDLED: Record<string, string> = {
 		'party.identity.name': 'name',
 		'party.status.state': 'status',
-		'party.assignment.quest': 'quest_id',
-		'party.membership.lead': 'lead',
-		'party.coordination.strategy': 'strategy',
+		'party.quest': 'quest_id',
+		'party.lead': 'lead',
+		'party.strategy': 'strategy',
 		'party.lifecycle.formed_at': 'formed_at'
 	};
 
 	const PARTY_IGNORED: Record<string, string> = {
 		'party.lifecycle.disbanded_at': 'disbanded timestamp not displayed',
 		'party.membership.member': 'member list populated from separate source',
+		'party.membership.count': 'member count derived from member list',
 		'party.member.{id}.role': 'member roles not in party card',
-		'party.subquest.{id}.agent': 'sub-quest assignments not in party card'
+		'party.assignment.{id}': 'sub-quest assignments not in party card',
+		'party.context.count': 'shared context count not displayed',
+		'party.results.count': 'sub-results count not displayed'
 	};
 
 	// -------------------------------------------------------------------------

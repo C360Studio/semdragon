@@ -246,7 +246,8 @@
         "quest_loops_bucket": "QUEST_LOOPS",
         "max_iterations": 20,
         "enable_builtins": true,
-        "default_role": "general"
+        "default_role": "general",
+        "sandbox_dir": "/workspace"
       }
     },
     "questtools": {
@@ -260,7 +261,8 @@
         "stream_name": "AGENT",
         "quest_loops_bucket": "QUEST_LOOPS",
         "timeout": "60s",
-        "enable_builtins": true
+        "enable_builtins": true,
+        "sandbox_dir": "/workspace"
       }
     },
     "partycoord": {

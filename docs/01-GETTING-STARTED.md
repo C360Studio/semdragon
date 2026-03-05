@@ -13,18 +13,17 @@ revive              go install github.com/mgechev/revive@latest
 goimports           go install golang.org/x/tools/cmd/goimports@latest
 ```
 
-For LLM-powered quest execution (enabled by default), you also need an LLM provider:
+For LLM-powered quest execution, you need an LLM provider. Pick one:
 
 ```text
-Ollama (default)    ollama serve && ollama pull qwen2.5-coder:7b
-  — or —
-Anthropic API key   export ANTHROPIC_API_KEY=sk-ant-...
-  — or —
-OpenAI API key      export OPENAI_API_KEY=sk-...
+Gemini API key      export GEMINI_API_KEY=...       (fast + cheap)
+Anthropic API key   export ANTHROPIC_API_KEY=...
+OpenAI API key      export OPENAI_API_KEY=...
+Ollama (local)      ollama serve && ollama pull qwen2.5-coder:7b
 ```
 
-The default config uses a local Ollama endpoint. See [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) for
-switching providers.
+Without a provider, `docker compose up` starts with a mock LLM that returns canned responses —
+useful for exploring the UI but not for real quest execution.
 
 **Cost warning:** Every quest execution calls an LLM, and boss battle reviews call a second
 LLM-as-judge pass. A busy board with multiple agents claiming quests will burn through tokens
@@ -39,28 +38,92 @@ The root `docker-compose.yml` starts four containers:
 | Service | Image | Ports | Purpose |
 |---------|-------|-------|---------|
 | nats | nats:2.12-alpine | 4222, 8222 | NATS JetStream (message broker + KV) |
+| mockllm | Go mock server | 9090 | Deterministic LLM responses for testing |
 | backend | Multi-stage Go build | 8080 | REST API + processors |
 | ui | Node 22 dev server | 5173 | SvelteKit dashboard |
 
 ```bash
-docker compose up -d
-
-# Verify
-docker compose ps
-curl http://localhost:8080/health
+make up              # mock LLM — explore the UI, no API key needed
 open http://localhost:5173
 ```
 
-Environment variables the compose file reads:
+To use a real LLM provider, copy `.env.example` to `.env` and set your API key:
 
-- `SEED_E2E` — set to `true` to pre-populate agents, quests, and guilds for testing
-- `SEMDRAGONS_API_KEY` — auth key for write endpoints (empty = dev mode, no auth required)
+```bash
+cp .env.example .env
+# Edit .env — uncomment and set one provider key (Gemini, Anthropic, or OpenAI)
+
+make up-cloud        # uses your .env key, Gemini by default
+```
+
+For local Ollama:
+
+```bash
+ollama serve && ollama pull qwen2.5-coder:7b
+make up-ollama
+```
+
+To switch cloud providers, set `SEMDRAGONS_CONFIG` before starting:
+
+```bash
+# Anthropic
+SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-e2e-anthropic.json make up-cloud
+
+# OpenAI
+SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-e2e-openai.json make up-cloud
+```
+
+Stop everything with `make down`.
+
+Environment variables (set in `.env` or inline):
+
+| Variable | Purpose |
+|----------|---------|
+| `GEMINI_API_KEY` | Google Gemini API key |
+| `ANTHROPIC_API_KEY` | Anthropic Claude API key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `WORKSPACE` | Directory mounted into the backend for agent file operations |
+| `SEED_E2E` | Set to `true` to pre-populate agents, quests, and guilds |
+| `SEMDRAGONS_API_KEY` | Auth key for write endpoints (empty = no auth) |
+
+### Agent Workspace
+
+Agents can read, write, list, and search files during quest execution. By default these
+operations target an empty `.workspace/` directory. To give agents access to your project:
+
+```bash
+WORKSPACE=./my-project make up-cloud
+```
+
+The workspace is mounted at `/workspace` inside the container. Both `questbridge` and
+`questtools` enforce a sandbox — agents cannot access anything outside the mounted directory.
+Tool access is also gated by trust tier:
+
+| Tool | Min Tier | Level |
+|------|----------|-------|
+| `read_file` | Apprentice | 1+ |
+| `list_directory` | Apprentice | 1+ |
+| `search_text` | Apprentice | 1+ |
+| `graph_query` | Apprentice | 1+ |
+| `patch_file` | Journeyman | 6+ |
+| `http_request` | Journeyman | 6+ |
+| `write_file` | Expert | 11+ |
+| `run_tests` | Expert | 11+ |
+| `run_command` | Master | 16+ |
+
+**Scope your workspace.** Mount a project directory, not your home folder or root filesystem.
+Agents operate autonomously and a misconfigured quest could modify or delete files. The
+sandbox prevents escape, but it cannot prevent an agent from overwriting files *within* the
+mounted directory.
 
 After startup:
 
 - Dashboard: `http://localhost:5173`
 - REST API: `http://localhost:8080/api/game/`
 - NATS monitor: `http://localhost:8222`
+
+See [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) for advanced configuration including
+multi-model setups, capability routing, and fallback chains.
 
 ## Running Services Individually
 

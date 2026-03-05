@@ -44,6 +44,8 @@ services:
       SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
     ports:
       - "8080:8080"
+    volumes:
+      - ${WORKSPACE:-./.workspace}:/workspace
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]

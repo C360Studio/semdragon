@@ -152,7 +152,7 @@ func TestComputeWorldStats_AllEmpty(t *testing.T) {
 // AGENT STATUS BRANCHING
 // =============================================================================
 
-func TestComputeWorldStats_IdleAgent_CountsActiveAndIdle(t *testing.T) {
+func TestComputeWorldStats_IdleAgent_CountsIdleNotActive(t *testing.T) {
 	agg := newTestAggregator()
 	agents := []*agentprogression.Agent{
 		{ID: "a1", Status: domain.AgentIdle},
@@ -160,9 +160,9 @@ func TestComputeWorldStats_IdleAgent_CountsActiveAndIdle(t *testing.T) {
 
 	stats := agg.computeWorldStats(agents, nil, nil, nil)
 
-	// Idle counts toward both ActiveAgents and IdleAgents.
-	if stats.ActiveAgents != 1 {
-		t.Errorf("ActiveAgents = %d, want 1", stats.ActiveAgents)
+	// Idle agents are NOT active — they're available for work but not doing any.
+	if stats.ActiveAgents != 0 {
+		t.Errorf("ActiveAgents = %d, want 0 (idle is not active)", stats.ActiveAgents)
 	}
 	if stats.IdleAgents != 1 {
 		t.Errorf("IdleAgents = %d, want 1", stats.IdleAgents)
@@ -250,9 +250,9 @@ func TestComputeWorldStats_NilAgentInSlice_IsSkipped(t *testing.T) {
 
 	stats := agg.computeWorldStats(agents, nil, nil, nil)
 
-	// Only the non-nil idle agent should be counted.
-	if stats.ActiveAgents != 1 {
-		t.Errorf("ActiveAgents = %d, want 1 (nil agents skipped)", stats.ActiveAgents)
+	// Only the non-nil idle agent should be counted (idle is not active).
+	if stats.ActiveAgents != 0 {
+		t.Errorf("ActiveAgents = %d, want 0 (idle is not active)", stats.ActiveAgents)
 	}
 	if stats.IdleAgents != 1 {
 		t.Errorf("IdleAgents = %d, want 1 (nil agents skipped)", stats.IdleAgents)
@@ -272,9 +272,9 @@ func TestComputeWorldStats_MixedAgentStatuses(t *testing.T) {
 
 	stats := agg.computeWorldStats(agents, nil, nil, nil)
 
-	// idle(2) + on_quest(1) + in_battle(1) = 4 active
-	if stats.ActiveAgents != 4 {
-		t.Errorf("ActiveAgents = %d, want 4", stats.ActiveAgents)
+	// on_quest(1) + in_battle(1) = 2 active (idle is not active)
+	if stats.ActiveAgents != 2 {
+		t.Errorf("ActiveAgents = %d, want 2", stats.ActiveAgents)
 	}
 	if stats.IdleAgents != 2 {
 		t.Errorf("IdleAgents = %d, want 2", stats.IdleAgents)
@@ -577,9 +577,9 @@ func TestComputeWorldStats_FullScenario(t *testing.T) {
 
 	stats := agg.computeWorldStats(agents, quests, parties, guilds)
 
-	// Agent counts: idle(2)+on_quest(1)+in_battle(1) = 4 active.
-	if stats.ActiveAgents != 4 {
-		t.Errorf("ActiveAgents = %d, want 4", stats.ActiveAgents)
+	// Agent counts: on_quest(1)+in_battle(1) = 2 active (idle is not active).
+	if stats.ActiveAgents != 2 {
+		t.Errorf("ActiveAgents = %d, want 2", stats.ActiveAgents)
 	}
 	if stats.IdleAgents != 2 {
 		t.Errorf("IdleAgents = %d, want 2", stats.IdleAgents)

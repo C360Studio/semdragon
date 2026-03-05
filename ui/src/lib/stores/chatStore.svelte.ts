@@ -131,7 +131,7 @@ function clearLocalStorage() {
 
 let messages = $state<ChatMessage[]>([]);
 let contextItems = $state<ChatContextItem[]>([]);
-let open = $state(false);
+let open = $state(true);
 let height = $state(250);
 let loading = $state(false);
 let error = $state<string | null>(null);

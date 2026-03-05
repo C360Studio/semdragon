@@ -42,3 +42,6 @@ go.work.sum
 
 # Test runner artifacts
 test-results/
+
+# Default agent workspace (user-mounted directory)
+.workspace/

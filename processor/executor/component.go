@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -243,6 +244,9 @@ func (c *Component) Start(ctx context.Context) error {
 		c.toolRegistry.RegisterBuiltins()
 	}
 
+	// Register graph_query tool backed by the board KV bucket.
+	c.toolRegistry.RegisterGraphQuery(c.buildGraphQueryFunc())
+
 	// Create prompt assembler if domain catalog is configured
 	opts := []Option{
 		WithMaxTurns(c.config.MaxTurns),
@@ -295,6 +299,18 @@ func (c *Component) Stop(_ time.Duration) error {
 func (c *Component) createGraphClient(_ context.Context) error {
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 	return nil
+}
+
+// buildGraphQueryFunc returns an EntityQueryFunc that reads entities from the
+// board KV bucket and formats them as a compact text summary for agents.
+func (c *Component) buildGraphQueryFunc() EntityQueryFunc {
+	return func(ctx context.Context, entityType string, limit int) (string, error) {
+		entities, err := c.graph.ListEntitiesByType(ctx, entityType, limit)
+		if err != nil {
+			return "", fmt.Errorf("list %s entities: %w", entityType, err)
+		}
+		return FormatEntitySummary(entities, entityType), nil
+	}
 }
 
 // =============================================================================
