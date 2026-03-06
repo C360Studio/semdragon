@@ -37,12 +37,23 @@ export interface ChatContextItem {
 	label: string;
 }
 
+export interface QuestHintsBrief {
+	party_required?: boolean;
+	min_party_size?: number;
+	require_human_review?: boolean;
+	review_level?: number;
+	prefer_guild?: string;
+	budget?: number;
+	deadline?: string;
+}
+
 export interface QuestBrief {
 	title: string;
 	description?: string;
 	difficulty?: QuestDifficulty;
 	skills?: SkillTag[];
 	acceptance?: string[];
+	hints?: QuestHintsBrief;
 }
 
 export interface QuestChainBrief {
@@ -56,6 +67,7 @@ export interface QuestChainEntry {
 	skills?: SkillTag[];
 	acceptance?: string[];
 	depends_on?: number[];
+	hints?: QuestHintsBrief;
 }
 
 // =============================================================================
@@ -297,8 +309,13 @@ async function postQuest(brief: QuestBrief): Promise<Quest | null> {
 		const quest = await createQuest(brief.title, {
 			suggested_difficulty: brief.difficulty,
 			suggested_skills: brief.skills,
-			require_human_review: false,
-			budget: 0
+			require_human_review: brief.hints?.require_human_review ?? false,
+			review_level: brief.hints?.review_level,
+			party_required: brief.hints?.party_required ?? false,
+			min_party_size: brief.hints?.min_party_size,
+			budget: brief.hints?.budget ?? 0,
+			prefer_guild: brief.hints?.prefer_guild,
+			deadline: brief.hints?.deadline
 		});
 		// Optimistic update — show quest immediately instead of waiting for SSE
 		worldStore.upsertQuest(quest);

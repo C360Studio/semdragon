@@ -307,8 +307,26 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 				quest.Constraints.RequireReview = true
 				quest.Constraints.ReviewLevel = domain.ReviewStandard
 			}
+			if entry.Hints.ReviewLevel != nil {
+				quest.Constraints.ReviewLevel = *entry.Hints.ReviewLevel
+			}
 			if entry.Hints.PreferGuild != nil {
 				quest.GuildPriority = entry.Hints.PreferGuild
+			}
+			if entry.Hints.SuggestedDifficulty != nil {
+				quest.Difficulty = *entry.Hints.SuggestedDifficulty
+				quest.BaseXP = domain.DefaultXPForDifficulty(quest.Difficulty)
+				quest.MinTier = domain.TierFromDifficulty(quest.Difficulty)
+			}
+			for _, skill := range entry.Hints.SuggestedSkills {
+				quest.RequiredSkills = append(quest.RequiredSkills, skill)
+			}
+			if entry.Hints.PartyRequired {
+				quest.PartyRequired = true
+				quest.MinPartySize = 2 // default
+				if entry.Hints.MinPartySize != nil && *entry.Hints.MinPartySize >= 2 && *entry.Hints.MinPartySize <= 5 {
+					quest.MinPartySize = *entry.Hints.MinPartySize
+				}
 			}
 		}
 
@@ -1173,8 +1191,17 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 	sessionID, turnSpan := s.getOrCreateChatTrace(req.SessionID)
 	ctx = natsclient.ContextWithTrace(ctx, turnSpan)
 
-	// Build system prompt with world state, context, and mode
-	systemPrompt := s.buildDMSystemPrompt(ctx, chatMode, req.Context)
+	// Build session recap for multi-turn continuity
+	var sessionRecap string
+	if sessionID != "" && s.dmSessions != nil {
+		session, err := s.dmSessions.GetSession(ctx, sessionID)
+		if err == nil && session != nil && len(session.Turns) > 0 {
+			sessionRecap = buildSessionRecap(session)
+		}
+	}
+
+	// Build system prompt with world state, context, mode, and session recap
+	systemPrompt := s.buildDMSystemPrompt(ctx, chatMode, req.Context, sessionRecap)
 
 	// Build conversation: history + new user message
 	messages := make([]ChatMessage, 0, len(req.History)+1)

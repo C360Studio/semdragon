@@ -334,8 +334,11 @@ type QuestHints struct {
 	SuggestedSkills     []SkillTag       `json:"suggested_skills,omitempty"`
 	PreferGuild         *GuildID         `json:"prefer_guild,omitempty"`
 	RequireHumanReview  bool             `json:"require_human_review"`
+	ReviewLevel         *ReviewLevel     `json:"review_level,omitempty"`
 	Budget              float64          `json:"budget"`
 	Deadline            string           `json:"deadline,omitempty"`
+	PartyRequired       bool             `json:"party_required"`
+	MinPartySize        *int             `json:"min_party_size,omitempty"`
 }
 
 // =============================================================================

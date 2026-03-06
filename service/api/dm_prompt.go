@@ -9,6 +9,7 @@ import (
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/partycoord"
 )
 
 // dmChatContextItem is an entity reference injected as context into the DM chat.
@@ -23,7 +24,7 @@ type dmChatContextItem struct {
 //   - quest: quest/chain creation with JSON schemas
 //
 // All modes share the DM persona, world state summary, and injected context.
-func (s *Service) buildDMSystemPrompt(ctx context.Context, mode domain.ChatMode, contextItems []dmChatContextItem) string {
+func (s *Service) buildDMSystemPrompt(ctx context.Context, mode domain.ChatMode, contextItems []dmChatContextItem, sessionRecap string) string {
 	var b strings.Builder
 
 	// DM persona (shared, mode-neutral)
@@ -74,6 +75,37 @@ Do NOT produce JSON blocks or structured output. Answer in natural language only
 		b.WriteString("\n")
 	}
 
+	// Session recap for multi-turn continuity
+	if sessionRecap != "" {
+		b.WriteString("## Session Recap\n\n")
+		b.WriteString(sessionRecap)
+		b.WriteString("\n\n")
+	}
+
+	return b.String()
+}
+
+// buildSessionRecap generates a compact summary of prior conversation turns.
+// Injected into the system prompt to help the LLM maintain continuity across turns.
+func buildSessionRecap(session *DMChatSession) string {
+	if len(session.Turns) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("This is a continuing conversation. Key points so far:\n")
+
+	// Summarize the last 3 turns (most relevant context)
+	start := len(session.Turns) - 3
+	if start < 0 {
+		start = 0
+	}
+	for _, turn := range session.Turns[start:] {
+		userMsg := turn.UserMessage
+		if len(userMsg) > 100 {
+			userMsg = userMsg[:100] + "..."
+		}
+		b.WriteString(fmt.Sprintf("- User said: %s\n", userMsg))
+	}
 	return b.String()
 }
 
@@ -115,6 +147,28 @@ For MULTIPLE related quests (a chain), include a JSON block tagged as quest_chai
 }
 ` + "```" + `
 
+Quests can include an optional "hints" object for advanced configuration:
+` + "```json:quest_brief" + `
+{
+  "title": "Build end-to-end data pipeline",
+  "description": "Research, transform, and validate the dataset",
+  "difficulty": 4,
+  "skills": ["research", "data_transformation", "code_generation"],
+  "acceptance": ["Pipeline runs successfully", "Output validated"],
+  "hints": {
+    "party_required": true,
+    "min_party_size": 3,
+    "review_level": 2
+  }
+}
+` + "```" + `
+The "hints" object is optional — omit it for simple quests. Available hint fields:
+- "party_required": true/false — whether the quest needs a party (team) of agents
+- "min_party_size": 2-5 — minimum agents in the party (default 2)
+- "review_level": 0-3 — review strictness (0=Auto, 1=Standard, 2=Strict, 3=Human)
+- "require_human_review": true/false — shorthand for review_level 3
+- "prefer_guild": "guild_id" — route to a specific guild
+
 IMPORTANT: When choosing skills for a quest, prefer skills that match agents currently
 available in the roster below. If no agents have the exact skill, pick the closest match
 from the roster's skill sets. This ensures agents can actually claim and work on the quest.
@@ -151,6 +205,12 @@ func (s *Service) writeAvailableOptions(b *strings.Builder) {
 	b.WriteString("\n\n")
 
 	b.WriteString("**Review levels**: 0=Auto, 1=Standard, 2=Strict, 3=Human\n\n")
+
+	b.WriteString("**Party quests**: Set `hints.party_required: true` when the quest:\n")
+	b.WriteString("- Requires 3+ distinct skills that no single agent covers\n")
+	b.WriteString("- Is Epic (4) or Legendary (5) difficulty\n")
+	b.WriteString("- Involves parallel sub-tasks best handled by a team\n")
+	b.WriteString("Party size range: 2-5. Default: 2.\n\n")
 }
 
 // writeWorldState appends the current world state summary including agent roster.
@@ -170,8 +230,11 @@ func (s *Service) writeWorldState(ctx context.Context, b *strings.Builder) {
 	b.WriteString(fmt.Sprintf("- Guilds: %d active\n", ws.Stats.ActiveGuilds))
 	b.WriteString(fmt.Sprintf("- Completion rate: %.0f%%\n\n", ws.Stats.CompletionRate*100))
 
+	b.WriteString(fmt.Sprintf("- Parties: %d active\n\n", ws.Stats.ActiveParties))
+
 	writeAgentRoster(b, ws.Agents)
 	writeQuestList(b, ws.Quests)
+	writePartyList(b, ws.Parties)
 }
 
 // writeAgentRoster appends a compact agent roster sorted by level descending.
@@ -255,6 +318,34 @@ func writeQuestList(b *strings.Builder, quests []any) {
 	b.WriteString("### Active Quests\n\n")
 	for _, s := range summaries {
 		b.WriteString(fmt.Sprintf("- **%s** — %s (%s)\n", s.title, s.status, s.difficulty))
+	}
+	b.WriteString("\n")
+}
+
+// writePartyList appends active parties to the prompt.
+func writePartyList(b *strings.Builder, parties []any) {
+	if len(parties) == 0 {
+		return
+	}
+
+	var lines []string
+	for _, p := range parties {
+		party, ok := p.(partycoord.Party)
+		if !ok {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- **%s** — %d members, quest: %s, status: %s",
+			party.Name, len(party.Members), party.QuestID, party.Status))
+	}
+
+	if len(lines) == 0 {
+		return
+	}
+
+	b.WriteString("### Active Parties\n\n")
+	for _, line := range lines {
+		b.WriteString(line)
+		b.WriteString("\n")
 	}
 	b.WriteString("\n")
 }

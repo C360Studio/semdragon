@@ -164,7 +164,10 @@ function transformAgent(key: string, entity: GraphEntity): Agent {
 		parties_led: 0,
 		quests_decomposed: 0,
 		peer_review_avg: num(m.get('agent.stats.peer_review_avg')),
-		peer_review_count: num(m.get('agent.stats.peer_review_count'))
+		peer_review_count: num(m.get('agent.stats.peer_review_count')),
+		peer_review_q1_avg: 0,
+		peer_review_q2_avg: 0,
+		peer_review_q3_avg: 0
 	};
 
 	return {

@@ -963,7 +963,7 @@
     "/game/dm/chat": {
       "post": {
         "summary": "DM chat",
-        "description": "Send a natural language message to the Dungeon Master. Supports four modes: 'converse' (default, Q\u0026A), 'quest' (create quests/chains), 'plan' (stub), 'manage' (stub). Only quest mode produces structured quest_brief/quest_chain output. Sessions persist across turns.",
+        "description": "Send a natural language message to the Dungeon Master. Supports two modes: 'converse' (default, Q\u0026A) and 'quest' (create quests/chains with structured output). Sessions persist across turns.",
         "tags": [
           "DM"
         ],
@@ -1060,6 +1060,20 @@
           },
           "404": {
             "description": "Session not found"
+          }
+        }
+      }
+    },
+    "/game/events": {
+      "get": {
+        "summary": "Real-time entity updates",
+        "description": "Server-Sent Events stream of entity state changes from the board KV bucket. Sends `event: connected` on connect, then `event: kv_change` for each entity create/update/delete. Includes `initial_sync_complete` operation after all existing entities are sent. Auto-reconnects via SSE `retry` directive.",
+        "tags": [
+          "Observability"
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream of KV change events"
           }
         }
       }
@@ -2518,6 +2532,15 @@
               "peer_review_count": {
                 "type": "integer"
               },
+              "peer_review_q1_avg": {
+                "type": "number"
+              },
+              "peer_review_q2_avg": {
+                "type": "number"
+              },
+              "peer_review_q3_avg": {
+                "type": "number"
+              },
               "quests_completed": {
                 "type": "integer"
               },
@@ -2546,6 +2569,9 @@
               "parties_led",
               "quests_decomposed",
               "peer_review_avg",
+              "peer_review_q1_avg",
+              "peer_review_q2_avg",
+              "peer_review_q3_avg",
               "peer_review_count"
             ],
             "type": "object"
@@ -2744,6 +2770,15 @@
           "peer_review_count": {
             "type": "integer"
           },
+          "peer_review_q1_avg": {
+            "type": "number"
+          },
+          "peer_review_q2_avg": {
+            "type": "number"
+          },
+          "peer_review_q3_avg": {
+            "type": "number"
+          },
           "quests_completed": {
             "type": "integer"
           },
@@ -2772,6 +2807,9 @@
           "parties_led",
           "quests_decomposed",
           "peer_review_avg",
+          "peer_review_q1_avg",
+          "peer_review_q2_avg",
+          "peer_review_q3_avg",
           "peer_review_count"
         ],
         "type": "object"
@@ -3303,6 +3341,15 @@
                   "peer_review_count": {
                     "type": "integer"
                   },
+                  "peer_review_q1_avg": {
+                    "type": "number"
+                  },
+                  "peer_review_q2_avg": {
+                    "type": "number"
+                  },
+                  "peer_review_q3_avg": {
+                    "type": "number"
+                  },
                   "quests_completed": {
                     "type": "integer"
                   },
@@ -3331,6 +3378,9 @@
                   "parties_led",
                   "quests_decomposed",
                   "peer_review_avg",
+                  "peer_review_q1_avg",
+                  "peer_review_q2_avg",
+                  "peer_review_q3_avg",
                   "peer_review_count"
                 ],
                 "type": "object"
@@ -3889,7 +3939,7 @@
             "type": "string"
           },
           "mode": {
-            "description": "Chat mode: converse, quest, plan, manage",
+            "description": "Chat mode: converse or quest",
             "type": "string"
           },
           "session_id": {
@@ -3951,6 +4001,19 @@
                           "deadline": {
                             "type": "string"
                           },
+                          "min_party_size": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "party_required": {
+                            "type": "boolean"
+                          },
                           "prefer_guild": {
                             "anyOf": [
                               {
@@ -3963,6 +4026,16 @@
                           },
                           "require_human_review": {
                             "type": "boolean"
+                          },
+                          "review_level": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "suggested_difficulty": {
                             "anyOf": [
@@ -3983,7 +4056,8 @@
                         },
                         "required": [
                           "require_human_review",
-                          "budget"
+                          "budget",
+                          "party_required"
                         ],
                         "type": "object"
                       },
@@ -4055,6 +4129,19 @@
                                 "deadline": {
                                   "type": "string"
                                 },
+                                "min_party_size": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "party_required": {
+                                  "type": "boolean"
+                                },
                                 "prefer_guild": {
                                   "anyOf": [
                                     {
@@ -4067,6 +4154,16 @@
                                 },
                                 "require_human_review": {
                                   "type": "boolean"
+                                },
+                                "review_level": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
                                 },
                                 "suggested_difficulty": {
                                   "anyOf": [
@@ -4087,7 +4184,8 @@
                               },
                               "required": [
                                 "require_human_review",
-                                "budget"
+                                "budget",
+                                "party_required"
                               ],
                               "type": "object"
                             },
@@ -5626,9 +5724,6 @@
           "title": {
             "type": "string"
           },
-          "trajectory_id": {
-            "type": "string"
-          },
           "verdict": {
             "anyOf": [
               {
@@ -5688,8 +5783,7 @@
           "posted_at",
           "attempts",
           "max_attempts",
-          "escalated",
-          "trajectory_id"
+          "escalated"
         ],
         "type": "object"
       },
@@ -5730,6 +5824,19 @@
                   "deadline": {
                     "type": "string"
                   },
+                  "min_party_size": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "party_required": {
+                    "type": "boolean"
+                  },
                   "prefer_guild": {
                     "anyOf": [
                       {
@@ -5742,6 +5849,16 @@
                   },
                   "require_human_review": {
                     "type": "boolean"
+                  },
+                  "review_level": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "suggested_difficulty": {
                     "anyOf": [
@@ -5762,7 +5879,8 @@
                 },
                 "required": [
                   "require_human_review",
-                  "budget"
+                  "budget",
+                  "party_required"
                 ],
                 "type": "object"
               },
@@ -5826,6 +5944,19 @@
                         "deadline": {
                           "type": "string"
                         },
+                        "min_party_size": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "party_required": {
+                          "type": "boolean"
+                        },
                         "prefer_guild": {
                           "anyOf": [
                             {
@@ -5838,6 +5969,16 @@
                         },
                         "require_human_review": {
                           "type": "boolean"
+                        },
+                        "review_level": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "suggested_difficulty": {
                           "anyOf": [
@@ -5858,7 +5999,8 @@
                       },
                       "required": [
                         "require_human_review",
-                        "budget"
+                        "budget",
+                        "party_required"
                       ],
                       "type": "object"
                     },
@@ -5927,6 +6069,19 @@
                   "deadline": {
                     "type": "string"
                   },
+                  "min_party_size": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "party_required": {
+                    "type": "boolean"
+                  },
                   "prefer_guild": {
                     "anyOf": [
                       {
@@ -5939,6 +6094,16 @@
                   },
                   "require_human_review": {
                     "type": "boolean"
+                  },
+                  "review_level": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "suggested_difficulty": {
                     "anyOf": [
@@ -5959,7 +6124,8 @@
                 },
                 "required": [
                   "require_human_review",
-                  "budget"
+                  "budget",
+                  "party_required"
                 ],
                 "type": "object"
               },
@@ -6024,6 +6190,19 @@
           "deadline": {
             "type": "string"
           },
+          "min_party_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "party_required": {
+            "type": "boolean"
+          },
           "prefer_guild": {
             "anyOf": [
               {
@@ -6036,6 +6215,16 @@
           },
           "require_human_review": {
             "type": "boolean"
+          },
+          "review_level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "suggested_difficulty": {
             "anyOf": [
@@ -6056,7 +6245,8 @@
         },
         "required": [
           "require_human_review",
-          "budget"
+          "budget",
+          "party_required"
         ],
         "type": "object"
       },

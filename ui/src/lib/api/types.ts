@@ -535,6 +535,16 @@ export interface TraceInfo {
 
 export type ChatMode = 'converse' | 'quest';
 
+export interface ChatResponseHints {
+	party_required?: boolean;
+	min_party_size?: number;
+	require_human_review?: boolean;
+	review_level?: number;
+	prefer_guild?: string;
+	budget?: number;
+	deadline?: string;
+}
+
 export interface ChatResponse {
 	message: string;
 	mode: ChatMode;
@@ -544,6 +554,7 @@ export interface ChatResponse {
 		difficulty?: number;
 		skills?: string[];
 		acceptance?: string[];
+		hints?: ChatResponseHints;
 	};
 	quest_chain?: {
 		quests: Array<{
@@ -553,6 +564,7 @@ export interface ChatResponse {
 			skills?: string[];
 			acceptance?: string[];
 			depends_on?: number[];
+			hints?: ChatResponseHints;
 		}>;
 	};
 	session_id?: string;

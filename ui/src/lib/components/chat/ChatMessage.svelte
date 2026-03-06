@@ -51,6 +51,11 @@
 						{QuestDifficultyNames[questBrief.difficulty] ?? `Difficulty ${questBrief.difficulty}`}
 					</span>
 				{/if}
+				{#if questBrief.hints?.party_required}
+					<span class="meta-tag party" data-testid="party-badge">
+						Party ({questBrief.hints?.min_party_size ?? 2}+)
+					</span>
+				{/if}
 				{#if questBrief.skills?.length}
 					{#each questBrief.skills as skill}
 						<span class="meta-tag skill">{skill}</span>
@@ -187,6 +192,11 @@
 	.meta-tag.skill {
 		background: var(--quest-posted-container, #e3f2fd);
 		color: var(--quest-posted, #1976d2);
+	}
+
+	.meta-tag.party {
+		background: var(--quest-in_progress-container, #fff3e0);
+		color: var(--quest-in_progress, #e65100);
 	}
 
 	.preview-acceptance {

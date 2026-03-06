@@ -964,7 +964,7 @@ export interface paths {
         put?: never;
         /**
          * Recruit agent
-         * @description Recruits a new agent into the game. Agents start at level 1 (Apprentice tier).
+         * @description Recruits a new agent into the game. Agents start at level 1 (Apprentice tier) unless an initial level is specified.
          */
         post: {
             parameters: {
@@ -1389,6 +1389,227 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/game/board/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause the board
+         * @description Pauses autonomous processing. In-progress agentic loops complete gracefully. Manual operations continue. Idempotent — pausing an already-paused board returns the current state.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Board paused */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BoardStatusResponse"];
+                    };
+                };
+                /** @description Board controller unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/board/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume the board
+         * @description Resumes autonomous processing. Triggers reconciliation for any quests that transitioned to in_progress while paused. Idempotent.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Board resumed */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BoardStatusResponse"];
+                    };
+                };
+                /** @description Board controller unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/board/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get board status
+         * @description Returns the current board play/pause status. When paused, autonomous actions (heartbeats, quest dispatch, boid suggestions) are suspended while manual operations continue.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Board status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BoardStatusResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/board/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get token usage stats
+         * @description Returns current token usage counters, hourly limit, budget percentage, and circuit breaker state. The breaker field is 'ok', 'warning' (>=80%), or 'tripped' (>=100%).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Token usage statistics */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TokenStats"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/board/tokens/budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set token budget
+         * @description Updates the global hourly token limit. Set to 0 for unlimited. Persisted to KV for restart recovery.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description New hourly token limit */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetTokenBudgetRequest"];
+                };
+            };
+            responses: {
+                /** @description Budget updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TokenStats"];
+                    };
+                };
+                /** @description Invalid limit value */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/game/dm/chat": {
         parameters: {
             query?: never;
@@ -1400,7 +1621,7 @@ export interface paths {
         put?: never;
         /**
          * DM chat
-         * @description Send a natural language message to the Dungeon Master. The DM can create quests, recruit agents, and manage the game world based on the conversation. Sessions persist across turns.
+         * @description Send a natural language message to the Dungeon Master. Supports two modes: 'converse' (default, Q&A) and 'quest' (create quests/chains with structured output). Sessions persist across turns.
          */
         post: {
             parameters: {
@@ -1534,6 +1755,266 @@ export interface paths {
                     content?: never;
                 };
                 /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Real-time entity updates
+         * @description Server-Sent Events stream of entity state changes from the board KV bucket. Sends `event: connected` on connect, then `event: kv_change` for each entity create/update/delete. Includes `initial_sync_complete` operation after all existing entities are sent. Auto-reconnects via SSE `retry` directive.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description SSE stream of KV change events */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/guilds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List guilds
+         * @description Returns all guilds including members, founder, and specialization.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description List of guilds */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Guild"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/guilds/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get guild
+         * @description Returns a single guild by ID including members, founder, and specialization.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Guild ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Guild details */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Guild"];
+                    };
+                };
+                /** @description Guild not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get model registry
+         * @description Returns model registry state. With ?resolve=capability, returns the resolution result for a single capability including endpoint name, model, and provider. Without it, returns a full summary of all endpoints and capabilities.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Capability key to resolve (e.g. 'agent-work.apprentice') */
+                    resolve?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Model registry summary or resolution result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Model registry unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List parties
+         * @description Returns all parties including members, quest assignments, and formation status.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description List of parties */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Party"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/parties/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get party
+         * @description Returns a single party by ID including members, roles, and quest assignment.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Party ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Party details */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Party"];
+                    };
+                };
+                /** @description Party not found */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -2483,29 +2964,45 @@ export interface paths {
         };
         /**
          * Get trajectory
-         * @description Returns trajectory events for a quest.
+         * @description Returns the execution trajectory for an agentic loop, including all model calls, tool calls, token usage, and timing. The trajectory ID is the loop_id from a completed quest.
          */
         get: {
             parameters: {
                 query?: never;
                 header?: never;
                 path: {
-                    /** @description Trajectory ID */
+                    /** @description Trajectory/loop ID (from quest.loop_id) */
                     id: string;
                 };
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description Trajectory events */
+                /** @description Trajectory with execution steps */
                 200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Trajectory"];
+                    };
+                };
+                /** @description Invalid trajectory ID format */
+                400: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
                 };
-                /** @description Not yet implemented */
-                501: {
+                /** @description Trajectory not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Trajectory service unavailable */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -2938,6 +3435,9 @@ export interface components {
                 parties_led: number;
                 peer_review_avg: number;
                 peer_review_count: number;
+                peer_review_q1_avg: number;
+                peer_review_q2_avg: number;
+                peer_review_q3_avg: number;
                 quests_completed: number;
                 quests_decomposed: number;
                 quests_failed: number;
@@ -2996,6 +3496,9 @@ export interface components {
             parties_led: number;
             peer_review_avg: number;
             peer_review_count: number;
+            peer_review_q1_avg: number;
+            peer_review_q2_avg: number;
+            peer_review_q3_avg: number;
             quests_completed: number;
             quests_decomposed: number;
             quests_failed: number;
@@ -3009,6 +3512,14 @@ export interface components {
             quality_score: number;
             xp_awarded: number;
             xp_penalty: number;
+        };
+        BoardStatusResponse: {
+            /** @description Whether the board is currently paused */
+            paused: boolean;
+            /** @description RFC 3339 timestamp when board was paused, or null */
+            paused_at?: string | null;
+            /** @description Identifier of who paused the board, or null */
+            paused_by?: string | null;
         };
         BossBattle: {
             agent_id: string;
@@ -3125,6 +3636,9 @@ export interface components {
                     parties_led: number;
                     peer_review_avg: number;
                     peer_review_count: number;
+                    peer_review_q1_avg: number;
+                    peer_review_q2_avg: number;
+                    peer_review_q3_avg: number;
                     quests_completed: number;
                     quests_decomposed: number;
                     quests_failed: number;
@@ -3196,6 +3710,10 @@ export interface components {
             budget: number;
             /** @description ISO 8601 deadline */
             deadline?: string;
+            /** @description Minimum party size (2-5) */
+            min_party_size?: number | null;
+            /** @description Whether the quest requires a party */
+            party_required: boolean;
             /** @description Guild ID for priority routing */
             prefer_guild?: string | null;
             /** @description Whether to require human review */
@@ -3214,6 +3732,10 @@ export interface components {
                 budget: number;
                 /** @description ISO 8601 deadline */
                 deadline?: string;
+                /** @description Minimum party size (2-5) */
+                min_party_size?: number | null;
+                /** @description Whether the quest requires a party */
+                party_required: boolean;
                 /** @description Guild ID for priority routing */
                 prefer_guild?: string | null;
                 /** @description Whether to require human review */
@@ -3275,12 +3797,16 @@ export interface components {
             }[];
             /** @description User message to the DM */
             message: string;
+            /** @description Chat mode: converse or quest */
+            mode?: string;
             /** @description Hex session ID for multi-turn */
             session_id?: string;
         };
         DMChatResponse: {
             /** @description DM response text */
             message: string;
+            /** @description Active chat mode */
+            mode: string;
             /** @description Extracted quest brief if detected */
             quest_brief?: {
                 acceptance?: string[];
@@ -3290,8 +3816,11 @@ export interface components {
                 hints?: {
                     budget: number;
                     deadline?: string;
+                    min_party_size?: number | null;
+                    party_required: boolean;
                     prefer_guild?: string | null;
                     require_human_review: boolean;
+                    review_level?: number | null;
                     suggested_difficulty?: number | null;
                     suggested_skills?: string[];
                 } | null;
@@ -3308,8 +3837,11 @@ export interface components {
                     hints?: {
                         budget: number;
                         deadline?: string;
+                        min_party_size?: number | null;
+                        party_required: boolean;
                         prefer_guild?: string | null;
                         require_human_review: boolean;
+                        review_level?: number | null;
                         suggested_difficulty?: number | null;
                         suggested_skills?: string[];
                     } | null;
@@ -3514,6 +4046,51 @@ export interface components {
                 value: number;
             }[];
         };
+        ModelEndpointSummary: {
+            /** @description Maximum context window size */
+            max_tokens: number;
+            /** @description Model identifier */
+            model: string;
+            /** @description Endpoint name */
+            name: string;
+            /** @description Provider type */
+            provider: string;
+            /** @description Reasoning effort level (none, low, medium, high) */
+            reasoning_effort?: string;
+            /** @description Whether the endpoint supports tool calling */
+            supports_tools: boolean;
+        };
+        ModelRegistrySummary: {
+            /** @description All configured capability keys */
+            capabilities: string[];
+            /** @description All configured model endpoints */
+            endpoints: {
+                /** @description Maximum context window size */
+                max_tokens: number;
+                /** @description Model identifier */
+                model: string;
+                /** @description Endpoint name */
+                name: string;
+                /** @description Provider type */
+                provider: string;
+                /** @description Reasoning effort level (none, low, medium, high) */
+                reasoning_effort?: string;
+                /** @description Whether the endpoint supports tool calling */
+                supports_tools: boolean;
+            }[];
+        };
+        ModelResolveResponse: {
+            /** @description The requested capability key */
+            capability: string;
+            /** @description Resolved endpoint name */
+            endpoint_name: string;
+            /** @description Ordered fallback endpoint names for this capability */
+            fallback_chain?: string[];
+            /** @description Model identifier at the resolved endpoint */
+            model?: string;
+            /** @description Provider type (openai, ollama, anthropic, etc.) */
+            provider?: string;
+        };
         OwnedItem: {
             item_id: string;
             item_name: string;
@@ -3657,6 +4234,7 @@ export interface components {
             guild_xp: number;
             id: string;
             input: unknown;
+            loop_id?: string;
             max_attempts: number;
             min_party_size: number;
             /** @enum {integer} */
@@ -3674,7 +4252,6 @@ export interface components {
             status: "posted" | "claimed" | "in_progress" | "in_review" | "completed" | "failed" | "escalated" | "cancelled";
             sub_quests?: string[];
             title: string;
-            loop_id?: string;
             verdict?: {
                 feedback: string;
                 level_change: number;
@@ -3692,8 +4269,11 @@ export interface components {
             hints?: {
                 budget: number;
                 deadline?: string;
+                min_party_size?: number | null;
+                party_required: boolean;
                 prefer_guild?: string | null;
                 require_human_review: boolean;
+                review_level?: number | null;
                 suggested_difficulty?: number | null;
                 suggested_skills?: string[];
             } | null;
@@ -3709,8 +4289,11 @@ export interface components {
                 hints?: {
                     budget: number;
                     deadline?: string;
+                    min_party_size?: number | null;
+                    party_required: boolean;
                     prefer_guild?: string | null;
                     require_human_review: boolean;
+                    review_level?: number | null;
                     suggested_difficulty?: number | null;
                     suggested_skills?: string[];
                 } | null;
@@ -3726,8 +4309,11 @@ export interface components {
             hints?: {
                 budget: number;
                 deadline?: string;
+                min_party_size?: number | null;
+                party_required: boolean;
                 prefer_guild?: string | null;
                 require_human_review: boolean;
+                review_level?: number | null;
                 suggested_difficulty?: number | null;
                 suggested_skills?: string[];
             } | null;
@@ -3745,8 +4331,11 @@ export interface components {
         QuestHints: {
             budget: number;
             deadline?: string;
+            min_party_size?: number | null;
+            party_required: boolean;
             prefer_guild?: string | null;
             require_human_review: boolean;
+            review_level?: number | null;
             suggested_difficulty?: number | null;
             suggested_skills?: string[];
         };
@@ -3755,6 +4344,8 @@ export interface components {
             display_name?: string;
             /** @description Whether this is an NPC agent */
             is_npc: boolean;
+            /** @description Initial level (1-20, default 1). Higher levels grant higher trust tiers. */
+            level?: number | null;
             /** @description Unique agent name */
             name: string;
             /** @description Initial skill tags */
@@ -3849,6 +4440,10 @@ export interface components {
             /** Format: date-time */
             timestamp: string;
         };
+        SetTokenBudgetRequest: {
+            /** @description New hourly token limit (0 = unlimited) */
+            global_hourly_limit: number;
+        };
         SkillBar: {
             is_max_level: boolean;
             level: number;
@@ -3914,6 +4509,26 @@ export interface components {
             message_types?: string[];
             sources?: string[];
         };
+        TokenStats: {
+            breaker: string;
+            budget_pct: number;
+            hourly_cost_usd: number;
+            hourly_epoch: number;
+            hourly_limit: number;
+            hourly_usage: {
+                completion_tokens: number;
+                estimated_cost_usd: number;
+                prompt_tokens: number;
+                total_tokens: number;
+            };
+            total_cost_usd: number;
+            total_usage: {
+                completion_tokens: number;
+                estimated_cost_usd: number;
+                prompt_tokens: number;
+                total_tokens: number;
+            };
+        };
         TraceInfoResponse: {
             /** @description Parent span ID */
             parent_span_id?: string;
@@ -3921,6 +4536,54 @@ export interface components {
             span_id?: string;
             /** @description Trace ID */
             trace_id?: string;
+        };
+        Trajectory: {
+            duration: number;
+            end_time?: string | null;
+            loop_id: string;
+            outcome?: string;
+            /** Format: date-time */
+            start_time: string;
+            steps: {
+                duration: number;
+                prompt?: string;
+                request_id?: string;
+                response?: string;
+                step_type: string;
+                /** Format: date-time */
+                timestamp: string;
+                tokens_in?: number;
+                tokens_out?: number;
+                tool_arguments?: {
+                    [key: string]: unknown;
+                };
+                tool_name?: string;
+                tool_result?: string;
+            }[];
+            total_tokens_in: number;
+            total_tokens_out: number;
+        };
+        TrajectoryStep: {
+            duration: number;
+            prompt?: string;
+            request_id?: string;
+            response?: string;
+            step_type: string;
+            /** Format: date-time */
+            timestamp: string;
+            tokens_in?: number;
+            tokens_out?: number;
+            tool_arguments?: {
+                [key: string]: unknown;
+            };
+            tool_name?: string;
+            tool_result?: string;
+        };
+        UsageSnapshot: {
+            completion_tokens: number;
+            estimated_cost_usd: number;
+            prompt_tokens: number;
+            total_tokens: number;
         };
         UseConsumableRequest: {
             /** @description ID of the consumable to use */
@@ -3958,9 +4621,15 @@ export interface components {
                 avg_quality: number;
                 completion_rate: number;
                 cooldown_agents: number;
+                cost_total_usd: number;
+                cost_used_hourly_usd: number;
                 idle_agents: number;
                 open_quests: number;
                 retired_agents: number;
+                token_breaker: string;
+                token_budget_pct: number;
+                tokens_limit_hourly: number;
+                tokens_used_hourly: number;
             };
         };
         WorldStats: {
@@ -3971,9 +4640,15 @@ export interface components {
             avg_quality: number;
             completion_rate: number;
             cooldown_agents: number;
+            cost_total_usd: number;
+            cost_used_hourly_usd: number;
             idle_agents: number;
             open_quests: number;
             retired_agents: number;
+            token_breaker: string;
+            token_budget_pct: number;
+            tokens_limit_hourly: number;
+            tokens_used_hourly: number;
         };
     };
     responses: never;

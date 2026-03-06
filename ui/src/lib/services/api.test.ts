@@ -45,7 +45,10 @@ function createAgentStats(): AgentStats {
 		parties_led: 2,
 		quests_decomposed: 3,
 		peer_review_avg: 0,
-		peer_review_count: 0
+		peer_review_count: 0,
+		peer_review_q1_avg: 0,
+		peer_review_q2_avg: 0,
+		peer_review_q3_avg: 0
 	};
 }
 
@@ -221,7 +224,8 @@ describe('API Service', () => {
 			await createQuest('Build a dashboard', {
 				suggested_difficulty: 3,
 				require_human_review: true,
-				budget: 100
+				budget: 100,
+				party_required: false
 			});
 
 			expect(mockFetch).toHaveBeenCalledWith(
@@ -232,7 +236,8 @@ describe('API Service', () => {
 						hints: {
 							suggested_difficulty: 3,
 							require_human_review: true,
-							budget: 100
+							budget: 100,
+							party_required: false
 						}
 					})
 				})
