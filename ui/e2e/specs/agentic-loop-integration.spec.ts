@@ -156,17 +156,19 @@ test.describe('Agentic Loop Integration @integration', () => {
 		// when the quest completes through the agentic loop (not manual submit).
 		test.setTimeout(60_000);
 
-		const quest = await lifecycleApi.createQuest('E2E agent idle-return after agentic quest', 1);
-		const questInstance = extractInstance(quest.id);
-
+		// Recruit agent and verify idle status BEFORE creating the quest.
+		// This minimizes the window between quest creation and claim,
+		// preventing the autonomy component from auto-claiming first.
 		const agent = await lifecycleApi.recruitAgent('agentic-idle-return-agent');
 		const agentInstance = extractInstance(agent.id);
 
-		// Verify starting state before the loop runs
 		const initialAgent = await lifecycleApi.getAgent(agentInstance);
 		expect(initialAgent.status).toBe('idle');
 
-		// Claim and start to trigger the agentic loop
+		const quest = await lifecycleApi.createQuest('E2E agent idle-return after agentic quest', 1);
+		const questInstance = extractInstance(quest.id);
+
+		// Claim immediately after creation to beat autonomy
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);
 		expect(claimRes.ok, `claim failed: ${claimRes.status}`).toBeTruthy();
 
@@ -641,22 +643,27 @@ test.describe('Agentic Loop Integration @integration', () => {
 		// Flow:
 		//   1. Navigate to quests page (establishes SSE connection)
 		//   2. Create quest → claim → start (triggers agentic loop)
-		//   3. Wait for the completed status in the UI (SSE delivers the KV change)
+		//   3. Wait for the completed count in the filter badge to increase
 		test.setTimeout(75_000);
 
-		// Navigate to the quests page to establish SSE subscription before the loop runs
+		// Navigate to the quests page to establish SSE subscription before the loop runs.
+		// Use domcontentloaded — SSE keeps the connection open permanently,
+		// so networkidle will never fire.
 		await page.goto('/quests');
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('domcontentloaded');
 
-		// Count completed quests before our test to isolate our quest's appearance
-		const completedBefore = await page.locator('[data-status="completed"]').count();
+		// Read the completed count from the filter badge (reactive via SSE).
+		// The badge text is inside [data-testid="filter-completed"] .filter-count.
+		const completedBadge = page.getByTestId('filter-completed').locator('.filter-count');
+		const completedBefore = parseInt((await completedBadge.textContent()) ?? '0', 10);
+
+		// Recruit agent before creating quest to minimize the claim window
+		const agent = await lifecycleApi.recruitAgent('agentic-sse-reflection-agent');
+		const agentInstance = extractInstance(agent.id);
 
 		// Create and start a quest to trigger the agentic loop
 		const quest = await lifecycleApi.createQuest('E2E agentic SSE reflection test', 1);
 		const questInstance = extractInstance(quest.id);
-
-		const agent = await lifecycleApi.recruitAgent('agentic-sse-reflection-agent');
-		const agentInstance = extractInstance(agent.id);
 
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);
 		expect(claimRes.ok, `claim failed: ${claimRes.status}`).toBeTruthy();
@@ -665,21 +672,20 @@ test.describe('Agentic Loop Integration @integration', () => {
 		expect(startRes.ok, `start failed: ${startRes.status}`).toBeTruthy();
 
 		// Wait for the SSE-driven UI update to reflect the completed quest.
-		// We use expect.poll() here for native Playwright retry semantics.
-		// The quest card should appear in the completed column once SSE delivers
-		// the KV watch event for quest.state.{questInstance} → status=completed.
+		// The filter badge count is reactive — it updates when worldStore
+		// receives the KV watch event for quest.state.{questInstance} → completed.
 		await expect
 			.poll(
 				async () => {
-					const completedAfter = await page.locator('[data-status="completed"]').count();
-					return completedAfter;
+					const text = (await completedBadge.textContent()) ?? '0';
+					return parseInt(text, 10);
 				},
 				{
 					timeout: 60_000,
 					intervals: [1000, 1500, 2000],
 					message:
-						'Completed quest count did not increase in the UI via SSE. ' +
-						'Check that dmworldstate is running and SSE is delivering KV watch events.'
+						'Completed quest count in filter badge did not increase via SSE. ' +
+						'Check that SSE is delivering KV watch events to the frontend.'
 				}
 			)
 			.toBeGreaterThan(completedBefore);

@@ -147,20 +147,20 @@ e2e-wait:
 
 # Run Playwright tests (stack must be running)
 e2e-run:
-	cd ui && npx playwright test
+	cd ui && E2E_MOCK_LLM=true npx playwright test
 
 # Run on chromium only (fast iteration)
 e2e-chromium:
-	cd ui && npx playwright test --project=chromium
+	cd ui && E2E_MOCK_LLM=true npx playwright test --project=chromium
 
 # Run E2E tests in headed mode (shows browser)
 e2e-headed: e2e-install e2e-up e2e-wait
-	cd ui && npx playwright test --headed
+	cd ui && E2E_MOCK_LLM=true npx playwright test --headed
 	$(MAKE) e2e-down
 
 # Run E2E tests with UI mode (interactive debugging)
 e2e-ui: e2e-install e2e-up e2e-wait
-	cd ui && npx playwright test --ui
+	cd ui && E2E_MOCK_LLM=true npx playwright test --ui
 
 # Stop the Docker stack
 e2e-down:
