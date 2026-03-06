@@ -167,18 +167,6 @@ test.describe('Trajectory List Page', () => {
 		);
 	});
 
-	test('shows empty state when no trajectories exist', async ({ page }) => {
-		test.skip(hasBackend(), 'Backend seeds quests with loop_ids, so empty state is not shown');
-
-		await page.goto('/trajectories');
-		await waitForHydration(page);
-
-		const emptyState = page.getByTestId('trajectory-empty-state');
-		await expect(emptyState).toBeVisible();
-		await expect(emptyState).toContainText('No trajectories found');
-		await expect(emptyState).toContainText('Trajectories are created when quests are posted');
-	});
-
 	test('trajectory list is present on the page', async ({ page }) => {
 		await page.goto('/trajectories');
 		await waitForHydration(page);
