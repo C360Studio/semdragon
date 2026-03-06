@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/errs"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -335,7 +336,8 @@ func (c *Component) AvailableQuests(ctx context.Context, agentID domain.AgentID,
 	return available, nil
 }
 
-// ClaimQuest assigns a quest to an agent.
+// ClaimQuest assigns a quest to an agent using CAS to prevent race conditions.
+// Returns natsclient.ErrKVRevisionMismatch if another agent claimed first.
 func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agentID domain.AgentID) error {
 	if !c.running.Load() {
 		return errors.New("component not running")
@@ -351,11 +353,16 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 		return errs.Wrap(err, "QuestBoard", "ClaimQuest", "load agent")
 	}
 
-	// Load quest
-	quest, err := c.getQuestByID(ctx, questID)
+	// Load quest with revision for CAS
+	entity, revision, err := c.graph.GetQuestWithRevision(ctx, questID)
 	if err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "ClaimQuest", "load quest")
+	}
+
+	quest := domain.QuestFromEntityState(entity)
+	if quest == nil {
+		return fmt.Errorf("failed to decode quest %s", questID)
 	}
 
 	if quest.Status != domain.QuestPosted {
@@ -366,15 +373,17 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 		return err
 	}
 
-	// Update quest state
+	// CAS write quest state: claimed. Fails if revision changed (another claim won).
 	now := time.Now()
 	quest.Status = domain.QuestClaimed
 	quest.ClaimedBy = &agentID
 	quest.ClaimedAt = &now
 	quest.Attempts++
 
-	// Emit updated quest to graph (KV write is the event — watchers are notified)
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.claimed"); err != nil {
+	if err := c.graph.EmitEntityCAS(ctx, quest, "quest.claimed", revision); err != nil {
+		if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
+			return fmt.Errorf("quest already claimed by another agent: %w", err)
+		}
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "ClaimQuest", "emit update")
 	}

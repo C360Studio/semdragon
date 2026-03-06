@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/c360studio/semstreams/natsclient"
+
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
@@ -92,11 +94,12 @@ func (c *Component) claimQuestAction() action {
 
 // executeClaimQuest iterates ranked suggestions and claims the first viable quest.
 // If a quest is stale (no longer posted) or fails validation, it falls through
-// to the next suggestion. KV write serialization handles concurrent claims.
+// to the next suggestion. CAS (Compare-And-Swap) on the quest KV entry ensures
+// only one agent wins the claim — losers get ErrKVRevisionMismatch and skip.
 func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogression.Agent, tracker *agentTracker) error {
 	for i, suggestion := range tracker.suggestions {
-		// Read quest from KV
-		entity, err := c.graph.GetQuest(ctx, domain.QuestID(suggestion.QuestID))
+		// Read quest from KV with revision for CAS
+		entity, revision, err := c.graph.GetQuestWithRevision(ctx, domain.QuestID(suggestion.QuestID))
 		if err != nil {
 			c.logger.Debug("quest not found in KV, skipping suggestion",
 				"quest_id", suggestion.QuestID,
@@ -137,7 +140,9 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 			return errNoViableClaim
 		}
 
-		// Write quest state: claimed
+		// CAS write quest state: claimed. If another agent already wrote to this
+		// quest (changing the revision), EmitEntityCAS returns ErrKVRevisionMismatch
+		// and we skip to the next suggestion.
 		now := time.Now()
 		agentID := domain.AgentID(agent.ID)
 		quest.Status = domain.QuestClaimed
@@ -145,7 +150,13 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 		quest.ClaimedAt = &now
 		quest.Attempts++
 
-		if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.claimed"); err != nil {
+		if err := c.graph.EmitEntityCAS(ctx, quest, "quest.claimed", revision); err != nil {
+			if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
+				c.logger.Debug("quest already claimed by another agent (CAS conflict), skipping",
+					"quest_id", suggestion.QuestID,
+					"agent_id", agent.ID)
+				continue
+			}
 			c.errorsCount.Add(1)
 			c.logger.Error("failed to write quest claim",
 				"quest_id", suggestion.QuestID,
@@ -153,21 +164,27 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 			continue
 		}
 
-		// Transition quest to in_progress so questbridge picks it up
-		now1 := time.Now()
-		quest.Status = domain.QuestInProgress
-		quest.StartedAt = &now1
-
-		if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
+		// CAS succeeded — we own this quest. Transition to in_progress.
+		// Re-read revision after our claim write for the next CAS.
+		_, revision, err = c.graph.GetQuestWithRevision(ctx, domain.QuestID(quest.ID))
+		if err != nil {
 			c.errorsCount.Add(1)
-			c.logger.Error("failed to start quest after claim",
-				"quest_id", suggestion.QuestID,
-				"error", err)
-			// Quest is claimed but not started — questbridge won't pick it up,
-			// but the quest is still recoverable via manual StartQuest.
+			c.logger.Error("failed to re-read quest after claim", "error", err)
+			// Quest is claimed but we can't transition — recoverable via manual StartQuest.
+		} else {
+			now1 := time.Now()
+			quest.Status = domain.QuestInProgress
+			quest.StartedAt = &now1
+
+			if err := c.graph.EmitEntityCAS(ctx, quest, "quest.started", revision); err != nil {
+				c.errorsCount.Add(1)
+				c.logger.Error("failed to start quest after claim",
+					"quest_id", suggestion.QuestID,
+					"error", err)
+			}
 		}
 
-		// Write agent state: on_quest
+		// Write agent state: on_quest (no CAS needed — only this agent's heartbeat writes its state)
 		now2 := time.Now()
 		questIDRef := domain.QuestID(quest.ID)
 		agent.Status = domain.AgentOnQuest
@@ -179,7 +196,6 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 			c.logger.Error("failed to update agent status on claim",
 				"agent_id", agent.ID,
 				"error", err)
-			// Quest is already claimed — don't roll back, just log
 		}
 
 		// Emit claim intent for observability

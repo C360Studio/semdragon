@@ -16,8 +16,9 @@ import (
 )
 
 // GraphClient provides access to the semstreams graph system for semdragons components.
-// It wraps the natsclient and provides methods for emitting Graphable entities
-// and reading entity state directly from the board-specific KV bucket.
+// It wraps natsclient.KVStore for all KV operations, inheriting CAS support, timeouts,
+// and retry semantics. Entity-specific methods handle marshaling between Graphable
+// entities and the KV bucket.
 //
 // Design: Components use GraphClient instead of direct storage operations.
 // Entity writes go to the board KV bucket (e.g., "semdragons-local-dev-board1"),
@@ -25,7 +26,8 @@ import (
 type GraphClient struct {
 	nats   *natsclient.Client
 	config *domain.BoardConfig
-	bucket jetstream.KeyValue // cached after EnsureBucket
+	bucket jetstream.KeyValue    // raw bucket for KVBucket() backward compat
+	store  *natsclient.KVStore   // CAS-aware KV operations
 }
 
 // NewGraphClient creates a new graph client for interacting with the semstreams graph system.
@@ -55,68 +57,103 @@ func (gc *GraphClient) EnsureBucket(ctx context.Context) error {
 		return fmt.Errorf("ensure bucket %s: %w", gc.config.BucketName(), err)
 	}
 	gc.bucket = bucket
+	gc.store = gc.nats.NewKVStore(bucket)
 	return nil
 }
 
-// kvBucket returns the cached bucket or fetches it by name.
-func (gc *GraphClient) kvBucket(ctx context.Context) (jetstream.KeyValue, error) {
-	if gc.bucket != nil {
-		return gc.bucket, nil
+// ensureStore returns the cached KVStore, creating it on first access.
+func (gc *GraphClient) ensureStore(ctx context.Context) (*natsclient.KVStore, error) {
+	if gc.store != nil {
+		return gc.store, nil
 	}
 	bucket, err := gc.nats.GetKeyValueBucket(ctx, gc.config.BucketName())
 	if err != nil {
 		return nil, fmt.Errorf("get bucket %s: %w", gc.config.BucketName(), err)
 	}
 	gc.bucket = bucket
-	return bucket, nil
+	gc.store = gc.nats.NewKVStore(bucket)
+	return gc.store, nil
+}
+
+// marshalEntityState converts a Graphable entity into serialized EntityState bytes.
+func marshalEntityState(entity graph.Graphable, eventType string) ([]byte, error) {
+	entityState := &graph.EntityState{
+		ID: entity.EntityID(),
+		Triples: entity.Triples(),
+		MessageType: message.Type{
+			Domain:   "semdragons",
+			Category: eventType,
+			Version:  "v1",
+		},
+		Version:   1,
+		UpdatedAt: time.Now(),
+	}
+	return json.Marshal(entityState)
+}
+
+// unmarshalEntityState deserializes bytes into an EntityState.
+func unmarshalEntityState(data []byte) (*graph.EntityState, error) {
+	var entity graph.EntityState
+	if err := json.Unmarshal(data, &entity); err != nil {
+		return nil, fmt.Errorf("unmarshal entity: %w", err)
+	}
+	return &entity, nil
 }
 
 // =============================================================================
 // ENTITY EMISSION
 // =============================================================================
 
-// EmitEntity publishes a Graphable entity to the graph system.
+// EmitEntity publishes a Graphable entity to the graph system (last-writer-wins).
 // Writes entity state to the ENTITY_STATES KV bucket. KV watchers are notified
 // immediately, enabling the entity-centric reactive pattern.
 //
-// Example:
-//
-//	err := gc.EmitEntity(ctx, &quest, "quest.posted")
+// For contested writes (e.g., quest claims), use EmitEntityCAS instead.
 func (gc *GraphClient) EmitEntity(ctx context.Context, entity graph.Graphable, eventType string) error {
-	msgType := message.Type{
-		Domain:   "semdragons",
-		Category: eventType,
-		Version:  "v1",
-	}
-
-	entityState := &graph.EntityState{
-		ID:          entity.EntityID(),
-		Triples:     entity.Triples(),
-		MessageType: msgType,
-		Version:     1,
-		UpdatedAt:   time.Now(),
-	}
-
-	data, err := json.Marshal(entityState)
+	data, err := marshalEntityState(entity, eventType)
 	if err != nil {
-		return fmt.Errorf("marshal entity state: %w", err)
+		return err
 	}
 
-	bucket, err := gc.kvBucket(ctx)
+	store, err := gc.ensureStore(ctx)
 	if err != nil {
-		return fmt.Errorf("get entity states bucket: %w", err)
+		return err
 	}
-	if _, err := bucket.Put(ctx, entity.EntityID(), data); err != nil {
+
+	if _, err := store.Put(ctx, entity.EntityID(), data); err != nil {
 		return fmt.Errorf("put entity state: %w", err)
 	}
-
 	return nil
 }
 
-// EmitEntityUpdate publishes an updated entity state.
+// EmitEntityUpdate publishes an updated entity state (last-writer-wins).
 // This is used when an entity's state changes (e.g., quest claimed, agent leveled up).
 func (gc *GraphClient) EmitEntityUpdate(ctx context.Context, entity graph.Graphable, eventType string) error {
 	return gc.EmitEntity(ctx, entity, eventType)
+}
+
+// EmitEntityCAS writes entity state only if the KV revision matches (Compare-And-Swap).
+// Returns natsclient.ErrKVRevisionMismatch if the entity was modified since it was read.
+// Use this for contested writes where multiple processors may update the same entity
+// concurrently (e.g., quest claims).
+//
+// The revision parameter should come from a prior GetEntityDirectWithRevision or
+// GetQuestWithRevision call.
+func (gc *GraphClient) EmitEntityCAS(ctx context.Context, entity graph.Graphable, eventType string, revision uint64) error {
+	data, err := marshalEntityState(entity, eventType)
+	if err != nil {
+		return err
+	}
+
+	store, err := gc.ensureStore(ctx)
+	if err != nil {
+		return err
+	}
+
+	if _, err := store.Update(ctx, entity.EntityID(), data, revision); err != nil {
+		return err // natsclient returns ErrKVRevisionMismatch on conflict
+	}
+	return nil
 }
 
 // =============================================================================
@@ -126,22 +163,38 @@ func (gc *GraphClient) EmitEntityUpdate(ctx context.Context, entity graph.Grapha
 // GetEntityDirect retrieves an entity directly from the ENTITY_STATES KV bucket.
 // This bypasses the graph-query layer for faster reads when the entity ID is known.
 func (gc *GraphClient) GetEntityDirect(ctx context.Context, entityID string) (*graph.EntityState, error) {
-	bucket, err := gc.kvBucket(ctx)
+	store, err := gc.ensureStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get entity states bucket: %w", err)
+		return nil, err
 	}
 
-	entry, err := bucket.Get(ctx, entityID)
+	entry, err := store.Get(ctx, entityID)
 	if err != nil {
 		return nil, fmt.Errorf("get entity: %w", err)
 	}
 
-	var entity graph.EntityState
-	if err := json.Unmarshal(entry.Value(), &entity); err != nil {
-		return nil, fmt.Errorf("unmarshal entity: %w", err)
+	return unmarshalEntityState(entry.Value)
+}
+
+// GetEntityDirectWithRevision retrieves an entity and its KV revision for CAS operations.
+// The returned revision should be passed to EmitEntityCAS for optimistic concurrency control.
+func (gc *GraphClient) GetEntityDirectWithRevision(ctx context.Context, entityID string) (*graph.EntityState, uint64, error) {
+	store, err := gc.ensureStore(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
 
-	return &entity, nil
+	entry, err := store.Get(ctx, entityID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get entity: %w", err)
+	}
+
+	entity, err := unmarshalEntityState(entry.Value)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return entity, entry.Revision, nil
 }
 
 // =============================================================================
@@ -155,11 +208,25 @@ func (gc *GraphClient) GetQuest(ctx context.Context, questID domain.QuestID) (*g
 	return gc.GetEntityDirect(ctx, entityID)
 }
 
+// GetQuestWithRevision retrieves a quest and its KV revision for CAS operations.
+func (gc *GraphClient) GetQuestWithRevision(ctx context.Context, questID domain.QuestID) (*graph.EntityState, uint64, error) {
+	instance := domain.ExtractInstance(string(questID))
+	entityID := gc.config.QuestEntityID(instance)
+	return gc.GetEntityDirectWithRevision(ctx, entityID)
+}
+
 // GetAgent retrieves an agent by its agent ID (instance portion).
 func (gc *GraphClient) GetAgent(ctx context.Context, agentID domain.AgentID) (*graph.EntityState, error) {
 	instance := domain.ExtractInstance(string(agentID))
 	entityID := gc.config.AgentEntityID(instance)
 	return gc.GetEntityDirect(ctx, entityID)
+}
+
+// GetAgentWithRevision retrieves an agent and its KV revision for CAS operations.
+func (gc *GraphClient) GetAgentWithRevision(ctx context.Context, agentID domain.AgentID) (*graph.EntityState, uint64, error) {
+	instance := domain.ExtractInstance(string(agentID))
+	entityID := gc.config.AgentEntityID(instance)
+	return gc.GetEntityDirectWithRevision(ctx, entityID)
 }
 
 // GetParty retrieves a party by its party ID (instance portion).
@@ -214,13 +281,13 @@ func (gc *GraphClient) ListEntitiesByType(ctx context.Context, entityType string
 		limit = 100
 	}
 
-	bucket, err := gc.kvBucket(ctx)
+	store, err := gc.ensureStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get entity states bucket: %w", err)
+		return nil, err
 	}
 
 	prefix := gc.config.TypePrefix(entityType) + "."
-	keys, err := natsclient.FilteredKeys(ctx, bucket, prefix+">")
+	keys, err := store.KeysByPrefix(ctx, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("list keys for %s: %w", entityType, err)
 	}
@@ -230,15 +297,15 @@ func (gc *GraphClient) ListEntitiesByType(ctx context.Context, entityType string
 		if i >= limit {
 			break
 		}
-		entry, err := bucket.Get(ctx, key)
+		entry, err := store.Get(ctx, key)
 		if err != nil {
 			continue // Key may have been deleted between list and get
 		}
-		var entity graph.EntityState
-		if err := json.Unmarshal(entry.Value(), &entity); err != nil {
+		entity, err := unmarshalEntityState(entry.Value)
+		if err != nil {
 			continue
 		}
-		entities = append(entities, entity)
+		entities = append(entities, *entity)
 	}
 
 	return entities, nil
@@ -276,36 +343,7 @@ func (gc *GraphClient) ListPartiesByPrefix(ctx context.Context, limit int) ([]gr
 // This is the primary write path for the entity-centric architecture.
 // KV watchers will be notified of this change immediately.
 func (gc *GraphClient) PutEntityState(ctx context.Context, entity graph.Graphable, eventType string) error {
-	msgType := message.Type{
-		Domain:   "semdragons",
-		Category: eventType,
-		Version:  "v1",
-	}
-
-	entityState := &graph.EntityState{
-		ID:          entity.EntityID(),
-		Triples:     entity.Triples(),
-		MessageType: msgType,
-		Version:     1,
-		UpdatedAt:   time.Now(),
-	}
-
-	data, err := json.Marshal(entityState)
-	if err != nil {
-		return fmt.Errorf("marshal entity state: %w", err)
-	}
-
-	bucket, err := gc.kvBucket(ctx)
-	if err != nil {
-		return fmt.Errorf("get entity states bucket: %w", err)
-	}
-
-	_, err = bucket.Put(ctx, entity.EntityID(), data)
-	if err != nil {
-		return fmt.Errorf("put entity state: %w", err)
-	}
-
-	return nil
+	return gc.EmitEntity(ctx, entity, eventType)
 }
 
 // WatchEntityType watches for changes to entities of a specific type on this board.
@@ -314,18 +352,13 @@ func (gc *GraphClient) PutEntityState(ctx context.Context, entity graph.Graphabl
 //
 // Callers must call watcher.Stop() when done.
 func (gc *GraphClient) WatchEntityType(ctx context.Context, entityType string) (jetstream.KeyWatcher, error) {
-	bucket, err := gc.kvBucket(ctx)
+	store, err := gc.ensureStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get entity states bucket: %w", err)
+		return nil, err
 	}
 
 	pattern := gc.config.TypePrefix(entityType) + ".*"
-	watcher, err := bucket.Watch(ctx, pattern)
-	if err != nil {
-		return nil, fmt.Errorf("watch entity type %s: %w", entityType, err)
-	}
-
-	return watcher, nil
+	return store.Watch(ctx, pattern)
 }
 
 // WatchEntity watches for changes to a single entity by its full entity ID.
@@ -333,17 +366,12 @@ func (gc *GraphClient) WatchEntityType(ctx context.Context, entityType string) (
 //
 // Callers must call watcher.Stop() when done.
 func (gc *GraphClient) WatchEntity(ctx context.Context, entityID string) (jetstream.KeyWatcher, error) {
-	bucket, err := gc.kvBucket(ctx)
+	store, err := gc.ensureStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get entity states bucket: %w", err)
+		return nil, err
 	}
 
-	watcher, err := bucket.Watch(ctx, entityID)
-	if err != nil {
-		return nil, fmt.Errorf("watch entity %s: %w", entityID, err)
-	}
-
-	return watcher, nil
+	return store.Watch(ctx, entityID)
 }
 
 // DecodeEntityState unmarshals a KV entry value into an EntityState.
@@ -352,13 +380,7 @@ func DecodeEntityState(entry jetstream.KeyValueEntry) (*graph.EntityState, error
 	if entry == nil || entry.Value() == nil {
 		return nil, nil
 	}
-
-	var entity graph.EntityState
-	if err := json.Unmarshal(entry.Value(), &entity); err != nil {
-		return nil, fmt.Errorf("unmarshal entity state: %w", err)
-	}
-
-	return &entity, nil
+	return unmarshalEntityState(entry.Value())
 }
 
 // =============================================================================
@@ -368,7 +390,14 @@ func DecodeEntityState(entry jetstream.KeyValueEntry) (*graph.EntityState, error
 // KVBucket returns the board-specific KV bucket for watching entity state changes.
 // Processors use this for KV Watch operations with TypePrefix-based key patterns.
 func (gc *GraphClient) KVBucket(ctx context.Context) (jetstream.KeyValue, error) {
-	return gc.kvBucket(ctx)
+	if gc.bucket != nil {
+		return gc.bucket, nil
+	}
+	// Ensure store is initialized (which also sets bucket)
+	if _, err := gc.ensureStore(ctx); err != nil {
+		return nil, err
+	}
+	return gc.bucket, nil
 }
 
 // Client returns the underlying NATS client for advanced operations.

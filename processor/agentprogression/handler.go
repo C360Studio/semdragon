@@ -217,6 +217,10 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 		"quest", quest.ID,
 		"xp_awarded", award.TotalXP,
 		"new_level", fullAgent.Level)
+
+	// Release any orphaned agents that lost the CAS claim race but still have
+	// status=on_quest pointing at this quest.
+	c.releaseOrphanedAgents(ctx, quest.ID, domain.AgentID(agentID))
 }
 
 // handleQuestFailedFromKV processes a quest that transitioned to failed.
@@ -339,6 +343,51 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 		"quest", quest.ID,
 		"xp_lost", penalty.XPLost,
 		"new_status", fullAgent.Status)
+
+	// Release any orphaned agents that lost the CAS claim race but still have
+	// status=on_quest pointing at this quest.
+	c.releaseOrphanedAgents(ctx, quest.ID, domain.AgentID(agentID))
+}
+
+// releaseOrphanedAgents finds agents stuck in on_quest for a completed/failed quest
+// and releases them back to idle. This handles agents that lost the CAS claim race
+// but still set their own status to on_quest before the race was resolved.
+func (c *Component) releaseOrphanedAgents(ctx context.Context, questID domain.QuestID, winnerAgentID domain.AgentID) {
+	agents, err := c.graph.ListAgentsByPrefix(ctx, 200)
+	if err != nil {
+		c.logger.Error("failed to list agents for orphan cleanup", "error", err)
+		return
+	}
+
+	for _, agentEntity := range agents {
+		agent := AgentFromEntityState(&agentEntity)
+		if agent == nil {
+			continue
+		}
+		// Skip the winner — already handled
+		if domain.AgentID(agent.ID) == winnerAgentID {
+			continue
+		}
+		// Only release agents stuck on this specific quest
+		if agent.Status != domain.AgentOnQuest || agent.CurrentQuest == nil || *agent.CurrentQuest != questID {
+			continue
+		}
+
+		agent.Status = domain.AgentIdle
+		agent.CurrentQuest = nil
+		agent.UpdatedAt = time.Now()
+
+		if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.idle"); err != nil {
+			c.logger.Error("failed to release orphaned agent",
+				"agent", agent.ID,
+				"quest", questID,
+				"error", err)
+		} else {
+			c.logger.Info("released orphaned agent from completed quest",
+				"agent", agent.ID,
+				"quest", questID)
+		}
+	}
 }
 
 // =============================================================================
