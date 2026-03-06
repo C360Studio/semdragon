@@ -381,8 +381,8 @@ func TestQuest_Triples_FullQuest(t *testing.T) {
 		CompletedAt:   &completedAt,
 		Attempts:      1,
 		MaxAttempts:   3,
-		TrajectoryID:  "traj-abc123",
-		Verdict:       verdict,
+		LoopID:  "quest-test-loop-abc123",
+		Verdict: verdict,
 		Duration:      45 * time.Minute,
 	}
 
@@ -433,8 +433,8 @@ func TestQuest_Triples_FullQuest(t *testing.T) {
 	}
 
 	// Observability.
-	if v, _ := idx["quest.observability.trajectory_id"].Object.(string); v != "traj-abc123" {
-		t.Errorf("quest.observability.trajectory_id = %q, want %q", v, "traj-abc123")
+	if v, _ := idx["quest.execution.loop_id"].Object.(string); v != "quest-test-loop-abc123" {
+		t.Errorf("quest.execution.loop_id = %q, want %q", v, "quest-test-loop-abc123")
 	}
 
 	// Review constraints.
@@ -606,7 +606,7 @@ func TestQuest_Triples_NoOptionalRelationshipsWhenNil(t *testing.T) {
 		"quest.assignment.party",
 		"quest.priority.guild",
 		"quest.parent.quest",
-		"quest.observability.trajectory_id",
+		"quest.execution.loop_id",
 	}
 	for _, pred := range optionalPreds {
 		if _, ok := idx[pred]; ok {

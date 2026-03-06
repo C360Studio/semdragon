@@ -15,7 +15,7 @@
 
 	// Get unique trajectory IDs from quests
 	const trajectoryIds = $derived(
-		[...new Set(worldStore.questList.map((q) => q.trajectory_id).filter(Boolean))].slice(0, 20)
+		[...new Set(worldStore.questList.map((q) => q.loop_id).filter((id): id is string => !!id))].slice(0, 20)
 	);
 </script>
 
@@ -50,7 +50,7 @@
 			<div class="trajectory-list" data-testid="trajectory-list">
 				<h2>Recent Trajectories</h2>
 				{#each trajectoryIds as trajectoryId}
-					{@const quest = worldStore.questList.find((q) => q.trajectory_id === trajectoryId)}
+					{@const quest = worldStore.questList.find((q) => q.loop_id === trajectoryId)}
 					<a href="/trajectories/{trajectoryId}" class="trajectory-item" data-testid="trajectory-item">
 						<span class="trajectory-id" data-testid="trajectory-item-id">{trajectoryId.slice(0, 12)}&hellip;</span>
 						{#if quest}

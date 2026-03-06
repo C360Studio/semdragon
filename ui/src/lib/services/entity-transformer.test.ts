@@ -527,7 +527,7 @@ describe('transformQuest', () => {
 		expect(quest.input).toBeNull();
 		expect(quest.sub_quests).toEqual([]);
 		expect(quest.escalated).toBe(false);
-		expect(quest.trajectory_id).toBe('');
+		expect(quest.loop_id).toBe('');
 		expect(quest.min_party_size).toBe(0);
 		expect(quest.parent_quest).toBeUndefined();
 	});
@@ -918,7 +918,8 @@ describe('schema contract validation', () => {
 		'quest.review.level': 'constraints.review_level',
 		'quest.lifecycle.posted_at': 'posted_at',
 		'quest.attempts.current': 'attempts',
-		'quest.attempts.max': 'max_attempts'
+		'quest.attempts.max': 'max_attempts',
+		'quest.execution.loop_id': 'loop_id'
 	};
 
 	const QUEST_IGNORED: Record<string, string> = {
@@ -927,7 +928,6 @@ describe('schema contract validation', () => {
 		'quest.lifecycle.claimed_at': 'lifecycle timestamps not displayed',
 		'quest.lifecycle.started_at': 'lifecycle timestamps not displayed',
 		'quest.lifecycle.completed_at': 'lifecycle timestamps not displayed',
-		'quest.observability.trajectory_id': 'trajectory link not yet built',
 		'quest.parent.quest': 'quest hierarchy not yet displayed',
 		'quest.priority.guild': 'guild priority not displayed',
 		'quest.review.needs_review': 'backend constraint not displayed in quest card',

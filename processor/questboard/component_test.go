@@ -118,9 +118,6 @@ func TestComponent_PostQuest(t *testing.T) {
 	if posted.Status != domain.QuestPosted {
 		t.Errorf("Status = %v, want %v", posted.Status, domain.QuestPosted)
 	}
-	if posted.TrajectoryID == "" {
-		t.Error("TrajectoryID should be set")
-	}
 	if posted.PostedAt.IsZero() {
 		t.Error("PostedAt should be set")
 	}

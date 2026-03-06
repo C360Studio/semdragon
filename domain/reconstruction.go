@@ -114,8 +114,6 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.Constraints.RequireReview = AsBool(triple.Object)
 
 		// Observability
-		case "quest.observability.trajectory_id":
-			q.TrajectoryID = AsString(triple.Object)
 		case "quest.execution.loop_id":
 			q.LoopID = AsString(triple.Object)
 

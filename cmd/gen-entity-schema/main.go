@@ -264,7 +264,7 @@ func extractQuest() EntitySchema {
 		CompletedAt:    &completedAt,
 		Attempts:       1,
 		MaxAttempts:    5,
-		TrajectoryID:   "traj-123",
+		LoopID:         "quest-test-loop-123",
 		Constraints:    domain.QuestConstraints{ReviewLevel: domain.ReviewStrict},
 	}
 

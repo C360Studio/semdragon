@@ -45,16 +45,12 @@ const (
 	ChatModeConverse ChatMode = "converse"
 	// ChatModeQuest enables quest/chain creation with structured JSON output.
 	ChatModeQuest ChatMode = "quest"
-	// ChatModePlan is a stub for future planning mode.
-	ChatModePlan ChatMode = "plan"
-	// ChatModeManage is a stub for future agent management mode.
-	ChatModeManage ChatMode = "manage"
 )
 
 // ValidChatMode returns true if the given ChatMode is one of the known constants.
 func ValidChatMode(m ChatMode) bool {
 	switch m {
-	case ChatModeConverse, ChatModeQuest, ChatModePlan, ChatModeManage:
+	case ChatModeConverse, ChatModeQuest:
 		return true
 	default:
 		return false
@@ -199,8 +195,7 @@ type GameEvent struct {
 	BattleID *BattleID `json:"battle_id,omitempty"`
 
 	// Semstreams integration
-	TrajectoryID string `json:"trajectory_id"`
-	SpanID       string `json:"span_id"`
+	SpanID string `json:"span_id"`
 }
 
 // EventFilter specifies criteria for filtering game events.

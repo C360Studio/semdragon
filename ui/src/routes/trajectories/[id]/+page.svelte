@@ -13,7 +13,7 @@
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
 	const trajectoryId = $derived($page.params.id ?? '');
-	const quest = $derived(worldStore.questList.find((q) => q.trajectory_id === trajectoryId));
+	const quest = $derived(worldStore.questList.find((q) => q.loop_id === trajectoryId));
 
 	$effect(() => {
 		if (quest) {
@@ -25,6 +25,7 @@
 	let trajectory = $state<Trajectory | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let expandedSteps = $state<Set<number>>(new Set());
 
 	let leftPanelOpen = $state(true);
 	let rightPanelOpen = $state(false);
@@ -59,17 +60,39 @@
 
 	function stepLabel(step: TrajectoryStep): string {
 		if (step.step_type === 'tool_call') return step.tool_name ?? 'tool_call';
+		if (step.prompt) return 'request';
+		if (step.response) return 'response';
 		return 'model_call';
 	}
 
-	function stepDetail(step: TrajectoryStep): string | null {
-		if (step.step_type === 'tool_call' && step.tool_arguments) {
-			return JSON.stringify(step.tool_arguments, null, 2);
-		}
-		if (step.step_type === 'model_call' && step.response) {
-			return step.response.length > 500 ? step.response.slice(0, 500) + '...' : step.response;
-		}
-		return null;
+	function stepIcon(step: TrajectoryStep): string {
+		if (step.step_type === 'tool_call') return 'T';
+		if (step.prompt) return '\u2192'; // →
+		return '\u2190'; // ←
+	}
+
+	function hasExpandableContent(step: TrajectoryStep): boolean {
+		return !!(step.prompt || step.response || step.tool_result || step.tool_arguments);
+	}
+
+	function toggleStep(index: number) {
+		const next = new Set(expandedSteps);
+		if (next.has(index)) next.delete(index);
+		else next.add(index);
+		expandedSteps = next;
+	}
+
+	function expandAll() {
+		expandedSteps = new Set(steps.map((_, i) => i));
+	}
+
+	function collapseAll() {
+		expandedSteps = new Set();
+	}
+
+	function preview(text: string, max = 120): string {
+		if (text.length <= max) return text;
+		return text.slice(0, max) + '\u2026';
 	}
 </script>
 
@@ -131,6 +154,12 @@
 						{#if trajectory.duration > 0}
 							<span class="summary-item" data-testid="trajectory-duration">Duration: {formatMs(trajectory.duration)}</span>
 						{/if}
+						{#if steps.length > 0}
+							<span class="summary-actions">
+								<button class="text-btn" onclick={expandAll}>Expand all</button>
+								<button class="text-btn" onclick={collapseAll}>Collapse all</button>
+							</span>
+						{/if}
 					</div>
 				{/if}
 
@@ -141,11 +170,19 @@
 					</div>
 				{:else}
 					<div class="timeline" data-testid="trajectory-timeline">
-						{#each steps as step}
-							{@const detail = stepDetail(step)}
+						{#each steps as step, i}
+							{@const expanded = expandedSteps.has(i)}
+							{@const expandable = hasExpandableContent(step)}
 							<div class="timeline-event" data-testid="timeline-event" data-step-type={step.step_type}>
-								<div class="event-marker"></div>
-								<div class="event-content">
+								<div class="event-marker" data-step-type={step.step_type}>{stepIcon(step)}</div>
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div
+									class="event-content"
+									class:expandable
+									class:expanded
+									onclick={expandable ? () => toggleStep(i) : undefined}
+								>
 									<div class="event-header">
 										<span class="event-type" data-testid="event-type">{stepLabel(step)}</span>
 										<span class="event-time" data-testid="event-time">{formatTime(step.timestamp)}</span>
@@ -155,9 +192,57 @@
 										{#if step.tokens_in || step.tokens_out}
 											<span class="event-tokens" data-testid="event-tokens">{step.tokens_in ?? 0}/{step.tokens_out ?? 0} tok</span>
 										{/if}
+										{#if expandable}
+											<span class="expand-indicator">{expanded ? '\u25BC' : '\u25B6'}</span>
+										{/if}
 									</div>
-									{#if detail}
-										<pre class="event-data" data-testid="event-data">{detail}</pre>
+
+									{#if !expanded && expandable}
+										<div class="event-preview">
+											{#if step.prompt}{preview(step.prompt)}{/if}
+											{#if step.response}{preview(step.response)}{/if}
+											{#if step.tool_result}{preview(step.tool_result)}{/if}
+										</div>
+									{/if}
+
+									{#if expanded}
+										<div class="event-details">
+											{#if step.prompt}
+												<div class="detail-section">
+													<span class="detail-label">Prompt</span>
+													<pre class="detail-content" data-testid="event-prompt">{step.prompt}</pre>
+												</div>
+											{/if}
+											{#if step.response}
+												<div class="detail-section">
+													<span class="detail-label">Response</span>
+													<pre class="detail-content" data-testid="event-response">{step.response}</pre>
+												</div>
+											{/if}
+											{#if step.tool_name}
+												<div class="detail-section">
+													<span class="detail-label">Tool</span>
+													<code class="detail-inline">{step.tool_name}</code>
+												</div>
+											{/if}
+											{#if step.tool_arguments}
+												<div class="detail-section">
+													<span class="detail-label">Arguments</span>
+													<pre class="detail-content" data-testid="event-tool-args">{JSON.stringify(step.tool_arguments, null, 2)}</pre>
+												</div>
+											{/if}
+											{#if step.tool_result}
+												<div class="detail-section">
+													<span class="detail-label">Result</span>
+													<pre class="detail-content" data-testid="event-tool-result">{step.tool_result}</pre>
+												</div>
+											{/if}
+											{#if step.request_id}
+												<div class="detail-meta">
+													request_id: {step.request_id}
+												</div>
+											{/if}
+										</div>
 									{/if}
 								</div>
 							</div>
@@ -246,6 +331,7 @@
 	.trajectory-summary {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: var(--spacing-md);
 		padding: var(--spacing-md);
 		background: var(--ui-surface-secondary);
@@ -258,6 +344,27 @@
 
 	.summary-item strong {
 		color: var(--ui-text-primary);
+	}
+
+	.summary-actions {
+		margin-left: auto;
+		display: flex;
+		gap: var(--spacing-sm);
+	}
+
+	.text-btn {
+		background: none;
+		border: none;
+		color: var(--ui-text-tertiary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+	}
+
+	.text-btn:hover {
+		color: var(--ui-text-primary);
+		background: var(--ui-surface-tertiary);
 	}
 
 	/* Timeline */
@@ -283,13 +390,23 @@
 
 	.event-marker {
 		position: absolute;
-		left: calc(-1 * var(--spacing-xl) + 4px);
+		left: calc(-1 * var(--spacing-xl) + 2px);
 		top: 4px;
-		width: 12px;
-		height: 12px;
+		width: 16px;
+		height: 16px;
 		border-radius: 50%;
 		background: var(--ui-interactive-primary);
 		border: 2px solid var(--ui-surface-primary);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.5rem;
+		font-weight: 700;
+		color: var(--ui-surface-primary);
+	}
+
+	.event-marker[data-step-type='tool_call'] {
+		background: var(--ui-text-tertiary);
 	}
 
 	.event-content {
@@ -299,11 +416,18 @@
 		padding: var(--spacing-md);
 	}
 
+	.event-content.expandable {
+		cursor: pointer;
+	}
+
+	.event-content.expandable:hover {
+		border-color: var(--ui-border-interactive);
+	}
+
 	.event-header {
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-md);
-		margin-bottom: var(--spacing-sm);
 	}
 
 	.event-type {
@@ -330,15 +454,71 @@
 		font-family: monospace;
 	}
 
-	.event-data {
+	.expand-indicator {
+		margin-left: auto;
+		font-size: 0.625rem;
+		color: var(--ui-text-tertiary);
+	}
+
+	.event-preview {
+		margin-top: var(--spacing-xs);
+		font-size: 0.8125rem;
+		color: var(--ui-text-tertiary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.event-details {
+		margin-top: var(--spacing-md);
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+	}
+
+	.detail-section {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.detail-label {
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-tertiary);
+	}
+
+	.detail-content {
 		font-family: monospace;
-		font-size: 0.75rem;
+		font-size: 0.8125rem;
 		background: var(--ui-surface-primary);
-		padding: var(--spacing-sm);
+		padding: var(--spacing-sm) var(--spacing-md);
 		border-radius: var(--radius-sm);
 		overflow-x: auto;
 		margin: 0;
 		color: var(--ui-text-secondary);
+		white-space: pre-wrap;
+		word-break: break-word;
+		max-height: 400px;
+		overflow-y: auto;
+	}
+
+	.detail-inline {
+		font-size: 0.8125rem;
+		background: var(--ui-surface-primary);
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		color: var(--ui-text-secondary);
+	}
+
+	.detail-meta {
+		font-size: 0.6875rem;
+		font-family: monospace;
+		color: var(--ui-text-tertiary);
+		padding-top: var(--spacing-xs);
+		border-top: 1px solid var(--ui-border-subtle);
 	}
 
 	.loading,

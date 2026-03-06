@@ -68,9 +68,9 @@ type Quest struct {
 	// Duration of quest execution (from start to completion)
 	Duration time.Duration `json:"duration,omitempty"`
 
-	// Observability - links back to semstreams
-	TrajectoryID string `json:"trajectory_id"`           // semstreams trajectory reference
-	LoopID       string `json:"loop_id,omitempty"`       // Agentic loop execution ID
+	// Observability — LoopID is the agentic-loop execution ID, also the key
+	// in AGENT_TRAJECTORIES KV bucket for trajectory lookup.
+	LoopID string `json:"loop_id,omitempty"`
 }
 
 // PrimarySkill returns the first required skill for this quest, or empty if none.

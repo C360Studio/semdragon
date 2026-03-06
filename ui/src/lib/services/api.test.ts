@@ -176,7 +176,7 @@ describe('API Service', () => {
 				output: null,
 				constraints: createQuestConstraints(),
 				posted_at: '2024-01-01T00:00:00Z',
-				trajectory_id: 'traj-1'
+				loop_id: 'loop-1'
 			};
 
 			mockFetch.mockResolvedValueOnce({

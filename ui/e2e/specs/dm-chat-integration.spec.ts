@@ -417,11 +417,8 @@ test.describe('DM Chat UI Integration @integration', () => {
 		}
 		await expect(input).toBeVisible();
 
-		// Switch to quest mode — previews only render in quest mode
-		await page.getByTestId('mode-pill-quest').click();
-
-		// Type and submit — this goes to the real backend which calls the mock LLM
-		await input.fill('create a quest to analyze test data');
+		// Use /quest prefix to trigger quest mode
+		await input.fill('/quest create a quest to analyze test data');
 		await page.getByTestId('chat-send').click();
 
 		// The mock LLM returns a quest_brief, so a preview card must render.
@@ -443,10 +440,8 @@ test.describe('DM Chat UI Integration @integration', () => {
 		}
 		await expect(input).toBeVisible();
 
-		// Switch to quest mode — previews only render in quest mode
-		await page.getByTestId('mode-pill-quest').click();
-
-		await input.fill('create a simple quest to run linter checks');
+		// Use /quest prefix to trigger quest mode
+		await input.fill('/quest create a simple quest to run linter checks');
 		await page.getByTestId('chat-send').click();
 
 		// 2. Wait for the quest preview card to render from the mock LLM response
@@ -473,10 +468,8 @@ test.describe('DM Chat UI Integration @integration', () => {
 		}
 		await expect(input).toBeVisible();
 
-		// Switch to quest mode — chain previews only render in quest mode
-		await page.getByTestId('mode-pill-quest').click();
-
-		await input.fill('create a quest chain for data pipeline');
+		// Use /quest prefix to trigger quest mode
+		await input.fill('/quest create a quest chain for data pipeline');
 		await page.getByTestId('chat-send').click();
 
 		// 2. The mock LLM returns a quest_chain, so the chain preview component must render

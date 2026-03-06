@@ -202,14 +202,14 @@ func seedAgents(
 		{
 			namePattern: "apprentice-{n}",
 			level:       2,
-			skills:      []domain.SkillTag{domain.SkillSummarization},
+			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillAnalysis, domain.SkillResearch},
 			guildID:     dataWranglerID,
 			count:       2,
 		},
 		{
 			namePattern: "rookie-coder",
 			level:       4,
-			skills:      []domain.SkillTag{domain.SkillCodeGen},
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
 			guildID:     codeSmithsID,
 			count:       1,
 		},

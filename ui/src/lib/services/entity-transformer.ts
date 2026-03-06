@@ -196,6 +196,9 @@ function transformAgent(key: string, entity: GraphEntity): Agent {
 function transformQuest(key: string, entity: GraphEntity): Quest {
 	const m = tripleMap(entity.triples);
 
+	const claimedByRaw = m.get('quest.assignment.agent');
+	const claimedBy = typeof claimedByRaw === 'string' && claimedByRaw ? agentId(claimedByRaw) : undefined;
+
 	return {
 		id: questId(key),
 		title: str(m.get('quest.identity.title'), 'Untitled Quest'),
@@ -219,13 +222,17 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 			require_review: false,
 			review_level: num(m.get('quest.review.level')) as ReviewLevel
 		},
+		claimed_by: claimedBy,
+		claimed_at: str(m.get('quest.lifecycle.claimed_at')) || undefined,
+		started_at: str(m.get('quest.lifecycle.started_at')) || undefined,
+		completed_at: str(m.get('quest.lifecycle.completed_at')) || undefined,
 		parent_quest: undefined,
 		sub_quests: [],
 		posted_at: str(m.get('quest.lifecycle.posted_at')),
 		attempts: num(m.get('quest.attempts.current')),
 		max_attempts: num(m.get('quest.attempts.max'), 3),
 		escalated: false,
-		trajectory_id: ''
+		loop_id: str(m.get('quest.execution.loop_id'))
 	};
 }
 

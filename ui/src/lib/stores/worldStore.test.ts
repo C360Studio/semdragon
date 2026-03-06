@@ -107,7 +107,7 @@ function createTestQuest(overrides: Partial<Quest> = {}): Quest {
 			review_level: 1
 		},
 		posted_at: new Date().toISOString(),
-		trajectory_id: 'traj-123',
+		loop_id: 'loop-123',
 		...overrides
 	};
 }
@@ -182,7 +182,6 @@ function createTestEvent(overrides: Partial<GameEvent> = {}): GameEvent {
 		type: 'quest.lifecycle.posted',
 		timestamp: Date.now(),
 		session_id: 'session-1',
-		trajectory_id: 'traj-1',
 		span_id: 'span-1',
 		data: {},
 		...overrides

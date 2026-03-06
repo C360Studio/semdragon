@@ -131,7 +131,7 @@
         "quest.lifecycle.claimed_at",
         "quest.lifecycle.completed_at",
         "quest.lifecycle.started_at",
-        "quest.observability.trajectory_id",
+        "quest.execution.loop_id",
         "quest.parent.quest",
         "quest.priority.guild"
       ],

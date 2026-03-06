@@ -21,8 +21,6 @@ type dmChatContextItem struct {
 // The prompt varies by chat mode:
 //   - converse: Q&A only, no structured output
 //   - quest: quest/chain creation with JSON schemas
-//   - plan: stub (converse + coming soon note)
-//   - manage: stub (converse + coming soon note)
 //
 // All modes share the DM persona, world state summary, and injected context.
 func (s *Service) buildDMSystemPrompt(ctx context.Context, mode domain.ChatMode, contextItems []dmChatContextItem) string {
@@ -30,7 +28,11 @@ func (s *Service) buildDMSystemPrompt(ctx context.Context, mode domain.ChatMode,
 
 	// DM persona (shared, mode-neutral)
 	b.WriteString(`You are the Dungeon Master of a quest-based agentic workflow system called Semdragons.
-You oversee agents, quests, parties, guilds, and boss battles.
+You manage the quest board and oversee the game world. Agents are autonomous — they
+claim quests from the board based on their skills, trust tier, and a boid-flocking
+algorithm. You do NOT assign quests to agents. Instead, you post quests to the board
+and agents pull work they are qualified for. Trust tiers (Apprentice through Grandmaster)
+are earned through XP from completed quests, not manually assigned.
 `)
 
 	// Mode-specific instructions
@@ -47,22 +49,6 @@ structured JSON output. Use one of the two formats below.
 `)
 		s.writeQuestSchemaInstructions(&b)
 		s.writeAvailableOptions(&b)
-
-	case domain.ChatModePlan:
-		b.WriteString(`
-Plan mode is coming soon. For now, help the user think through their objective.
-Ask clarifying questions about scope, dependencies, and success criteria.
-Do NOT produce JSON blocks or structured output. Answer in natural language only.
-
-`)
-
-	case domain.ChatModeManage:
-		b.WriteString(`
-Manage mode is coming soon. For now, answer questions about agents, their status,
-levels, skills, and performance. Do NOT produce JSON blocks or structured output.
-Answer in natural language only.
-
-`)
 
 	default: // converse
 		b.WriteString(`
@@ -128,6 +114,11 @@ For MULTIPLE related quests (a chain), include a JSON block tagged as quest_chai
   ]
 }
 ` + "```" + `
+
+IMPORTANT: When choosing skills for a quest, prefer skills that match agents currently
+available in the roster below. If no agents have the exact skill, pick the closest match
+from the roster's skill sets. This ensures agents can actually claim and work on the quest.
+If the quest genuinely requires a skill no agent has, use it anyway but note the gap.
 
 If the user's intent is unclear, ask ONE clarifying question — but still include your
 best-guess JSON block so the user can refine it. Prefer producing output over asking

@@ -261,7 +261,11 @@
         "loops_bucket": "AGENT_LOOPS",
         "trajectories_bucket": "AGENT_TRAJECTORIES",
         "context": {
-          "enabled": false
+          "enabled": true,
+          "compact_threshold": 0.6,
+          "tool_result_max_age": 3,
+          "headroom_tokens": 6400,
+          "summarization_model": "ollama-coder"
         }
       }
     },
@@ -320,6 +324,22 @@
         "board": "board1",
         "auto_form_parties": true,
         "require_lead_approval": false
+      }
+    },
+    "autonomy": {
+      "type": "processor",
+      "name": "autonomy",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "initial_delay_ms": 2000,
+        "idle_interval_ms": 5000,
+        "on_quest_interval_ms": 30000,
+        "in_battle_interval_ms": 60000,
+        "cooldown_interval_ms": 15000,
+        "dm_mode": "full_auto"
       }
     }
   }

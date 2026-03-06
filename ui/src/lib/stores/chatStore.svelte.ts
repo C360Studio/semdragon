@@ -4,11 +4,17 @@
  * Manages conversation history, context injection, and quest brief extraction.
  * Uses Svelte 5 runes for reactive state management.
  * Persists to localStorage for instant UI restore on page refresh.
+ *
+ * Slash commands:
+ *   /quest <text>  — sends message in quest mode (structured quest output)
+ *   /help          — shows client-side help (no API call)
+ *   (no prefix)    — sends in converse mode (natural language Q&A)
  */
 
 import type { Quest, QuestDifficulty, SkillTag, DMChatSession, ChatMode } from '$types';
 import { browser } from '$app/environment';
 import { sendDMChat, createQuest, postQuestChain, getDMSession, ApiError } from '$lib/services/api';
+import { worldStore } from '$lib/stores/worldStore.svelte';
 
 export type { ChatMode };
 import { pageContext } from '$lib/stores/pageContext.svelte';
@@ -53,6 +59,24 @@ export interface QuestChainEntry {
 }
 
 // =============================================================================
+// HELP TEXT
+// =============================================================================
+
+const HELP_TEXT = `**Available commands:**
+
+**/quest <description>** — Describe work and the DM will draft a quest or quest chain.
+Example: \`/quest Analyze the sales data CSV and produce a summary report\`
+
+**/help** — Show this help message.
+
+**No prefix** — Chat with the DM about the game world, agents, quests, or strategies.
+
+**Tips:**
+- Pin entities (agents, quests) as context chips for targeted questions.
+- Quest previews include a "Post Quest" button to add them to the board.
+- Agents autonomously claim quests based on their skills and trust tier.`;
+
+// =============================================================================
 // LOCALSTORAGE PERSISTENCE
 // =============================================================================
 
@@ -62,7 +86,6 @@ const MAX_STORAGE_AGE_MS = 24 * 60 * 60 * 1000; // 24h
 interface PersistedChatState {
 	messages: ChatMessage[];
 	sessionId: string | null;
-	mode: ChatMode;
 	savedAt: number;
 }
 
@@ -71,7 +94,6 @@ function saveToLocalStorage() {
 		const state: PersistedChatState = {
 			messages,
 			sessionId,
-			mode,
 			savedAt: Date.now()
 		};
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -136,7 +158,6 @@ let height = $state(250);
 let loading = $state(false);
 let error = $state<string | null>(null);
 let sessionId = $state<string | null>(null);
-let mode = $state<ChatMode>('converse');
 
 // Restore from localStorage on module load — browser guard prevents SSR errors
 if (browser) {
@@ -144,7 +165,6 @@ if (browser) {
 	if (restored) {
 		messages = restored.messages;
 		sessionId = restored.sessionId;
-		if (restored.mode) mode = restored.mode;
 		if (messages.length > 0) open = true;
 	}
 }
@@ -184,13 +204,27 @@ function setHeight(h: number) {
 	height = Math.max(150, Math.min(h, window.innerHeight * 0.6));
 }
 
-function setMode(m: ChatMode) {
-	mode = m;
-	saveToLocalStorage();
-}
-
 async function sendMessage(text: string) {
 	if (!text.trim() || loading) return;
+
+	// Parse slash command prefix
+	let effectiveMode: ChatMode = 'converse';
+	let messageText = text.trim();
+
+	if (messageText.startsWith('/quest ')) {
+		effectiveMode = 'quest';
+		messageText = messageText.slice(7).trim();
+		if (!messageText) return; // nothing after /quest
+	} else if (messageText.startsWith('/help')) {
+		// Client-side help — inject DM-style help message, don't call API
+		messages = [
+			...messages,
+			{ role: 'user', content: text.trim(), timestamp: Date.now() },
+			{ role: 'dm', content: HELP_TEXT, timestamp: Date.now() }
+		];
+		saveToLocalStorage();
+		return;
+	}
 
 	const userMsg: ChatMessage = {
 		role: 'user',
@@ -226,7 +260,7 @@ async function sendMessage(text: string) {
 			}
 		}
 
-		const response = await sendDMChat(text.trim(), mode, context, history, sessionId ?? undefined);
+		const response = await sendDMChat(messageText, effectiveMode, context, history, sessionId ?? undefined);
 
 		// Track session for trace continuity across turns
 		if (response.session_id) {
@@ -246,6 +280,11 @@ async function sendMessage(text: string) {
 		saveToLocalStorage();
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Failed to send message';
+		// If the server doesn't recognize our session, clear stale state
+		// so the next message starts fresh instead of referencing old data.
+		if (e instanceof ApiError && (e.status === 404 || e.status === 503)) {
+			sessionId = null;
+		}
 		// Remove the user message on failure so they can retry
 		messages = messages.slice(0, -1);
 	} finally {
@@ -261,6 +300,8 @@ async function postQuest(brief: QuestBrief): Promise<Quest | null> {
 			require_human_review: false,
 			budget: 0
 		});
+		// Optimistic update — show quest immediately instead of waiting for SSE
+		worldStore.upsertQuest(quest);
 		return quest;
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Failed to post quest';
@@ -271,6 +312,10 @@ async function postQuest(brief: QuestBrief): Promise<Quest | null> {
 async function postChain(chain: QuestChainBrief): Promise<Quest[] | null> {
 	try {
 		const quests = await postQuestChain(chain);
+		// Optimistic update — show quests immediately instead of waiting for SSE
+		for (const quest of quests) {
+			worldStore.upsertQuest(quest);
+		}
 		return quests;
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'Failed to post quest chain';
@@ -338,7 +383,6 @@ export const chatStore = {
 	get loading() { return loading; },
 	get error() { return error; },
 	get sessionId() { return sessionId; },
-	get mode() { return mode; },
 
 	addContext,
 	addContextQuiet,
@@ -346,7 +390,6 @@ export const chatStore = {
 	clearContext,
 	toggle,
 	setHeight,
-	setMode,
 	sendMessage,
 	postQuest,
 	postChain,

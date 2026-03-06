@@ -262,7 +262,6 @@ make test-integration         # Integration tests (requires Docker — NATS via 
 make test-all                 # All tests (unit + integration)
 make test-one TEST=TestName   # Specific unit test
 make test-one-integration TEST=TestName  # Specific integration test
-make test-race                # All tests with race detector
 make lint                     # revive + go vet
 make check                    # fmt + tidy + lint + test-all
 make coverage                 # HTML coverage report → coverage.html
@@ -289,8 +288,8 @@ Start with `SEED_E2E=true` to pre-populate agents and guilds, then post a quest 
 the reactive pipeline in action.
 
 ```bash
-# 1. Start with seeded data
-SEED_E2E=true docker compose up -d
+# 1. Start with seeded data (mock LLM — no API key needed)
+SEED_E2E=true make up
 
 # Verify everything is running
 curl -s http://localhost:8080/health

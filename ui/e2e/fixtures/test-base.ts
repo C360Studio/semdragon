@@ -116,7 +116,6 @@ export interface QuestResponse {
 	completed_at?: string;
 	require_human_review?: boolean;
 	review_level?: number;
-	trajectory_id?: string;
 	loop_id?: string;
 	[key: string]: unknown;
 }
@@ -186,7 +185,7 @@ export interface ActiveEffectResponse {
 	[key: string]: unknown;
 }
 
-export type ChatMode = 'converse' | 'quest' | 'plan' | 'manage';
+export type ChatMode = 'converse' | 'quest';
 
 export interface DMChatResponse {
 	message: string;

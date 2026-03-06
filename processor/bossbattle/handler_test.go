@@ -1483,8 +1483,10 @@ func TestResolveJudges_CatalogJudgesReturnsCopy(t *testing.T) {
 func TestResolveJudges_LevelIgnoredWhenCatalogHasJudges(t *testing.T) {
 	// When the catalog provides judges the level parameter is irrelevant —
 	// the same judges must be returned regardless of which level is passed.
+	// Include a human judge so the ReviewHuman safety-append doesn't add an extra one.
 	catalogJudges := []domain.Judge{
 		{ID: "catalog-judge", Type: domain.JudgeAutomated},
+		{ID: "catalog-human", Type: domain.JudgeHuman},
 	}
 	comp := &Component{
 		config: &Config{},
@@ -1502,7 +1504,7 @@ func TestResolveJudges_LevelIgnoredWhenCatalogHasJudges(t *testing.T) {
 		domain.ReviewHuman,
 	} {
 		got := comp.resolveJudges(level)
-		if len(got) != 1 || got[0].ID != "catalog-judge" {
+		if len(got) != 2 || got[0].ID != "catalog-judge" || got[1].ID != "catalog-human" {
 			t.Errorf("level %d: resolveJudges() = %v, want catalog judges regardless of level", level, got)
 		}
 	}

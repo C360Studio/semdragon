@@ -131,10 +131,10 @@
 						</section>
 					{/if}
 
-					{#if quest.trajectory_id}
+					{#if quest.loop_id}
 						<section class="detail-card full-width">
 							<h2>Trajectory</h2>
-							<a href="/trajectories/{quest.trajectory_id}" class="trajectory-link">
+							<a href="/trajectories/{quest.loop_id}" class="trajectory-link">
 								View full trajectory timeline
 							</a>
 						</section>

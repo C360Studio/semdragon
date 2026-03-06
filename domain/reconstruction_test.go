@@ -92,7 +92,7 @@ func TestQuestRoundTrip_FullFields(t *testing.T) {
 		RequiredTools:  []string{"tool-a", "tool-b"},
 		MinTier:        TierJourneyman,
 		PartyRequired:  true,
-		TrajectoryID:   "traj-xyz",
+		LoopID: "quest-test-loop-abc",
 		Constraints: QuestConstraints{
 			RequireReview: true,
 			ReviewLevel:   ReviewStrict,
@@ -136,8 +136,8 @@ func TestQuestRoundTrip_FullFields(t *testing.T) {
 	if r.PartyRequired != original.PartyRequired {
 		t.Errorf("PartyRequired = %v, want %v", r.PartyRequired, original.PartyRequired)
 	}
-	if r.TrajectoryID != original.TrajectoryID {
-		t.Errorf("TrajectoryID = %q, want %q", r.TrajectoryID, original.TrajectoryID)
+	if r.LoopID != original.LoopID {
+		t.Errorf("LoopID = %q, want %q", r.LoopID, original.LoopID)
 	}
 	if r.Constraints.RequireReview != original.Constraints.RequireReview {
 		t.Errorf("RequireReview = %v, want %v", r.Constraints.RequireReview, original.Constraints.RequireReview)

@@ -217,9 +217,9 @@
 								<dt>Claimed By</dt>
 								<dd><a href="/agents/{quest.claimed_by}">{quest.claimed_by}</a></dd>
 							{/if}
-							{#if quest.trajectory_id}
+							{#if quest.loop_id}
 								<dt>Trajectory</dt>
-								<dd><a href="/trajectories/{quest.trajectory_id}">View</a></dd>
+								<dd><a href="/trajectories/{quest.loop_id}">View</a></dd>
 							{/if}
 						</dl>
 

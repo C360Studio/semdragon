@@ -91,7 +91,7 @@ type SubmitReviewRequest struct {
 // DMChatRequest is the request body for POST /dm/chat.
 type DMChatRequest struct {
 	Message   string              `json:"message" description:"User message to the DM"`
-	Mode      string              `json:"mode,omitempty" description:"Chat mode: converse, quest, plan, manage"`
+	Mode      string              `json:"mode,omitempty" description:"Chat mode: converse or quest"`
 	Context   []DMChatContextRef  `json:"context,omitempty" description:"Entity references for context"`
 	History   []DMChatHistoryItem `json:"history,omitempty" description:"Previous conversation turns"`
 	SessionID string              `json:"session_id,omitempty" description:"Hex session ID for multi-turn"`

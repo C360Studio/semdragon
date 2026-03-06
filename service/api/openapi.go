@@ -585,7 +585,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			"/dm/chat": {
 				POST: &service.OperationSpec{
 					Summary:     "DM chat",
-					Description: "Send a natural language message to the Dungeon Master. Supports four modes: 'converse' (default, Q&A), 'quest' (create quests/chains), 'plan' (stub), 'manage' (stub). Only quest mode produces structured quest_brief/quest_chain output. Sessions persist across turns.",
+					Description: "Send a natural language message to the Dungeon Master. Supports two modes: 'converse' (default, Q&A) and 'quest' (create quests/chains with structured output). Sessions persist across turns.",
 					Tags:        []string{"DM"},
 					RequestBody: &service.RequestBodySpec{
 						Description: "Chat message and optional context",

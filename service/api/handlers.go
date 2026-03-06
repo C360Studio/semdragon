@@ -1146,14 +1146,14 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 	if req.Mode != "" {
 		chatMode = domain.ChatMode(req.Mode)
 		if !domain.ValidChatMode(chatMode) {
-			s.writeError(w, "invalid mode: must be converse, quest, plan, or manage", http.StatusBadRequest)
+			s.writeError(w, "invalid mode: must be converse or quest", http.StatusBadRequest)
 			return
 		}
 	}
 
 	// Route LLM capability by mode
 	capability := "dm-chat"
-	if chatMode == domain.ChatModeQuest || chatMode == domain.ChatModePlan {
+	if chatMode == domain.ChatModeQuest {
 		capability = "quest-design"
 	}
 

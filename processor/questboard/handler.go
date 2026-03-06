@@ -48,12 +48,12 @@ func (c *Component) PostQuest(ctx context.Context, quest domain.Quest) (*domain.
 	// Set full entity ID
 	quest.ID = domain.QuestID(c.boardConfig.QuestEntityID(instance))
 
-	// Create trace context for this quest
-	var tc = c.traces.StartQuestTrace(quest.ID)
+	// Create trace context for this quest (used for distributed tracing headers,
+	// not trajectory storage — agentic-loop owns trajectories via LoopID).
+	_ = c.traces.StartQuestTrace(quest.ID)
 	if quest.ParentQuest != nil {
-		tc = c.traces.StartQuestTraceWithParent(quest.ID, *quest.ParentQuest)
+		_ = c.traces.StartQuestTraceWithParent(quest.ID, *quest.ParentQuest)
 	}
-	quest.TrajectoryID = tc.TraceID
 
 	// Set defaults
 	quest.Status = domain.QuestPosted
@@ -913,10 +913,6 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *domain.Quest {
 		case "quest.acceptance.criterion":
 			if v, ok := triple.Object.(string); ok {
 				quest.Acceptance = append(quest.Acceptance, v)
-			}
-		case "quest.observability.trajectory_id":
-			if v, ok := triple.Object.(string); ok {
-				quest.TrajectoryID = v
 			}
 		case "quest.review.level":
 			if v, ok := triple.Object.(float64); ok {

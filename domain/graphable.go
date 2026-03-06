@@ -146,13 +146,6 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
-	if q.TrajectoryID != "" {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.observability.trajectory_id", Object: q.TrajectoryID,
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
 	if q.LoopID != "" {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.execution.loop_id", Object: q.LoopID,

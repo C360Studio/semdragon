@@ -5,69 +5,25 @@
 	 * Collapsed: thin bar with "Ask the DM..." text
 	 * Expanded: scrollable messages, context chips, input area
 	 * Resizable vertically via VerticalResizeHandle
+	 *
+	 * Slash commands:
+	 *   /quest <text>  — quest creation mode
+	 *   /help          — client-side help
+	 *   (no prefix)    — conversational Q&A
 	 */
 
 	import { chatStore } from '$lib/stores/chatStore.svelte';
-	import type { QuestBrief, QuestChainBrief, ChatMode } from '$lib/stores/chatStore.svelte';
+	import type { QuestBrief, QuestChainBrief } from '$lib/stores/chatStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import ChatMessageComponent from './ChatMessage.svelte';
 	import ContextChip from './ContextChip.svelte';
 	import VerticalResizeHandle from './VerticalResizeHandle.svelte';
 
-	interface ModeConfig {
-		id: ChatMode;
-		label: string;
-		placeholder: string;
-		stub: boolean;
-		description: string;
-		examples: string[];
-	}
-
-	const modes: ModeConfig[] = [
-		{
-			id: 'converse',
-			label: 'Chat',
-			placeholder: 'Ask the DM anything...',
-			stub: false,
-			description: 'Ask questions about the game world, your agents, quests, or strategies.',
-			examples: [
-				'What agents do I have and what are their levels?',
-				'Which quests are currently active?',
-				'How does the XP system work?'
-			]
-		},
-		{
-			id: 'quest',
-			label: 'Quest',
-			placeholder: 'Describe the work you want done...',
-			stub: false,
-			description: 'Describe work and the DM will draft a quest or quest chain for your agents.',
-			examples: [
-				'Analyze the sales data CSV and produce a summary report',
-				'Review the authentication module for security issues',
-				'Build a data pipeline that cleans and transforms user logs'
-			]
-		},
-		{
-			id: 'plan',
-			label: 'Plan',
-			placeholder: 'What do you want to build?',
-			stub: true,
-			description: 'Break down a project into a structured quest chain with dependencies.',
-			examples: []
-		},
-		{
-			id: 'manage',
-			label: 'Manage',
-			placeholder: 'What do you need to do with agents?',
-			stub: true,
-			description: 'Recruit, promote, or reassign agents across guilds and parties.',
-			examples: []
-		}
+	const examplePrompts = [
+		'What agents do I have and what are their levels?',
+		'Which quests are currently active?',
+		'/quest Analyze the sales data CSV and produce a summary report'
 	];
-
-	let currentMode = $derived(modes.find((m) => m.id === chatStore.mode) ?? modes[0]);
-	let isStubMode = $derived(currentMode.stub);
 
 	let input = $state('');
 	let messagesContainer: HTMLElement | undefined = $state();
@@ -146,10 +102,13 @@
 	{/if}
 
 	<!-- Collapsed bar / Header -->
-	<button
-		type="button"
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div
 		class="chat-header"
 		onclick={() => chatStore.toggle()}
+		role="button"
+		tabindex="0"
 		data-testid="chat-toggle"
 	>
 		<span class="header-icon">{chatStore.open ? '\u25BE' : '\u25B4'}</span>
@@ -158,24 +117,20 @@
 			<span class="header-count">{chatStore.messages.length}</span>
 		{/if}
 		<span class="header-hint">{chatStore.open ? '' : 'Click to chat'}</span>
-	</button>
+		{#if chatStore.open && chatStore.messages.length > 0}
+			<button
+				type="button"
+				class="header-clear"
+				onclick={(e) => { e.stopPropagation(); chatStore.clearMessages(); }}
+				title="Clear chat history"
+				data-testid="chat-clear"
+			>
+				Clear
+			</button>
+		{/if}
+	</div>
 
 	{#if chatStore.open}
-		<!-- Mode selector pills -->
-		<div class="mode-selector" data-testid="mode-selector">
-			{#each modes as m}
-				<button
-					type="button"
-					class="mode-pill"
-					class:active={chatStore.mode === m.id}
-					onclick={() => chatStore.setMode(m.id)}
-					data-testid="mode-pill-{m.id}"
-				>
-					{m.label}
-				</button>
-			{/each}
-		</div>
-
 		<div class="chat-body" style="height: {chatStore.height}px">
 			<!-- Messages -->
 			<div class="messages-scroll" bind:this={messagesContainer}>
@@ -183,7 +138,6 @@
 					<ChatMessageComponent
 						role={msg.role}
 						content={msg.content}
-						mode={chatStore.mode}
 						questBrief={msg.questBrief}
 						questChain={msg.questChain}
 						onPostQuest={handlePostQuest}
@@ -191,23 +145,18 @@
 					/>
 				{:else}
 					<div class="empty-chat">
-						<p class="mode-description">{currentMode.description}</p>
-						{#if currentMode.examples.length > 0}
-							<div class="example-prompts">
-								{#each currentMode.examples as example}
-									<button
-										type="button"
-										class="example-prompt"
-										onclick={() => { input = example; }}
-									>
-										{example}
-									</button>
-								{/each}
-							</div>
-						{/if}
-						{#if isStubMode}
-							<p class="stub-note">Coming soon</p>
-						{/if}
+						<p class="chat-description">Ask questions, create quests, or get help. Try /quest or /help.</p>
+						<div class="example-prompts">
+							{#each examplePrompts as example}
+								<button
+									type="button"
+									class="example-prompt"
+									onclick={() => { input = example; }}
+								>
+									{example}
+								</button>
+							{/each}
+						</div>
 					</div>
 				{/each}
 
@@ -253,15 +202,12 @@
 
 			<!-- Input area -->
 			<div class="input-area">
-				{#if isStubMode}
-					<div class="stub-overlay" data-testid="stub-overlay">Coming soon</div>
-				{/if}
 				<textarea
 					class="chat-input"
-					placeholder={currentMode.placeholder}
+					placeholder="Ask the DM... (try /quest or /help)"
 					bind:value={input}
 					onkeydown={handleKeyDown}
-					disabled={chatStore.loading || isStubMode}
+					disabled={chatStore.loading}
 					rows={1}
 					data-testid="chat-input"
 				></textarea>
@@ -269,7 +215,7 @@
 					type="button"
 					class="send-button"
 					onclick={handleSend}
-					disabled={!input.trim() || chatStore.loading || isStubMode}
+					disabled={!input.trim() || chatStore.loading}
 					data-testid="chat-send"
 				>
 					Send
@@ -327,6 +273,22 @@
 		font-weight: 400;
 	}
 
+	.header-clear {
+		padding: 2px 8px;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: transparent;
+		color: var(--ui-text-tertiary);
+		font-size: 0.625rem;
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.header-clear:hover {
+		color: var(--ui-text-primary);
+		border-color: var(--ui-text-secondary);
+	}
+
 	.header-count {
 		font-size: 0.625rem;
 		padding: 1px 6px;
@@ -334,39 +296,6 @@
 		background: var(--ui-interactive-primary);
 		color: var(--ui-text-on-primary);
 		font-weight: 600;
-	}
-
-	/* Mode selector */
-	.mode-selector {
-		display: flex;
-		gap: 2px;
-		padding: 4px var(--spacing-sm);
-		background: var(--ui-surface-secondary);
-		border-bottom: 1px solid var(--ui-border-subtle);
-	}
-
-	.mode-pill {
-		padding: 2px 10px;
-		border: 1px solid var(--ui-border-subtle);
-		border-radius: var(--radius-full);
-		background: transparent;
-		color: var(--ui-text-secondary);
-		font-size: 0.75rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all 150ms ease;
-		line-height: 1.3;
-	}
-
-	.mode-pill:hover {
-		background: var(--ui-interactive-secondary-hover);
-		color: var(--ui-text-primary);
-	}
-
-	.mode-pill.active {
-		background: var(--ui-interactive-primary);
-		color: var(--ui-text-on-primary);
-		border-color: var(--ui-interactive-primary);
 	}
 
 	/* Chat body */
@@ -395,7 +324,7 @@
 		align-items: center;
 	}
 
-	.mode-description {
+	.chat-description {
 		margin: 0 0 var(--spacing-md);
 		color: var(--ui-text-secondary);
 		font-size: 0.8rem;
@@ -425,13 +354,6 @@
 		border-color: var(--ui-interactive-primary);
 		color: var(--ui-text-primary);
 		background: var(--ui-surface-secondary);
-	}
-
-	.stub-note {
-		margin-top: var(--spacing-md);
-		font-style: italic;
-		color: var(--ui-text-tertiary);
-		font-size: 0.75rem;
 	}
 
 	.loading-indicator {
@@ -476,22 +398,6 @@
 		gap: 4px;
 		padding: var(--spacing-xs) var(--spacing-sm);
 		border-top: 1px solid var(--ui-border-subtle);
-	}
-
-	/* Stub overlay */
-	.stub-overlay {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--ui-surface-secondary);
-		opacity: 0.85;
-		color: var(--ui-text-tertiary);
-		font-size: 0.75rem;
-		font-style: italic;
-		z-index: 1;
-		border-radius: var(--radius-md);
 	}
 
 	/* Input area */

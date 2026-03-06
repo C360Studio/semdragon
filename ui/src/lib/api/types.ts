@@ -403,7 +403,6 @@ export interface GameEvent {
 	party_id?: PartyID;
 	guild_id?: GuildID;
 	battle_id?: BattleID;
-	trajectory_id: string;
 	span_id: string;
 }
 
@@ -534,7 +533,7 @@ export interface TraceInfo {
 	parent_span_id?: string;
 }
 
-export type ChatMode = 'converse' | 'quest' | 'plan' | 'manage';
+export type ChatMode = 'converse' | 'quest';
 
 export interface ChatResponse {
 	message: string;

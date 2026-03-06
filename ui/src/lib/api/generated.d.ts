@@ -3674,7 +3674,7 @@ export interface components {
             status: "posted" | "claimed" | "in_progress" | "in_review" | "completed" | "failed" | "escalated" | "cancelled";
             sub_quests?: string[];
             title: string;
-            trajectory_id: string;
+            loop_id?: string;
             verdict?: {
                 feedback: string;
                 level_change: number;

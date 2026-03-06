@@ -153,6 +153,20 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 			continue
 		}
 
+		// Transition quest to in_progress so questbridge picks it up
+		now1 := time.Now()
+		quest.Status = domain.QuestInProgress
+		quest.StartedAt = &now1
+
+		if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
+			c.errorsCount.Add(1)
+			c.logger.Error("failed to start quest after claim",
+				"quest_id", suggestion.QuestID,
+				"error", err)
+			// Quest is claimed but not started — questbridge won't pick it up,
+			// but the quest is still recoverable via manual StartQuest.
+		}
+
 		// Write agent state: on_quest
 		now2 := time.Now()
 		questIDRef := domain.QuestID(quest.ID)
