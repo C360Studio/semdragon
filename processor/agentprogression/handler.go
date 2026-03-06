@@ -612,13 +612,18 @@ func (c *Component) handlePeerReviewStateChange(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	// Compute running average: (oldAvg * oldCount + thisAvg) / (oldCount + 1).
-	oldAvg := agent.Stats.PeerReviewAvg
+	// Compute running averages: (oldAvg * oldCount + thisVal) / (oldCount + 1).
 	oldCount := agent.Stats.PeerReviewCount
 	newCount := oldCount + 1
-	newAvg := (oldAvg*float64(oldCount) + review.LeaderAvgRating) / float64(newCount)
+	fc := float64(oldCount)
+	fn := float64(newCount)
 
-	agent.Stats.PeerReviewAvg = newAvg
+	agent.Stats.PeerReviewAvg = (agent.Stats.PeerReviewAvg*fc + review.LeaderAvgRating) / fn
+	if review.LeaderReview != nil {
+		agent.Stats.PeerReviewQ1Avg = (agent.Stats.PeerReviewQ1Avg*fc + float64(review.LeaderReview.Ratings.Q1)) / fn
+		agent.Stats.PeerReviewQ2Avg = (agent.Stats.PeerReviewQ2Avg*fc + float64(review.LeaderReview.Ratings.Q2)) / fn
+		agent.Stats.PeerReviewQ3Avg = (agent.Stats.PeerReviewQ3Avg*fc + float64(review.LeaderReview.Ratings.Q3)) / fn
+	}
 	agent.Stats.PeerReviewCount = newCount
 	agent.UpdatedAt = time.Now()
 
@@ -636,10 +641,12 @@ func (c *Component) handlePeerReviewStateChange(entry jetstream.KeyValueEntry) {
 	c.logger.Info("updated agent peer review stats",
 		"agent_id", review.MemberID,
 		"review_id", review.ID,
-		"old_avg", oldAvg,
-		"new_avg", newAvg,
+		"avg", agent.Stats.PeerReviewAvg,
+		"q1_avg", agent.Stats.PeerReviewQ1Avg,
+		"q2_avg", agent.Stats.PeerReviewQ2Avg,
+		"q3_avg", agent.Stats.PeerReviewQ3Avg,
 		"review_count", newCount,
-		"below_threshold", newAvg < peerReviewThreshold)
+		"below_threshold", agent.Stats.PeerReviewAvg < peerReviewThreshold)
 }
 
 // =============================================================================

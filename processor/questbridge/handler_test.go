@@ -1204,43 +1204,58 @@ func TestLoadPeerFeedback(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		peerReviewAvg float64
-		peerReviewCnt int
-		wantLen       int
-		wantRating    float64
+		name    string
+		stats   agentprogression.AgentStats
+		wantLen int
 	}{
 		{
-			name:          "no reviews — returns empty slice",
-			peerReviewAvg: 0,
-			peerReviewCnt: 0,
-			wantLen:       0,
+			name:    "no reviews — returns nil",
+			stats:   agentprogression.AgentStats{},
+			wantLen: 0,
 		},
 		{
-			name:          "avg exactly at threshold — returns empty slice",
-			peerReviewAvg: 3.0,
-			peerReviewCnt: 5,
-			wantLen:       0,
+			name: "all questions at threshold — returns nil",
+			stats: agentprogression.AgentStats{
+				PeerReviewCount: 5,
+				PeerReviewAvg:   3.0,
+				PeerReviewQ1Avg: 3.0,
+				PeerReviewQ2Avg: 3.0,
+				PeerReviewQ3Avg: 3.0,
+			},
+			wantLen: 0,
 		},
 		{
-			name:          "avg above threshold — returns empty slice",
-			peerReviewAvg: 4.5,
-			peerReviewCnt: 3,
-			wantLen:       0,
+			name: "all questions above threshold — returns nil",
+			stats: agentprogression.AgentStats{
+				PeerReviewCount: 3,
+				PeerReviewAvg:   4.5,
+				PeerReviewQ1Avg: 4.0,
+				PeerReviewQ2Avg: 5.0,
+				PeerReviewQ3Avg: 4.5,
+			},
+			wantLen: 0,
 		},
 		{
-			name:          "avg below threshold — returns one summary",
-			peerReviewAvg: 2.5,
-			peerReviewCnt: 4,
-			wantLen:       1,
-			wantRating:    2.5,
+			name: "one question below threshold — returns one item",
+			stats: agentprogression.AgentStats{
+				PeerReviewCount: 4,
+				PeerReviewAvg:   3.2,
+				PeerReviewQ1Avg: 2.5,
+				PeerReviewQ2Avg: 3.5,
+				PeerReviewQ3Avg: 3.5,
+			},
+			wantLen: 1,
 		},
 		{
-			name:          "avg well below threshold — returns one summary",
-			peerReviewAvg: 1.3,
-			peerReviewCnt: 2,
-			wantLen:       1,
-			wantRating:    1.3,
+			name: "all questions below threshold — returns three items",
+			stats: agentprogression.AgentStats{
+				PeerReviewCount: 2,
+				PeerReviewAvg:   1.5,
+				PeerReviewQ1Avg: 1.5,
+				PeerReviewQ2Avg: 2.0,
+				PeerReviewQ3Avg: 1.0,
+			},
+			wantLen: 3,
 		},
 	}
 
@@ -1249,12 +1264,9 @@ func TestLoadPeerFeedback(t *testing.T) {
 			t.Parallel()
 
 			agent := &agentprogression.Agent{
-				ID:   "agent-pr-test",
-				Name: "TestAgent",
-				Stats: agentprogression.AgentStats{
-					PeerReviewAvg:   tt.peerReviewAvg,
-					PeerReviewCount: tt.peerReviewCnt,
-				},
+				ID:    "agent-pr-test",
+				Name:  "TestAgent",
+				Stats: tt.stats,
 			}
 
 			got := loadPeerFeedback(agent)
@@ -1264,16 +1276,12 @@ func TestLoadPeerFeedback(t *testing.T) {
 				return
 			}
 
-			if tt.wantLen > 0 {
-				fb := got[0]
-				if fb.AvgRating != tt.wantRating {
-					t.Errorf("loadPeerFeedback()[0].AvgRating = %v; want %v", fb.AvgRating, tt.wantRating)
-				}
+			for _, fb := range got {
 				if fb.Question == "" {
-					t.Error("loadPeerFeedback()[0].Question must not be empty")
+					t.Error("PeerFeedbackSummary.Question must not be empty")
 				}
-				if fb.Explanation == "" {
-					t.Error("loadPeerFeedback()[0].Explanation must not be empty")
+				if fb.AvgRating <= 0 || fb.AvgRating >= 3.0 {
+					t.Errorf("PeerFeedbackSummary.AvgRating = %v; want < 3.0", fb.AvgRating)
 				}
 			}
 		})

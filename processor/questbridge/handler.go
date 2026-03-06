@@ -946,29 +946,37 @@ func (c *Component) cleanupMapping(ctx context.Context, questID string) {
 // PROMPT BUILDING
 // =============================================================================
 
-// loadPeerFeedback returns PeerFeedbackSummary items for an agent if their
-// peer review average is below the warning threshold (3.0). The summary is
-// derived from the agent's aggregated reputation triples written by
-// agentprogression; no peer-review entity scan is required on the hot path.
-//
-// TODO: Break down feedback into per-question items (Q1/Q2/Q3) instead of a
-// single aggregate. Requires storing per-question running averages on the
-// agent entity — currently only the overall average is tracked.
-//
-// Returns an empty slice when the agent has no reviews or the average is at
-// or above the threshold — the assembler skips the section entirely in that case.
+// loadPeerFeedback returns PeerFeedbackSummary items for each review question
+// where the agent's running average is below threshold (3.0). Only questions
+// with low ratings are included — the assembler emits them as "You MUST address
+// these" directives. Returns nil when the agent has no reviews or all questions
+// are at or above threshold.
 func loadPeerFeedback(agent *agentprogression.Agent) []promptmanager.PeerFeedbackSummary {
 	const ratingThreshold = 3.0
-	if agent.Stats.PeerReviewCount == 0 || agent.Stats.PeerReviewAvg >= ratingThreshold {
+	if agent.Stats.PeerReviewCount == 0 {
 		return nil
 	}
-	return []promptmanager.PeerFeedbackSummary{
-		{
-			Question:    "Overall peer review average",
-			AvgRating:   agent.Stats.PeerReviewAvg,
-			Explanation: "Your recent work has been rated below expectations by your party lead. Focus on quality and communication.",
-		},
+
+	type qAvg struct {
+		question string
+		avg      float64
 	}
+	questions := []qAvg{
+		{domain.LeaderToMemberQuestions[0], agent.Stats.PeerReviewQ1Avg},
+		{domain.LeaderToMemberQuestions[1], agent.Stats.PeerReviewQ2Avg},
+		{domain.LeaderToMemberQuestions[2], agent.Stats.PeerReviewQ3Avg},
+	}
+
+	var feedback []promptmanager.PeerFeedbackSummary
+	for _, q := range questions {
+		if q.avg > 0 && q.avg < ratingThreshold {
+			feedback = append(feedback, promptmanager.PeerFeedbackSummary{
+				Question:  q.question,
+				AvgRating: q.avg,
+			})
+		}
+	}
+	return feedback
 }
 
 // buildSystemPrompt builds the system prompt using the assembler when available,

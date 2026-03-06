@@ -97,6 +97,9 @@ type AgentStats struct {
 	PartiesLed       int     `json:"parties_led"`
 	QuestsDecomposed int     `json:"quests_decomposed"`
 	PeerReviewAvg    float64 `json:"peer_review_avg"`
+	PeerReviewQ1Avg  float64 `json:"peer_review_q1_avg"`
+	PeerReviewQ2Avg  float64 `json:"peer_review_q2_avg"`
+	PeerReviewQ3Avg  float64 `json:"peer_review_q3_avg"`
 	PeerReviewCount  int     `json:"peer_review_count"`
 }
 
@@ -300,6 +303,9 @@ func (a *Agent) Triples() []message.Triple {
 	if a.Stats.PeerReviewCount > 0 {
 		triples = append(triples,
 			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_avg", Object: a.Stats.PeerReviewAvg, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_q1_avg", Object: a.Stats.PeerReviewQ1Avg, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_q2_avg", Object: a.Stats.PeerReviewQ2Avg, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_q3_avg", Object: a.Stats.PeerReviewQ3Avg, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_count", Object: a.Stats.PeerReviewCount, Source: source, Timestamp: now, Confidence: 1.0},
 		)
 	}
@@ -386,6 +392,12 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 		// Peer review reputation
 		case "agent.reputation.peer_avg":
 			a.Stats.PeerReviewAvg = domain.AsFloat64(triple.Object)
+		case "agent.reputation.peer_q1_avg":
+			a.Stats.PeerReviewQ1Avg = domain.AsFloat64(triple.Object)
+		case "agent.reputation.peer_q2_avg":
+			a.Stats.PeerReviewQ2Avg = domain.AsFloat64(triple.Object)
+		case "agent.reputation.peer_q3_avg":
+			a.Stats.PeerReviewQ3Avg = domain.AsFloat64(triple.Object)
 		case "agent.reputation.peer_count":
 			a.Stats.PeerReviewCount = domain.AsInt(triple.Object)
 		}
