@@ -221,6 +221,54 @@ Failure types:
 - `error` — Unexpected execution error
 - `abandoned` — Agent gave up
 
+## Party Sub-Quests
+
+Sub-quests created by the `questdagexec` processor during DAG execution have distinct
+visibility and claiming rules that differ from quests posted directly to the board.
+
+### Visibility: Hidden from the Public Board
+
+Any quest with a non-empty `PartyID` field is excluded from the results returned by
+`AvailableQuests`. This prevents regular agents from seeing — and accidentally claiming
+— work that belongs to a party's internal DAG. The filter happens in the questboard
+handler before results are returned; the quests still exist in KV and are visible to
+party members querying by quest ID directly.
+
+This is intentional. Party sub-quests are not "available" work in the pull-based sense.
+They are directed assignments made by the lead through the DAG decomposition.
+
+### Dependency Gates on Sub-Quests
+
+Party sub-quests carry `DependsOn` entries referencing other nodes in the same DAG.
+A sub-quest with unmet dependencies cannot be claimed — `ClaimQuest` will return an
+error if any entry in `DependsOn` has not yet reached `completed` status. This is the
+same gate that governs public quest chains (see [Quest Chains and
+Dependencies](#quest-chains-and-dependencies)), applied consistently here.
+
+`questdagexec` handles dependency tracking reactively: when a node completes, it
+resolves which downstream nodes now have all dependencies satisfied and transitions them
+from `pending` to `ready`. The processor then issues `ClaimQuestForParty` on those
+nodes — agents do not need to poll.
+
+### `ClaimQuestForParty`: Lead-Directed Claiming
+
+Standard `ClaimQuest` is pull-based: the agent decides what to claim. For party
+sub-quests, `questdagexec` uses `ClaimQuestForParty` instead, which:
+
+1. Bypasses the public availability filter (the quest has a `PartyID`).
+2. Verifies the target agent is a current member of the owning party.
+3. Validates the agent's tier and skills against the sub-quest requirements — the lead
+   cannot route work to an agent who lacks the capability.
+4. Sets the sub-quest's `AgentID` and transitions status to `claimed` atomically via
+   CAS to prevent race conditions when multiple nodes become ready simultaneously.
+
+This is why DAG execution is reactive rather than push-based: `questdagexec` watches KV
+transitions and calls `ClaimQuestForParty` when conditions are met, rather than the
+lead manually dispatching each assignment.
+
+For the full DAG node state machine and review gate, see
+[04-PARTIES.md — DAG Execution Lifecycle](04-PARTIES.md#dag-execution-lifecycle).
+
 ## Acceptance Criteria
 
 The `acceptance` field holds domain-flexible strings that describe what "done" looks like.

@@ -23,6 +23,13 @@ import (
 	"github.com/c360studio/semdragons/domain"
 )
 
+// SubQuestPoster is the narrow interface questbridge needs from questboard.
+// Using an interface rather than a direct questboard.Component reference avoids
+// an import cycle and allows test mocking without starting a full component.
+type SubQuestPoster interface {
+	PostSubQuests(ctx context.Context, parentID domain.QuestID, subQuests []domain.Quest, decomposer domain.AgentID) ([]domain.Quest, error)
+}
+
 // =============================================================================
 // COMPONENT - QuestBridge as a native semstreams processor
 // =============================================================================
@@ -58,6 +65,15 @@ type Component struct {
 
 	// QUEST_LOOPS KV bucket for crash recovery
 	questLoopsBucket jetstream.KeyValue
+
+	// QUEST_DAGS KV bucket for DAG execution state (party quest decomposition).
+	// Keyed by DAGExecutionState.ExecutionID. Written by questbridge after posting
+	// sub-quests; read and mutated by questdagexec processor.
+	questDagsBucket jetstream.KeyValue
+
+	// questBoard posts sub-quests when a lead agent completes a DAG decomposition.
+	// Optional: nil means DAG output from party quests is treated as normal output.
+	questBoard SubQuestPoster
 
 	// Board pause integration
 	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
@@ -266,6 +282,18 @@ func (c *Component) Start(ctx context.Context) error {
 	}
 	c.questLoopsBucket = bucket
 
+	// Get or create the QUEST_DAGS KV bucket for DAG execution state.
+	// Written by questbridge after sub-quest posting; watched by questdagexec.
+	dagsBucket, dagsErr := c.deps.NATSClient.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
+		Bucket:      c.config.QuestDagsBucket,
+		Description: "DAG execution state for party quest decompositions",
+		History:     10,
+	})
+	if dagsErr != nil {
+		return fmt.Errorf("create QUEST_DAGS bucket: %w", dagsErr)
+	}
+	c.questDagsBucket = dagsBucket
+
 	// Subscribe to board resume notifications for reconciliation.
 	if c.pauseChecker != nil {
 		sub, subErr := c.deps.NATSClient.Subscribe(ctx, boardcontrol.ResumeSubject(), func(msgCtx context.Context, _ *nats.Msg) {
@@ -311,6 +339,20 @@ func (c *Component) SetTokenLedger(l *tokenbudget.TokenLedger) {
 		return
 	}
 	c.tokenLedger = l
+}
+
+// SetQuestBoard injects the quest board poster for sub-quest creation.
+// When set, party quest completions that produce a valid DAG will trigger
+// sub-quest posting instead of transitioning directly to in_review.
+// Must be called before Start.
+func (c *Component) SetQuestBoard(qb SubQuestPoster) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetQuestBoard called while running; ignored")
+		return
+	}
+	c.questBoard = qb
 }
 
 // SetPauseChecker injects the board pause checker. When paused, quest

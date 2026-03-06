@@ -304,6 +304,11 @@ func (c *Component) AvailableQuests(ctx context.Context, agentID domain.AgentID,
 		if quest.PartyRequired && (opts.PartyOnly == nil || !*opts.PartyOnly) {
 			continue
 		}
+		// Party sub-quests are assigned directly by the party lead — they must
+		// never appear on the public board regardless of other filter options.
+		if quest.PartyID != nil {
+			continue
+		}
 		if opts.MinDifficulty != nil && quest.Difficulty < *opts.MinDifficulty {
 			continue
 		}
@@ -367,6 +372,42 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 
 	if quest.Status != domain.QuestPosted {
 		return fmt.Errorf("quest not available: %s", quest.Status)
+	}
+
+	// Dependency gate: all quests listed in DependsOn must be completed before
+	// this quest can be claimed. This enforces sequential chains for solo quests;
+	// party sub-quest DAGs are gated separately by the questdagexec processor.
+	// INVARIANT: QuestCompleted is terminal for dependency resolution — FailQuest
+	// only operates on in_progress/in_review, so a completed dep cannot regress.
+	for _, depID := range quest.DependsOn {
+		dep, depErr := c.getQuestByID(ctx, depID)
+		if depErr != nil {
+			c.errorsCount.Add(1)
+			return errs.Wrap(depErr, "QuestBoard", "ClaimQuest", "load dependency")
+		}
+		if dep.Status != domain.QuestCompleted {
+			return fmt.Errorf("quest has unmet dependencies: %s is %s", depID, dep.Status)
+		}
+	}
+
+	// Party membership gate: if the quest belongs to a party, only members of
+	// that party may claim it. Non-members must use ClaimQuestForParty instead.
+	if quest.PartyID != nil {
+		party, partyErr := c.getPartyByID(ctx, *quest.PartyID)
+		if partyErr != nil {
+			c.errorsCount.Add(1)
+			return errs.Wrap(partyErr, "QuestBoard", "ClaimQuest", "load party")
+		}
+		isMember := false
+		for _, m := range party.Members {
+			if m.AgentID == agentID {
+				isMember = true
+				break
+			}
+		}
+		if !isMember {
+			return fmt.Errorf("agent is not a member of the party that owns this quest")
+		}
 	}
 
 	if err := c.validateAgentCanClaim(agent, quest); err != nil {

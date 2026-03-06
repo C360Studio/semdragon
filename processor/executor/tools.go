@@ -17,6 +17,7 @@ import (
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/graph"
 )
@@ -467,6 +468,36 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler: runCommandHandler,
 		MinTier: domain.TierMaster, // Level 16+ — unrestricted shell requires high trust
 	})
+
+	decomposeExec := questdagexec.NewDecomposeExecutor()
+	for _, def := range decomposeExec.ListTools() {
+		r.Register(RegisteredTool{
+			Definition: def,
+			Handler: func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+				result, err := decomposeExec.Execute(ctx, call)
+				if err != nil {
+					return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("decompose_quest internal error: %v", err)}
+				}
+				return result
+			},
+			MinTier: domain.TierMaster, // Level 16+ — only party leads (Master+) can decompose quests
+		})
+	}
+
+	reviewExec := questdagexec.NewReviewExecutor()
+	for _, def := range reviewExec.ListTools() {
+		r.Register(RegisteredTool{
+			Definition: def,
+			Handler: func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+				result, err := reviewExec.Execute(ctx, call)
+				if err != nil {
+					return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("review_sub_quest internal error: %v", err)}
+				}
+				return result
+			},
+			MinTier: domain.TierMaster, // Level 16+ — only party leads (Master+) can review sub-quests
+		})
+	}
 }
 
 // =============================================================================

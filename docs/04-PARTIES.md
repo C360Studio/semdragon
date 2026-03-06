@@ -178,9 +178,161 @@ behaviors get explicit reminders to improve, and improvement shows up in future 
 | `min_members_for_party` | 2 | Minimum members (including lead) |
 | `require_lead_approval` | true | Lead must approve new members |
 
+## DAG Execution Lifecycle
+
+When the parent quest is `party_required`, the lead does not hand-assign sub-quests
+one by one. Instead, they propose a **directed acyclic graph (DAG)** that the
+`questdagexec` processor drives to completion autonomously. This is the primary path
+for complex, multi-step party work.
+
+### Why a DAG, Not a Simple List
+
+A flat sub-quest list forces sequential execution or requires the lead to micromanage
+parallelism. A DAG expresses *which work depends on what* and nothing else —
+`questdagexec` handles scheduling, blocking, retrying, and rollup without further
+intervention from the lead or the DM.
+
+### Quest Decomposition via `decompose_quest`
+
+The lead agent (Master tier, level 16+) receives a `decompose_quest` tool call during
+its agentic loop turn. The tool payload describes the parent quest and available party
+members. The lead responds with a DAG proposal:
+
+```json
+{
+  "nodes": [
+    {"id": "n1", "title": "Extract raw data", "skills": ["data_transformation"],
+     "assigned_to": "agent.xyz", "depends_on": []},
+    {"id": "n2", "title": "Analyze trends",   "skills": ["analysis"],
+     "assigned_to": "agent.abc", "depends_on": ["n1"]},
+    {"id": "n3", "title": "Write summary",    "skills": ["summarization"],
+     "assigned_to": "agent.abc", "depends_on": ["n2"]},
+    {"id": "n4", "title": "Deliver report",   "skills": ["customer_comms"],
+     "assigned_to": "agent.def", "depends_on": ["n3"]}
+  ]
+}
+```
+
+`questdagexec` validates the proposal before persisting it to the `QUEST_DAGS` KV
+bucket.
+
+### DAG Validation Rules
+
+| Rule | Limit | Reason |
+|------|-------|--------|
+| Max nodes | 20 | Keeps rollup tractable and review latency bounded |
+| No self-references | — | A node cannot list itself in `depends_on` |
+| No cycles | — | Validated via topological sort (Kahn's algorithm) |
+| Valid dependency IDs | — | Every `depends_on` entry must reference a node in the same DAG |
+| Assigned agent must be a party member | — | Prevents routing work outside the party |
+
+### Node State Machine
+
+Each DAG node transitions independently through its own lifecycle:
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending : DAG created
+    pending --> ready : all dependencies completed
+    ready --> assigned : questdagexec dispatches sub-quest
+    assigned --> in_progress : agent starts work
+    in_progress --> pending_review : agent submits output
+    pending_review --> completed : lead accepts (avg ≥ 3.0)
+    pending_review --> rejected : lead rejects (avg < 3.0)
+    rejected --> in_progress : retry with peer feedback injected
+    in_progress --> failed : retries exhausted
+    failed --> [*] : parent quest escalated
+    completed --> [*] : dependencies unlock
+```
+
+Nodes with no dependencies start in `ready` immediately. Nodes with dependencies stay
+`pending` until every predecessor reaches `completed`.
+
+### Lead Review Gate
+
+When a member submits a sub-quest output, the node transitions to `pending_review`.
+`questdagexec` dispatches a `review_sub_quest` tool call to the lead's agentic loop.
+The lead evaluates on three questions (1-5 scale):
+
+| # | Question |
+|---|----------|
+| 1 | Does the output meet the node's acceptance criteria? |
+| 2 | Is the quality sufficient to unblock downstream nodes? |
+| 3 | Is the work complete, or are there obvious gaps? |
+
+**Accept threshold**: average score ≥ 3.0. No explanation required on accept.
+
+**Reject**: average score < 3.0. An explanation is **required** — this text becomes the
+corrective guidance injected into the member's next prompt attempt (see Feedback Loop
+below). The node transitions to `rejected` and then back to `in_progress` for retry.
+
+### Feedback Loop on Rejection
+
+A rejected node does not simply retry from scratch. `questdagexec` creates a
+`PeerReview` entity linking the lead and the member to the node. When the member's
+agentic loop is re-dispatched, `questbridge` reads any open `PeerReview` entries for
+the agent and injects the lead's explanation into the `TaskMessage` system prompt at
+`CategoryPeerFeedback` priority.
+
+The member agent therefore sees something like:
+
+```
+[Lead Feedback — retry 2 of 3]
+"The trend analysis is missing Q2 year-over-year context. The downstream summary
+node requires this comparison explicitly. Please add a YoY table."
+```
+
+This corrective loop mirrors the peer review feedback described in the
+[Feedback Loop into Prompts](#feedback-loop-into-prompts) section above, but targets
+sub-quest retries specifically rather than future quests.
+
+### Rollup and Party Disbandment
+
+When all nodes reach `completed`:
+
+1. `questdagexec` collects each node's `quest.data.output` in topological order.
+2. The lead receives a `rollup_outputs` tool call containing all node outputs.
+3. The lead synthesises a final answer and returns it as the rollup payload.
+4. `questdagexec` submits the rollup as the parent quest's output, transitioning the
+   parent quest to `completed` (or `in_review` if the parent requires a boss battle).
+5. The party transitions to `disbanded`. All member agents return to `idle`.
+
+The lead's trajectory spans the entire DAG execution; individual node trajectories are
+children of the parent quest trajectory, providing end-to-end observability without
+manual instrumentation.
+
+### Failure Escalation
+
+If a node exhausts its retry limit (`max_attempts` on the sub-quest entity):
+
+1. The node transitions to terminal `failed`.
+2. `questdagexec` calls `EscalateQuest` on the **parent** quest.
+3. The parent transitions to `escalated`, flagging it for DM attention.
+4. All remaining `ready` and `pending` nodes are cancelled.
+5. The party remains active but paused until the DM intervenes.
+
+This prevents silent partial completion — a failed node always surfaces through the
+parent quest's escalation, visible on the DM dashboard and in the SSE event feed.
+
+### KV Storage for DAG State
+
+`questdagexec` persists DAG state in the `QUEST_DAGS` KV bucket alongside the existing
+entity state bucket:
+
+```
+dag.state.{parent_quest_id}          // Full DAG with all node states
+dag.node.{parent_quest_id}.{node_id} // Individual node state (for targeted watches)
+dag.status.pending.{node_id}         // Index: pending nodes
+dag.status.ready.{node_id}           // Index: ready to dispatch
+dag.status.pending_review.{node_id}  // Index: awaiting lead review
+```
+
+The entity state bucket IS the event log (KV twofer). `questdagexec` watches
+`dag.node.*` to react to transitions without polling.
+
 ## Further Reading
 
-- [03-QUESTS.md](03-QUESTS.md) — Quest lifecycle and evaluation
+- [03-QUESTS.md](03-QUESTS.md) — Quest lifecycle, sub-quest visibility, and dependency gates
 - [05-BOIDS.md](05-BOIDS.md) — How boid affinity uses peer review ratings
 - [02-DESIGN.md](02-DESIGN.md) — Architecture and death mechanics
 - [Swagger UI](/docs) — Live API documentation at `/docs`

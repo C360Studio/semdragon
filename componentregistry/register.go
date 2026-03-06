@@ -27,6 +27,7 @@ import (
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semdragons/processor/questbridge"
+	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semdragons/processor/questtools"
 	"github.com/c360studio/semdragons/processor/seeding"
 )
@@ -77,6 +78,7 @@ func RegisterAll(registry *component.Registry) error {
 		dmworldstate.Register,
 		dmpartyformation.Register,
 		questbridge.Register,
+		questdagexec.Register,
 		questtools.Register,
 	}
 
@@ -129,6 +131,7 @@ func RegisterProcessors(registry *component.Registry) error {
 		dmworldstate.Register,
 		dmpartyformation.Register,
 		questbridge.Register,
+		questdagexec.Register,
 		questtools.Register,
 	}
 
@@ -163,6 +166,7 @@ func ComponentNames() []string {
 		dmworldstate.ComponentName,
 		dmpartyformation.ComponentName,
 		questbridge.ComponentName,
+		questdagexec.ComponentName,
 		questtools.ComponentName,
 	}
 }
@@ -189,6 +193,7 @@ func ProcessorNames() []string {
 		dmworldstate.ComponentName,
 		dmpartyformation.ComponentName,
 		questbridge.ComponentName,
+		questdagexec.ComponentName,
 		questtools.ComponentName,
 	}
 }

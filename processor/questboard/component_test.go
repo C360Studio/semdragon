@@ -15,6 +15,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/partycoord"
 )
 
 // =============================================================================
@@ -926,6 +927,199 @@ func TestRejectsClaimWhenInBattle(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "agent is in battle") {
 		t.Errorf("Expected 'agent is in battle' error, got: %v", err)
+	}
+}
+
+// =============================================================================
+// PDAG-02: DEPENDENCY GATE AND PARTY VISIBILITY TESTS
+// =============================================================================
+
+// TestClaimQuest_BlockedByUnmetDependency verifies that claiming quest B before
+// quest A (its dependency) is completed returns an "unmet dependencies" error.
+func TestClaimQuest_BlockedByUnmetDependency(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "depgate")
+	defer comp.Stop(5 * time.Second)
+
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "dep-agent", 5)
+
+	// Post chain: questA → questB (B depends on A). Use DifficultyTrivial so that
+	// a level-5 agent passes the tier gate — the test exercises the dep gate, not tier.
+	diffTrivial := domain.DifficultyTrivial
+	chain, err := comp.PostQuestChain(ctx, domain.QuestChainBrief{
+		Quests: []domain.QuestChainEntry{
+			{Title: "Quest A", Description: "First in chain", Difficulty: &diffTrivial, DependsOn: []int{}},
+			{Title: "Quest B", Description: "Depends on A", Difficulty: &diffTrivial, DependsOn: []int{0}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("PostQuestChain failed: %v", err)
+	}
+	questA := chain[0]
+	questB := chain[1]
+
+	// Attempt to claim B before A is completed — must be rejected.
+	err = comp.ClaimQuest(ctx, questB.ID, agent.ID)
+	if err == nil {
+		t.Fatal("Expected error claiming quest with unmet dependency, got nil")
+	}
+	if !strings.Contains(err.Error(), "unmet dependencies") {
+		t.Errorf("Expected 'unmet dependencies' error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), string(questA.ID)) {
+		t.Errorf("Expected error to name the blocking quest %s, got: %v", questA.ID, err)
+	}
+}
+
+// TestClaimQuest_AllowedAfterDependencyCompleted verifies that quest B can be
+// claimed once quest A (its dependency) has been completed.
+func TestClaimQuest_AllowedAfterDependencyCompleted(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "depgate2")
+	defer comp.Stop(5 * time.Second)
+
+	agentA := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "dep-agent-a", 5)
+	agentB := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "dep-agent-b", 5)
+
+	diffTrivial := domain.DifficultyTrivial
+	chain, err := comp.PostQuestChain(ctx, domain.QuestChainBrief{
+		Quests: []domain.QuestChainEntry{
+			{Title: "Chain A", Description: "First quest", Difficulty: &diffTrivial, DependsOn: []int{}},
+			{Title: "Chain B", Description: "Depends on A", Difficulty: &diffTrivial, DependsOn: []int{0}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("PostQuestChain failed: %v", err)
+	}
+	questA := chain[0]
+	questB := chain[1]
+
+	// Complete quest A: claim → start → submit (no review required).
+	if err := comp.ClaimQuest(ctx, questA.ID, agentA.ID); err != nil {
+		t.Fatalf("ClaimQuest A failed: %v", err)
+	}
+	if err := comp.StartQuest(ctx, questA.ID); err != nil {
+		t.Fatalf("StartQuest A failed: %v", err)
+	}
+	if err := comp.SubmitResult(ctx, questA.ID, "done"); err != nil {
+		t.Fatalf("SubmitResult A failed: %v", err)
+	}
+	completed, _ := comp.GetQuest(ctx, questA.ID)
+	if completed.Status != domain.QuestCompleted {
+		t.Fatalf("Quest A status = %v, want completed", completed.Status)
+	}
+
+	// Now claiming B must succeed.
+	if err := comp.ClaimQuest(ctx, questB.ID, agentB.ID); err != nil {
+		t.Errorf("ClaimQuest B should succeed after A is completed, got: %v", err)
+	}
+}
+
+// TestAvailableQuests_ExcludesPartySubQuests verifies that a quest with PartyID
+// set is never returned by AvailableQuests, regardless of other filter options.
+func TestAvailableQuests_ExcludesPartySubQuests(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "partyvisibility")
+	defer comp.Stop(5 * time.Second)
+
+	agent := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "visibility-agent", 5)
+
+	// Post a normal quest that should be visible.
+	_, err := comp.PostQuest(ctx, domain.Quest{
+		Title:      "Public Quest",
+		Difficulty: domain.DifficultyTrivial,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest (public) failed: %v", err)
+	}
+
+	// Post a party sub-quest by setting PartyID directly on the quest entity —
+	// simulating what PostSubQuests does when called from a party context.
+	partyID := domain.PartyID(comp.BoardConfig().PartyEntityID(domain.GenerateInstance()))
+	partyQuest, err := comp.PostQuest(ctx, domain.Quest{
+		Title:      "Party Sub-Quest",
+		Difficulty: domain.DifficultyTrivial,
+		PartyID:    &partyID,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest (party) failed: %v", err)
+	}
+
+	available, err := comp.AvailableQuests(ctx, agent.ID, QuestFilter{})
+	if err != nil {
+		t.Fatalf("AvailableQuests failed: %v", err)
+	}
+
+	for _, q := range available {
+		if q.ID == partyQuest.ID {
+			t.Errorf("Party sub-quest %s should not appear in AvailableQuests", partyQuest.ID)
+		}
+	}
+
+	// The public quest must still appear.
+	found := false
+	for _, q := range available {
+		if q.Title == "Public Quest" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Public quest should appear in AvailableQuests")
+	}
+}
+
+// TestClaimQuest_RejectsNonMemberOnPartyQuest verifies that an agent who is not
+// a member of the owning party cannot claim a party sub-quest via ClaimQuest.
+func TestClaimQuest_RejectsNonMemberOnPartyQuest(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	comp := setupComponent(t, client, "partymember")
+	defer comp.Stop(5 * time.Second)
+
+	outsider := createTestAgent(t, comp.GraphClient(), comp.BoardConfig(), "outsider-agent", 5)
+
+	// Build a party entity in KV with no members.
+	partyID := domain.PartyID(comp.BoardConfig().PartyEntityID(domain.GenerateInstance()))
+	party := &partycoord.Party{
+		ID:     partyID,
+		Name:   "Test Party",
+		Status: domain.PartyActive,
+		Lead:   domain.AgentID(comp.BoardConfig().AgentEntityID(domain.GenerateInstance())),
+		// Members intentionally empty — outsider is not in this party.
+	}
+	if err := comp.GraphClient().PutEntityState(ctx, party, "party.lifecycle.created"); err != nil {
+		t.Fatalf("Failed to create test party: %v", err)
+	}
+
+	// Post a quest owned by that party.
+	partyQuest, err := comp.PostQuest(ctx, domain.Quest{
+		Title:      "Party-Owned Quest",
+		Difficulty: domain.DifficultyTrivial,
+		PartyID:    &partyID,
+	})
+	if err != nil {
+		t.Fatalf("PostQuest failed: %v", err)
+	}
+
+	// Non-member claim must be rejected.
+	err = comp.ClaimQuest(ctx, partyQuest.ID, outsider.ID)
+	if err == nil {
+		t.Fatal("Expected error when non-member claims party quest, got nil")
+	}
+	if !strings.Contains(err.Error(), "not a member") {
+		t.Errorf("Expected 'not a member' error, got: %v", err)
 	}
 }
 

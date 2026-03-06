@@ -2,6 +2,7 @@ package agentprogression
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	semgraph "github.com/c360studio/semstreams/graph"
@@ -10,6 +11,18 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 )
+
+// peerReviewThreshold is the rating below which agents receive corrective
+// feedback in their next quest prompt. Matches the threshold in questbridge.
+const peerReviewThreshold = 3.0
+
+// lockAgent returns a per-agent mutex from the agentLocks sync.Map,
+// creating one on first access. This serializes read-modify-write cycles
+// when both the quest watcher and review watcher update the same agent.
+func (c *Component) lockAgent(agentID string) *sync.Mutex {
+	v, _ := c.agentLocks.LoadOrStore(agentID, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
 
 // =============================================================================
 // KV WATCH HANDLER - Entity-centric quest state monitoring
@@ -105,6 +118,11 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 		return
 	}
 	agentID := *quest.ClaimedBy
+
+	// Serialize with any concurrent review-watcher updates for this agent.
+	agentMu := c.lockAgent(string(agentID))
+	agentMu.Lock()
+	defer agentMu.Unlock()
 
 	// Read agent state directly from KV (always current, not a stale snapshot)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -243,6 +261,11 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 		return
 	}
 	agentID := *quest.ClaimedBy
+
+	// Serialize with any concurrent review-watcher updates for this agent.
+	agentMu := c.lockAgent(string(agentID))
+	agentMu.Lock()
+	defer agentMu.Unlock()
 
 	// Read agent state directly from KV
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -483,6 +506,140 @@ func questFromEntityStateTriples(entity *semgraph.EntityState) *domain.Quest {
 	}
 
 	return quest
+}
+
+// =============================================================================
+// PEER REVIEW HANDLER - Updates agent reputation stats when a review completes
+// =============================================================================
+
+// processPeerReviewUpdates watches PeerReview entity state changes from KV
+// and updates the member agent's running reputation average on completion.
+func (c *Component) processPeerReviewUpdates() {
+	defer close(c.reviewWatchDone)
+
+	// KV twofer bootstrap: the nil sentinel from WatchAll marks the end of
+	// the historical replay. We skip all entries during bootstrap to avoid
+	// re-applying running average increments for reviews that were already
+	// counted before this instance started.
+	bootstrapping := true
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case entry, ok := <-c.reviewWatch.Updates():
+			if !ok {
+				return
+			}
+			if entry == nil {
+				// Nil sentinel — bootstrap replay complete, begin live processing.
+				bootstrapping = false
+				continue
+			}
+			if entry.Operation() == jetstream.KeyValueDelete {
+				continue
+			}
+			if bootstrapping {
+				continue
+			}
+			c.handlePeerReviewStateChange(entry)
+		}
+	}
+}
+
+// handlePeerReviewStateChange processes a single PeerReview KV entry. It
+// reacts only to reviews that have just transitioned to "completed" and updates
+// the member agent's PeerReviewAvg/PeerReviewCount running average.
+func (c *Component) handlePeerReviewStateChange(entry jetstream.KeyValueEntry) {
+	if !c.running.Load() {
+		return
+	}
+
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		return
+	}
+
+	// Only process completed reviews — partial/pending reviews carry no aggregate data.
+	var status string
+	for _, t := range entityState.Triples {
+		if t.Predicate == "review.status.state" {
+			if v, ok := t.Object.(string); ok {
+				status = v
+			}
+			break
+		}
+	}
+	if status != string(domain.PeerReviewCompleted) {
+		return
+	}
+
+	// Reconstruct the full PeerReview entity to access leader avg rating and member ID.
+	review := domain.PeerReviewFromEntityState(entityState)
+	if review == nil || review.MemberID == "" {
+		return
+	}
+
+	// Only react to leader-to-member reviews; DM-to-agent or member-to-leader
+	// reviews use different rating scales and do not feed member reputation.
+	if review.LeaderAvgRating == 0 {
+		return
+	}
+
+	// Serialize with any concurrent quest-watcher updates for this agent.
+	mu := c.lockAgent(string(review.MemberID))
+	mu.Lock()
+	defer mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	agentEntity, err := c.graph.GetAgent(ctx, review.MemberID)
+	if err != nil {
+		c.logger.Error("failed to load agent for peer review stat update",
+			"agent_id", review.MemberID,
+			"review_id", review.ID,
+			"error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+
+	agent := AgentFromEntityState(agentEntity)
+	if agent == nil {
+		c.logger.Error("agent reconstruction returned nil for peer review stat update",
+			"agent_id", review.MemberID)
+		c.errorsCount.Add(1)
+		return
+	}
+
+	// Compute running average: (oldAvg * oldCount + thisAvg) / (oldCount + 1).
+	oldAvg := agent.Stats.PeerReviewAvg
+	oldCount := agent.Stats.PeerReviewCount
+	newCount := oldCount + 1
+	newAvg := (oldAvg*float64(oldCount) + review.LeaderAvgRating) / float64(newCount)
+
+	agent.Stats.PeerReviewAvg = newAvg
+	agent.Stats.PeerReviewCount = newCount
+	agent.UpdatedAt = time.Now()
+
+	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.progression.xp"); err != nil {
+		c.logger.Error("failed to emit agent peer review stat update",
+			"agent_id", review.MemberID,
+			"error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+
+	c.messagesProcessed.Add(1)
+	c.lastActivity.Store(time.Now())
+
+	c.logger.Info("updated agent peer review stats",
+		"agent_id", review.MemberID,
+		"review_id", review.ID,
+		"old_avg", oldAvg,
+		"new_avg", newAvg,
+		"review_count", newCount,
+		"below_threshold", newAvg < peerReviewThreshold)
 }
 
 // =============================================================================

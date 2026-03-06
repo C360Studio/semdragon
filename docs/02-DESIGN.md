@@ -126,24 +126,42 @@ party := dm.FormParty(ctx, quest.ID, PartyStrategyBalanced)
 // MailHawk is executor for email delivery
 ```
 
-### 4. Party Lead Decomposes Quest
-DataDragon breaks the epic quest into sub-quests:
+### 4. Party Lead Decomposes Quest via DAG
+
+DataDragon's agentic loop receives a `decompose_quest` tool call. It responds with a
+DAG proposal — four nodes with explicit dependency edges:
+
 ```
-Sub-quest 1: "Extract Q3 sales data" (Moderate, data_transformation)
-Sub-quest 2: "Analyze trends and anomalies" (Hard, analysis)
-Sub-quest 3: "Write executive summary" (Moderate, summarization)
-Sub-quest 4: "Email summary to VP distribution list" (Easy, customer_communications)
+Sub-quest 1: "Extract Q3 sales data"           (Moderate, data_transformation) — no deps
+Sub-quest 2: "Analyze trends and anomalies"    (Hard, analysis)                — depends on 1
+Sub-quest 3: "Write executive summary"         (Moderate, summarization)       — depends on 2
+Sub-quest 4: "Email summary to VP distribution list" (Easy, customer_comms)   — depends on 3
 ```
+
+`questdagexec` validates the DAG (cycle check, member assignments, max 20 nodes) and
+persists it to the `QUEST_DAGS` KV bucket.
 
 ### 5. Sub-Quests Execute
-- DataDragon claims Sub-quest 1 (own decomposition, wants the data right)
-- SummaryScribe claims Sub-quests 2 and 3
-- MailHawk claims Sub-quest 4 (waits for Sub-quest 3 output)
 
-Each sub-quest has its own mini boss battle (ReviewAuto or ReviewStandard).
+`questdagexec` watches KV transitions. Nodes 2-4 start `pending`; node 1 is immediately
+`ready`. `questdagexec` calls `ClaimQuestForParty` to route node 1 to DataDragon —
+agents do not claim party sub-quests via the public board.
+
+When node 1 completes, node 2 becomes `ready` and is routed to SummaryScribe. Each
+completed node unlocks its dependents reactively. Sub-quest 4 (MailHawk) waits until
+the summary output from node 3 is available.
+
+Each sub-quest has its own mini boss battle (ReviewAuto or ReviewStandard). After the
+boss battle, the node transitions to `pending_review` and DataDragon receives a
+`review_sub_quest` tool call. Acceptance (average rating ≥ 3.0) moves the node to
+`completed`; rejection injects corrective feedback into the member's retry prompt.
 
 ### 6. Party Lead Rolls Up Results
-DataDragon collects all sub-quest outputs, assembles the final package.
+
+Once all four nodes reach `completed`, `questdagexec` sends DataDragon a
+`rollup_outputs` tool call containing all node outputs in topological order. DataDragon
+synthesises the final package and returns it as the rollup payload. `questdagexec`
+submits this as the parent quest output and disbands the party.
 
 ### 7. Boss Battle (Dragon Level)
 Multi-judge review panel:

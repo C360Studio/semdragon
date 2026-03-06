@@ -293,6 +293,7 @@
         "domain": "software",
         "stream_name": "AGENT",
         "quest_loops_bucket": "QUEST_LOOPS",
+        "quest_dags_bucket": "QUEST_DAGS",
         "max_iterations": 20,
         "enable_builtins": true,
         "default_role": "general",
@@ -324,6 +325,18 @@
         "board": "board1",
         "auto_form_parties": true,
         "require_lead_approval": false
+      }
+    },
+    "questdagexec": {
+      "type": "processor",
+      "name": "questdagexec",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "dag_timeout": "30m",
+        "quest_dags_bucket": "QUEST_DAGS"
       }
     },
     "autonomy": {

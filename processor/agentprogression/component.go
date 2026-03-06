@@ -52,8 +52,18 @@ type Component struct {
 	questWatch  jetstream.KeyWatcher
 	watchDoneCh chan struct{}
 
+	// KV watcher for peer review entity state changes (feeds agent stats)
+	reviewWatch     jetstream.KeyWatcher
+	reviewWatchDone chan struct{}
+
 	// Quest state cache for detecting transitions
 	questCache sync.Map // map[entityID]domain.QuestStatus
+
+	// agentLocks serializes read-modify-write cycles on agent entities.
+	// Both the quest watcher and review watcher goroutines may update the
+	// same agent concurrently; this map provides per-agent locking to
+	// prevent lost writes.
+	agentLocks sync.Map // map[string]*sync.Mutex
 
 	// Internal state
 	running  atomic.Bool
@@ -281,6 +291,19 @@ func (c *Component) Start(ctx context.Context) error {
 	c.watchDoneCh = make(chan struct{})
 	go c.processQuestWatchUpdates()
 
+	// Watch peer review entities to update agent reputation stats when a review
+	// is completed. Failure is non-fatal: the quest watcher still runs if this
+	// fails to start, but peer feedback aggregation will be unavailable.
+	reviewWatcher, reviewErr := c.graph.WatchEntityType(ctx, domain.EntityTypePeerReview)
+	if reviewErr != nil {
+		c.logger.Warn("failed to start peer review watcher — reputation stats unavailable",
+			"error", reviewErr)
+	} else {
+		c.reviewWatch = reviewWatcher
+		c.reviewWatchDone = make(chan struct{})
+		go c.processPeerReviewUpdates()
+	}
+
 	c.logger.Info("agent_progression component started",
 		"org", c.config.Org,
 		"platform", c.config.Platform,
@@ -310,12 +333,26 @@ func (c *Component) Stop(timeout time.Duration) error {
 		c.questWatch.Stop()
 	}
 
+	// Stop peer review watcher
+	if c.reviewWatch != nil {
+		c.reviewWatch.Stop()
+	}
+
 	// Wait for watch goroutine to finish with timeout
 	if c.watchDoneCh != nil {
 		select {
 		case <-c.watchDoneCh:
 		case <-time.After(timeout):
 			c.logger.Warn("stop timed out waiting for KV watcher")
+		}
+	}
+
+	// Wait for peer review watch goroutine to finish with timeout
+	if c.reviewWatchDone != nil {
+		select {
+		case <-c.reviewWatchDone:
+		case <-time.After(timeout):
+			c.logger.Warn("stop timed out waiting for peer review watcher")
 		}
 	}
 

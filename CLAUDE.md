@@ -136,6 +136,13 @@ quest.guild.{guild_id}.{quest_id}    // Quests with guild priority
 
 // Stats and aggregates
 stats.board.current                  // Current board statistics
+
+// DAG execution state (QUEST_DAGS bucket)
+dag.state.{parent_quest_id}          // Full DAG with all node states
+dag.node.{parent_quest_id}.{node_id} // Individual node state
+dag.status.pending.{node_id}         // Index: nodes awaiting dependencies
+dag.status.ready.{node_id}           // Index: nodes ready to dispatch
+dag.status.pending_review.{node_id}  // Index: nodes awaiting lead review
 ```
 
 ### Think Reactive, Not Objects
@@ -265,11 +272,12 @@ The root `semdragons` package re-exports type aliases from `domain/` and provide
 
 **`domains/`** (plural) contains three concrete domain implementations: `software.go`, `dnd.go`, `research.go`. Each defines a `DomainConfig` (vocabulary mapping + skill taxonomy) and a `DomainCatalog` (prompt fragments for `promptmanager`). See `/docs/06-DOMAINS.md` for details.
 
-**`processor/`** contains 16 reactive components registered via `componentregistry/`, plus `promptmanager` and `boardcontrol` which are libraries (not standalone components). Each processor follows the same structure: `component.go`, `config.go`, `register.go`, `handler.go`. See "Processor Architecture Patterns" below.
+**`processor/`** contains 17 reactive components registered via `componentregistry/`, plus `promptmanager` and `boardcontrol` which are libraries (not standalone components). Each processor follows the same structure: `component.go`, `config.go`, `register.go`, `handler.go`. See "Processor Architecture Patterns" below.
 
 Two components form the **agentic integration layer** that bridges quest lifecycle to semstreams' event-driven LLM execution:
 - `questbridge` — Watches quest entities for `in_progress` transitions, assembles `TaskMessage` (prompt, tools, metadata), publishes to AGENT JetStream stream, handles loop completion/failure events. Uses KV twofer bootstrap protocol for crash recovery via QUEST_LOOPS bucket.
 - `questtools` — Consumes `tool.execute.*` from AGENT stream, enforces tier/skill/sandbox gates via `executor.ToolRegistry`, publishes `tool.result.*` back. Reconstructs agent/quest context from `ToolCall.Metadata` to avoid KV round-trips on the hot path.
+- `questdagexec` — Reactive DAG execution for party quest decompositions — watches sub-quest KV transitions, drives node assignment via `ClaimQuestForParty`, dispatches lead review tool calls, aggregates outputs for rollup, and escalates the parent quest on node exhaustion. Persists DAG state in the `QUEST_DAGS` KV bucket.
 
 **`processor/dmworldstate/`** aggregates all entity state into a single world-state snapshot consumed by the REST API's `/api/game/world` endpoint.
 
@@ -416,6 +424,7 @@ Components enabled in the default config (`config/semdragons.json`):
 - `boidengine` — emergent quest-claiming suggestions
 - `agentic-loop`, `agentic-model` — semstreams event-driven LLM loop orchestration
 - `questbridge`, `questtools` — quest-to-LLM bridge (requires model_registry and AGENT stream)
+- `questdagexec` — party quest DAG execution (requires questbridge, questtools, and QUEST_DAGS bucket)
 
 Processors registered but excluded from the default config (opt-in):
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)

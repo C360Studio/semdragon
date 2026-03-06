@@ -13,6 +13,7 @@ import (
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/promptmanager"
+	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
@@ -512,7 +513,8 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 // QUEST STATE TRANSITIONS
 // =============================================================================
 
-// completeQuest transitions the quest to in_review for DM-directed evaluation.
+// completeQuest transitions the quest to in_review for DM-directed evaluation,
+// or triggers DAG sub-quest posting when the lead's output contains a valid DAG.
 // The agent is NOT released here — bossbattle auto-passes or runs evaluation,
 // then agentprogression handles agent release on the terminal quest status.
 func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, mapping *QuestLoopMapping, output string) {
@@ -538,6 +540,37 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		return
 	}
 
+	// When a party quest completes and we have a questboard reference, check
+	// whether the lead's output contains a DAG decomposition. A valid DAG
+	// triggers sub-quest posting and DAG state initialization instead of the
+	// normal in_review transition.
+	if quest.PartyRequired && c.questBoard != nil {
+		dag, ok := extractDAGFromOutput(output)
+		if ok {
+			c.logger.Info("detected DAG output from party quest lead",
+				"quest_id", questID,
+				"nodes", len(dag.Nodes))
+
+			if err := c.handleDAGDecomposition(ctx, quest, mapping, dag); err != nil {
+				c.logger.Error("DAG decomposition failed, failing quest",
+					"quest_id", questID, "error", err)
+				quest.Status = domain.QuestFailed
+				quest.LoopID = mapping.LoopID
+				quest.FailureReason = fmt.Sprintf("DAG decomposition failed: %s", err)
+				if emitErr := c.graph.EmitEntityUpdate(ctx, quest, "quest.failed"); emitErr != nil {
+					c.logger.Error("failed to emit quest failure after DAG error",
+						"quest_id", questID, "error", emitErr)
+				}
+				c.releaseAgent(ctx, mapping.AgentID)
+				c.errorsCount.Add(1)
+			}
+			// DAG path handled — do not fall through to normal in_review.
+			return
+		}
+		c.logger.Debug("party quest output contains no DAG, using normal completion path",
+			"quest_id", questID)
+	}
+
 	quest.Output = output
 	quest.LoopID = mapping.LoopID
 
@@ -552,6 +585,227 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	}
 	c.logger.Info("quest submitted for review",
 		"quest_id", questID, "review_level", quest.Constraints.ReviewLevel)
+}
+
+// handleDAGDecomposition posts sub-quests from a validated DAG and initializes
+// the DAGExecutionState in QUEST_DAGS. Called only when quest.PartyRequired is
+// true and the lead's loop output contains a valid DAG structure.
+func (c *Component) handleDAGDecomposition(ctx context.Context, quest *domain.Quest, mapping *QuestLoopMapping, dag *questdagexec.QuestDAG) error {
+	// Convert DAG nodes to domain.Quest values for PostSubQuests.
+	subQuests := dagNodesToQuests(dag.Nodes, quest)
+
+	// Post sub-quests via questboard. This validates the decomposer's tier
+	// (Master+), sets ParentQuest on each sub-quest, and writes them to KV.
+	posted, err := c.questBoard.PostSubQuests(ctx, quest.ID, subQuests, mapping.AgentID)
+	if err != nil {
+		return fmt.Errorf("post sub-quests: %w", err)
+	}
+
+	c.logger.Info("posted DAG sub-quests",
+		"parent_quest_id", quest.ID,
+		"sub_quest_count", len(posted))
+
+	// PostSubQuests is all-or-nothing but verify defensively.
+	if len(posted) != len(dag.Nodes) {
+		return fmt.Errorf("posted %d sub-quests, expected %d", len(posted), len(dag.Nodes))
+	}
+
+	// Build node ID → sub-quest entity ID map for the execution state.
+	nodeQuestIDs := make(map[string]string, len(dag.Nodes))
+	for i, node := range dag.Nodes {
+		nodeQuestIDs[node.ID] = string(posted[i].ID)
+	}
+
+	// Apply the party assignment triple to each posted sub-quest when the
+	// parent has a PartyID. This makes sub-quests invisible to the general
+	// board and claimable only via lead assignment.
+	if quest.PartyID != nil {
+		for i := range posted {
+			posted[i].PartyID = quest.PartyID
+			if emitErr := c.graph.EmitEntityUpdate(ctx, &posted[i], "quest.assignment.party"); emitErr != nil {
+				c.logger.Warn("failed to set party assignment on sub-quest",
+					"sub_quest_id", posted[i].ID, "error", emitErr)
+			}
+		}
+	}
+
+	// Second pass: resolve DependsOn node IDs to real sub-quest entity IDs.
+	// dag.Nodes[i].DependsOn contains node IDs (strings); we map those to
+	// posted[i].ID values using nodeQuestIDs.
+	for i, node := range dag.Nodes {
+		if len(node.DependsOn) == 0 {
+			continue
+		}
+		deps := make([]domain.QuestID, 0, len(node.DependsOn))
+		for _, depNodeID := range node.DependsOn {
+			if depQuestID, ok := nodeQuestIDs[depNodeID]; ok {
+				deps = append(deps, domain.QuestID(depQuestID))
+			}
+		}
+		if len(deps) == 0 {
+			continue
+		}
+		posted[i].DependsOn = deps
+		if emitErr := c.graph.EmitEntityUpdate(ctx, &posted[i], "quest.dependencies.set"); emitErr != nil {
+			c.logger.Warn("failed to set dependencies on sub-quest",
+				"sub_quest_id", posted[i].ID, "error", emitErr)
+		}
+	}
+
+	// Initialize DAG execution state and persist to QUEST_DAGS.
+	dagState := buildDAGExecutionState(dag, quest, nodeQuestIDs)
+	return c.persistDAGState(ctx, dagState)
+}
+
+// persistDAGState marshals a DAGExecutionState and writes it to QUEST_DAGS
+// keyed by ExecutionID. The questdagexec processor watches this bucket.
+func (c *Component) persistDAGState(ctx context.Context, state *questdagexec.DAGExecutionState) error {
+	if c.questDagsBucket == nil {
+		return fmt.Errorf("QUEST_DAGS bucket not initialized")
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("marshal DAG execution state: %w", err)
+	}
+	if _, err := c.questDagsBucket.Put(ctx, state.ExecutionID, data); err != nil {
+		return fmt.Errorf("write DAG execution state to KV: %w", err)
+	}
+	c.logger.Info("initialized DAG execution state",
+		"execution_id", state.ExecutionID,
+		"parent_quest_id", state.ParentQuestID,
+		"node_count", len(state.DAG.Nodes))
+	return nil
+}
+
+// =============================================================================
+// DAG DETECTION AND CONVERSION (pure functions, no component receiver)
+// =============================================================================
+
+// extractDAGFromOutput parses the LLM's loop output and attempts to extract a
+// validated QuestDAG. The decompose_quest tool produces output like:
+//
+//	{"goal": "...", "dag": {"nodes": [...]}}
+//
+// Returns (dag, true) when a structurally valid DAG is found, (nil, false)
+// otherwise. Invalid JSON, missing keys, or validation errors all return false.
+func extractDAGFromOutput(output string) (*questdagexec.QuestDAG, bool) {
+	if output == "" {
+		return nil, false
+	}
+
+	// Try to unmarshal the full output as the tool response JSON.
+	// Use json.NewDecoder so trailing prose after a valid JSON object is
+	// tolerated (LLMs often wrap tool output in markdown code fences).
+	var raw map[string]any
+	if err := json.NewDecoder(strings.NewReader(output)).Decode(&raw); err != nil {
+		// Output is not top-level JSON — scan for a JSON object within it.
+		start := strings.Index(output, "{")
+		if start == -1 {
+			return nil, false
+		}
+		if err2 := json.NewDecoder(strings.NewReader(output[start:])).Decode(&raw); err2 != nil {
+			return nil, false
+		}
+	}
+
+	// Must have both "goal" and "dag" keys per decompose_quest tool contract.
+	if _, hasGoal := raw["goal"]; !hasGoal {
+		return nil, false
+	}
+	dagRaw, hasDag := raw["dag"]
+	if !hasDag {
+		return nil, false
+	}
+
+	// Re-marshal and unmarshal the "dag" value into QuestDAG for type safety.
+	dagData, err := json.Marshal(dagRaw)
+	if err != nil {
+		return nil, false
+	}
+	var dag questdagexec.QuestDAG
+	if err := json.Unmarshal(dagData, &dag); err != nil {
+		return nil, false
+	}
+
+	// Re-validate as defense in depth — the tool validated on creation but
+	// the output may have been truncated or modified in transit.
+	if err := dag.Validate(); err != nil {
+		return nil, false
+	}
+
+	return &dag, true
+}
+
+// dagNodesToQuests converts a slice of QuestNode values from a DAG into
+// domain.Quest values suitable for PostSubQuests. Skills are mapped from
+// string tags to domain.SkillTag. Difficulty inherits from the parent when
+// the node specifies zero. Title is truncated to 100 characters.
+func dagNodesToQuests(nodes []questdagexec.QuestNode, parent *domain.Quest) []domain.Quest {
+	quests := make([]domain.Quest, 0, len(nodes))
+	for _, node := range nodes {
+		title := node.Objective
+		if len(title) > 100 {
+			title = title[:100]
+		}
+
+		difficulty := domain.QuestDifficulty(node.Difficulty)
+		if difficulty == 0 && parent != nil {
+			difficulty = parent.Difficulty
+		}
+
+		skills := make([]domain.SkillTag, 0, len(node.Skills))
+		for _, s := range node.Skills {
+			skills = append(skills, domain.SkillTag(s))
+		}
+
+		quests = append(quests, domain.Quest{
+			Title:          title,
+			Description:    node.Objective,
+			Difficulty:     difficulty,
+			RequiredSkills: skills,
+			Acceptance:     node.Acceptance,
+		})
+	}
+	return quests
+}
+
+// buildDAGExecutionState creates a DAGExecutionState from a validated DAG,
+// the parent quest, and the node-to-sub-quest ID mapping produced after posting.
+// Node states are initialized using DAGReadyNodes: nodes with no dependencies
+// (or all dependencies already in NodeCompleted state) start as "ready";
+// all others start as "pending".
+func buildDAGExecutionState(dag *questdagexec.QuestDAG, parent *domain.Quest, nodeQuestIDs map[string]string) *questdagexec.DAGExecutionState {
+	// Seed all nodes as pending so DAGReadyNodes can compute the initial ready set.
+	nodeStates := make(map[string]string, len(dag.Nodes))
+	for _, node := range dag.Nodes {
+		nodeStates[node.ID] = questdagexec.NodePending
+	}
+
+	// Promote nodes whose dependencies are already met to "ready".
+	for _, readyID := range questdagexec.DAGReadyNodes(*dag, nodeStates) {
+		nodeStates[readyID] = questdagexec.NodeReady
+	}
+
+	nodeRetries := make(map[string]int, len(dag.Nodes))
+	for _, node := range dag.Nodes {
+		nodeRetries[node.ID] = 2 // default retry budget per node
+	}
+
+	partyID := ""
+	if parent.PartyID != nil {
+		partyID = string(*parent.PartyID)
+	}
+
+	return &questdagexec.DAGExecutionState{
+		ExecutionID:   nuid.Next(),
+		ParentQuestID: string(parent.ID),
+		PartyID:       partyID,
+		DAG:           *dag,
+		NodeStates:    nodeStates,
+		NodeQuestIDs:  nodeQuestIDs,
+		NodeAssignees: make(map[string]string),
+		NodeRetries:   nodeRetries,
+	}
 }
 
 // failQuest transitions the quest to failed and releases the agent.
@@ -692,6 +946,31 @@ func (c *Component) cleanupMapping(ctx context.Context, questID string) {
 // PROMPT BUILDING
 // =============================================================================
 
+// loadPeerFeedback returns PeerFeedbackSummary items for an agent if their
+// peer review average is below the warning threshold (3.0). The summary is
+// derived from the agent's aggregated reputation triples written by
+// agentprogression; no peer-review entity scan is required on the hot path.
+//
+// TODO: Break down feedback into per-question items (Q1/Q2/Q3) instead of a
+// single aggregate. Requires storing per-question running averages on the
+// agent entity — currently only the overall average is tracked.
+//
+// Returns an empty slice when the agent has no reviews or the average is at
+// or above the threshold — the assembler skips the section entirely in that case.
+func loadPeerFeedback(agent *agentprogression.Agent) []promptmanager.PeerFeedbackSummary {
+	const ratingThreshold = 3.0
+	if agent.Stats.PeerReviewCount == 0 || agent.Stats.PeerReviewAvg >= ratingThreshold {
+		return nil
+	}
+	return []promptmanager.PeerFeedbackSummary{
+		{
+			Question:    "Overall peer review average",
+			AvgRating:   agent.Stats.PeerReviewAvg,
+			Explanation: "Your recent work has been rated below expectations by your party lead. Focus on quality and communication.",
+		},
+	}
+}
+
 // buildSystemPrompt builds the system prompt using the assembler when available,
 // falling back to the legacy string concatenation path.
 func (c *Component) buildSystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
@@ -736,6 +1015,7 @@ func (c *Component) buildAssembledSystemPrompt(agent *agentprogression.Agent, qu
 		MaxDuration:      maxDuration,
 		MaxTokens:        quest.Constraints.MaxTokens,
 		Provider:         provider,
+		PeerFeedback:     loadPeerFeedback(agent),
 	}
 
 	result := c.promptAssembler.AssembleSystemPrompt(assemblyCtx)
