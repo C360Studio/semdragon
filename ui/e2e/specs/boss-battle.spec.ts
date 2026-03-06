@@ -1,5 +1,10 @@
 import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/test-base';
 
+/** Whether an LLM backend (mock or real) is available for the agentic pipeline. */
+function hasLLM(): boolean {
+	return process.env.E2E_MOCK_LLM === 'true' || process.env.E2E_REAL_LLM === 'true';
+}
+
 /**
  * Boss Battle - Auto Trigger
  *
@@ -12,7 +17,7 @@ import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/te
  */
 test.describe('Boss Battle - Auto Trigger', () => {
 	test('submitting quest with review triggers battle', async ({ lifecycleApi }) => {
-		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
 		test.setTimeout(120_000);
 
 		// 1. Create a quest that requires human review (difficulty=easy so fresh agent qualifies)
@@ -59,7 +64,7 @@ test.describe('Boss Battle - Auto Trigger', () => {
 	});
 
 	test('no battle created for quest without review', async ({ lifecycleApi }) => {
-		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
 		test.setTimeout(120_000);
 
 		// 1. Capture existing battles before the test

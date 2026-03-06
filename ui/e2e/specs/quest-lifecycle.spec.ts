@@ -1,5 +1,10 @@
 import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/test-base';
 
+/** Whether an LLM backend (mock or real) is available for the agentic pipeline. */
+function hasLLM(): boolean {
+	return process.env.E2E_MOCK_LLM === 'true' || process.env.E2E_REAL_LLM === 'true';
+}
+
 /**
  * Quest Lifecycle - Happy Path
  *
@@ -17,7 +22,7 @@ import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/te
  */
 test.describe('Quest Lifecycle - Happy Path', () => {
 	test('create -> claim -> start -> complete (no review)', async ({ lifecycleApi }) => {
-		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
 		test.setTimeout(120_000);
 
 		// 1. Create an easy quest with no review requirement
@@ -60,7 +65,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 	test('quest with review required reaches in_review after processing', async ({
 		lifecycleApi
 	}) => {
-		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
 		test.setTimeout(120_000);
 
 		// Use ReviewHuman (level 3) so the quest parks at in_review.
@@ -135,7 +140,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 	});
 
 	test('fail with retries remaining reposts quest', async ({ lifecycleApi }) => {
-		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
 		test.setTimeout(120_000);
 
 		// Use a quest that requires human review (ReviewHuman = level 3).
@@ -195,7 +200,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 	});
 
 	test('direct complete from in_review succeeds', async ({ lifecycleApi }) => {
-		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
 		test.setTimeout(120_000);
 
 		// Use human review so the quest parks at in_review after the agentic loop.

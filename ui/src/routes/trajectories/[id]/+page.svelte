@@ -60,15 +60,15 @@
 
 	function stepLabel(step: TrajectoryStep): string {
 		if (step.step_type === 'tool_call') return step.tool_name ?? 'tool_call';
+		if (step.step_type === 'model_call') return 'model_call';
 		if (step.prompt) return 'request';
 		if (step.response) return 'response';
-		return 'model_call';
+		return step.step_type ?? 'unknown';
 	}
 
 	function stepIcon(step: TrajectoryStep): string {
 		if (step.step_type === 'tool_call') return 'T';
-		if (step.prompt) return '\u2192'; // →
-		return '\u2190'; // ←
+		return '\u2192'; // →
 	}
 
 	function hasExpandableContent(step: TrajectoryStep): boolean {

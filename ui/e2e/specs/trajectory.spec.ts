@@ -168,6 +168,8 @@ test.describe('Trajectory List Page', () => {
 	});
 
 	test('shows empty state when no trajectories exist', async ({ page }) => {
+		test.skip(hasBackend(), 'Backend seeds quests with loop_ids, so empty state is not shown');
+
 		await page.goto('/trajectories');
 		await waitForHydration(page);
 
@@ -268,7 +270,10 @@ test.describe('Trajectory Detail - Completed', () => {
 		// First tool call — read_file
 		const readFile = toolEvents.first();
 		await expect(readFile.getByTestId('event-type')).toHaveText('read_file');
-		await expect(readFile.getByTestId('event-data')).toContainText('src/auth/handler.go');
+
+		// Click to expand, then check tool arguments
+		await readFile.locator('.event-content').click();
+		await expect(readFile.getByTestId('event-tool-args')).toContainText('src/auth/handler.go');
 	});
 
 	test('tool_call events display duration', async ({ page }) => {
@@ -281,12 +286,13 @@ test.describe('Trajectory Detail - Completed', () => {
 		await expect(toolEvents.nth(1).getByTestId('event-duration')).toContainText('80ms');
 	});
 
-	test('model_call events show response preview in event-data', async ({ page }) => {
+	test('model_call events show response when expanded', async ({ page }) => {
 		const modelEvents = page.locator('[data-testid="timeline-event"][data-step-type="model_call"]');
 
-		// First model call has a response that appears in event-data
-		const firstData = modelEvents.first().getByTestId('event-data');
-		await expect(firstData).toContainText('reading the existing auth code');
+		// Click to expand the first model call, then check response content
+		const first = modelEvents.first();
+		await first.locator('.event-content').click();
+		await expect(first.getByTestId('event-response')).toContainText('reading the existing auth code');
 	});
 
 	test('events are in chronological order', async ({ page }) => {

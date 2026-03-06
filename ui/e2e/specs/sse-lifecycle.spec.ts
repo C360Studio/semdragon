@@ -22,22 +22,25 @@ test.describe('SSE - Lifecycle Events', () => {
 		// Wait for the page to fully settle before capturing a baseline
 		await page.waitForTimeout(500);
 
-		// Note the current number of quest cards visible in the "posted" column
-		const postedBefore = await questsPage.getQuestCountInColumn('posted');
+		// Note the current total quest count across all columns.
+		// We track total rather than the "posted" column specifically because
+		// autonomy (full_auto mode) may auto-claim the quest before the test
+		// detects it in "posted".
+		const totalBefore = await questsPage.getTotalQuestCount();
 
 		// 2. Create a quest via the API — the backend publishes a KV change
 		//    which the SSE stream delivers to the page
 		const quest = await lifecycleApi.createQuest('E2E SSE lifecycle test quest', 1);
 		expect(quest.id).toBeTruthy();
 
-		// 3. The page should reflect the new quest in the posted column
+		// 3. The page should reflect the new quest (in any column)
 		//    without a manual reload — driven purely by SSE reactivity
 		await retry(
 			async () => {
-				const postedAfter = await questsPage.getQuestCountInColumn('posted');
-				if (postedAfter <= postedBefore) {
+				const totalAfter = await questsPage.getTotalQuestCount();
+				if (totalAfter <= totalBefore) {
 					throw new Error(
-						`Posted column count (${postedAfter}) has not grown from baseline (${postedBefore})`
+						`Total quest count (${totalAfter}) has not grown from baseline (${totalBefore})`
 					);
 				}
 			},
@@ -45,13 +48,13 @@ test.describe('SSE - Lifecycle Events', () => {
 				timeout: 12000,
 				interval: 800,
 				message:
-					'Quest did not appear in posted column via SSE within the allowed timeout. ' +
+					'Quest did not appear via SSE within the allowed timeout. ' +
 					'Verify that the SSE stream is delivering KV watch events to the frontend.'
 			}
 		);
 
-		const postedAfter = await questsPage.getQuestCountInColumn('posted');
-		expect(postedAfter).toBeGreaterThan(postedBefore);
+		const totalAfter = await questsPage.getTotalQuestCount();
+		expect(totalAfter).toBeGreaterThan(totalBefore);
 	});
 
 	test('SSE connection indicator shows connected state', async ({
