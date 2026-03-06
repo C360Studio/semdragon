@@ -48,9 +48,11 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 			"error", err)
 		c.errorsCount.Add(1)
 		if parts := strings.SplitN(msg.Subject(), ".", 3); len(parts) == 3 {
+			errMsg := fmt.Sprintf("failed to unmarshal ToolCall: %v", err)
 			_ = c.publishResult(ctx, parts[2], &agentic.ToolResult{
-				CallID: parts[2],
-				Error:  fmt.Sprintf("failed to unmarshal ToolCall: %v", err),
+				CallID:  parts[2],
+				Content: "Tool error: " + errMsg,
+				Error:   errMsg,
 			})
 		}
 		return
@@ -70,9 +72,11 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 		c.logger.Error("invalid ToolCall", "subject", msg.Subject(), "error", err)
 		c.errorsCount.Add(1)
 		if call.ID != "" {
+			errMsg := fmt.Sprintf("invalid tool call: %v", err)
 			_ = c.publishResult(ctx, call.ID, &agentic.ToolResult{
-				CallID: call.ID,
-				Error:  fmt.Sprintf("invalid tool call: %v", err),
+				CallID:  call.ID,
+				Content: "Tool error: " + errMsg,
+				Error:   errMsg,
 			})
 		}
 		return
@@ -83,6 +87,14 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 
 	// Execute the tool through the registry, which enforces tier and skill gates.
 	result := c.toolRegistry.Execute(ctx, call, quest, agent)
+
+	// Ensure Content is non-empty when an error occurred. The agentic-loop converts
+	// ToolResult.Content into the ChatMessage.Content for role=tool messages. Gemini
+	// (and other providers) reject tool result messages with empty content, so we
+	// must surface the error string as content for the LLM to react to.
+	if result.Content == "" && result.Error != "" {
+		result.Content = fmt.Sprintf("Tool error: %s", result.Error)
+	}
 
 	// Propagate correlation identifiers so the loop can match this result.
 	result.LoopID = call.LoopID
