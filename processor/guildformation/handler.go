@@ -90,6 +90,16 @@ func (c *Component) handleAgentStateChange(entry jetstream.KeyValueEntry) {
 	c.agentsMu.Unlock()
 
 	if !hadPrev {
+		// New agent appeared. Check if this triggers auto-formation:
+		// either this agent is Expert+ (potential founder) or a cached
+		// Expert+ unguilded agent now has enough candidates.
+		if c.config.EnableAutoFormation {
+			if agent.Tier >= domain.TierExpert {
+				c.evaluateAutoFormation(agent)
+			} else {
+				c.evaluateAutoFormationForCachedFounders()
+			}
+		}
 		return
 	}
 
@@ -102,6 +112,26 @@ func (c *Component) handleAgentStateChange(entry jetstream.KeyValueEntry) {
 			"old_tier", prev.Tier,
 			"new_tier", agent.Tier)
 		c.evaluateAutoFormation(agent)
+	}
+}
+
+// evaluateAutoFormationForCachedFounders scans the agent cache for any Expert+
+// unguilded agent and re-evaluates auto-formation. Called when a new non-Expert
+// agent appears, since it may be the Nth candidate that tips the threshold.
+func (c *Component) evaluateAutoFormationForCachedFounders() {
+	c.agentsMu.RLock()
+	var founders []*agentprogression.Agent
+	for _, a := range c.agents {
+		if a.Tier >= domain.TierExpert {
+			if guilds := c.GetAgentGuilds(a.ID); len(guilds) == 0 {
+				founders = append(founders, a)
+			}
+		}
+	}
+	c.agentsMu.RUnlock()
+
+	for _, founder := range founders {
+		c.evaluateAutoFormation(founder)
 	}
 }
 

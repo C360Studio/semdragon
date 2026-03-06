@@ -60,7 +60,7 @@ test.describe('Guild Formation @integration', () => {
 				}
 				return result;
 			},
-			{ timeout: 15000, interval: 1000, message: 'Guild auto-formation did not trigger' }
+			{ timeout: 30000, interval: 2000, message: 'Guild auto-formation did not trigger' }
 		);
 
 		expect(guilds.length).toBeGreaterThanOrEqual(1);

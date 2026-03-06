@@ -4,17 +4,17 @@ import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/te
  * Party Formation
  *
  * Exercises the partycoord lifecycle via the backend API. The partycoord
- * processor reacts to quest claim events and auto-forms parties for quests
- * that have party_required set.
+ * processor reacts to party-required quest posting and auto-forms parties,
+ * recruiting idle agents and claiming the quest on their behalf.
+ *
+ * Auto-formation requires a Master-tier (level 16+) idle agent as party lead.
+ * Tests recruit their own Master-tier agent to ensure availability.
  *
  * Endpoints covered:
  *   POST  /game/quests           (create with party_required hint)
  *   GET   /game/quests/{id}      (verify party_required persisted)
  *   GET   /game/parties          (list all parties)
  *   GET   /game/parties/{id}     (get single party)
- *
- * Note: party auto-formation is event-driven and asynchronous. Tests that
- * assert party existence must use retry() to poll for the expected state.
  */
 
 test.describe('Party Formation', () => {
@@ -31,19 +31,20 @@ test.describe('Party Formation', () => {
 		expect(fetched.party_required).toBe(true);
 	});
 
-	test('party auto-forms when agent claims party-required quest', async ({ lifecycleApi }) => {
-		// Create a party-required quest
+	test('party auto-forms when party-required quest is posted', async ({ lifecycleApi }) => {
+		// Recruit a Master-tier agent (level 16) to serve as party lead.
+		// selectPartyLead requires CanLeadParty, which is Master+ only.
+		await lifecycleApi.recruitAgentAtLevel(`party-lead-${Date.now()}`, 16, [
+			'analysis',
+			'coding'
+		]);
+
+		// Create a party-required quest — partycoord auto-forms a party on posting
 		const quest = await lifecycleApi.createQuestWithParty('Auto-form party test', 2);
 		const questId = extractInstance(quest.id);
 
-		// Recruit an agent and claim the quest
-		const agent = await lifecycleApi.recruitAgent(`party-test-${Date.now()}`, ['analysis']);
-		const agentId = extractInstance(agent.id);
-
-		const claimRes = await lifecycleApi.claimQuest(questId, agentId);
-		expect(claimRes.ok).toBeTruthy();
-
-		// Poll for party formation — partycoord reacts to quest claim events
+		// Poll for party formation — partycoord reacts to quest posting,
+		// finds idle agents, forms a party, claims, and starts the quest.
 		const parties = await retry(
 			async () => {
 				const allParties = await lifecycleApi.listParties();
@@ -55,12 +56,16 @@ test.describe('Party Formation', () => {
 				}
 				return matching;
 			},
-			{ timeout: 60_000, interval: 2000, message: 'Party did not auto-form within 60s' }
+			{ timeout: 30_000, interval: 2000, message: 'Party did not auto-form within 30s' }
 		);
 
 		expect(parties.length).toBeGreaterThanOrEqual(1);
 		const party = parties[0];
 		expect(party.quest_id).toContain(questId);
+
+		// Verify the quest was claimed (partycoord auto-claims)
+		const questAfter = await lifecycleApi.getQuest(questId);
+		expect(['claimed', 'in_progress', 'completed']).toContain(questAfter.status);
 	});
 
 	test('list parties returns empty array when no parties exist', async ({ lifecycleApi }) => {

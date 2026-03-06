@@ -37,10 +37,11 @@
       "gemini-lite": {
         "provider": "openai",
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "model": "gemini-2.0-flash-lite",
+        "model": "gemini-2.5-flash-lite",
         "api_key_env": "GEMINI_API_KEY",
         "max_tokens": 8192,
-        "supports_tools": true
+        "supports_tools": true,
+        "stream": true
       },
       "gemini-flash": {
         "provider": "openai",
@@ -49,6 +50,7 @@
         "api_key_env": "GEMINI_API_KEY",
         "max_tokens": 8192,
         "supports_tools": true,
+        "stream": true,
         "reasoning_effort": "low"
       },
       "gemini-pro": {
@@ -58,6 +60,7 @@
         "api_key_env": "GEMINI_API_KEY",
         "max_tokens": 8192,
         "supports_tools": true,
+        "stream": true,
         "reasoning_effort": "medium"
       }
     },
@@ -296,10 +299,22 @@
         "sandbox_dir": "/workspace"
       }
     },
+    "partycoord": {
+      "type": "processor",
+      "name": "partycoord",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "auto_form_parties": true,
+        "require_lead_approval": false
+      }
+    },
     "autonomy": {
       "type": "processor",
       "name": "autonomy",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",

@@ -34,6 +34,15 @@
   },
   "model_registry": {
     "endpoints": {
+      "gemini-lite": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-flash-lite",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 8192,
+        "supports_tools": true,
+        "stream": true
+      },
       "gemini-flash": {
         "provider": "openai",
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -41,13 +50,29 @@
         "api_key_env": "GEMINI_API_KEY",
         "max_tokens": 8192,
         "supports_tools": true,
-        "stream": true
+        "stream": true,
+        "reasoning_effort": "low"
+      },
+      "gemini-pro": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-pro",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 8192,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "medium"
       }
     },
     "capabilities": {
-      "agent-work": { "preferred": ["gemini-flash"], "requires_tools": true },
-      "dm-chat": { "preferred": ["gemini-flash"] },
-      "boss-battle": { "preferred": ["gemini-flash"] }
+      "agent-work":             { "preferred": ["gemini-flash"], "requires_tools": true },
+      "agent-work.apprentice":  { "preferred": ["gemini-lite"], "requires_tools": true },
+      "agent-work.journeyman":  { "preferred": ["gemini-flash"], "requires_tools": true },
+      "agent-work.expert":      { "preferred": ["gemini-pro"], "requires_tools": true },
+      "agent-work.master":      { "preferred": ["gemini-pro"], "requires_tools": true },
+      "agent-work.grandmaster": { "preferred": ["gemini-pro"], "requires_tools": true },
+      "boss-battle":            { "preferred": ["gemini-flash"] },
+      "dm-chat":                { "preferred": ["gemini-flash"] }
     },
     "defaults": { "model": "gemini-flash" }
   },
@@ -274,10 +299,22 @@
         "sandbox_dir": "/workspace"
       }
     },
+    "partycoord": {
+      "type": "processor",
+      "name": "partycoord",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "auto_form_parties": true,
+        "require_lead_approval": false
+      }
+    },
     "autonomy": {
       "type": "processor",
       "name": "autonomy",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",

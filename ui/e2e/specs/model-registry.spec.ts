@@ -129,7 +129,7 @@ test.describe('Model Registry @integration', () => {
 
 				const body: ModelResolveResponse = await res.json();
 				expect(body.capability).toBe('agent-work.apprentice');
-				expect(body.model).toBe('gemini-2.0-flash-lite');
+				expect(body.model).toBe('gemini-2.5-flash-lite');
 				expect(body.endpoint_name).toBe('gemini-lite');
 			} finally {
 				await api.dispose();
