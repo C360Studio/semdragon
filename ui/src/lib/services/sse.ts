@@ -11,7 +11,9 @@ import type {
 	BossBattle,
 	Party,
 	Guild,
-	EntityType
+	EntityType,
+	GameEventType,
+	GameEvent
 } from '$types';
 import { questId, agentId, battleId, partyId, guildId } from '$types';
 import { worldStore } from '$stores/worldStore.svelte';
@@ -39,6 +41,55 @@ export function entityTypeFromKey(key: string): EntityType | null {
 		default:
 			return null;
 	}
+}
+
+// =============================================================================
+// EVENT TYPE DERIVATION
+// =============================================================================
+
+/**
+ * Map backend message_type.category to frontend GameEventType.
+ * Backend emits short categories like "quest.posted"; frontend expects
+ * "quest.lifecycle.posted". Unmapped categories are silently skipped.
+ */
+const CATEGORY_TO_EVENT_TYPE: Record<string, GameEventType> = {
+	'quest.posted': 'quest.lifecycle.posted',
+	'quest.claimed': 'quest.lifecycle.claimed',
+	'quest.started': 'quest.lifecycle.started',
+	'quest.submitted': 'quest.lifecycle.submitted',
+	'quest.completed': 'quest.lifecycle.completed',
+	'quest.failed': 'quest.lifecycle.failed',
+	'quest.escalated': 'quest.lifecycle.escalated',
+	'quest.abandoned': 'quest.lifecycle.abandoned',
+	'quest.in_review': 'quest.lifecycle.submitted',
+	'agent.progression.xp': 'agent.progression.xp',
+	'agent.status.on_quest': 'agent.progression.xp',
+	'agent.status.idle': 'agent.progression.xp',
+	'agent.status.in_battle': 'agent.progression.xp',
+	'agent.released': 'agent.progression.xp',
+	'agent.inventory.purchased': 'agent.inventory.updated',
+	'battle.started': 'battle.review.started',
+	'guild.created': 'guild.membership.joined',
+	'guild.member.joined': 'guild.membership.joined',
+	'guild.member.promoted': 'guild.membership.promoted',
+	'guild.disbanded': 'guild.membership.joined',
+	'party.formed': 'party.formation.created',
+	'party.joined': 'party.formation.created',
+	'party.disbanded': 'party.formation.disbanded',
+	'store.item.listed': 'store.item.purchased'
+};
+
+/**
+ * Derive a GameEventType from the raw SSE value's message_type.category.
+ * Returns null for unmapped or missing categories (event is silently skipped).
+ */
+function deriveEventType(rawValue: unknown): GameEventType | null {
+	if (typeof rawValue !== 'object' || rawValue === null || !('message_type' in rawValue)) {
+		return null;
+	}
+	const mt = (rawValue as { message_type?: { category?: string } }).message_type;
+	if (!mt?.category) return null;
+	return CATEGORY_TO_EVENT_TYPE[mt.category] ?? null;
 }
 
 // =============================================================================
@@ -124,6 +175,26 @@ export function createSSEService() {
 				worldStore.upsertGuild(entity as Guild);
 				break;
 		}
+
+		// Generate activity event after upsert (skip during initial sync to avoid flood)
+		if (!synced) return;
+		const eventType = deriveEventType(value);
+		if (!eventType) return;
+
+		const gameEvent: GameEvent = {
+			type: eventType,
+			timestamp: Date.now(),
+			session_id: '',
+			span_id: '',
+			data: {}
+		};
+		if (entityType === 'quest') gameEvent.quest_id = (entity as Quest).id;
+		if (entityType === 'agent') gameEvent.agent_id = (entity as Agent).id;
+		if (entityType === 'battle') gameEvent.battle_id = (entity as BossBattle).id;
+		if (entityType === 'party') gameEvent.party_id = (entity as Party).id;
+		if (entityType === 'guild') gameEvent.guild_id = (entity as Guild).id;
+
+		worldStore.addEvent(gameEvent);
 	}
 
 	function handleDelete(key: string) {

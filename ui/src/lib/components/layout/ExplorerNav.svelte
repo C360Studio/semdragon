@@ -13,7 +13,7 @@
 
 	type EventCategory = 'all' | 'quest' | 'agent' | 'battle' | 'guild';
 
-	let { showActivity = false }: { showActivity?: boolean } = $props();
+	let { showActivity = true }: { showActivity?: boolean } = $props();
 
 	// Active route highlighting — exact match for `/`, prefix match for others
 	const currentPath = $derived($page.url.pathname);

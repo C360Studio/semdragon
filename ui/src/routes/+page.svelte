@@ -39,7 +39,7 @@
 	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
 >
 	{#snippet leftPanel()}
-		<ExplorerNav showActivity={true} />
+		<ExplorerNav />
 	{/snippet}
 
 	{#snippet rightPanel()}{/snippet}
