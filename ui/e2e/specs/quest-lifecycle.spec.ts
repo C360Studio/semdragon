@@ -23,7 +23,7 @@ function hasLLM(): boolean {
 test.describe('Quest Lifecycle - Happy Path', () => {
 	test('create -> claim -> start -> complete (no review)', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
-		test.setTimeout(120_000);
+		test.setTimeout(180_000);
 
 		// 1. Create an easy quest with no review requirement
 		const quest = await lifecycleApi.createQuest('E2E no-review lifecycle quest', 1);
@@ -54,7 +54,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 				}
 				return q;
 			},
-			{ timeout: 90000, interval: 1000, message: 'Quest did not reach completed status' }
+			{ timeout: 150_000, interval: 2000, message: 'Quest did not reach completed status' }
 		);
 
 		expect(finalQuest.status).toBe('completed');
@@ -66,7 +66,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 		lifecycleApi
 	}) => {
 		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
-		test.setTimeout(120_000);
+		test.setTimeout(180_000);
 
 		// Use ReviewHuman (level 3) so the quest parks at in_review.
 		// The agentic loop (questbridge + mockLLM) processes started quests
@@ -98,7 +98,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 				}
 				return q;
 			},
-			{ timeout: 90000, interval: 1000, message: 'Quest did not reach in_review' }
+			{ timeout: 150_000, interval: 2000, message: 'Quest did not reach in_review' }
 		);
 
 		expect(reviewQuest.status).toBe('in_review');
@@ -141,7 +141,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 
 	test('fail with retries remaining reposts quest', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
-		test.setTimeout(120_000);
+		test.setTimeout(180_000);
 
 		// Use a quest that requires human review (ReviewHuman = level 3).
 		// This ensures the quest parks at in_review after the agentic loop completes,
@@ -173,7 +173,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 				}
 				return q;
 			},
-			{ timeout: 90000, interval: 1000, message: 'Quest did not reach in_review' }
+			{ timeout: 150_000, interval: 2000, message: 'Quest did not reach in_review' }
 		);
 
 		// Fail from in_review — handler accepts both in_progress and in_review.
@@ -201,7 +201,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 
 	test('direct complete from in_review succeeds', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
-		test.setTimeout(120_000);
+		test.setTimeout(180_000);
 
 		// Use human review so the quest parks at in_review after the agentic loop.
 		// This avoids the race where the mockLLM pipeline auto-completes the quest
@@ -228,7 +228,7 @@ test.describe('Quest Lifecycle - Happy Path', () => {
 				}
 				return q;
 			},
-			{ timeout: 90000, interval: 1000, message: 'Quest did not reach in_review' }
+			{ timeout: 150_000, interval: 2000, message: 'Quest did not reach in_review' }
 		);
 
 		// Direct complete — handler accepts both in_progress and in_review

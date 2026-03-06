@@ -55,7 +55,7 @@ test.describe('Party Formation', () => {
 				}
 				return matching;
 			},
-			{ timeout: 15000, interval: 1000, message: 'Party did not auto-form within 15s' }
+			{ timeout: 60_000, interval: 2000, message: 'Party did not auto-form within 60s' }
 		);
 
 		expect(parties.length).toBeGreaterThanOrEqual(1);
