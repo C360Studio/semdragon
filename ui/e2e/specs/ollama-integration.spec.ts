@@ -432,6 +432,34 @@ test.describe('Semspec Hello-World Comparison @integration @ollama', () => {
 		const seniorInstance = extractInstance(seniorAgent.id);
 
 		// ---------------------------------------------------------------
+		// 1b. Wait for all seeded agents to be idle
+		// ---------------------------------------------------------------
+		// Prior tests or autonomy may have assigned quests to these agents.
+		// We must wait for them to finish before we can claim new quests.
+
+		for (const [name, instance] of [
+			['coder-journeyman', coderInstance],
+			['analyst-1', analystInstance],
+			['senior-dev', seniorInstance]
+		] as const) {
+			await retry(
+				async () => {
+					const a = await lifecycleApi.getAgent(instance);
+					if (a.status !== 'idle') {
+						throw new Error(`${name} is ${a.status}, waiting for idle`);
+					}
+				},
+				{
+					timeout: 120_000,
+					interval: 3000,
+					message: `${name} did not return to idle — may be stuck on a quest from a prior test`
+				}
+			);
+		}
+
+		console.log('[Semspec Comparison] All agents idle, creating quests...');
+
+		// ---------------------------------------------------------------
 		// 2. Create 3 quests matching semspec's task decomposition
 		// ---------------------------------------------------------------
 
@@ -458,38 +486,39 @@ test.describe('Semspec Hello-World Comparison @integration @ollama', () => {
 			'\n\n' +
 			CODEBASE_CONTEXT;
 
-		const [backendQuest, frontendQuest, testingQuest] = await Promise.all([
-			createQuestWithSkills(backendObjective, 2, ['code_generation']),
-			createQuestWithSkills(frontendObjective, 2, ['analysis']),
-			createQuestWithSkills(testingObjective, 3, ['code_generation', 'code_review'])
-		]);
+		// Create each quest and claim it immediately. If autonomy auto-claims
+		// the quest before us (409), create a new quest and retry.
+		async function createAndClaim(
+			objective: string,
+			difficulty: number,
+			skills: string[],
+			agentInstance: string,
+			label: string
+		): Promise<{ quest: QuestResponse; questInstance: string }> {
+			for (let attempt = 0; attempt < 5; attempt++) {
+				const quest = await createQuestWithSkills(objective, difficulty, skills);
+				const questInstance = extractInstance(quest.id);
+				const claim = await lifecycleApi.claimQuest(questInstance, agentInstance);
+				if (claim.ok) return { quest, questInstance };
+				console.log(`[Semspec Comparison] ${label} claim attempt ${attempt + 1} got 409, retrying with new quest`);
+			}
+			throw new Error(`${label} claim failed after 5 attempts — autonomy keeps auto-claiming`);
+		}
 
-		expect(backendQuest.id).toBeTruthy();
-		expect(frontendQuest.id).toBeTruthy();
-		expect(testingQuest.id).toBeTruthy();
+		const { quest: backendQuest, questInstance: backendInstance } = await createAndClaim(
+			backendObjective, 2, ['code_generation'], coderInstance, 'Backend'
+		);
+		const { quest: frontendQuest, questInstance: frontendInstance } = await createAndClaim(
+			frontendObjective, 2, ['analysis'], analystInstance, 'Frontend'
+		);
+		const { quest: testingQuest, questInstance: testingInstance } = await createAndClaim(
+			testingObjective, 3, ['code_generation', 'code_review'], seniorInstance, 'Testing'
+		);
 
-		console.log('[Semspec Comparison] Quests created:');
+		console.log('[Semspec Comparison] Quests created and claimed:');
 		console.log(`  Backend: ${backendQuest.id}`);
 		console.log(`  Frontend: ${frontendQuest.id}`);
 		console.log(`  Testing: ${testingQuest.id}`);
-
-		const backendInstance = extractInstance(backendQuest.id);
-		const frontendInstance = extractInstance(frontendQuest.id);
-		const testingInstance = extractInstance(testingQuest.id);
-
-		// ---------------------------------------------------------------
-		// 3. Claim each quest with its assigned agent
-		// ---------------------------------------------------------------
-
-		const [claim1, claim2, claim3] = await Promise.all([
-			lifecycleApi.claimQuest(backendInstance, coderInstance),
-			lifecycleApi.claimQuest(frontendInstance, analystInstance),
-			lifecycleApi.claimQuest(testingInstance, seniorInstance)
-		]);
-
-		expect(claim1.ok, `Backend claim failed: ${claim1.status}`).toBeTruthy();
-		expect(claim2.ok, `Frontend claim failed: ${claim2.status}`).toBeTruthy();
-		expect(claim3.ok, `Testing claim failed: ${claim3.status}`).toBeTruthy();
 
 		// ---------------------------------------------------------------
 		// 4. Start all 3 quests (triggers 3 concurrent agentic loops)
@@ -980,7 +1009,9 @@ test.describe('Boss Battle Review Pipeline @integration @ollama', () => {
 		expect(battle.id, 'boss battle must have an entity ID').toBeTruthy();
 		console.log(`[Boss Battle] Battle created: ${battle.id}, status: ${battle.status}`);
 
-		// 5. Poll until battle resolves (victory or defeat)
+		// 5. Poll until battle resolves (victory or defeat).
+		//    The bossbattle processor makes an LLM evaluation call which can
+		//    take 90-120s with Ollama — use the full quest execution timeout.
 		const resolvedBattle = await retry(
 			async () => {
 				const battles = await lifecycleApi.listBattles();
@@ -998,8 +1029,7 @@ test.describe('Boss Battle Review Pipeline @integration @ollama', () => {
 				return current;
 			},
 			{
-				timeout: 60_000,
-				interval: 2000,
+				...OLLAMA_POLL.questExecution,
 				message: 'Boss battle did not reach a verdict within timeout'
 			}
 		);
