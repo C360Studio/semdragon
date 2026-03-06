@@ -1,0 +1,34 @@
+# Caddy reverse proxy for Semdragons
+#
+# Routes API traffic to the Go backend and everything else to the
+# SvelteKit dev server. Eliminates CORS hacks by making all requests
+# same-origin. flush_interval -1 ensures SSE events stream immediately.
+
+:80 {
+	# Game API + SSE events → backend
+	handle /game/* {
+		reverse_proxy backend:8080 {
+			flush_interval -1
+		}
+	}
+
+	# Health check → backend
+	handle /health {
+		reverse_proxy backend:8080
+	}
+
+	# API docs (Swagger UI) → backend
+	handle /docs* {
+		reverse_proxy backend:8080
+	}
+
+	# OpenAPI spec → backend
+	handle /openapi.json {
+		reverse_proxy backend:8080
+	}
+
+	# Everything else → SvelteKit dev server (includes HMR websocket)
+	handle {
+		reverse_proxy ui:5173
+	}
+}

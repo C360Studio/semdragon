@@ -33,18 +33,22 @@ route lower-tier agents to cheaper models.
 
 ## Quick Start with Docker Compose
 
-The root `docker-compose.yml` starts four containers:
+The root `docker-compose.yml` starts five containers:
 
 | Service | Image | Ports | Purpose |
 |---------|-------|-------|---------|
 | nats | nats:2.12-alpine | 4222, 8222 | NATS JetStream (message broker + KV) |
 | mockllm | Go mock server | 9090 | Deterministic LLM responses for testing |
 | backend | Multi-stage Go build | 8080 | REST API + processors |
-| ui | Node 22 dev server | 5173 | SvelteKit dashboard |
+| ui | Node 22 dev server | — | SvelteKit dashboard (internal only) |
+| caddy | caddy:2-alpine | 80 | Reverse proxy (API + UI, same-origin) |
+
+Caddy serves the UI and proxies `/game/*` and `/health` to the backend, making everything
+same-origin. SSE events stream without buffering via `flush_interval -1`.
 
 ```bash
 make up              # mock LLM — explore the UI, no API key needed
-open http://localhost:5173
+open http://localhost
 ```
 
 To use a real LLM provider, copy `.env.example` to `.env` and set your API key:
@@ -118,8 +122,8 @@ mounted directory.
 
 After startup:
 
-- Dashboard: `http://localhost:5173`
-- REST API: `http://localhost:8080/api/game/`
+- Dashboard: `http://localhost` (via Caddy)
+- REST API: `http://localhost:8080/api/game/` (direct) or `http://localhost/game/` (via Caddy)
 - NATS monitor: `http://localhost:8222`
 
 See [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) for advanced configuration including
@@ -176,13 +180,9 @@ npm install     # first time only
 npm run dev     # Vite dev server at http://localhost:5173
 ```
 
-Vite proxies these paths to the backend (default `http://localhost:8080`):
-
-- `/game` — REST API
-- `/health` — Health check
-- `/message-logger` — SSE event stream
-
-Set `BACKEND_URL` to override the proxy target.
+Vite proxies `/game` and `/health` to the backend (default `http://localhost:8080`).
+Set `BACKEND_URL` to override the proxy target. When running via Docker Compose, Caddy
+handles the proxying instead.
 
 ## Configuration
 
@@ -293,7 +293,7 @@ SEED_E2E=true make up
 
 # Verify everything is running
 curl -s http://localhost:8080/health
-open http://localhost:5173
+open http://localhost
 ```
 
 ```bash
@@ -409,18 +409,15 @@ The backend exposes a Server-Sent Events endpoint for live KV watching. No extra
 required — use curl or the dashboard:
 
 ```bash
-# Watch all entity state changes
-curl -N http://localhost:8080/message-logger/kv/semdragons-local-dev-board1/watch?pattern=*
+# Watch all entity state changes via SSE
+curl -N http://localhost:8080/game/events
 
-# Watch all quest state changes
-curl -N http://localhost:8080/message-logger/kv/semdragons-local-dev-board1/watch?pattern=quest.state.*
-
-# Watch a specific entity
-curl -N http://localhost:8080/message-logger/kv/semdragons-local-dev-board1/watch?pattern=agent.state.{id}
+# Or through Caddy (same-origin)
+curl -N http://localhost/game/events
 ```
 
-The Vite dev proxy routes `/message-logger` to the backend, so the dashboard at
-`http://localhost:5173` receives these same live updates automatically in the event feed.
+The dashboard at `http://localhost` subscribes to `/game/events` automatically via Caddy,
+receiving live entity updates in the event feed sidebar.
 
 ### Common Issues
 
@@ -429,7 +426,7 @@ The Vite dev proxy routes `/message-logger` to the backend, so the dashboard at
 | "bucket not found" on first request | KV bucket created on first entity write | Post a quest or recruit an agent first |
 | Agent can't claim quest | Tier too low for quest difficulty | Check `min_tier` on quest vs agent `tier` |
 | 503 on store endpoints | `agent_store` component not running | Ensure it's enabled in config |
-| SSE not connecting | Backend not running or Vite proxy misconfigured | Check `BACKEND_URL` and that `/message-logger` responds |
+| SSE not connecting | Backend not running or Caddy/Vite proxy misconfigured | Check that `/game/events` responds |
 | Quest stuck in `in_review` | `bossbattle` processor not running | Ensure it's enabled in config |
 
 ## Further Reading

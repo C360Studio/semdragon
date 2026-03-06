@@ -178,6 +178,8 @@ export function createSSEService() {
 
 		// Generate activity event after upsert (skip during initial sync to avoid flood)
 		if (!synced) return;
+
+		// Derive event type from the raw SSE value (graph entity has message_type.category)
 		const eventType = deriveEventType(value);
 		if (!eventType) return;
 

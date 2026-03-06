@@ -40,8 +40,9 @@
 		if (browser) {
 			document.body.classList.add('hydrated');
 
-			// In dev, Vite proxies /game and /health to the backend.
-			// In Docker, PUBLIC_API_URL points to the backend container directly.
+			// In Docker: Caddy reverse-proxies /game/* and /health to the backend,
+			// so all requests are same-origin (PUBLIC_API_URL is empty).
+			// In local dev without Docker: Vite proxies the same paths.
 			const baseUrl = env.PUBLIC_API_URL || '';
 			api.setApiUrl(baseUrl);
 

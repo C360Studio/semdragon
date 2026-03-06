@@ -21,7 +21,8 @@ vi.mock('$stores/worldStore.svelte', () => ({
 		removeAgent: vi.fn(),
 		removeBattle: vi.fn(),
 		removeParty: vi.fn(),
-		removeGuild: vi.fn()
+		removeGuild: vi.fn(),
+		addEvent: vi.fn()
 	}
 }));
 
@@ -91,6 +92,7 @@ describe('SSE Service', () => {
 		removeBattle: ReturnType<typeof vi.fn>;
 		removeParty: ReturnType<typeof vi.fn>;
 		removeGuild: ReturnType<typeof vi.fn>;
+		addEvent: ReturnType<typeof vi.fn>;
 	};
 
 	beforeEach(async () => {
@@ -481,6 +483,159 @@ describe('SSE Service', () => {
 			expect(worldStore.setSynced).toHaveBeenCalledWith(true);
 			expect(worldStore.setLoading).toHaveBeenCalledWith(false);
 			expect(service.synced).toBe(true);
+		});
+	});
+
+	describe('activity events', () => {
+		it('generates activity event for graph entity after sync', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+
+			const source = getLastSource();
+
+			// Complete initial sync first
+			const syncEvent: KVChangeEvent = {
+				bucket: 'ENTITY_STATES',
+				key: '',
+				operation: 'initial_sync_complete',
+				revision: 0,
+				timestamp: '2024-01-01T00:00:00Z'
+			};
+			source.emit('kv_change', JSON.stringify(syncEvent));
+			expect(service.synced).toBe(true);
+
+			// Send a graph entity (has message_type.category)
+			const questGraphEntity = {
+				id: 'c360.prod.game.board1.quest.quest-99',
+				triples: [
+					{ subject: 'c360.prod.game.board1.quest.quest-99', predicate: 'quest.identity.title', object: 'Test Quest', source: 'test', timestamp: '2024-01-01T00:00:00Z', confidence: 1 },
+					{ subject: 'c360.prod.game.board1.quest.quest-99', predicate: 'quest.status.state', object: 'posted', source: 'test', timestamp: '2024-01-01T00:00:00Z', confidence: 1 }
+				],
+				message_type: { domain: 'semdragons', category: 'quest.posted', version: 'v1' },
+				version: 1,
+				updated_at: '2024-01-01T00:00:00Z'
+			};
+
+			const event: KVChangeEvent = {
+				bucket: 'ENTITY_STATES',
+				key: 'c360.prod.game.board1.quest.quest-99',
+				operation: 'create',
+				value: questGraphEntity,
+				revision: 1,
+				timestamp: '2024-01-01T00:00:00Z'
+			};
+
+			source.emit('kv_change', JSON.stringify(event));
+
+			expect(worldStore.upsertQuest).toHaveBeenCalled();
+			expect(worldStore.addEvent).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: 'quest.lifecycle.posted',
+					quest_id: expect.any(String)
+				})
+			);
+		});
+
+		it('skips activity events during initial sync', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+
+			const source = getLastSource();
+			// Do NOT complete initial sync
+
+			const questGraphEntity = {
+				id: 'c360.prod.game.board1.quest.quest-99',
+				triples: [
+					{ subject: 'c360.prod.game.board1.quest.quest-99', predicate: 'quest.identity.title', object: 'Test Quest', source: 'test', timestamp: '2024-01-01T00:00:00Z', confidence: 1 },
+					{ subject: 'c360.prod.game.board1.quest.quest-99', predicate: 'quest.status.state', object: 'posted', source: 'test', timestamp: '2024-01-01T00:00:00Z', confidence: 1 }
+				],
+				message_type: { domain: 'semdragons', category: 'quest.posted', version: 'v1' },
+				version: 1,
+				updated_at: '2024-01-01T00:00:00Z'
+			};
+
+			const event: KVChangeEvent = {
+				bucket: 'ENTITY_STATES',
+				key: 'c360.prod.game.board1.quest.quest-99',
+				operation: 'create',
+				value: questGraphEntity,
+				revision: 1,
+				timestamp: '2024-01-01T00:00:00Z'
+			};
+
+			source.emit('kv_change', JSON.stringify(event));
+
+			expect(worldStore.upsertQuest).toHaveBeenCalled();
+			expect(worldStore.addEvent).not.toHaveBeenCalled();
+		});
+
+		it('skips activity events for flat entities without message_type', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+
+			const source = getLastSource();
+
+			// Complete initial sync
+			source.emit('kv_change', JSON.stringify({
+				bucket: 'ENTITY_STATES', key: '', operation: 'initial_sync_complete',
+				revision: 0, timestamp: '2024-01-01T00:00:00Z'
+			}));
+
+			// Send flat entity (no message_type)
+			const event: KVChangeEvent = {
+				bucket: 'ENTITY_STATES',
+				key: 'c360.prod.game.board1.quest.quest-99',
+				operation: 'create',
+				value: { id: questId('quest-99'), title: 'Flat Quest' },
+				revision: 1,
+				timestamp: '2024-01-01T00:00:00Z'
+			};
+
+			source.emit('kv_change', JSON.stringify(event));
+
+			expect(worldStore.upsertQuest).toHaveBeenCalled();
+			expect(worldStore.addEvent).not.toHaveBeenCalled();
+		});
+
+		it('generates agent activity events', async () => {
+			const service = await getService();
+			service.connect('http://localhost:8080');
+
+			const source = getLastSource();
+
+			// Complete sync
+			source.emit('kv_change', JSON.stringify({
+				bucket: 'ENTITY_STATES', key: '', operation: 'initial_sync_complete',
+				revision: 0, timestamp: '2024-01-01T00:00:00Z'
+			}));
+
+			const agentGraphEntity = {
+				id: 'c360.prod.game.board1.agent.agent-1',
+				triples: [
+					{ subject: 'c360.prod.game.board1.agent.agent-1', predicate: 'agent.identity.name', object: 'TestBot', source: 'test', timestamp: '2024-01-01T00:00:00Z', confidence: 1 },
+					{ subject: 'c360.prod.game.board1.agent.agent-1', predicate: 'agent.status.state', object: 'idle', source: 'test', timestamp: '2024-01-01T00:00:00Z', confidence: 1 }
+				],
+				message_type: { domain: 'semdragons', category: 'agent.status.idle', version: 'v1' },
+				version: 1,
+				updated_at: '2024-01-01T00:00:00Z'
+			};
+
+			source.emit('kv_change', JSON.stringify({
+				bucket: 'ENTITY_STATES',
+				key: 'c360.prod.game.board1.agent.agent-1',
+				operation: 'update',
+				value: agentGraphEntity,
+				revision: 2,
+				timestamp: '2024-01-01T00:00:00Z'
+			}));
+
+			expect(worldStore.upsertAgent).toHaveBeenCalled();
+			expect(worldStore.addEvent).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: 'agent.progression.xp',
+					agent_id: expect.any(String)
+				})
+			);
 		});
 	});
 
