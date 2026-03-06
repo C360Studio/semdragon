@@ -42,6 +42,7 @@ func (q *Quest) Triples() []message.Triple {
 		// Requirements
 		{Subject: entityID, Predicate: "quest.tier.minimum", Object: int(q.MinTier), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "quest.party.required", Object: q.PartyRequired, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "quest.party.min_size", Object: q.MinPartySize, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Rewards
 		{Subject: entityID, Predicate: "quest.xp.base", Object: q.BaseXP, Source: source, Timestamp: now, Confidence: 1.0},

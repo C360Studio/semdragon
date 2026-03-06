@@ -920,6 +920,10 @@ func (c *Component) questFromEntity(entity *graph.EntityState) *domain.Quest {
 			if v, ok := triple.Object.(bool); ok {
 				quest.PartyRequired = v
 			}
+		case "quest.party.min_size":
+			if v, ok := triple.Object.(float64); ok {
+				quest.MinPartySize = int(v)
+			}
 		case "quest.xp.base":
 			if v, ok := triple.Object.(float64); ok {
 				quest.BaseXP = int64(v)

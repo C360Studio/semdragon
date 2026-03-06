@@ -344,14 +344,10 @@ func (c *Component) SetTokenLedger(l *tokenbudget.TokenLedger) {
 // SetQuestBoard injects the quest board poster for sub-quest creation.
 // When set, party quest completions that produce a valid DAG will trigger
 // sub-quest posting instead of transitioning directly to in_review.
-// Must be called before Start.
+// Safe to call before or after Start — the reference is checked lazily when needed.
 func (c *Component) SetQuestBoard(qb SubQuestPoster) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.running.Load() {
-		c.logger.Warn("SetQuestBoard called while running; ignored")
-		return
-	}
 	c.questBoard = qb
 }
 

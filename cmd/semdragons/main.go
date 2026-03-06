@@ -24,6 +24,10 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
+	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semdragons/processor/questboard"
+	"github.com/c360studio/semdragons/processor/questbridge"
+	"github.com/c360studio/semdragons/processor/questdagexec"
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
 
@@ -135,7 +139,7 @@ func run() error {
 	}
 
 	// 11. Run application with signal handling
-	return runWithSignalHandling(ctx, manager, cliCfg.ShutdownTimeout)
+	return runWithSignalHandling(ctx, manager, componentRegistry, cliCfg.ShutdownTimeout)
 }
 
 // parseCLI parses and validates CLI flags.
@@ -430,7 +434,7 @@ func configureAndCreateServices(
 }
 
 // runWithSignalHandling starts services and handles shutdown signals.
-func runWithSignalHandling(ctx context.Context, manager *service.Manager, shutdownTimeout time.Duration) error {
+func runWithSignalHandling(ctx context.Context, manager *service.Manager, registry *component.Registry, shutdownTimeout time.Duration) error {
 	signalCtx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
@@ -439,6 +443,9 @@ func runWithSignalHandling(ctx context.Context, manager *service.Manager, shutdo
 		return fmt.Errorf("start services: %w", err)
 	}
 	slog.Info("All services started successfully")
+
+	// Wire cross-component references now that all components are instantiated.
+	wireComponentCrossReferences(registry)
 
 	<-signalCtx.Done()
 	slog.Info("Received shutdown signal")
@@ -454,6 +461,55 @@ func runWithSignalHandling(ctx context.Context, manager *service.Manager, shutdo
 
 	slog.Info("Semdragons shutdown complete")
 	return nil
+}
+
+// wireComponentCrossReferences injects sibling component references after all
+// components have been instantiated and started by the component manager.
+// This wires up the reactive party quest connector (partycoord → questboard)
+// and DAG executor references (questdagexec → questboard + partycoord).
+func wireComponentCrossReferences(registry *component.Registry) {
+	qb := registry.Component(questboard.ComponentName)
+	pc := registry.Component(partycoord.ComponentName)
+	dex := registry.Component(questdagexec.ComponentName)
+	qbr := registry.Component(questbridge.ComponentName)
+
+	// Wire partycoord → questboard (for ClaimQuestForParty on party-required quests)
+	if pc != nil && qb != nil {
+		if setter, ok := pc.(*partycoord.Component); ok {
+			if ref, ok := qb.(partycoord.QuestBoardRef); ok {
+				setter.SetQuestBoard(ref)
+				slog.Info("wired partycoord → questboard")
+			}
+		}
+	}
+
+	// Wire questdagexec → questboard + partycoord (for sub-quest lifecycle)
+	if dex != nil {
+		if setter, ok := dex.(*questdagexec.Component); ok {
+			if qb != nil {
+				if ref, ok := qb.(questdagexec.QuestBoardRef); ok {
+					setter.SetQuestBoard(ref)
+					slog.Info("wired questdagexec → questboard")
+				}
+			}
+			if pc != nil {
+				if ref, ok := pc.(questdagexec.PartyCoordRef); ok {
+					setter.SetPartyCoord(ref)
+					slog.Info("wired questdagexec → partycoord")
+				}
+			}
+		}
+	}
+
+	// Wire questbridge → questboard (for sub-quest posting on DAG decomposition)
+	if qbr != nil && qb != nil {
+		if setter, ok := qbr.(*questbridge.Component); ok {
+			if ref, ok := qb.(questbridge.SubQuestPoster); ok {
+				setter.SetQuestBoard(ref)
+				slog.Info("wired questbridge → questboard")
+			}
+		}
+	}
 }
 
 // loadConfig loads configuration from the specified file path.

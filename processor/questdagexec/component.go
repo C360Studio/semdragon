@@ -117,26 +117,18 @@ var (
 // =============================================================================
 
 // SetQuestBoard injects the quest board reference for quest state transitions.
-// Must be called before Start. Ignored when the component is already running.
+// Safe to call before or after Start — the reference is checked lazily when needed.
 func (c *Component) SetQuestBoard(qb QuestBoardRef) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.running.Load() {
-		c.logger.Warn("SetQuestBoard called while running; ignored")
-		return
-	}
 	c.questBoardRef = qb
 }
 
 // SetPartyCoord injects the party coordination reference.
-// Must be called before Start. Ignored when the component is already running.
+// Safe to call before or after Start — the reference is checked lazily when needed.
 func (c *Component) SetPartyCoord(pc PartyCoordRef) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.running.Load() {
-		c.logger.Warn("SetPartyCoord called while running; ignored")
-		return
-	}
 	c.partyCoord = pc
 }
 

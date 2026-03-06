@@ -27,6 +27,13 @@ import (
 // Manages party formation, coordination, and rollup for quest decomposition.
 // =============================================================================
 
+// QuestBoardRef is the narrow interface partycoord needs from questboard
+// for claiming party-required quests on behalf of a lead agent.
+type QuestBoardRef interface {
+	ClaimQuestForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error
+	StartQuest(ctx context.Context, questID domain.QuestID) error
+}
+
 // Component implements the PartyCoord processor as a semstreams component.
 type Component struct {
 	config      *Config
@@ -34,6 +41,9 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
+
+	// Sibling component reference injected before Start.
+	questBoardRef QuestBoardRef // see SetQuestBoard
 
 	// KV watch for quest state changes (facts about the world)
 	questWatch jetstream.KeyWatcher
@@ -314,6 +324,18 @@ func (c *Component) Stop(timeout time.Duration) error {
 	c.logger.Info("partycoord component stopped")
 
 	return nil
+}
+
+// =============================================================================
+// INJECTION METHODS
+// =============================================================================
+
+// SetQuestBoard injects the quest board reference for claiming party-required quests.
+// Safe to call before or after Start — the reference is checked lazily when needed.
+func (c *Component) SetQuestBoard(qb QuestBoardRef) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.questBoardRef = qb
 }
 
 // createGraphClient creates the graph client for the component.

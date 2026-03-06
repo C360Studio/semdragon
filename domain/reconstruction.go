@@ -49,6 +49,8 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.MinTier = TrustTier(AsInt(triple.Object))
 		case "quest.party.required":
 			q.PartyRequired = AsBool(triple.Object)
+		case "quest.party.min_size":
+			q.MinPartySize = AsInt(triple.Object)
 
 		// Rewards
 		case "quest.xp.base":

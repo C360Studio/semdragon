@@ -3,12 +3,14 @@ package partycoord
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/pkg/errs"
 )
 
@@ -469,9 +471,12 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 	c.logger.Debug("quest cache updated", "instance", instance, "status", quest.Status)
 
 	// React to quest state transitions when auto-formation is enabled.
-	// A quest moving into "claimed" status and requiring a party triggers formation.
 	if c.config.AutoFormParties {
+		// A quest moving into "claimed" status and requiring a party triggers formation.
 		c.maybeFormParty(prev, quest)
+		// A quest posted with party_required=true triggers the full orchestration:
+		// find lead → form party → recruit → claim → start.
+		c.maybeInitiatePartyQuest(prev, quest)
 	}
 }
 
@@ -515,4 +520,156 @@ func (c *Component) maybeFormParty(prev, curr *domain.Quest) {
 		"quest_id", curr.ID,
 		"party_id", party.ID,
 		"lead_id", *curr.ClaimedBy)
+}
+
+// maybeInitiatePartyQuest detects posted party-required quests and orchestrates
+// the full formation flow: find a Master-tier lead, form party, recruit members,
+// then claim and start the quest. This is the missing connector that bridges
+// party-required quest posting to the existing party/DAG execution pipeline.
+func (c *Component) maybeInitiatePartyQuest(prev, curr *domain.Quest) {
+	if !curr.PartyRequired {
+		return
+	}
+	if c.questBoardRef == nil {
+		return // No questboard wired — cannot claim
+	}
+
+	// Only react to the transition into "posted" status
+	prevStatus := domain.QuestStatus("")
+	if prev != nil {
+		prevStatus = prev.Status
+	}
+	if prevStatus == curr.Status {
+		return
+	}
+	if curr.Status != domain.QuestPosted {
+		return
+	}
+
+	ctx := context.Background()
+
+	// Find all idle agents from the graph
+	agents, err := c.findIdleAgents(ctx)
+	if err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("party quest: failed to find idle agents",
+			"quest_id", curr.ID, "error", err)
+		return
+	}
+
+	// Select a Master-tier lead
+	lead, err := selectPartyLead(agents)
+	if err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Warn("party quest: no eligible lead found",
+			"quest_id", curr.ID, "idle_agents", len(agents), "error", err)
+		return
+	}
+
+	// Form the party with the lead
+	party, err := c.FormParty(ctx, curr.ID, lead.ID)
+	if err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("party quest: failed to form party",
+			"quest_id", curr.ID, "lead", lead.ID, "error", err)
+		return
+	}
+
+	// Recruit members: add idle agents that have relevant skills
+	recruited := c.recruitMembers(ctx, party.ID, lead.ID, agents, curr)
+
+	c.logger.Info("party quest: formed party and recruited members",
+		"quest_id", curr.ID,
+		"party_id", party.ID,
+		"lead", lead.ID,
+		"members_recruited", recruited)
+
+	// Claim the quest for the party (questboard validates lead tier + party size)
+	if err := c.questBoardRef.ClaimQuestForParty(ctx, curr.ID, party.ID); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("party quest: failed to claim quest for party",
+			"quest_id", curr.ID, "party_id", party.ID, "error", err)
+		return
+	}
+
+	// Start the quest (triggers questbridge → decompose → questdagexec)
+	if err := c.questBoardRef.StartQuest(ctx, curr.ID); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("party quest: failed to start quest",
+			"quest_id", curr.ID, "error", err)
+		return
+	}
+
+	c.logger.Info("party quest: initiated full party quest flow",
+		"quest_id", curr.ID,
+		"party_id", party.ID,
+		"lead", lead.ID,
+		"total_members", recruited+1)
+}
+
+// findIdleAgents lists all agents from the graph and returns those that are idle.
+func (c *Component) findIdleAgents(ctx context.Context) ([]agentprogression.Agent, error) {
+	entities, err := c.graph.ListEntitiesByType(ctx, "agent", 1000)
+	if err != nil {
+		return nil, errs.Wrap(err, "PartyCoord", "findIdleAgents", "list agents")
+	}
+
+	var idle []agentprogression.Agent
+	for _, entity := range entities {
+		agent := agentprogression.AgentFromEntityState(&entity)
+		if agent == nil {
+			continue
+		}
+		if agent.Status == domain.AgentIdle && agent.CurrentQuest == nil {
+			idle = append(idle, *agent)
+		}
+	}
+	return idle, nil
+}
+
+// selectPartyLead finds the highest-level Master-tier agent from the list.
+func selectPartyLead(agents []agentprogression.Agent) (*agentprogression.Agent, error) {
+	var best *agentprogression.Agent
+	for _, agent := range agents {
+		perms := domain.TierPermissionsFor(domain.TierFromLevel(agent.Level))
+		if !perms.CanLeadParty {
+			continue
+		}
+		if best == nil || agent.Level > best.Level {
+			agentCopy := agent
+			best = &agentCopy
+		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("no Master-tier agent available to lead party")
+	}
+	return best, nil
+}
+
+// recruitMembers adds eligible idle agents to the party as executors.
+// Returns the number of members recruited (excluding the lead).
+func (c *Component) recruitMembers(ctx context.Context, partyID domain.PartyID, leadID domain.AgentID, agents []agentprogression.Agent, quest *domain.Quest) int {
+	recruited := 0
+	minSize := quest.MinPartySize
+	if minSize < 2 {
+		minSize = 2 // At least lead + 1 member
+	}
+
+	for _, agent := range agents {
+		if agent.ID == leadID {
+			continue
+		}
+		// Already have enough members (lead counts as 1)
+		if recruited+1 >= minSize {
+			break
+		}
+
+		if err := c.JoinParty(ctx, partyID, agent.ID, domain.RoleExecutor); err != nil {
+			c.logger.Warn("party quest: failed to recruit member",
+				"party_id", partyID, "agent_id", agent.ID, "error", err)
+			continue
+		}
+		recruited++
+	}
+	return recruited
 }
