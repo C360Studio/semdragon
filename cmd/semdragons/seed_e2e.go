@@ -333,19 +333,14 @@ func seedQuests(ctx context.Context, graph *semdragons.GraphClient, boardCfg *do
 	return nil
 }
 
-// xpAtMidLevel computes XP at the midpoint of the given level.
-// Uses the same exponential curve as the XP engine: 100 * 1.5^(level-1).
+// xpAtMidLevel returns XP at ~50% progress through the current level.
+// The agent's XP field represents progress within the current level
+// (0 to xpForLevel(level+1)), not cumulative XP across all levels.
 func xpAtMidLevel(level int) int64 {
 	if level <= 1 {
 		return 0
 	}
-	// XP needed to reach this level (sum of all prior level thresholds).
-	var total int64
-	for l := 2; l <= level; l++ {
-		total += xpForLevel(l)
-	}
-	// Sit at ~50% through the current level.
-	return total + xpForLevel(level+1)/2
+	return xpForLevel(level+1) / 2
 }
 
 // xpForLevel returns XP required to advance from level to level+1.
