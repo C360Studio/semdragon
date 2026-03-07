@@ -298,6 +298,33 @@ export async function setTokenBudget(limit: number): Promise<TokenStats> {
 }
 
 // =============================================================================
+// WORKSPACE (read-only file browser)
+// =============================================================================
+
+export interface WorkspaceEntry {
+	name: string;
+	path: string;
+	is_dir: boolean;
+	size: number;
+	modified: string;
+	children?: WorkspaceEntry[];
+}
+
+export async function getWorkspaceTree(): Promise<WorkspaceEntry[]> {
+	return fetchJson<WorkspaceEntry[]>('/game/workspace');
+}
+
+export async function getWorkspaceFile(path: string): Promise<string> {
+	const url = `${apiUrl}/game/workspace/file?path=${encodeURIComponent(path)}`;
+	const res = await fetch(url);
+	if (!res.ok) {
+		const errorText = await res.text();
+		throw new ApiError(res.status, `API Error ${res.status}: ${errorText}`);
+	}
+	return res.text();
+}
+
+// =============================================================================
 // HEALTH (system endpoint — no /game/ prefix)
 // =============================================================================
 
@@ -339,5 +366,7 @@ export const api = {
 	resumeBoard,
 	getTokenStats,
 	setTokenBudget,
+	getWorkspaceTree,
+	getWorkspaceFile,
 	healthCheck
 };

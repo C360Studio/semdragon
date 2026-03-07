@@ -29,6 +29,7 @@
       "config": {
         "board": "board1",
         "max_entities": 1000,
+        "workspace_dir": "/workspace",
         "token_budget": {
           "global_hourly_limit": 1000000,
           "endpoint_pricing": {

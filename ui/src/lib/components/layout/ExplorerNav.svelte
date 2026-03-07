@@ -106,6 +106,10 @@
 			<span class="nav-icon">S</span>
 			<span class="nav-label">Store</span>
 		</a>
+		<a href="/workspace" class="nav-item" class:active={isActive('/workspace')} data-testid="nav-workspace">
+			<span class="nav-icon">W</span>
+			<span class="nav-label">Workspace</span>
+		</a>
 	</nav>
 
 	{#if showActivity}

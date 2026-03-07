@@ -28,11 +28,12 @@ import (
 
 // Config holds configuration for the semdragons-api service.
 type Config struct {
-	Board       string                  `json:"board"`        // Board name (default: "board1")
-	Org         string                  `json:"org"`          // Org namespace (default from platform)
-	Platform    string                  `json:"platform"`     // Platform ID (default from platform)
-	MaxEntities int                     `json:"max_entities"` // Max entities per query (default: 1000)
-	TokenBudget *tokenbudget.BudgetConfig `json:"token_budget,omitempty"` // Token budget config
+	Board        string                    `json:"board"`                   // Board name (default: "board1")
+	Org          string                    `json:"org"`                     // Org namespace (default from platform)
+	Platform     string                    `json:"platform"`               // Platform ID (default from platform)
+	MaxEntities  int                       `json:"max_entities"`           // Max entities per query (default: 1000)
+	WorkspaceDir string                    `json:"workspace_dir,omitempty"` // Host directory for agent workspace artifacts
+	TokenBudget  *tokenbudget.BudgetConfig `json:"token_budget,omitempty"` // Token budget config
 }
 
 // maxChatSessions caps the number of in-memory DM chat session traces.
@@ -416,6 +417,10 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 
 	// Model registry
 	mux.HandleFunc("GET "+prefix+"models", cors(s.handleGetModels))
+
+	// Workspace file browser (read-only, auth required — exposes host filesystem)
+	mux.HandleFunc("GET "+prefix+"workspace", cors(requireAuth(apiKey, s.handleWorkspaceTree)))
+	mux.HandleFunc("GET "+prefix+"workspace/file", cors(requireAuth(apiKey, s.handleWorkspaceFile)))
 
 	// SSE — real-time entity updates
 	mux.HandleFunc("GET "+prefix+"events", cors(s.handleEvents))

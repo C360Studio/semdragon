@@ -22,7 +22,10 @@ import {
 	purchase,
 	useConsumable,
 	getActiveEffects,
-	getWorldState
+	getWorldState,
+	getWorkspaceTree,
+	getWorkspaceFile,
+	ApiError
 } from './api';
 import type { Quest, Agent, BossBattle, AgentStats, QuestConstraints, AgentConfig } from '$types';
 import { agentId, questId, battleId } from '$types';
@@ -468,6 +471,79 @@ describe('API Service', () => {
 		});
 	});
 
+	describe('workspace endpoints', () => {
+		it('fetches workspace tree from /game/workspace', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => [
+					{ name: 'src', path: 'src', is_dir: true, size: 0, modified: '2024-01-01T00:00:00Z' },
+					{ name: 'README.md', path: 'README.md', is_dir: false, size: 512, modified: '2024-01-01T00:00:00Z' }
+				]
+			});
+
+			const result = await getWorkspaceTree();
+
+			expect(result).toHaveLength(2);
+			expect(result[0].name).toBe('src');
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/workspace',
+				expect.any(Object)
+			);
+		});
+
+		it('throws ApiError when getWorkspaceTree fails', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: false,
+				status: 503,
+				text: async () => 'Service Unavailable'
+			});
+
+			await expect(getWorkspaceTree()).rejects.toThrow('API Error 503: Service Unavailable');
+		});
+
+		it('fetches file content with encoded path', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				text: async () => 'package main\n'
+			});
+
+			const result = await getWorkspaceFile('src/main.go');
+
+			expect(result).toBe('package main\n');
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/workspace/file?path=src%2Fmain.go'
+			);
+		});
+
+		it('throws ApiError with status 415 for binary files', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: false,
+				status: 415,
+				text: async () => 'binary file'
+			});
+
+			const err = await getWorkspaceFile('image.png').catch((e) => e);
+
+			expect(err).toBeInstanceOf(ApiError);
+			expect(err.status).toBe(415);
+			expect(err.message).toBe('API Error 415: binary file');
+		});
+
+		it('throws ApiError with status 413 for oversized files', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: false,
+				status: 413,
+				text: async () => 'file too large'
+			});
+
+			const err = await getWorkspaceFile('huge.log').catch((e) => e);
+
+			expect(err).toBeInstanceOf(ApiError);
+			expect(err.status).toBe(413);
+			expect(err.message).toBe('API Error 413: file too large');
+		});
+	});
+
 	describe('error handling', () => {
 		it('includes status code in error message', async () => {
 			mockFetch.mockResolvedValueOnce({
@@ -534,6 +610,8 @@ describe('API Service Object', () => {
 		expect(api.getActiveEffects).toBeDefined();
 		expect(api.getTokenStats).toBeDefined();
 		expect(api.setTokenBudget).toBeDefined();
+		expect(api.getWorkspaceTree).toBeDefined();
+		expect(api.getWorkspaceFile).toBeDefined();
 		expect(api.healthCheck).toBeDefined();
 	});
 
