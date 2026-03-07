@@ -29,7 +29,7 @@ func DefaultConfig() Config {
 		Board:                  "main",
 		MinMembersForFormation: 3,
 		MaxGuildSize:           20,
-		EnableAutoFormation:    true,
+		EnableAutoFormation:    false,
 	}
 }
 

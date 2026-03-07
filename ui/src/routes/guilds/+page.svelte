@@ -6,6 +6,14 @@
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
+	import type { Guild } from '$types';
+
+	function guildmasterName(guild: Guild): string | null {
+		const gm = guild.members.find((m) => m.rank === 'guildmaster');
+		if (!gm) return null;
+		const agent = worldStore.agents.get(gm.agent_id);
+		return agent?.name ?? String(gm.agent_id);
+	}
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -41,6 +49,8 @@
 
 			<div class="guilds-grid">
 				{#each worldStore.guildList as guild}
+					{@const gmName = guildmasterName(guild)}
+					{@const questTypes = guild.quest_types ?? []}
 					<a href="/guilds/{guild.id}" class="guild-card" data-status={guild.status} data-testid="guild-card">
 						<div class="guild-header">
 							<h2>{guild.name}</h2>
@@ -48,6 +58,13 @@
 						</div>
 
 						<p class="guild-description">{guild.description}</p>
+
+						{#if gmName}
+							<div class="guild-guildmaster">
+								<span class="gm-label">Guildmaster:</span>
+								<span class="gm-name">{gmName}</span>
+							</div>
+						{/if}
 
 						<div class="guild-domain">
 							<span class="domain-label">Culture:</span>
@@ -74,11 +91,11 @@
 						</div>
 
 						<div class="guild-skills">
-							{#each (guild.quest_types || []).slice(0, 4) as qtype}
+							{#each questTypes.slice(0, 4) as qtype}
 								<span class="skill-tag">{qtype.replaceAll('_', ' ')}</span>
 							{/each}
-							{#if (guild.quest_types || []).length > 4}
-								<span class="skill-more">+{(guild.quest_types || []).length - 4}</span>
+							{#if questTypes.length > 4}
+								<span class="skill-more">+{questTypes.length - 4}</span>
 							{/if}
 						</div>
 					</a>
@@ -184,6 +201,20 @@
 		color: var(--ui-text-secondary);
 		font-size: 0.875rem;
 		margin-bottom: var(--spacing-md);
+	}
+
+	.guild-guildmaster {
+		font-size: 0.875rem;
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.gm-label {
+		color: var(--ui-text-tertiary);
+	}
+
+	.gm-name {
+		font-weight: 500;
+		color: var(--tier-master);
 	}
 
 	.guild-domain {

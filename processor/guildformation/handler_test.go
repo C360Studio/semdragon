@@ -31,8 +31,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.MaxGuildSize != 20 {
 		t.Errorf("MaxGuildSize = %d; want 20", cfg.MaxGuildSize)
 	}
-	if !cfg.EnableAutoFormation {
-		t.Errorf("EnableAutoFormation = false; want true")
+	if cfg.EnableAutoFormation {
+		t.Errorf("EnableAutoFormation = true; want false (agents should opt-in to guilds)")
 	}
 }
 

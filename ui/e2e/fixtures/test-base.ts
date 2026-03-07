@@ -2,6 +2,7 @@ import { test as base, expect, type Page, type APIRequestContext } from '@playwr
 import { DashboardPage } from '../pages/dashboard.page';
 import { QuestsPage } from '../pages/quests.page';
 import { AgentsPage } from '../pages/agents.page';
+import { GuildsPage, GuildDetailPage } from '../pages/guilds.page';
 import { SSEHelper } from './sse-helpers';
 
 /**
@@ -413,6 +414,8 @@ export const test = base.extend<{
 	dashboardPage: DashboardPage;
 	questsPage: QuestsPage;
 	agentsPage: AgentsPage;
+	guildsPage: GuildsPage;
+	guildDetailPage: GuildDetailPage;
 	sseHelper: SSEHelper;
 	seedQuests: (quests: QuestPayload[]) => Promise<string[]>;
 	apiRequest: APIRequestContext;
@@ -432,6 +435,14 @@ export const test = base.extend<{
 	agentsPage: async ({ page }, use) => {
 		const agentsPage = new AgentsPage(page);
 		await use(agentsPage);
+	},
+
+	guildsPage: async ({ page }, use) => {
+		await use(new GuildsPage(page));
+	},
+
+	guildDetailPage: async ({ page }, use) => {
+		await use(new GuildDetailPage(page));
 	},
 
 	// SSE helper
