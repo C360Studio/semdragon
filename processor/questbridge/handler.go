@@ -107,9 +107,16 @@ func (c *Component) handleLiveUpdate(ctx context.Context, entry jetstream.KeyVal
 
 	// Swap atomically; returns the previous value and whether the key existed before.
 	oldStatusI, existed := c.questCache.Swap(entry.Key(), newStatus)
+	oldStatus, _ := oldStatusI.(string)
+
+	// Track escalation timestamps for the stale-escalation sweep.
+	if newStatus == string(domain.QuestEscalated) && oldStatus != string(domain.QuestEscalated) {
+		c.escalatedAt.Store(entry.Key(), time.Now())
+	} else if oldStatus == string(domain.QuestEscalated) && newStatus != string(domain.QuestEscalated) {
+		c.escalatedAt.Delete(entry.Key())
+	}
 
 	if newStatus == string(domain.QuestInProgress) {
-		oldStatus, _ := oldStatusI.(string)
 		// Only trigger when transitioning TO in_progress, not when already there.
 		if !existed || oldStatus != string(domain.QuestInProgress) {
 			c.handleQuestStarted(ctx, entityState)
@@ -574,6 +581,25 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	quest.Output = output
 	quest.LoopID = mapping.LoopID
 
+	// Check if the agent is asking a clarifying question rather than delivering
+	// a work product. Clarification requests escalate to the DM without a boss
+	// battle — the agent keeps the quest and waits for the DM's answer.
+	if isOutputClarificationRequest(output) {
+		quest.Status = domain.QuestEscalated
+		quest.Escalated = true
+		quest.FailureReason = output
+		// Agent stays assigned — ClaimedBy unchanged.
+		if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.escalated"); err != nil {
+			c.logger.Error("failed to emit quest escalation for clarification",
+				"quest_id", questID, "error", err)
+			c.errorsCount.Add(1)
+			return
+		}
+		c.logger.Info("quest escalated — agent requesting clarification",
+			"quest_id", questID, "agent_id", mapping.AgentID)
+		return
+	}
+
 	// All completed quests route through DM review.
 	// The domain config determines what happens: auto-pass, LLM judge, or human review.
 	quest.Status = domain.QuestInReview
@@ -585,6 +611,61 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	}
 	c.logger.Info("quest submitted for review",
 		"quest_id", questID, "review_level", quest.Constraints.ReviewLevel)
+}
+
+// isOutputClarificationRequest returns true when the agent's output is a
+// clarification request rather than a work product.
+//
+// Detection strategy (ordered by reliability):
+//  1. Structured intent tag: [INTENT: clarification] on the first non-empty line
+//     (injected by the prompt assembler's response format instruction).
+//  2. Heuristic fallback: majority of non-empty lines end with "?" — catches
+//     agents that ignore the format instruction.
+func isOutputClarificationRequest(output any) bool {
+	text, ok := output.(string)
+	if !ok {
+		return false
+	}
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) == 0 {
+		return false
+	}
+
+	// Strategy 1: Parse structured intent tag from the first non-empty line.
+	if intent := parseOutputIntent(trimmed); intent != "" {
+		return intent == "clarification"
+	}
+
+	// Strategy 2: Heuristic — majority of non-empty lines are questions.
+	lines := strings.Split(trimmed, "\n")
+	var nonEmpty, questions int
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		nonEmpty++
+		if strings.HasSuffix(line, "?") {
+			questions++
+		}
+	}
+	return nonEmpty > 0 && float64(questions)/float64(nonEmpty) > 0.5
+}
+
+// parseOutputIntent extracts the intent value from a structured [INTENT: <value>]
+// tag on the first non-empty line. Returns the lowercase intent string (e.g.
+// "work_product", "clarification") or empty string if no tag is found.
+func parseOutputIntent(text string) string {
+	lines := strings.SplitN(text, "\n", 2)
+	first := strings.TrimSpace(lines[0])
+
+	const prefix = "[INTENT:"
+	const suffix = "]"
+	if !strings.HasPrefix(first, prefix) || !strings.HasSuffix(first, suffix) {
+		return ""
+	}
+	intent := first[len(prefix) : len(first)-len(suffix)]
+	return strings.TrimSpace(strings.ToLower(intent))
 }
 
 // handleDAGDecomposition posts sub-quests from a validated DAG and initializes
@@ -867,6 +948,89 @@ func (c *Component) releaseAgent(ctx context.Context, agentID domain.AgentID) {
 }
 
 // =============================================================================
+// STALE ESCALATION SWEEP
+// =============================================================================
+
+// sweepStaleEscalations periodically checks for escalated quests that have been
+// waiting for DM clarification longer than EscalationTimeoutMins. When found,
+// the agent is released and the quest is reposted for a different agent.
+func (c *Component) sweepStaleEscalations(ctx context.Context) {
+	timeout := time.Duration(c.config.EscalationTimeoutMins) * time.Minute
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.escalatedAt.Range(func(key, value any) bool {
+				entityKey := key.(string)
+				escalatedTime := value.(time.Time)
+				if time.Since(escalatedTime) < timeout {
+					return true
+				}
+				c.handleStaleEscalation(ctx, entityKey)
+				return true
+			})
+		}
+	}
+}
+
+// handleStaleEscalation releases the agent and reposts a quest that has been
+// escalated for longer than the configured timeout.
+func (c *Component) handleStaleEscalation(ctx context.Context, entityKey string) {
+	c.escalatedAt.Delete(entityKey)
+
+	// The entity key is the full entity ID (e.g., c360.prod.game.board1.quest.abc123).
+	// GetQuest calls ExtractInstance internally, so the full ID works as a QuestID.
+	questEntity, err := c.graph.GetQuest(ctx, domain.QuestID(entityKey))
+	if err != nil {
+		c.logger.Warn("failed to load quest for stale escalation sweep",
+			"entity_key", entityKey, "error", err)
+		return
+	}
+	quest := domain.QuestFromEntityState(questEntity)
+	if quest == nil {
+		return
+	}
+
+	// Guard: only act on quests that are still escalated.
+	if quest.Status != domain.QuestEscalated {
+		return
+	}
+
+	c.logger.Warn("escalation timeout — releasing agent and reposting quest",
+		"quest_id", quest.ID,
+		"agent_id", quest.ClaimedBy,
+		"timeout_mins", c.config.EscalationTimeoutMins)
+
+	// Release the agent.
+	if quest.ClaimedBy != nil {
+		c.releaseAgent(ctx, *quest.ClaimedBy)
+	}
+
+	// Repost the quest so a different agent can claim it.
+	quest.Status = domain.QuestPosted
+	quest.Escalated = false
+	quest.ClaimedBy = nil
+	quest.ClaimedAt = nil
+	quest.StartedAt = nil
+	quest.Output = nil
+	quest.FailureReason = ""
+	quest.FailureType = ""
+	quest.Attempts++
+
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.reposted"); err != nil {
+		c.logger.Error("failed to repost quest after escalation timeout",
+			"quest_id", quest.ID, "error", err)
+		c.errorsCount.Add(1)
+	}
+}
+
+// =============================================================================
 // CRASH RECOVERY
 // =============================================================================
 
@@ -878,6 +1042,17 @@ func (c *Component) reconcileOrphanedQuests(ctx context.Context) {
 
 	c.questCache.Range(func(key, value any) bool {
 		status, _ := value.(string)
+
+		// Seed escalation timestamps for quests already escalated at startup.
+		// Uses current time as a conservative estimate — the quest gets the full
+		// timeout from this restart rather than expiring immediately.
+		if status == string(domain.QuestEscalated) {
+			entityKey, _ := key.(string)
+			c.escalatedAt.Store(entityKey, time.Now())
+			c.logger.Info("seeded escalation timestamp for pre-existing escalated quest",
+				"entity_key", entityKey)
+		}
+
 		if status != string(domain.QuestInProgress) {
 			return true
 		}

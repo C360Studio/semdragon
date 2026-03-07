@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -3975,4 +3976,119 @@ func TestHandleBoardResume(t *testing.T) {
 			}
 		})
 	}
+}
+
+// =============================================================================
+// DM INTERVENTION TESTS
+// =============================================================================
+
+func TestHandleDMIntervene(t *testing.T) {
+	agentID := domain.AgentID("test.dev.game.board1.agent.worker1")
+
+	escalatedQuest := func(desc string) *domain.Quest {
+		return &domain.Quest{
+			ID:          "test.dev.game.board1.quest.q1",
+			Title:       "Test Quest",
+			Description: desc,
+			Status:      domain.QuestEscalated,
+			Escalated:   true,
+			ClaimedBy:   &agentID,
+		}
+	}
+
+	t.Run("clarification replaces existing clarification block", func(t *testing.T) {
+		quest := escalatedQuest("Original description\n\n**DM Clarification:** Use Python")
+		var emittedQuest *domain.Quest
+		mg := &mockGraph{
+			getQuestFn: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(quest)
+				return &es, nil
+			},
+			emitEntityUpdateFn: func(_ context.Context, entity graph.Graphable, _ string) error {
+				emittedQuest = entity.(*domain.Quest)
+				return nil
+			},
+		}
+
+		svc := newTestService(mg, &mockWorld{})
+		mux := http.NewServeMux()
+		mux.HandleFunc("POST /game/dm/intervene/{questId}", svc.handleDMIntervene)
+
+		body := `{"clarification":"Use Go instead"}`
+		req := httptest.NewRequest(http.MethodPost, "/game/dm/intervene/q1", bytes.NewBufferString(body))
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status: got %d, want 200, body: %s", rr.Code, rr.Body.String())
+		}
+		if emittedQuest == nil {
+			t.Fatal("expected quest to be emitted")
+		}
+		// Should replace the old clarification, not append.
+		if strings.Count(emittedQuest.Description, "**DM Clarification:**") != 1 {
+			t.Errorf("expected exactly one clarification block, got description: %s", emittedQuest.Description)
+		}
+		if !strings.Contains(emittedQuest.Description, "Use Go instead") {
+			t.Error("expected new clarification text in description")
+		}
+		if strings.Contains(emittedQuest.Description, "Use Python") {
+			t.Error("expected old clarification text to be replaced")
+		}
+	})
+
+	t.Run("agent stays assigned and quest returns to in_progress", func(t *testing.T) {
+		quest := escalatedQuest("Do the thing")
+		var emittedQuest *domain.Quest
+		mg := &mockGraph{
+			getQuestFn: func(_ context.Context, _ domain.QuestID) (*graph.EntityState, error) {
+				es := makeQuestEntityState(quest)
+				return &es, nil
+			},
+			emitEntityUpdateFn: func(_ context.Context, entity graph.Graphable, _ string) error {
+				emittedQuest = entity.(*domain.Quest)
+				return nil
+			},
+		}
+
+		svc := newTestService(mg, &mockWorld{})
+		mux := http.NewServeMux()
+		mux.HandleFunc("POST /game/dm/intervene/{questId}", svc.handleDMIntervene)
+
+		body := `{"clarification":"Use Go"}`
+		req := httptest.NewRequest(http.MethodPost, "/game/dm/intervene/q1", bytes.NewBufferString(body))
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status: got %d, want 200", rr.Code)
+		}
+		if emittedQuest.Status != domain.QuestInProgress {
+			t.Errorf("Status = %v, want %v", emittedQuest.Status, domain.QuestInProgress)
+		}
+		if emittedQuest.ClaimedBy == nil || *emittedQuest.ClaimedBy != agentID {
+			t.Error("expected ClaimedBy to remain unchanged")
+		}
+		if emittedQuest.Escalated {
+			t.Error("expected Escalated to be false")
+		}
+	})
+
+	t.Run("unsupported action returns 400 without echoing input", func(t *testing.T) {
+		svc := newTestService(&mockGraph{}, &mockWorld{})
+		mux := http.NewServeMux()
+		mux.HandleFunc("POST /game/dm/intervene/{questId}", svc.handleDMIntervene)
+
+		body := `{"clarification":"x","action":"<script>alert(1)</script>"}`
+		req := httptest.NewRequest(http.MethodPost, "/game/dm/intervene/q1", bytes.NewBufferString(body))
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status: got %d, want 400", rr.Code)
+		}
+		if strings.Contains(rr.Body.String(), "<script>") {
+			t.Error("error response should not echo user-supplied action value")
+		}
+	})
 }

@@ -447,3 +447,63 @@ func TestAssembleSystemPrompt_DnDDomain(t *testing.T) {
 		t.Error("D&D domain should not contain software vocabulary")
 	}
 }
+
+// =============================================================================
+// RESPONSE FORMAT INTENT INSTRUCTION TESTS
+// =============================================================================
+
+func TestAssembleSystemPrompt_ResponseFormatIncluded(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:       domain.TierExpert,
+		QuestTitle: "Test quest",
+	})
+
+	if !strings.Contains(result.SystemMessage, "[INTENT: work_product]") {
+		t.Error("expected response format instruction with work_product intent")
+	}
+	if !strings.Contains(result.SystemMessage, "[INTENT: clarification]") {
+		t.Error("expected response format instruction with clarification intent")
+	}
+}
+
+func TestAssembleSystemPrompt_ResponseFormatAfterQuest(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:             domain.TierExpert,
+		QuestTitle:       "Test quest",
+		QuestDescription: "Do the thing",
+	})
+
+	msg := result.SystemMessage
+	questIdx := strings.Index(msg, "Test quest")
+	intentIdx := strings.Index(msg, "[INTENT:")
+
+	if questIdx < 0 || intentIdx < 0 {
+		t.Fatal("expected both quest context and response format in output")
+	}
+	if questIdx >= intentIdx {
+		t.Error("response format instruction should come after quest context")
+	}
+}
+
+func TestAssembleSystemPrompt_ResponseFormatFragmentID(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierExpert,
+	})
+
+	found := false
+	for _, id := range result.FragmentsUsed {
+		if id == "response-format-intent" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'response-format-intent' in FragmentsUsed")
+	}
+}

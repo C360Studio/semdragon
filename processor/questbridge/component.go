@@ -89,6 +89,10 @@ type Component struct {
 	questCache  sync.Map // string → string (entity key → status)
 	activeLoops sync.Map // string → *QuestLoopMapping (quest entity key → mapping)
 
+	// escalatedAt tracks when quests entered escalated status (entity key → time.Time).
+	// Used by sweepStaleEscalations to detect quests waiting too long for DM response.
+	escalatedAt sync.Map
+
 	// Internal state
 	running  atomic.Bool
 	mu       sync.RWMutex
@@ -317,6 +321,12 @@ func (c *Component) Start(ctx context.Context) error {
 
 	// Start JetStream consumer for loop completion/failure events.
 	go func() { defer c.wg.Done(); c.consumeCompletions(ctx) }()
+
+	// Start periodic sweep for escalated quests that timed out waiting for DM.
+	if c.config.EscalationTimeoutMins > 0 {
+		c.wg.Add(1)
+		go func() { defer c.wg.Done(); c.sweepStaleEscalations(ctx) }()
+	}
 
 	c.logger.Info("questbridge component started",
 		"org", c.config.Org,

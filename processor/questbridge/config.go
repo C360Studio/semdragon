@@ -24,6 +24,12 @@ type Config struct {
 	MaxIterations  int    `json:"max_iterations"`
 	DefaultRole    string `json:"default_role"`
 
+	// EscalationTimeoutMins is how long a quest can stay escalated (waiting
+	// for DM clarification) before the agent is released and the quest reposted.
+	// Prevents agents from being stuck indefinitely if the DM never responds.
+	// 0 disables the timeout (agents wait forever). Default: 30.
+	EscalationTimeoutMins int `json:"escalation_timeout_mins,omitempty"`
+
 	// ConsumerNameSuffix allows unique consumer names in tests to avoid
 	// durable consumer conflicts when multiple test instances run concurrently.
 	ConsumerNameSuffix string `json:"consumer_name_suffix,omitempty"`
@@ -51,8 +57,9 @@ func DefaultConfig() Config {
 		QuestDagsBucket:  "QUEST_DAGS",
 		SandboxDir:       "",
 		EnableBuiltins:   true,
-		MaxIterations:    20,
-		DefaultRole:      "general",
+		MaxIterations:         20,
+		DefaultRole:           "general",
+		EscalationTimeoutMins: 30,
 	}
 }
 

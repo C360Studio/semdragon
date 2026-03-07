@@ -1288,3 +1288,99 @@ func TestLoadPeerFeedback(t *testing.T) {
 	}
 }
 
+func TestParseOutputIntent(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{"work_product tag", "[INTENT: work_product]\nHere is the code...", "work_product"},
+		{"clarification tag", "[INTENT: clarification]\nWhat language?", "clarification"},
+		{"case insensitive", "[INTENT: Clarification]\nWhat?", "clarification"},
+		{"extra whitespace", "[INTENT:   work_product  ]\nDone.", "work_product"},
+		{"no tag", "Here is the result.", ""},
+		{"tag not on first line", "Hello\n[INTENT: clarification]\nWhat?", ""},
+		{"empty string", "", ""},
+		{"partial prefix", "[INTENT: ", ""},
+		{"missing bracket", "[INTENT: work_product", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseOutputIntent(tt.text)
+			if got != tt.want {
+				t.Errorf("parseOutputIntent() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsOutputClarificationRequest(t *testing.T) {
+	tests := []struct {
+		name   string
+		output any
+		want   bool
+	}{
+		// Structured intent tag (primary path)
+		{
+			"intent tag work_product",
+			"[INTENT: work_product]\nHere is the implementation.",
+			false,
+		},
+		{
+			"intent tag clarification",
+			"[INTENT: clarification]\nWhat language should I use?",
+			true,
+		},
+
+		// Heuristic fallback (no intent tag)
+		{
+			"all questions no tag",
+			"What language should I use?\nWhich framework do you prefer?",
+			true,
+		},
+		{
+			"mixed content majority questions",
+			"I have some questions:\nWhat language?\nWhat framework?\nWhat DB?",
+			true,
+		},
+		{
+			"work product with a question",
+			"Here is the implementation.\nThe code handles errors.\nDoes this look right?",
+			false,
+		},
+		{
+			"pure work product no tag",
+			"Here is the completed code.\nAll tests pass.\nReady for review.",
+			false,
+		},
+
+		// Intent tag takes precedence over heuristic
+		{
+			"intent tag overrides heuristic — questions tagged as work_product",
+			"[INTENT: work_product]\nWhat did you think?\nDoes this look right?\nAny questions?",
+			false, // tag says work_product, even though heuristic would say clarification
+		},
+		{
+			"intent tag overrides heuristic — prose tagged as clarification",
+			"[INTENT: clarification]\nI need more details about the requirements.",
+			true, // tag says clarification, even though heuristic would say no
+		},
+
+		// Edge cases
+		{"nil output", nil, false},
+		{"non-string output", 42, false},
+		{"empty string", "", false},
+		{"whitespace only", "   \n\n  ", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isOutputClarificationRequest(tt.output)
+			if got != tt.want {
+				t.Errorf("isOutputClarificationRequest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+

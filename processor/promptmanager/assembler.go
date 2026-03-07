@@ -80,10 +80,16 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		sections = append(sections, formatSection("Persona", ctx.PersonaPrompt, style))
 	}
 
-	// Quest context is always last
+	// Quest context is always last before the response format instruction.
 	if questCtx := buildQuestContext(ctx); questCtx != "" {
 		sections = append(sections, formatSection("Quest", questCtx, style))
 	}
+
+	// Response format: instruct the LLM to self-classify its output intent.
+	// This enables downstream routing (work product → boss battle review,
+	// clarification → DM escalation) without fragile heuristics.
+	sections = append(sections, formatSection("Response Format", responseFormatInstruction, style))
+	usedIDs = append(usedIDs, "response-format-intent")
 
 	return AssembledPrompt{
 		SystemMessage: strings.Join(sections, "\n\n"),
@@ -91,6 +97,20 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		FragmentsUsed: usedIDs,
 	}
 }
+
+// =============================================================================
+// RESPONSE FORMAT INSTRUCTION
+// =============================================================================
+
+// responseFormatInstruction is injected into every assembled system prompt.
+// It instructs the LLM to self-classify its output so questbridge can route
+// work products to review and clarification requests to the DM.
+const responseFormatInstruction = `Begin every response with exactly one intent declaration on its own line:
+
+[INTENT: work_product] — You are delivering a completed result for the quest.
+[INTENT: clarification] — You need more information from the quest issuer before you can proceed.
+
+After the intent line, provide your response content. Do not omit the intent line.`
 
 // =============================================================================
 // INTERNAL HELPERS

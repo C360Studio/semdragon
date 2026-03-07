@@ -1415,14 +1415,91 @@ func extractTaggedJSON(text, tag string) string {
 	return strings.TrimSpace(text[start : start+end])
 }
 
+// interventionRequest is the JSON body for the DM intervention endpoint.
+type interventionRequest struct {
+	Clarification string `json:"clarification"`
+	Action        string `json:"action"` // "clarify" (default)
+}
+
 func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 	questID := r.PathValue("questId")
 	if !isValidPathID(questID) {
 		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
 		return
 	}
-	// TODO: Wire DM intervention when DM component is available
-	s.writeError(w, "DM intervention not yet implemented", http.StatusNotImplemented)
+
+	ctx := r.Context()
+
+	// Parse request body
+	var req interventionRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBodySize)).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Clarification == "" {
+		s.writeError(w, "clarification is required", http.StatusBadRequest)
+		return
+	}
+
+	// Default action is clarify — resume the same agent with updated description.
+	if req.Action == "" {
+		req.Action = "clarify"
+	}
+	if req.Action != "clarify" {
+		s.writeError(w, "unsupported action (only 'clarify' is supported)", http.StatusBadRequest)
+		return
+	}
+
+	// Load quest
+	questEntity, err := s.graph.GetQuest(ctx, domain.QuestID(questID))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to load quest", http.StatusInternalServerError)
+		return
+	}
+	quest := domain.QuestFromEntityState(questEntity)
+	if quest == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Only escalated quests can be intervened on
+	if quest.Status != domain.QuestEscalated {
+		s.writeError(w, "quest must be escalated to intervene (status: "+string(quest.Status)+")", http.StatusConflict)
+		return
+	}
+
+	// Replace any existing clarification block to prevent unbounded description
+	// growth across multiple clarification round-trips. Only the latest
+	// clarification is kept — the DM can include prior context if needed.
+	const clarificationMarker = "\n\n**DM Clarification:** "
+	if idx := strings.Index(quest.Description, clarificationMarker); idx >= 0 {
+		quest.Description = quest.Description[:idx]
+	}
+	quest.Description += clarificationMarker + req.Clarification
+
+	// Return quest to in_progress with the same agent — this is a communication
+	// loop, not a retry. The agent keeps the quest and questbridge re-dispatches
+	// with the updated description containing the DM's clarification.
+	quest.Status = domain.QuestInProgress
+	quest.Escalated = false
+	quest.Output = nil
+	quest.FailureReason = ""
+	quest.FailureType = ""
+	// Do NOT increment Attempts — clarification is not a retry.
+	// Do NOT clear ClaimedBy/ClaimedAt/StartedAt — agent stays assigned.
+
+	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
+		s.writeError(w, "failed to resume quest", http.StatusInternalServerError)
+		s.logger.Error("Failed to resume quest after DM intervention", "error", err)
+		return
+	}
+
+	s.writeJSON(w, quest)
 }
 
 func (s *Service) handleGetDMSession(w http.ResponseWriter, r *http.Request) {
