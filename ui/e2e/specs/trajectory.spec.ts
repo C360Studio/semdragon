@@ -285,12 +285,12 @@ test.describe('Trajectory Detail - Completed', () => {
 
 	test('events are in chronological order', async ({ page }) => {
 		const events = page.getByTestId('timeline-event');
-		const count = await events.count();
-		expect(count).toBe(5);
+		// Wait for all 5 events to render before reading attributes
+		await expect(events).toHaveCount(5);
 
 		// Verify alternating pattern: model, tool, model, tool, model
 		const types: string[] = [];
-		for (let i = 0; i < count; i++) {
+		for (let i = 0; i < 5; i++) {
 			const type = await events.nth(i).getAttribute('data-step-type');
 			types.push(type!);
 		}

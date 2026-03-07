@@ -3,14 +3,14 @@
 	 * Agent Detail Page - Full agent profile with history
 	 */
 
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import { TrustTierNames, agentId } from '$types';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
-	const id = $derived(agentId($page.params.id ?? ''));
+	const id = $derived(agentId(page.params.id ?? ''));
 	const agent = $derived(worldStore.agents.get(id));
 
 	$effect(() => {

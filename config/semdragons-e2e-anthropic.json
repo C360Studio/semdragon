@@ -196,7 +196,8 @@
       "config": {
         "org": "local",
         "platform": "dev",
-        "board": "board1"
+        "board": "board1",
+        "enable_auto_formation": true
       }
     },
     "boidengine": {

@@ -7,7 +7,7 @@
 	 * of ThreePanelLayout.
 	 */
 
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import type { GameEventType } from '$types';
 
@@ -16,7 +16,7 @@
 	let { showActivity = true }: { showActivity?: boolean } = $props();
 
 	// Active route highlighting — exact match for `/`, prefix match for others
-	const currentPath = $derived($page.url.pathname);
+	const currentPath = $derived(page.url.pathname);
 
 	function isActive(href: string): boolean {
 		if (href === '/') return currentPath === '/';
@@ -168,6 +168,8 @@
 
 	.explorer-nav {
 		padding: var(--spacing-sm);
+		flex-shrink: 1;
+		overflow-y: auto;
 	}
 
 	.nav-item {
@@ -218,6 +220,7 @@
 	/* Event Feed */
 	.event-feed {
 		flex: 1;
+		min-height: 120px;
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;

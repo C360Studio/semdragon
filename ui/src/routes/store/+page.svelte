@@ -37,7 +37,10 @@
 
 	// Filter state
 	let selectedCategory = $state<ItemType | 'all'>('all');
-	let selectedAgentId = $state<AgentID | null>(null);
+	let userSelectedAgentId = $state<AgentID | null>(null);
+
+	// Effective agent: user selection falls back to first available agent
+	const selectedAgentId = $derived(userSelectedAgentId ?? worldStore.agentList[0]?.id ?? null);
 
 	// Derived: Selected agent
 	const selectedAgent = $derived(
@@ -108,14 +111,7 @@
 		loading = false;
 	}
 
-	// Auto-select first agent on mount
-	$effect(() => {
-		if (worldStore.agentList.length > 0 && !selectedAgentId) {
-			selectedAgentId = worldStore.agentList[0].id;
-		}
-	});
-
-	// Load store data when agent changes
+	// Load store data when effective agent changes (genuine side effect: network I/O)
 	$effect(() => {
 		if (selectedAgentId) {
 			loadStoreData();
@@ -219,7 +215,13 @@
 			<header class="store-header">
 				<h1>Agent Store</h1>
 				<div class="header-controls">
-					<select id="agent-select" class="inline-filter" bind:value={selectedAgentId} aria-label="Shop as agent">
+					<select
+						id="agent-select"
+						class="inline-filter"
+						value={selectedAgentId}
+						onchange={(e) => { userSelectedAgentId = (e.currentTarget.value || null) as AgentID | null; }}
+						aria-label="Shop as agent"
+					>
 						{#each worldStore.agentList as agent (agent.id)}
 							<option value={agent.id}>{agent.name} (Lvl {agent.level})</option>
 						{/each}

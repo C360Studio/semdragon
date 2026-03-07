@@ -12,6 +12,7 @@
 	 *   (no prefix)    — conversational Q&A
 	 */
 
+	import { tick } from 'svelte';
 	import { chatStore } from '$lib/stores/chatStore.svelte';
 	import type { QuestBrief, QuestChainBrief } from '$lib/stores/chatStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
@@ -22,7 +23,7 @@
 	const examplePrompts = [
 		'What agents do I have and what are their levels?',
 		'Which quests are currently active?',
-		'/quest Analyze the sales data CSV and produce a summary report'
+		'/quest Write a hello world function in Go'
 	];
 
 	let input = $state('');
@@ -31,16 +32,11 @@
 
 	// Auto-scroll to bottom when new messages arrive
 	$effect(() => {
-		// Touch messages array to trigger on changes
-		const _ = chatStore.messages.length;
-		if (messagesContainer) {
-			// Use setTimeout to ensure DOM has updated
-			setTimeout(() => {
-				if (messagesContainer) {
-					messagesContainer.scrollTop = messagesContainer.scrollHeight;
-				}
-			}, 0);
-		}
+		chatStore.messages;
+		if (!messagesContainer) return;
+		tick().then(() => {
+			messagesContainer?.scrollTo({ top: messagesContainer?.scrollHeight ?? 0 });
+		});
 	});
 
 	function handleSend() {
@@ -80,14 +76,16 @@
 		}
 	}
 
-	function handleEditQuest(brief: QuestBrief) {
+	async function handleEditQuest(brief: QuestBrief) {
 		input = `/quest Revise: "${brief.title}" \u2014 `;
-		setTimeout(() => inputEl?.focus(), 0);
+		await tick();
+		inputEl?.focus();
 	}
 
-	function handleEditChain(chain: QuestChainBrief) {
+	async function handleEditChain(chain: QuestChainBrief) {
 		input = `/quest Revise the ${chain.quests.length}-quest chain \u2014 `;
-		setTimeout(() => inputEl?.focus(), 0);
+		await tick();
+		inputEl?.focus();
 	}
 
 	function handleDismissQuest(msgIndex: number) {

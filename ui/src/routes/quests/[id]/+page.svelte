@@ -3,14 +3,14 @@
 	 * Quest Detail Page - Full quest view with trajectory
 	 */
 
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import { QuestDifficultyNames, TrustTierNames, questId } from '$types';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
-	const id = $derived(questId($page.params.id ?? ''));
+	const id = $derived(questId(page.params.id ?? ''));
 	const quest = $derived(worldStore.quests.get(id));
 
 	$effect(() => {

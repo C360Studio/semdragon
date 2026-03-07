@@ -19,13 +19,8 @@ test.describe('SSE - Lifecycle Events', () => {
 		// 1. Navigate to the quests page — this establishes the SSE connection
 		await questsPage.goto();
 
-		// Wait for the page to fully settle before capturing a baseline
-		await page.waitForTimeout(500);
-
-		// Note the current total quest count across all columns.
-		// We track total rather than the "posted" column specifically because
-		// autonomy (full_auto mode) may auto-claim the quest before the test
-		// detects it in "posted".
+		// Wait for the quest count header to be visible before reading baseline
+		await expect(questsPage.questCount).toBeVisible();
 		const totalBefore = await questsPage.getTotalQuestCount();
 
 		// 2. Create a quest via the API — the backend publishes a KV change
@@ -46,15 +41,12 @@ test.describe('SSE - Lifecycle Events', () => {
 			},
 			{
 				timeout: 12000,
-				interval: 800,
+				interval: 500,
 				message:
 					'Quest did not appear via SSE within the allowed timeout. ' +
 					'Verify that the SSE stream is delivering KV watch events to the frontend.'
 			}
 		);
-
-		const totalAfter = await questsPage.getTotalQuestCount();
-		expect(totalAfter).toBeGreaterThan(totalBefore);
 	});
 
 	test('SSE connection indicator shows connected state', async ({

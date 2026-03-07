@@ -3,7 +3,7 @@
 	 * Party Detail Page - Full party profile with members and quest assignment
 	 */
 
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
@@ -16,7 +16,7 @@
 	let leftPanelWidth = $state(280);
 	let rightPanelWidth = $state(320);
 
-	const id = $derived(partyId($page.params.id ?? ''));
+	const id = $derived(partyId(page.params.id ?? ''));
 	const party = $derived(worldStore.parties.get(id));
 
 	$effect(() => {

@@ -3,7 +3,7 @@
 	 * Guild Detail Page - Full guild profile with members and stats
 	 */
 
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import { guildId } from '$types';
@@ -11,7 +11,7 @@
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
-	const id = $derived(guildId($page.params.id ?? ''));
+	const id = $derived(guildId(page.params.id ?? ''));
 	const guild = $derived(worldStore.guilds.get(id));
 
 	const guildmaster = $derived(guild?.members.find((m) => m.rank === 'guildmaster'));
@@ -184,7 +184,7 @@
 			{:else}
 				<div class="not-found" data-testid="guild-not-found">
 					<h2>Guild not found</h2>
-					<p>The guild with ID "{$page.params.id}" could not be found.</p>
+					<p>The guild with ID "{page.params.id}" could not be found.</p>
 					<a href="/guilds">Back to Guild Registry</a>
 				</div>
 			{/if}

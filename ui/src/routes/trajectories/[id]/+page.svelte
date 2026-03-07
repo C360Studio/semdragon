@@ -3,8 +3,7 @@
 	 * Trajectory Timeline View - Step-by-step timeline for a trajectory
 	 */
 
-	import { page } from '$app/stores';
-	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { api } from '$services/api';
 	import type { Trajectory, TrajectoryStep } from '$types';
 	import { worldStore } from '$stores/worldStore.svelte';
@@ -12,7 +11,7 @@
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
-	const trajectoryId = $derived($page.params.id ?? '');
+	const trajectoryId = $derived(page.params.id ?? '');
 	const quest = $derived(worldStore.questList.find((q) => q.loop_id === trajectoryId));
 
 	$effect(() => {
@@ -36,16 +35,27 @@
 	const totalTokensIn = $derived(trajectory?.total_tokens_in ?? 0);
 	const totalTokensOut = $derived(trajectory?.total_tokens_out ?? 0);
 
-	onMount(async () => {
-		if (!trajectoryId) return;
-		try {
-			trajectory = await api.getTrajectory(trajectoryId);
-		} catch (err) {
-			console.error('Failed to load trajectory:', err);
-			error = 'Failed to load trajectory';
-		} finally {
-			loading = false;
-		}
+	// Fetch trajectory data — re-runs when trajectoryId changes via client-side nav
+	$effect(() => {
+		const tid = trajectoryId;
+		if (!tid) return;
+		const controller = new AbortController();
+		loading = true;
+		error = null;
+		api.getTrajectory(tid)
+			.then((t) => {
+				if (!controller.signal.aborted) trajectory = t;
+			})
+			.catch((err) => {
+				if (!controller.signal.aborted) {
+					console.error('Failed to load trajectory:', err);
+					error = 'Failed to load trajectory';
+				}
+			})
+			.finally(() => {
+				if (!controller.signal.aborted) loading = false;
+			});
+		return () => controller.abort();
 	});
 
 	function formatTime(timestamp: string): string {

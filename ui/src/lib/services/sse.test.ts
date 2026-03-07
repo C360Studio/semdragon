@@ -632,7 +632,7 @@ describe('SSE Service', () => {
 			expect(worldStore.upsertAgent).toHaveBeenCalled();
 			expect(worldStore.addEvent).toHaveBeenCalledWith(
 				expect.objectContaining({
-					type: 'agent.progression.xp',
+					type: 'agent.status.idle',
 					agent_id: expect.any(String)
 				})
 			);

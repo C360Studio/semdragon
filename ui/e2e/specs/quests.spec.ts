@@ -100,8 +100,12 @@ test.describe('Quest Board - Selection', () => {
 });
 
 test.describe('Quest Board - With Seeded Data', () => {
-	test('creating a quest adds it to posted column', async ({ questsPage, seedQuests }) => {
+	test('creating a quest shows it on the board', async ({ questsPage, seedQuests }) => {
 		test.skip(!hasBackend(), 'Requires backend for quest creation');
+
+		// Get baseline count
+		await questsPage.goto();
+		const before = await questsPage.getTotalQuestCount();
 
 		// Seed a new quest
 		const questIds = await seedQuests([
@@ -113,23 +117,21 @@ test.describe('Quest Board - With Seeded Data', () => {
 			}
 		]);
 
-		// Navigate to quests page
-		await questsPage.goto();
+		expect(questIds.length).toBe(1);
 
-		// If quest was created successfully, it should appear
-		if (questIds.length > 0) {
-			// Wait for the quest to appear in the posted column
-			await questsPage.page.waitForTimeout(500); // Allow for SSE update
-
-			// Look for our quest
-			const postedQuests = questsPage.getQuestsInColumn('posted');
-			const count = await postedQuests.count();
-			expect(count).toBeGreaterThan(0);
-		}
+		// Wait for the quest count to increase — autonomy may claim/complete it,
+		// but it should appear on the board regardless of which column it lands in
+		await expect(async () => {
+			const after = await questsPage.getTotalQuestCount();
+			expect(after).toBeGreaterThan(before);
+		}).toPass({ timeout: 5000 });
 	});
 
 	test('seeded quests appear in board', async ({ questsPage, seedQuests }) => {
 		test.skip(!hasBackend(), 'Requires backend for quest creation');
+
+		await questsPage.goto();
+		const before = await questsPage.getTotalQuestCount();
 
 		// Create multiple quests
 		await seedQuests([
@@ -138,12 +140,12 @@ test.describe('Quest Board - With Seeded Data', () => {
 			{ title: 'Quest Gamma', difficulty: 'hard', base_xp: 500 }
 		]);
 
-		await questsPage.goto();
-		await questsPage.page.waitForTimeout(500);
-
-		// Total quest count should include our new quests
-		const totalCount = await questsPage.getTotalQuestCount();
-		expect(totalCount).toBeGreaterThanOrEqual(3);
+		// Wait for all 3 to appear — autonomy may move them between columns,
+		// but the total should increase by at least 3
+		await expect(async () => {
+			const after = await questsPage.getTotalQuestCount();
+			expect(after).toBeGreaterThanOrEqual(before + 3);
+		}).toPass({ timeout: 5000 });
 	});
 });
 

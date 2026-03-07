@@ -399,11 +399,8 @@ test.describe('DM Chat UI Integration @integration', () => {
 			'Requires running backend and LLM (E2E_MOCK_LLM=true or E2E_REAL_LLM=true)'
 		);
 		await page.goto('/');
-		// Wait for SvelteKit hydration — use domcontentloaded instead of networkidle
-		// because the SSE connection stays open indefinitely, blocking networkidle.
-		await page.waitForLoadState('domcontentloaded');
-		// Give Svelte time to hydrate
-		await page.waitForTimeout(1000);
+		// Wait for SvelteKit hydration — the layout adds .hydrated to <body>
+		await page.locator('body.hydrated').waitFor({ state: 'attached', timeout: 10_000 });
 	});
 
 	test('sending a quest creation message renders a quest preview card', async ({ page }) => {

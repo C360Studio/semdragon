@@ -3,14 +3,14 @@
 	 * Battle Detail Page - Full battle view with criteria scoring
 	 */
 
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import { ReviewLevelNames, battleId } from '$types';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 
-	const id = $derived(battleId($page.params.id ?? ''));
+	const id = $derived(battleId(page.params.id ?? ''));
 	const battle = $derived(worldStore.battles.get(id));
 
 	$effect(() => {

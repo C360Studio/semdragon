@@ -40,12 +40,11 @@ test.describe('SSE - Real-time Updates', () => {
 			}
 		]);
 
-		// Wait for the event to appear in the feed
-		await dashboardPage.page.waitForTimeout(1000);
-
-		// Check if event count increased
-		const newCount = await sseHelper.getEventCount();
-		expect(newCount).toBeGreaterThanOrEqual(initialCount);
+		// Poll for the event to appear in the feed
+		await expect(async () => {
+			const newCount = await sseHelper.getEventCount();
+			expect(newCount).toBeGreaterThanOrEqual(initialCount);
+		}).toPass({ timeout: 5000 });
 	});
 
 	test('stats update when data changes', async ({ dashboardPage, sseHelper, seedQuests }) => {
@@ -63,13 +62,12 @@ test.describe('SSE - Real-time Updates', () => {
 			{ title: 'Stat Update Test 2', difficulty: 'easy' }
 		]);
 
-		// Wait for stats to update via SSE
-		await dashboardPage.page.waitForTimeout(1000);
-
-		// Note: This test verifies the stat display exists and updates
-		// The exact count depends on backend state
-		const newOpenQuests = await dashboardPage.getStatValue('Open Quests');
-		expect(newOpenQuests).toBeTruthy();
+		// Poll for stats to update via SSE — the exact value depends on
+		// backend state, but the stat should remain populated
+		await expect(async () => {
+			const newOpenQuests = await dashboardPage.getStatValue('Open Quests');
+			expect(newOpenQuests).toBeTruthy();
+		}).toPass({ timeout: 5000 });
 	});
 });
 
@@ -109,10 +107,8 @@ test.describe('SSE - Event Types', () => {
 		// Create a quest
 		await seedQuests([{ title: 'Quest Event Test', difficulty: 'easy' }]);
 
-		// Wait for event propagation
-		await dashboardPage.page.waitForTimeout(1000);
-
-		// Verify event filter is set
+		// Verify event filter is set (no need to wait for event propagation —
+		// we're testing the filter UI state, not event delivery)
 		await expect(dashboardPage.eventFilter).toHaveValue('quest');
 	});
 

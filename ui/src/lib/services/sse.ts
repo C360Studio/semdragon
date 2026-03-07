@@ -63,11 +63,13 @@ const CATEGORY_TO_EVENT_TYPE: Record<string, GameEventType> = {
 	'quest.abandoned': 'quest.lifecycle.abandoned',
 	'quest.in_review': 'quest.lifecycle.submitted',
 	'agent.progression.xp': 'agent.progression.xp',
-	'agent.status.on_quest': 'agent.progression.xp',
-	'agent.status.idle': 'agent.progression.xp',
-	'agent.status.in_battle': 'agent.progression.xp',
-	'agent.released': 'agent.progression.xp',
+	'agent.status.on_quest': 'agent.status.active',
+	'agent.status.idle': 'agent.status.idle',
+	'agent.status.in_battle': 'agent.status.active',
+	'agent.released': 'agent.status.idle',
+	'agent.autonomy.cooldown_expired': 'agent.autonomy.cooldown',
 	'agent.inventory.purchased': 'agent.inventory.updated',
+	'agent.consumable.used': 'store.consumable.used',
 	'battle.started': 'battle.review.started',
 	'guild.created': 'guild.membership.joined',
 	'guild.member.joined': 'guild.membership.joined',
@@ -140,6 +142,7 @@ export function createSSEService() {
 
 		source.onerror = () => {
 			worldStore.setConnected(false);
+			worldStore.setLoading(true);
 			synced = false;
 			worldStore.setSynced(false);
 			// EventSource auto-reconnects after server-sent retry interval
