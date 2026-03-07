@@ -21,8 +21,8 @@ import (
 // maybeSeedE2E checks SEED_E2E and SEED_AGENTS to determine what data to
 // write into the ENTITY_STATES KV bucket on startup.
 //
-//   - SEED_E2E=true  → Full E2E dataset: guilds, agents (with guild refs), quests, store
-//   - SEED_AGENTS=true → Agents only (no guilds, quests, or store) — good for first-time use
+//   - SEED_E2E=true  → Full E2E dataset: agents, quests, store (guilds form organically)
+//   - SEED_AGENTS=true → Agents only (no quests or store) — good for first-time use
 //
 // We write directly via GraphClient.EmitEntity (the same path the questboard
 // processor uses) rather than going through the seeding component's pub/sub
@@ -51,13 +51,9 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 	graph := semdragons.NewGraphClient(natsClient, boardCfg)
 
 	if fullSeed {
-		// Full E2E: guilds first so agents can reference them.
-		dataWranglerID, codeSmithsID, err := seedGuilds(ctx, graph, boardCfg)
-		if err != nil {
-			return fmt.Errorf("seed e2e: seed guilds: %w", err)
-		}
-
-		if err := seedAgents(ctx, graph, boardCfg, dataWranglerID, codeSmithsID); err != nil {
+		// Agents start unguilded — guildformation auto-creates social guilds
+		// from Expert+ founders when it detects unguilded agents on startup.
+		if err := seedAgents(ctx, graph, boardCfg); err != nil {
 			return fmt.Errorf("seed e2e: seed agents: %w", err)
 		}
 
@@ -69,8 +65,8 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 			return fmt.Errorf("seed e2e: seed store: %w", err)
 		}
 	} else {
-		// Agents only — no guild refs, no quests, no store.
-		if err := seedAgents(ctx, graph, boardCfg, "", ""); err != nil {
+		// Agents only — no quests or store.
+		if err := seedAgents(ctx, graph, boardCfg); err != nil {
 			return fmt.Errorf("seed agents: %w", err)
 		}
 	}
@@ -112,90 +108,22 @@ func extractBoardConfig(cfg *config.Config) (*domain.BoardConfig, error) {
 	}, nil
 }
 
-// seedGuilds creates the two E2E guilds and returns their full entity IDs.
-func seedGuilds(ctx context.Context, graph *semdragons.GraphClient, boardCfg *domain.BoardConfig) (dataWranglerID, codeSmithsID domain.GuildID, err error) {
-	now := time.Now()
-
-	specs := []struct {
-		name        string
-		description string
-		culture     string
-		motto       string
-		questTypes  []string
-		minLevel    int
-		idPtr       *domain.GuildID
-	}{
-		{
-			name:        "Data Wranglers",
-			description: "Specialists in analysis, data transformation, and research tasks",
-			culture:     "We turn raw data into actionable insight",
-			motto:       "In data we trust",
-			questTypes:  []string{"analysis", "data_transformation", "research", "summarization"},
-			minLevel:    1,
-			idPtr:       &dataWranglerID,
-		},
-		{
-			name:        "Code Smiths",
-			description: "Elite developers focused on code generation and code review",
-			culture:     "Ship quality code every time",
-			motto:       "Forged in pull requests",
-			questTypes:  []string{"code_generation", "code_review"},
-			minLevel:    3,
-			idPtr:       &codeSmithsID,
-		},
-	}
-
-	for _, spec := range specs {
-		instance := domain.GenerateInstance()
-		guildEntityID := boardCfg.GuildEntityID(instance)
-
-		guild := &domain.Guild{
-			ID:          domain.GuildID(guildEntityID),
-			Name:        spec.name,
-			Description: spec.description,
-			Status:      domain.GuildActive,
-			MaxMembers:  50,
-			MinLevel:    spec.minLevel,
-			Founded:     now,
-			FoundedBy:   domain.AgentID("system"),
-			Culture:     spec.culture,
-			Motto:       spec.motto,
-			Reputation:  0.8,
-			SuccessRate: 0.85,
-			QuestTypes:  spec.questTypes,
-			CreatedAt:   now,
-		}
-
-		if err := graph.EmitEntity(ctx, guild, "guild.seeded"); err != nil {
-			return "", "", fmt.Errorf("create guild %q: %w", spec.name, err)
-		}
-
-		*spec.idPtr = guild.ID
-
-		slog.Info("Seeded guild",
-			"id", guild.ID,
-			"name", guild.Name)
-	}
-
-	return dataWranglerID, codeSmithsID, nil
-}
-
 // agentSpec describes one agent (or a batch sharing the same profile) to seed.
 type agentSpec struct {
 	namePattern string // e.g. "apprentice-{n}" or a fixed name
 	level       int    // base level assigned
 	skills      []domain.SkillTag
-	guildID     domain.GuildID
 	isNPC       bool
 	count       int // how many to create (1 = single named agent)
 }
 
 // seedAgents creates all E2E agents at their target levels.
+// Agents start unguilded — the guildformation processor auto-creates social
+// guilds from Expert+ founders when it detects unguilded agents.
 func seedAgents(
 	ctx context.Context,
 	graph *semdragons.GraphClient,
 	boardCfg *domain.BoardConfig,
-	dataWranglerID, codeSmithsID domain.GuildID,
 ) error {
 	specs := []agentSpec{
 		// 3 apprentices (level 1-5)
@@ -203,14 +131,12 @@ func seedAgents(
 			namePattern: "apprentice-{n}",
 			level:       2,
 			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillAnalysis, domain.SkillResearch},
-			guildID:     dataWranglerID,
 			count:       2,
 		},
 		{
 			namePattern: "rookie-coder",
 			level:       4,
 			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
-			guildID:     codeSmithsID,
 			count:       1,
 		},
 
@@ -219,14 +145,12 @@ func seedAgents(
 			namePattern: "analyst-{n}",
 			level:       8,
 			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillResearch},
-			guildID:     dataWranglerID,
 			count:       1,
 		},
 		{
 			namePattern: "coder-journeyman",
 			level:       9,
 			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
-			guildID:     codeSmithsID,
 			count:       1,
 		},
 
@@ -235,14 +159,12 @@ func seedAgents(
 			namePattern: "data-expert",
 			level:       13,
 			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillDataTransform, domain.SkillPlanning},
-			guildID:     dataWranglerID,
 			count:       1,
 		},
 		{
 			namePattern: "senior-dev",
 			level:       14,
 			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillPlanning},
-			guildID:     codeSmithsID,
 			count:       1,
 		},
 
@@ -251,7 +173,6 @@ func seedAgents(
 			namePattern: "archmage",
 			level:       17,
 			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillPlanning, domain.SkillResearch, domain.SkillTraining},
-			guildID:     dataWranglerID,
 			count:       1,
 		},
 
@@ -260,7 +181,6 @@ func seedAgents(
 			namePattern: "grandmaster",
 			level:       20,
 			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillAnalysis, domain.SkillPlanning},
-			guildID:     codeSmithsID,
 			count:       1,
 		},
 	}
@@ -320,11 +240,6 @@ func seedOneAgent(
 		}
 	}
 
-	guilds := []domain.GuildID{}
-	if spec.guildID != "" {
-		guilds = append(guilds, spec.guildID)
-	}
-
 	agent := &agentprogression.Agent{
 		ID:                 domain.AgentID(agentEntityID),
 		Name:               name,
@@ -335,7 +250,7 @@ func seedOneAgent(
 		XPToLevel:          xpToNext,
 		Tier:               tier,
 		IsNPC:              spec.isNPC,
-		Guilds:             guilds,
+		Guilds:             nil,
 		SkillProficiencies: skillProfs,
 		Stats: agentprogression.AgentStats{
 			QuestsCompleted: spec.level * 5,
