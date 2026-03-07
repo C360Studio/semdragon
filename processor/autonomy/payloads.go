@@ -26,16 +26,18 @@ var (
 	_ graph.Graphable = (*ShopIntentPayload)(nil)
 	_ graph.Graphable = (*GuildIntentPayload)(nil)
 	_ graph.Graphable = (*UseIntentPayload)(nil)
+	_ graph.Graphable = (*GuildCreateIntentPayload)(nil)
 )
 
 // Typed subjects for autonomy events.
 var (
-	SubjectAutonomyEvaluated   = natsclient.NewSubject[EvaluatedPayload](domain.PredicateAutonomyEvaluated)
-	SubjectAutonomyIdle        = natsclient.NewSubject[IdlePayload](domain.PredicateAutonomyIdle)
-	SubjectAutonomyClaimIntent = natsclient.NewSubject[ClaimIntentPayload](domain.PredicateAutonomyClaimIntent)
-	SubjectAutonomyShopIntent  = natsclient.NewSubject[ShopIntentPayload](domain.PredicateAutonomyShopIntent)
-	SubjectAutonomyGuildIntent = natsclient.NewSubject[GuildIntentPayload](domain.PredicateAutonomyGuildIntent)
-	SubjectAutonomyUseIntent   = natsclient.NewSubject[UseIntentPayload](domain.PredicateAutonomyUseIntent)
+	SubjectAutonomyEvaluated        = natsclient.NewSubject[EvaluatedPayload](domain.PredicateAutonomyEvaluated)
+	SubjectAutonomyIdle             = natsclient.NewSubject[IdlePayload](domain.PredicateAutonomyIdle)
+	SubjectAutonomyClaimIntent      = natsclient.NewSubject[ClaimIntentPayload](domain.PredicateAutonomyClaimIntent)
+	SubjectAutonomyShopIntent       = natsclient.NewSubject[ShopIntentPayload](domain.PredicateAutonomyShopIntent)
+	SubjectAutonomyGuildIntent      = natsclient.NewSubject[GuildIntentPayload](domain.PredicateAutonomyGuildIntent)
+	SubjectAutonomyUseIntent        = natsclient.NewSubject[UseIntentPayload](domain.PredicateAutonomyUseIntent)
+	SubjectAutonomyGuildCreateIntent = natsclient.NewSubject[GuildCreateIntentPayload](domain.PredicateGuildProposed)
 )
 
 // --- TraceInfo for observability ---
@@ -324,6 +326,52 @@ func (p *UseIntentPayload) Schema() types.Type {
 func (p *UseIntentPayload) Validate() error {
 	if p.AgentID == "" {
 		return errors.New("agent_id required")
+	}
+	if p.Timestamp.IsZero() {
+		return errors.New("timestamp required")
+	}
+	return nil
+}
+
+// =============================================================================
+// GUILD CREATE INTENT PAYLOAD
+// =============================================================================
+
+// GuildCreateIntentPayload is emitted when an agent proposes founding a guild.
+type GuildCreateIntentPayload struct {
+	AgentID          domain.AgentID     `json:"agent_id"`
+	GuildName        string             `json:"guild_name"`
+	CandidateIDs     []domain.AgentID   `json:"candidate_ids"`
+	FellowshipScores map[string]float64 `json:"fellowship_scores"` // agentID → score
+	Timestamp        time.Time          `json:"timestamp"`
+	Trace            TraceInfo          `json:"trace,omitempty"`
+}
+
+// EntityID returns the entity ID for this event.
+func (p *GuildCreateIntentPayload) EntityID() string { return string(p.AgentID) }
+
+// Triples returns semantic triples for this event.
+func (p *GuildCreateIntentPayload) Triples() []message.Triple {
+	source := "autonomy"
+	entityID := string(p.AgentID)
+	return []message.Triple{
+		{Subject: entityID, Predicate: "agent.autonomy.guild_create", Object: p.GuildName, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.autonomy.guild_create_candidates", Object: len(p.CandidateIDs), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+	}
+}
+
+// Schema returns the type schema for this payload.
+func (p *GuildCreateIntentPayload) Schema() types.Type {
+	return types.Type{Domain: "semdragons", Category: "autonomy.guildcreateintent", Version: "v1"}
+}
+
+// Validate checks the payload for required fields.
+func (p *GuildCreateIntentPayload) Validate() error {
+	if p.AgentID == "" {
+		return errors.New("agent_id required")
+	}
+	if p.GuildName == "" {
+		return errors.New("guild_name required")
 	}
 	if p.Timestamp.IsZero() {
 		return errors.New("timestamp required")

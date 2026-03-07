@@ -37,14 +37,19 @@ func (a *PromptAssembler) AssembleJudgePrompt(
 	}
 
 	// Instructions
-	instructions := "Evaluate the submission against each criterion. " +
+	instructions := "IMPORTANT: Before scoring, classify the output:\n" +
+		"- If the output is primarily asking questions or requesting clarification rather than " +
+		"delivering work product, respond with needs_escalation: true and score all criteria at 0. " +
+		"The quest needs to be returned to the DM for clarification.\n" +
+		"- If the output is an actual work product (even if incomplete), evaluate it normally.\n\n" +
+		"Evaluate the submission against each criterion. " +
 		"Score each criterion from 0.0 to 1.0. " +
 		"Provide specific reasoning for each score. " +
 		"A criterion passes if its score meets or exceeds its threshold.\n\n" +
 		"Respond with ONLY a JSON object in this exact format:\n" +
 		"```json\n" +
 		"{\"criteria\": [{\"name\": \"<criterion_name>\", \"score\": <0.0-1.0>, \"reasoning\": \"<explanation>\"}], " +
-		"\"overall_feedback\": \"<summary>\"}\n" +
+		"\"overall_feedback\": \"<summary>\", \"needs_escalation\": false}\n" +
 		"```"
 	sections = append(sections, formatSection("Instructions", instructions, style))
 

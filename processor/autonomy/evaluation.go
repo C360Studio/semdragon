@@ -188,6 +188,7 @@ func (c *Component) actionsForState(status domain.AgentStatus) []action {
 			c.useConsumableAction(),
 			c.shopAction(),
 			c.joinGuildAction(),
+			c.createGuildAction(),
 		}
 	case domain.AgentOnQuest:
 		return []action{
@@ -203,6 +204,7 @@ func (c *Component) actionsForState(status domain.AgentStatus) []action {
 			c.useCooldownSkipAction(),
 			c.shopAction(),
 			c.joinGuildAction(),
+			c.createGuildAction(),
 		}
 	default:
 		// Retired or unknown

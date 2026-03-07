@@ -94,6 +94,12 @@ func (b *BossBattle) Triples() []message.Triple {
 				Source: source, Timestamp: now, Confidence: 1.0,
 			})
 		}
+		if b.Verdict.NeedsEscalation {
+			triples = append(triples, message.Triple{
+				Subject: entityID, Predicate: "battle.verdict.needs_escalation", Object: true,
+				Source: source, Timestamp: now, Confidence: 1.0,
+			})
+		}
 	}
 
 	// Completed time if set
@@ -184,6 +190,11 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 				b.Verdict = &domain.BattleVerdict{}
 			}
 			b.Verdict.Feedback = domain.AsString(triple.Object)
+		case "battle.verdict.needs_escalation":
+			if b.Verdict == nil {
+				b.Verdict = &domain.BattleVerdict{}
+			}
+			b.Verdict.NeedsEscalation = domain.AsBool(triple.Object)
 
 		// Judges (legacy predicate — kept for backward compatibility)
 		case "battle.judge.id":

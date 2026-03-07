@@ -859,3 +859,357 @@ func guildSkillAffinity(agent *agentprogression.Agent, guild *domain.Guild) floa
 
 	return float64(matches) / float64(len(agent.SkillProficiencies))
 }
+
+// createGuildAction returns the action for autonomously proposing guild creation.
+// Only Master-tier (level 16+) agents can propose founding a guild when they have
+// strong fellowship with enough unguilded agents. The proposal goes through the
+// DM approval gate before creating the guild.
+func (c *Component) createGuildAction() action {
+	return action{
+		name: "create_guild",
+		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
+			if c.guilds == nil {
+				return false
+			}
+			if agent.Level < c.config.GuildCreateMinLevel {
+				return false
+			}
+			if agent.Status != domain.AgentIdle && agent.Status != domain.AgentCooldown {
+				return false
+			}
+			// Only agents who are not already a guildmaster should propose.
+			// GetAgentGuilds uses the in-memory projection which is authoritative.
+			currentGuilds := c.guilds.GetAgentGuilds(agent.ID)
+			for _, gid := range currentGuilds {
+				guild, ok := c.guilds.GetGuild(gid)
+				if ok && guild.FoundedBy == agent.ID {
+					return false // Already a guildmaster
+				}
+			}
+			return true
+		},
+		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
+			return c.executeCreateGuild(ctx, agent)
+		},
+	}
+}
+
+// executeCreateGuild scores fellowship with other agents and proposes a guild
+// if enough candidates have strong affinity with this agent.
+func (c *Component) executeCreateGuild(ctx context.Context, agent *agentprogression.Agent) error {
+	allGuilds := c.guilds.ListGuilds()
+
+	// Collect under-guilded agents from KV cache (exclude self).
+	c.trackersMu.RLock()
+	var candidates []*agentprogression.Agent
+	for _, tracker := range c.trackers {
+		if tracker.agent == nil || tracker.agent.ID == agent.ID {
+			continue
+		}
+		// Only consider agents not already in too many guilds.
+		peerGuilds := c.guilds.GetAgentGuilds(tracker.agent.ID)
+		if len(peerGuilds) < c.config.MaxGuildsPerAgent {
+			agentCopy := *tracker.agent
+			candidates = append(candidates, &agentCopy)
+		}
+	}
+	c.trackersMu.RUnlock()
+
+	// Score fellowship with each candidate. Use authoritative guild count
+	// from GetAgentGuilds (in-memory projection) rather than the potentially
+	// stale Agent.Guilds field from the KV snapshot.
+	var fellows []fellowCandidate
+	for _, candidate := range candidates {
+		peerGuildCount := len(c.guilds.GetAgentGuilds(candidate.ID))
+		score := scoreFellowship(agent, candidate, allGuilds, peerGuildCount)
+		if score > 0.3 { // Minimum fellowship threshold
+			fellows = append(fellows, fellowCandidate{agent: candidate, score: score})
+		}
+	}
+
+	// Need enough fellowship candidates to form a guild.
+	if len(fellows) < c.config.GuildCreateMinFellows {
+		return nil
+	}
+
+	// Sort by fellowship score descending.
+	sort.Slice(fellows, func(i, j int) bool {
+		return fellows[i].score > fellows[j].score
+	})
+
+	// Select diverse candidates (mixed skills) for the founding group.
+	maxFounders := c.config.GuildCreateMaxFounders
+	selected := selectFellowshipCandidates(agent, fellows, maxFounders)
+	if len(selected) < c.config.GuildCreateMinFellows {
+		// Fall back to all fellows if diversity selection came up short.
+		selected = fellows
+		if len(selected) > maxFounders {
+			selected = selected[:maxFounders]
+		}
+	}
+
+	// Build candidate ID list and score map for observability.
+	candidateIDs := make([]domain.AgentID, 0, len(selected))
+	fellowshipScores := make(map[string]float64, len(selected))
+	for _, f := range selected {
+		candidateIDs = append(candidateIDs, f.agent.ID)
+		fellowshipScores[string(f.agent.ID)] = f.score
+	}
+
+	guildName := agentGuildName(agent)
+
+	// Emit proposal intent for observability — before approval gate so
+	// watchers see the proposal regardless of approval outcome.
+	if err := SubjectAutonomyGuildCreateIntent.Publish(ctx, c.deps.NATSClient, GuildCreateIntentPayload{
+		AgentID:          agent.ID,
+		GuildName:        guildName,
+		CandidateIDs:     candidateIDs,
+		FellowshipScores: fellowshipScores,
+		Timestamp:        time.Now(),
+	}); err != nil {
+		c.logger.Warn("failed to publish guild create intent", "error", err)
+	}
+
+	// DM approval gate — guild founding is a high-trust action.
+	if !c.requestApproval(ctx, domain.ApprovalAutonomyGuildCreate,
+		fmt.Sprintf("Agent %s proposes founding guild %q with %d candidates", agent.Name, guildName, len(candidateIDs)),
+		fmt.Sprintf("Guild: %s (founder level: %d, candidates: %d)", guildName, agent.Level, len(candidateIDs)),
+		map[string]any{
+			"agent_id":    agent.ID,
+			"guild_name":  guildName,
+			"candidates":  candidateIDs,
+			"fellowships": fellowshipScores,
+		},
+	) {
+		c.logger.Info("guild creation denied by DM", "agent_id", agent.ID, "guild_name", guildName)
+		return nil
+	}
+
+	// Create the guild via guildformation.
+	guild, err := c.guilds.CreateGuild(ctx, guildformation.CreateGuildParams{
+		Name:      guildName,
+		Culture:   "Founded through fellowship and shared purpose",
+		FounderID: agent.ID,
+		MinLevel:  1,
+	})
+	if err != nil {
+		c.logger.Warn("autonomous guild creation failed",
+			"agent_id", agent.ID,
+			"error", err)
+		return err
+	}
+
+	// Invite top candidates. The founder is already in the guild (added by
+	// CreateGuild), so we invite the remaining fellows up to the minimum.
+	invited := 0
+	for _, f := range selected {
+		if invited >= c.config.GuildCreateMinFellows-1 {
+			break
+		}
+		if joinErr := c.guilds.JoinGuild(ctx, guild.ID, f.agent.ID); joinErr != nil {
+			c.logger.Debug("failed to add fellowship candidate to guild",
+				"guild_id", guild.ID,
+				"agent_id", f.agent.ID,
+				"error", joinErr)
+			continue
+		}
+		invited++
+	}
+
+	c.logger.Info("agent autonomously proposed and created guild",
+		"agent_id", agent.ID,
+		"guild_id", guild.ID,
+		"guild_name", guildName,
+		"candidates", len(candidateIDs),
+		"invited", invited)
+
+	return nil
+}
+
+// =============================================================================
+// FELLOWSHIP SCORING
+// =============================================================================
+// Fellowship measures social affinity between two agents. Higher scores indicate
+// agents who would work well together in a guild. Factors:
+//   - Skill complementarity (40%): diverse skills attract
+//   - Reputation      (30%): high peer review scores indicate good collaborators
+//   - Level proximity (15%): similar level agents relate better
+//   - Guild need      (15%): unguilded agents have higher incentive
+//
+// =============================================================================
+
+const (
+	fellowWeightSkillComplement = 0.40
+	fellowWeightReputation      = 0.30
+	fellowWeightLevelProximity  = 0.15
+	fellowWeightGuildNeed       = 0.15
+)
+
+// fellowCandidate pairs an agent with its computed fellowship score.
+type fellowCandidate struct {
+	agent *agentprogression.Agent
+	score float64
+}
+
+// scoreFellowship computes social affinity between two agents.
+// peerGuildCount is the authoritative count from GetAgentGuilds (not the
+// potentially stale Agent.Guilds field).
+// Returns 0.0-1.0: higher means stronger fellowship bond.
+func scoreFellowship(self, peer *agentprogression.Agent, guilds []*domain.Guild, peerGuildCount int) float64 {
+	// Skill complementarity: agents with different skills complement each other.
+	skillComplement := skillComplementarity(self, peer)
+
+	// Reputation: both agents should have good peer review scores.
+	reputation := averageReputation(self, peer)
+
+	// Level proximity: agents within a few levels relate better.
+	// Decays toward 0 as gap grows; same level = 1.0.
+	levelDiff := levelAbs(self.Level - peer.Level)
+	levelProximity := 1.0 / (1.0 + float64(levelDiff)/5.0)
+
+	// Guild need: unguilded agents have higher incentive to form guilds.
+	// Penalise candidates who already share a guild with the proposer —
+	// they already collaborate; founding a new guild together adds less value.
+	guildNeed := 1.0
+	if peerGuildCount > 0 {
+		guildNeed = 0.3 // Already in a guild, less incentive
+		for _, g := range guilds {
+			if isMemberOf(g, self.ID) && isMemberOf(g, peer.ID) {
+				guildNeed = 0.1 // Already share a guild — minimal incentive
+				break
+			}
+		}
+	}
+
+	return skillComplement*fellowWeightSkillComplement +
+		reputation*fellowWeightReputation +
+		levelProximity*fellowWeightLevelProximity +
+		guildNeed*fellowWeightGuildNeed
+}
+
+// skillComplementarity returns 0.0-1.0 measuring how well two agents'
+// skill sets complement each other. Higher when skills are diverse.
+func skillComplementarity(a, b *agentprogression.Agent) float64 {
+	if len(a.SkillProficiencies) == 0 && len(b.SkillProficiencies) == 0 {
+		return 0.5 // No skill data — neutral
+	}
+
+	allSkills := make(map[domain.SkillTag]bool)
+	sharedSkills := 0
+
+	for skill := range a.SkillProficiencies {
+		allSkills[skill] = true
+	}
+	for skill := range b.SkillProficiencies {
+		if allSkills[skill] {
+			sharedSkills++
+		}
+		allSkills[skill] = true
+	}
+
+	if len(allSkills) == 0 {
+		return 0.5
+	}
+
+	// Complementarity = unique skills / total skills.
+	// Higher when agents bring different skills to the table.
+	uniqueSkills := len(allSkills) - sharedSkills
+	return float64(uniqueSkills) / float64(len(allSkills))
+}
+
+// averageReputation returns the average normalized reputation of two agents.
+// Normalises PeerReviewAvg (1-5 scale) to 0.0-1.0. Defaults to 0.5 when no
+// peer reviews have been recorded yet.
+func averageReputation(a, b *agentprogression.Agent) float64 {
+	repA := 0.5 // Default neutral
+	repB := 0.5
+	if a.Stats.PeerReviewCount > 0 {
+		repA = (a.Stats.PeerReviewAvg - 1.0) / 4.0 // Normalise 1-5 → 0-1
+	}
+	if b.Stats.PeerReviewCount > 0 {
+		repB = (b.Stats.PeerReviewAvg - 1.0) / 4.0
+	}
+	return (repA + repB) / 2.0
+}
+
+// agentGuildName creates a guild name from the founding agent's display name or name.
+func agentGuildName(agent *agentprogression.Agent) string {
+	name := agent.Name
+	if agent.DisplayName != "" {
+		name = agent.DisplayName
+	}
+	return name + "'s Guild"
+}
+
+// selectFellowshipCandidates picks up to limit candidates from fellows,
+// preferring those who bring skills not already represented.
+// Always includes as many as possible from the sorted (best-first) input.
+func selectFellowshipCandidates(founder *agentprogression.Agent, candidates []fellowCandidate, limit int) []fellowCandidate {
+	if len(candidates) <= limit {
+		return candidates
+	}
+
+	selected := make([]fellowCandidate, 0, limit)
+	seenSkills := make(map[domain.SkillTag]bool)
+
+	// Seed seen skills with the founder's proficiencies.
+	for skill := range founder.SkillProficiencies {
+		seenSkills[skill] = true
+	}
+
+	// First pass: prefer candidates who introduce at least one new skill.
+	for _, c := range candidates {
+		if len(selected) >= limit {
+			break
+		}
+		hasNewSkill := false
+		for skill := range c.agent.SkillProficiencies {
+			if !seenSkills[skill] {
+				hasNewSkill = true
+				break
+			}
+		}
+		if hasNewSkill {
+			selected = append(selected, c)
+			for skill := range c.agent.SkillProficiencies {
+				seenSkills[skill] = true
+			}
+		}
+	}
+
+	// Second pass: fill remaining slots from highest fellowship score.
+	if len(selected) < limit {
+		selectedIDs := make(map[domain.AgentID]bool, len(selected))
+		for _, s := range selected {
+			selectedIDs[s.agent.ID] = true
+		}
+		for _, c := range candidates {
+			if len(selected) >= limit {
+				break
+			}
+			if !selectedIDs[c.agent.ID] {
+				selected = append(selected, c)
+			}
+		}
+	}
+
+	return selected
+}
+
+// isMemberOf checks if an agent is a member of a guild.
+func isMemberOf(guild *domain.Guild, agentID domain.AgentID) bool {
+	for _, m := range guild.Members {
+		if m.AgentID == agentID {
+			return true
+		}
+	}
+	return false
+}
+
+// levelAbs returns the absolute value of an integer level difference.
+func levelAbs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}

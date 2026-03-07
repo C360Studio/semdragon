@@ -190,7 +190,7 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 	userMessage := formatOutputForJudge(output)
 
 	// Call the LLM
-	llmResults, feedback, tokenUsage, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
+	llmResults, feedback, needsEscalation, tokenUsage, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
 
 	// Record token usage regardless of success/failure.
 	if e.tokenLedger != nil && (tokenUsage.PromptTokens > 0 || tokenUsage.CompletionTokens > 0) {
@@ -210,7 +210,11 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 		feedback = "LLM judge evaluation complete"
 	}
 
-	return computeVerdict(results, battle, feedback), nil
+	verdict := computeVerdict(results, battle, feedback)
+	if needsEscalation {
+		verdict.Verdict.NeedsEscalation = true
+	}
+	return verdict, nil
 }
 
 // hasLLMJudge checks if any judge in the battle requires LLM evaluation.
@@ -224,16 +228,16 @@ func (e *DomainAwareEvaluator) hasLLMJudge(battle *BossBattle) bool {
 }
 
 // callLLMJudge makes a one-shot LLM call and parses the response into review results.
-// Returns results, overall feedback, token usage from the LLM, and any error.
+// Returns results, overall feedback, needs_escalation flag, token usage from the LLM, and any error.
 func (e *DomainAwareEvaluator) callLLMJudge(
 	ctx context.Context,
 	endpoint *model.EndpointConfig,
 	systemPrompt, userMessage string,
 	battle *BossBattle,
-) ([]domain.ReviewResult, string, agentic.TokenUsage, error) {
+) ([]domain.ReviewResult, string, bool, agentic.TokenUsage, error) {
 	client, err := agenticmodel.NewClient(endpoint)
 	if err != nil {
-		return nil, "", agentic.TokenUsage{}, fmt.Errorf("create LLM client: %w", err)
+		return nil, "", false, agentic.TokenUsage{}, fmt.Errorf("create LLM client: %w", err)
 	}
 
 	req := agentic.AgentRequest{
@@ -248,15 +252,15 @@ func (e *DomainAwareEvaluator) callLLMJudge(
 
 	resp, err := client.ChatCompletion(ctx, req)
 	if err != nil {
-		return nil, "", agentic.TokenUsage{}, fmt.Errorf("LLM chat completion: %w", err)
+		return nil, "", false, agentic.TokenUsage{}, fmt.Errorf("LLM chat completion: %w", err)
 	}
 
 	if resp.Status == agentic.StatusError {
-		return nil, "", resp.TokenUsage, fmt.Errorf("LLM returned error: %s", resp.Error)
+		return nil, "", false, resp.TokenUsage, fmt.Errorf("LLM returned error: %s", resp.Error)
 	}
 
-	results, feedback, parseErr := parseJudgeResponse(resp.Message.Content, battle)
-	return results, feedback, resp.TokenUsage, parseErr
+	results, feedback, needsEscalation, parseErr := parseJudgeResponse(resp.Message.Content, battle)
+	return results, feedback, needsEscalation, resp.TokenUsage, parseErr
 }
 
 // judgeResponse is the expected JSON structure from the LLM judge.
@@ -267,25 +271,26 @@ type judgeResponse struct {
 		Reasoning string  `json:"reasoning"`
 	} `json:"criteria"`
 	OverallFeedback string `json:"overall_feedback"`
+	NeedsEscalation bool   `json:"needs_escalation,omitempty"`
 }
 
 // parseJudgeResponse extracts per-criterion scores from the LLM response.
-// Returns results, overall feedback, and any error.
+// Returns results, overall feedback, needs_escalation flag, and any error.
 // Defensively handles malformed responses by returning an error (caller falls back to heuristic).
-func parseJudgeResponse(content string, battle *BossBattle) ([]domain.ReviewResult, string, error) {
+func parseJudgeResponse(content string, battle *BossBattle) ([]domain.ReviewResult, string, bool, error) {
 	// Extract JSON from response (may be wrapped in markdown code block)
 	jsonStr := extractJSON(content)
 	if jsonStr == "" {
-		return nil, "", fmt.Errorf("no JSON found in LLM response")
+		return nil, "", false, fmt.Errorf("no JSON found in LLM response")
 	}
 
 	var resp judgeResponse
 	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
-		return nil, "", fmt.Errorf("parse judge JSON: %w", err)
+		return nil, "", false, fmt.Errorf("parse judge JSON: %w", err)
 	}
 
 	if len(resp.Criteria) == 0 {
-		return nil, "", fmt.Errorf("judge returned no criteria scores")
+		return nil, "", false, fmt.Errorf("judge returned no criteria scores")
 	}
 
 	// Map LLM scores to review results, matching by criterion name
@@ -316,10 +321,10 @@ func parseJudgeResponse(content string, battle *BossBattle) ([]domain.ReviewResu
 	}
 
 	if len(results) == 0 {
-		return nil, "", fmt.Errorf("no matching criteria in judge response")
+		return nil, "", false, fmt.Errorf("no matching criteria in judge response")
 	}
 
-	return results, resp.OverallFeedback, nil
+	return results, resp.OverallFeedback, resp.NeedsEscalation, nil
 }
 
 // mergeResults combines LLM results with heuristic fallback for any unscored criteria.

@@ -264,6 +264,7 @@ const (
 	ApprovalAutonomyClaim      ApprovalType = "autonomy_claim"
 	ApprovalAutonomyShop       ApprovalType = "autonomy_shop"
 	ApprovalAutonomyGuild      ApprovalType = "autonomy_guild"
+	ApprovalAutonomyGuildCreate ApprovalType = "autonomy_guild_create"
 	ApprovalAutonomyUse        ApprovalType = "autonomy_use"
 )
 

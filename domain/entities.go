@@ -109,10 +109,11 @@ const (
 // This type lives in domain because Quest.Verdict references it,
 // making it a shared contract between questboard and bossbattle processors.
 type BattleVerdict struct {
-	Passed       bool    `json:"passed"`
-	QualityScore float64 `json:"quality_score"`
-	XPAwarded    int64   `json:"xp_awarded"`
-	XPPenalty    int64   `json:"xp_penalty"`
-	Feedback     string  `json:"feedback"`
-	LevelChange  int     `json:"level_change"`
+	Passed          bool    `json:"passed"`
+	QualityScore    float64 `json:"quality_score"`
+	XPAwarded       int64   `json:"xp_awarded"`
+	XPPenalty       int64   `json:"xp_penalty"`
+	Feedback        string  `json:"feedback"`
+	LevelChange     int     `json:"level_change"`
+	NeedsEscalation bool   `json:"needs_escalation,omitempty"`
 }

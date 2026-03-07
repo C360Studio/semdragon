@@ -97,7 +97,7 @@ var SoftwarePromptCatalog = promptmanager.DomainCatalog{
 			{Name: "completeness", Weight: 0.3, Threshold: 0.6, Description: "All requirements addressed"},
 			{Name: "quality", Weight: 0.3, Threshold: 0.5, Description: "Code quality and maintainability"},
 		},
-		AutoPassDifficulties: []domain.QuestDifficulty{domain.DifficultyTrivial},
+		AutoPassDifficulties: []domain.QuestDifficulty{},
 		DefaultJudges: []domain.Judge{
 			{ID: "judge-auto", Type: domain.JudgeAutomated},
 			{ID: "judge-llm", Type: domain.JudgeLLM},

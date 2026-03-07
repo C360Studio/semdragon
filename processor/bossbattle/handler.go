@@ -60,17 +60,12 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 
 	// Extract current quest status from triples
 	var currentStatus domain.QuestStatus
-	var needsReview bool
 	var reviewLevel domain.ReviewLevel
 	for _, triple := range entityState.Triples {
 		switch triple.Predicate {
 		case "quest.status.state":
 			if v, ok := triple.Object.(string); ok {
 				currentStatus = domain.QuestStatus(v)
-			}
-		case "quest.review.needs_review":
-			if v, ok := triple.Object.(bool); ok {
-				needsReview = v
 			}
 		case "quest.review.level":
 			if v, ok := triple.Object.(float64); ok {
@@ -105,10 +100,9 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Auto-pass: quests without review requirement, or with auto review level,
-	// or whose difficulty is in the domain's auto-pass list.
-	if !needsReview || c.shouldAutoPass(quest) ||
-		(c.config.RequireReviewLevel && reviewLevel == domain.ReviewAuto) {
+	// Auto-pass: only when difficulty is in the domain's auto-pass list AND
+	// review level is explicitly set to ReviewAuto.
+	if c.shouldAutoPass(quest) && reviewLevel == domain.ReviewAuto {
 		c.autoPassQuest(ctx, quest)
 		return
 	}
@@ -482,6 +476,10 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				if ab.quest.StartedAt != nil {
 					ab.quest.Duration = verdictNow.Sub(*ab.quest.StartedAt)
 				}
+			} else if ab.battle.Verdict.NeedsEscalation {
+				ab.quest.Status = domain.QuestEscalated
+				ab.quest.Escalated = true
+				ab.quest.FailureReason = ab.battle.Verdict.Feedback
 			} else {
 				ab.quest.Status = domain.QuestFailed
 				ab.quest.FailureReason = ab.battle.Verdict.Feedback
@@ -644,10 +642,11 @@ func battleFromEntityState(entity *graph.EntityState) *BossBattle {
 		battle.Verdict = &domain.BattleVerdict{
 			Passed:       semBattle.Verdict.Passed,
 			QualityScore: semBattle.Verdict.QualityScore,
-			XPAwarded:    semBattle.Verdict.XPAwarded,
-			XPPenalty:    semBattle.Verdict.XPPenalty,
-			Feedback:     semBattle.Verdict.Feedback,
-			LevelChange:  semBattle.Verdict.LevelChange,
+			XPAwarded:       semBattle.Verdict.XPAwarded,
+			XPPenalty:       semBattle.Verdict.XPPenalty,
+			Feedback:        semBattle.Verdict.Feedback,
+			LevelChange:     semBattle.Verdict.LevelChange,
+			NeedsEscalation: semBattle.Verdict.NeedsEscalation,
 		}
 	}
 	return battle

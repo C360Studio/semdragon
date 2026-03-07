@@ -99,7 +99,7 @@ var ResearchPromptCatalog = promptmanager.DomainCatalog{
 			{Name: "evidence", Weight: 0.35, Threshold: 0.6, Description: "Evidence supports conclusions"},
 			{Name: "clarity", Weight: 0.25, Threshold: 0.5, Description: "Clear presentation of findings"},
 		},
-		AutoPassDifficulties: []domain.QuestDifficulty{domain.DifficultyTrivial},
+		AutoPassDifficulties: []domain.QuestDifficulty{},
 		DefaultJudges: []domain.Judge{
 			{ID: "judge-auto", Type: domain.JudgeAutomated},
 			{ID: "judge-llm", Type: domain.JudgeLLM},

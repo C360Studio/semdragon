@@ -1817,7 +1817,7 @@ func TestParseJudgeResponse_ValidJSON(t *testing.T) {
 	}
 	content := `{"criteria": [{"name": "correctness", "score": 0.9, "reasoning": "Good"}, {"name": "completeness", "score": 0.5, "reasoning": "Missing parts"}], "overall_feedback": "Mostly good"}`
 
-	results, feedback, err := parseJudgeResponse(content, battle)
+	results, feedback, needsEsc, err := parseJudgeResponse(content, battle)
 	if err != nil {
 		t.Fatalf("parseJudgeResponse() error = %v", err)
 	}
@@ -1826,6 +1826,9 @@ func TestParseJudgeResponse_ValidJSON(t *testing.T) {
 	}
 	if feedback != "Mostly good" {
 		t.Errorf("feedback = %q, want %q", feedback, "Mostly good")
+	}
+	if needsEsc {
+		t.Error("needsEscalation should be false for normal evaluation")
 	}
 
 	// correctness: 0.9 >= 0.7 → passed
@@ -1846,7 +1849,7 @@ func TestParseJudgeResponse_WrappedInCodeBlock(t *testing.T) {
 	}
 	content := "Here is my evaluation:\n```json\n{\"criteria\": [{\"name\": \"quality\", \"score\": 0.8, \"reasoning\": \"Good\"}], \"overall_feedback\": \"OK\"}\n```"
 
-	results, _, err := parseJudgeResponse(content, battle)
+	results, _, _, err := parseJudgeResponse(content, battle)
 	if err != nil {
 		t.Fatalf("parseJudgeResponse() error = %v", err)
 	}
@@ -1857,7 +1860,7 @@ func TestParseJudgeResponse_WrappedInCodeBlock(t *testing.T) {
 
 func TestParseJudgeResponse_NoJSON(t *testing.T) {
 	battle := &BossBattle{}
-	_, _, err := parseJudgeResponse("I cannot evaluate this.", battle)
+	_, _, _, err := parseJudgeResponse("I cannot evaluate this.", battle)
 	if err == nil {
 		t.Error("parseJudgeResponse() should fail when no JSON present")
 	}
@@ -1871,7 +1874,7 @@ func TestParseJudgeResponse_UnknownCriterionSkipped(t *testing.T) {
 	}
 	content := `{"criteria": [{"name": "known", "score": 0.7, "reasoning": "OK"}, {"name": "unknown", "score": 0.9, "reasoning": "??"}]}`
 
-	results, _, err := parseJudgeResponse(content, battle)
+	results, _, _, err := parseJudgeResponse(content, battle)
 	if err != nil {
 		t.Fatalf("parseJudgeResponse() error = %v", err)
 	}
@@ -1892,7 +1895,7 @@ func TestParseJudgeResponse_ClampScores(t *testing.T) {
 	}
 	content := `{"criteria": [{"name": "c1", "score": 1.5, "reasoning": "over"}, {"name": "c2", "score": -0.3, "reasoning": "under"}]}`
 
-	results, _, err := parseJudgeResponse(content, battle)
+	results, _, _, err := parseJudgeResponse(content, battle)
 	if err != nil {
 		t.Fatalf("parseJudgeResponse() error = %v", err)
 	}

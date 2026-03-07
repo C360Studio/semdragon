@@ -18,6 +18,10 @@ type Config struct {
 
 	// EnableEvaluation enables automatic boss battle evaluation on submission.
 	EnableEvaluation bool `json:"enable_evaluation" schema:"type:bool,description:Enable automatic evaluation"`
+
+	// AutoPartyAboveDifficulty sets the difficulty threshold above which quests
+	// automatically get PartyRequired=true. Nil means disabled (no auto-party).
+	AutoPartyAboveDifficulty *domain.QuestDifficulty `json:"auto_party_above_difficulty,omitempty" schema:"type:int,description:Auto-party difficulty threshold (nil=disabled)"`
 }
 
 // DefaultConfig returns a configuration with sensible defaults.

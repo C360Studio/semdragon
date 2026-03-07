@@ -62,11 +62,25 @@ func (c *Component) PostQuest(ctx context.Context, quest domain.Quest) (*domain.
 	if quest.MaxAttempts == 0 {
 		quest.MaxAttempts = c.config.DefaultMaxAttempts
 	}
+	// Ensure all quests go through boss battle review by default
+	quest.Constraints.RequireReview = true
+	if quest.Constraints.ReviewLevel == 0 {
+		quest.Constraints.ReviewLevel = domain.ReviewStandard
+	}
 	if quest.BaseXP == 0 {
 		quest.BaseXP = domain.DefaultXPForDifficulty(quest.Difficulty)
 	}
 	if quest.MinTier == 0 {
 		quest.MinTier = domain.TierFromDifficulty(quest.Difficulty)
+	}
+
+	// Auto-party: if quest difficulty meets or exceeds the configured threshold,
+	// mark it as requiring a party.
+	if c.config.AutoPartyAboveDifficulty != nil && quest.Difficulty >= *c.config.AutoPartyAboveDifficulty {
+		quest.PartyRequired = true
+		if quest.MinPartySize < 2 {
+			quest.MinPartySize = 2
+		}
 	}
 
 	// Emit quest to graph system (KV write is the event — watchers are notified)

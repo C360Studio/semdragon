@@ -168,6 +168,15 @@ func (c *Component) OutputPorts() []component.Port {
 			},
 		},
 		{
+			Name:        "guild-create-intent",
+			Direction:   component.DirectionOutput,
+			Required:    false,
+			Description: "Agent proposes founding a guild",
+			Config: &component.NATSPort{
+				Subject: domain.PredicateGuildProposed,
+			},
+		},
+		{
 			Name:        "use-intent",
 			Direction:   component.DirectionOutput,
 			Required:    false,
@@ -298,6 +307,24 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Type:        "int",
 				Description: "Number of guild choices to evaluate before picking",
 				Default:     5,
+				Category:    "guild",
+			},
+			"guild_create_min_level": {
+				Type:        "int",
+				Description: "Minimum agent level to propose founding a guild (Master tier)",
+				Default:     16,
+				Category:    "guild",
+			},
+			"guild_create_min_fellows": {
+				Type:        "int",
+				Description: "Minimum fellowship candidates to propose a guild",
+				Default:     3,
+				Category:    "guild",
+			},
+			"guild_create_max_founders": {
+				Type:        "int",
+				Description: "Maximum founding members to invite when creating a guild",
+				Default:     6,
 				Category:    "guild",
 			},
 			"dm_mode": {

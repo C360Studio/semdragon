@@ -153,19 +153,19 @@ test.describe('DM Chat - Mock LLM', () => {
 		await waitForHydration(page);
 	});
 
-	test('panel toggles between collapsed and expanded', async ({ page }) => {
+	test('panel toggles between expanded and collapsed', async ({ page }) => {
 		const input = page.getByTestId('chat-input');
 
-		// Initially collapsed — input not visible
-		await expect(input).not.toBeVisible();
-
-		// Click toggle to expand
-		await page.getByTestId('chat-toggle').click();
+		// Initially expanded — input visible
 		await expect(input).toBeVisible();
 
 		// Click toggle to collapse
 		await page.getByTestId('chat-toggle').click();
 		await expect(input).not.toBeVisible();
+
+		// Click toggle to expand
+		await page.getByTestId('chat-toggle').click();
+		await expect(input).toBeVisible();
 	});
 
 	test('send message and receive DM response', async ({ page }) => {

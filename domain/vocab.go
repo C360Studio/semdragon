@@ -196,6 +196,9 @@ const (
 
 	// PredicateGuildAutoJoined - Agent auto-recruited into a guild.
 	PredicateGuildAutoJoined = "guild.formation.autojoined"
+
+	// PredicateGuildProposed - Agent proposed founding a guild (awaiting DM approval).
+	PredicateGuildProposed = "guild.formation.proposed"
 )
 
 // --- DM Session Predicates ---
@@ -508,6 +511,10 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateGuildAutoJoined,
 		vocabulary.WithDescription("Agent auto-recruited into a guild"),
 		vocabulary.WithDataType("GuildAutoJoinedPayload"),
+	)
+	vocabulary.Register(PredicateGuildProposed,
+		vocabulary.WithDescription("Agent proposed founding a guild"),
+		vocabulary.WithDataType("GuildCreateIntentPayload"),
 	)
 
 	// DM session predicates
