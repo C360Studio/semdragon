@@ -27,6 +27,7 @@
 
 	let input = $state('');
 	let messagesContainer: HTMLElement | undefined = $state();
+	let inputEl: HTMLTextAreaElement | undefined = $state();
 
 	// Auto-scroll to bottom when new messages arrive
 	$effect(() => {
@@ -77,6 +78,24 @@
 				`Quest chain posted: ${quests.length} quests created.`
 			);
 		}
+	}
+
+	function handleEditQuest(brief: QuestBrief) {
+		input = `/quest Revise: "${brief.title}" \u2014 `;
+		setTimeout(() => inputEl?.focus(), 0);
+	}
+
+	function handleEditChain(chain: QuestChainBrief) {
+		input = `/quest Revise the ${chain.quests.length}-quest chain \u2014 `;
+		setTimeout(() => inputEl?.focus(), 0);
+	}
+
+	function handleDismissQuest(msgIndex: number) {
+		chatStore.dismissQuestBrief(msgIndex);
+	}
+
+	function handleDismissChain(msgIndex: number) {
+		chatStore.dismissQuestChain(msgIndex);
 	}
 </script>
 
@@ -134,7 +153,7 @@
 		<div class="chat-body" style="height: {chatStore.height}px">
 			<!-- Messages -->
 			<div class="messages-scroll" bind:this={messagesContainer}>
-				{#each chatStore.messages as msg}
+				{#each chatStore.messages as msg, i}
 					<ChatMessageComponent
 						role={msg.role}
 						content={msg.content}
@@ -142,6 +161,10 @@
 						questChain={msg.questChain}
 						onPostQuest={handlePostQuest}
 						onPostChain={handlePostChain}
+						onEditQuest={msg.questBrief ? handleEditQuest : undefined}
+						onEditChain={msg.questChain ? handleEditChain : undefined}
+						onDismissQuest={msg.questBrief ? () => handleDismissQuest(i) : undefined}
+						onDismissChain={msg.questChain ? () => handleDismissChain(i) : undefined}
 					/>
 				{:else}
 					<div class="empty-chat">
@@ -206,6 +229,7 @@
 					class="chat-input"
 					placeholder="Ask the DM... (try /quest or /help)"
 					bind:value={input}
+					bind:this={inputEl}
 					onkeydown={handleKeyDown}
 					disabled={chatStore.loading}
 					rows={1}

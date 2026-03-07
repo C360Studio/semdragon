@@ -15,10 +15,24 @@
 		questChain?: QuestChainBrief | null;
 		onPostQuest?: (brief: QuestBrief) => void;
 		onPostChain?: (chain: QuestChainBrief) => void;
+		onEditQuest?: (brief: QuestBrief) => void;
+		onEditChain?: (chain: QuestChainBrief) => void;
+		onDismissQuest?: () => void;
+		onDismissChain?: () => void;
 	}
 
-	let { role, content, questBrief, questChain, onPostQuest, onPostChain }: ChatMessageProps =
-		$props();
+	let {
+		role,
+		content,
+		questBrief,
+		questChain,
+		onPostQuest,
+		onPostChain,
+		onEditQuest,
+		onEditChain,
+		onDismissQuest,
+		onDismissChain
+	}: ChatMessageProps = $props();
 
 	const QuestDifficultyNames: Record<number, string> = {
 		0: 'Trivial',
@@ -69,16 +83,39 @@
 					{/each}
 				</ul>
 			{/if}
-			{#if onPostQuest}
-				<button
-					type="button"
-					class="post-button"
-					onclick={() => onPostQuest?.(questBrief!)}
-					data-testid="post-quest-button"
-				>
-					Post Quest
-				</button>
-			{/if}
+			<div class="card-actions">
+				{#if onPostQuest}
+					<button
+						type="button"
+						class="post-button"
+						onclick={() => onPostQuest?.(questBrief!)}
+						data-testid="post-quest-button"
+					>
+						Post Quest
+					</button>
+				{/if}
+				{#if onEditQuest}
+					<button
+						type="button"
+						class="edit-button"
+						onclick={() => onEditQuest?.(questBrief!)}
+						data-testid="edit-quest-button"
+					>
+						Edit
+					</button>
+				{/if}
+				{#if onDismissQuest}
+					<button
+						type="button"
+						class="dismiss-button"
+						onclick={() => onDismissQuest?.()}
+						title="Dismiss"
+						data-testid="dismiss-quest-button"
+					>
+						&times;
+					</button>
+				{/if}
+			</div>
 		</div>
 	{/if}
 
@@ -96,16 +133,39 @@
 					{/if}
 				</div>
 			{/each}
-			{#if onPostChain}
-				<button
-					type="button"
-					class="post-button"
-					onclick={() => onPostChain?.(questChain!)}
-					data-testid="post-chain-button"
-				>
-					Post Chain
-				</button>
-			{/if}
+			<div class="card-actions">
+				{#if onPostChain}
+					<button
+						type="button"
+						class="post-button"
+						onclick={() => onPostChain?.(questChain!)}
+						data-testid="post-chain-button"
+					>
+						Post Chain
+					</button>
+				{/if}
+				{#if onEditChain}
+					<button
+						type="button"
+						class="edit-button"
+						onclick={() => onEditChain?.(questChain!)}
+						data-testid="edit-chain-button"
+					>
+						Edit
+					</button>
+				{/if}
+				{#if onDismissChain}
+					<button
+						type="button"
+						class="dismiss-button"
+						onclick={() => onDismissChain?.()}
+						title="Dismiss"
+						data-testid="dismiss-chain-button"
+					>
+						&times;
+					</button>
+				{/if}
+			</div>
 		</div>
 	{/if}
 </div>
@@ -230,9 +290,15 @@
 		color: var(--ui-text-tertiary);
 	}
 
-	/* Post button */
-	.post-button {
+	/* Card action buttons */
+	.card-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs);
 		margin-top: var(--spacing-sm);
+	}
+
+	.post-button {
 		padding: var(--spacing-xs) var(--spacing-md);
 		border: none;
 		border-radius: var(--radius-md);
@@ -246,5 +312,38 @@
 
 	.post-button:hover {
 		opacity: 0.9;
+	}
+
+	.edit-button {
+		padding: var(--spacing-xs) var(--spacing-sm);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: transparent;
+		color: var(--ui-text-secondary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.edit-button:hover {
+		color: var(--ui-text-primary);
+		border-color: var(--ui-text-secondary);
+	}
+
+	.dismiss-button {
+		padding: var(--spacing-xs) var(--spacing-xs);
+		border: none;
+		border-radius: var(--radius-md);
+		background: transparent;
+		color: var(--ui-text-tertiary);
+		font-size: 0.875rem;
+		line-height: 1;
+		cursor: pointer;
+		transition: color 150ms ease;
+		margin-left: auto;
+	}
+
+	.dismiss-button:hover {
+		color: var(--ui-text-primary);
 	}
 </style>

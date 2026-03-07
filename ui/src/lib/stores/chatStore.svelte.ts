@@ -347,6 +347,22 @@ function clearMessages() {
 	clearLocalStorage();
 }
 
+function dismissQuestBrief(msgIndex: number) {
+	if (msgIndex >= 0 && msgIndex < messages.length) {
+		messages[msgIndex] = { ...messages[msgIndex], questBrief: null };
+		messages = [...messages];
+		saveToLocalStorage();
+	}
+}
+
+function dismissQuestChain(msgIndex: number) {
+	if (msgIndex >= 0 && msgIndex < messages.length) {
+		messages[msgIndex] = { ...messages[msgIndex], questChain: null };
+		messages = [...messages];
+		saveToLocalStorage();
+	}
+}
+
 /**
  * Restore chat from server-side KV session.
  * Reconstructs ChatMessage[] from DMChatTurns.
@@ -411,5 +427,7 @@ export const chatStore = {
 	postQuest,
 	postChain,
 	clearMessages,
+	dismissQuestBrief,
+	dismissQuestChain,
 	restoreFromServer
 };
