@@ -450,8 +450,11 @@ test.describe('DM Chat UI Integration @integration', () => {
 
 		// 4. The chat panel should confirm the quest was posted.
 		// The chatStore appends a success confirmation message after a successful POST.
-		const messages = page.getByTestId('chat-message');
-		await expect(messages.last()).toContainText('posted', { timeout: 10_000 });
+		// Use getByText instead of messages.last() to avoid race where the LLM
+		// response is still the last message before the confirmation renders.
+		await expect(
+			page.getByTestId('chat-message').filter({ hasText: /posted/i })
+		).toBeVisible({ timeout: 10_000 });
 	});
 
 	test('quest chain preview renders with dependency information', async ({ page }) => {

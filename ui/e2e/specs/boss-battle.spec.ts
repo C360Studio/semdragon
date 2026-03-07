@@ -63,20 +63,16 @@ test.describe('Boss Battle - Auto Trigger', () => {
 		expect(battle.id).toBeTruthy();
 	});
 
-	test('no battle created for quest without review', async ({ lifecycleApi }) => {
+	test('quest created without explicit review still triggers battle', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
 		test.setTimeout(120_000);
 
-		// 1. Capture existing battles before the test
-		const battlesBefore = await lifecycleApi.listBattles();
-		const battleIdsBefore = new Set(battlesBefore.map((b) => b.id));
-
-		// 2. Create a quest without review
-		const quest = await lifecycleApi.createQuest('E2E no-battle quest', 1);
+		// All quests now go through review (PostQuest forces RequireReview=true).
+		// Verify that even a quest created without explicit review_level gets a battle.
+		const quest = await lifecycleApi.createQuest('E2E implicit-review quest', 1);
 		const questInstance = extractInstance(quest.id);
 
-		// 3. Recruit a fresh agent and complete the full lifecycle
-		const agent = await lifecycleApi.recruitAgent('battle-nobattle-agent');
+		const agent = await lifecycleApi.recruitAgent('battle-implicit-agent');
 		const agentInstance = extractInstance(agent.id);
 
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);
@@ -85,33 +81,25 @@ test.describe('Boss Battle - Auto Trigger', () => {
 		const startRes = await lifecycleApi.startQuest(questInstance);
 		expect(startRes.ok, `start failed: ${startRes.status}`).toBeTruthy();
 
-		// 4. The agentic loop processes the quest and auto-completes (no review).
-		//    Wait for the quest to reach completed.
-		await retry(
+		// Poll for a battle matching this quest — should appear since all quests
+		// now require review.
+		const battle = await retry(
 			async () => {
-				const q = await lifecycleApi.getQuest(questInstance);
-				if (q.status !== 'completed') {
-					throw new Error(`Expected completed, got ${q.status}`);
+				const battles = await lifecycleApi.listBattles();
+				const match = battles.find(
+					(b) =>
+						b.quest_id === quest.id ||
+						extractInstance(b.quest_id ?? '') === questInstance
+				);
+				if (!match) {
+					throw new Error('Battle for quest not found yet');
 				}
+				return match;
 			},
-			{ timeout: 90000, interval: 1000, message: 'Quest did not complete without review' }
+			{ timeout: 90000, interval: 1000, message: 'No battle was created for the implicit-review quest' }
 		);
 
-		// 5. Give the system a moment to process any async events, then check battles.
-		//    No new battle should reference this quest.
-		await new Promise((resolve) => setTimeout(resolve, 1000));
-
-		const battlesAfter = await lifecycleApi.listBattles();
-		const newBattles = battlesAfter.filter((b) => !battleIdsBefore.has(b.id));
-		const relatedBattle = newBattles.find(
-			(b) =>
-				b.quest_id === quest.id ||
-				extractInstance(b.quest_id ?? '') === questInstance
-		);
-
-		expect(
-			relatedBattle,
-			'A battle was unexpectedly created for a quest without review'
-		).toBeUndefined();
+		expect(battle).toBeTruthy();
+		expect(battle.id).toBeTruthy();
 	});
 });

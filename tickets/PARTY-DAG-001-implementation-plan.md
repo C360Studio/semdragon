@@ -40,7 +40,7 @@ assigned: go-developer
 depends_on: []
 blocks: [PDAG-02, PDAG-03, PDAG-04, PDAG-05]
 reviewer: go-reviewer
-status: ready
+status: completed
 ```
 
 ### Deliverables
@@ -114,7 +114,7 @@ assigned: go-developer
 depends_on: [PDAG-01]
 blocks: [PDAG-03]
 reviewer: go-reviewer
-status: blocked
+status: completed
 ```
 
 ### Deliverables
@@ -161,7 +161,7 @@ assigned: go-developer
 depends_on: [PDAG-01, PDAG-02]
 blocks: [PDAG-06]
 reviewer: go-reviewer
-status: blocked
+status: completed
 ```
 
 ### Deliverables
@@ -236,7 +236,7 @@ assigned: go-developer
 depends_on: [PDAG-01]
 blocks: [PDAG-07]
 reviewer: go-reviewer
-status: blocked
+status: completed
 ```
 
 ### Deliverables
@@ -300,7 +300,7 @@ assigned: go-developer
 depends_on: [PDAG-01]
 blocks: [PDAG-07]
 reviewer: go-reviewer
-status: blocked
+status: completed
 ```
 
 ### Deliverables
@@ -367,7 +367,7 @@ assigned: go-developer
 depends_on: [PDAG-03]
 blocks: [PDAG-07]
 reviewer: go-reviewer
-status: blocked
+status: completed
 ```
 
 ### Deliverables
@@ -440,7 +440,7 @@ assigned: svelte-developer
 depends_on: [PDAG-03, PDAG-04, PDAG-05, PDAG-06]
 blocks: []
 reviewer: svelte-reviewer
-status: blocked
+status: completed
 ```
 
 ### Deliverables
@@ -527,7 +527,7 @@ assigned: technical-writer
 depends_on: [PDAG-03]
 blocks: []
 reviewer: go-reviewer
-status: blocked
+status: completed
 ```
 
 ### Deliverables
