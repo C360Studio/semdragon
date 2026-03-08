@@ -96,6 +96,14 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 		return
 	}
 
+	// Sub-quests in a party DAG are reviewed by the party lead via questdagexec,
+	// not by the automated boss battle judge. Skip to avoid racing.
+	if quest.ParentQuest != nil {
+		c.logger.Debug("skipping boss battle for DAG sub-quest (lead reviews instead)",
+			"quest", quest.ID, "parent", *quest.ParentQuest)
+		return
+	}
+
 	// Start battle with background context (watcher goroutine context)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -476,10 +484,6 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				if ab.quest.StartedAt != nil {
 					ab.quest.Duration = verdictNow.Sub(*ab.quest.StartedAt)
 				}
-			} else if ab.battle.Verdict.NeedsEscalation {
-				ab.quest.Status = domain.QuestEscalated
-				ab.quest.Escalated = true
-				ab.quest.FailureReason = ab.battle.Verdict.Feedback
 			} else {
 				ab.quest.Status = domain.QuestFailed
 				ab.quest.FailureReason = ab.battle.Verdict.Feedback
@@ -491,6 +495,11 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 					"quest", ab.quest.ID,
 					"status", ab.quest.Status,
 					"error", questErr)
+			}
+
+			// Create DM peer review entity — feeds into agentprogression running averages
+			if result != nil && result.PeerRatings != nil && ab.quest.ClaimedBy != nil {
+				c.emitDMPeerReview(persistCtx, ab.quest, result.PeerRatings, ab.battle.Verdict.Feedback)
 			}
 		}
 	} else {
@@ -571,6 +580,40 @@ func (c *Component) createGraphClient(_ context.Context) error {
 	return nil
 }
 
+// emitDMPeerReview creates a PeerReview entity for the DM's review of an agent.
+// This feeds into the existing agentprogression peer review pipeline.
+func (c *Component) emitDMPeerReview(ctx context.Context, quest *domain.Quest, ratings *domain.ReviewRatings, feedback string) {
+	now := time.Now()
+	reviewID := domain.PeerReviewID(c.boardConfig.PeerReviewEntityID(c.generateID()))
+
+	review := &domain.PeerReview{
+		ID:       reviewID,
+		Status:   domain.PeerReviewCompleted,
+		QuestID:  quest.ID,
+		LeaderID: domain.AgentID("dm"),
+		MemberID: *quest.ClaimedBy,
+		IsSoloTask: quest.PartyID == nil,
+		LeaderReview: &domain.ReviewSubmission{
+			ReviewerID:  domain.AgentID("dm"),
+			RevieweeID:  *quest.ClaimedBy,
+			Direction:   domain.ReviewDirectionDMToAgent,
+			Ratings:     *ratings,
+			Explanation: feedback,
+			SubmittedAt: now,
+		},
+		LeaderAvgRating: ratings.Average(),
+		CreatedAt:       now,
+		CompletedAt:     &now,
+	}
+
+	if err := c.graph.EmitEntity(ctx, review, domain.PredicateReviewCompleted); err != nil {
+		c.logger.Error("failed to emit DM peer review",
+			"quest", quest.ID,
+			"agent", *quest.ClaimedBy,
+			"error", err)
+	}
+}
+
 // =============================================================================
 // HELPERS
 // =============================================================================
@@ -642,11 +685,10 @@ func battleFromEntityState(entity *graph.EntityState) *BossBattle {
 		battle.Verdict = &domain.BattleVerdict{
 			Passed:       semBattle.Verdict.Passed,
 			QualityScore: semBattle.Verdict.QualityScore,
-			XPAwarded:       semBattle.Verdict.XPAwarded,
-			XPPenalty:       semBattle.Verdict.XPPenalty,
-			Feedback:        semBattle.Verdict.Feedback,
-			LevelChange:     semBattle.Verdict.LevelChange,
-			NeedsEscalation: semBattle.Verdict.NeedsEscalation,
+			XPAwarded:    semBattle.Verdict.XPAwarded,
+			XPPenalty:    semBattle.Verdict.XPPenalty,
+			Feedback:     semBattle.Verdict.Feedback,
+			LevelChange:  semBattle.Verdict.LevelChange,
 		}
 	}
 	return battle

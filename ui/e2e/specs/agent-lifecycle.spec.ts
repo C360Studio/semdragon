@@ -93,21 +93,24 @@ test.describe('Agent Lifecycle', () => {
 		const startRes = await lifecycleApi.startQuest(questInstance);
 		expect(startRes.ok, `start failed: ${startRes.status}`).toBeTruthy();
 
-		// After completion the agent should return to idle
-		const backToIdle = await retry(
+		// After completion the agent should reach a post-quest status.
+		// With autonomy enabled, the agent may immediately claim another quest
+		// (on_quest) or enter cooldown before returning to idle.
+		const postQuest = await retry(
 			async () => {
 				const a = await lifecycleApi.getAgent(agentInstance);
-				if (a.status !== 'idle') {
-					throw new Error(`Expected idle, got ${a.status}`);
+				const validStatuses = ['idle', 'cooldown', 'on_quest'];
+				if (!validStatuses.includes(a.status)) {
+					throw new Error(`Expected one of ${validStatuses.join('/')}, got ${a.status}`);
 				}
 				return a;
 			},
 			{
 				timeout: 90000,
 				interval: 1000,
-				message: 'Agent did not return to idle after quest completion'
+				message: 'Agent did not reach post-quest status after quest completion'
 			}
 		);
-		expect(backToIdle.status).toBe('idle');
+		expect(['idle', 'cooldown', 'on_quest']).toContain(postQuest.status);
 	});
 });

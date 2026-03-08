@@ -29,7 +29,7 @@ import (
 func newSSETestService(t *testing.T) (*Service, *natsclient.Client) {
 	t.Helper()
 
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	client := testClient.Client
 
 	boardConfig := &domain.BoardConfig{

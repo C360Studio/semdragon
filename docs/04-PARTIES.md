@@ -213,8 +213,8 @@ members. The lead responds with a DAG proposal:
 }
 ```
 
-`questdagexec` validates the proposal before persisting it to the `QUEST_DAGS` KV
-bucket.
+`questdagexec` validates the proposal before persisting it as `quest.dag.*` predicates
+on the parent quest entity in the graph.
 
 ### DAG Validation Rules
 
@@ -314,21 +314,23 @@ If a node exhausts its retry limit (`max_attempts` on the sub-quest entity):
 This prevents silent partial completion — a failed node always surfaces through the
 parent quest's escalation, visible on the DM dashboard and in the SSE event feed.
 
-### KV Storage for DAG State
+### Graph Storage for DAG State
 
-`questdagexec` persists DAG state in the `QUEST_DAGS` KV bucket alongside the existing
-entity state bucket:
+DAG state is stored as `quest.dag.*` predicates on the parent quest entity in the
+graph's ENTITY_STATES bucket — no separate KV bucket needed:
 
 ```
-dag.state.{parent_quest_id}          // Full DAG with all node states
-dag.node.{parent_quest_id}.{node_id} // Individual node state (for targeted watches)
-dag.status.pending.{node_id}         // Index: pending nodes
-dag.status.ready.{node_id}           // Index: ready to dispatch
-dag.status.pending_review.{node_id}  // Index: awaiting lead review
+quest.dag.execution_id               // DAG execution identifier
+quest.dag.definition                 // QuestDAG JSON (nodes, dependencies)
+quest.dag.node_quest_ids             // map[nodeID]subQuestID
+quest.dag.node_states                // map[nodeID]state (pending/ready/assigned/completed/failed)
+quest.dag.node_assignees             // map[nodeID]agentID
+quest.dag.node_retries               // map[nodeID]retriesRemaining
 ```
 
 The entity state bucket IS the event log (KV twofer). `questdagexec` watches
-`dag.node.*` to react to transitions without polling.
+quest entities to detect DAG parent quests and react to sub-quest transitions
+without polling. CAS read-modify-write ensures concurrent safety with questboard.
 
 ## Further Reading
 

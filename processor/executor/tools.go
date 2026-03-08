@@ -478,6 +478,10 @@ func (r *ToolRegistry) RegisterBuiltins() {
 				if err != nil {
 					return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("decompose_quest internal error: %v", err)}
 				}
+				// Stop the agentic loop after successful decomposition.
+				// The DAG JSON in result.Content becomes the loop's final output,
+				// which questbridge parses via extractDAGFromOutput.
+				result.StopLoop = true
 				return result
 			},
 			MinTier: domain.TierMaster, // Level 16+ — only party leads (Master+) can decompose quests
@@ -493,6 +497,9 @@ func (r *ToolRegistry) RegisterBuiltins() {
 				if err != nil {
 					return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("review_sub_quest internal error: %v", err)}
 				}
+				// Stop the review agentic loop after the verdict.
+				// The verdict JSON in result.Content is the loop's final output.
+				result.StopLoop = true
 				return result
 			},
 			MinTier: domain.TierMaster, // Level 16+ — only party leads (Master+) can review sub-quests

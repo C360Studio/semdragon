@@ -137,12 +137,13 @@ quest.guild.{guild_id}.{quest_id}    // Quests with guild priority
 // Stats and aggregates
 stats.board.current                  // Current board statistics
 
-// DAG execution state (QUEST_DAGS bucket)
-dag.state.{parent_quest_id}          // Full DAG with all node states
-dag.node.{parent_quest_id}.{node_id} // Individual node state
-dag.status.pending.{node_id}         // Index: nodes awaiting dependencies
-dag.status.ready.{node_id}           // Index: nodes ready to dispatch
-dag.status.pending_review.{node_id}  // Index: nodes awaiting lead review
+// DAG execution state (stored as quest.dag.* predicates on parent quest entity)
+// quest.dag.execution_id             // DAG execution identifier
+// quest.dag.definition               // QuestDAG JSON (nodes, dependencies)
+// quest.dag.node_quest_ids           // map[nodeID]subQuestID
+// quest.dag.node_states              // map[nodeID]state (pending/ready/assigned/completed/failed)
+// quest.dag.node_assignees           // map[nodeID]agentID
+// quest.dag.node_retries             // map[nodeID]retriesRemaining
 ```
 
 ### Think Reactive, Not Objects
@@ -277,7 +278,7 @@ The root `semdragons` package re-exports type aliases from `domain/` and provide
 Two components form the **agentic integration layer** that bridges quest lifecycle to semstreams' event-driven LLM execution:
 - `questbridge` — Watches quest entities for `in_progress` transitions, assembles `TaskMessage` (prompt, tools, metadata), publishes to AGENT JetStream stream, handles loop completion/failure events. Uses KV twofer bootstrap protocol for crash recovery via QUEST_LOOPS bucket.
 - `questtools` — Consumes `tool.execute.*` from AGENT stream, enforces tier/skill/sandbox gates via `executor.ToolRegistry`, publishes `tool.result.*` back. Reconstructs agent/quest context from `ToolCall.Metadata` to avoid KV round-trips on the hot path.
-- `questdagexec` — Reactive DAG execution for party quest decompositions — watches sub-quest KV transitions, drives node assignment via `ClaimQuestForParty`, dispatches lead review tool calls, aggregates outputs for rollup, and escalates the parent quest on node exhaustion. Persists DAG state in the `QUEST_DAGS` KV bucket.
+- `questdagexec` — Reactive DAG execution for party quest decompositions — watches sub-quest KV transitions, drives node assignment via `ClaimQuestForParty`, dispatches lead review tool calls, aggregates outputs for rollup, and escalates the parent quest on node exhaustion. DAG state stored as `quest.dag.*` predicates on the parent quest entity in the graph.
 
 **`processor/dmworldstate/`** aggregates all entity state into a single world-state snapshot consumed by the REST API's `/api/game/world` endpoint.
 
@@ -424,7 +425,7 @@ Components enabled in the default config (`config/semdragons.json`):
 - `boidengine` — emergent quest-claiming suggestions
 - `agentic-loop`, `agentic-model` — semstreams event-driven LLM loop orchestration
 - `questbridge`, `questtools` — quest-to-LLM bridge (requires model_registry and AGENT stream)
-- `questdagexec` — party quest DAG execution (requires questbridge, questtools, and QUEST_DAGS bucket)
+- `questdagexec` — party quest DAG execution (requires questbridge, questtools)
 
 Processors registered but excluded from the default config (opt-in):
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)

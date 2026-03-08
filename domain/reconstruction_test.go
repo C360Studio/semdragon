@@ -211,6 +211,123 @@ func TestQuestRoundTrip_DependsOnAndAcceptance(t *testing.T) {
 	}
 }
 
+func TestQuestRoundTrip_DAGFields(t *testing.T) {
+	// Parent quest with DAG execution state
+	nodeStates := map[string]string{"node-1": "completed", "node-2": "in_progress"}
+	nodeQuestIDs := map[string]string{"node-1": "quest.sub1", "node-2": "quest.sub2"}
+	nodeAssignees := map[string]string{"node-1": "agent.a1", "node-2": "agent.a2"}
+	completedNodes := []string{"node-1"}
+	failedNodes := []string(nil)
+	nodeRetries := map[string]int{"node-1": 3, "node-2": 2}
+
+	dagDef := map[string]any{
+		"nodes": []any{
+			map[string]any{"id": "node-1", "objective": "do thing 1"},
+			map[string]any{"id": "node-2", "objective": "do thing 2", "depends_on": []any{"node-1"}},
+		},
+	}
+
+	original := &Quest{
+		ID:                QuestID("test.dev.game.board1.quest.parent"),
+		Title:             "DAG Parent Quest",
+		Status:            QuestInProgress,
+		PostedAt:          time.Now().Truncate(time.Second),
+		DAGExecutionID:    "dag-exec-abc",
+		DAGDefinition:     dagDef,
+		DAGNodeQuestIDs:   nodeQuestIDs,
+		DAGNodeStates:     nodeStates,
+		DAGNodeAssignees:  nodeAssignees,
+		DAGCompletedNodes: completedNodes,
+		DAGFailedNodes:    failedNodes,
+		DAGNodeRetries:    nodeRetries,
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if r.DAGExecutionID != "dag-exec-abc" {
+		t.Errorf("DAGExecutionID = %q, want %q", r.DAGExecutionID, "dag-exec-abc")
+	}
+	if r.DAGDefinition == nil {
+		t.Fatal("DAGDefinition is nil, want non-nil")
+	}
+	if r.DAGNodeStates == nil {
+		t.Fatal("DAGNodeStates is nil, want non-nil")
+	}
+	if r.DAGNodeQuestIDs == nil {
+		t.Fatal("DAGNodeQuestIDs is nil, want non-nil")
+	}
+	if r.DAGNodeAssignees == nil {
+		t.Fatal("DAGNodeAssignees is nil, want non-nil")
+	}
+	if r.DAGCompletedNodes == nil {
+		t.Fatal("DAGCompletedNodes is nil, want non-nil")
+	}
+	if r.DAGNodeRetries == nil {
+		t.Fatal("DAGNodeRetries is nil, want non-nil")
+	}
+}
+
+func TestQuestRoundTrip_DAGSubQuestFields(t *testing.T) {
+	clarifications := []map[string]any{
+		{"question": "What format?", "answer": "JSON", "asked_at": "2024-01-01T00:00:00Z"},
+	}
+
+	original := &Quest{
+		ID:                QuestID("test.dev.game.board1.quest.sub1"),
+		Title:             "Sub Quest",
+		Status:            QuestInProgress,
+		PostedAt:          time.Now().Truncate(time.Second),
+		DAGNodeID:         "node-1",
+		DAGClarifications: clarifications,
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if r.DAGNodeID != "node-1" {
+		t.Errorf("DAGNodeID = %q, want %q", r.DAGNodeID, "node-1")
+	}
+	if r.DAGClarifications == nil {
+		t.Fatal("DAGClarifications is nil, want non-nil")
+	}
+}
+
+func TestQuestRoundTrip_DAGFieldsEmpty(t *testing.T) {
+	// Quest without DAG fields should have zero values
+	original := &Quest{
+		ID:       QuestID("test.dev.game.board1.quest.solo"),
+		Title:    "Solo Quest",
+		Status:   QuestPosted,
+		PostedAt: time.Now().Truncate(time.Second),
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if r.DAGExecutionID != "" {
+		t.Errorf("DAGExecutionID = %q, want empty", r.DAGExecutionID)
+	}
+	if r.DAGDefinition != nil {
+		t.Errorf("DAGDefinition = %v, want nil", r.DAGDefinition)
+	}
+	if r.DAGNodeID != "" {
+		t.Errorf("DAGNodeID = %q, want empty", r.DAGNodeID)
+	}
+}
+
 func TestQuestRoundTrip_EmptyDependsOnAndAcceptance(t *testing.T) {
 	original := &Quest{
 		ID:          QuestID("test.dev.game.board1.quest.q1"),

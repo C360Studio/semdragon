@@ -6,7 +6,9 @@
     "environment": "development"
   },
   "nats": {
-    "urls": ["nats://localhost:4222"]
+    "urls": [
+      "nats://localhost:4222"
+    ]
   },
   "services": {
     "service-manager": {
@@ -56,11 +58,32 @@
       }
     },
     "capabilities": {
-      "agent-work": { "preferred": ["ollama-coder"], "requires_tools": true },
-      "dm-chat": { "preferred": ["ollama-qwen3"], "fallback": ["ollama-coder"] },
-      "boss-battle": { "preferred": ["ollama-qwen3"], "fallback": ["ollama-coder"] }
+      "agent-work": {
+        "preferred": [
+          "ollama-coder"
+        ],
+        "requires_tools": true
+      },
+      "dm-chat": {
+        "preferred": [
+          "ollama-qwen3"
+        ],
+        "fallback": [
+          "ollama-coder"
+        ]
+      },
+      "boss-battle": {
+        "preferred": [
+          "ollama-qwen3"
+        ],
+        "fallback": [
+          "ollama-coder"
+        ]
+      }
     },
-    "defaults": { "model": "ollama-coder" }
+    "defaults": {
+      "model": "ollama-coder"
+    }
   },
   "streams": {
     "GRAPH": {
@@ -98,17 +121,21 @@
       "enabled": true,
       "config": {
         "ports": {
-          "inputs": [{
-            "name": "entities_in",
-            "subject": "graph.ingest.entity",
-            "type": "jetstream",
-            "stream_name": "GRAPH"
-          }],
-          "outputs": [{
-            "name": "entity_states",
-            "subject": "ENTITY_STATES",
-            "type": "kv-write"
-          }]
+          "inputs": [
+            {
+              "name": "entities_in",
+              "subject": "graph.ingest.entity",
+              "type": "jetstream",
+              "stream_name": "GRAPH"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "entity_states",
+              "subject": "ENTITY_STATES",
+              "type": "kv-write"
+            }
+          ]
         },
         "enable_hierarchy": true
       }
@@ -119,16 +146,34 @@
       "enabled": true,
       "config": {
         "ports": {
-          "inputs": [{
-            "name": "entity_watch",
-            "subject": "ENTITY_STATES",
-            "type": "kv-watch"
-          }],
+          "inputs": [
+            {
+              "name": "entity_watch",
+              "subject": "ENTITY_STATES",
+              "type": "kv-watch"
+            }
+          ],
           "outputs": [
-            {"name": "outgoing_index", "subject": "OUTGOING_INDEX", "type": "kv"},
-            {"name": "incoming_index", "subject": "INCOMING_INDEX", "type": "kv"},
-            {"name": "alias_index", "subject": "ALIAS_INDEX", "type": "kv"},
-            {"name": "predicate_index", "subject": "PREDICATE_INDEX", "type": "kv"}
+            {
+              "name": "outgoing_index",
+              "subject": "OUTGOING_INDEX",
+              "type": "kv"
+            },
+            {
+              "name": "incoming_index",
+              "subject": "INCOMING_INDEX",
+              "type": "kv"
+            },
+            {
+              "name": "alias_index",
+              "subject": "ALIAS_INDEX",
+              "type": "kv"
+            },
+            {
+              "name": "predicate_index",
+              "subject": "PREDICATE_INDEX",
+              "type": "kv"
+            }
           ]
         },
         "workers": 2,
@@ -141,11 +186,13 @@
       "enabled": true,
       "config": {
         "ports": {
-          "inputs": [{
-            "name": "query_requests",
-            "subject": "graph.query.>",
-            "type": "nats-request"
-          }],
+          "inputs": [
+            {
+              "name": "query_requests",
+              "subject": "graph.query.>",
+              "type": "nats-request"
+            }
+          ],
           "outputs": []
         },
         "request_timeout": "5s",
@@ -301,7 +348,7 @@
     "autonomy": {
       "type": "processor",
       "name": "autonomy",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",
@@ -312,6 +359,16 @@
         "in_battle_interval_ms": 60000,
         "cooldown_interval_ms": 15000,
         "dm_mode": "full_auto"
+      }
+    },
+    "questdagexec": {
+      "type": "processor",
+      "name": "questdagexec",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1"
       }
     }
   }

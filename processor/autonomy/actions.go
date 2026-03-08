@@ -120,6 +120,15 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 			continue
 		}
 
+		// Skip party sub-quests — these are managed by questdagexec,
+		// not available for autonomous claiming.
+		if quest.PartyID != nil {
+			c.logger.Debug("quest belongs to a party, skipping",
+				"quest_id", suggestion.QuestID,
+				"party_id", *quest.PartyID)
+			continue
+		}
+
 		// Pre-flight validation
 		if err := agentprogression.ValidateAgentCanClaim(agent, quest); err != nil {
 			c.logger.Debug("agent cannot claim quest, trying next",

@@ -139,7 +139,7 @@ Sub-quest 4: "Email summary to VP distribution list" (Easy, customer_comms)   â€
 ```
 
 `questdagexec` validates the DAG (cycle check, member assignments, max 20 nodes) and
-persists it to the `QUEST_DAGS` KV bucket.
+persists it as `quest.dag.*` predicates on the parent quest entity in the graph.
 
 ### 5. Sub-Quests Execute
 

@@ -66,11 +66,6 @@ type Component struct {
 	// QUEST_LOOPS KV bucket for crash recovery
 	questLoopsBucket jetstream.KeyValue
 
-	// QUEST_DAGS KV bucket for DAG execution state (party quest decomposition).
-	// Keyed by DAGExecutionState.ExecutionID. Written by questbridge after posting
-	// sub-quests; read and mutated by questdagexec processor.
-	questDagsBucket jetstream.KeyValue
-
 	// questBoard posts sub-quests when a lead agent completes a DAG decomposition.
 	// Optional: nil means DAG output from party quests is treated as normal output.
 	questBoard SubQuestPoster
@@ -272,6 +267,7 @@ func (c *Component) Start(ctx context.Context) error {
 		promptRegistry := promptmanager.NewPromptRegistry()
 		promptRegistry.RegisterProviderStyles()
 		promptRegistry.RegisterDomainCatalog(c.config.DomainCatalog)
+		promptmanager.RegisterBuiltinFragments(promptRegistry)
 		c.promptAssembler = promptmanager.NewPromptAssembler(promptRegistry)
 	}
 
@@ -285,18 +281,6 @@ func (c *Component) Start(ctx context.Context) error {
 		return fmt.Errorf("create QUEST_LOOPS bucket: %w", err)
 	}
 	c.questLoopsBucket = bucket
-
-	// Get or create the QUEST_DAGS KV bucket for DAG execution state.
-	// Written by questbridge after sub-quest posting; watched by questdagexec.
-	dagsBucket, dagsErr := c.deps.NATSClient.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
-		Bucket:      c.config.QuestDagsBucket,
-		Description: "DAG execution state for party quest decompositions",
-		History:     10,
-	})
-	if dagsErr != nil {
-		return fmt.Errorf("create QUEST_DAGS bucket: %w", dagsErr)
-	}
-	c.questDagsBucket = dagsBucket
 
 	// Subscribe to board resume notifications for reconciliation.
 	if c.pauseChecker != nil {

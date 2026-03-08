@@ -27,7 +27,7 @@ import (
 // =============================================================================
 
 func TestComponent_Lifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -163,7 +163,7 @@ func TestComponent_ConfigSchema(t *testing.T) {
 // =============================================================================
 
 func TestStartSession_CreatesAndPersists(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -205,7 +205,7 @@ func TestStartSession_CreatesAndPersists(t *testing.T) {
 }
 
 func TestGetSession_ReturnsFromMemory(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -235,7 +235,7 @@ func TestGetSession_ReturnsFromMemory(t *testing.T) {
 }
 
 func TestGetSession_LoadsFromKV(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -276,7 +276,7 @@ func TestGetSession_LoadsFromKV(t *testing.T) {
 // =============================================================================
 
 func TestEndSession_ProduceSummary(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -312,7 +312,7 @@ func TestEndSession_ProduceSummary(t *testing.T) {
 }
 
 func TestEndSession_UnknownID_Errors(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -330,7 +330,7 @@ func TestEndSession_UnknownID_Errors(t *testing.T) {
 // =============================================================================
 
 func TestSession_MultipleActiveSessionsTracked(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -355,7 +355,7 @@ func TestSession_MultipleActiveSessionsTracked(t *testing.T) {
 }
 
 func TestSession_EndedSessionRemovedFromActive(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -394,7 +394,7 @@ func TestSession_EndedSessionRemovedFromActive(t *testing.T) {
 // =============================================================================
 
 func TestStartSession_FailsWhenNotRunning(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 

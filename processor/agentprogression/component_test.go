@@ -26,7 +26,7 @@ import (
 // preserve all agent fields (name, skills, guilds, status). This is the
 // regression test for the AgentXPPayload overwrite bug.
 func TestXPPreservesAgentData(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -136,7 +136,7 @@ func TestXPPreservesAgentData(t *testing.T) {
 // TestCompletionResetsAgent verifies that quest completion sets agent to idle
 // with CurrentQuest cleared and QuestsCompleted incremented.
 func TestCompletionResetsAgent(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -209,7 +209,7 @@ func TestCompletionResetsAgent(t *testing.T) {
 // TestFailureSetsAgentCooldown verifies that quest failure with penalty sets
 // agent to cooldown status with CooldownUntil and increments QuestsFailed.
 func TestFailureSetsAgentCooldown(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 

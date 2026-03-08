@@ -71,6 +71,22 @@ type Quest struct {
 	// Observability — LoopID is the agentic-loop execution ID, also the key
 	// in AGENT_TRAJECTORIES KV bucket for trajectory lookup.
 	LoopID string `json:"loop_id,omitempty"`
+
+	// DAG execution state (party quest decomposition).
+	// Stored as any to avoid importing questdagexec types into domain.
+	// Parent quest fields:
+	DAGExecutionID    string `json:"dag_execution_id,omitempty"`
+	DAGDefinition     any    `json:"dag_definition,omitempty"`      // QuestDAG JSON
+	DAGNodeQuestIDs   any    `json:"dag_node_quest_ids,omitempty"`  // map[string]string
+	DAGNodeStates     any    `json:"dag_node_states,omitempty"`     // map[string]string
+	DAGNodeAssignees  any    `json:"dag_node_assignees,omitempty"`  // map[string]string
+	DAGCompletedNodes any    `json:"dag_completed_nodes,omitempty"` // []string
+	DAGFailedNodes    any    `json:"dag_failed_nodes,omitempty"`    // []string
+	DAGNodeRetries    any    `json:"dag_node_retries,omitempty"`    // map[string]int
+
+	// Sub-quest DAG fields:
+	DAGNodeID         string `json:"dag_node_id,omitempty"`
+	DAGClarifications any    `json:"dag_clarifications,omitempty"` // []ClarificationExchange
 }
 
 // PrimarySkill returns the first required skill for this quest, or empty if none.
@@ -113,7 +129,6 @@ type BattleVerdict struct {
 	QualityScore    float64 `json:"quality_score"`
 	XPAwarded       int64   `json:"xp_awarded"`
 	XPPenalty       int64   `json:"xp_penalty"`
-	Feedback        string  `json:"feedback"`
-	LevelChange     int     `json:"level_change"`
-	NeedsEscalation bool   `json:"needs_escalation,omitempty"`
+	Feedback    string `json:"feedback"`
+	LevelChange int    `json:"level_change"`
 }

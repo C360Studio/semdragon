@@ -33,7 +33,7 @@ import (
 // cycle reports the correct status at each transition.
 func TestComponentLifecycle(t *testing.T) {
 	testClient := natsclient.NewTestClient(t,
-		natsclient.WithKV(),
+		natsclient.WithKV(), natsclient.WithFileStorage(),
 		natsclient.WithStreams(natsclient.TestStreamConfig{
 			Name:     "AGENT",
 			Subjects: []string{"agent.task.>", "agent.complete.>", "agent.failed.>", "tool.execute.>", "tool.result.>"},
@@ -190,7 +190,7 @@ func TestConfigSchema(t *testing.T) {
 // agent.task.{questID} on the AGENT JetStream stream.
 func TestQuestStartedPublishesTaskMessage(t *testing.T) {
 	testClient := natsclient.NewTestClient(t,
-		natsclient.WithKV(),
+		natsclient.WithKV(), natsclient.WithFileStorage(),
 		natsclient.WithStreams(natsclient.TestStreamConfig{
 			Name:     "AGENT",
 			Subjects: []string{"agent.task.>", "agent.complete.>", "agent.failed.>", "tool.execute.>", "tool.result.>"},
@@ -270,7 +270,7 @@ func TestQuestStartedPublishesTaskMessage(t *testing.T) {
 // TierJourneyman or higher must be excluded.
 func TestTaskMessageToolFiltering(t *testing.T) {
 	testClient := natsclient.NewTestClient(t,
-		natsclient.WithKV(),
+		natsclient.WithKV(), natsclient.WithFileStorage(),
 		natsclient.WithStreams(natsclient.TestStreamConfig{
 			Name:     "AGENT",
 			Subjects: []string{"agent.task.>", "agent.complete.>", "agent.failed.>", "tool.execute.>", "tool.result.>"},
@@ -332,7 +332,7 @@ func TestTaskMessageToolFiltering(t *testing.T) {
 // TaskMessage, it writes a QuestLoopMapping into the QUEST_LOOPS KV bucket.
 func TestQuestLoopsMappingPersisted(t *testing.T) {
 	testClient := natsclient.NewTestClient(t,
-		natsclient.WithKV(),
+		natsclient.WithKV(), natsclient.WithFileStorage(),
 		natsclient.WithStreams(natsclient.TestStreamConfig{
 			Name:     "AGENT",
 			Subjects: []string{"agent.task.>", "agent.complete.>", "agent.failed.>", "tool.execute.>", "tool.result.>"},
@@ -390,7 +390,7 @@ func TestQuestLoopsMappingPersisted(t *testing.T) {
 // loopsCompleted counter incrementing.
 func TestLoopCompletionEmitsExecutorEvent(t *testing.T) {
 	testClient := natsclient.NewTestClient(t,
-		natsclient.WithKV(),
+		natsclient.WithKV(), natsclient.WithFileStorage(),
 		natsclient.WithStreams(natsclient.TestStreamConfig{
 			Name:     "AGENT",
 			Subjects: []string{"agent.task.>", "agent.complete.>", "agent.failed.>", "tool.execute.>", "tool.result.>"},
@@ -469,7 +469,7 @@ func TestLoopCompletionEmitsExecutorEvent(t *testing.T) {
 // cause the loopsFailed counter to increment, confirming questbridge handled the event.
 func TestLoopFailureEmitsExecutorEvent(t *testing.T) {
 	testClient := natsclient.NewTestClient(t,
-		natsclient.WithKV(),
+		natsclient.WithKV(), natsclient.WithFileStorage(),
 		natsclient.WithStreams(natsclient.TestStreamConfig{
 			Name:     "AGENT",
 			Subjects: []string{"agent.task.>", "agent.complete.>", "agent.failed.>", "tool.execute.>", "tool.result.>"},
@@ -551,7 +551,7 @@ func TestLoopFailureEmitsExecutorEvent(t *testing.T) {
 // should trigger publishing.
 func TestBootstrapDoesNotRetriggerExistingQuests(t *testing.T) {
 	testClient := natsclient.NewTestClient(t,
-		natsclient.WithKV(),
+		natsclient.WithKV(), natsclient.WithFileStorage(),
 		natsclient.WithStreams(natsclient.TestStreamConfig{
 			Name:     "AGENT",
 			Subjects: []string{"agent.task.>", "agent.complete.>", "agent.failed.>", "tool.execute.>", "tool.result.>"},

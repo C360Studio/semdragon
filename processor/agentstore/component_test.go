@@ -26,7 +26,7 @@ import (
 // TestCooldownSkipClearsStatus verifies that using a cooldown_skip consumable
 // clears the agent's cooldown status and sets them back to idle.
 func TestCooldownSkipClearsStatus(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -96,7 +96,7 @@ func TestCooldownSkipClearsStatus(t *testing.T) {
 // on an agent who is not in cooldown still consumes the item and records the active
 // effect, but does not change the agent's idle status.
 func TestCooldownSkipWhenNotOnCooldown(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -165,7 +165,7 @@ func TestCooldownSkipWhenNotOnCooldown(t *testing.T) {
 // test: purchase on instance A, stop A, start instance B, verify B sees the
 // purchased item.
 func TestInventorySurvivesRestart(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 

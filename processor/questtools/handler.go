@@ -85,6 +85,11 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 	// Reconstruct enough agent/quest context from call metadata for gate checks.
 	agent, quest := c.buildContextFromMetadata(&call)
 
+	c.logger.Debug("executing tool",
+		"tool", call.Name, "call_id", call.ID,
+		"loop_id", call.LoopID, "agent_id", agent.ID,
+		"quest_id", quest.ID, "tier", agent.Tier)
+
 	// Execute the tool through the registry, which enforces tier and skill gates.
 	result := c.toolRegistry.Execute(ctx, call, quest, agent)
 
@@ -116,11 +121,11 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 	}
 	c.lastActivity.Store(time.Now())
 
-	c.logger.Debug("tool executed",
-		"tool", call.Name,
-		"call_id", call.ID,
-		"loop_id", call.LoopID,
-		"success", result.Error == "")
+	c.logger.Debug("tool completed",
+		"tool", call.Name, "call_id", call.ID,
+		"loop_id", call.LoopID, "agent_id", agent.ID,
+		"quest_id", quest.ID, "success", result.Error == "",
+		"error", result.Error)
 }
 
 // publishResult wraps a ToolResult in a BaseMessage envelope and publishes it

@@ -582,13 +582,29 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	quest.LoopID = mapping.LoopID
 
 	// Check if the agent is asking a clarifying question rather than delivering
-	// a work product. Clarification requests escalate to the DM without a boss
-	// battle — the agent keeps the quest and waits for the DM's answer.
+	// a work product.
 	if isOutputClarificationRequest(output) {
 		quest.Status = domain.QuestEscalated
 		quest.Escalated = true
 		quest.FailureReason = output
 		// Agent stays assigned — ClaimedBy unchanged.
+
+		if quest.PartyID != nil {
+			// Party sub-quest: route to party lead, not DM. The DAG state
+			// machine picks up the escalated status and dispatches a
+			// clarification task to the lead via the AGENT stream.
+			if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.dag.clarification_requested"); err != nil {
+				c.logger.Error("failed to emit party clarification request",
+					"quest_id", questID, "error", err)
+				c.errorsCount.Add(1)
+				return
+			}
+			c.logger.Info("party sub-quest clarification routed to lead",
+				"quest_id", questID, "party_id", quest.PartyID, "agent_id", mapping.AgentID)
+			return
+		}
+
+		// Non-party quest: escalate to DM for human clarification.
 		if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.escalated"); err != nil {
 			c.logger.Error("failed to emit quest escalation for clarification",
 				"quest_id", questID, "error", err)
@@ -669,8 +685,9 @@ func parseOutputIntent(text string) string {
 }
 
 // handleDAGDecomposition posts sub-quests from a validated DAG and initializes
-// the DAGExecutionState in QUEST_DAGS. Called only when quest.PartyRequired is
-// true and the lead's loop output contains a valid DAG structure.
+// the DAG execution state as quest.dag.* predicates on the parent quest entity.
+// Called only when quest.PartyRequired is true and the lead's loop output
+// contains a valid DAG structure.
 func (c *Component) handleDAGDecomposition(ctx context.Context, quest *domain.Quest, mapping *QuestLoopMapping, dag *questdagexec.QuestDAG) error {
 	// Convert DAG nodes to domain.Quest values for PostSubQuests.
 	subQuests := dagNodesToQuests(dag.Nodes, quest)
@@ -682,6 +699,15 @@ func (c *Component) handleDAGDecomposition(ctx context.Context, quest *domain.Qu
 		return fmt.Errorf("post sub-quests: %w", err)
 	}
 
+	// Log each sub-quest for traceability.
+	for i, sq := range posted {
+		c.logger.Debug("posted DAG sub-quest",
+			"parent_quest_id", quest.ID,
+			"sub_quest_id", sq.ID,
+			"node_id", dag.Nodes[i].ID,
+			"node_objective", dag.Nodes[i].Objective,
+			"index", i)
+	}
 	c.logger.Info("posted DAG sub-quests",
 		"parent_quest_id", quest.ID,
 		"sub_quest_count", len(posted))
@@ -697,64 +723,58 @@ func (c *Component) handleDAGDecomposition(ctx context.Context, quest *domain.Qu
 		nodeQuestIDs[node.ID] = string(posted[i].ID)
 	}
 
-	// Apply the party assignment triple to each posted sub-quest when the
-	// parent has a PartyID. This makes sub-quests invisible to the general
-	// board and claimable only via lead assignment.
-	if quest.PartyID != nil {
-		for i := range posted {
-			posted[i].PartyID = quest.PartyID
-			if emitErr := c.graph.EmitEntityUpdate(ctx, &posted[i], "quest.assignment.party"); emitErr != nil {
-				c.logger.Warn("failed to set party assignment on sub-quest",
-					"sub_quest_id", posted[i].ID, "error", emitErr)
-			}
-		}
-	}
-
-	// Second pass: resolve DependsOn node IDs to real sub-quest entity IDs.
-	// dag.Nodes[i].DependsOn contains node IDs (strings); we map those to
-	// posted[i].ID values using nodeQuestIDs.
+	// Apply the party assignment and DAG node ID to each posted sub-quest.
+	// Party assignment makes sub-quests invisible to the general board;
+	// DAG node ID enables questdagexec to correlate sub-quest transitions.
 	for i, node := range dag.Nodes {
-		if len(node.DependsOn) == 0 {
-			continue
+		if quest.PartyID != nil {
+			posted[i].PartyID = quest.PartyID
 		}
-		deps := make([]domain.QuestID, 0, len(node.DependsOn))
-		for _, depNodeID := range node.DependsOn {
-			if depQuestID, ok := nodeQuestIDs[depNodeID]; ok {
-				deps = append(deps, domain.QuestID(depQuestID))
+		posted[i].DAGNodeID = node.ID
+
+		// Resolve DependsOn node IDs to real sub-quest entity IDs.
+		if len(node.DependsOn) > 0 {
+			deps := make([]domain.QuestID, 0, len(node.DependsOn))
+			for _, depNodeID := range node.DependsOn {
+				if depQuestID, ok := nodeQuestIDs[depNodeID]; ok {
+					deps = append(deps, domain.QuestID(depQuestID))
+				}
 			}
+			posted[i].DependsOn = deps
 		}
-		if len(deps) == 0 {
-			continue
-		}
-		posted[i].DependsOn = deps
-		if emitErr := c.graph.EmitEntityUpdate(ctx, &posted[i], "quest.dependencies.set"); emitErr != nil {
-			c.logger.Warn("failed to set dependencies on sub-quest",
-				"sub_quest_id", posted[i].ID, "error", emitErr)
+
+		if emitErr := c.graph.EmitEntityUpdate(ctx, &posted[i], "quest.dag.sub_quest_initialized"); emitErr != nil {
+			c.logger.Warn("failed to set DAG fields on sub-quest",
+				"sub_quest_id", posted[i].ID, "node_id", node.ID, "error", emitErr)
 		}
 	}
 
-	// Initialize DAG execution state and persist to QUEST_DAGS.
-	dagState := buildDAGExecutionState(dag, quest, nodeQuestIDs)
-	return c.persistDAGState(ctx, dagState)
-}
+	// Initialize DAG state as predicates on the parent quest entity.
+	// questdagexec detects the new quest.dag.execution_id via the quest
+	// entity watcher and builds its in-memory execution state.
+	executionID := nuid.Next()
+	nodeStates := make(map[string]string, len(dag.Nodes))
+	for _, node := range dag.Nodes {
+		nodeStates[node.ID] = questdagexec.NodePending
+	}
 
-// persistDAGState marshals a DAGExecutionState and writes it to QUEST_DAGS
-// keyed by ExecutionID. The questdagexec processor watches this bucket.
-func (c *Component) persistDAGState(ctx context.Context, state *questdagexec.DAGExecutionState) error {
-	if c.questDagsBucket == nil {
-		return fmt.Errorf("QUEST_DAGS bucket not initialized")
+	quest.DAGExecutionID = executionID
+	quest.DAGDefinition = *dag
+	quest.DAGNodeQuestIDs = nodeQuestIDs
+	quest.DAGNodeStates = nodeStates
+
+	c.logger.Debug("writing DAG predicates on parent quest",
+		"execution_id", executionID,
+		"parent_quest_id", quest.ID,
+		"node_count", len(dag.Nodes))
+
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.dag.decomposed"); err != nil {
+		return fmt.Errorf("write DAG predicates on parent quest: %w", err)
 	}
-	data, err := json.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("marshal DAG execution state: %w", err)
-	}
-	if _, err := c.questDagsBucket.Put(ctx, state.ExecutionID, data); err != nil {
-		return fmt.Errorf("write DAG execution state to KV: %w", err)
-	}
-	c.logger.Info("initialized DAG execution state",
-		"execution_id", state.ExecutionID,
-		"parent_quest_id", state.ParentQuestID,
-		"node_count", len(state.DAG.Nodes))
+	c.logger.Info("DAG decomposition stored on parent quest entity",
+		"execution_id", executionID,
+		"parent_quest_id", quest.ID,
+		"node_count", len(dag.Nodes))
 	return nil
 }
 
@@ -848,45 +868,6 @@ func dagNodesToQuests(nodes []questdagexec.QuestNode, parent *domain.Quest) []do
 		})
 	}
 	return quests
-}
-
-// buildDAGExecutionState creates a DAGExecutionState from a validated DAG,
-// the parent quest, and the node-to-sub-quest ID mapping produced after posting.
-// Node states are initialized using DAGReadyNodes: nodes with no dependencies
-// (or all dependencies already in NodeCompleted state) start as "ready";
-// all others start as "pending".
-func buildDAGExecutionState(dag *questdagexec.QuestDAG, parent *domain.Quest, nodeQuestIDs map[string]string) *questdagexec.DAGExecutionState {
-	// Seed all nodes as pending so DAGReadyNodes can compute the initial ready set.
-	nodeStates := make(map[string]string, len(dag.Nodes))
-	for _, node := range dag.Nodes {
-		nodeStates[node.ID] = questdagexec.NodePending
-	}
-
-	// Promote nodes whose dependencies are already met to "ready".
-	for _, readyID := range questdagexec.DAGReadyNodes(*dag, nodeStates) {
-		nodeStates[readyID] = questdagexec.NodeReady
-	}
-
-	nodeRetries := make(map[string]int, len(dag.Nodes))
-	for _, node := range dag.Nodes {
-		nodeRetries[node.ID] = 2 // default retry budget per node
-	}
-
-	partyID := ""
-	if parent.PartyID != nil {
-		partyID = string(*parent.PartyID)
-	}
-
-	return &questdagexec.DAGExecutionState{
-		ExecutionID:   nuid.Next(),
-		ParentQuestID: string(parent.ID),
-		PartyID:       partyID,
-		DAG:           *dag,
-		NodeStates:    nodeStates,
-		NodeQuestIDs:  nodeQuestIDs,
-		NodeAssignees: make(map[string]string),
-		NodeRetries:   nodeRetries,
-	}
 }
 
 // failQuest transitions the quest to failed and releases the agent.
@@ -1154,6 +1135,38 @@ func loadPeerFeedback(agent *agentprogression.Agent) []promptmanager.PeerFeedbac
 	return feedback
 }
 
+// loadClarificationAnswers reads clarification exchanges from the sub-quest
+// entity's quest.dag.clarifications predicate. Returns nil when the quest has
+// no party or no prior clarifications.
+func (c *Component) loadClarificationAnswers(quest *domain.Quest) []promptmanager.ClarificationAnswer {
+	if quest.PartyID == nil || quest.DAGClarifications == nil {
+		return nil
+	}
+
+	// DAGClarifications is stored as any (JSON-serialized []ClarificationExchange).
+	// After KV round-trip it may arrive as []any of map[string]any.
+	raw, err := json.Marshal(quest.DAGClarifications)
+	if err != nil {
+		return nil
+	}
+	var exchanges []questdagexec.ClarificationExchange
+	if json.Unmarshal(raw, &exchanges) != nil {
+		return nil
+	}
+	if len(exchanges) == 0 {
+		return nil
+	}
+
+	answers := make([]promptmanager.ClarificationAnswer, len(exchanges))
+	for i, ex := range exchanges {
+		answers[i] = promptmanager.ClarificationAnswer{
+			Question: ex.Question,
+			Answer:   ex.Answer,
+		}
+	}
+	return answers
+}
+
 // buildSystemPrompt builds the system prompt using the assembler when available,
 // falling back to the legacy string concatenation path.
 func (c *Component) buildSystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
@@ -1184,21 +1197,24 @@ func (c *Component) buildAssembledSystemPrompt(agent *agentprogression.Agent, qu
 	}
 
 	assemblyCtx := promptmanager.AssemblyContext{
-		AgentID:          agent.ID,
-		Tier:             agent.Tier,
-		Level:            agent.Level,
-		Skills:           agent.SkillProficiencies,
-		Guilds:           agent.Guilds,
-		SystemPrompt:     agent.Config.SystemPrompt,
-		PersonaPrompt:    personaPrompt,
-		QuestTitle:       quest.Title,
-		QuestDescription: quest.Description,
-		QuestInput:       quest.Input,
-		RequiredSkills:   quest.RequiredSkills,
-		MaxDuration:      maxDuration,
-		MaxTokens:        quest.Constraints.MaxTokens,
-		Provider:         provider,
-		PeerFeedback:     loadPeerFeedback(agent),
+		AgentID:              agent.ID,
+		Tier:                 agent.Tier,
+		Level:                agent.Level,
+		Skills:               agent.SkillProficiencies,
+		Guilds:               agent.Guilds,
+		SystemPrompt:         agent.Config.SystemPrompt,
+		PersonaPrompt:        personaPrompt,
+		QuestTitle:           quest.Title,
+		QuestDescription:     quest.Description,
+		QuestInput:           quest.Input,
+		RequiredSkills:       quest.RequiredSkills,
+		MaxDuration:          maxDuration,
+		MaxTokens:            quest.Constraints.MaxTokens,
+		Provider:             provider,
+		PeerFeedback:         loadPeerFeedback(agent),
+		PartyRequired:        quest.PartyRequired,
+		IsPartyLead:          quest.PartyRequired && agent.Tier >= domain.TierMaster,
+		ClarificationAnswers: c.loadClarificationAnswers(quest),
 	}
 
 	result := c.promptAssembler.AssembleSystemPrompt(assemblyCtx)
@@ -1299,10 +1315,20 @@ func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.A
 		return nil
 	}
 
+	// Party lead on a party-required quest: restrict to decomposition/review
+	// tools only. Without this, the LLM sees execution tools (file write, etc.)
+	// and solves the quest directly instead of decomposing.
+	isPartyLead := quest.PartyRequired && agent.Tier >= domain.TierMaster
+
 	all := c.toolRegistry.ListAll()
 	result := make([]agentic.ToolDefinition, 0, len(all))
 
 	for _, tool := range all {
+		// Party lead filter: only decompose_quest and review_sub_quest.
+		if isPartyLead && !isLeadTool(tool.Definition.Name) {
+			continue
+		}
+
 		// Enforce trust tier gate.
 		if agent.Tier < tool.MinTier {
 			continue
@@ -1321,6 +1347,13 @@ func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.A
 		result = append(result, tool.Definition)
 	}
 	return result
+}
+
+// isLeadTool returns true for tools that a party lead should have during
+// the decomposition phase. Execution tools are withheld to force the LLM
+// to decompose rather than solve directly.
+func isLeadTool(name string) bool {
+	return name == "decompose_quest" || name == "review_sub_quest"
 }
 
 func agentHasAnySkill(agent *agentprogression.Agent, skills []domain.SkillTag) bool {

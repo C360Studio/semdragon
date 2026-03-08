@@ -11,7 +11,10 @@
 //   - DAGExecutionState tracks node-to-subquest mapping and lead assignment
 package questdagexec
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // =============================================================================
 // NODE STATE CONSTANTS
@@ -54,7 +57,30 @@ const (
 	// NodeFailed means the node exhausted retries or reassignment failed;
 	// downstream nodes depending on this one are permanently blocked.
 	NodeFailed = "failed"
+
+	// NodeAwaitingClarification means the party member asked a clarifying question.
+	// The lead receives the question via the AGENT stream and provides an answer.
+	// The node transitions back to NodeAssigned after the lead responds.
+	NodeAwaitingClarification = "awaiting_clarification"
 )
+
+// =============================================================================
+// CLARIFICATION TYPES
+// =============================================================================
+
+// ClarificationExchange records one question-and-answer exchange between a
+// party member and the party lead during sub-quest execution. The member asks
+// a clarifying question (surfaced via the escalated quest's output field) and
+// the lead answers via the answer_clarification tool.
+//
+// Exchanges are persisted in DAGExecutionState.NodeClarifications and injected
+// into the member's prompt context when the sub-quest is retried after the
+// lead answers, reducing repeated questions in subsequent attempts.
+type ClarificationExchange struct {
+	Question string    `json:"question"`
+	Answer   string    `json:"answer"`
+	AskedAt  time.Time `json:"asked_at"`
+}
 
 // =============================================================================
 // DAG TYPES
@@ -76,7 +102,7 @@ type QuestDAG struct {
 // QuestNode represents a single sub-quest within a party quest DAG.
 // Each node corresponds to one quest entity posted to the questboard with the
 // party's ID set, making it invisible to the public board and only claimable
-// via lead assignment through ClaimQuestForParty.
+// via lead assignment through ClaimAndStartForParty.
 type QuestNode struct {
 	// ID uniquely identifies this node within the DAG. Used as the key in
 	// DAGExecutionState.NodeStates and NodeQuestIDs maps.
@@ -228,15 +254,24 @@ func DAGReadyNodes(dag QuestDAG, nodeStates map[string]string) []string {
 // DAG EXECUTION STATE
 // =============================================================================
 
-// DAGExecutionState tracks the full lifecycle of a party quest DAG from
-// decomposition through rollup. It is persisted in the QUEST_DAGS KV bucket
-// keyed by ExecutionID. The questdagexec processor watches sub-quest KV
-// updates and mutates this state in response.
+// DAGExecutionState is the in-memory representation of a party quest DAG
+// execution. It is keyed by ExecutionID in the dagCache map and is the
+// primary in-memory state machine for the questdagexec event loop.
+//
+// Persistent state is stored as quest.dag.* predicates on the parent quest
+// entity in the graph (ENTITY_STATES KV bucket). questdagexec reads these
+// predicates on startup and reconstructs DAGExecutionState via
+// dagStateFromQuest. After each mutation the event loop calls persistDAGState
+// which performs a CAS read-modify-write on the parent quest entity.
 //
 // NodeStates is the primary state machine: the processor reads it to determine
 // which nodes to dispatch, which are pending review, and when rollup triggers.
 // NodeQuestIDs and NodeAssignees allow the processor to correlate KV watch
 // events on sub-quest entities back to their DAG node.
+//
+// Concurrency: All mutable fields are ONLY accessed from the event loop
+// goroutine. No mutexes are needed — the single-writer design eliminates
+// data races by construction. See ADR-003.
 type DAGExecutionState struct {
 	// ExecutionID uniquely identifies this DAG execution. Used as the KV key.
 	ExecutionID string `json:"execution_id"`
@@ -281,7 +316,8 @@ type DAGExecutionState struct {
 	// NodeAssigned. When it reaches zero, the next rejection sets NodeFailed.
 	NodeRetries map[string]int `json:"node_retries"`
 
-	// Revision is the NATS KV revision for CAS updates. Not persisted in JSON;
-	// populated from the KV entry on bootstrap and updated after each Put/Update.
-	Revision uint64 `json:"-"`
+	// NodeClarifications tracks clarification Q&A exchanges per node.
+	// Appended when the lead answers a clarification; injected into the
+	// member's prompt on the next dispatch so they have context for the retry.
+	NodeClarifications map[string][]ClarificationExchange `json:"node_clarifications,omitempty"`
 }

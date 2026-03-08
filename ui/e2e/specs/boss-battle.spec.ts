@@ -1,9 +1,4 @@
-import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/test-base';
-
-/** Whether an LLM backend (mock or real) is available for the agentic pipeline. */
-function hasLLM(): boolean {
-	return process.env.E2E_MOCK_LLM === 'true' || process.env.E2E_REAL_LLM === 'true';
-}
+import { test, expect, hasBackend, hasLLM, extractInstance, retry } from '../fixtures/test-base';
 
 /**
  * Boss Battle - Auto Trigger

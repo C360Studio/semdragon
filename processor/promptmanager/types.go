@@ -18,6 +18,11 @@ type FragmentCategory int
 const (
 	// CategorySystemBase is the domain identity fragment ("You are a developer...").
 	CategorySystemBase FragmentCategory = 0
+	// CategoryToolDirective contains mandatory tool-call instructions that must
+	// appear early in the prompt — before provider hints — so models that short-
+	// circuit on the first actionable directive see them first. Used for party
+	// lead decompose_quest enforcement.
+	CategoryToolDirective FragmentCategory = 50
 	// CategoryProviderHints contains provider-specific formatting instructions.
 	CategoryProviderHints FragmentCategory = 100
 	// CategoryTierGuardrails contains behavioral bounds for the agent's trust tier.
@@ -41,8 +46,8 @@ const (
 // =============================================================================
 
 // PromptFragment is the atomic unit of prompt composition.
-// Fragments are gated by tier, skills, provider, and guild — only matching
-// fragments are included in the assembled prompt.
+// Fragments are gated by tier, skills, provider, guild, and optional Condition —
+// only matching fragments are included in the assembled prompt.
 type PromptFragment struct {
 	ID       string
 	Category FragmentCategory
@@ -55,6 +60,12 @@ type PromptFragment struct {
 	Skills    []domain.SkillTag // Agent must have >= 1
 	Providers []string          // "anthropic", "openai", "ollama"
 	GuildID   *domain.GuildID
+
+	// Condition is an optional runtime predicate evaluated after all structural
+	// gates pass. If non-nil, the fragment is included only when Condition returns
+	// true. Use this for context fields (e.g. PartyRequired, IsPartyLead) that
+	// have no corresponding struct gate.
+	Condition func(AssemblyContext) bool
 }
 
 // =============================================================================
@@ -97,8 +108,25 @@ type AssemblyContext struct {
 	// should be included; the assembler emits them verbatim without further filtering.
 	PeerFeedback []PeerFeedbackSummary `json:"peer_feedback,omitempty"`
 
+	// Party context
+	PartyRequired bool // Quest requires party collaboration
+	IsPartyLead   bool // This agent is the party lead (Master+ tier)
+
+	// ClarificationAnswers carries previous Q&A exchanges between the member
+	// agent and the party lead. Populated by questbridge from the sub-quest
+	// entity's quest.dag.clarifications predicate when re-dispatching a
+	// sub-quest after clarification. The assembler renders them as a
+	// "Previous Clarifications" section so the agent has context.
+	ClarificationAnswers []ClarificationAnswer `json:"clarification_answers,omitempty"`
+
 	// Resolution
 	Provider string // from resolved endpoint ("anthropic", "openai", etc.)
+}
+
+// ClarificationAnswer is a single Q&A exchange from a party clarification loop.
+type ClarificationAnswer struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
 }
 
 // PeerFeedbackSummary describes a single peer-review question on which the agent

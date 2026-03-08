@@ -294,7 +294,6 @@
         "domain": "software",
         "stream_name": "AGENT",
         "quest_loops_bucket": "QUEST_LOOPS",
-        "quest_dags_bucket": "QUEST_DAGS",
         "max_iterations": 20,
         "enable_builtins": true,
         "default_role": "general",
@@ -335,9 +334,7 @@
       "config": {
         "org": "local",
         "platform": "dev",
-        "board": "board1",
-        "dag_timeout": "30m",
-        "quest_dags_bucket": "QUEST_DAGS"
+        "board": "board1"
       }
     },
     "autonomy": {

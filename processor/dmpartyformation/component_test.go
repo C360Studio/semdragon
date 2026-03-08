@@ -28,7 +28,7 @@ import (
 // =============================================================================
 
 func TestComponent_Lifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -159,7 +159,7 @@ func TestComponent_ConfigSchema(t *testing.T) {
 // =============================================================================
 
 func TestFormParty_Balanced_SingleAgent(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -191,7 +191,7 @@ func TestFormParty_Balanced_SingleAgent(t *testing.T) {
 }
 
 func TestFormParty_Balanced_MultipleAgents_CoverSkills(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -227,7 +227,7 @@ func TestFormParty_Balanced_MultipleAgents_CoverSkills(t *testing.T) {
 }
 
 func TestFormParty_NoAgents_Errors(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -247,7 +247,7 @@ func TestFormParty_NoAgents_Errors(t *testing.T) {
 // =============================================================================
 
 func TestFormParty_Specialist_PrefersGuildAgents(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -281,7 +281,7 @@ func TestFormParty_Specialist_PrefersGuildAgents(t *testing.T) {
 // =============================================================================
 
 func TestFormParty_Mentor_RequiresMasterLead(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -308,7 +308,7 @@ func TestFormParty_Mentor_RequiresMasterLead(t *testing.T) {
 }
 
 func TestFormParty_Mentor_NoLeadCapable_Errors(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -334,7 +334,7 @@ func TestFormParty_Mentor_NoLeadCapable_Errors(t *testing.T) {
 // =============================================================================
 
 func TestFormParty_Minimal_SingleMemberIfNoPartyRequired(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -366,7 +366,7 @@ func TestFormParty_Minimal_SingleMemberIfNoPartyRequired(t *testing.T) {
 // =============================================================================
 
 func TestRankAgentsForQuest_ReturnsRankedList(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 
 	comp := setupPartyComponent(t, client, "rank-agents")
@@ -388,7 +388,7 @@ func TestRankAgentsForQuest_ReturnsRankedList(t *testing.T) {
 }
 
 func TestRankAgentsForQuest_NotRunning_ReturnsNil(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 
 	deps := component.Dependencies{NATSClient: client}
@@ -422,7 +422,7 @@ func TestRankAgentsForQuest_NotRunning_ReturnsNil(t *testing.T) {
 // =============================================================================
 
 func TestSuggestPartyMembers_ReturnsSortedByScore(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 
 	comp := setupPartyComponent(t, client, "suggest-members")
@@ -454,7 +454,7 @@ func TestSuggestPartyMembers_ReturnsSortedByScore(t *testing.T) {
 }
 
 func TestSuggestPartyMembers_CanLeadFlagAccurate(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 
 	comp := setupPartyComponent(t, client, "suggest-canlead")
@@ -481,7 +481,7 @@ func TestSuggestPartyMembers_CanLeadFlagAccurate(t *testing.T) {
 }
 
 func TestSuggestPartyMembers_SkillsCoveredPopulated(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 
 	comp := setupPartyComponent(t, client, "suggest-skills")
@@ -519,7 +519,7 @@ func TestSuggestPartyMembers_SkillsCoveredPopulated(t *testing.T) {
 // =============================================================================
 
 func TestFormParty_FailsWhenNotRunning(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 

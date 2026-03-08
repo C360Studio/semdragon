@@ -40,12 +40,18 @@ services:
         required: false
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
-      SEMDRAGONS_CONFIG: /etc/semdragons/semdragons-e2e.json
+      SEMDRAGONS_CONFIG: /etc/semdragons/${SEMDRAGONS_E2E_CONFIG:-semdragons-e2e.json}
       SEED_E2E: "${SEED_E2E:-false}"
       SEED_AGENTS: "${SEED_AGENTS:-true}"
       SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      SEMDRAGONS_DEBUG: "${SEMDRAGONS_DEBUG:-false}"
+      SEMDRAGONS_DEBUG_PORT: "6060"
     ports:
       - "8080:8080"
+      - "36060:6060"
     volumes:
       - ${WORKSPACE:-./.workspace}:/workspace
     restart: unless-stopped

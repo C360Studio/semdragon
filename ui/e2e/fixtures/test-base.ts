@@ -4,6 +4,7 @@ import { QuestsPage } from '../pages/quests.page';
 import { AgentsPage } from '../pages/agents.page';
 import { GuildsPage, GuildDetailPage } from '../pages/guilds.page';
 import { SSEHelper } from './sse-helpers';
+import type { components } from '../../src/lib/api/generated';
 
 /**
  * API URL for backend interactions.
@@ -107,59 +108,16 @@ interface QuestPayload {
 
 /**
  * Typed response shapes for lifecycle API operations.
+ *
+ * Entity types are derived from Go structs via OpenAPI → openapi-typescript.
+ * Regenerate with: make openapi && cd ui && npm run gen:api
  */
-export interface QuestResponse {
-	id: string;
-	objective: string;
-	status: string;
-	agent_id?: string;
-	attempts?: number;
-	completed_at?: string;
-	require_human_review?: boolean;
-	review_level?: number;
-	loop_id?: string;
-	[key: string]: unknown;
-}
+export type QuestResponse = components['schemas']['Quest'];
+export type AgentResponse = components['schemas']['Agent'];
+export type BattleVerdictResponse = components['schemas']['BattleVerdict'];
+export type BattleResponse = components['schemas']['BossBattle'];
 
-export interface AgentResponse {
-	id: string;
-	name: string;
-	level: number;
-	tier: number;
-	status: string;
-	xp?: number;
-	skills?: string[];
-	[key: string]: unknown;
-}
-
-export interface BattleVerdictResponse {
-	passed: boolean;
-	quality_score: number;
-	xp_awarded?: number;
-	xp_penalty?: number;
-	feedback?: string;
-}
-
-export interface BattleResponse {
-	id: string;
-	quest_id: string;
-	agent_id?: string;
-	status: string;
-	verdict?: BattleVerdictResponse;
-	[key: string]: unknown;
-}
-
-export interface StoreItemResponse {
-	id: string;
-	name: string;
-	description: string;
-	item_type: string;
-	purchase_type: string;
-	xp_cost: number;
-	min_tier: number;
-	in_stock: boolean;
-	[key: string]: unknown;
-}
+export type StoreItemResponse = components['schemas']['StoreItem'];
 
 export interface PurchaseResponse {
 	success: boolean;
@@ -179,112 +137,19 @@ export interface InventoryResponse {
 	[key: string]: unknown;
 }
 
-export interface ActiveEffectResponse {
-	consumable_id: string;
-	effect: { type: string; magnitude?: number; duration?: number };
-	quests_remaining: number;
-	[key: string]: unknown;
-}
+export type ActiveEffectResponse = components['schemas']['ActiveEffect'];
 
-export type ChatMode = 'converse' | 'quest';
+export type DMChatResponse = components['schemas']['DMChatResponse'];
+export type ChatMode = DMChatResponse['mode'];
 
-export interface DMChatResponse {
-	message: string;
-	mode: ChatMode;
-	quest_brief?: {
-		title: string;
-		description?: string;
-		difficulty?: number;
-		skills?: string[];
-		acceptance?: string[];
-	};
-	quest_chain?: {
-		quests: Array<{
-			title: string;
-			description?: string;
-			difficulty?: number;
-			skills?: string[];
-			acceptance?: string[];
-			depends_on?: number[];
-		}>;
-	};
-	session_id?: string;
-	trace_info?: { trace_id?: string; span_id?: string; parent_span_id?: string };
-}
+export type ReviewResponse = components['schemas']['PeerReview'];
 
-export interface ReviewResponse {
-	id: string;
-	status: string;
-	quest_id: string;
-	leader_id: string;
-	member_id: string;
-	is_solo_task: boolean;
-	leader_review?: {
-		reviewer_id: string;
-		ratings: { q1: number; q2: number; q3: number };
-		explanation?: string;
-	};
-	member_review?: {
-		reviewer_id: string;
-		ratings: { q1: number; q2: number; q3: number };
-		explanation?: string;
-	};
-	leader_avg_rating?: number;
-	member_avg_rating?: number;
-	created_at: string;
-	completed_at?: string;
-	[key: string]: unknown;
-}
+export type DMSessionResponse = components['schemas']['DMChatSession'];
+export type TokenStatsResponse = components['schemas']['TokenStats'];
+export type BoardStatusResponse = components['schemas']['BoardStatusResponse'];
 
-export interface DMSessionResponse {
-	session_id: string;
-	created_at?: string;
-	updated_at?: string;
-	turns?: Array<{
-		user_message: string;
-		dm_response: string;
-		timestamp: string;
-		trace_id?: string;
-		span_id?: string;
-	}>;
-	[key: string]: unknown;
-}
-
-export interface TokenStatsResponse {
-	hourly_usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; estimated_cost_usd: number };
-	total_usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; estimated_cost_usd: number };
-	hourly_limit: number;
-	budget_pct: number;
-	breaker: string;
-	hourly_cost_usd: number;
-	total_cost_usd: number;
-	[key: string]: unknown;
-}
-
-export interface BoardStatusResponse {
-	paused: boolean;
-	paused_at: string | null;
-	paused_by: string | null;
-}
-
-export interface PartyResponse {
-	id: string;
-	quest_id: string;
-	lead_id?: string;
-	members?: Array<{ agent_id: string; role?: string }>;
-	status: string;
-	[key: string]: unknown;
-}
-
-export interface GuildResponse {
-	id: string;
-	name: string;
-	founder_id?: string;
-	specialization?: string;
-	members?: Array<{ agent_id: string; role?: string; joined_at?: string }>;
-	status?: string;
-	[key: string]: unknown;
-}
+export type PartyResponse = components['schemas']['Party'];
+export type GuildResponse = components['schemas']['Guild'];
 
 export interface UseConsumableResponse {
 	success: boolean;
@@ -346,6 +211,7 @@ export interface LifecycleApi {
 	getAgent: (agentId: string) => Promise<AgentResponse>;
 	listBattles: () => Promise<BattleResponse[]>;
 	getWorldState: () => Promise<WorldStateResponse>;
+	listQuests: () => Promise<QuestResponse[]>;
 	listStore: (agentId?: string) => Promise<StoreItemResponse[]>;
 	getStoreItem: (itemId: string) => Promise<StoreItemResponse>;
 	purchaseItem: (agentId: string, itemId: string) => Promise<PurchaseResponse>;
@@ -362,16 +228,7 @@ export interface LifecycleApi {
 		mode?: ChatMode,
 		timeoutMs?: number
 	) => Promise<DMChatResponse>;
-	postQuestChain: (chain: {
-		quests: Array<{
-			title: string;
-			description?: string;
-			difficulty?: number;
-			skills?: string[];
-			acceptance?: string[];
-			depends_on?: number[];
-		}>;
-	}) => Promise<QuestResponse[]>;
+	postQuestChain: (chain: components['schemas']['QuestChainBrief']) => Promise<QuestResponse[]>;
 	getTrajectory: (loopId: string) => Promise<TrajectoryResponse>;
 	createReview: (
 		questId: string,
@@ -623,6 +480,14 @@ export const test = base.extend<{
 				const res = await apiContext.get('/game/world');
 				if (!res.ok()) {
 					throw new Error(`getWorldState failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			listQuests: async () => {
+				const res = await apiContext.get('/game/quests');
+				if (!res.ok()) {
+					throw new Error(`listQuests failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			},
@@ -919,6 +784,49 @@ function difficultyToNumber(
  */
 export function hasBackend(): boolean {
 	return process.env.E2E_BACKEND_AVAILABLE === 'true';
+}
+
+/**
+ * LLM mode for E2E tests.
+ *
+ * Controls which LLM backend the tests expect:
+ *   - 'none'      — skip all LLM-dependent tests (default)
+ *   - 'mock'      — deterministic mock LLM server (canned responses)
+ *   - 'gemini'    — Google Gemini (real, nondeterministic)
+ *   - 'openai'    — OpenAI (real, nondeterministic)
+ *   - 'anthropic' — Anthropic (real, nondeterministic)
+ *   - 'ollama'    — Ollama local (real, nondeterministic)
+ *
+ * Set via E2E_LLM_MODE env var. For backwards compatibility,
+ * E2E_MOCK_LLM=true is treated as mode 'mock' and
+ * E2E_REAL_LLM=true is treated as mode 'real' (generic).
+ */
+export type LLMMode = 'none' | 'mock' | 'gemini' | 'openai' | 'anthropic' | 'ollama' | 'real';
+
+export function getLLMMode(): LLMMode {
+	const mode = process.env.E2E_LLM_MODE;
+	if (mode) return mode as LLMMode;
+
+	// Backwards compatibility with legacy env vars
+	if (process.env.E2E_MOCK_LLM === 'true') return 'mock';
+	if (process.env.E2E_REAL_LLM === 'true') return 'real';
+	if (process.env.E2E_OLLAMA === 'true') return 'ollama';
+	return 'none';
+}
+
+/** Whether any LLM (mock or real) is available for tests. */
+export function hasLLM(): boolean {
+	return getLLMMode() !== 'none';
+}
+
+/** Whether the LLM is a real provider (not mock, not none). */
+export function isRealLLM(): boolean {
+	return !['none', 'mock'].includes(getLLMMode());
+}
+
+/** Whether the LLM is the deterministic mock server. */
+export function isMockLLM(): boolean {
+	return getLLMMode() === 'mock';
 }
 
 // Re-export expect for convenience

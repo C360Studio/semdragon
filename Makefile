@@ -4,6 +4,7 @@
        e2e-cloud e2e-cloud-up e2e-cloud-run e2e-cloud-down \
        e2e-cloud-tiered e2e-cloud-tiered-up e2e-cloud-tiered-run e2e-cloud-tiered-down \
        e2e-ollama e2e-ollama-up e2e-ollama-run e2e-ollama-down \
+       e2e-gemini e2e-anthropic e2e-openai e2e-spec e2e-nats-clean e2e-logs \
        ui-test ui-check
 
 # Build all packages
@@ -242,3 +243,74 @@ e2e-ollama-run:
 e2e-ollama-down:
 	docker compose $(OLLAMA_COMPOSE) down -v --remove-orphans
 	@echo "Ollama E2E stack stopped."
+
+# =============================================================================
+# E2E Shortcuts — Provider-Specific (one command, full lifecycle)
+# =============================================================================
+#
+# Usage:
+#   make e2e-gemini                            # all cloud specs with Gemini
+#   make e2e-gemini SPEC=party-quest-dag-e2e   # single spec with Gemini
+#   make e2e-anthropic SPEC=dm-chat-integration
+#   make e2e-openai SPEC=dm-chat-integration
+#
+# These read API keys from .env or the environment.
+# Override config: SEMDRAGONS_E2E_CONFIG=semdragons-e2e-gemini-tiered.json make e2e-gemini
+
+# Default spec — empty means "all cloud-compatible specs"
+SPEC ?=
+
+# Build the playwright test arguments from SPEC
+_pw_spec = $(if $(SPEC),$(SPEC),)
+_pw_args = $(_pw_spec) --project=chromium
+
+e2e-gemini: e2e-install e2e-nats-clean
+	SEED_E2E=true SEMDRAGONS_E2E_CONFIG=$${SEMDRAGONS_E2E_CONFIG:-semdragons-e2e-gemini.json} \
+		docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@$(MAKE) e2e-wait
+	cd ui && E2E_LLM_MODE=gemini npx playwright test $(_pw_args) || true
+	@$(MAKE) e2e-cloud-down
+
+e2e-anthropic: e2e-install e2e-nats-clean
+	SEED_E2E=true SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json \
+		docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@$(MAKE) e2e-wait
+	cd ui && E2E_LLM_MODE=anthropic npx playwright test $(_pw_args) || true
+	@$(MAKE) e2e-cloud-down
+
+e2e-openai: e2e-install e2e-nats-clean
+	SEED_E2E=true SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json \
+		docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@$(MAKE) e2e-wait
+	cd ui && E2E_LLM_MODE=openai npx playwright test $(_pw_args) || true
+	@$(MAKE) e2e-cloud-down
+
+# ─── Single Spec Runner ────────────────────────────────────────────
+#
+# Run one spec against whatever stack is already running.
+# Usage:
+#   make e2e-spec SPEC=party-quest-dag-e2e            # mock LLM
+#   make e2e-spec SPEC=dm-chat-integration MODE=gemini # real LLM
+#
+MODE ?= mock
+e2e-spec:
+ifndef SPEC
+	$(error SPEC is required. Usage: make e2e-spec SPEC=party-quest-dag-e2e)
+endif
+	cd ui && E2E_LLM_MODE=$(MODE) npx playwright test $(SPEC) --project=chromium
+
+# ─── Utilities ──────────────────────────────────────────────────────
+
+# Wipe NATS volumes (clean KV state between runs)
+e2e-nats-clean:
+	@docker compose --profile mock down -v --remove-orphans 2>/dev/null || true
+	@docker compose $(CLOUD_COMPOSE) down -v --remove-orphans 2>/dev/null || true
+	@echo "NATS volumes wiped."
+
+# Tail backend logs (useful alongside e2e-spec)
+e2e-logs:
+	docker compose logs -f backend
+
+# Tail all service logs
+e2e-logs-all:
+	docker compose logs -f

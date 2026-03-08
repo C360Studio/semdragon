@@ -36,20 +36,20 @@ func (a *PromptAssembler) AssembleJudgePrompt(
 		sections = append(sections, formatSection("Evaluation Criteria", rubric, style))
 	}
 
-	// Instructions
-	instructions := "IMPORTANT: Before scoring, classify the output:\n" +
-		"- If the output is primarily asking questions or requesting clarification rather than " +
-		"delivering work product, respond with needs_escalation: true and score all criteria at 0. " +
-		"The quest needs to be returned to the DM for clarification.\n" +
-		"- If the output is an actual work product (even if incomplete), evaluate it normally.\n\n" +
-		"Evaluate the submission against each criterion. " +
+	// Instructions — includes peer review ratings (DM reviewing the agent)
+	instructions := "Evaluate the submission against each criterion. " +
 		"Score each criterion from 0.0 to 1.0. " +
 		"Provide specific reasoning for each score. " +
 		"A criterion passes if its score meets or exceeds its threshold.\n\n" +
+		"Additionally, provide peer review ratings on a 1-5 scale for these three questions:\n" +
+		"  Q1: " + domain.LeaderToMemberQuestions[0] + "\n" +
+		"  Q2: " + domain.LeaderToMemberQuestions[1] + "\n" +
+		"  Q3: " + domain.LeaderToMemberQuestions[2] + "\n\n" +
 		"Respond with ONLY a JSON object in this exact format:\n" +
 		"```json\n" +
 		"{\"criteria\": [{\"name\": \"<criterion_name>\", \"score\": <0.0-1.0>, \"reasoning\": \"<explanation>\"}], " +
-		"\"overall_feedback\": \"<summary>\", \"needs_escalation\": false}\n" +
+		"\"overall_feedback\": \"<summary>\", " +
+		"\"peer_review\": {\"q1\": <1-5>, \"q2\": <1-5>, \"q3\": <1-5>}}\n" +
 		"```"
 	sections = append(sections, formatSection("Instructions", instructions, style))
 

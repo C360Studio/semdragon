@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -16,6 +17,8 @@ type CLIConfig struct {
 	ShowVersion     bool
 	ShowHelp        bool
 	Validate        bool
+	Debug           bool
+	DebugPort       int
 }
 
 func parseFlags() *CLIConfig {
@@ -40,6 +43,14 @@ func parseFlags() *CLIConfig {
 	flag.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout",
 		30*time.Second,
 		"Graceful shutdown timeout")
+
+	flag.BoolVar(&cfg.Debug, "debug",
+		getEnvBool("SEMDRAGONS_DEBUG", false),
+		"Enable debug mode with pprof (env: SEMDRAGONS_DEBUG)")
+
+	flag.IntVar(&cfg.DebugPort, "debug-port",
+		getEnvInt("SEMDRAGONS_DEBUG_PORT", 6060),
+		"Debug pprof server port, 0 to disable (env: SEMDRAGONS_DEBUG_PORT)")
 
 	flag.BoolVar(&cfg.ShowVersion, "version", false, "Show version and exit")
 	flag.BoolVar(&cfg.ShowHelp, "help", false, "Show help and exit")
@@ -96,12 +107,33 @@ Environment Variables:
   SEMDRAGONS_LOG_FORMAT  Log format
   SEMDRAGONS_NATS_URLS   NATS server URLs (comma-separated)
   SEMSTREAMS_NATS_URLS   NATS server URLs (fallback)
+  SEMDRAGONS_DEBUG       Enable pprof debug server
+  SEMDRAGONS_DEBUG_PORT  pprof server port (default: 6060)
 `, os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	return v == "true" || v == "1" || v == "yes"
+}
+
+func getEnvInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	if n, err := strconv.Atoi(v); err == nil {
+		return n
 	}
 	return fallback
 }

@@ -1,4 +1,4 @@
-import { test, expect, hasBackend } from '../fixtures/test-base';
+import { test, expect, hasBackend, isRealLLM } from '../fixtures/test-base';
 
 /**
  * Model Registry E2E Tests
@@ -14,13 +14,8 @@ import { test, expect, hasBackend } from '../fixtures/test-base';
  *
  * Environment requirements:
  *   - E2E_BACKEND_AVAILABLE=true (set by global-setup.ts)
- *   - E2E_REAL_LLM=true (tiered config only exists in cloud mode)
+ *   - E2E_LLM_MODE=gemini|openai|anthropic (real LLM with tiered config)
  */
-
-/** Whether real LLM is configured (cloud mode with tiered config). */
-function hasRealLLM(): boolean {
-	return process.env.E2E_REAL_LLM === 'true';
-}
 
 // Response shapes for the /game/models endpoint
 interface ModelResolveResponse {
@@ -116,8 +111,8 @@ test.describe('Model Registry @integration', () => {
 	test.describe('Tiered Gemini Routing', () => {
 		test.beforeEach(() => {
 			test.skip(
-				!hasRealLLM(),
-				'Tiered routing tests require E2E_REAL_LLM=true (cloud mode with tiered config)'
+				!isRealLLM(),
+				'Tiered routing tests require real LLM (E2E_LLM_MODE=gemini|openai|anthropic|ollama)'
 			);
 		});
 

@@ -3,6 +3,7 @@ package questdagexec
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
@@ -45,17 +46,18 @@ type TaskAssigner interface {
 	AssignTask(ctx context.Context, partyID domain.PartyID, subQuestID domain.QuestID, assignedTo domain.AgentID, rationale string) error
 }
 
-// QuestClaimerForParty formally claims a sub-quest on behalf of a party.
-// The signature mirrors questboard.Component.ClaimQuestForParty.
-type QuestClaimerForParty interface {
-	ClaimQuestForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error
+// QuestClaimerAndStarter atomically claims a sub-quest on behalf of a party and
+// transitions it directly to in_progress. The signature mirrors
+// questboard.Component.ClaimAndStartForParty.
+type QuestClaimerAndStarter interface {
+	ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error
 }
 
 // AssignmentDeps bundles the dependencies required by AssignReadyNodes.
 type AssignmentDeps struct {
 	Members     PartyMemberLister
 	Tasks       TaskAssigner
-	QuestClaims QuestClaimerForParty
+	QuestClaims QuestClaimerAndStarter
 }
 
 // =============================================================================
@@ -103,10 +105,15 @@ func agentMeetsTier(agent *agentprogression.Agent, node QuestNode) bool {
 // Returns an error when there are fewer eligible idle agents than DAG nodes
 // that require a recruit. Callers should retry after a delay.
 func RecruitMembers(ctx context.Context, dagState *DAGExecutionState, deps RecruitmentDeps) error {
+	logger := slog.Default().With("execution_id", dagState.ExecutionID, "party_id", dagState.PartyID)
+
 	idleAgents, err := deps.Agents.ListIdleAgents(ctx)
 	if err != nil {
 		return fmt.Errorf("list idle agents: %w", err)
 	}
+
+	logger.Debug("recruitment: listing idle agents",
+		"idle_count", len(idleAgents), "nodes", len(dagState.DAG.Nodes))
 
 	if len(idleAgents) == 0 {
 		return fmt.Errorf("no idle agents available for recruitment")
@@ -127,8 +134,14 @@ func RecruitMembers(ctx context.Context, dagState *DAGExecutionState, deps Recru
 		best, score := selectCandidate(idleAgents, node, recruited)
 		if best == nil || score < 0 {
 			shortfall++
+			logger.Warn("recruitment: no eligible candidate for node",
+				"node_id", node.ID, "skills", node.Skills)
 			continue
 		}
+
+		logger.Debug("recruitment: selected candidate",
+			"node_id", node.ID, "agent_id", best.ID,
+			"score", score, "agent_level", best.Level)
 
 		if err := deps.PartyJoins.JoinParty(ctx, domain.PartyID(dagState.PartyID), best.ID, domain.RoleExecutor); err != nil {
 			return fmt.Errorf("join party for agent %s (node %s): %w", best.ID, node.ID, err)
@@ -138,9 +151,11 @@ func RecruitMembers(ctx context.Context, dagState *DAGExecutionState, deps Recru
 	}
 
 	if shortfall > 0 {
+		logger.Warn("recruitment: shortfall", "shortfall", shortfall)
 		return fmt.Errorf("insufficient idle agents: %d node(s) could not be staffed", shortfall)
 	}
 
+	logger.Debug("recruitment: completed successfully", "recruited", len(recruited))
 	return nil
 }
 
@@ -186,15 +201,30 @@ func selectCandidate(agents []*agentprogression.Agent, node QuestNode, recruited
 // Party members already assigned to a node in this DAGExecutionState are
 // excluded from further assignment to prevent double-booking.
 func AssignReadyNodes(ctx context.Context, dagState *DAGExecutionState, deps AssignmentDeps) error {
-	readyNodeIDs := DAGReadyNodes(dagState.DAG, dagState.NodeStates)
+	logger := slog.Default().With("execution_id", dagState.ExecutionID, "party_id", dagState.PartyID)
+
+	// Collect nodes in NodeReady state (already promoted by promoteReadyNodes).
+	var readyNodeIDs []string
+	for _, node := range dagState.DAG.Nodes {
+		if dagState.NodeStates[node.ID] == NodeReady {
+			readyNodeIDs = append(readyNodeIDs, node.ID)
+		}
+	}
 	if len(readyNodeIDs) == 0 {
+		logger.Debug("assignment: no ready nodes to assign")
 		return nil
 	}
+
+	logger.Debug("assignment: starting node assignment",
+		"ready_nodes", readyNodeIDs)
 
 	party, ok := deps.Members.GetParty(domain.PartyID(dagState.PartyID))
 	if !ok {
 		return fmt.Errorf("party %s not found", dagState.PartyID)
 	}
+
+	logger.Debug("assignment: party found",
+		"member_count", len(party.Members), "lead", party.Lead)
 
 	// Build the set of already-assigned agents so we don't double-book them.
 	alreadyAssigned := make(map[domain.AgentID]struct{}, len(dagState.NodeAssignees))
@@ -214,18 +244,25 @@ func AssignReadyNodes(ctx context.Context, dagState *DAGExecutionState, deps Ass
 
 		member := selectMember(party.Members, node, alreadyAssigned)
 		if member == nil {
+			logger.Warn("assignment: no available party member",
+				"node_id", nodeID, "already_assigned", len(alreadyAssigned),
+				"total_members", len(party.Members))
 			return fmt.Errorf("no available party member for node %s", nodeID)
 		}
 
 		subQuestID := domain.QuestID(dagState.NodeQuestIDs[nodeID])
 		rationale := buildRationale(member, node)
 
+		logger.Debug("assignment: assigning node",
+			"node_id", nodeID, "agent_id", member.AgentID,
+			"sub_quest_id", subQuestID)
+
 		if err := deps.Tasks.AssignTask(ctx, domain.PartyID(dagState.PartyID), subQuestID, member.AgentID, rationale); err != nil {
 			return fmt.Errorf("assign task for node %s to agent %s: %w", nodeID, member.AgentID, err)
 		}
 
-		if err := deps.QuestClaims.ClaimQuestForParty(ctx, subQuestID, domain.PartyID(dagState.PartyID)); err != nil {
-			return fmt.Errorf("claim quest %s for party: %w", subQuestID, err)
+		if err := deps.QuestClaims.ClaimAndStartForParty(ctx, subQuestID, domain.PartyID(dagState.PartyID)); err != nil {
+			return fmt.Errorf("claim and start quest %s for party: %w", subQuestID, err)
 		}
 
 		// Advance DAG state.
@@ -236,6 +273,7 @@ func AssignReadyNodes(ctx context.Context, dagState *DAGExecutionState, deps Ass
 		alreadyAssigned[member.AgentID] = struct{}{}
 	}
 
+	logger.Debug("assignment: all ready nodes assigned", "assigned_count", len(readyNodeIDs))
 	return nil
 }
 

@@ -2067,7 +2067,17 @@ func (s *Service) handleListAgentReviews(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	agentID := domain.AgentID(id)
+	// Build a match function that checks both instance ID and full entity ID,
+	// since reviews may store either form depending on the creation path.
+	instance := domain.ExtractInstance(id)
+	shortID := domain.AgentID(instance)
+	fullID := shortID
+	if s.boardConfig != nil {
+		fullID = domain.AgentID(s.boardConfig.AgentEntityID(instance))
+	}
+	matchesAgent := func(reviewAgentID domain.AgentID) bool {
+		return reviewAgentID == shortID || reviewAgentID == fullID
+	}
 
 	entities, err := s.graph.ListPeerReviewsByPrefix(r.Context(), s.config.MaxEntities)
 	if err != nil {
@@ -2086,7 +2096,7 @@ func (s *Service) handleListAgentReviews(w http.ResponseWriter, r *http.Request)
 		if review == nil {
 			continue
 		}
-		if review.LeaderID != agentID && review.MemberID != agentID {
+		if !matchesAgent(review.LeaderID) && !matchesAgent(review.MemberID) {
 			continue
 		}
 		reviews = append(reviews, stripPartialSubmissions(review))

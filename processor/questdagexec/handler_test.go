@@ -2,7 +2,10 @@ package questdagexec
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/c360studio/semdragons/domain"
@@ -14,14 +17,15 @@ import (
 // =============================================================================
 
 type mockQuestBoardRef struct {
-	submitCalls   []submitCall
-	failCalls     []failCall
-	escalateCalls []escalateCall
-	claimCalls    []claimForPartyCall
-	submitErr     error
-	failErr       error
-	escalateErr   error
-	claimErr      error
+	mu                 sync.Mutex
+	submitCalls        []submitCall
+	failCalls          []failCall
+	escalateCalls      []escalateCall
+	claimAndStartCalls []claimForPartyCall
+	submitErr          error
+	failErr            error
+	escalateErr        error
+	claimAndStartErr   error
 }
 
 type submitCall struct {
@@ -45,26 +49,56 @@ type claimForPartyCall struct {
 }
 
 func (m *mockQuestBoardRef) SubmitResult(_ context.Context, questID domain.QuestID, result any) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.submitCalls = append(m.submitCalls, submitCall{questID, result})
 	return m.submitErr
 }
 
 func (m *mockQuestBoardRef) FailQuest(_ context.Context, questID domain.QuestID, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.failCalls = append(m.failCalls, failCall{questID, reason})
 	return m.failErr
 }
 
 func (m *mockQuestBoardRef) EscalateQuest(_ context.Context, questID domain.QuestID, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.escalateCalls = append(m.escalateCalls, escalateCall{questID, reason})
 	return m.escalateErr
 }
 
-func (m *mockQuestBoardRef) ClaimQuestForParty(_ context.Context, questID domain.QuestID, partyID domain.PartyID) error {
-	m.claimCalls = append(m.claimCalls, claimForPartyCall{questID, partyID})
-	return m.claimErr
+func (m *mockQuestBoardRef) ClaimAndStartForParty(_ context.Context, questID domain.QuestID, partyID domain.PartyID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.claimAndStartCalls = append(m.claimAndStartCalls, claimForPartyCall{questID, partyID})
+	return m.claimAndStartErr
+}
+
+// SubmitCallCount returns the number of submit calls (thread-safe).
+func (m *mockQuestBoardRef) SubmitCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.submitCalls)
+}
+
+// ClaimCallCount returns the number of ClaimAndStart calls (thread-safe).
+func (m *mockQuestBoardRef) ClaimCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.claimAndStartCalls)
+}
+
+// GetSubmitCall returns the i-th submit call (thread-safe).
+func (m *mockQuestBoardRef) GetSubmitCall(i int) submitCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.submitCalls[i]
 }
 
 type mockPartyCoordRef struct {
+	mu           sync.Mutex
 	joinCalls    []partyJoinCall
 	assignCalls  []partyAssignCall
 	parties      map[domain.PartyID]*partycoord.Party
@@ -93,16 +127,22 @@ type disbandCall struct {
 }
 
 func (m *mockPartyCoordRef) JoinParty(_ context.Context, partyID domain.PartyID, agentID domain.AgentID, role domain.PartyRole) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.joinCalls = append(m.joinCalls, partyJoinCall{partyID, agentID, role})
 	return m.joinErr
 }
 
 func (m *mockPartyCoordRef) AssignTask(_ context.Context, partyID domain.PartyID, subQuestID domain.QuestID, agentID domain.AgentID, rationale string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.assignCalls = append(m.assignCalls, partyAssignCall{partyID, subQuestID, agentID, rationale})
 	return m.assignErr
 }
 
 func (m *mockPartyCoordRef) GetParty(partyID domain.PartyID) (*partycoord.Party, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.parties == nil {
 		return nil, false
 	}
@@ -111,8 +151,17 @@ func (m *mockPartyCoordRef) GetParty(partyID domain.PartyID) (*partycoord.Party,
 }
 
 func (m *mockPartyCoordRef) DisbandParty(_ context.Context, partyID domain.PartyID, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.disbandCalls = append(m.disbandCalls, disbandCall{partyID, reason})
 	return m.disbandErr
+}
+
+// DisbandCallCount returns the number of disband calls (thread-safe).
+func (m *mockPartyCoordRef) DisbandCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.disbandCalls)
 }
 
 // =============================================================================
@@ -122,13 +171,25 @@ func (m *mockPartyCoordRef) DisbandParty(_ context.Context, partyID domain.Party
 // newTestComponent constructs a Component with mocked sibling refs suitable
 // for unit tests. The graph client is nil since handler functions that load
 // quest entities from KV are tested via integration tests.
+//
+// Plain maps are initialized so event loop handler methods can be called
+// directly without nil-map panics.
 func newTestComponent(qb *mockQuestBoardRef, pc *mockPartyCoordRef) *Component {
 	config := DefaultConfig()
 	c := &Component{
 		config:        &config,
-		questBoardRef: qb,
-		partyCoord:    pc,
 		logger:        slog.Default(),
+		dagCache:      make(map[string]*DAGExecutionState),
+		dagBySubQuest: make(map[string]*DAGExecutionState),
+		questCache:    make(map[string]string),
+	}
+	// Assign through interface only when non-nil to avoid the Go
+	// "typed nil wraps to non-nil interface" trap.
+	if qb != nil {
+		c.questBoardRef = qb
+	}
+	if pc != nil {
+		c.partyCoord = pc
 	}
 	return c
 }
@@ -176,8 +237,8 @@ func TestFindDAGForSubQuest(t *testing.T) {
 		makeNode("n1", 0),
 	})
 
-	// Store with a known key.
-	c.dagBySubQuest.Store("quest.local.dev.game.board1.quest.abc", dag)
+	// Store with a known key directly in the plain map.
+	c.dagBySubQuest["quest.local.dev.game.board1.quest.abc"] = dag
 
 	tests := []struct {
 		name      string
@@ -235,9 +296,9 @@ func TestFindNodeForQuest(t *testing.T) {
 	dag.NodeQuestIDs["n3"] = "q3ghi"
 
 	tests := []struct {
-		name        string
-		questID     string
-		wantNodeID  string
+		name       string
+		questID    string
+		wantNodeID string
 	}{
 		{
 			name:       "exact full-entity-ID match",
@@ -373,8 +434,11 @@ func TestHandleNodeCompleted(t *testing.T) {
 		c := &Component{
 			config:        &config,
 			questBoardRef: qb,
-			partyCoord: &mockPartyCoordRef{},
+			partyCoord:    &mockPartyCoordRef{},
 			logger:        slog.Default(),
+			dagCache:      make(map[string]*DAGExecutionState),
+			dagBySubQuest: make(map[string]*DAGExecutionState),
+			questCache:    make(map[string]string),
 		}
 
 		dag := makeFullDAGState("exec-c1", "parent-quest-1", "party-c1", []QuestNode{
@@ -432,6 +496,9 @@ func TestHandleNodeCompleted(t *testing.T) {
 			questBoardRef: qb,
 			partyCoord:    pc,
 			logger:        slog.Default(),
+			dagCache:      make(map[string]*DAGExecutionState),
+			dagBySubQuest: make(map[string]*DAGExecutionState),
+			questCache:    make(map[string]string),
 		}
 
 		dag := makeFullDAGState("exec-c3", "parent-quest-3", "party-c3", []QuestNode{
@@ -631,9 +698,12 @@ func TestTriggerRollup(t *testing.T) {
 		// not a typed nil wrapped in an interface.
 		config := DefaultConfig()
 		c := &Component{
-			config:     &config,
-			partyCoord: pc,
-			logger:     slog.Default(),
+			config:        &config,
+			partyCoord:    pc,
+			logger:        slog.Default(),
+			dagCache:      make(map[string]*DAGExecutionState),
+			dagBySubQuest: make(map[string]*DAGExecutionState),
+			questCache:    make(map[string]string),
 		}
 
 		dag := makeFullDAGState("exec-r2", "parent-r2", "party-r2", []QuestNode{
@@ -659,6 +729,9 @@ func TestTriggerRollup(t *testing.T) {
 			config:        &config,
 			questBoardRef: qb,
 			logger:        slog.Default(),
+			dagCache:      make(map[string]*DAGExecutionState),
+			dagBySubQuest: make(map[string]*DAGExecutionState),
+			questCache:    make(map[string]string),
 		}
 
 		dag := makeFullDAGState("exec-r3", "parent-r3", "", []QuestNode{
@@ -856,4 +929,336 @@ func TestPromoteReadyNodes(t *testing.T) {
 			t.Errorf("n1 state = %q, want ready (no deps)", dag.NodeStates["n1"])
 		}
 	})
+}
+
+// =============================================================================
+// Event loop sequential correctness — replaces TestConcurrentNodeCompletions
+// =============================================================================
+// The old TestConcurrentNodeCompletions launched multiple goroutines each
+// calling handleNodeCompleted while holding a per-DAG mutex. With the single-
+// goroutine event loop there is no concurrent access to DAG state, so that
+// specific test no longer makes sense.
+//
+// Instead we verify that sequential processing of N node completions via the
+// event loop handlers produces the correct final state without data races.
+// =============================================================================
+
+// TestSequentialNodeCompletions verifies that calling handleNodeCompleted N times
+// sequentially (as the event loop does) produces correct CompletedNodes and
+// eventually triggers rollup exactly once.
+func TestSequentialNodeCompletions(t *testing.T) {
+	t.Parallel()
+
+	const numNodes = 10
+
+	nodes := make([]QuestNode, numNodes)
+	for i := range nodes {
+		nodes[i] = QuestNode{ID: fmt.Sprintf("n%d", i), Objective: fmt.Sprintf("Step %d", i)}
+	}
+
+	qb := &mockQuestBoardRef{}
+	pc := &mockPartyCoordRef{
+		parties: map[domain.PartyID]*partycoord.Party{
+			"party-1": {Lead: "lead-1"},
+		},
+	}
+	c := newTestComponent(qb, pc)
+
+	dagState := makeFullDAGState("exec-seq", "parent-seq", "party-1", nodes)
+	for _, n := range nodes {
+		dagState.NodeStates[n.ID] = NodeInProgress
+	}
+	// Register in dagCache so indexDAGState-dependent paths can find it.
+	c.dagCache[dagState.ExecutionID] = dagState
+
+	ctx := context.Background()
+
+	// Call handleNodeCompleted sequentially for each node — mimicking the
+	// single-goroutine event loop processing N completion events.
+	for i := 0; i < numNodes; i++ {
+		c.handleNodeCompleted(ctx, dagState, fmt.Sprintf("n%d", i))
+	}
+
+	// Verify all nodes are completed.
+	for _, n := range nodes {
+		if dagState.NodeStates[n.ID] != NodeCompleted {
+			t.Errorf("node %s state = %q, want %q", n.ID, dagState.NodeStates[n.ID], NodeCompleted)
+		}
+	}
+
+	// Verify CompletedNodes has all entries.
+	if len(dagState.CompletedNodes) != numNodes {
+		t.Errorf("CompletedNodes length = %d, want %d", len(dagState.CompletedNodes), numNodes)
+	}
+
+	// Verify rollup was triggered exactly once (when the last node completed).
+	if qb.SubmitCallCount() != 1 {
+		t.Errorf("expected 1 rollup submit call, got %d", qb.SubmitCallCount())
+	}
+}
+
+// =============================================================================
+// dagStateFromQuest TESTS
+// =============================================================================
+
+// TestDagStateFromQuest verifies that dagStateFromQuest correctly reconstructs
+// a DAGExecutionState from a domain.Quest with DAG fields set.
+func TestDagStateFromQuest(t *testing.T) {
+	t.Parallel()
+
+	twoNodeDAG := QuestDAG{
+		Nodes: []QuestNode{
+			{ID: "n1", Objective: "task 1"},
+			{ID: "n2", Objective: "task 2", DependsOn: []string{"n1"}},
+		},
+	}
+
+	t.Run("fresh quest — seeds node states from DAG definition", func(t *testing.T) {
+		t.Parallel()
+
+		partyID := domain.PartyID("party-1")
+		quest := &domain.Quest{
+			ID:              domain.QuestID("parent-q-1"),
+			PartyID:         &partyID,
+			DAGExecutionID:  "exec-init-1",
+			DAGDefinition:   twoNodeDAG,
+			DAGNodeQuestIDs: map[string]string{"n1": "sq-1", "n2": "sq-2"},
+			// NodeStates absent — dagStateFromQuest must seed from DAG.
+		}
+
+		state := dagStateFromQuest(quest, 2)
+		if state == nil {
+			t.Fatal("dagStateFromQuest returned nil")
+		}
+		if state.ExecutionID != "exec-init-1" {
+			t.Errorf("ExecutionID = %q, want exec-init-1", state.ExecutionID)
+		}
+		if state.ParentQuestID != "parent-q-1" {
+			t.Errorf("ParentQuestID = %q, want parent-q-1", state.ParentQuestID)
+		}
+		if state.PartyID != "party-1" {
+			t.Errorf("PartyID = %q, want party-1", state.PartyID)
+		}
+		if len(state.NodeStates) != 2 {
+			t.Fatalf("NodeStates length = %d, want 2", len(state.NodeStates))
+		}
+		// n1 has no deps → NodeReady; n2 depends on n1 → NodePending
+		if state.NodeStates["n1"] != NodeReady {
+			t.Errorf("n1 state = %q, want %q", state.NodeStates["n1"], NodeReady)
+		}
+		if state.NodeStates["n2"] != NodePending {
+			t.Errorf("n2 state = %q, want %q", state.NodeStates["n2"], NodePending)
+		}
+		if len(state.NodeRetries) != 2 {
+			t.Errorf("NodeRetries length = %d, want 2", len(state.NodeRetries))
+		}
+		if state.NodeRetries["n1"] != 2 || state.NodeRetries["n2"] != 2 {
+			t.Errorf("NodeRetries = %v, want all 2", state.NodeRetries)
+		}
+	})
+
+	t.Run("quest with existing node states — preserves them", func(t *testing.T) {
+		t.Parallel()
+
+		partyID := domain.PartyID("party-2")
+		quest := &domain.Quest{
+			ID:              domain.QuestID("parent-q-2"),
+			PartyID:         &partyID,
+			DAGExecutionID:  "exec-2",
+			DAGDefinition:   twoNodeDAG,
+			DAGNodeQuestIDs: map[string]string{"n1": "sq-1", "n2": "sq-2"},
+			DAGNodeStates:   map[string]string{"n1": NodeCompleted, "n2": NodeInProgress},
+			DAGNodeAssignees: map[string]string{"n2": "agent-x"},
+			DAGCompletedNodes: []string{"n1"},
+			DAGNodeRetries:  map[string]int{"n1": 1, "n2": 2},
+		}
+
+		state := dagStateFromQuest(quest, 3)
+		if state == nil {
+			t.Fatal("dagStateFromQuest returned nil")
+		}
+		if state.NodeStates["n1"] != NodeCompleted {
+			t.Errorf("n1 state = %q, want %q", state.NodeStates["n1"], NodeCompleted)
+		}
+		if state.NodeStates["n2"] != NodeInProgress {
+			t.Errorf("n2 state = %q, want %q", state.NodeStates["n2"], NodeInProgress)
+		}
+		if state.NodeAssignees["n2"] != "agent-x" {
+			t.Errorf("n2 assignee = %q, want agent-x", state.NodeAssignees["n2"])
+		}
+		if len(state.CompletedNodes) != 1 || state.CompletedNodes[0] != "n1" {
+			t.Errorf("CompletedNodes = %v, want [n1]", state.CompletedNodes)
+		}
+		if state.NodeRetries["n1"] != 1 {
+			t.Errorf("n1 retries = %d, want 1", state.NodeRetries["n1"])
+		}
+	})
+
+	t.Run("nil quest returns nil", func(t *testing.T) {
+		t.Parallel()
+		state := dagStateFromQuest(nil, 2)
+		if state != nil {
+			t.Error("expected nil for nil quest")
+		}
+	})
+
+	t.Run("quest with empty DAGExecutionID returns nil", func(t *testing.T) {
+		t.Parallel()
+		quest := &domain.Quest{ID: "q1"}
+		state := dagStateFromQuest(quest, 2)
+		if state != nil {
+			t.Error("expected nil when DAGExecutionID is empty")
+		}
+	})
+
+	t.Run("diamond DAG — only root nodes seeded as ready", func(t *testing.T) {
+		t.Parallel()
+
+		diamondDAG := QuestDAG{
+			Nodes: []QuestNode{
+				{ID: "a", Objective: "first"},
+				{ID: "b", Objective: "second", DependsOn: []string{"a"}},
+				{ID: "c", Objective: "third", DependsOn: []string{"a"}},
+				{ID: "d", Objective: "final", DependsOn: []string{"b", "c"}},
+			},
+		}
+		partyID := domain.PartyID("party-3")
+		quest := &domain.Quest{
+			ID:             domain.QuestID("parent-q-3"),
+			PartyID:        &partyID,
+			DAGExecutionID: "exec-build-1",
+			DAGDefinition:  diamondDAG,
+			DAGNodeQuestIDs: map[string]string{
+				"a": "sq-a", "b": "sq-b", "c": "sq-c", "d": "sq-d",
+			},
+		}
+
+		state := dagStateFromQuest(quest, 3)
+		if state == nil {
+			t.Fatal("dagStateFromQuest returned nil")
+		}
+		if state.ExecutionID != "exec-build-1" {
+			t.Errorf("ExecutionID = %q", state.ExecutionID)
+		}
+
+		// Node "a" has no deps → Ready; b,c,d depend on something → Pending
+		if state.NodeStates["a"] != NodeReady {
+			t.Errorf("node a state = %q, want %q", state.NodeStates["a"], NodeReady)
+		}
+		for _, id := range []string{"b", "c", "d"} {
+			if state.NodeStates[id] != NodePending {
+				t.Errorf("node %s state = %q, want %q", id, state.NodeStates[id], NodePending)
+			}
+		}
+
+		// All retries set to 3
+		for _, id := range []string{"a", "b", "c", "d"} {
+			if state.NodeRetries[id] != 3 {
+				t.Errorf("node %s retries = %d, want 3", id, state.NodeRetries[id])
+			}
+		}
+
+		// Completed/Failed should be empty slices (not nil)
+		if state.CompletedNodes == nil || len(state.CompletedNodes) != 0 {
+			t.Errorf("CompletedNodes = %v, want empty slice", state.CompletedNodes)
+		}
+		if state.FailedNodes == nil || len(state.FailedNodes) != 0 {
+			t.Errorf("FailedNodes = %v, want empty slice", state.FailedNodes)
+		}
+
+		// NodeAssignees should be initialized but empty
+		if state.NodeAssignees == nil {
+			t.Error("NodeAssignees is nil, want initialized empty map")
+		}
+
+		// NodeQuestIDs should be carried through
+		if state.NodeQuestIDs["a"] != "sq-a" {
+			t.Errorf("NodeQuestIDs[a] = %q, want sq-a", state.NodeQuestIDs["a"])
+		}
+	})
+}
+
+// TestAnyToStringMap verifies that anyToStringMap handles map[string]any
+// after a JSON round-trip (the typical case from KV reconstruction).
+func TestAnyToStringMap(t *testing.T) {
+	t.Parallel()
+
+	t.Run("already typed map[string]string", func(t *testing.T) {
+		t.Parallel()
+		in := map[string]string{"k1": "v1", "k2": "v2"}
+		out := anyToStringMap(in)
+		if out["k1"] != "v1" || out["k2"] != "v2" {
+			t.Errorf("anyToStringMap = %v, want %v", out, in)
+		}
+	})
+
+	t.Run("map[string]any with string values (JSON round-trip)", func(t *testing.T) {
+		t.Parallel()
+		in := map[string]any{"k1": "v1", "k2": "v2"}
+		out := anyToStringMap(in)
+		if out["k1"] != "v1" || out["k2"] != "v2" {
+			t.Errorf("anyToStringMap = %v, want k1→v1, k2→v2", out)
+		}
+	})
+
+	t.Run("nil returns nil", func(t *testing.T) {
+		t.Parallel()
+		if anyToStringMap(nil) != nil {
+			t.Error("expected nil for nil input")
+		}
+	})
+}
+
+// TestAnyToIntMap verifies that anyToIntMap handles the float64 encoding
+// that JSON uses for all numbers.
+func TestAnyToIntMap(t *testing.T) {
+	t.Parallel()
+
+	t.Run("map[string]any with float64 values (JSON round-trip)", func(t *testing.T) {
+		t.Parallel()
+		in := map[string]any{"n1": float64(2), "n2": float64(0)}
+		out := anyToIntMap(in)
+		if out["n1"] != 2 || out["n2"] != 0 {
+			t.Errorf("anyToIntMap = %v, want n1→2, n2→0", out)
+		}
+	})
+
+	t.Run("nil returns nil", func(t *testing.T) {
+		t.Parallel()
+		if anyToIntMap(nil) != nil {
+			t.Error("expected nil for nil input")
+		}
+	})
+}
+
+// TestAnyToStringSlice verifies that anyToStringSlice handles []any after
+// JSON round-trip.
+func TestAnyToStringSlice(t *testing.T) {
+	t.Parallel()
+
+	t.Run("[]any with string elements (JSON round-trip)", func(t *testing.T) {
+		t.Parallel()
+		in := []any{"n1", "n2", "n3"}
+		out := anyToStringSlice(in)
+		if len(out) != 3 || out[0] != "n1" || out[2] != "n3" {
+			t.Errorf("anyToStringSlice = %v, want [n1 n2 n3]", out)
+		}
+	})
+
+	t.Run("nil returns nil", func(t *testing.T) {
+		t.Parallel()
+		if anyToStringSlice(nil) != nil {
+			t.Error("expected nil for nil input")
+		}
+	})
+}
+
+// mustMarshal is a test helper that marshals v to JSON or fails the test.
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("mustMarshal: %v", err)
+	}
+	return data
 }

@@ -79,8 +79,10 @@ type usage struct {
 // ---- Pattern matching -------------------------------------------------------
 
 var (
-	reChain     = regexp.MustCompile(`(?i)chain|multiple.*quest`)
+	reChain      = regexp.MustCompile(`(?i)chain|multiple.*quest`)
 	reQuestBrief = regexp.MustCompile(`(?i)create.*quest|quest.*brief|build|analyze`)
+	// Matches sub-quest entity IDs in prompts like: sub-quest "org.plat.game.board.quest.abc"
+	reSubQuestID = regexp.MustCompile(`sub-quest\s+"([^"]+)"`)
 )
 
 // handleChatCompletions returns an http.HandlerFunc that logs and routes
@@ -130,9 +132,9 @@ func route(req chatRequest) chatResponse {
 	// so the loop finishes cleanly.
 	if len(req.Tools) > 0 {
 		if hasToolResults(req.Messages) {
-			return completionResponse(completionContent)
+			return routeWithToolResults(req)
 		}
-		return toolCallResponse(req.Tools)
+		return routeToolCall(req.Tools, req.Messages)
 	}
 
 	// DM chat path: pattern-match on the last user message.
@@ -144,6 +146,85 @@ func route(req chatRequest) chatResponse {
 		return completionResponse(questBriefResponse)
 	}
 	return completionResponse(conversationalResponse)
+}
+
+// routeToolCall picks the right tool call based on which tools are available.
+// For DAG decomposition and review flows, it calls the domain-specific tool.
+// For generic agentic loops, it falls back to filesystem tools.
+func routeToolCall(tools []toolDef, msgs []requestMsg) chatResponse {
+	toolNames := make(map[string]bool, len(tools))
+	for _, t := range tools {
+		toolNames[t.Function.Name] = true
+	}
+
+	// Party quest decomposition: call decompose_quest if available.
+	if toolNames["decompose_quest"] {
+		return namedToolCallResponse("decompose_quest", dagDecompositionArgs)
+	}
+
+	// Lead review: call review_sub_quest if available.
+	// Extract the real sub-quest ID from the prompt so the review tool
+	// receives a valid entity ID rather than a placeholder.
+	if toolNames["review_sub_quest"] {
+		args := buildReviewAcceptArgs(msgs)
+		return namedToolCallResponse("review_sub_quest", args)
+	}
+
+	// Lead clarification: call answer_clarification if available.
+	if toolNames["answer_clarification"] {
+		args := buildClarificationArgs(msgs)
+		return namedToolCallResponse("answer_clarification", args)
+	}
+
+	// Default: pick a filesystem tool for generic agentic loops.
+	return toolCallResponse(tools)
+}
+
+// routeWithToolResults handles the second+ turn of an agentic loop (tool
+// results are present). For DAG decomposition, returns the DAG JSON content
+// so questbridge can extract and process it.
+func routeWithToolResults(req chatRequest) chatResponse {
+	// Check what tool was last called by looking at tool_calls in messages.
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		msg := req.Messages[i]
+		for _, tc := range msg.ToolCalls {
+			switch tc.Function.Name {
+			case "decompose_quest":
+				return completionResponse(dagDecompositionContent)
+			case "review_sub_quest":
+				return completionResponse(reviewAcceptCompletion)
+			}
+		}
+	}
+	return completionResponse(completionContent)
+}
+
+// namedToolCallResponse returns a tool_calls response for a specific tool.
+func namedToolCallResponse(name, arguments string) chatResponse {
+	nilContent := (*string)(nil)
+	return chatResponse{
+		Choices: []choice{
+			{
+				Index: 0,
+				Message: responseMsg{
+					Role:    "assistant",
+					Content: nilContent,
+					ToolCalls: []toolCall{
+						{
+							ID:   "call_mock_1",
+							Type: "function",
+							Function: toolFuncCall{
+								Name:      name,
+								Arguments: arguments,
+							},
+						},
+					},
+				},
+				FinishReason: "tool_calls",
+			},
+		},
+		Usage: usage{PromptTokens: 100, CompletionTokens: 25, TotalTokens: 125},
+	}
 }
 
 // hasToolResults returns true if any message in the conversation has role
@@ -214,6 +295,43 @@ func toolCallResponse(tools []toolDef) chatResponse {
 		},
 		Usage: usage{PromptTokens: 100, CompletionTokens: 25, TotalTokens: 125},
 	}
+}
+
+// buildReviewAcceptArgs constructs review_sub_quest tool call arguments with
+// the real sub-quest ID extracted from the prompt messages. Falls back to a
+// placeholder if no ID can be found (shouldn't happen in normal flow).
+func buildReviewAcceptArgs(msgs []requestMsg) string {
+	subQuestID := extractSubQuestID(msgs)
+	return fmt.Sprintf(
+		`{"sub_quest_id":%q,"verdict":"accept","ratings":{"q1":5,"q2":5,"q3":5},"explanation":"Work meets all acceptance criteria."}`,
+		subQuestID,
+	)
+}
+
+// buildClarificationArgs constructs answer_clarification tool call arguments
+// with the real sub-quest ID extracted from the prompt messages.
+func buildClarificationArgs(msgs []requestMsg) string {
+	subQuestID := extractSubQuestID(msgs)
+	return fmt.Sprintf(
+		`{"sub_quest_id":%q,"answer":"The approach looks correct. Proceed with the implementation as described."}`,
+		subQuestID,
+	)
+}
+
+// extractSubQuestID scans all messages for a sub-quest entity ID pattern.
+// The dispatch prompts include: sub-quest "org.plat.game.board.quest.abc"
+func extractSubQuestID(msgs []requestMsg) string {
+	for _, msg := range msgs {
+		content, ok := msg.Content.(string)
+		if !ok {
+			continue
+		}
+		matches := reSubQuestID.FindStringSubmatch(content)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+	}
+	return "__UNKNOWN_SUB_QUEST_ID__"
 }
 
 // completionResponse wraps a text string in a standard stop-finish choice.

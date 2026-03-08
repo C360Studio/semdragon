@@ -69,7 +69,7 @@ const apprenticeTier = float64(domain.TierApprentice) // == 0.0
 
 // TestComponentLifecycle verifies Create → Initialize → Start → Health → Stop.
 func TestComponentLifecycle(t *testing.T) {
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -253,7 +253,7 @@ func TestToolExecutionSuccess(t *testing.T) {
 		t.Fatalf("create temp file: %v", err)
 	}
 
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -297,7 +297,7 @@ func TestToolExecutionSuccess(t *testing.T) {
 // Apprentice agent (tier 0). write_file requires Expert (tier 2). The
 // component must publish a ToolResult with a tier/authorization error.
 func TestToolExecutionTierRejection(t *testing.T) {
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -341,7 +341,7 @@ func TestToolExecutionTierRejection(t *testing.T) {
 // Journeyman agent that has no required skills (code_generation, research, or
 // analysis). The component must publish a ToolResult with a skill error.
 func TestToolExecutionSkillRejection(t *testing.T) {
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -384,7 +384,7 @@ func TestToolExecutionSkillRejection(t *testing.T) {
 // The component must publish an error ToolResult using the tool name from the
 // subject, rather than silently dropping the message.
 func TestInvalidToolCallPayload(t *testing.T) {
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -424,7 +424,7 @@ func TestInvalidToolCallPayload(t *testing.T) {
 // or falls through to an "unknown tool: " error from the registry — both are
 // acceptable outcomes; the test asserts only that an error was returned.
 func TestToolCallValidation(t *testing.T) {
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -471,7 +471,7 @@ func TestMetadataToContextReconstruction(t *testing.T) {
 		t.Fatalf("create temp file: %v", err)
 	}
 
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -528,7 +528,7 @@ func TestSandboxEnforcement(t *testing.T) {
 		t.Fatalf("create outside file: %v", err)
 	}
 
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -597,7 +597,7 @@ func TestCorrelationIDPropagation(t *testing.T) {
 		t.Fatalf("create temp file: %v", err)
 	}
 
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -645,7 +645,7 @@ func TestCorrelationIDPropagation(t *testing.T) {
 // TestUnknownTool verifies that a ToolCall for an unregistered tool name
 // produces a ToolResult with an "unknown tool" error rather than silently failing.
 func TestUnknownTool(t *testing.T) {
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 
@@ -682,7 +682,7 @@ func TestUnknownTool(t *testing.T) {
 // defaults to TierApprentice. read_file requires TierJourneyman, so the call
 // must be rejected with an insufficient-tier error.
 func TestNoMetadataDefaultsToApprentice(t *testing.T) {
-	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
 	ctx := context.Background()
 

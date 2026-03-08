@@ -947,100 +947,13 @@ func TestDagNodesToQuests(t *testing.T) {
 }
 
 // =============================================================================
-// buildDAGExecutionState
+// DAG execution state initialisation
 // =============================================================================
-
-func TestBuildDAGExecutionState(t *testing.T) {
-	partyID := domain.PartyID("c360.test.game.board1.party.p1")
-	parent := &domain.Quest{
-		ID:         "c360.test.game.board1.quest.parent",
-		PartyID:    &partyID,
-		Difficulty: domain.DifficultyModerate,
-	}
-
-	linearDag := &questdagexec.QuestDAG{
-		Nodes: []questdagexec.QuestNode{
-			{ID: "n1", Objective: "First task"},
-			{ID: "n2", Objective: "Second task", DependsOn: []string{"n1"}},
-		},
-	}
-
-	nodeQuestIDs := map[string]string{
-		"n1": "c360.test.game.board1.quest.sub0",
-		"n2": "c360.test.game.board1.quest.sub1",
-	}
-
-	t.Run("ParentQuestID and PartyID are set from parent quest", func(t *testing.T) {
-		state := buildDAGExecutionState(linearDag, parent, nodeQuestIDs)
-		if state.ParentQuestID != string(parent.ID) {
-			t.Errorf("ParentQuestID = %q; want %q", state.ParentQuestID, string(parent.ID))
-		}
-		if state.PartyID != string(partyID) {
-			t.Errorf("PartyID = %q; want %q", state.PartyID, string(partyID))
-		}
-	})
-
-	t.Run("ExecutionID is non-empty", func(t *testing.T) {
-		state := buildDAGExecutionState(linearDag, parent, nodeQuestIDs)
-		if state.ExecutionID == "" {
-			t.Error("ExecutionID must be non-empty")
-		}
-	})
-
-	t.Run("DAG field preserves the original nodes", func(t *testing.T) {
-		state := buildDAGExecutionState(linearDag, parent, nodeQuestIDs)
-		if len(state.DAG.Nodes) != 2 {
-			t.Errorf("DAG.Nodes len = %d; want 2", len(state.DAG.Nodes))
-		}
-	})
-
-	t.Run("n1 is ready and n2 is pending (n2 depends on n1)", func(t *testing.T) {
-		state := buildDAGExecutionState(linearDag, parent, nodeQuestIDs)
-		if state.NodeStates["n1"] != questdagexec.NodeReady {
-			t.Errorf("NodeStates[n1] = %q; want %q", state.NodeStates["n1"], questdagexec.NodeReady)
-		}
-		if state.NodeStates["n2"] != questdagexec.NodePending {
-			t.Errorf("NodeStates[n2] = %q; want %q", state.NodeStates["n2"], questdagexec.NodePending)
-		}
-	})
-
-	t.Run("NodeQuestIDs maps all nodes correctly", func(t *testing.T) {
-		state := buildDAGExecutionState(linearDag, parent, nodeQuestIDs)
-		for nodeID, wantQuestID := range nodeQuestIDs {
-			if state.NodeQuestIDs[nodeID] != wantQuestID {
-				t.Errorf("NodeQuestIDs[%q] = %q; want %q",
-					nodeID, state.NodeQuestIDs[nodeID], wantQuestID)
-			}
-		}
-	})
-
-	t.Run("NodeRetries defaults to 2 per node", func(t *testing.T) {
-		state := buildDAGExecutionState(linearDag, parent, nodeQuestIDs)
-		for _, node := range linearDag.Nodes {
-			if state.NodeRetries[node.ID] != 2 {
-				t.Errorf("NodeRetries[%q] = %d; want 2", node.ID, state.NodeRetries[node.ID])
-			}
-		}
-	})
-
-	t.Run("single-node DAG with no deps starts as ready", func(t *testing.T) {
-		singleDag := &questdagexec.QuestDAG{
-			Nodes: []questdagexec.QuestNode{{ID: "only", Objective: "Do everything"}},
-		}
-		state := buildDAGExecutionState(singleDag, parent, map[string]string{"only": "sub0"})
-		if state.NodeStates["only"] != questdagexec.NodeReady {
-			t.Errorf("NodeStates[only] = %q; want ready", state.NodeStates["only"])
-		}
-	})
-
-	t.Run("parent with nil PartyID produces empty PartyID in state", func(t *testing.T) {
-		noParty := &domain.Quest{ID: "c360.test.game.board1.quest.nop"}
-		state := buildDAGExecutionState(linearDag, noParty, nodeQuestIDs)
-		if state.PartyID != "" {
-			t.Errorf("PartyID = %q; want empty string when parent has no PartyID", state.PartyID)
-		}
-	})
-}
+// DAG state initialisation invariants are now tested in
+// processor/questdagexec/handler_test.go (TestDagStateFromQuest). The old
+// questdagexec.DAGInitPayload / BuildDAGExecutionStateFromInit pathway was
+// removed when DAG state moved from the QUEST_DAGS KV bucket to quest.dag.*
+// predicates on the parent quest entity in the graph.
 
 // =============================================================================
 // DAG decomposition path (component branch logic)

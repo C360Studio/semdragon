@@ -41,7 +41,7 @@ func (c *Component) loadInitialState(ctx context.Context) error {
 	c.questsMu.Lock()
 	for _, entity := range questEntities {
 		quest := domain.QuestFromEntityState(&entity)
-		if quest != nil && quest.Status == domain.QuestPosted {
+		if quest != nil && quest.Status == domain.QuestPosted && quest.PartyID == nil {
 			instance := domain.ExtractInstance(string(quest.ID))
 			c.quests[instance] = quest
 		}
@@ -246,11 +246,12 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 	}
 
 	c.questsMu.Lock()
-	// Only track posted quests for boid calculations.
-	if quest.Status == domain.QuestPosted {
+	// Only track posted quests without a party — party sub-quests are
+	// managed by questdagexec and should not appear in boid suggestions.
+	if quest.Status == domain.QuestPosted && quest.PartyID == nil {
 		c.quests[instance] = quest
 	} else {
-		// Remove non-posted quests from cache.
+		// Remove non-posted or party quests from cache.
 		delete(c.quests, instance)
 	}
 	c.questsMu.Unlock()

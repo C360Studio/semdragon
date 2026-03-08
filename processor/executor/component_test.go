@@ -48,7 +48,7 @@ import (
 // real NATS. The executor does not require a model registry to start; it only
 // needs a NATS client and a valid config.
 func TestComponentLifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -134,7 +134,7 @@ func TestComponentDoubleStart(t *testing.T) {
 // TestComponentExecuteRequiresRunning verifies that Execute returns an error
 // when the component has not been started.
 func TestComponentExecuteRequiresRunning(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 
 	deps := component.Dependencies{NATSClient: client}
@@ -276,7 +276,7 @@ func TestToolRegistryBuiltins(t *testing.T) {
 // TestToolRegistryNoBuiltins verifies that EnableBuiltins=false leaves the
 // ToolRegistry empty after Start.
 func TestToolRegistryNoBuiltins(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -830,7 +830,7 @@ func TestBuildUserPrompt(t *testing.T) {
 func setupComponent(t *testing.T, board string) *Component {
 	t.Helper()
 
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 

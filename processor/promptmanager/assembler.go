@@ -23,7 +23,7 @@ func NewPromptAssembler(registry *PromptRegistry) *PromptAssembler {
 //
 // Assembly order (by category):
 //
-//	SystemBase → ProviderHints → TierGuardrails → SkillContext →
+//	SystemBase → ToolDirective → ProviderHints → TierGuardrails → SkillContext →
 //	GuildKnowledge → [AgentConfig.SystemPrompt] → [Persona] → QuestContext
 //
 // Agent-level overrides (SystemPrompt, PersonaPrompt) are appended after domain
@@ -70,6 +70,19 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		}
 		sections = append(sections, formatSection("Peer Feedback", warnings.String(), style))
 		usedIDs = append(usedIDs, "peer-feedback-warnings")
+	}
+
+	// Inject clarification answers from previous party lead interactions.
+	// These appear before agent overrides so the agent has context for its retry.
+	if len(ctx.ClarificationAnswers) > 0 {
+		var clarifications strings.Builder
+		clarifications.WriteString("The party lead answered your previous questions:\n")
+		for i, ca := range ctx.ClarificationAnswers {
+			clarifications.WriteString(fmt.Sprintf("\nQ%d: %s\nA%d: %s\n", i+1, ca.Question, i+1, ca.Answer))
+		}
+		clarifications.WriteString("\nUse these answers to complete your task. Do NOT ask the same questions again.")
+		sections = append(sections, formatSection("Previous Clarifications", clarifications.String(), style))
+		usedIDs = append(usedIDs, "clarification-answers")
 	}
 
 	// Append agent-level overrides (not from registry — per-agent customization)
@@ -145,6 +158,8 @@ func categoryLabel(cat FragmentCategory) string {
 	switch cat {
 	case CategorySystemBase:
 		return "System"
+	case CategoryToolDirective:
+		return "Tool Directive"
 	case CategoryProviderHints:
 		return "Provider"
 	case CategoryTierGuardrails:

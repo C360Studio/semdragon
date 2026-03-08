@@ -256,6 +256,7 @@ func (c *Component) Start(ctx context.Context) error {
 		promptRegistry := promptmanager.NewPromptRegistry()
 		promptRegistry.RegisterProviderStyles()
 		promptRegistry.RegisterDomainCatalog(c.config.DomainCatalog)
+		promptmanager.RegisterBuiltinFragments(promptRegistry)
 		opts = append(opts, WithPromptAssembler(promptmanager.NewPromptAssembler(promptRegistry)))
 	}
 

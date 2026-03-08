@@ -1,12 +1,12 @@
-import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/test-base';
+import { test, expect, hasBackend, hasLLM, isRealLLM, isMockLLM, extractInstance, retry } from '../fixtures/test-base';
 import type { DMChatResponse, QuestResponse } from '../fixtures/test-base';
 
 /**
  * DM Chat Integration Tests
  *
  * These tests exercise the full backend DM chat pipeline. They work with either:
- *   - Mock LLM server at http://mockllm:9090 (E2E_MOCK_LLM=true) — deterministic
- *   - Real LLM (Ollama, cloud) (E2E_REAL_LLM=true) — non-deterministic
+ *   - Mock LLM server at http://mockllm:9090 (E2E_LLM_MODE=mock) — deterministic
+ *   - Real LLM (Gemini, OpenAI, etc.) (E2E_LLM_MODE=gemini|openai|...) — non-deterministic
  *
  * No Playwright-level route interception is used — requests flow through the real
  * backend, which calls whatever LLM is configured.
@@ -15,32 +15,17 @@ import type { DMChatResponse, QuestResponse } from '../fixtures/test-base';
  *
  * Environment requirements:
  *   - E2E_BACKEND_AVAILABLE=true (set by global-setup.ts when backend is reachable)
- *   - E2E_MOCK_LLM=true OR E2E_REAL_LLM=true (at least one LLM available)
+ *   - E2E_LLM_MODE=mock|gemini|openai|anthropic|ollama (which LLM to use)
  *
  * Tag: @integration
  */
 
 // =============================================================================
-// ENVIRONMENT GUARDS
+// TIMEOUT CONFIGURATION
 // =============================================================================
 
-/** Whether the mock LLM server is available (deterministic canned responses). */
-function hasMockLLM(): boolean {
-	return process.env.E2E_MOCK_LLM === 'true';
-}
-
-/** Whether a real LLM (Ollama, cloud) is available (non-deterministic). */
-function hasRealLLM(): boolean {
-	return process.env.E2E_REAL_LLM === 'true';
-}
-
-/** Whether any LLM backend is available for DM chat. */
-function hasLLM(): boolean {
-	return hasMockLLM() || hasRealLLM();
-}
-
-/** Timeout for a single LLM call: 5s for mock, 120s for real (qwen3:14b needs ~20-30s). */
-const LLM_TIMEOUT = hasRealLLM() ? 120_000 : 5_000;
+/** Timeout for a single LLM call: 5s for mock, 120s for real. */
+const LLM_TIMEOUT = isRealLLM() ? 120_000 : 5_000;
 
 // =============================================================================
 // RESPONSE SHAPE HELPERS
@@ -86,13 +71,13 @@ function assertQuestChain(resp: DMChatResponse): void {
 test.describe('DM Chat Integration @integration', () => {
 	// Serialize DM chat tests to avoid Ollama contention when using real LLMs.
 	// With 6 parallel workers each making LLM calls, requests queue and timeout.
-	test.describe.configure({ mode: hasRealLLM() ? 'serial' : 'parallel' });
+	test.describe.configure({ mode: isRealLLM() ? 'serial' : 'parallel' });
 
 	// All tests require backend + at least one LLM (mock or real).
 	test.beforeEach(() => {
 		test.skip(
 			!hasBackend() || !hasLLM(),
-			'Requires running backend and LLM (E2E_MOCK_LLM=true or E2E_REAL_LLM=true)'
+			'Requires running backend and LLM (E2E_LLM_MODE=mock|gemini|openai|anthropic|ollama)'
 		);
 	});
 
@@ -132,7 +117,7 @@ test.describe('DM Chat Integration @integration', () => {
 
 		assertValidChatResponse(resp);
 
-		if (hasMockLLM()) {
+		if (isMockLLM()) {
 			// Mock LLM is deterministic — quest_brief must be present
 			assertQuestBrief(resp);
 		} else {
@@ -182,7 +167,7 @@ test.describe('DM Chat Integration @integration', () => {
 		const questInstance = extractInstance(quest.id);
 		const fetched = await lifecycleApi.getQuest(questInstance);
 		expect(fetched.status).toBe('posted');
-		expect(fetched.objective ?? fetched.id).toBeTruthy();
+		expect(fetched.title ?? fetched.id).toBeTruthy();
 	});
 
 	// ---------------------------------------------------------------------------
@@ -203,7 +188,7 @@ test.describe('DM Chat Integration @integration', () => {
 
 		assertValidChatResponse(resp);
 
-		if (hasMockLLM()) {
+		if (isMockLLM()) {
 			// Mock LLM is deterministic — quest_chain must be present
 			assertQuestChain(resp);
 			const chain = resp.quest_chain!;
@@ -390,13 +375,13 @@ test.describe('DM Chat Integration @integration', () => {
  * the browser. They navigate to the dashboard, open the chat panel, and
  * verify that the Svelte UI renders responses from the real backend.
  *
- * Skipped unless both E2E_BACKEND_AVAILABLE and E2E_MOCK_LLM are true.
+ * Skipped unless E2E_BACKEND_AVAILABLE=true and E2E_LLM_MODE is set.
  */
 test.describe('DM Chat UI Integration @integration', () => {
 	test.beforeEach(async ({ page }) => {
 		test.skip(
 			!hasBackend() || !hasLLM(),
-			'Requires running backend and LLM (E2E_MOCK_LLM=true or E2E_REAL_LLM=true)'
+			'Requires running backend and LLM (E2E_LLM_MODE=mock|gemini|openai|anthropic|ollama)'
 		);
 		await page.goto('/');
 		// Wait for SvelteKit hydration — the layout adds .hydrated to <body>
@@ -404,7 +389,7 @@ test.describe('DM Chat UI Integration @integration', () => {
 	});
 
 	test('sending a quest creation message renders a quest preview card', async ({ page }) => {
-		test.skip(hasRealLLM() && !hasMockLLM(), 'UI quest preview test requires deterministic mock LLM responses');
+		test.skip(isRealLLM() && !isMockLLM(), 'UI quest preview test requires deterministic mock LLM responses');
 		test.setTimeout(LLM_TIMEOUT + 15_000);
 
 		// Open the DM chat panel
@@ -427,7 +412,7 @@ test.describe('DM Chat UI Integration @integration', () => {
 	});
 
 	test('posting quest from DM brief lands on the quest board', async ({ page }) => {
-		test.skip(hasRealLLM() && !hasMockLLM(), 'UI post quest test requires deterministic mock LLM responses');
+		test.skip(isRealLLM() && !isMockLLM(), 'UI post quest test requires deterministic mock LLM responses');
 		test.setTimeout(LLM_TIMEOUT + 30_000);
 
 		// 1. Open chat and submit a quest creation message
@@ -458,7 +443,7 @@ test.describe('DM Chat UI Integration @integration', () => {
 	});
 
 	test('quest chain preview renders with dependency information', async ({ page }) => {
-		test.skip(hasRealLLM() && !hasMockLLM(), 'UI chain preview test requires deterministic mock LLM responses');
+		test.skip(isRealLLM() && !isMockLLM(), 'UI chain preview test requires deterministic mock LLM responses');
 		test.setTimeout(LLM_TIMEOUT + 15_000);
 
 		// 1. Open chat and request a quest chain

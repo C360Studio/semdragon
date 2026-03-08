@@ -519,6 +519,73 @@ func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.Quest
 	return nil
 }
 
+// ClaimAndStartForParty assigns a sub-quest to a party and transitions it
+// directly to in_progress in a single KV write. This is the atomic equivalent
+// of calling ClaimQuestForParty followed by StartQuest, and eliminates the
+// window where a process crash could leave a sub-quest stuck in claimed state.
+func (c *Component) ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error {
+	if !c.running.Load() {
+		return errors.New("component not running")
+	}
+
+	c.lastActivity.Store(time.Now())
+	c.messagesProcessed.Add(1)
+
+	party, err := c.getPartyByID(ctx, partyID)
+	if err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "QuestBoard", "ClaimAndStartForParty", "load party")
+	}
+
+	agent, err := c.getAgentByID(ctx, domain.AgentID(party.Lead))
+	if err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "QuestBoard", "ClaimAndStartForParty", "load lead")
+	}
+
+	perms := domain.TierPermissionsFor(domain.TierFromLevel(agent.Level))
+	if !perms.CanLeadParty {
+		return errors.New("party lead cannot lead parties (requires Master+ tier)")
+	}
+
+	quest, err := c.getQuestByID(ctx, questID)
+	if err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "QuestBoard", "ClaimAndStartForParty", "load quest")
+	}
+
+	if quest.Status != domain.QuestPosted {
+		return fmt.Errorf("quest not available: %s", quest.Status)
+	}
+
+	if quest.MinPartySize > 0 && len(party.Members) < quest.MinPartySize {
+		return errors.New("party too small")
+	}
+
+	if domain.TierFromLevel(agent.Level) < quest.MinTier {
+		return errors.New("party lead tier too low")
+	}
+
+	// Set quest state directly to in_progress — skip the claimed intermediate
+	// state to prevent crash-recovery issues with sub-quests stuck in claimed.
+	now := time.Now()
+	leadAgentID := domain.AgentID(party.Lead)
+	quest.Status = domain.QuestInProgress
+	quest.ClaimedBy = &leadAgentID
+	quest.PartyID = &partyID
+	quest.ClaimedAt = &now
+	quest.StartedAt = &now
+	quest.Attempts++
+
+	// Emit updated quest to graph (KV write is the event — questbridge watches for in_progress)
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "QuestBoard", "ClaimAndStartForParty", "emit update")
+	}
+
+	return nil
+}
+
 // AbandonQuest returns a quest to the board.
 func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, reason string) error {
 	if !c.running.Load() {
@@ -536,7 +603,11 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 		return errs.Wrap(err, "QuestBoard", "AbandonQuest", "load quest")
 	}
 
-	if quest.Status != domain.QuestClaimed && quest.Status != domain.QuestInProgress {
+	abandonable := quest.Status == domain.QuestClaimed ||
+		quest.Status == domain.QuestInProgress ||
+		quest.Status == domain.QuestInReview ||
+		quest.Status == domain.QuestEscalated
+	if !abandonable {
 		return fmt.Errorf("quest not abandonable: %s", quest.Status)
 	}
 
@@ -560,6 +631,8 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 	quest.PartyID = nil
 	quest.ClaimedAt = nil
 	quest.StartedAt = nil
+	quest.Escalated = false
+	quest.FailureReason = ""
 
 	// Emit updated quest to graph (KV write is the event — watchers are notified)
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.abandoned"); err != nil {

@@ -1817,7 +1817,7 @@ func TestParseJudgeResponse_ValidJSON(t *testing.T) {
 	}
 	content := `{"criteria": [{"name": "correctness", "score": 0.9, "reasoning": "Good"}, {"name": "completeness", "score": 0.5, "reasoning": "Missing parts"}], "overall_feedback": "Mostly good"}`
 
-	results, feedback, needsEsc, err := parseJudgeResponse(content, battle)
+	results, feedback, peerRatings, err := parseJudgeResponse(content, battle)
 	if err != nil {
 		t.Fatalf("parseJudgeResponse() error = %v", err)
 	}
@@ -1827,8 +1827,8 @@ func TestParseJudgeResponse_ValidJSON(t *testing.T) {
 	if feedback != "Mostly good" {
 		t.Errorf("feedback = %q, want %q", feedback, "Mostly good")
 	}
-	if needsEsc {
-		t.Error("needsEscalation should be false for normal evaluation")
+	if peerRatings != nil {
+		t.Error("peerRatings should be nil when not provided in response")
 	}
 
 	// correctness: 0.9 >= 0.7 → passed

@@ -152,6 +152,30 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			if d, err := time.ParseDuration(AsString(triple.Object)); err == nil {
 				q.Duration = d
 			}
+
+		// DAG execution state (parent quest)
+		case "quest.dag.execution_id":
+			q.DAGExecutionID = AsString(triple.Object)
+		case "quest.dag.definition":
+			q.DAGDefinition = triple.Object
+		case "quest.dag.node_quest_ids":
+			q.DAGNodeQuestIDs = triple.Object
+		case "quest.dag.node_states":
+			q.DAGNodeStates = triple.Object
+		case "quest.dag.node_assignees":
+			q.DAGNodeAssignees = triple.Object
+		case "quest.dag.completed_nodes":
+			q.DAGCompletedNodes = triple.Object
+		case "quest.dag.failed_nodes":
+			q.DAGFailedNodes = triple.Object
+		case "quest.dag.node_retries":
+			q.DAGNodeRetries = triple.Object
+
+		// DAG sub-quest fields
+		case "quest.dag.node_id":
+			q.DAGNodeID = AsString(triple.Object)
+		case "quest.dag.clarifications":
+			q.DAGClarifications = triple.Object
 		}
 	}
 

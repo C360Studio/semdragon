@@ -82,3 +82,24 @@ const completionContent = `I have reviewed the tool output and the task is compl
 
 The requested operation finished successfully. All output has been validated
 and is ready for the next stage of the workflow.`
+
+// dagDecompositionContent is the completion content returned after the
+// decompose_quest tool call. It contains the DAG JSON that questbridge's
+// extractDAGFromOutput will detect and parse into sub-quests.
+const dagDecompositionContent = `I have analyzed the quest and decomposed it into independent sub-tasks.
+
+{"goal":"Complete the requested work through parallel sub-tasks","dag":{"nodes":[{"id":"node-1","objective":"Implement the first component of the task","skills":["code_generation"],"acceptance":["Code compiles","Tests pass"],"depends_on":[],"difficulty":2},{"id":"node-2","objective":"Implement the second component of the task","skills":["code_generation"],"acceptance":["Code compiles","Tests pass"],"depends_on":[],"difficulty":2}]}}
+
+Both sub-tasks can be executed in parallel since they have no dependencies.`
+
+// dagDecompositionArgs is the canned arguments for the decompose_quest tool call.
+// Must match DecomposeExecutor's expected schema: goal (string) + nodes (array of
+// QuestNode objects with id, objective, skills, acceptance, depends_on, difficulty).
+const dagDecompositionArgs = `{"goal":"Complete the requested work through parallel sub-tasks","nodes":[{"id":"node-1","objective":"Implement the first component of the task","skills":["code_generation"],"acceptance":["Code compiles","Tests pass"],"depends_on":[],"difficulty":2},{"id":"node-2","objective":"Implement the second component of the task","skills":["code_generation"],"acceptance":["Code compiles","Tests pass"],"depends_on":[],"difficulty":2}]}`
+
+// reviewAcceptArgs was previously a static constant with a placeholder sub_quest_id.
+// It is now built dynamically by buildReviewAcceptArgs() in router.go, which
+// extracts the real sub-quest ID from the prompt messages.
+
+// reviewAcceptCompletion is the completion content after review tool results.
+const reviewAcceptCompletion = `I have reviewed the sub-quest output. The work meets all acceptance criteria and I accept it.`

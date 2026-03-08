@@ -180,6 +180,11 @@ func (r *PromptRegistry) fragmentMatches(f *PromptFragment, ctx AssemblyContext)
 		return false
 	}
 
+	// Runtime condition — evaluated last, after all structural gates pass.
+	if f.Condition != nil && !f.Condition(ctx) {
+		return false
+	}
+
 	return true
 }
 

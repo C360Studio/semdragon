@@ -19,7 +19,7 @@ import (
 func setupNameGenTestBoard(t *testing.T) (*semdragons.GraphClient, func()) {
 	t.Helper()
 	tc := natsclient.NewTestClient(t,
-		natsclient.WithKV(),
+		natsclient.WithKV(), natsclient.WithFileStorage(),
 		natsclient.WithKVBuckets(semgraph.BucketEntityStates),
 	)
 	config := domain.BoardConfig{

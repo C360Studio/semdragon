@@ -204,6 +204,70 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
+	// DAG execution state (parent quest fields)
+	if q.DAGExecutionID != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.execution_id", Object: q.DAGExecutionID,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.DAGDefinition != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.definition", Object: q.DAGDefinition,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.DAGNodeQuestIDs != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.node_quest_ids", Object: q.DAGNodeQuestIDs,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.DAGNodeStates != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.node_states", Object: q.DAGNodeStates,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.DAGNodeAssignees != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.node_assignees", Object: q.DAGNodeAssignees,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.DAGCompletedNodes != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.completed_nodes", Object: q.DAGCompletedNodes,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.DAGFailedNodes != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.failed_nodes", Object: q.DAGFailedNodes,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.DAGNodeRetries != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.node_retries", Object: q.DAGNodeRetries,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	// DAG sub-quest fields
+	if q.DAGNodeID != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.node_id", Object: q.DAGNodeID,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.DAGClarifications != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.dag.clarifications", Object: q.DAGClarifications,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
 	return triples
 }
 

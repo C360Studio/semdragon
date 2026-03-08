@@ -26,7 +26,7 @@ import (
 // =============================================================================
 
 func TestComponent_Lifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -92,7 +92,7 @@ func TestComponent_Lifecycle(t *testing.T) {
 }
 
 func TestComponent_PostQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -134,7 +134,7 @@ func TestComponent_PostQuest(t *testing.T) {
 }
 
 func TestComponent_ClaimQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -176,7 +176,7 @@ func TestComponent_ClaimQuest(t *testing.T) {
 }
 
 func TestComponent_QuestLifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -231,7 +231,7 @@ func TestComponent_QuestLifecycle(t *testing.T) {
 }
 
 func TestComponent_QuestWithReview(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -292,7 +292,7 @@ func TestComponent_QuestWithReview(t *testing.T) {
 }
 
 func TestComponent_FailQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -348,7 +348,7 @@ func TestComponent_FailQuest(t *testing.T) {
 }
 
 func TestComponent_AbandonQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -384,7 +384,7 @@ func TestComponent_AbandonQuest(t *testing.T) {
 }
 
 func TestComponent_EscalateQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -425,7 +425,7 @@ func TestComponent_EscalateQuest(t *testing.T) {
 }
 
 func TestComponent_BoardStats(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -455,7 +455,7 @@ func TestComponent_BoardStats(t *testing.T) {
 }
 
 func TestComponent_AvailableQuests(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -560,7 +560,7 @@ func TestComponent_ConfigSchema(t *testing.T) {
 // TestClaimSetsAgentOnQuest verifies that claiming a quest transitions the
 // agent to on_quest status with CurrentQuest set.
 func TestClaimSetsAgentOnQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -605,7 +605,7 @@ func TestClaimSetsAgentOnQuest(t *testing.T) {
 // TestAbandonResetsAgent verifies that abandoning a quest resets the agent
 // to idle with CurrentQuest cleared.
 func TestAbandonResetsAgent(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -652,7 +652,7 @@ func TestAbandonResetsAgent(t *testing.T) {
 // TestFailRepostResetsAgent verifies that when a quest fails with retries
 // remaining (repost path), the agent is reset to idle so it can claim again.
 func TestFailRepostResetsAgent(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -713,7 +713,7 @@ func TestFailRepostResetsAgent(t *testing.T) {
 // TestRejectsClaimWhenOnQuest verifies that an agent with CurrentQuest set
 // cannot claim another quest.
 func TestRejectsClaimWhenOnQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -756,7 +756,7 @@ func TestRejectsClaimWhenOnQuest(t *testing.T) {
 // TestRejectsClaimWhenOnCooldown verifies that an agent on active cooldown
 // cannot claim a quest.
 func TestRejectsClaimWhenOnCooldown(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -799,7 +799,7 @@ func TestRejectsClaimWhenOnCooldown(t *testing.T) {
 // TestAllowsClaimWhenCooldownExpired verifies that an agent whose cooldown
 // has expired can claim a quest.
 func TestAllowsClaimWhenCooldownExpired(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -852,7 +852,7 @@ func TestAllowsClaimWhenCooldownExpired(t *testing.T) {
 
 // TestRejectsClaimWhenRetired verifies that a retired agent cannot claim quests.
 func TestRejectsClaimWhenRetired(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -892,7 +892,7 @@ func TestRejectsClaimWhenRetired(t *testing.T) {
 
 // TestRejectsClaimWhenInBattle verifies that an agent in battle cannot claim quests.
 func TestRejectsClaimWhenInBattle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -937,7 +937,7 @@ func TestRejectsClaimWhenInBattle(t *testing.T) {
 // TestClaimQuest_BlockedByUnmetDependency verifies that claiming quest B before
 // quest A (its dependency) is completed returns an "unmet dependencies" error.
 func TestClaimQuest_BlockedByUnmetDependency(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -977,7 +977,7 @@ func TestClaimQuest_BlockedByUnmetDependency(t *testing.T) {
 // TestClaimQuest_AllowedAfterDependencyCompleted verifies that quest B can be
 // claimed once quest A (its dependency) has been completed.
 func TestClaimQuest_AllowedAfterDependencyCompleted(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1024,7 +1024,7 @@ func TestClaimQuest_AllowedAfterDependencyCompleted(t *testing.T) {
 // TestAvailableQuests_ExcludesPartySubQuests verifies that a quest with PartyID
 // set is never returned by AvailableQuests, regardless of other filter options.
 func TestAvailableQuests_ExcludesPartySubQuests(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1081,7 +1081,7 @@ func TestAvailableQuests_ExcludesPartySubQuests(t *testing.T) {
 // TestClaimQuest_RejectsNonMemberOnPartyQuest verifies that an agent who is not
 // a member of the owning party cannot claim a party sub-quest via ClaimQuest.
 func TestClaimQuest_RejectsNonMemberOnPartyQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 

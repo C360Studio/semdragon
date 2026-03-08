@@ -30,10 +30,6 @@ type Config struct {
 	// the lead rejects its output before the node transitions to NodeFailed.
 	MaxRetriesPerNode int `json:"max_retries_per_node"`
 
-	// QuestDagsBucket is the NATS KV bucket that stores DAGExecutionState
-	// values keyed by ExecutionID. Questbridge writes; questdagexec watches.
-	QuestDagsBucket string `json:"quest_dags_bucket"`
-
 	// StreamName is the AGENT JetStream stream used to publish lead review
 	// TaskMessages.
 	StreamName string `json:"stream_name"`
@@ -52,7 +48,6 @@ func DefaultConfig() Config {
 		RecruitmentTimeout:  5 * time.Minute,
 		RecruitmentInterval: 30 * time.Second,
 		MaxRetriesPerNode:   2,
-		QuestDagsBucket:     "QUEST_DAGS",
 		StreamName:          "AGENT",
 	}
 }
@@ -88,9 +83,6 @@ func (c *Config) Validate() error {
 	}
 	if c.MaxRetriesPerNode < 0 {
 		return errors.New("max_retries_per_node must be non-negative")
-	}
-	if c.QuestDagsBucket == "" {
-		return errors.New("quest_dags_bucket is required")
 	}
 	if c.StreamName == "" {
 		return errors.New("stream_name is required")

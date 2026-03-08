@@ -75,7 +75,7 @@ func (m *mockTaskAssigner) AssignTask(_ context.Context, partyID domain.PartyID,
 	return nil
 }
 
-// mockQuestClaimer implements QuestClaimerForParty and records claim calls.
+// mockQuestClaimer implements QuestClaimerAndStarter and records claim calls.
 type mockQuestClaimer struct {
 	calls []claimCall
 	err   error
@@ -86,7 +86,7 @@ type claimCall struct {
 	partyID domain.PartyID
 }
 
-func (m *mockQuestClaimer) ClaimQuestForParty(_ context.Context, questID domain.QuestID, partyID domain.PartyID) error {
+func (m *mockQuestClaimer) ClaimAndStartForParty(_ context.Context, questID domain.QuestID, partyID domain.PartyID) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -123,13 +123,14 @@ func makeNode(id string, difficulty int, skills ...string) QuestNode {
 }
 
 // makeDAGState builds a minimal DAGExecutionState for use in tests.
+// Nodes start in NodeReady state (as if promoteReadyNodes already ran).
 func makeDAGState(partyID string, nodes []QuestNode) *DAGExecutionState {
 	nodeStates := make(map[string]string, len(nodes))
 	nodeQuestIDs := make(map[string]string, len(nodes))
 	nodeAssignees := make(map[string]string, len(nodes))
 
 	for _, n := range nodes {
-		nodeStates[n.ID] = NodePending
+		nodeStates[n.ID] = NodeReady
 		nodeQuestIDs[n.ID] = "quest-" + n.ID
 	}
 
@@ -421,7 +422,7 @@ func TestAssignReadyNodes(t *testing.T) {
 					makeNode("n1", 0, string(domain.SkillCodeGen)),
 				}
 				s := makeDAGState(partyID, nodes)
-				s.NodeStates["n1"] = NodePending
+				// Node already in NodeReady (set by makeDAGState).
 				return s
 			},
 			party:       party,
@@ -493,7 +494,7 @@ func TestAssignReadyNodes(t *testing.T) {
 			errContains: "party not active",
 		},
 		// -----------------------------------------------------------------
-		// ClaimQuestForParty error propagates
+		// ClaimAndStartForParty error propagates
 		// -----------------------------------------------------------------
 		{
 			name: "claim quest error propagates",
@@ -623,7 +624,7 @@ func TestAssignReadyNodes(t *testing.T) {
 				t.Fatalf("AssignTask called %d times, want %d", len(tasker.calls), tc.wantAssigns)
 			}
 			if len(claimer.calls) != tc.wantClaims {
-				t.Fatalf("ClaimQuestForParty called %d times, want %d", len(claimer.calls), tc.wantClaims)
+				t.Fatalf("ClaimAndStartForParty called %d times, want %d", len(claimer.calls), tc.wantClaims)
 			}
 
 			if tc.checkState != nil {

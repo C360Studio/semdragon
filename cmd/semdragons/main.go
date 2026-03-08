@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
@@ -65,6 +67,14 @@ func run() error {
 	cliCfg, shouldExit, err := parseCLI()
 	if shouldExit || err != nil {
 		return err
+	}
+
+	// 2a. Start pprof debug server if enabled
+	if cliCfg.Debug {
+		cliCfg.LogLevel = "debug"
+		if cliCfg.DebugPort > 0 {
+			go startPProfServer(cliCfg.DebugPort)
+		}
 	}
 
 	// 3. Load and validate configuration
@@ -438,14 +448,17 @@ func runWithSignalHandling(ctx context.Context, manager *service.Manager, regist
 	signalCtx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
+	// Wire cross-component references BEFORE starting, so handlers
+	// have their sibling references from the first tick. Components are
+	// already instantiated (in registry.instances) after service creation;
+	// SetPartyCoord/SetQuestBoard are safe to call before Start.
+	wireComponentCrossReferences(registry)
+
 	slog.Info("Starting all services")
 	if err := manager.StartAll(signalCtx); err != nil {
 		return fmt.Errorf("start services: %w", err)
 	}
 	slog.Info("All services started successfully")
-
-	// Wire cross-component references now that all components are instantiated.
-	wireComponentCrossReferences(registry)
 
 	<-signalCtx.Done()
 	slog.Info("Received shutdown signal")
@@ -509,6 +522,16 @@ func wireComponentCrossReferences(registry *component.Registry) {
 				slog.Info("wired questbridge → questboard")
 			}
 		}
+	}
+}
+
+// startPProfServer starts a pprof HTTP server on the given port.
+// The blank import of net/http/pprof registers handlers on DefaultServeMux.
+func startPProfServer(port int) {
+	addr := fmt.Sprintf(":%d", port)
+	fmt.Printf("Starting pprof server on %s\n", addr)
+	if err := http.ListenAndServe(addr, nil); err != nil && err != http.ErrServerClosed {
+		fmt.Printf("pprof server error: %v\n", err)
 	}
 }
 

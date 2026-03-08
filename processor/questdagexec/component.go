@@ -1,8 +1,14 @@
 // Package questdagexec implements reactive DAG execution for party quests.
-// When a lead agent's questbridge handler posts sub-quests and writes a
-// DAGExecutionState to QUEST_DAGS, this component watches sub-quest KV entity
-// transitions and drives the state machine: node assignment, lead review
-// dispatch, rollup, and failure escalation.
+// When a lead agent decomposes a party quest, questbridge writes DAG state as
+// quest.dag.* predicates on the parent quest entity. This component watches
+// quest entity KV transitions to detect new DAGs and drive the state machine:
+// node assignment, lead review dispatch, rollup, and failure escalation.
+//
+// Architecture: two producer goroutines (quest KV watcher, AGENT stream review
+// consumer) feed a unified chan dagEvent. A single event loop goroutine
+// processes events sequentially, eliminating data races by construction.
+// dagCache, dagBySubQuest, and questCache are plain maps — no mutexes needed
+// because only the event loop accesses them.
 package questdagexec
 
 import (
@@ -18,8 +24,6 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semstreams/component"
-	"github.com/c360studio/semstreams/pkg/errs"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 // =============================================================================
@@ -37,8 +41,10 @@ type QuestBoardRef interface {
 	FailQuest(ctx context.Context, questID domain.QuestID, reason string) error
 	// EscalateQuest transitions a quest to escalated.
 	EscalateQuest(ctx context.Context, questID domain.QuestID, reason string) error
-	// ClaimQuestForParty claims a sub-quest on behalf of a party.
-	ClaimQuestForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error
+	// ClaimAndStartForParty claims a sub-quest on behalf of a party and
+	// transitions it directly to in_progress in a single KV write, eliminating
+	// the window where a crash could leave a sub-quest stuck in claimed state.
+	ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error
 }
 
 // PartyCoordRef is the narrow interface questdagexec needs from partycoord.
@@ -54,13 +60,16 @@ type PartyCoordRef interface {
 }
 
 // =============================================================================
-// COMPONENT - QuestDAGExec as a native semstreams processor
+// COMPONENT
 // =============================================================================
 // Implements Discoverable + LifecycleComponent interfaces.
-// Watches quest entity KV for sub-quest status transitions, drives DAG state,
-// dispatches lead review TaskMessages, and triggers rollup on completion.
-// Lock ordering: mu must be held before any per-DAG map operation when both
-// mu and dagBySubQuest/dagCache are needed simultaneously.
+//
+// Concurrency model:
+//   - dagCache, dagBySubQuest, questCache: plain maps; ONLY accessed from the
+//     event loop goroutine (runEventLoop). No mutexes required.
+//   - questBoardRef, partyCoord: protected by mu; set before Start via
+//     SetQuestBoard / SetPartyCoord, then read-only during operation.
+//   - Metric atomics (nodesCompleted etc.): safe from any goroutine.
 // =============================================================================
 
 // Component implements the questdagexec processor as a semstreams component.
@@ -71,39 +80,40 @@ type Component struct {
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
 
-	// QUEST_DAGS KV bucket — shared with questbridge (written there, watched here).
-	questDagsBucket jetstream.KeyValue
+	// Sibling component references injected before Start via SetQuestBoard /
+	// SetPartyCoord. Protected by mu during injection; read-only after Start.
+	mu            sync.Mutex
+	questBoardRef QuestBoardRef
+	partyCoord    PartyCoordRef
 
-	// Sibling component references injected before Start.
-	questBoardRef QuestBoardRef // see SetQuestBoard
-	partyCoord    PartyCoordRef // see SetPartyCoord
+	// events is the unified channel all producers write to. The event loop
+	// is the sole reader. Buffered to absorb bursts without blocking producers.
+	events chan dagEvent
 
-	// questCache stores last-known quest status (entity key → status string).
-	// Populated during bootstrap; consulted on every live update to detect transitions.
-	questCache sync.Map // map[string]string
+	// In-memory DAG state — ONLY accessed by the event loop goroutine.
+	// Plain maps; no mutexes needed.
+	dagCache      map[string]*DAGExecutionState // executionID → state
+	dagBySubQuest map[string]*DAGExecutionState // sub-quest entity key → state
+	questCache    map[string]string             // quest entity key → last known status
 
-	// dagBySubQuest maps sub-quest entity ID → *DAGExecutionState.
-	// Built on startup from QUEST_DAGS bucket; updated on each DAG mutation.
-	// Allows O(1) lookup when a sub-quest KV event arrives.
-	dagBySubQuest sync.Map // map[string]*DAGExecutionState
+	// completedDAGKeys tracks entity keys of parent quests whose DAG has completed
+	// (rollup triggered). Written by the event loop, read by produceQuestEvents
+	// to prune seenDAGParents and allow future DAGs on the same entity key.
+	// sync.Map because event loop writes and producer goroutine reads.
+	completedDAGKeys sync.Map // string → bool (entity key → true)
 
-	// dagCache is the in-memory store of all known DAGExecutionState values
-	// keyed by ExecutionID. Updated on every mutation before KV persist.
-	dagCache sync.Map // map[string]*DAGExecutionState
-
-	// Internal lifecycle state.
+	// Lifecycle.
 	running  atomic.Bool
-	mu       sync.RWMutex
 	stopChan chan struct{}
 	wg       sync.WaitGroup
 
-	// Metrics.
-	nodesCompleted atomic.Uint64
-	nodesFailed    atomic.Uint64
+	// Metrics — atomics are safe from any goroutine.
+	nodesCompleted   atomic.Uint64
+	nodesFailed      atomic.Uint64
 	rollupsTriggered atomic.Uint64
-	errorsCount    atomic.Int64
-	lastActivity   atomic.Value // time.Time
-	startTime      time.Time
+	errorsCount      atomic.Int64
+	lastActivity     atomic.Value // stores time.Time
+	startTime        time.Time
 }
 
 // Ensure Component implements the required interfaces at compile time.
@@ -117,7 +127,8 @@ var (
 // =============================================================================
 
 // SetQuestBoard injects the quest board reference for quest state transitions.
-// Safe to call before or after Start — the reference is checked lazily when needed.
+// Must be called before Start. Protected by mu to allow safe injection from
+// the main goroutine while other initialization may be in progress.
 func (c *Component) SetQuestBoard(qb QuestBoardRef) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -125,7 +136,7 @@ func (c *Component) SetQuestBoard(qb QuestBoardRef) {
 }
 
 // SetPartyCoord injects the party coordination reference.
-// Safe to call before or after Start — the reference is checked lazily when needed.
+// Must be called before Start. Protected by mu.
 func (c *Component) SetPartyCoord(pc PartyCoordRef) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -153,18 +164,9 @@ func (c *Component) InputPorts() []component.Port {
 			Name:        "quest-entities",
 			Direction:   component.DirectionInput,
 			Required:    true,
-			Description: "Sub-quest entity state changes via KV watch (detects status transitions)",
+			Description: "Quest entity state changes via KV watch (detects DAG init and sub-quest status transitions)",
 			Config: &component.KVWatchPort{
 				Bucket: "", // ENTITY_STATES bucket, watched dynamically via graph client
-			},
-		},
-		{
-			Name:        "dag-states",
-			Direction:   component.DirectionInput,
-			Required:    true,
-			Description: "DAGExecutionState entries from QUEST_DAGS bucket (written by questbridge)",
-			Config: &component.KVWritePort{
-				Bucket: "", // Set dynamically from config
 			},
 		},
 	}
@@ -190,15 +192,14 @@ func (c *Component) OutputPorts() []component.Port {
 func (c *Component) ConfigSchema() component.ConfigSchema {
 	return component.ConfigSchema{
 		Properties: map[string]component.PropertySchema{
-			"org":                   {Type: "string", Description: "Organization namespace", Default: "default", Category: "basic"},
-			"platform":              {Type: "string", Description: "Platform/environment name", Default: "local", Category: "basic"},
-			"board":                 {Type: "string", Description: "Quest board name", Default: "main", Category: "basic"},
-			"dag_timeout":           {Type: "duration", Description: "Maximum wall-clock time for a DAG to complete", Default: "30m", Category: "advanced"},
-			"recruitment_timeout":   {Type: "duration", Description: "Maximum time to wait for recruitment", Default: "5m", Category: "advanced"},
-			"recruitment_interval":  {Type: "duration", Description: "Retry interval for recruitment", Default: "30s", Category: "advanced"},
-			"max_retries_per_node":  {Type: "int", Description: "Maximum retries before NodeFailed", Default: 2, Category: "advanced"},
-			"quest_dags_bucket":     {Type: "string", Description: "QUEST_DAGS KV bucket name", Default: "QUEST_DAGS", Category: "basic"},
-			"stream_name":           {Type: "string", Description: "AGENT stream name for review task publishing", Default: "AGENT", Category: "basic"},
+			"org":                  {Type: "string", Description: "Organization namespace", Default: "default", Category: "basic"},
+			"platform":             {Type: "string", Description: "Platform/environment name", Default: "local", Category: "basic"},
+			"board":                {Type: "string", Description: "Quest board name", Default: "main", Category: "basic"},
+			"dag_timeout":          {Type: "duration", Description: "Maximum wall-clock time for a DAG to complete", Default: "30m", Category: "advanced"},
+			"recruitment_timeout":  {Type: "duration", Description: "Maximum time to wait for recruitment", Default: "5m", Category: "advanced"},
+			"recruitment_interval": {Type: "duration", Description: "Retry interval for recruitment", Default: "30s", Category: "advanced"},
+			"max_retries_per_node": {Type: "int", Description: "Maximum retries before NodeFailed", Default: 2, Category: "advanced"},
+			"stream_name":          {Type: "string", Description: "AGENT stream name for review task publishing", Default: "AGENT", Category: "basic"},
 		},
 		Required: []string{"org", "platform", "board"},
 	}
@@ -266,7 +267,11 @@ func (c *Component) Initialize() error {
 	return nil
 }
 
-// Start begins component operation with the given context.
+// Start begins component operation with the given context. It:
+//  1. Ensures the graph bucket (ENTITY_STATES) is open
+//  2. Launches 3 goroutines: 2 producers (quest KV watcher, AGENT stream review
+//     consumer) + 1 event loop. The quest watcher handles both bootstrap replay
+//     (priming questCache and dagCache from existing entities) and live events.
 func (c *Component) Start(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -281,33 +286,28 @@ func (c *Component) Start(ctx context.Context) error {
 		return fmt.Errorf("ensure board bucket: %w", err)
 	}
 
-	// Get the QUEST_DAGS bucket. Questbridge creates it; we just open it.
-	// Use CreateKeyValueBucket (idempotent get-or-create) so startup order
-	// between questbridge and questdagexec doesn't matter.
-	dagsBucket, err := c.deps.NATSClient.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
-		Bucket:      c.config.QuestDagsBucket,
-		Description: "DAG execution state for party quest decompositions",
-		History:     10,
-	})
-	if err != nil {
-		return errs.Wrap(err, ComponentName, "Start", "open QUEST_DAGS bucket")
-	}
-	c.questDagsBucket = dagsBucket
+	// Initialize in-memory state maps and the event channel.
+	// These are owned exclusively by the event loop goroutine after Start returns.
+	c.events = make(chan dagEvent, 256)
+	c.dagCache = make(map[string]*DAGExecutionState)
+	c.dagBySubQuest = make(map[string]*DAGExecutionState)
+	c.questCache = make(map[string]string)
 
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
 
-	// Bootstrap DAG index from existing QUEST_DAGS entries, then watch for
-	// sub-quest entity transitions.
-	c.wg.Add(1)
-	go func() { defer c.wg.Done(); c.watchLoop(ctx) }()
+	// Launch producers and event loop. produceQuestEvents handles both bootstrap
+	// and live events — DAG detection and sub-quest status transitions in one pass.
+	c.wg.Add(3)
+	go c.runEventLoop(ctx)
+	go c.produceQuestEvents(ctx, c.events)
+	go c.produceReviewEvents(ctx, c.events)
 
 	c.logger.Info("questdagexec component started",
 		"org", c.config.Org,
 		"platform", c.config.Platform,
 		"board", c.config.Board,
-		"bucket", c.config.QuestDagsBucket,
 		"stream", c.config.StreamName)
 
 	return nil
@@ -334,7 +334,7 @@ func (c *Component) Stop(timeout time.Duration) error {
 	select {
 	case <-done:
 	case <-time.After(timeout):
-		c.logger.Warn("graceful shutdown timed out waiting for DAG watcher", "timeout", timeout)
+		c.logger.Warn("graceful shutdown timed out", "timeout", timeout)
 	}
 
 	c.logger.Info("questdagexec component stopped",
@@ -344,3 +344,4 @@ func (c *Component) Stop(timeout time.Duration) error {
 
 	return nil
 }
+

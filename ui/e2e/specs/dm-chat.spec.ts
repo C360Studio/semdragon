@@ -1,4 +1,4 @@
-import { test, expect, hasBackend, waitForHydration, type Page } from '../fixtures/test-base';
+import { test, expect, hasBackend, isRealLLM, waitForHydration, type Page } from '../fixtures/test-base';
 import type { Route } from '@playwright/test';
 
 // =============================================================================
@@ -293,7 +293,7 @@ test.describe('DM Chat - Mock LLM', () => {
 		// Verify the chain creation request was sent with correct data
 		await expect(async () => {
 			expect(chainPostBody).not.toBeNull();
-			const chain = chainPostBody as { quests: Array<{ title: string }> };
+			const chain = chainPostBody as { quests: Array<{ title: string; depends_on?: number[] }> };
 			expect(chain.quests).toHaveLength(3);
 			expect(chain.quests[0].title).toBe('Gather Intel');
 			expect(chain.quests[2].depends_on).toEqual([0, 1]);
@@ -513,13 +513,9 @@ test.describe('DM Chat - Slash Commands', () => {
 // REAL LLM TESTS (opt-in: E2E_REAL_LLM=true + backend available)
 // =============================================================================
 
-function hasRealLLM(): boolean {
-	return process.env.E2E_REAL_LLM === 'true';
-}
-
 test.describe('DM Chat - Real LLM', () => {
 	test.beforeEach(async ({ page }) => {
-		test.skip(!hasBackend() || !hasRealLLM(), 'Requires running backend and E2E_REAL_LLM=true');
+		test.skip(!hasBackend() || !isRealLLM(), 'Requires running backend and real LLM (E2E_LLM_MODE=gemini|openai|anthropic|ollama)');
 		await page.goto('/');
 		await waitForHydration(page);
 	});

@@ -16,7 +16,6 @@ type Config struct {
 	// Stream and KV settings
 	StreamName       string `json:"stream_name"`
 	QuestLoopsBucket string `json:"quest_loops_bucket"`
-	QuestDagsBucket  string `json:"quest_dags_bucket"`
 
 	// Execution settings
 	SandboxDir     string `json:"sandbox_dir"`
@@ -54,7 +53,6 @@ func DefaultConfig() Config {
 		Board:            "main",
 		StreamName:       "AGENT",
 		QuestLoopsBucket: "QUEST_LOOPS",
-		QuestDagsBucket:  "QUEST_DAGS",
 		SandboxDir:       "",
 		EnableBuiltins:   true,
 		MaxIterations:         20,
