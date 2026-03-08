@@ -237,7 +237,11 @@
       "config": {
         "org": "local",
         "platform": "dev",
-        "board": "board1"
+        "board": "board1",
+        "enable_auto_formation": true,
+        "enable_quorum_formation": true,
+        "min_founding_members": 3,
+        "formation_timeout_sec": 300
       }
     },
     "boidengine": {

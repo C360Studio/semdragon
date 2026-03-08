@@ -35,7 +35,7 @@ func newTestComponent() *Component {
 func TestActionsForState_Idle(t *testing.T) {
 	c := newTestComponent()
 	actions := c.actionsForState(domain.AgentIdle)
-	want := []string{"claim_quest", "use_consumable", "shop", "join_guild", "create_guild"}
+	want := []string{"review_guild_applications", "claim_quest", "use_consumable", "shop", "apply_to_guild", "join_guild", "create_guild"}
 
 	if len(actions) != len(want) {
 		t.Fatalf("idle actions: got %d, want %d", len(actions), len(want))
@@ -81,7 +81,7 @@ func TestActionsForState_InBattle(t *testing.T) {
 func TestActionsForState_Cooldown(t *testing.T) {
 	c := newTestComponent()
 	actions := c.actionsForState(domain.AgentCooldown)
-	want := []string{"use_cooldown_skip", "shop", "join_guild", "create_guild"}
+	want := []string{"use_cooldown_skip", "review_guild_applications", "shop", "apply_to_guild", "join_guild", "create_guild"}
 
 	if len(actions) != len(want) {
 		t.Fatalf("cooldown actions: got %d, want %d", len(actions), len(want))

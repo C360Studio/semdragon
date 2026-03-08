@@ -311,8 +311,19 @@ type GuildStatus string
 
 // Guild lifecycle status values.
 const (
-	GuildActive   GuildStatus = "active"
-	GuildInactive GuildStatus = "inactive"
+	GuildPending  GuildStatus = "pending"  // Awaiting founding quorum
+	GuildActive   GuildStatus = "active"   // Quorum met, fully operational
+	GuildInactive GuildStatus = "inactive" // Disbanded or dissolved
+)
+
+// ApplicationStatus represents the state of a guild application.
+type ApplicationStatus string
+
+// Guild application status values.
+const (
+	ApplicationPending  ApplicationStatus = "pending"
+	ApplicationAccepted ApplicationStatus = "accepted"
+	ApplicationRejected ApplicationStatus = "rejected"
 )
 
 // GuildRank represents a member's rank within a guild.

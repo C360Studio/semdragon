@@ -19,6 +19,11 @@ type Config struct {
 	MinMembersForFormation int  `json:"min_members_for_formation"`
 	MaxGuildSize           int  `json:"max_guild_size"`
 	EnableAutoFormation    bool `json:"enable_auto_formation"`
+
+	// Founding quorum settings
+	EnableQuorumFormation bool `json:"enable_quorum_formation"`
+	MinFoundingMembers    int  `json:"min_founding_members"`
+	FormationTimeoutSec   int  `json:"formation_timeout_sec"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -30,6 +35,9 @@ func DefaultConfig() Config {
 		MinMembersForFormation: 3,
 		MaxGuildSize:           20,
 		EnableAutoFormation:    false,
+		EnableQuorumFormation:  false,
+		MinFoundingMembers:     3,
+		FormationTimeoutSec:    300,
 	}
 }
 

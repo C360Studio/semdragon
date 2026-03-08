@@ -14,8 +14,12 @@ import (
 
 // Sentinel errors for guild operations.
 var (
-	ErrAlreadyMember = errors.New("already a member")
-	ErrGuildFull     = errors.New("guild is full")
+	ErrAlreadyMember        = errors.New("already a member")
+	ErrGuildFull            = errors.New("guild is full")
+	ErrGuildNotPending      = errors.New("guild is not in pending state")
+	ErrNotFounder           = errors.New("only the founder can review applications")
+	ErrDuplicateApplication = errors.New("application already exists")
+	ErrApplicationNotFound  = errors.New("application not found")
 )
 
 // =============================================================================
@@ -197,7 +201,13 @@ func (c *Component) evaluateAutoFormation(trigger *agentprogression.Agent) {
 	c.logger.Info("auto-formed guild via social model",
 		"guild_id", guild.ID,
 		"guild_name", guild.Name,
+		"status", guild.Status,
 		"candidates", len(selected))
+
+	// In quorum mode, candidates must apply via autonomy — don't auto-add them.
+	if c.config.EnableQuorumFormation {
+		return
+	}
 
 	// Add remaining candidates (skip the founder who was added by CreateGuild).
 	for _, candidate := range selected {
@@ -288,17 +298,32 @@ func (c *Component) CreateGuild(ctx context.Context, params CreateGuildParams) (
 	instance := domain.GenerateInstance()
 	guildID := domain.GuildID(c.boardConfig.GuildEntityID(instance))
 
+	status := domain.GuildActive
+	var quorumSize int
+	var deadline *time.Time
+	eventPredicate := "guild.created"
+
+	if c.config.EnableQuorumFormation {
+		status = domain.GuildPending
+		quorumSize = c.config.MinFoundingMembers
+		t := now.Add(time.Duration(c.config.FormationTimeoutSec) * time.Second)
+		deadline = &t
+		eventPredicate = domain.PredicateGuildPending
+	}
+
 	guild := &domain.Guild{
-		ID:          domain.GuildID(guildID),
-		Name:        params.Name,
-		Description: "",
-		Status:      domain.GuildActive,
-		Culture:     params.Culture,
-		Motto:       params.Motto,
-		MinLevel:    params.MinLevel,
-		MaxMembers:  c.config.MaxGuildSize,
-		FoundedBy:   domain.AgentID(params.FounderID),
-		Founded:     now,
+		ID:                domain.GuildID(guildID),
+		Name:              params.Name,
+		Description:       "",
+		Status:            status,
+		Culture:           params.Culture,
+		Motto:             params.Motto,
+		MinLevel:          params.MinLevel,
+		MaxMembers:        c.config.MaxGuildSize,
+		FoundedBy:         domain.AgentID(params.FounderID),
+		Founded:           now,
+		QuorumSize:        quorumSize,
+		FormationDeadline: deadline,
 		Members: []domain.GuildMember{
 			{
 				AgentID:  domain.AgentID(params.FounderID),
@@ -318,7 +343,7 @@ func (c *Component) CreateGuild(ctx context.Context, params CreateGuildParams) (
 	c.addAgentGuild(params.FounderID, guildID)
 
 	// Persist to KV via graph client
-	if err := c.graph.EmitEntity(ctx, guild, "guild.created"); err != nil {
+	if err := c.graph.EmitEntity(ctx, guild, eventPredicate); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to persist guild to KV", "guild_id", guildID, "error", err)
 		// Continue -- in-memory state is valid, KV will catch up on next mutation.
@@ -585,6 +610,277 @@ func (c *Component) GetAgentGuilds(agentID domain.AgentID) []domain.GuildID {
 		return nil
 	}
 	return val.([]domain.GuildID)
+}
+
+// SubmitApplication submits an agent's application to join a pending guild.
+func (c *Component) SubmitApplication(ctx context.Context, guildID domain.GuildID, agent *agentprogression.Agent, message string) error {
+	if !c.running.Load() {
+		return errors.New("component not running")
+	}
+
+	val, ok := c.guilds.Load(guildID)
+	if !ok {
+		return errors.New("guild not found")
+	}
+	guild := val.(*domain.Guild)
+
+	if guild.Status != domain.GuildPending {
+		return ErrGuildNotPending
+	}
+
+	if isMember(guild, agent.ID) {
+		return ErrAlreadyMember
+	}
+
+	// Check for duplicate pending application
+	for _, app := range guild.Applications {
+		if app.ApplicantID == agent.ID && app.Status == domain.ApplicationPending {
+			return ErrDuplicateApplication
+		}
+	}
+
+	now := time.Now()
+	appID := domain.GenerateInstance()
+
+	// Collect agent skills
+	var skills []domain.SkillTag
+	for skill := range agent.SkillProficiencies {
+		skills = append(skills, skill)
+	}
+
+	app := domain.GuildApplication{
+		ID:          appID,
+		GuildID:     guildID,
+		ApplicantID: agent.ID,
+		Status:      domain.ApplicationPending,
+		Message:     message,
+		Skills:      skills,
+		Level:       agent.Level,
+		Tier:        agent.Tier,
+		AppliedAt:   now,
+	}
+
+	guild.Applications = append(guild.Applications, app)
+
+	// Persist to KV
+	if err := c.graph.EmitEntity(ctx, guild, domain.PredicateGuildApplicationSubmitted); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("failed to persist guild application", "guild_id", guildID, "error", err)
+	}
+
+	c.lastActivity.Store(now)
+	c.logger.Info("application submitted to guild",
+		"guild_id", guildID,
+		"applicant", agent.ID,
+		"app_id", appID)
+
+	return nil
+}
+
+// ReviewApplication accepts or rejects a pending application. Only the founder can review.
+func (c *Component) ReviewApplication(ctx context.Context, guildID domain.GuildID, applicationID string, founderID domain.AgentID, accepted bool, reason string) error {
+	if !c.running.Load() {
+		return errors.New("component not running")
+	}
+
+	val, ok := c.guilds.Load(guildID)
+	if !ok {
+		return errors.New("guild not found")
+	}
+	guild := val.(*domain.Guild)
+
+	if guild.Status != domain.GuildPending {
+		return ErrGuildNotPending
+	}
+
+	if guild.FoundedBy != founderID {
+		return ErrNotFounder
+	}
+
+	// Find the application
+	var app *domain.GuildApplication
+	for i := range guild.Applications {
+		if guild.Applications[i].ID == applicationID {
+			app = &guild.Applications[i]
+			break
+		}
+	}
+	if app == nil {
+		return ErrApplicationNotFound
+	}
+	if app.Status != domain.ApplicationPending {
+		return errors.New("application already reviewed")
+	}
+
+	now := time.Now()
+	app.ReviewedBy = &founderID
+	app.Reason = reason
+	app.ReviewedAt = &now
+
+	predicate := domain.PredicateGuildApplicationRejected
+	if accepted {
+		app.Status = domain.ApplicationAccepted
+		predicate = domain.PredicateGuildApplicationAccepted
+
+		// Add applicant as guild member
+		guild.Members = append(guild.Members, domain.GuildMember{
+			AgentID:  app.ApplicantID,
+			Rank:     domain.GuildRankInitiate,
+			JoinedAt: now,
+		})
+		c.addAgentGuild(app.ApplicantID, guildID)
+		c.membersJoined.Add(1)
+	} else {
+		app.Status = domain.ApplicationRejected
+	}
+
+	// Persist to KV
+	if err := c.graph.EmitEntity(ctx, guild, predicate); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("failed to persist application review", "guild_id", guildID, "error", err)
+	}
+
+	c.lastActivity.Store(now)
+
+	verb := "rejected"
+	if accepted {
+		verb = "accepted"
+	}
+	c.logger.Info("application reviewed",
+		"guild_id", guildID,
+		"app_id", applicationID,
+		"applicant", app.ApplicantID,
+		"decision", verb,
+		"reason", reason)
+
+	// Check if quorum is reached after acceptance
+	if accepted {
+		c.checkQuorum(ctx, guild)
+	}
+
+	return nil
+}
+
+// checkQuorum transitions a pending guild to active if the quorum is met.
+func (c *Component) checkQuorum(ctx context.Context, guild *domain.Guild) {
+	if guild.Status != domain.GuildPending {
+		return
+	}
+	if len(guild.Members) < guild.QuorumSize {
+		return
+	}
+
+	guild.Status = domain.GuildActive
+	guild.FormationDeadline = nil
+
+	if err := c.graph.EmitEntity(ctx, guild, domain.PredicateGuildActivated); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("failed to persist guild activation", "guild_id", guild.ID, "error", err)
+	}
+
+	c.logger.Info("guild reached quorum and activated",
+		"guild_id", guild.ID,
+		"guild_name", guild.Name,
+		"members", len(guild.Members),
+		"quorum", guild.QuorumSize)
+}
+
+// dissolveGuild dissolves a pending guild that failed to reach quorum.
+func (c *Component) dissolveGuild(ctx context.Context, guild *domain.Guild, reason string) {
+	guild.Status = domain.GuildInactive
+
+	// Reject all remaining pending applications
+	now := time.Now()
+	for i := range guild.Applications {
+		if guild.Applications[i].Status == domain.ApplicationPending {
+			guild.Applications[i].Status = domain.ApplicationRejected
+			guild.Applications[i].Reason = reason
+			guild.Applications[i].ReviewedAt = &now
+		}
+	}
+
+	// Remove all agent guild mappings
+	for _, member := range guild.Members {
+		c.removeAgentGuild(member.AgentID, guild.ID)
+	}
+
+	if err := c.graph.EmitEntity(ctx, guild, domain.PredicateGuildDissolved); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Error("failed to persist guild dissolution", "guild_id", guild.ID, "error", err)
+	}
+
+	c.lastActivity.Store(now)
+	c.logger.Info("pending guild dissolved",
+		"guild_id", guild.ID,
+		"guild_name", guild.Name,
+		"reason", reason)
+}
+
+// runFormationTimeoutLoop periodically checks pending guilds and dissolves
+// any that have passed their formation deadline.
+func (c *Component) runFormationTimeoutLoop() {
+	defer close(c.timeoutDoneCh)
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case <-ticker.C:
+			c.checkFormationTimeouts()
+		}
+	}
+}
+
+// checkFormationTimeouts scans for pending guilds past their deadline.
+func (c *Component) checkFormationTimeouts() {
+	now := time.Now()
+
+	c.guilds.Range(func(_, value any) bool {
+		guild := value.(*domain.Guild)
+		if guild.Status == domain.GuildPending &&
+			guild.FormationDeadline != nil &&
+			now.After(*guild.FormationDeadline) {
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			c.dissolveGuild(ctx, guild, "formation timeout: quorum not met")
+			cancel()
+		}
+		return true
+	})
+}
+
+// HasPendingGuilds returns true if at least one pending guild exists.
+// More efficient than ListPendingGuilds for guard checks.
+func (c *Component) HasPendingGuilds() bool {
+	found := false
+	c.guilds.Range(func(_, value any) bool {
+		if value.(*domain.Guild).Status == domain.GuildPending {
+			found = true
+			return false // stop iteration
+		}
+		return true
+	})
+	return found
+}
+
+// ListPendingGuilds returns all pending guilds as shallow copies.
+func (c *Component) ListPendingGuilds() []*domain.Guild {
+	var guilds []*domain.Guild
+	c.guilds.Range(func(_, value any) bool {
+		original := value.(*domain.Guild)
+		if original.Status == domain.GuildPending {
+			cp := *original
+			cp.Members = append([]domain.GuildMember(nil), original.Members...)
+			cp.Applications = append([]domain.GuildApplication(nil), original.Applications...)
+			cp.QuestTypes = append([]string(nil), original.QuestTypes...)
+			guilds = append(guilds, &cp)
+		}
+		return true
+	})
+	return guilds
 }
 
 // ListGuilds returns all active guilds as shallow copies with independent

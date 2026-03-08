@@ -41,6 +41,9 @@ type Component struct {
 	agentWatch  jetstream.KeyWatcher
 	watchDoneCh chan struct{}
 
+	// Timeout loop for pending guild dissolution
+	timeoutDoneCh chan struct{}
+
 	// Agent state cache for detecting level/XP transitions that trigger clustering
 	agents   map[string]*agentprogression.Agent
 	agentsMu sync.RWMutex
@@ -151,6 +154,24 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Default:     true,
 				Category:    "guild",
 			},
+			"enable_quorum_formation": {
+				Type:        "bool",
+				Description: "When true, new guilds start as pending and require founding quorum",
+				Default:     false,
+				Category:    "guild",
+			},
+			"min_founding_members": {
+				Type:        "int",
+				Description: "Number of members (including founder) required to activate a pending guild",
+				Default:     3,
+				Category:    "guild",
+			},
+			"formation_timeout_sec": {
+				Type:        "int",
+				Description: "Seconds before a pending guild dissolves if quorum is not met",
+				Default:     300,
+				Category:    "guild",
+			},
 		},
 		Required: []string{"org", "platform", "board"},
 	}
@@ -254,6 +275,12 @@ func (c *Component) Start(ctx context.Context) error {
 		go c.processAgentWatchUpdates()
 	}
 
+	// Start timeout loop for pending guild dissolution
+	if c.config.EnableQuorumFormation {
+		c.timeoutDoneCh = make(chan struct{})
+		go c.runFormationTimeoutLoop()
+	}
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
@@ -262,7 +289,8 @@ func (c *Component) Start(ctx context.Context) error {
 		"org", c.config.Org,
 		"platform", c.config.Platform,
 		"board", c.config.Board,
-		"auto_formation", c.config.EnableAutoFormation)
+		"auto_formation", c.config.EnableAutoFormation,
+		"quorum_formation", c.config.EnableQuorumFormation)
 
 	return nil
 }
@@ -294,6 +322,14 @@ func (c *Component) Stop(timeout time.Duration) error {
 		case <-c.watchDoneCh:
 		case <-time.After(timeout):
 			c.logger.Warn("guildformation stop timed out waiting for KV watcher")
+		}
+	}
+	// Wait for timeout loop to exit
+	if c.timeoutDoneCh != nil {
+		select {
+		case <-c.timeoutDoneCh:
+		case <-time.After(timeout):
+			c.logger.Warn("guildformation stop timed out waiting for timeout loop")
 		}
 	}
 

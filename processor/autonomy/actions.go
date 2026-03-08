@@ -1036,6 +1036,239 @@ func (c *Component) executeCreateGuild(ctx context.Context, agent *agentprogress
 }
 
 // =============================================================================
+// GUILD APPLICATION AND REVIEW ACTIONS
+// =============================================================================
+
+// applyToGuildAction returns the action for submitting applications to pending guilds.
+// Candidates discover pending guilds and apply based on skill affinity scoring.
+func (c *Component) applyToGuildAction() action {
+	return action{
+		name: "apply_to_guild",
+		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
+			if c.guilds == nil {
+				return false
+			}
+			if agent.Level < c.config.GuildJoinMinLevel {
+				return false
+			}
+			if agent.Status != domain.AgentIdle && agent.Status != domain.AgentCooldown {
+				return false
+			}
+			if len(agent.Guilds) >= c.config.MaxGuildsPerAgent {
+				return false
+			}
+			return c.guilds.HasPendingGuilds()
+		},
+		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
+			return c.executeApplyToGuild(ctx, agent)
+		},
+	}
+}
+
+// executeApplyToGuild scores pending guilds and submits an application to the best match.
+func (c *Component) executeApplyToGuild(ctx context.Context, agent *agentprogression.Agent) error {
+	pending := c.guilds.ListPendingGuilds()
+	currentGuildIDs := c.guilds.GetAgentGuilds(agent.ID)
+
+	// Filter and score pending guilds using the same scoring infrastructure as joinGuild.
+	suggestions := c.scoreGuilds(agent, pending, currentGuildIDs)
+	if len(suggestions) == 0 {
+		return nil
+	}
+
+	best := suggestions[0]
+
+	// Check we haven't already applied to this guild.
+	guild, ok := c.guilds.GetGuild(best.GuildID)
+	if !ok {
+		return nil
+	}
+	for _, app := range guild.Applications {
+		if app.ApplicantID == agent.ID && app.Status == domain.ApplicationPending {
+			return nil // Already applied
+		}
+	}
+
+	// Build a reason message from skills
+	var skillNames []string
+	for skill := range agent.SkillProficiencies {
+		skillNames = append(skillNames, string(skill))
+	}
+	message := fmt.Sprintf("Skill affinity (score: %.2f): %s", best.Score, strings.Join(skillNames, ", "))
+
+	if err := c.guilds.SubmitApplication(ctx, best.GuildID, agent, message); err != nil {
+		if errors.Is(err, guildformation.ErrDuplicateApplication) || errors.Is(err, guildformation.ErrAlreadyMember) {
+			return nil // Stale data, not a real error
+		}
+		c.logger.Warn("autonomous guild application failed",
+			"agent_id", agent.ID,
+			"guild_id", best.GuildID,
+			"error", err)
+		return err
+	}
+
+	c.logger.Info("agent autonomously applied to pending guild",
+		"agent_id", agent.ID,
+		"guild_id", best.GuildID,
+		"guild_name", best.GuildName,
+		"score", fmt.Sprintf("%.3f", best.Score))
+
+	return nil
+}
+
+// reviewGuildApplicationsAction returns the action for founders to review pending applications.
+// Uses a scoring heuristic: skill complementarity, tier, and level proximity.
+func (c *Component) reviewGuildApplicationsAction() action {
+	return action{
+		name: "review_guild_applications",
+		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
+			if c.guilds == nil {
+				return false
+			}
+			if agent.Status != domain.AgentIdle && agent.Status != domain.AgentCooldown {
+				return false
+			}
+			// Check: is this agent the founder of a pending guild with pending applications?
+			for _, gid := range c.guilds.GetAgentGuilds(agent.ID) {
+				guild, ok := c.guilds.GetGuild(gid)
+				if !ok || guild.Status != domain.GuildPending || guild.FoundedBy != agent.ID {
+					continue
+				}
+				for _, app := range guild.Applications {
+					if app.Status == domain.ApplicationPending {
+						return true
+					}
+				}
+			}
+			return false
+		},
+		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
+			return c.executeReviewGuildApplications(ctx, agent)
+		},
+	}
+}
+
+// Scoring weights for guild application review.
+const (
+	reviewWeightSkillComplement = 0.40
+	reviewWeightTier            = 0.30
+	reviewWeightLevelProximity  = 0.30
+
+	// Minimum score to accept an applicant.
+	reviewAcceptThreshold = 0.35
+)
+
+// executeReviewGuildApplications reviews all pending applications for guilds founded by this agent.
+func (c *Component) executeReviewGuildApplications(ctx context.Context, agent *agentprogression.Agent) error {
+	for _, gid := range c.guilds.GetAgentGuilds(agent.ID) {
+		guild, ok := c.guilds.GetGuild(gid)
+		if !ok || guild.Status != domain.GuildPending || guild.FoundedBy != agent.ID {
+			continue
+		}
+
+		for _, app := range guild.Applications {
+			if app.Status != domain.ApplicationPending {
+				continue
+			}
+
+			score, reason := c.scoreApplication(agent, guild, &app)
+			accepted := score >= reviewAcceptThreshold
+
+			decision := "rejected"
+			if accepted {
+				decision = "accepted"
+			}
+
+			reviewReason := fmt.Sprintf("%s (score: %.2f, %s)", decision, score, reason)
+
+			if err := c.guilds.ReviewApplication(ctx, guild.ID, app.ID, agent.ID, accepted, reviewReason); err != nil {
+				c.logger.Warn("failed to review guild application",
+					"guild_id", guild.ID,
+					"app_id", app.ID,
+					"error", err)
+				continue
+			}
+
+			c.logger.Info("founder reviewed guild application",
+				"guild_id", guild.ID,
+				"applicant", app.ApplicantID,
+				"decision", decision,
+				"score", fmt.Sprintf("%.3f", score),
+				"reason", reason)
+		}
+	}
+
+	return nil
+}
+
+// scoreApplication computes how well an applicant fits the guild.
+// Factors: skill complementarity with existing members, tier, level proximity to founder.
+func (c *Component) scoreApplication(founder *agentprogression.Agent, guild *domain.Guild, app *domain.GuildApplication) (float64, string) {
+	// Skill complementarity: does the applicant bring new skills?
+	// Build skill map from all members in a single lock acquisition.
+	c.trackersMu.RLock()
+	memberSkills := make(map[domain.AgentID]map[domain.SkillTag]domain.SkillProficiency)
+	for _, tracker := range c.trackers {
+		if tracker.agent != nil {
+			memberSkills[tracker.agent.ID] = tracker.agent.SkillProficiencies
+		}
+	}
+	c.trackersMu.RUnlock()
+
+	existingSkills := make(map[domain.SkillTag]bool)
+	for _, m := range guild.Members {
+		if skills, ok := memberSkills[m.AgentID]; ok {
+			for skill := range skills {
+				existingSkills[skill] = true
+			}
+		}
+	}
+
+	newSkills := 0
+	for _, skill := range app.Skills {
+		if !existingSkills[skill] {
+			newSkills++
+		}
+	}
+	var skillScore float64
+	if len(app.Skills) > 0 {
+		skillScore = float64(newSkills) / float64(len(app.Skills))
+	} else {
+		skillScore = 0.3 // No skill data — slight penalty
+	}
+
+	// Tier score: higher tier = more capable.
+	// Normalize 1-5 (Apprentice-Grandmaster) to 0.2-1.0.
+	tierScore := float64(app.Tier) / float64(domain.TierGrandmaster)
+
+	// Level proximity: closer to founder = better fit.
+	levelDiff := levelAbs(founder.Level - app.Level)
+	levelScore := 1.0 / (1.0 + float64(levelDiff)/5.0)
+
+	total := skillScore*reviewWeightSkillComplement +
+		tierScore*reviewWeightTier +
+		levelScore*reviewWeightLevelProximity
+
+	// Build reason
+	var parts []string
+	if skillScore >= 0.5 {
+		parts = append(parts, "brings new skills")
+	}
+	if tierScore >= 0.4 {
+		parts = append(parts, fmt.Sprintf("tier %d", int(app.Tier)))
+	}
+	if levelScore >= 0.5 {
+		parts = append(parts, "close level")
+	}
+	reason := "general evaluation"
+	if len(parts) > 0 {
+		reason = strings.Join(parts, ", ")
+	}
+
+	return total, reason
+}
+
+// =============================================================================
 // FELLOWSHIP SCORING
 // =============================================================================
 // Fellowship measures social affinity between two agents. Higher scores indicate

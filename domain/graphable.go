@@ -393,6 +393,62 @@ func (g *Guild) Triples() []message.Triple {
 		})
 	}
 
+	// Quorum fields
+	if g.QuorumSize > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "guild.quorum.size", Object: g.QuorumSize,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if g.FormationDeadline != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "guild.quorum.deadline", Object: g.FormationDeadline.Format(time.RFC3339),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	// Applications
+	for _, app := range g.Applications {
+		prefix := fmt.Sprintf("guild.application.%s", app.ID)
+		triples = append(triples,
+			message.Triple{Subject: entityID, Predicate: prefix + ".applicant", Object: string(app.ApplicantID), Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".status", Object: string(app.Status), Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".level", Object: app.Level, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".tier", Object: int(app.Tier), Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".applied_at", Object: app.AppliedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		)
+		if app.Message != "" {
+			triples = append(triples, message.Triple{
+				Subject: entityID, Predicate: prefix + ".message", Object: app.Message,
+				Source: source, Timestamp: now, Confidence: 1.0,
+			})
+		}
+		for _, skill := range app.Skills {
+			triples = append(triples, message.Triple{
+				Subject: entityID, Predicate: prefix + ".skill", Object: string(skill),
+				Source: source, Timestamp: now, Confidence: 1.0,
+			})
+		}
+		if app.ReviewedBy != nil {
+			triples = append(triples, message.Triple{
+				Subject: entityID, Predicate: prefix + ".reviewed_by", Object: string(*app.ReviewedBy),
+				Source: source, Timestamp: now, Confidence: 1.0,
+			})
+		}
+		if app.Reason != "" {
+			triples = append(triples, message.Triple{
+				Subject: entityID, Predicate: prefix + ".reason", Object: app.Reason,
+				Source: source, Timestamp: now, Confidence: 1.0,
+			})
+		}
+		if app.ReviewedAt != nil {
+			triples = append(triples, message.Triple{
+				Subject: entityID, Predicate: prefix + ".reviewed_at", Object: app.ReviewedAt.Format(time.RFC3339),
+				Source: source, Timestamp: now, Confidence: 1.0,
+			})
+		}
+	}
+
 	return triples
 }
 

@@ -147,3 +147,140 @@ func TestQuestRoundTrip_DMClarificationsNil(t *testing.T) {
 		}
 	}
 }
+
+func TestGuildRoundTrip_WithApplications(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	deadline := now.Add(5 * time.Minute)
+	reviewedAt := now.Add(2 * time.Minute)
+	reviewerID := AgentID("c360.dev.game.board1.agent.founder1")
+
+	original := &Guild{
+		ID:          GuildID("c360.dev.game.board1.guild.testguild"),
+		Name:        "Test Guild",
+		Description: "A guild for testing",
+		Status:      GuildPending,
+		Members: []GuildMember{
+			{AgentID: AgentID("c360.dev.game.board1.agent.founder1"), Rank: GuildRankMaster, Contribution: 100.0},
+		},
+		MaxMembers:        20,
+		MinLevel:          3,
+		Founded:           now,
+		FoundedBy:         AgentID("c360.dev.game.board1.agent.founder1"),
+		QuorumSize:        3,
+		FormationDeadline: &deadline,
+		Culture:           "Ship quality code",
+		Motto:             "Test all the things",
+		Reputation:        0.5,
+		CreatedAt:         now,
+		Applications: []GuildApplication{
+			{
+				ID:          "app1",
+				GuildID:     GuildID("c360.dev.game.board1.guild.testguild"),
+				ApplicantID: AgentID("c360.dev.game.board1.agent.candidate1"),
+				Status:      ApplicationPending,
+				Message:     "I bring data wrangling skills",
+				Skills:      []SkillTag{SkillAnalysis, SkillCodeGen},
+				Level:       5,
+				Tier:        TierApprentice,
+				AppliedAt:   now,
+			},
+			{
+				ID:          "app2",
+				GuildID:     GuildID("c360.dev.game.board1.guild.testguild"),
+				ApplicantID: AgentID("c360.dev.game.board1.agent.candidate2"),
+				Status:      ApplicationAccepted,
+				Message:     "Experienced reviewer",
+				Skills:      []SkillTag{SkillCodeReview},
+				Level:       8,
+				Tier:        TierJourneyman,
+				ReviewedBy:  &reviewerID,
+				Reason:      "Good skill complement",
+				AppliedAt:   now,
+				ReviewedAt:  &reviewedAt,
+			},
+		},
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := GuildFromEntityState(entity)
+
+	// Core fields
+	if r.ID != original.ID {
+		t.Errorf("ID = %v, want %v", r.ID, original.ID)
+	}
+	if r.Name != original.Name {
+		t.Errorf("Name = %v, want %v", r.Name, original.Name)
+	}
+	if r.Status != GuildPending {
+		t.Errorf("Status = %v, want %v", r.Status, GuildPending)
+	}
+	if r.QuorumSize != 3 {
+		t.Errorf("QuorumSize = %d, want 3", r.QuorumSize)
+	}
+	if r.FormationDeadline == nil {
+		t.Fatal("FormationDeadline is nil, want non-nil")
+	}
+	if !r.FormationDeadline.Equal(deadline) {
+		t.Errorf("FormationDeadline = %v, want %v", r.FormationDeadline, deadline)
+	}
+
+	// Members
+	if len(r.Members) != 1 {
+		t.Fatalf("Members count = %d, want 1", len(r.Members))
+	}
+
+	// Applications
+	if len(r.Applications) != 2 {
+		t.Fatalf("Applications count = %d, want 2", len(r.Applications))
+	}
+
+	// Find apps by ID (map iteration order is non-deterministic)
+	appByID := make(map[string]GuildApplication)
+	for _, app := range r.Applications {
+		appByID[app.ID] = app
+	}
+
+	app1, ok := appByID["app1"]
+	if !ok {
+		t.Fatal("app1 not found in reconstructed applications")
+	}
+	if app1.Status != ApplicationPending {
+		t.Errorf("app1.Status = %v, want %v", app1.Status, ApplicationPending)
+	}
+	if app1.Message != "I bring data wrangling skills" {
+		t.Errorf("app1.Message = %v, want 'I bring data wrangling skills'", app1.Message)
+	}
+	if len(app1.Skills) != 2 {
+		t.Errorf("app1.Skills count = %d, want 2", len(app1.Skills))
+	}
+	if app1.Level != 5 {
+		t.Errorf("app1.Level = %d, want 5", app1.Level)
+	}
+	if app1.Tier != TierApprentice {
+		t.Errorf("app1.Tier = %v, want %v", app1.Tier, TierApprentice)
+	}
+
+	app2, ok := appByID["app2"]
+	if !ok {
+		t.Fatal("app2 not found in reconstructed applications")
+	}
+	if app2.Status != ApplicationAccepted {
+		t.Errorf("app2.Status = %v, want %v", app2.Status, ApplicationAccepted)
+	}
+	if app2.ReviewedBy == nil {
+		t.Fatal("app2.ReviewedBy is nil, want non-nil")
+	}
+	if *app2.ReviewedBy != reviewerID {
+		t.Errorf("app2.ReviewedBy = %v, want %v", *app2.ReviewedBy, reviewerID)
+	}
+	if app2.Reason != "Good skill complement" {
+		t.Errorf("app2.Reason = %v, want 'Good skill complement'", app2.Reason)
+	}
+	if app2.ReviewedAt == nil {
+		t.Fatal("app2.ReviewedAt is nil, want non-nil")
+	}
+}

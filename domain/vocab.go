@@ -201,6 +201,28 @@ const (
 	PredicateGuildProposed = "guild.formation.proposed"
 )
 
+// --- Guild Founding Quorum Predicates ---
+
+const (
+	// PredicateGuildPending - Guild created in pending state, awaiting quorum.
+	PredicateGuildPending = "guild.lifecycle.pending"
+
+	// PredicateGuildActivated - Guild reached quorum and became active.
+	PredicateGuildActivated = "guild.lifecycle.activated"
+
+	// PredicateGuildDissolved - Pending guild dissolved (timeout or manual).
+	PredicateGuildDissolved = "guild.lifecycle.dissolved"
+
+	// PredicateGuildApplicationSubmitted - Agent submitted application to pending guild.
+	PredicateGuildApplicationSubmitted = "guild.application.submitted"
+
+	// PredicateGuildApplicationAccepted - Founder accepted guild application.
+	PredicateGuildApplicationAccepted = "guild.application.accepted"
+
+	// PredicateGuildApplicationRejected - Founder rejected guild application.
+	PredicateGuildApplicationRejected = "guild.application.rejected"
+)
+
 // --- DM Session Predicates ---
 
 const (
@@ -515,6 +537,26 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateGuildProposed,
 		vocabulary.WithDescription("Agent proposed founding a guild"),
 		vocabulary.WithDataType("GuildCreateIntentPayload"),
+	)
+
+	// Guild founding quorum predicates
+	vocabulary.Register(PredicateGuildPending,
+		vocabulary.WithDescription("Guild created in pending state, awaiting founding quorum"),
+	)
+	vocabulary.Register(PredicateGuildActivated,
+		vocabulary.WithDescription("Guild reached founding quorum and became active"),
+	)
+	vocabulary.Register(PredicateGuildDissolved,
+		vocabulary.WithDescription("Pending guild dissolved due to timeout or manual action"),
+	)
+	vocabulary.Register(PredicateGuildApplicationSubmitted,
+		vocabulary.WithDescription("Agent submitted application to join a pending guild"),
+	)
+	vocabulary.Register(PredicateGuildApplicationAccepted,
+		vocabulary.WithDescription("Founder accepted a guild application"),
+	)
+	vocabulary.Register(PredicateGuildApplicationRejected,
+		vocabulary.WithDescription("Founder rejected a guild application"),
 	)
 
 	// DM session predicates

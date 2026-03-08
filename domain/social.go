@@ -21,8 +21,11 @@ type Guild struct {
 	MinLevel   int           `json:"min_level"` // Minimum agent level to join
 
 	// Founding
-	Founded   time.Time `json:"founded"`
-	FoundedBy AgentID   `json:"founded_by"`
+	Founded           time.Time          `json:"founded"`
+	FoundedBy         AgentID            `json:"founded_by"`
+	QuorumSize        int                `json:"quorum_size"`
+	Applications      []GuildApplication `json:"applications,omitempty"`
+	FormationDeadline *time.Time         `json:"formation_deadline,omitempty"`
 
 	// Guild culture and identity
 	Culture string `json:"culture"` // "We ship quality code"
@@ -50,4 +53,20 @@ type GuildMember struct {
 	Rank         GuildRank `json:"rank"`
 	JoinedAt     time.Time `json:"joined_at"`
 	Contribution float64   `json:"contribution"` // XP contributed via guild quests
+}
+
+// GuildApplication represents an agent's request to join a pending guild.
+type GuildApplication struct {
+	ID          string            `json:"id"`
+	GuildID     GuildID           `json:"guild_id"`
+	ApplicantID AgentID           `json:"applicant_id"`
+	Status      ApplicationStatus `json:"status"`
+	Message     string            `json:"message,omitempty"`
+	Skills      []SkillTag        `json:"skills,omitempty"`
+	Level       int               `json:"level"`
+	Tier        TrustTier         `json:"tier"`
+	ReviewedBy  *AgentID          `json:"reviewed_by,omitempty"`
+	Reason      string            `json:"reason,omitempty"`
+	AppliedAt   time.Time         `json:"applied_at"`
+	ReviewedAt  *time.Time        `json:"reviewed_at,omitempty"`
 }

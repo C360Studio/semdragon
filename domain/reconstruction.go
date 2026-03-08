@@ -206,6 +206,8 @@ func GuildFromEntityState(entity *graph.EntityState) *Guild {
 
 	// Track member data by agent ID for reconstruction
 	memberData := make(map[AgentID]*GuildMember)
+	// Track application data by ID for reconstruction
+	appData := make(map[string]*GuildApplication)
 
 	for _, triple := range entity.Triples {
 		switch triple.Predicate {
@@ -234,6 +236,13 @@ func GuildFromEntityState(entity *graph.EntityState) *Guild {
 			g.Founded = AsTime(triple.Object)
 		case "guild.founding.agent":
 			g.FoundedBy = AgentID(AsString(triple.Object))
+
+		// Quorum
+		case "guild.quorum.size":
+			g.QuorumSize = AsInt(triple.Object)
+		case "guild.quorum.deadline":
+			t := AsTime(triple.Object)
+			g.FormationDeadline = &t
 
 		// Stats
 		case "guild.stats.reputation":
@@ -290,11 +299,61 @@ func GuildFromEntityState(entity *graph.EntityState) *Guild {
 				}
 			}
 		}
+
+		// Handle dynamic predicates for applications
+		// Format: guild.application.{app_id}.{field}
+		if len(triple.Predicate) > 18 && triple.Predicate[:18] == "guild.application." {
+			rest := triple.Predicate[18:] // e.g., "abc123.status"
+			for i := len(rest) - 1; i >= 0; i-- {
+				if rest[i] == '.' {
+					appID := rest[:i]
+					suffix := rest[i+1:]
+
+					if appData[appID] == nil {
+						appData[appID] = &GuildApplication{
+							ID:      appID,
+							GuildID: g.ID,
+						}
+					}
+
+					switch suffix {
+					case "applicant":
+						appData[appID].ApplicantID = AgentID(AsString(triple.Object))
+					case "status":
+						appData[appID].Status = ApplicationStatus(AsString(triple.Object))
+					case "message":
+						appData[appID].Message = AsString(triple.Object)
+					case "level":
+						appData[appID].Level = AsInt(triple.Object)
+					case "tier":
+						appData[appID].Tier = TrustTier(AsInt(triple.Object))
+					case "applied_at":
+						appData[appID].AppliedAt = AsTime(triple.Object)
+					case "reviewed_at":
+						t := AsTime(triple.Object)
+						appData[appID].ReviewedAt = &t
+					case "reviewed_by":
+						id := AgentID(AsString(triple.Object))
+						appData[appID].ReviewedBy = &id
+					case "reason":
+						appData[appID].Reason = AsString(triple.Object)
+					case "skill":
+						appData[appID].Skills = append(appData[appID].Skills, SkillTag(AsString(triple.Object)))
+					}
+					break
+				}
+			}
+		}
 	}
 
 	// Reconstruct members from collected data
 	for _, member := range memberData {
 		g.Members = append(g.Members, *member)
+	}
+
+	// Reconstruct applications from collected data
+	for _, app := range appData {
+		g.Applications = append(g.Applications, *app)
 	}
 
 	return g

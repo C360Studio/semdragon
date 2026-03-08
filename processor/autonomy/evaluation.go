@@ -184,9 +184,11 @@ func (c *Component) actionsForState(status domain.AgentStatus) []action {
 	switch status {
 	case domain.AgentIdle:
 		return []action{
+			c.reviewGuildApplicationsAction(), // Founders process applications before claiming quests
 			c.claimQuestAction(),
 			c.useConsumableAction(),
 			c.shopAction(),
+			c.applyToGuildAction(),
 			c.joinGuildAction(),
 			c.createGuildAction(),
 		}
@@ -202,7 +204,9 @@ func (c *Component) actionsForState(status domain.AgentStatus) []action {
 	case domain.AgentCooldown:
 		return []action{
 			c.useCooldownSkipAction(),
+			c.reviewGuildApplicationsAction(),
 			c.shopAction(),
+			c.applyToGuildAction(),
 			c.joinGuildAction(),
 			c.createGuildAction(),
 		}
