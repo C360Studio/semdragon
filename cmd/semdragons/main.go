@@ -26,6 +26,10 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
+	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semdragons/processor/autonomy"
+	"github.com/c360studio/semdragons/processor/dmapproval"
+	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semdragons/processor/questbridge"
@@ -477,9 +481,9 @@ func runWithSignalHandling(ctx context.Context, manager *service.Manager, regist
 }
 
 // wireComponentCrossReferences injects sibling component references after all
-// components have been instantiated and started by the component manager.
-// This wires up the reactive party quest connector (partycoord → questboard)
-// and DAG executor references (questdagexec → questboard + partycoord).
+// components have been instantiated by the component manager but before Start.
+// Wires: partycoord → questboard, questdagexec → questboard + partycoord,
+// questbridge → questboard, autonomy → agentstore + guildformation + dmapproval.
 func wireComponentCrossReferences(registry *component.Registry) {
 	qb := registry.Component(questboard.ComponentName)
 	pc := registry.Component(partycoord.ComponentName)
@@ -520,6 +524,31 @@ func wireComponentCrossReferences(registry *component.Registry) {
 			if ref, ok := qb.(questbridge.SubQuestPoster); ok {
 				setter.SetQuestBoard(ref)
 				slog.Info("wired questbridge → questboard")
+			}
+		}
+	}
+
+	// Wire autonomy → agentstore, guildformation, dmapproval
+	auto := registry.Component(autonomy.ComponentName)
+	if auto != nil {
+		if setter, ok := auto.(*autonomy.Component); ok {
+			if store := registry.Component(agentstore.ComponentName); store != nil {
+				if ref, ok := store.(*agentstore.Component); ok {
+					setter.SetStore(ref)
+					slog.Info("wired autonomy → agentstore")
+				}
+			}
+			if guilds := registry.Component(guildformation.ComponentName); guilds != nil {
+				if ref, ok := guilds.(*guildformation.Component); ok {
+					setter.SetGuilds(ref)
+					slog.Info("wired autonomy → guildformation")
+				}
+			}
+			if approval := registry.Component(dmapproval.ComponentName); approval != nil {
+				if ref, ok := approval.(*dmapproval.Component); ok {
+					setter.SetApproval(ref)
+					slog.Info("wired autonomy → dmapproval")
+				}
 			}
 		}
 	}
