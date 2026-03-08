@@ -146,7 +146,7 @@ test.describe('Model Registry @integration', () => {
 			}
 		});
 
-		test('resolves expert tier to pro model', async ({ playwright }) => {
+		test('resolves expert tier to flash model with pro fallback', async ({ playwright }) => {
 			const api = await playwright.request.newContext({ baseURL: API_URL });
 			try {
 				const res = await api.get('/game/models?resolve=agent-work.expert');
@@ -154,8 +154,8 @@ test.describe('Model Registry @integration', () => {
 
 				const body: ModelResolveResponse = await res.json();
 				expect(body.capability).toBe('agent-work.expert');
-				expect(body.model).toBe('gemini-2.5-pro');
-				expect(body.endpoint_name).toBe('gemini-pro');
+				expect(body.model).toBe('gemini-2.5-flash');
+				expect(body.endpoint_name).toBe('gemini-flash');
 			} finally {
 				await api.dispose();
 			}
@@ -175,7 +175,7 @@ test.describe('Model Registry @integration', () => {
 			}
 		});
 
-		test('resolves grandmaster tier to pro model', async ({ playwright }) => {
+		test('resolves grandmaster tier to pro-low model', async ({ playwright }) => {
 			const api = await playwright.request.newContext({ baseURL: API_URL });
 			try {
 				const res = await api.get('/game/models?resolve=agent-work.grandmaster');
@@ -183,8 +183,9 @@ test.describe('Model Registry @integration', () => {
 
 				const body: ModelResolveResponse = await res.json();
 				expect(body.capability).toBe('agent-work.grandmaster');
+				// gemini-pro-low uses gemini-2.5-pro with reasoning_effort: low
 				expect(body.model).toBe('gemini-2.5-pro');
-				expect(body.endpoint_name).toBe('gemini-pro');
+				expect(body.endpoint_name).toBe('gemini-pro-low');
 			} finally {
 				await api.dispose();
 			}
