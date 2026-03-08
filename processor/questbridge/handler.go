@@ -189,7 +189,7 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	}
 
 	// Build system prompt using assembler or legacy path.
-	systemPrompt := c.buildSystemPrompt(agent, quest)
+	systemPrompt := c.buildSystemPrompt(ctx, agent, quest)
 
 	// Resolve model capability key and endpoint.
 	capability := c.resolveCapability(agent, quest)
@@ -1167,16 +1167,129 @@ func (c *Component) loadClarificationAnswers(quest *domain.Quest) []promptmanage
 	return answers
 }
 
+// loadDependencyOutputs loads completed predecessor node outputs for a sub-quest
+// that is part of a DAG. When a sub-quest has depends_on predecessors, their
+// outputs are loaded from the graph and returned as DependencyOutput structs
+// for injection into the agent's system prompt.
+func (c *Component) loadDependencyOutputs(ctx context.Context, quest *domain.Quest) []promptmanager.DependencyOutput {
+	if quest.ParentQuest == nil || quest.DAGNodeID == "" {
+		return nil
+	}
+
+	// Load the parent quest to get DAG definition and node-quest mappings.
+	parentEntity, err := c.graph.GetQuest(ctx, *quest.ParentQuest)
+	if err != nil {
+		c.logger.Debug("failed to load parent quest for dependency outputs",
+			"parent_quest", *quest.ParentQuest, "error", err)
+		return nil
+	}
+	parentQuest := domain.QuestFromEntityState(parentEntity)
+	if parentQuest == nil {
+		return nil
+	}
+
+	// Parse DAG definition to find this node's dependencies.
+	dagDef, nodeQuestIDs := c.parseDAGFromParent(parentQuest)
+	if dagDef == nil {
+		return nil
+	}
+
+	// Find this node in the DAG.
+	var thisNode *questdagexec.QuestNode
+	for i := range dagDef.Nodes {
+		if dagDef.Nodes[i].ID == quest.DAGNodeID {
+			thisNode = &dagDef.Nodes[i]
+			break
+		}
+	}
+	if thisNode == nil || len(thisNode.DependsOn) == 0 {
+		return nil
+	}
+
+	// Build a node index for objective lookup.
+	nodesByID := make(map[string]*questdagexec.QuestNode, len(dagDef.Nodes))
+	for i := range dagDef.Nodes {
+		nodesByID[dagDef.Nodes[i].ID] = &dagDef.Nodes[i]
+	}
+
+	// Load each predecessor's output.
+	var outputs []promptmanager.DependencyOutput
+	for _, depNodeID := range thisNode.DependsOn {
+		depQuestID, ok := nodeQuestIDs[depNodeID]
+		if !ok {
+			continue
+		}
+		depEntity, loadErr := c.graph.GetQuest(ctx, domain.QuestID(depQuestID))
+		if loadErr != nil {
+			c.logger.Debug("failed to load dependency quest output",
+				"dep_node_id", depNodeID, "dep_quest_id", depQuestID, "error", loadErr)
+			continue
+		}
+		depQuest := domain.QuestFromEntityState(depEntity)
+		if depQuest == nil || depQuest.Output == nil {
+			continue
+		}
+
+		outputStr := fmt.Sprintf("%v", depQuest.Output)
+		objective := depNodeID
+		if node, found := nodesByID[depNodeID]; found {
+			objective = node.Objective
+		}
+
+		outputs = append(outputs, promptmanager.DependencyOutput{
+			NodeID:    depNodeID,
+			Objective: objective,
+			Output:    outputStr,
+		})
+	}
+
+	if len(outputs) > 0 {
+		c.logger.Debug("loaded dependency outputs for sub-quest",
+			"quest_id", quest.ID, "node_id", quest.DAGNodeID, "dep_count", len(outputs))
+	}
+	return outputs
+}
+
+// parseDAGFromParent extracts the QuestDAG and node-quest ID mapping from a
+// parent quest's DAG fields. Returns (nil, nil) if the parent has no DAG data.
+func (c *Component) parseDAGFromParent(parent *domain.Quest) (*questdagexec.QuestDAG, map[string]string) {
+	if parent.DAGDefinition == nil || parent.DAGNodeQuestIDs == nil {
+		return nil, nil
+	}
+
+	// DAGDefinition is stored as any — round-trip through JSON.
+	defBytes, err := json.Marshal(parent.DAGDefinition)
+	if err != nil {
+		return nil, nil
+	}
+	var dag questdagexec.QuestDAG
+	if json.Unmarshal(defBytes, &dag) != nil {
+		return nil, nil
+	}
+
+	// NodeQuestIDs is stored as any — round-trip through JSON.
+	idsBytes, err := json.Marshal(parent.DAGNodeQuestIDs)
+	if err != nil {
+		return nil, nil
+	}
+	var nodeQuestIDs map[string]string
+	if json.Unmarshal(idsBytes, &nodeQuestIDs) != nil {
+		return nil, nil
+	}
+
+	return &dag, nodeQuestIDs
+}
+
 // buildSystemPrompt builds the system prompt using the assembler when available,
 // falling back to the legacy string concatenation path.
-func (c *Component) buildSystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
+func (c *Component) buildSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) string {
 	if c.promptAssembler != nil {
-		return c.buildAssembledSystemPrompt(agent, quest)
+		return c.buildAssembledSystemPrompt(ctx, agent, quest)
 	}
 	return buildLegacySystemPrompt(agent, quest)
 }
 
-func (c *Component) buildAssembledSystemPrompt(agent *agentprogression.Agent, quest *domain.Quest) string {
+func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) string {
 	var personaPrompt string
 	if agent.Persona != nil {
 		personaPrompt = agent.Persona.SystemPrompt
@@ -1215,6 +1328,7 @@ func (c *Component) buildAssembledSystemPrompt(agent *agentprogression.Agent, qu
 		PartyRequired:        quest.PartyRequired,
 		IsPartyLead:          quest.PartyRequired && agent.Tier >= domain.TierMaster,
 		ClarificationAnswers: c.loadClarificationAnswers(quest),
+		DependencyOutputs:    c.loadDependencyOutputs(ctx, quest),
 	}
 
 	result := c.promptAssembler.AssembleSystemPrompt(assemblyCtx)

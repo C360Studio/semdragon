@@ -119,6 +119,12 @@ type AssemblyContext struct {
 	// "Previous Clarifications" section so the agent has context.
 	ClarificationAnswers []ClarificationAnswer `json:"clarification_answers,omitempty"`
 
+	// DependencyOutputs carries outputs from predecessor DAG nodes. When a
+	// sub-quest depends on completed nodes, their outputs are loaded from the
+	// graph and injected into the prompt so the agent has context about what
+	// predecessor steps produced.
+	DependencyOutputs []DependencyOutput `json:"dependency_outputs,omitempty"`
+
 	// Resolution
 	Provider string // from resolved endpoint ("anthropic", "openai", etc.)
 }
@@ -127,6 +133,15 @@ type AssemblyContext struct {
 type ClarificationAnswer struct {
 	Question string `json:"question"`
 	Answer   string `json:"answer"`
+}
+
+// DependencyOutput represents the output from a completed predecessor DAG node.
+// Injected into the system prompt so dependent nodes have context about what
+// their upstream steps produced.
+type DependencyOutput struct {
+	NodeID    string `json:"node_id"`
+	Objective string `json:"objective"`
+	Output    string `json:"output"`
 }
 
 // PeerFeedbackSummary describes a single peer-review question on which the agent

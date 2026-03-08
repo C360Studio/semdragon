@@ -72,6 +72,19 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		usedIDs = append(usedIDs, "peer-feedback-warnings")
 	}
 
+	// Inject dependency outputs from completed predecessor DAG nodes.
+	// These appear before clarifications and agent overrides so the agent
+	// knows what predecessor steps produced.
+	if len(ctx.DependencyOutputs) > 0 {
+		var deps strings.Builder
+		deps.WriteString("The following predecessor tasks have been completed. Use their outputs as context for your work:\n")
+		for _, dep := range ctx.DependencyOutputs {
+			deps.WriteString(fmt.Sprintf("\n--- %s: %s ---\n%s\n", dep.NodeID, dep.Objective, dep.Output))
+		}
+		sections = append(sections, formatSection("Dependency Outputs", deps.String(), style))
+		usedIDs = append(usedIDs, "dependency-outputs")
+	}
+
 	// Inject clarification answers from previous party lead interactions.
 	// These appear before agent overrides so the agent has context for its retry.
 	if len(ctx.ClarificationAnswers) > 0 {

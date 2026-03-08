@@ -507,3 +507,84 @@ func TestAssembleSystemPrompt_ResponseFormatFragmentID(t *testing.T) {
 		t.Error("expected 'response-format-intent' in FragmentsUsed")
 	}
 }
+
+func TestAssembly_WithDependencyOutputs(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierApprentice,
+		DependencyOutputs: []DependencyOutput{
+			{NodeID: "node-1", Objective: "Parse the input data", Output: "Parsed 42 records successfully"},
+			{NodeID: "node-2", Objective: "Validate schema", Output: "Schema validation passed"},
+		},
+	})
+
+	if !strings.Contains(result.SystemMessage, "Dependency Outputs") {
+		t.Error("expected 'Dependency Outputs' section in system message")
+	}
+	if !strings.Contains(result.SystemMessage, "node-1") {
+		t.Error("expected node-1 ID in system message")
+	}
+	if !strings.Contains(result.SystemMessage, "Parse the input data") {
+		t.Error("expected node-1 objective in system message")
+	}
+	if !strings.Contains(result.SystemMessage, "Parsed 42 records") {
+		t.Error("expected node-1 output in system message")
+	}
+	if !strings.Contains(result.SystemMessage, "node-2") {
+		t.Error("expected node-2 ID in system message")
+	}
+	if !strings.Contains(result.SystemMessage, "predecessor tasks") {
+		t.Error("expected predecessor context text in system message")
+	}
+
+	found := false
+	for _, id := range result.FragmentsUsed {
+		if id == "dependency-outputs" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'dependency-outputs' in FragmentsUsed")
+	}
+}
+
+func TestAssembly_WithoutDependencyOutputs(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierApprentice,
+	})
+
+	if strings.Contains(result.SystemMessage, "Dependency Outputs") {
+		t.Error("expected no 'Dependency Outputs' section when none provided")
+	}
+}
+
+func TestAssembly_DependencyOutputsBeforeClarifications(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierApprentice,
+		DependencyOutputs: []DependencyOutput{
+			{NodeID: "n1", Objective: "First step", Output: "Done"},
+		},
+		ClarificationAnswers: []ClarificationAnswer{
+			{Question: "What format?", Answer: "JSON"},
+		},
+	})
+
+	depIdx := strings.Index(result.SystemMessage, "Dependency Outputs")
+	clarIdx := strings.Index(result.SystemMessage, "Previous Clarifications")
+
+	if depIdx < 0 {
+		t.Fatal("expected Dependency Outputs section")
+	}
+	if clarIdx < 0 {
+		t.Fatal("expected Previous Clarifications section")
+	}
+	if depIdx >= clarIdx {
+		t.Error("expected Dependency Outputs to appear before Previous Clarifications")
+	}
+}
