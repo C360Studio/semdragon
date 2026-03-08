@@ -226,10 +226,14 @@ func AssignReadyNodes(ctx context.Context, dagState *DAGExecutionState, deps Ass
 	logger.Debug("assignment: party found",
 		"member_count", len(party.Members), "lead", party.Lead)
 
-	// Build the set of already-assigned agents so we don't double-book them.
+	// Build the set of agents currently working on active (non-terminal) nodes.
+	// Agents whose nodes have completed or failed are available for new work.
 	alreadyAssigned := make(map[domain.AgentID]struct{}, len(dagState.NodeAssignees))
-	for _, agentID := range dagState.NodeAssignees {
-		alreadyAssigned[domain.AgentID(agentID)] = struct{}{}
+	for nodeID, agentID := range dagState.NodeAssignees {
+		state := dagState.NodeStates[nodeID]
+		if state != NodeCompleted && state != NodeFailed {
+			alreadyAssigned[domain.AgentID(agentID)] = struct{}{}
+		}
 	}
 
 	// Build a node index for O(1) skill lookup.

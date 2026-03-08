@@ -76,6 +76,10 @@ func (m *mockQuestBoardRef) ClaimAndStartForParty(_ context.Context, questID dom
 	return m.claimAndStartErr
 }
 
+func (m *mockQuestBoardRef) RepostForRetry(_ context.Context, _ domain.QuestID) error {
+	return nil
+}
+
 // SubmitCallCount returns the number of submit calls (thread-safe).
 func (m *mockQuestBoardRef) SubmitCallCount() int {
 	m.mu.Lock()

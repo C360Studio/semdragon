@@ -643,6 +643,54 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 	return nil
 }
 
+// RepostForRetry resets a sub-quest back to posted status for DAG retry.
+// Unlike AbandonQuest, it preserves the PartyID so the sub-quest stays
+// within the party's closed system.
+func (c *Component) RepostForRetry(ctx context.Context, questID domain.QuestID) error {
+	if !c.running.Load() {
+		return errors.New("component not running")
+	}
+
+	c.lastActivity.Store(time.Now())
+	c.messagesProcessed.Add(1)
+
+	quest, err := c.getQuestByID(ctx, questID)
+	if err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "QuestBoard", "RepostForRetry", "load quest")
+	}
+
+	c.logger.Info("reposting sub-quest for DAG retry",
+		"quest_id", questID, "previous_status", quest.Status)
+
+	// Reset agent assignment if present
+	if quest.ClaimedBy != nil {
+		retryAgent, agentErr := c.getAgentByID(ctx, *quest.ClaimedBy)
+		if agentErr == nil {
+			retryAgent.Status = domain.AgentIdle
+			retryAgent.CurrentQuest = nil
+			retryAgent.UpdatedAt = time.Now()
+			if writeErr := c.graph.EmitEntityUpdate(ctx, retryAgent, "agent.status.idle"); writeErr != nil {
+				c.logger.Error("failed to reset agent on repost", "error", writeErr)
+			}
+		}
+	}
+
+	// Reset quest to posted, preserving PartyID and parent references.
+	quest.Status = domain.QuestPosted
+	quest.ClaimedBy = nil
+	quest.ClaimedAt = nil
+	quest.StartedAt = nil
+	quest.FailureReason = ""
+
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.reposted_for_retry"); err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "QuestBoard", "RepostForRetry", "emit update")
+	}
+
+	return nil
+}
+
 // StartQuest marks a quest as in-progress.
 func (c *Component) StartQuest(ctx context.Context, questID domain.QuestID) error {
 	if !c.running.Load() {

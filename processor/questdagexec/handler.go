@@ -766,9 +766,22 @@ func (c *Component) assignReadyNodes(ctx context.Context, dagState *DAGExecution
 		"assignees", dagState.NodeAssignees)
 }
 
-// retryNodeAssignment re-dispatches a failed node by resetting it to NodePending
-// and calling promoteReadyNodes + assignReadyNodes.
+// retryNodeAssignment re-dispatches a failed node by resetting the sub-quest
+// back to posted status and then re-claiming it for the party.
 func (c *Component) retryNodeAssignment(ctx context.Context, dagState *DAGExecutionState, nodeID string) {
+	// Reset the sub-quest back to posted so ClaimAndStartForParty can re-claim it.
+	subQuestID, ok := dagState.NodeQuestIDs[nodeID]
+	if ok && c.questBoardRef != nil {
+		if err := c.questBoardRef.RepostForRetry(ctx, domain.QuestID(subQuestID)); err != nil {
+			c.logger.Error("failed to repost sub-quest for retry",
+				"execution_id", dagState.ExecutionID,
+				"node_id", nodeID,
+				"sub_quest_id", subQuestID,
+				"error", err)
+			c.errorsCount.Add(1)
+		}
+	}
+
 	dagState.NodeStates[nodeID] = NodePending
 	delete(dagState.NodeAssignees, nodeID)
 
