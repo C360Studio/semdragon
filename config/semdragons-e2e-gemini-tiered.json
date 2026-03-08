@@ -88,24 +88,28 @@
       },
       "agent-work.expert": {
         "preferred": [
-          "gemini-pro"
+          "gemini-pro",
+          "gemini-flash"
         ],
         "requires_tools": true
       },
       "agent-work.master": {
         "preferred": [
-          "gemini-pro"
+          "gemini-pro",
+          "gemini-flash"
         ],
         "requires_tools": true
       },
       "agent-work.grandmaster": {
         "preferred": [
-          "gemini-pro"
+          "gemini-pro",
+          "gemini-flash"
         ],
         "requires_tools": true
       },
       "boss-battle": {
         "preferred": [
+          "gemini-pro",
           "gemini-flash"
         ]
       },
