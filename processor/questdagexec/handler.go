@@ -604,7 +604,23 @@ func (c *Component) onClarificationAnswered(ctx context.Context, evt dagEvent) {
 // the member's output.
 func buildLeadReviewSystemPrompt(objective string, acceptance []string, output string) string {
 	var sb strings.Builder
-	sb.WriteString("You are the party lead reviewing a sub-quest. Review the output against acceptance criteria.\n\n")
+	sb.WriteString("You are the party lead performing a BLIND PEER REVIEW of a party member's work.\n\n")
+
+	sb.WriteString("REVIEW STANDARDS:\n")
+	sb.WriteString("Your ratings become part of this agent's permanent record. Inflated scores are harmful:\n")
+	sb.WriteString("- Future party leads will rely on these ratings to decide whether to trust this agent\n")
+	sb.WriteString("- A 5 means genuinely excellent work that exceeds expectations — not merely acceptable\n")
+	sb.WriteString("- Average competent work that meets requirements is a 3\n")
+	sb.WriteString("- Reserve 4 for work that shows clear quality beyond what was asked\n")
+	sb.WriteString("- A 1-2 indicates significant gaps or errors\n")
+	sb.WriteString("- If you would not stake your own reputation on this output, do not rate it highly\n\n")
+
+	sb.WriteString("RATING SCALE:\n")
+	sb.WriteString("  1 = Unacceptable — fundamentally wrong, missing, or unusable\n")
+	sb.WriteString("  2 = Below expectations — significant gaps, errors, or missing requirements\n")
+	sb.WriteString("  3 = Meets expectations — correct, complete, does what was asked\n")
+	sb.WriteString("  4 = Exceeds expectations — well-structured, thorough, handles edge cases\n")
+	sb.WriteString("  5 = Exceptional — production-quality, elegant, teaches something new\n\n")
 
 	sb.WriteString("Sub-quest objective:\n")
 	sb.WriteString(objective)
@@ -626,7 +642,8 @@ func buildLeadReviewSystemPrompt(objective string, acceptance []string, output s
 		sb.WriteString("The party member did not provide output — this constitutes a failure.\n\n")
 	}
 
-	sb.WriteString("Use the review_sub_quest tool to submit your verdict (accept or reject).")
+	sb.WriteString("Use the review_sub_quest tool to submit your verdict (accept or reject).\n")
+	sb.WriteString("Be honest. A 3 for solid work is the correct rating — not a 5.")
 	return sb.String()
 }
 

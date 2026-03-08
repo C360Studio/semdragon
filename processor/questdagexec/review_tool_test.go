@@ -218,15 +218,41 @@ func TestReviewToolExecute(t *testing.T) {
 			},
 		},
 		{
-			name: "rating of 5 is valid maximum",
+			name: "all-5 ratings without explanation is rejected",
 			args: map[string]any{
 				"sub_quest_id": "sq-max",
 				"ratings":      map[string]any{"q1": float64(5), "q2": float64(5), "q3": float64(5)},
 				"verdict":      "accept",
 			},
+			wantToolErr: true,
+			errContains: "all-5 ratings require an explanation",
+		},
+		{
+			name: "all-5 ratings with explanation is valid",
+			args: map[string]any{
+				"sub_quest_id": "sq-max-justified",
+				"ratings":      map[string]any{"q1": float64(5), "q2": float64(5), "q3": float64(5)},
+				"verdict":      "accept",
+				"explanation":  "Exceptional implementation with novel algorithm, comprehensive edge case handling, and clear documentation",
+			},
 			checkResult: func(t *testing.T, r reviewResult) {
 				t.Helper()
 				wantAvg := 5.0
+				if r.AvgRating != wantAvg {
+					t.Errorf("AvgRating = %.4f, want %.4f", r.AvgRating, wantAvg)
+				}
+			},
+		},
+		{
+			name: "near-perfect ratings 5-5-4 without explanation is valid",
+			args: map[string]any{
+				"sub_quest_id": "sq-near-perfect",
+				"ratings":      map[string]any{"q1": float64(5), "q2": float64(5), "q3": float64(4)},
+				"verdict":      "accept",
+			},
+			checkResult: func(t *testing.T, r reviewResult) {
+				t.Helper()
+				wantAvg := (5.0 + 5.0 + 4.0) / 3.0
 				if r.AvgRating != wantAvg {
 					t.Errorf("AvgRating = %.4f, want %.4f", r.AvgRating, wantAvg)
 				}

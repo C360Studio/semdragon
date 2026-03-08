@@ -92,6 +92,18 @@ func (e *ReviewExecutor) Execute(_ context.Context, call agentic.ToolCall) (agen
 		)), nil
 	}
 
+	// Anti-inflation guard: perfect scores (all 5s) require explicit justification.
+	// LLMs are sycophantic by default and give inflated ratings. This structural
+	// guardrail forces the lead to explain WHY the work is truly exceptional rather
+	// than rubber-stamping every submission. The explanation is stored on the peer
+	// review entity and becomes part of the agent's permanent record.
+	if q1 == 5 && q2 == 5 && q3 == 5 && explanation == "" {
+		return reviewErrorResult(call, "all-5 ratings require an explanation justifying why "+
+			"the work is truly exceptional across all three criteria. A score of 5 means the "+
+			"work significantly exceeded expectations — most competent work deserves a 3 or 4. "+
+			"Provide an explanation or adjust your ratings to reflect the actual quality."), nil
+	}
+
 	type result struct {
 		Verdict     string  `json:"verdict"`
 		AvgRating   float64 `json:"avg_rating"`
@@ -111,7 +123,7 @@ func (e *ReviewExecutor) Execute(_ context.Context, call agentic.ToolCall) (agen
 func (e *ReviewExecutor) ListTools() []agentic.ToolDefinition {
 	return []agentic.ToolDefinition{{
 		Name:        reviewToolName,
-		Description: "Review a party member's sub-quest output. Provide ratings on three questions (1-5 scale) and a verdict. If the average rating is below 3.0, an explanation is required to provide corrective feedback to the member.",
+		Description: "Review a party member's sub-quest output. Rate honestly: 3 = meets expectations (standard competent work), 5 = exceptional (rare). Inflated scores become part of the agent's permanent record and mislead future leads. If avg < 3.0, explanation is required.",
 		Parameters: map[string]any{
 			"type":     "object",
 			"required": []string{"sub_quest_id", "ratings", "verdict"},
@@ -127,19 +139,19 @@ func (e *ReviewExecutor) ListTools() []agentic.ToolDefinition {
 					"properties": map[string]any{
 						"q1": map[string]any{
 							"type":        "integer",
-							"description": "Task quality: Did the output meet acceptance criteria? (1-5)",
+							"description": "Task quality: Did the output meet acceptance criteria? 1=wrong/missing, 2=significant gaps, 3=meets requirements, 4=exceeds (thorough), 5=exceptional (rare)",
 							"minimum":     1,
 							"maximum":     5,
 						},
 						"q2": map[string]any{
 							"type":        "integer",
-							"description": "Communication: Were assumptions stated clearly? (1-5)",
+							"description": "Communication: Were assumptions stated and output clearly organized? 1=incoherent, 2=unclear, 3=adequate, 4=well-structured, 5=exemplary",
 							"minimum":     1,
 							"maximum":     5,
 						},
 						"q3": map[string]any{
 							"type":        "integer",
-							"description": "Autonomy: Did the agent work independently without gaps? (1-5)",
+							"description": "Completeness: Did the agent deliver everything needed without gaps? 1=mostly missing, 2=incomplete, 3=complete, 4=thorough with edge cases, 5=comprehensive beyond requirements",
 							"minimum":     1,
 							"maximum":     5,
 						},
@@ -147,7 +159,7 @@ func (e *ReviewExecutor) ListTools() []agentic.ToolDefinition {
 				},
 				"explanation": map[string]any{
 					"type":        "string",
-					"description": "Corrective feedback for the member. Required when avg rating < 3.0 and verdict is reject.",
+					"description": "Corrective feedback for the member. Required when avg rating < 3.0 and verdict is reject. Also required when all ratings are 5 — justify why the work is truly exceptional.",
 				},
 				"verdict": map[string]any{
 					"type":        "string",

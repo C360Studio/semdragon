@@ -45,6 +45,13 @@ func (a *PromptAssembler) AssembleJudgePrompt(
 		"  Q1: " + domain.LeaderToMemberQuestions[0] + "\n" +
 		"  Q2: " + domain.LeaderToMemberQuestions[1] + "\n" +
 		"  Q3: " + domain.LeaderToMemberQuestions[2] + "\n\n" +
+		"RATING CALIBRATION (this is critical — ratings become the agent's permanent record):\n" +
+		"  1 = Unacceptable — fundamentally wrong, missing, or unusable\n" +
+		"  2 = Below expectations — significant gaps, errors, or missing requirements\n" +
+		"  3 = Meets expectations — correct, complete, does what was asked (this is the baseline for competent work)\n" +
+		"  4 = Exceeds expectations — well-structured, thorough, handles edge cases\n" +
+		"  5 = Exceptional — production-quality, elegant, rare (most good work is a 3 or 4, not a 5)\n" +
+		"Inflated scores erode trust in the review system. Rate honestly.\n\n" +
 		"Respond with ONLY a JSON object in this exact format:\n" +
 		"```json\n" +
 		"{\"criteria\": [{\"name\": \"<criterion_name>\", \"score\": <0.0-1.0>, \"reasoning\": \"<explanation>\"}], " +
