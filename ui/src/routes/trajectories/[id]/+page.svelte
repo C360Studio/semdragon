@@ -142,6 +142,27 @@
 						<span class="quest-status" data-testid="trajectory-quest-status" data-status={quest.status}>{quest.status}</span>
 					</a>
 				</div>
+
+				{#if quest.context_token_count || quest.context_sources?.length || quest.context_entities?.length}
+					<div class="context-metadata" data-testid="trajectory-context-metadata">
+						{#if quest.context_token_count}
+							<span class="context-chip">~{quest.context_token_count.toLocaleString()} context tokens</span>
+						{/if}
+						{#if quest.context_entities?.length}
+							<span class="context-chip">{quest.context_entities.length} entities</span>
+						{/if}
+						{#if quest.context_sources?.length}
+							<details class="context-sources-detail">
+								<summary class="context-chip">{quest.context_sources.length} prompt fragments</summary>
+								<ul class="context-source-list">
+									{#each quest.context_sources as src}
+										<li><code>{src}</code></li>
+									{/each}
+								</ul>
+							</details>
+						{/if}
+					</div>
+				{/if}
 			{/if}
 
 			{#if loading}
@@ -269,7 +290,19 @@
 				<h2>Related</h2>
 			</header>
 			<div class="details-content">
-				<p class="empty-state">Trajectory context</p>
+				{#if quest?.context_entities?.length}
+					<div class="related-section">
+						<h3 class="related-heading">Context Entities</h3>
+						<ul class="entity-list">
+							{#each quest.context_entities as entityId}
+								<li><code>{entityId}</code></li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+				{#if !quest?.context_entities?.length}
+					<p class="empty-state">No context data available</p>
+				{/if}
 			</div>
 		</div>
 	{/snippet}
@@ -336,6 +369,66 @@
 	.quest-status[data-status='completed'] {
 		background: var(--quest-completed-container);
 		color: var(--quest-completed);
+	}
+
+	/* Context metadata chips */
+	.context-metadata {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		gap: var(--spacing-sm);
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.context-chip {
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.75rem;
+		padding: 2px 10px;
+		background: var(--ui-surface-tertiary);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-full);
+		color: var(--ui-text-secondary);
+		font-family: monospace;
+	}
+
+	.context-chip.clickable {
+		cursor: pointer;
+	}
+
+	.context-chip.clickable:hover {
+		border-color: var(--ui-border-interactive);
+		color: var(--ui-text-primary);
+	}
+
+	.context-sources-detail {
+		display: inline-flex;
+		flex-direction: column;
+	}
+
+	.context-sources-detail summary:focus-visible {
+		outline: 2px solid var(--ui-border-interactive);
+		outline-offset: 2px;
+		border-radius: var(--radius-full);
+	}
+
+	.context-source-list {
+		list-style: none;
+		margin: var(--spacing-xs) 0 0;
+		padding: var(--spacing-xs) var(--spacing-md);
+		background: var(--ui-surface-secondary);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		font-size: 0.75rem;
+	}
+
+	.context-source-list li {
+		padding: 2px 0;
+		color: var(--ui-text-tertiary);
+	}
+
+	.context-source-list code {
+		font-size: 0.6875rem;
 	}
 
 	.trajectory-summary {
@@ -571,5 +664,39 @@
 
 	.details-content {
 		padding: var(--spacing-md);
+	}
+
+	.related-section {
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.related-heading {
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-tertiary);
+		margin: 0 0 var(--spacing-sm);
+	}
+
+	.entity-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.entity-list li {
+		padding: 4px 0;
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.entity-list li:last-child {
+		border-bottom: none;
+	}
+
+	.entity-list code {
+		font-size: 0.75rem;
+		color: var(--ui-text-secondary);
+		word-break: break-all;
 	}
 </style>

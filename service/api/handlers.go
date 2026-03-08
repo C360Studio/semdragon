@@ -1114,9 +1114,52 @@ func (s *Service) handleGetTrajectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pass raw JSON bytes through — avoid coupling to agentic.Trajectory type
+	// Default: strip verbose fields (messages, tool_calls) to keep payloads small.
+	// Use ?detail=full to include everything for debugging.
+	detail := r.URL.Query().Get("detail")
+	if detail != "full" {
+		data = trimTrajectoryDetail(data)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(data)
+}
+
+// trimTrajectoryDetail strips Messages and ToolCalls from trajectory steps
+// to keep the default response lightweight for the browser. Returns the
+// original data unchanged if unmarshalling fails.
+func trimTrajectoryDetail(data []byte) []byte {
+	var traj map[string]any
+	if err := json.Unmarshal(data, &traj); err != nil {
+		return data
+	}
+	steps, ok := traj["steps"].([]any)
+	if !ok || len(steps) == 0 {
+		return data // Nothing to trim — preserve original byte ordering
+	}
+	modified := false
+	for _, step := range steps {
+		s, ok := step.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, has := s["messages"]; has {
+			delete(s, "messages")
+			modified = true
+		}
+		if _, has := s["tool_calls"]; has {
+			delete(s, "tool_calls")
+			modified = true
+		}
+	}
+	if !modified {
+		return data // Nothing was actually trimmed — preserve original bytes
+	}
+	trimmed, err := json.Marshal(traj)
+	if err != nil {
+		return data
+	}
+	return trimmed
 }
 
 // =============================================================================

@@ -180,6 +180,14 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 		// DM clarification exchanges (standalone/parent quests)
 		case "quest.dm.clarifications":
 			q.DMClarifications = triple.Object
+
+		// Context metadata
+		case "quest.context.token_count":
+			q.ContextTokenCount = AsInt(triple.Object)
+		case "quest.context.sources":
+			q.ContextSources = AsStringSlice(triple.Object)
+		case "quest.context.entities":
+			q.ContextEntities = AsStringSlice(triple.Object)
 		}
 	}
 
@@ -462,6 +470,28 @@ func AsFloat64(v interface{}) float64 {
 		return f
 	default:
 		return 0
+	}
+}
+
+// AsStringSlice converts an interface value to []string.
+// Handles both []string (direct) and []any (from JSON unmarshal).
+func AsStringSlice(v interface{}) []string {
+	if v == nil {
+		return nil
+	}
+	switch val := v.(type) {
+	case []string:
+		return val
+	case []any:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		return nil
 	}
 }
 

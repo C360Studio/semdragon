@@ -46,6 +46,11 @@ type Config struct {
 	// Useful in tests to avoid stale consumer state between runs.
 	DeleteConsumerOnStop bool `json:"delete_consumer_on_stop,omitempty"`
 
+	// EntityContextBudget is the maximum token budget for entity knowledge injection.
+	// Entity knowledge (agent identity, quest details, party/guild context) is appended
+	// to the system prompt. 0 disables entity context injection. Default: 2000.
+	EntityContextBudget int `json:"entity_context_budget,omitempty"`
+
 	// Domain selects which DomainCatalog to inject (e.g. "software", "dnd", "research").
 	Domain string `json:"domain,omitempty"`
 
@@ -64,10 +69,11 @@ func DefaultConfig() Config {
 		QuestLoopsBucket: "QUEST_LOOPS",
 		SandboxDir:       "",
 		EnableBuiltins:   true,
-		MaxIterations:         20,
-		DefaultRole:           "general",
+		MaxIterations:          20,
+		DefaultRole:            "general",
 		EscalationTimeoutMins:  30,
 		MaxClarificationRounds: 3,
+		EntityContextBudget:    2000,
 	}
 }
 

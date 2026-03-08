@@ -274,6 +274,26 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
+	// Context metadata — what went into the prompt for this quest execution.
+	if q.ContextTokenCount > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.context.token_count", Object: q.ContextTokenCount,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if len(q.ContextSources) > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.context.sources", Object: q.ContextSources,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if len(q.ContextEntities) > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.context.entities", Object: q.ContextEntities,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
 	return triples
 }
 

@@ -97,6 +97,10 @@ func (e *ReviewExecutor) Execute(_ context.Context, call agentic.ToolCall) (agen
 	// guardrail forces the lead to explain WHY the work is truly exceptional rather
 	// than rubber-stamping every submission. The explanation is stored on the peer
 	// review entity and becomes part of the agent's permanent record.
+	//
+	// Intentionally conservative: only the exact {5,5,5} pattern is rejected.
+	// Near-perfect scores like {5,5,4} (avg 4.67) are allowed without explanation.
+	// If telemetry shows score clustering at 4.67+, consider expanding the threshold.
 	if q1 == 5 && q2 == 5 && q3 == 5 && explanation == "" {
 		return reviewErrorResult(call, "all-5 ratings require an explanation justifying why "+
 			"the work is truly exceptional across all three criteria. A score of 5 means the "+

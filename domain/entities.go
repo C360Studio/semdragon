@@ -91,6 +91,12 @@ type Quest struct {
 	// DM clarification exchanges (non-DAG quests or parent party quests).
 	// Stored as any to keep domain package free of processor-type imports.
 	DMClarifications any `json:"dm_clarifications,omitempty"` // []ClarificationExchange
+
+	// Context metadata — populated by questbridge after prompt assembly.
+	// Shows what went into the context window for this quest execution.
+	ContextTokenCount int      `json:"context_token_count,omitempty"`
+	ContextSources    []string `json:"context_sources,omitempty"`  // Fragment IDs used in assembly
+	ContextEntities   []string `json:"context_entities,omitempty"` // Entity IDs referenced in context
 }
 
 // ClarificationExchange records a single clarification Q&A round between

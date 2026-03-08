@@ -17,6 +17,7 @@ import (
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
+	pkgcontext "github.com/c360studio/semstreams/pkg/context"
 	pkgtypes "github.com/c360studio/semstreams/pkg/types"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/nats-io/nuid"
@@ -194,7 +195,21 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	}
 
 	// Build system prompt using assembler or legacy path.
-	systemPrompt := c.buildSystemPrompt(ctx, agent, quest)
+	assembled := c.buildSystemPrompt(ctx, agent, quest)
+
+	// Build entity knowledge — structured context about agent, quest, party, guild.
+	var entityKnowledgeContent string
+	var knowledgeEntityIDs []string
+	if c.config.EntityContextBudget > 0 {
+		ekb := &entityKnowledgeBuilder{
+			graph:       c.graph,
+			budgetToken: c.config.EntityContextBudget,
+			logger:      c.logger,
+		}
+		ek := ekb.build(ctx, quest, agent)
+		entityKnowledgeContent = ek.content
+		knowledgeEntityIDs = ek.entityIDs
+	}
 
 	// Resolve model capability key and endpoint.
 	capability := c.resolveCapability(agent, quest)
@@ -217,6 +232,27 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	// Build the user prompt from quest input.
 	userPrompt := buildUserPrompt(quest)
 
+	// Build context metadata — which entities and fragments informed this dispatch.
+	contextEntities := []string{questID, agentID}
+	if quest.PartyID != nil {
+		contextEntities = append(contextEntities, string(*quest.PartyID))
+	}
+	if quest.GuildPriority != nil {
+		contextEntities = append(contextEntities, string(*quest.GuildPriority))
+	}
+	if quest.ParentQuest != nil {
+		contextEntities = append(contextEntities, string(*quest.ParentQuest))
+	}
+	// Merge entity IDs discovered during knowledge building.
+	contextEntities = append(contextEntities, knowledgeEntityIDs...)
+
+	// Merge entity knowledge into the system prompt content.
+	contextContent := assembled.SystemMessage
+	if entityKnowledgeContent != "" {
+		contextContent = assembled.SystemMessage + "\n\n" + entityKnowledgeContent
+	}
+	tokenCount := pkgcontext.EstimateTokens(contextContent)
+
 	// Construct the TaskMessage.
 	// Sanitize questID for use in NATS subject tokens — entity IDs contain dots
 	// which are subject delimiters. Replace dots with hyphens so the ID is a single
@@ -230,7 +266,10 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 		Model:  modelKey,
 		Prompt: userPrompt,
 		Context: &pkgtypes.ConstructedContext{
-			Content:       systemPrompt,
+			Content:       contextContent,
+			TokenCount:    tokenCount,
+			Entities:      contextEntities,
+			Sources:       fragmentsToSources(assembled.FragmentsUsed),
 			ConstructedAt: time.Now(),
 		},
 		Tools: tools,
@@ -242,6 +281,16 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 			"sandbox_dir": c.config.SandboxDir,
 			"board":       c.config.Board,
 		},
+	}
+
+	// Write context metadata to quest entity for UI visibility.
+	// Must happen BEFORE publishing TaskMessage — a fast-completing task could
+	// race and overwrite the quest status if we emit after dispatch.
+	quest.ContextTokenCount = tokenCount
+	quest.ContextSources = assembled.FragmentsUsed
+	quest.ContextEntities = contextEntities
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.context.assembled"); err != nil {
+		c.logger.Warn("failed to emit context metadata", "quest_id", questID, "error", err)
 	}
 
 	// Wrap in BaseMessage envelope (required by agentic-loop consumer).
@@ -1468,15 +1517,16 @@ func (c *Component) parseDAGFromParent(parent *domain.Quest) (*questdagexec.Ques
 }
 
 // buildSystemPrompt builds the system prompt using the assembler when available,
-// falling back to the legacy string concatenation path.
-func (c *Component) buildSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) string {
+// falling back to the legacy string concatenation path. Returns the full
+// AssembledPrompt so callers can access FragmentsUsed for context metadata.
+func (c *Component) buildSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) promptmanager.AssembledPrompt {
 	if c.promptAssembler != nil {
 		return c.buildAssembledSystemPrompt(ctx, agent, quest)
 	}
-	return buildLegacySystemPrompt(agent, quest)
+	return promptmanager.AssembledPrompt{SystemMessage: buildLegacySystemPrompt(agent, quest)}
 }
 
-func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) string {
+func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) promptmanager.AssembledPrompt {
 	var personaPrompt string
 	if agent.Persona != nil {
 		personaPrompt = agent.Persona.SystemPrompt
@@ -1520,8 +1570,7 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		DependencyOutputs:    c.loadDependencyOutputs(ctx, quest),
 	}
 
-	result := c.promptAssembler.AssembleSystemPrompt(assemblyCtx)
-	return result.SystemMessage
+	return c.promptAssembler.AssembleSystemPrompt(assemblyCtx)
 }
 
 // buildLegacySystemPrompt is the fallback string concatenation path.
@@ -1711,4 +1760,14 @@ func tripleString(triples []message.Triple, predicate string) string {
 		}
 	}
 	return ""
+}
+
+// fragmentsToSources converts prompt fragment IDs to ContextSource structs
+// for the ConstructedContext.Sources field.
+func fragmentsToSources(fragmentIDs []string) []pkgtypes.ContextSource {
+	sources := make([]pkgtypes.ContextSource, len(fragmentIDs))
+	for i, id := range fragmentIDs {
+		sources[i] = pkgtypes.ContextSource{Type: "prompt_fragment", ID: id}
+	}
+	return sources
 }

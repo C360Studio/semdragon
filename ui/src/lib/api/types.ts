@@ -64,6 +64,10 @@ export type Quest = Omit<
 	parent_quest?: QuestID | null;
 	sub_quests?: QuestID[];
 	decomposed_by?: AgentID | null;
+	// Context metadata — populated by questbridge after prompt assembly.
+	context_token_count?: number;
+	context_sources?: string[];
+	context_entities?: string[];
 };
 
 export type Agent = Omit<RawAgent, 'id' | 'current_quest' | 'current_party' | 'guilds'> & {

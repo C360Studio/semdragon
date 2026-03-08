@@ -78,6 +78,11 @@ function num(v: unknown, fallback = 0): number {
 	return typeof v === 'number' ? v : fallback;
 }
 
+function asStringArray(v: unknown): string[] | undefined {
+	if (!Array.isArray(v)) return undefined;
+	return v.filter((item): item is string => typeof item === 'string');
+}
+
 // =============================================================================
 // PUBLIC API
 // =============================================================================
@@ -235,7 +240,12 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 		attempts: num(m.get('quest.attempts.current')),
 		max_attempts: num(m.get('quest.attempts.max'), 3),
 		escalated: false,
-		loop_id: str(m.get('quest.execution.loop_id'))
+		loop_id: str(m.get('quest.execution.loop_id')),
+		context_token_count: m.has('quest.context.token_count')
+			? num(m.get('quest.context.token_count'))
+			: undefined,
+		context_sources: asStringArray(m.get('quest.context.sources')),
+		context_entities: asStringArray(m.get('quest.context.entities'))
 	};
 }
 
