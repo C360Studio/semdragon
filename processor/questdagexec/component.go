@@ -41,10 +41,11 @@ type QuestBoardRef interface {
 	FailQuest(ctx context.Context, questID domain.QuestID, reason string) error
 	// EscalateQuest transitions a quest to escalated.
 	EscalateQuest(ctx context.Context, questID domain.QuestID, reason string) error
-	// ClaimAndStartForParty claims a sub-quest on behalf of a party and
-	// transitions it directly to in_progress in a single KV write, eliminating
-	// the window where a crash could leave a sub-quest stuck in claimed state.
-	ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error
+	// ClaimAndStartForParty claims a sub-quest for a specific agent within a
+	// party and transitions it directly to in_progress in a single KV write,
+	// eliminating the window where a crash could leave a sub-quest stuck in
+	// claimed state. The assignedTo agent is recorded as ClaimedBy.
+	ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID, assignedTo domain.AgentID) error
 	// RepostForRetry resets a sub-quest back to posted status for DAG retry,
 	// preserving the PartyID so it stays within the party's closed system.
 	RepostForRetry(ctx context.Context, questID domain.QuestID) error

@@ -43,9 +43,9 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	reg := NewPromptRegistry()
 	RegisterBuiltinFragments(reg)
 
-	// Expect exactly 2 built-in fragments: directive + provider hint.
-	if got := reg.FragmentCount(); got != 2 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 2", got)
+	// Expect exactly 3 built-in fragments: lead directive + lead provider hint + sub-quest executor directive.
+	if got := reg.FragmentCount(); got != 3 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 3", got)
 	}
 }
 
@@ -316,6 +316,63 @@ func TestConditionGating_EvaluatedAfterStructuralGates(t *testing.T) {
 	_ = reg.GetFragmentsForContext(AssemblyContext{Tier: domain.TierExpert})
 	if callCount != 1 {
 		t.Errorf("Condition should be called exactly once for matching tier, called %d times", callCount)
+	}
+}
+
+// =============================================================================
+// Sub-quest executor directive tests
+// =============================================================================
+
+func TestSubQuestExecutorDirective_IncludedForSubQuest(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:       domain.TierJourneyman,
+		Provider:   "gemini",
+		IsSubQuest: true,
+		QuestTitle: "Convert celsius to fahrenheit",
+	})
+
+	if !strings.Contains(result.SystemMessage, "SUB-QUEST") {
+		t.Error("expected SUB-QUEST directive in sub-quest agent prompt")
+	}
+	if !strings.Contains(result.SystemMessage, "INTENT: work_product") {
+		t.Error("expected work_product intent instruction in sub-quest directive")
+	}
+}
+
+func TestSubQuestExecutorDirective_ExcludedForNonSubQuest(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:       domain.TierJourneyman,
+		Provider:   "gemini",
+		IsSubQuest: false,
+		QuestTitle: "Regular quest",
+	})
+
+	if strings.Contains(result.SystemMessage, "SUB-QUEST") {
+		t.Error("sub-quest directive should not appear for regular quests")
+	}
+}
+
+func TestSubQuestExecutorDirective_ExcludedForPartyLead(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:          domain.TierMaster,
+		Provider:      "openai",
+		PartyRequired: true,
+		IsPartyLead:   true,
+		IsSubQuest:    false,
+		QuestTitle:    "Decompose this quest",
+	})
+
+	if strings.Contains(result.SystemMessage, "SUB-QUEST") {
+		t.Error("sub-quest directive should not appear for party leads")
+	}
+	if !strings.Contains(result.SystemMessage, "PARTY LEAD") {
+		t.Error("party lead directive should be present")
 	}
 }
 

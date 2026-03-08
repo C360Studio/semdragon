@@ -3,6 +3,8 @@ package domain
 import (
 	"testing"
 	"time"
+
+	"github.com/c360studio/semstreams/graph"
 )
 
 func TestQuestTriples_ReviewPredicates(t *testing.T) {
@@ -80,5 +82,68 @@ func TestQuestTriples_ReviewPredicates(t *testing.T) {
 				t.Error("quest.review.level triple not found")
 			}
 		})
+	}
+}
+
+func TestQuestRoundTrip_DMClarifications(t *testing.T) {
+	askedAt := time.Now().Truncate(time.Second)
+	clarifications := []ClarificationExchange{
+		{
+			Question: "What is the expected output format?",
+			Answer:   "Return a JSON object with keys: result, confidence.",
+			AskedAt:  askedAt,
+		},
+		{
+			Question: "Should the agent include reasoning steps?",
+			Answer:   "Yes, include a brief chain-of-thought.",
+			AskedAt:  askedAt,
+		},
+	}
+
+	original := &Quest{
+		ID:               QuestID("test.dev.game.board1.quest.q1"),
+		Title:            "DM Clarification Round-Trip",
+		Status:           QuestInProgress,
+		PostedAt:         time.Now().Truncate(time.Second),
+		DMClarifications: clarifications,
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if r.DMClarifications == nil {
+		t.Fatal("DMClarifications is nil, want non-nil")
+	}
+}
+
+func TestQuestRoundTrip_DMClarificationsNil(t *testing.T) {
+	// A quest without DM clarifications should not emit the predicate.
+	original := &Quest{
+		ID:       QuestID("test.dev.game.board1.quest.q2"),
+		Title:    "No DM Clarifications",
+		Status:   QuestPosted,
+		PostedAt: time.Now().Truncate(time.Second),
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if r.DMClarifications != nil {
+		t.Errorf("DMClarifications = %v, want nil", r.DMClarifications)
+	}
+
+	// Also verify no quest.dm.clarifications triple was emitted.
+	for _, triple := range entity.Triples {
+		if triple.Predicate == "quest.dm.clarifications" {
+			t.Errorf("unexpected triple emitted: predicate %q with object %v", triple.Predicate, triple.Object)
+		}
 	}
 }

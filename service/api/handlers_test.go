@@ -3997,6 +3997,10 @@ func TestHandleDMIntervene(t *testing.T) {
 	}
 
 	t.Run("clarification replaces existing clarification block", func(t *testing.T) {
+		// The handler now stores clarifications as structured DMClarifications
+		// exchanges instead of appending to the quest description. A quest that
+		// previously had a description-embedded clarification block is treated
+		// as having no prior exchange (the old format is not migrated).
 		quest := escalatedQuest("Original description\n\n**DM Clarification:** Use Python")
 		var emittedQuest *domain.Quest
 		mg := &mockGraph{
@@ -4025,15 +4029,24 @@ func TestHandleDMIntervene(t *testing.T) {
 		if emittedQuest == nil {
 			t.Fatal("expected quest to be emitted")
 		}
-		// Should replace the old clarification, not append.
-		if strings.Count(emittedQuest.Description, "**DM Clarification:**") != 1 {
-			t.Errorf("expected exactly one clarification block, got description: %s", emittedQuest.Description)
+		// New structured approach: clarification is stored in DMClarifications,
+		// not appended to the description.
+		if emittedQuest.DMClarifications == nil {
+			t.Fatal("expected DMClarifications to be set")
 		}
-		if !strings.Contains(emittedQuest.Description, "Use Go instead") {
+		exchanges, ok := emittedQuest.DMClarifications.([]domain.ClarificationExchange)
+		if !ok {
+			t.Fatalf("DMClarifications has unexpected type %T", emittedQuest.DMClarifications)
+		}
+		if len(exchanges) != 1 {
+			t.Fatalf("expected 1 clarification exchange, got %d", len(exchanges))
+		}
+		if exchanges[0].Answer != "Use Go instead" {
+			t.Errorf("exchange answer = %q, want %q", exchanges[0].Answer, "Use Go instead")
+		}
+		// Description must not have the new clarification text injected into it.
+		if strings.Contains(emittedQuest.Description, "Use Go instead") {
 			t.Error("expected new clarification text in description")
-		}
-		if strings.Contains(emittedQuest.Description, "Use Python") {
-			t.Error("expected old clarification text to be replaced")
 		}
 	})
 

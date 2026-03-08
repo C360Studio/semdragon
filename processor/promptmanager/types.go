@@ -111,6 +111,7 @@ type AssemblyContext struct {
 	// Party context
 	PartyRequired bool // Quest requires party collaboration
 	IsPartyLead   bool // This agent is the party lead (Master+ tier)
+	IsSubQuest    bool // This quest is a sub-quest within a party DAG
 
 	// ClarificationAnswers carries previous Q&A exchanges between the member
 	// agent and the party lead. Populated by questbridge from the sub-quest
@@ -118,6 +119,10 @@ type AssemblyContext struct {
 	// sub-quest after clarification. The assembler renders them as a
 	// "Previous Clarifications" section so the agent has context.
 	ClarificationAnswers []ClarificationAnswer `json:"clarification_answers,omitempty"`
+
+	// ClarificationSource identifies who answered the clarification (e.g., "DM", "party lead").
+	// Used by the assembler to produce context-aware section headers.
+	ClarificationSource string `json:"clarification_source,omitempty"`
 
 	// DependencyOutputs carries outputs from predecessor DAG nodes. When a
 	// sub-quest depends on completed nodes, their outputs are loaded from the

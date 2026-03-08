@@ -42,7 +42,7 @@ import type {
 // CONFIGURATION
 // =============================================================================
 
-const DEFAULT_API_URL = 'http://localhost:8080';
+const DEFAULT_API_URL = 'http://localhost:8081';
 
 let apiUrl = DEFAULT_API_URL;
 

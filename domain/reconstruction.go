@@ -176,6 +176,10 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.DAGNodeID = AsString(triple.Object)
 		case "quest.dag.clarifications":
 			q.DAGClarifications = triple.Object
+
+		// DM clarification exchanges (standalone/parent quests)
+		case "quest.dm.clarifications":
+			q.DMClarifications = triple.Object
 		}
 	}
 

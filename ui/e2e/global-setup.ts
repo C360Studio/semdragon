@@ -9,7 +9,7 @@
  *   import { hasBackend } from '../fixtures/test-base';
  *   test.skip(!hasBackend(), 'Requires backend');
  */
-const API_URL = process.env.API_URL || 'http://localhost:8080';
+const API_URL = process.env.API_URL || `http://localhost:${process.env.BACKEND_PORT || '8081'}`;
 
 async function globalSetup(): Promise<void> {
 	const healthOk = await checkHealth(API_URL);

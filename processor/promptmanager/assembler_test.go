@@ -562,6 +562,78 @@ func TestAssembly_WithoutDependencyOutputs(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// CLARIFICATION SOURCE LABEL TESTS
+// =============================================================================
+
+func TestAssembly_WithClarifications_PartyLeadSource(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierApprentice,
+		ClarificationAnswers: []ClarificationAnswer{
+			{Question: "Which API version?", Answer: "v2"},
+		},
+		ClarificationSource: "The party lead",
+	})
+
+	if !strings.Contains(result.SystemMessage, "The party lead answered your previous questions") {
+		t.Error("expected 'The party lead answered your previous questions' in clarification section")
+	}
+	if strings.Contains(result.SystemMessage, "The DM answered") {
+		t.Error("should not contain 'The DM answered' when source is party lead")
+	}
+}
+
+func TestAssembly_WithClarifications_DMSource(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierApprentice,
+		ClarificationAnswers: []ClarificationAnswer{
+			{Question: "What is the output format?", Answer: "JSON"},
+		},
+		ClarificationSource: "The DM",
+	})
+
+	if !strings.Contains(result.SystemMessage, "The DM answered your previous questions") {
+		t.Error("expected 'The DM answered your previous questions' in clarification section")
+	}
+	if strings.Contains(result.SystemMessage, "The party lead answered") {
+		t.Error("should not contain 'The party lead answered' when source is DM")
+	}
+}
+
+func TestAssembly_WithClarifications_EmptySourceDefaultsToDM(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierApprentice,
+		ClarificationAnswers: []ClarificationAnswer{
+			{Question: "Any constraints?", Answer: "None"},
+		},
+		// ClarificationSource intentionally left empty — must default to "The DM"
+	})
+
+	if !strings.Contains(result.SystemMessage, "The DM answered your previous questions") {
+		t.Error("expected default source 'The DM' when ClarificationSource is empty")
+	}
+}
+
+func TestAssembly_WithClarifications_NoClarificationsNoSection(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:                domain.TierApprentice,
+		ClarificationSource: "The party lead",
+		// No ClarificationAnswers — section must not appear even with a source set.
+	})
+
+	if strings.Contains(result.SystemMessage, "Previous Clarifications") {
+		t.Error("should not include 'Previous Clarifications' section when no answers provided")
+	}
+}
+
 func TestAssembly_DependencyOutputsBeforeClarifications(t *testing.T) {
 	assembler, _ := newTestAssembler()
 

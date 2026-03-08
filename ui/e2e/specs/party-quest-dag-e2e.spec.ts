@@ -61,6 +61,9 @@ const POLL = isMockLLM()
 			reviewCreation: { timeout: 30_000, interval: 2000 }
 		};
 
+// escalated can be terminal (DAG node exhaustion) or temporary (clarification).
+// Auto-DM handles clarification escalations transparently (resumes to in_progress),
+// so by the time the test polls, only true terminal escalations remain.
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'escalated']);
 
 /**
@@ -168,7 +171,9 @@ test.describe('Party Quest DAG @integration', () => {
 		console.log(`[DAG E2E] Parent quest reached: ${finalParent.status}`);
 
 		if (finalParent.status === 'escalated') {
-			test.skip(true, 'Parent quest escalated (LLM requested clarification) — DAG not triggered');
+			// DAG node exhaustion or unresolvable clarification — the pipeline
+			// ran but the LLM couldn't produce acceptable output. Not a test bug.
+			test.skip(true, 'Parent quest escalated (DAG node exhaustion or clarification loop) — pipeline ran but LLM quality insufficient');
 			return;
 		}
 

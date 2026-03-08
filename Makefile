@@ -100,21 +100,22 @@ check-openapi:
 
 CLOUD_COMPOSE  = -f docker-compose.yml -f docker-compose.cloud.yml
 OLLAMA_COMPOSE = -f docker-compose.yml -f docker-compose.ollama.yml
+BACKEND_PORT   ?= 8081
 
 # Start with mock LLM (no API key needed)
 up:
-	docker compose --profile mock up -d --build --wait
-	@echo "Stack is up. Dashboard: http://localhost:5173  API: http://localhost:8080"
+	BACKEND_PORT=$(BACKEND_PORT) docker compose --profile mock up -d --build --wait
+	@echo "Stack is up. Dashboard: http://localhost:5173  API: http://localhost:$(BACKEND_PORT)"
 
 # Start with cloud LLM (set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env)
 up-cloud:
-	docker compose $(CLOUD_COMPOSE) up -d --build --wait
-	@echo "Cloud stack is up. Dashboard: http://localhost:5173  API: http://localhost:8080"
+	BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@echo "Cloud stack is up. Dashboard: http://localhost:5173  API: http://localhost:$(BACKEND_PORT)"
 
 # Start with local Ollama (requires: ollama serve && ollama pull qwen2.5-coder:7b)
 up-ollama:
-	docker compose $(OLLAMA_COMPOSE) up -d --build --wait
-	@echo "Ollama stack is up. Dashboard: http://localhost:5173  API: http://localhost:8080"
+	BACKEND_PORT=$(BACKEND_PORT) docker compose $(OLLAMA_COMPOSE) up -d --build --wait
+	@echo "Ollama stack is up. Dashboard: http://localhost:5173  API: http://localhost:$(BACKEND_PORT)"
 
 # Stop the stack (--remove-orphans handles any profile/override combination)
 down:
@@ -132,14 +133,14 @@ e2e: e2e-install e2e-up e2e-wait e2e-run e2e-down
 
 # Start the Docker stack (nats + mockllm + backend + ui)
 e2e-up:
-	SEED_E2E=true docker compose --profile mock up -d --build --wait
-	@echo "E2E stack is up. Backend: http://localhost:8080  UI: http://localhost:5173"
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) docker compose --profile mock up -d --build --wait
+	@echo "E2E stack is up. Backend: http://localhost:$(BACKEND_PORT)  UI: http://localhost:5173"
 
 # Wait for backend health (with retries)
 e2e-wait:
 	@echo "Waiting for backend health..."
 	@for i in $$(seq 1 30); do \
-		if curl -sf http://localhost:8080/health > /dev/null 2>&1; then \
+		if curl -sf http://localhost:$(BACKEND_PORT)/health > /dev/null 2>&1; then \
 			echo "Backend healthy after $${i}s"; \
 			break; \
 		fi; \
@@ -148,20 +149,20 @@ e2e-wait:
 
 # Run Playwright tests (stack must be running)
 e2e-run:
-	cd ui && E2E_MOCK_LLM=true npx playwright test
+	cd ui && E2E_MOCK_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test
 
 # Run on chromium only (fast iteration)
 e2e-chromium:
-	cd ui && E2E_MOCK_LLM=true npx playwright test --project=chromium
+	cd ui && E2E_MOCK_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test --project=chromium
 
 # Run E2E tests in headed mode (shows browser)
 e2e-headed: e2e-install e2e-up e2e-wait
-	cd ui && E2E_MOCK_LLM=true npx playwright test --headed
+	cd ui && E2E_MOCK_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test --headed
 	$(MAKE) e2e-down
 
 # Run E2E tests with UI mode (interactive debugging)
 e2e-ui: e2e-install e2e-up e2e-wait
-	cd ui && E2E_MOCK_LLM=true npx playwright test --ui
+	cd ui && E2E_MOCK_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test --ui
 
 # Stop the Docker stack
 e2e-down:
@@ -191,12 +192,12 @@ e2e-cloud: e2e-install e2e-cloud-up e2e-wait e2e-cloud-run e2e-cloud-down
 
 # Start stack with cloud config (no mockllm, uses cloud API keys)
 e2e-cloud-up:
-	SEED_E2E=true docker compose $(CLOUD_COMPOSE) up -d --build --wait
-	@echo "Cloud E2E stack is up. Backend: http://localhost:8080  UI: http://localhost:5173"
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@echo "Cloud E2E stack is up. Backend: http://localhost:$(BACKEND_PORT)  UI: http://localhost:5173"
 
 # Run DM chat integration tests (chromium only — real LLM)
 e2e-cloud-run:
-	cd ui && E2E_REAL_LLM=true npx playwright test dm-chat-integration --project=chromium
+	cd ui && E2E_REAL_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test dm-chat-integration --project=chromium
 
 # Stop the cloud stack
 e2e-cloud-down:
@@ -214,12 +215,12 @@ e2e-cloud-tiered: e2e-install e2e-cloud-tiered-up e2e-wait e2e-cloud-tiered-run 
 
 # Start stack with tiered config
 e2e-cloud-tiered-up:
-	SEED_E2E=true SEMDRAGONS_CONFIG=$(TIERED_CONFIG) docker compose $(CLOUD_COMPOSE) up -d --build --wait
-	@echo "Tiered E2E stack is up. Backend: http://localhost:8080  UI: http://localhost:5173"
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) SEMDRAGONS_CONFIG=$(TIERED_CONFIG) docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@echo "Tiered E2E stack is up. Backend: http://localhost:$(BACKEND_PORT)  UI: http://localhost:5173"
 
 # Run model registry spec (chromium only — real LLM)
 e2e-cloud-tiered-run:
-	cd ui && E2E_REAL_LLM=true npx playwright test model-registry --project=chromium
+	cd ui && E2E_REAL_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test model-registry --project=chromium
 
 # Stop the tiered stack
 e2e-cloud-tiered-down:
@@ -232,12 +233,12 @@ e2e-ollama: e2e-install e2e-ollama-up e2e-wait e2e-ollama-run e2e-ollama-down
 
 # Start stack with Ollama config (no mockllm, points at host Ollama)
 e2e-ollama-up:
-	SEED_E2E=true docker compose $(OLLAMA_COMPOSE) up -d --build --wait
-	@echo "Ollama E2E stack is up. Backend: http://localhost:8080  UI: http://localhost:5173"
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) docker compose $(OLLAMA_COMPOSE) up -d --build --wait
+	@echo "Ollama E2E stack is up. Backend: http://localhost:$(BACKEND_PORT)  UI: http://localhost:5173"
 
 # Run Ollama integration spec (chromium only)
 e2e-ollama-run:
-	cd ui && E2E_OLLAMA=true npx playwright test ollama-integration --project=chromium
+	cd ui && E2E_OLLAMA=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test ollama-integration --project=chromium
 
 # Stop the Ollama stack
 e2e-ollama-down:
@@ -265,24 +266,24 @@ _pw_spec = $(if $(SPEC),$(SPEC),)
 _pw_args = $(_pw_spec) --project=chromium
 
 e2e-gemini: e2e-install e2e-nats-clean
-	SEED_E2E=true SEMDRAGONS_E2E_CONFIG=$${SEMDRAGONS_E2E_CONFIG:-semdragons-e2e-gemini.json} \
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) SEMDRAGONS_E2E_CONFIG=$${SEMDRAGONS_E2E_CONFIG:-semdragons-e2e-gemini.json} \
 		docker compose $(CLOUD_COMPOSE) up -d --build --wait
 	@$(MAKE) e2e-wait
-	cd ui && E2E_LLM_MODE=gemini npx playwright test $(_pw_args) || true
+	cd ui && E2E_LLM_MODE=gemini BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(_pw_args) || true
 	@$(MAKE) e2e-cloud-down
 
 e2e-anthropic: e2e-install e2e-nats-clean
-	SEED_E2E=true SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json \
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json \
 		docker compose $(CLOUD_COMPOSE) up -d --build --wait
 	@$(MAKE) e2e-wait
-	cd ui && E2E_LLM_MODE=anthropic npx playwright test $(_pw_args) || true
+	cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(_pw_args) || true
 	@$(MAKE) e2e-cloud-down
 
 e2e-openai: e2e-install e2e-nats-clean
-	SEED_E2E=true SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json \
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json \
 		docker compose $(CLOUD_COMPOSE) up -d --build --wait
 	@$(MAKE) e2e-wait
-	cd ui && E2E_LLM_MODE=openai npx playwright test $(_pw_args) || true
+	cd ui && E2E_LLM_MODE=openai BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(_pw_args) || true
 	@$(MAKE) e2e-cloud-down
 
 # ─── Single Spec Runner ────────────────────────────────────────────
@@ -297,7 +298,7 @@ e2e-spec:
 ifndef SPEC
 	$(error SPEC is required. Usage: make e2e-spec SPEC=party-quest-dag-e2e)
 endif
-	cd ui && E2E_LLM_MODE=$(MODE) npx playwright test $(SPEC) --project=chromium
+	cd ui && E2E_LLM_MODE=$(MODE) BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(SPEC) --project=chromium
 
 # ─── Utilities ──────────────────────────────────────────────────────
 

@@ -518,11 +518,13 @@ func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.Quest
 	return nil
 }
 
-// ClaimAndStartForParty assigns a sub-quest to a party and transitions it
-// directly to in_progress in a single KV write. This is the atomic equivalent
-// of calling ClaimQuestForParty followed by StartQuest, and eliminates the
-// window where a process crash could leave a sub-quest stuck in claimed state.
-func (c *Component) ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error {
+// ClaimAndStartForParty assigns a sub-quest to a specific agent within a party
+// and transitions it directly to in_progress in a single KV write. This is the
+// atomic equivalent of calling ClaimQuestForParty followed by StartQuest, and
+// eliminates the window where a process crash could leave a sub-quest stuck in
+// claimed state. The assignedTo agent is recorded as ClaimedBy so questbridge
+// dispatches the agentic loop to the correct agent (not the party lead).
+func (c *Component) ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID, assignedTo domain.AgentID) error {
 	if !c.running.Load() {
 		return errors.New("component not running")
 	}
@@ -568,9 +570,8 @@ func (c *Component) ClaimAndStartForParty(ctx context.Context, questID domain.Qu
 	// Set quest state directly to in_progress — skip the claimed intermediate
 	// state to prevent crash-recovery issues with sub-quests stuck in claimed.
 	now := time.Now()
-	leadAgentID := domain.AgentID(party.Lead)
 	quest.Status = domain.QuestInProgress
-	quest.ClaimedBy = &leadAgentID
+	quest.ClaimedBy = &assignedTo
 	quest.PartyID = &partyID
 	quest.ClaimedAt = &now
 	quest.StartedAt = &now

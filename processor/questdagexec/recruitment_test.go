@@ -82,15 +82,16 @@ type mockQuestClaimer struct {
 }
 
 type claimCall struct {
-	questID domain.QuestID
-	partyID domain.PartyID
+	questID    domain.QuestID
+	partyID    domain.PartyID
+	assignedTo domain.AgentID
 }
 
-func (m *mockQuestClaimer) ClaimAndStartForParty(_ context.Context, questID domain.QuestID, partyID domain.PartyID) error {
+func (m *mockQuestClaimer) ClaimAndStartForParty(_ context.Context, questID domain.QuestID, partyID domain.PartyID, assignedTo domain.AgentID) error {
 	if m.err != nil {
 		return m.err
 	}
-	m.calls = append(m.calls, claimCall{questID, partyID})
+	m.calls = append(m.calls, claimCall{questID, partyID, assignedTo})
 	return nil
 }
 

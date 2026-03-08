@@ -30,6 +30,13 @@ type SubQuestPoster interface {
 	PostSubQuests(ctx context.Context, parentID domain.QuestID, subQuests []domain.Quest, decomposer domain.AgentID) ([]domain.Quest, error)
 }
 
+// ClarificationAnswerer abstracts LLM inference for auto-DM clarification answering.
+// The default implementation uses the model registry's "dm-chat" capability
+// with a simple OpenAI-compatible HTTP call.
+type ClarificationAnswerer interface {
+	AnswerClarification(ctx context.Context, questTitle, questDescription string, question string) (string, error)
+}
+
 // =============================================================================
 // COMPONENT - QuestBridge as a native semstreams processor
 // =============================================================================
@@ -69,6 +76,10 @@ type Component struct {
 	// questBoard posts sub-quests when a lead agent completes a DAG decomposition.
 	// Optional: nil means DAG output from party quests is treated as normal output.
 	questBoard SubQuestPoster
+
+	// clarificationAnswerer auto-answers agent clarification questions when DMMode
+	// is full_auto. Optional: nil means escalated quests wait for human DM response.
+	clarificationAnswerer ClarificationAnswerer
 
 	// Board pause integration
 	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
@@ -252,6 +263,12 @@ func (c *Component) Start(ctx context.Context) error {
 	// Attach model registry from deps if available.
 	c.registry = c.deps.ModelRegistry
 
+	// Initialize auto-DM clarification answerer when in full_auto mode.
+	if c.config.DMMode == domain.DMFullAuto && c.registry != nil && c.clarificationAnswerer == nil {
+		c.clarificationAnswerer = newRegistryAnswerer(c.registry)
+		c.logger.Info("auto-DM clarification answerer enabled (full_auto mode)")
+	}
+
 	// Create tool registry for tool definition filtering.
 	c.toolRegistry = executor.NewToolRegistry()
 	if c.config.SandboxDir != "" {
@@ -343,6 +360,15 @@ func (c *Component) SetQuestBoard(qb SubQuestPoster) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.questBoard = qb
+}
+
+// SetClarificationAnswerer injects the auto-DM answerer. When set and DMMode
+// is full_auto, escalated quests are automatically answered via LLM.
+// Safe to call before or after Start — the reference is checked lazily when needed.
+func (c *Component) SetClarificationAnswerer(ca ClarificationAnswerer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.clarificationAnswerer = ca
 }
 
 // SetPauseChecker injects the board pause checker. When paused, quest

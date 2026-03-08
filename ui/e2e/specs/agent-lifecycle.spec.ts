@@ -37,7 +37,7 @@ test.describe('Agent Lifecycle', () => {
 		// 2. Retire the agent
 		// The retire endpoint is POST /game/agents/{id}/retire
 		const retireRes = await fetch(
-			`${process.env.API_URL ?? 'http://localhost:8080'}/game/agents/${agentInstance}/retire`,
+			`${process.env.API_URL ?? `http://localhost:${process.env.BACKEND_PORT || '8081'}`}/game/agents/${agentInstance}/retire`,
 			{ method: 'POST', headers: { 'Content-Type': 'application/json' } }
 		);
 		expect(retireRes.ok, `retire failed: ${retireRes.status}`).toBeTruthy();

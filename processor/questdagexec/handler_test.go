@@ -44,8 +44,9 @@ type escalateCall struct {
 }
 
 type claimForPartyCall struct {
-	questID domain.QuestID
-	partyID domain.PartyID
+	questID    domain.QuestID
+	partyID    domain.PartyID
+	assignedTo domain.AgentID
 }
 
 func (m *mockQuestBoardRef) SubmitResult(_ context.Context, questID domain.QuestID, result any) error {
@@ -69,10 +70,10 @@ func (m *mockQuestBoardRef) EscalateQuest(_ context.Context, questID domain.Ques
 	return m.escalateErr
 }
 
-func (m *mockQuestBoardRef) ClaimAndStartForParty(_ context.Context, questID domain.QuestID, partyID domain.PartyID) error {
+func (m *mockQuestBoardRef) ClaimAndStartForParty(_ context.Context, questID domain.QuestID, partyID domain.PartyID, assignedTo domain.AgentID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.claimAndStartCalls = append(m.claimAndStartCalls, claimForPartyCall{questID, partyID})
+	m.claimAndStartCalls = append(m.claimAndStartCalls, claimForPartyCall{questID, partyID, assignedTo})
 	return m.claimAndStartErr
 }
 

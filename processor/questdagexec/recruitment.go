@@ -46,11 +46,11 @@ type TaskAssigner interface {
 	AssignTask(ctx context.Context, partyID domain.PartyID, subQuestID domain.QuestID, assignedTo domain.AgentID, rationale string) error
 }
 
-// QuestClaimerAndStarter atomically claims a sub-quest on behalf of a party and
-// transitions it directly to in_progress. The signature mirrors
-// questboard.Component.ClaimAndStartForParty.
+// QuestClaimerAndStarter atomically claims a sub-quest for a specific agent
+// within a party and transitions it directly to in_progress. The signature
+// mirrors questboard.Component.ClaimAndStartForParty.
 type QuestClaimerAndStarter interface {
-	ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error
+	ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID, assignedTo domain.AgentID) error
 }
 
 // AssignmentDeps bundles the dependencies required by AssignReadyNodes.
@@ -265,7 +265,7 @@ func AssignReadyNodes(ctx context.Context, dagState *DAGExecutionState, deps Ass
 			return fmt.Errorf("assign task for node %s to agent %s: %w", nodeID, member.AgentID, err)
 		}
 
-		if err := deps.QuestClaims.ClaimAndStartForParty(ctx, subQuestID, domain.PartyID(dagState.PartyID)); err != nil {
+		if err := deps.QuestClaims.ClaimAndStartForParty(ctx, subQuestID, domain.PartyID(dagState.PartyID), member.AgentID); err != nil {
 			return fmt.Errorf("claim and start quest %s for party: %w", subQuestID, err)
 		}
 

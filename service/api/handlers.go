@@ -1473,18 +1473,31 @@ func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Replace any existing clarification block to prevent unbounded description
-	// growth across multiple clarification round-trips. Only the latest
-	// clarification is kept — the DM can include prior context if needed.
-	const clarificationMarker = "\n\n**DM Clarification:** "
-	if idx := strings.Index(quest.Description, clarificationMarker); idx >= 0 {
-		quest.Description = quest.Description[:idx]
+	// Extract the agent's question from the quest output (stored as FailureReason
+	// when the quest was escalated by questbridge).
+	question := extractClarificationQuestion(quest.Output)
+	if question == "" {
+		question = quest.FailureReason
 	}
-	quest.Description += clarificationMarker + req.Clarification
+
+	// Deserialize existing clarification exchanges (may be nil on first round).
+	var exchanges []domain.ClarificationExchange
+	if quest.DMClarifications != nil {
+		raw, _ := json.Marshal(quest.DMClarifications)
+		json.Unmarshal(raw, &exchanges) //nolint:errcheck // best-effort; nil slice is fine
+	}
+
+	// Append the new exchange.
+	exchanges = append(exchanges, domain.ClarificationExchange{
+		Question: question,
+		Answer:   req.Clarification,
+		AskedAt:  time.Now(),
+	})
+	quest.DMClarifications = exchanges
 
 	// Return quest to in_progress with the same agent — this is a communication
 	// loop, not a retry. The agent keeps the quest and questbridge re-dispatches
-	// with the updated description containing the DM's clarification.
+	// with the updated clarification exchanges in the assembled prompt.
 	quest.Status = domain.QuestInProgress
 	quest.Escalated = false
 	quest.Output = nil
@@ -1500,6 +1513,26 @@ func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, quest)
+}
+
+// extractClarificationQuestion extracts the agent's question text from the
+// quest output, stripping any structured [INTENT: clarification] header.
+func extractClarificationQuestion(output any) string {
+	text, ok := output.(string)
+	if !ok {
+		return ""
+	}
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return trimmed
+	}
+	// Strip [INTENT: ...] header line if present.
+	if strings.HasPrefix(trimmed, "[INTENT:") {
+		if idx := strings.Index(trimmed, "\n"); idx >= 0 {
+			return strings.TrimSpace(trimmed[idx+1:])
+		}
+	}
+	return trimmed
 }
 
 func (s *Service) handleGetDMSession(w http.ResponseWriter, r *http.Request) {

@@ -11,6 +11,8 @@ package promptmanager
 // Currently registers:
 //   - Party lead tool directive (CategoryToolDirective) — enforces decompose_quest
 //     calls for party lead agents on party-required quests.
+//   - Sub-quest executor directive (CategoryToolDirective) — guides party member
+//     agents to complete work and submit results via [INTENT: work_product].
 //   - Gemini/OpenAI tool enforcement hint (CategoryProviderHints) — reinforces
 //     immediate tool-call behaviour for providers that may otherwise respond with text.
 //
@@ -18,6 +20,7 @@ package promptmanager
 func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerPartyLeadDirective(r)
 	registerPartyLeadProviderHints(r)
+	registerSubQuestExecutorDirective(r)
 }
 
 // partyLeadDirective is the mandatory tool-call instruction for party leads.
@@ -52,6 +55,35 @@ func registerPartyLeadDirective(r *PromptRegistry) {
 		Content:   partyLeadDirective,
 		Priority:  0,
 		Condition: isPartyLead,
+	})
+}
+
+// subQuestExecutorDirective guides party member agents working on sub-quests.
+// Without this, agents spin through tools without knowing how to signal completion.
+const subQuestExecutorDirective = `You are executing a SUB-QUEST assigned to you by a party lead.
+
+COMPLETION RULES:
+1. Complete the task described in the quest objective.
+2. Use available tools (read_file, write_file, patch_file, etc.) as needed to do the work.
+3. When you have finished, respond with [INTENT: work_product] followed by your complete deliverable.
+4. Your deliverable should contain the actual work output — code, analysis, or results — not a description of what you did.
+5. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
+6. Do NOT explore endlessly. Complete the work in as few iterations as possible.
+7. If the task is simple enough to answer directly (e.g., write a function), respond immediately with [INTENT: work_product] and the result.`
+
+// isSubQuestExecutor returns true for agents working on sub-quests within a
+// party DAG (party members executing DAG nodes, not the lead).
+func isSubQuestExecutor(ctx AssemblyContext) bool {
+	return ctx.IsSubQuest
+}
+
+func registerSubQuestExecutorDirective(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:        "builtin.sub-quest-executor.tool-directive",
+		Category:  CategoryToolDirective,
+		Content:   subQuestExecutorDirective,
+		Priority:  0,
+		Condition: isSubQuestExecutor,
 	})
 }
 

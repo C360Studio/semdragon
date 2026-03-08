@@ -35,7 +35,7 @@ test.describe('Boid Suggestions Observability', () => {
 		const entries = await retry(
 			async () => {
 				const res = await fetch(
-					'http://localhost:8080/message-logger/kv/BOID_SUGGESTIONS/watch?pattern=*'
+					`http://localhost:${process.env.BACKEND_PORT || '8081'}/message-logger/kv/BOID_SUGGESTIONS/watch?pattern=*`
 				);
 				if (!res.ok) {
 					throw new Error(`message-logger request failed: ${res.status}`);

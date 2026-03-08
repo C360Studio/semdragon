@@ -85,11 +85,15 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		usedIDs = append(usedIDs, "dependency-outputs")
 	}
 
-	// Inject clarification answers from previous party lead interactions.
+	// Inject clarification answers from previous interactions (party lead or DM).
 	// These appear before agent overrides so the agent has context for its retry.
 	if len(ctx.ClarificationAnswers) > 0 {
 		var clarifications strings.Builder
-		clarifications.WriteString("The party lead answered your previous questions:\n")
+		source := ctx.ClarificationSource
+		if source == "" {
+			source = "The DM"
+		}
+		clarifications.WriteString(source + " answered your previous questions:\n")
 		for i, ca := range ctx.ClarificationAnswers {
 			clarifications.WriteString(fmt.Sprintf("\nQ%d: %s\nA%d: %s\n", i+1, ca.Question, i+1, ca.Answer))
 		}

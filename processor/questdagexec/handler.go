@@ -1254,8 +1254,8 @@ func (a *partyCoordTaskAssigner) AssignTask(ctx context.Context, partyID domain.
 // questBoardClaimer wraps QuestBoardRef to satisfy QuestClaimerAndStarter.
 type questBoardClaimer struct{ ref QuestBoardRef }
 
-func (a *questBoardClaimer) ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error {
-	return a.ref.ClaimAndStartForParty(ctx, questID, partyID)
+func (a *questBoardClaimer) ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID, assignedTo domain.AgentID) error {
+	return a.ref.ClaimAndStartForParty(ctx, questID, partyID, assignedTo)
 }
 
 // =============================================================================

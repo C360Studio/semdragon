@@ -10,7 +10,7 @@ import type { components } from '../../src/lib/api/generated';
  * API URL for backend interactions.
  * Playwright runs outside Docker, so we use localhost.
  */
-const API_URL = process.env.API_URL || 'http://localhost:8080';
+const API_URL = process.env.API_URL || `http://localhost:${process.env.BACKEND_PORT || '8081'}`;
 
 /**
  * Wait for SvelteKit hydration to complete.

@@ -87,6 +87,19 @@ type Quest struct {
 	// Sub-quest DAG fields:
 	DAGNodeID         string `json:"dag_node_id,omitempty"`
 	DAGClarifications any    `json:"dag_clarifications,omitempty"` // []ClarificationExchange
+
+	// DM clarification exchanges (non-DAG quests or parent party quests).
+	// Stored as any to keep domain package free of processor-type imports.
+	DMClarifications any `json:"dm_clarifications,omitempty"` // []ClarificationExchange
+}
+
+// ClarificationExchange records a single clarification Q&A round between
+// an agent and a DM (or party lead). Used for both DM clarifications on
+// standalone/parent quests and DAG clarifications on sub-quests.
+type ClarificationExchange struct {
+	Question string    `json:"question"`
+	Answer   string    `json:"answer"`
+	AskedAt  time.Time `json:"asked_at"`
 }
 
 // PrimarySkill returns the first required skill for this quest, or empty if none.

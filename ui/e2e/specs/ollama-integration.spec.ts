@@ -77,7 +77,7 @@ function hasModelResponse(trajectory: TrajectoryResponse): boolean {
 // HELPERS
 // =============================================================================
 
-const API_URL = process.env.API_URL || 'http://localhost:8080';
+const API_URL = process.env.API_URL || `http://localhost:${process.env.BACKEND_PORT || '8081'}`;
 
 /**
  * Find a seeded agent by display name from the world state.

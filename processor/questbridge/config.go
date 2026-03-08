@@ -29,6 +29,15 @@ type Config struct {
 	// 0 disables the timeout (agents wait forever). Default: 30.
 	EscalationTimeoutMins int `json:"escalation_timeout_mins,omitempty"`
 
+	// DMMode controls how the DM handles agent clarification requests.
+	// "full_auto" = auto-answer via LLM; "" or other = wait for human DM.
+	DMMode domain.DMMode `json:"dm_mode,omitempty"`
+
+	// MaxClarificationRounds limits how many times an agent can ask for
+	// clarification on a single quest before it is force-failed.
+	// Prevents infinite clarification loops. Default: 3. 0 = unlimited.
+	MaxClarificationRounds int `json:"max_clarification_rounds,omitempty"`
+
 	// ConsumerNameSuffix allows unique consumer names in tests to avoid
 	// durable consumer conflicts when multiple test instances run concurrently.
 	ConsumerNameSuffix string `json:"consumer_name_suffix,omitempty"`
@@ -57,7 +66,8 @@ func DefaultConfig() Config {
 		EnableBuiltins:   true,
 		MaxIterations:         20,
 		DefaultRole:           "general",
-		EscalationTimeoutMins: 30,
+		EscalationTimeoutMins:  30,
+		MaxClarificationRounds: 3,
 	}
 }
 

@@ -112,6 +112,11 @@ func (c *Component) handleLiveUpdate(ctx context.Context, entry jetstream.KeyVal
 	// Track escalation timestamps for the stale-escalation sweep.
 	if newStatus == string(domain.QuestEscalated) && oldStatus != string(domain.QuestEscalated) {
 		c.escalatedAt.Store(entry.Key(), time.Now())
+
+		// In full_auto mode, auto-answer clarifications via LLM.
+		if c.config.DMMode == domain.DMFullAuto && c.clarificationAnswerer != nil {
+			go c.autoAnswerClarification(ctx, entry.Key())
+		}
 	} else if oldStatus == string(domain.QuestEscalated) && newStatus != string(domain.QuestEscalated) {
 		c.escalatedAt.Delete(entry.Key())
 	}
@@ -584,15 +589,34 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	// Check if the agent is asking a clarifying question rather than delivering
 	// a work product.
 	if isOutputClarificationRequest(output) {
+		// Enforce max clarification rounds to prevent infinite loops.
+		if c.config.MaxClarificationRounds > 0 && c.clarificationRoundCount(quest) >= c.config.MaxClarificationRounds {
+			c.logger.Warn("max clarification rounds exceeded, failing quest",
+				"quest_id", questID, "rounds", c.clarificationRoundCount(quest),
+				"max", c.config.MaxClarificationRounds)
+			quest.Status = domain.QuestFailed
+			quest.FailureReason = fmt.Sprintf("max clarification rounds (%d) exceeded", c.config.MaxClarificationRounds)
+			quest.FailureType = domain.FailureError
+			if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.failed"); err != nil {
+				c.logger.Error("failed to emit quest failure after max clarifications",
+					"quest_id", questID, "error", err)
+			}
+			c.releaseAgent(ctx, mapping.AgentID)
+			c.errorsCount.Add(1)
+			return
+		}
+
 		quest.Status = domain.QuestEscalated
 		quest.Escalated = true
 		quest.FailureReason = output
 		// Agent stays assigned — ClaimedBy unchanged.
 
-		if quest.PartyID != nil {
+		if quest.PartyID != nil && quest.ParentQuest != nil {
 			// Party sub-quest: route to party lead, not DM. The DAG state
 			// machine picks up the escalated status and dispatches a
 			// clarification task to the lead via the AGENT stream.
+			// Note: the parent quest (lead's own quest) has PartyID but no
+			// ParentQuest — it falls through to the DM clarification path.
 			if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.dag.clarification_requested"); err != nil {
 				c.logger.Error("failed to emit party clarification request",
 					"quest_id", questID, "error", err)
@@ -994,6 +1018,7 @@ func (c *Component) handleStaleEscalation(ctx context.Context, entityKey string)
 	}
 
 	// Repost the quest so a different agent can claim it.
+	// Preserve DMClarifications so the next agent has partial clarification context.
 	quest.Status = domain.QuestPosted
 	quest.Escalated = false
 	quest.ClaimedBy = nil
@@ -1009,6 +1034,132 @@ func (c *Component) handleStaleEscalation(ctx context.Context, entityKey string)
 			"quest_id", quest.ID, "error", err)
 		c.errorsCount.Add(1)
 	}
+}
+
+// clarificationRoundCount returns how many DM clarification exchanges exist
+// for this quest. Used to enforce MaxClarificationRounds.
+func (c *Component) clarificationRoundCount(quest *domain.Quest) int {
+	if quest.DMClarifications == nil {
+		return 0
+	}
+	raw, err := json.Marshal(quest.DMClarifications)
+	if err != nil {
+		return 0
+	}
+	var exchanges []domain.ClarificationExchange
+	if json.Unmarshal(raw, &exchanges) != nil {
+		return 0
+	}
+	return len(exchanges)
+}
+
+// autoAnswerClarification uses the ClarificationAnswerer to automatically
+// answer an agent's clarification question via LLM. Called asynchronously
+// when DMMode is full_auto and a quest transitions to escalated.
+func (c *Component) autoAnswerClarification(ctx context.Context, entityKey string) {
+	questEntity, err := c.graph.GetQuest(ctx, domain.QuestID(entityKey))
+	if err != nil {
+		c.logger.Warn("auto-DM: failed to load escalated quest",
+			"entity_key", entityKey, "error", err)
+		return
+	}
+	quest := domain.QuestFromEntityState(questEntity)
+	if quest == nil {
+		return
+	}
+
+	// Guard: only act on quests that are still escalated.
+	if quest.Status != domain.QuestEscalated {
+		return
+	}
+
+	// Guard: skip sub-quest clarifications — those route to the party lead.
+	// Parent party quests (lead's own quest) have PartyID but no ParentQuest;
+	// they should be auto-answered by the DM like any other top-level quest.
+	if quest.PartyID != nil && quest.ParentQuest != nil {
+		return
+	}
+
+	// Guard: only auto-answer when the output is actually a clarification request.
+	// Quests escalated for other reasons (e.g. DAG node exhaustion) should not
+	// be auto-answered — they are truly terminal escalations.
+	outputText, _ := quest.Output.(string)
+	if !isOutputClarificationRequest(outputText) {
+		c.logger.Debug("auto-DM: escalated quest has no clarification intent, skipping",
+			"quest_id", quest.ID)
+		return
+	}
+
+	// Extract the question from the quest output.
+	question := strings.TrimSpace(outputText)
+	if question == "" {
+		c.logger.Warn("auto-DM: no clarification question found on escalated quest",
+			"quest_id", quest.ID)
+		return
+	}
+
+	// Strip [INTENT: ...] header if present.
+	if strings.HasPrefix(question, "[INTENT:") {
+		if idx := strings.Index(question, "\n"); idx >= 0 {
+			question = strings.TrimSpace(question[idx+1:])
+		}
+	}
+
+	c.logger.Info("auto-DM: answering clarification via LLM",
+		"quest_id", quest.ID, "question_len", len(question))
+
+	answer, err := c.clarificationAnswerer.AnswerClarification(ctx,
+		quest.Title, quest.Description, question)
+	if err != nil {
+		c.logger.Error("auto-DM: LLM call failed",
+			"quest_id", quest.ID, "error", err)
+		return
+	}
+
+	// Re-read the quest to get the latest state (may have been answered by human DM
+	// between our initial read and the LLM call completing).
+	questEntity, err = c.graph.GetQuest(ctx, domain.QuestID(entityKey))
+	if err != nil {
+		c.logger.Error("auto-DM: failed to re-read quest after LLM call",
+			"quest_id", quest.ID, "error", err)
+		return
+	}
+	quest = domain.QuestFromEntityState(questEntity)
+	if quest == nil || quest.Status != domain.QuestEscalated {
+		c.logger.Info("auto-DM: quest no longer escalated (human DM may have answered)",
+			"quest_id", entityKey)
+		return
+	}
+
+	// Build the clarification exchange.
+	var exchanges []domain.ClarificationExchange
+	if quest.DMClarifications != nil {
+		raw, _ := json.Marshal(quest.DMClarifications)
+		json.Unmarshal(raw, &exchanges) //nolint:errcheck // best-effort
+	}
+	exchanges = append(exchanges, domain.ClarificationExchange{
+		Question: question,
+		Answer:   answer,
+		AskedAt:  time.Now(),
+	})
+	quest.DMClarifications = exchanges
+
+	// Resume the quest with the same agent.
+	quest.Status = domain.QuestInProgress
+	quest.Escalated = false
+	quest.Output = nil
+	quest.FailureReason = ""
+	quest.FailureType = ""
+
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.dm.clarification_answered"); err != nil {
+		c.logger.Error("auto-DM: failed to resume quest after clarification",
+			"quest_id", quest.ID, "error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+
+	c.logger.Info("auto-DM: clarification answered, quest resumed",
+		"quest_id", quest.ID, "rounds", len(exchanges))
 }
 
 // =============================================================================
@@ -1135,36 +1286,72 @@ func loadPeerFeedback(agent *agentprogression.Agent) []promptmanager.PeerFeedbac
 	return feedback
 }
 
-// loadClarificationAnswers reads clarification exchanges from the sub-quest
-// entity's quest.dag.clarifications predicate. Returns nil when the quest has
-// no party or no prior clarifications.
+// loadClarificationAnswers reads clarification exchanges from the quest entity.
+// For sub-quests in a party DAG, it loads from DAGClarifications (party lead answered).
+// For standalone or parent quests, it loads from DMClarifications (DM answered).
+// Returns nil when no prior clarifications are present.
 func (c *Component) loadClarificationAnswers(quest *domain.Quest) []promptmanager.ClarificationAnswer {
-	if quest.PartyID == nil || quest.DAGClarifications == nil {
-		return nil
-	}
-
-	// DAGClarifications is stored as any (JSON-serialized []ClarificationExchange).
-	// After KV round-trip it may arrive as []any of map[string]any.
-	raw, err := json.Marshal(quest.DAGClarifications)
-	if err != nil {
-		return nil
-	}
-	var exchanges []questdagexec.ClarificationExchange
-	if json.Unmarshal(raw, &exchanges) != nil {
-		return nil
-	}
-	if len(exchanges) == 0 {
-		return nil
-	}
-
-	answers := make([]promptmanager.ClarificationAnswer, len(exchanges))
-	for i, ex := range exchanges {
-		answers[i] = promptmanager.ClarificationAnswer{
-			Question: ex.Question,
-			Answer:   ex.Answer,
+	// Sub-quest path: load from DAGClarifications (party lead answered).
+	if quest.PartyID != nil && quest.DAGClarifications != nil {
+		// DAGClarifications is stored as any (JSON-serialized []ClarificationExchange).
+		// After KV round-trip it may arrive as []any of map[string]any.
+		raw, err := json.Marshal(quest.DAGClarifications)
+		if err != nil {
+			return nil
 		}
+		var exchanges []questdagexec.ClarificationExchange
+		if json.Unmarshal(raw, &exchanges) != nil {
+			return nil
+		}
+		if len(exchanges) == 0 {
+			return nil
+		}
+		answers := make([]promptmanager.ClarificationAnswer, len(exchanges))
+		for i, ex := range exchanges {
+			answers[i] = promptmanager.ClarificationAnswer{
+				Question: ex.Question,
+				Answer:   ex.Answer,
+			}
+		}
+		return answers
 	}
-	return answers
+
+	// Standalone/parent quest path: load from DMClarifications (DM answered).
+	if quest.DMClarifications != nil {
+		raw, err := json.Marshal(quest.DMClarifications)
+		if err != nil {
+			return nil
+		}
+		var exchanges []domain.ClarificationExchange
+		if json.Unmarshal(raw, &exchanges) != nil {
+			return nil
+		}
+		if len(exchanges) == 0 {
+			return nil
+		}
+		answers := make([]promptmanager.ClarificationAnswer, len(exchanges))
+		for i, ex := range exchanges {
+			answers[i] = promptmanager.ClarificationAnswer{
+				Question: ex.Question,
+				Answer:   ex.Answer,
+			}
+		}
+		return answers
+	}
+
+	return nil
+}
+
+// clarificationSource returns a human-readable label for who answered the
+// agent's clarification questions, used in prompt section headers.
+func (c *Component) clarificationSource(quest *domain.Quest) string {
+	if quest.PartyID != nil && quest.DAGClarifications != nil {
+		return "The party lead"
+	}
+	if quest.DMClarifications != nil {
+		return "The DM"
+	}
+	return ""
 }
 
 // loadDependencyOutputs loads completed predecessor node outputs for a sub-quest
@@ -1327,7 +1514,9 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		PeerFeedback:         loadPeerFeedback(agent),
 		PartyRequired:        quest.PartyRequired,
 		IsPartyLead:          quest.PartyRequired && agent.Tier >= domain.TierMaster,
+		IsSubQuest:           quest.ParentQuest != nil,
 		ClarificationAnswers: c.loadClarificationAnswers(quest),
+		ClarificationSource:  c.clarificationSource(quest),
 		DependencyOutputs:    c.loadDependencyOutputs(ctx, quest),
 	}
 

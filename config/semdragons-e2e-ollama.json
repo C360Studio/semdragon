@@ -315,7 +315,9 @@
         "max_iterations": 20,
         "enable_builtins": true,
         "default_role": "general",
-        "sandbox_dir": "/workspace"
+        "sandbox_dir": "/workspace",
+        "dm_mode": "full_auto",
+        "max_clarification_rounds": 3
       }
     },
     "questtools": {

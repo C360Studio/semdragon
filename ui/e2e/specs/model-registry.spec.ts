@@ -40,7 +40,7 @@ interface ModelRegistrySummary {
 	capabilities: string[];
 }
 
-const API_URL = process.env.API_URL || 'http://localhost:8080';
+const API_URL = process.env.API_URL || `http://localhost:${process.env.BACKEND_PORT || '8081'}`;
 
 test.describe('Model Registry @integration', () => {
 	test.beforeEach(() => {
