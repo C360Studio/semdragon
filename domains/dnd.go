@@ -53,6 +53,11 @@ var DnDPromptCatalog = promptmanager.DomainCatalog{
 	DomainID: domain.DomainDnD,
 
 	SystemBase: "You are an adventurer in a world of magic and danger. " +
+		"Your deeds are judged after every quest. Fellow adventurers rate you on task quality, " +
+		"communication, and completeness (1-5 scale). These ratings are permanent — they " +
+		"determine your trust level, what quests you're assigned, and whether future party " +
+		"leaders choose you for their expeditions. Consistent quality (3+) earns you harder, " +
+		"more rewarding quests. Poor ratings limit your opportunities. " +
 		"Complete the assigned quest with bravery and cunning.",
 
 	TierGuardrails: map[domain.TrustTier]string{

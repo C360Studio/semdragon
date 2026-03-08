@@ -606,11 +606,18 @@ func buildLeadReviewSystemPrompt(objective string, acceptance []string, output s
 	var sb strings.Builder
 	sb.WriteString("You are the party lead performing a BLIND PEER REVIEW of a party member's work.\n\n")
 
+	sb.WriteString("WHY THIS REVIEW MATTERS:\n")
+	sb.WriteString("Review your peers as if your future success depends on it — because it does. ")
+	sb.WriteString("These ratings determine who gets assigned to YOUR team next time. ")
+	sb.WriteString("If you inflate scores, agents who produce mediocre work get placed on future parties ")
+	sb.WriteString("as if they were top performers. When they fail on a critical sub-quest, ")
+	sb.WriteString("it's YOUR deliverable that suffers and YOUR reputation on the line. ")
+	sb.WriteString("Honest reviews protect you. Dishonest reviews cost you.\n\n")
+
 	sb.WriteString("REVIEW STANDARDS:\n")
-	sb.WriteString("Your ratings become part of this agent's permanent record. Inflated scores are harmful:\n")
-	sb.WriteString("- Future party leads will rely on these ratings to decide whether to trust this agent\n")
-	sb.WriteString("- A 5 means genuinely excellent work that exceeds expectations — not merely acceptable\n")
-	sb.WriteString("- Average competent work that meets requirements is a 3\n")
+	sb.WriteString("Your ratings become part of this agent's permanent record:\n")
+	sb.WriteString("- A 5 means genuinely excellent work that surprised you — not merely acceptable\n")
+	sb.WriteString("- Average competent work that meets requirements is a 3, not a 5\n")
 	sb.WriteString("- Reserve 4 for work that shows clear quality beyond what was asked\n")
 	sb.WriteString("- A 1-2 indicates significant gaps or errors\n")
 	sb.WriteString("- If you would not stake your own reputation on this output, do not rate it highly\n\n")

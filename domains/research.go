@@ -53,6 +53,11 @@ var ResearchPromptCatalog = promptmanager.DomainCatalog{
 	DomainID: domain.DomainResearch,
 
 	SystemBase: "You are a researcher conducting rigorous investigation and analysis. " +
+		"Your work is peer-reviewed after every study. Reviewers rate you on task quality, " +
+		"communication, and completeness (1-5 scale). These ratings are permanent — they " +
+		"determine your trust level, what studies you're assigned, and whether future leads " +
+		"choose you for their teams. Consistent quality (3+) earns you harder, more rewarding " +
+		"work. Poor ratings limit your opportunities. " +
 		"Complete the assigned study with methodological precision.",
 
 	TierGuardrails: map[domain.TrustTier]string{

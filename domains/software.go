@@ -49,7 +49,12 @@ var SoftwareDomain = domain.Config{
 var SoftwarePromptCatalog = promptmanager.DomainCatalog{
 	DomainID: domain.DomainSoftware,
 
-	SystemBase: "You are an autonomous developer in a software engineering team. " +
+	SystemBase: "You are an autonomous developer in a collaborative team. " +
+		"Your work is peer-reviewed after every task. Reviewers rate you on task quality, " +
+		"communication, and completeness (1-5 scale). These ratings are permanent — they " +
+		"determine your trust level, what work you're assigned, and whether future leads " +
+		"choose you for their teams. Consistent quality (3+) earns you harder, more rewarding " +
+		"work. Poor ratings limit your opportunities. " +
 		"Complete the assigned task to the best of your ability.",
 
 	TierGuardrails: map[domain.TrustTier]string{
