@@ -59,6 +59,8 @@ func (c *Component) handleEvent(ctx context.Context, evt dagEvent) {
 		c.onReviewCompleted(ctx, evt)
 	case dagEventClarificationAnswered:
 		c.onClarificationAnswered(ctx, evt)
+	case dagEventSynthesisCompleted:
+		c.onSynthesisCompleted(ctx, evt)
 	}
 }
 
@@ -282,6 +284,48 @@ func (c *Component) onReviewCompleted(ctx context.Context, evt dagEvent) {
 			"sub_quest_id", verdict.SubQuestID, "node_id", nodeID,
 			"execution_id", dagState.ExecutionID)
 	}
+}
+
+// =============================================================================
+// HANDLER: dagEventSynthesisCompleted
+// =============================================================================
+
+// onSynthesisCompleted handles a synthesis loop completion from the AGENT stream.
+// The lead has combined all sub-quest outputs into a final deliverable. We use
+// that as the rollup result.
+func (c *Component) onSynthesisCompleted(ctx context.Context, evt dagEvent) {
+	c.logger.Info("event loop: processing synthesis completion",
+		"loop_id", evt.LoopID, "result_length", len(evt.Result))
+
+	// Extract execution ID from LoopID: "synthesis-{parentQuestEntityKey}-{nuid}"
+	executionID := c.extractExecutionIDFromSynthesisLoop(evt.LoopID)
+	if executionID == "" {
+		c.logger.Warn("synthesis completion: cannot find DAG for loop",
+			"loop_id", evt.LoopID)
+		return
+	}
+
+	dagState, ok := c.dagCache[executionID]
+	if !ok {
+		c.logger.Warn("synthesis completion: DAG not in cache",
+			"loop_id", evt.LoopID, "execution_id", executionID)
+		return
+	}
+
+	c.triggerRollupWithResult(ctx, dagState, evt.Result)
+}
+
+// extractExecutionIDFromSynthesisLoop finds the DAG execution ID by scanning
+// dagCache for a DAG that is complete (all nodes in CompletedNodes). The
+// synthesis loop is dispatched only for complete DAGs.
+func (c *Component) extractExecutionIDFromSynthesisLoop(_ string) string {
+	// There should be exactly one complete DAG waiting for synthesis.
+	for execID, ds := range c.dagCache {
+		if c.isDAGComplete(ds) {
+			return execID
+		}
+	}
+	return ""
 }
 
 // =============================================================================

@@ -225,7 +225,7 @@ func (c *Component) handleNodeCompleted(ctx context.Context, dagState *DAGExecut
 		"total", len(dagState.DAG.Nodes))
 
 	if c.isDAGComplete(dagState) {
-		c.triggerRollup(ctx, dagState)
+		c.dispatchLeadSynthesis(ctx, dagState)
 		return
 	}
 
@@ -631,12 +631,192 @@ func buildLeadReviewSystemPrompt(objective string, acceptance []string, output s
 }
 
 // =============================================================================
+// LEAD SYNTHESIS
+// =============================================================================
+
+// dispatchLeadSynthesis publishes a TaskMessage to the AGENT stream asking
+// the lead to synthesize all sub-quest outputs into a final deliverable.
+// Called when all DAG nodes are completed and reviewed. The synthesis result
+// becomes the parent quest's output via triggerRollupWithResult.
+func (c *Component) dispatchLeadSynthesis(ctx context.Context, dagState *DAGExecutionState) {
+	// In unit tests or when NATS is unavailable, fall back to mechanical rollup.
+	if c.deps.NATSClient == nil {
+		c.triggerRollup(ctx, dagState)
+		return
+	}
+
+	leadAgentID := c.findLeadAgentID(dagState)
+
+	// Collect all sub-quest outputs.
+	outputs := c.collectSubQuestOutputs(ctx, dagState)
+
+	systemPrompt := buildLeadSynthesisPrompt(dagState, outputs)
+	userPrompt := "All sub-quests are complete. Synthesize the outputs into a single cohesive deliverable. " +
+		"Respond with [INTENT: work_product] followed by the combined result."
+
+	parentKey := strings.ReplaceAll(dagState.ParentQuestID, ".", "-")
+	loopID := fmt.Sprintf("synthesis-%s-%s", parentKey, nuid.Next())
+
+	taskMsg := agentic.TaskMessage{
+		TaskID: dagState.ParentQuestID,
+		LoopID: loopID,
+		Role:   agentic.RoleGeneral,
+		Model:  "agent-work",
+		Prompt: userPrompt,
+		Context: &pkgtypes.ConstructedContext{
+			Content:       systemPrompt,
+			ConstructedAt: time.Now(),
+		},
+		Metadata: map[string]any{
+			"parent_quest_id":    dagState.ParentQuestID,
+			"execution_id":       dagState.ExecutionID,
+			"party_id":           dagState.PartyID,
+			"lead_agent_id":      leadAgentID,
+			"synthesis_dispatch": true,
+			"agent_id":           leadAgentID,
+			"trust_tier":         float64(domain.TierMaster),
+			"quest_id":           dagState.ParentQuestID,
+		},
+	}
+
+	baseMsg := message.NewBaseMessage(taskMsg.Schema(), &taskMsg, ComponentName)
+	data, err := json.Marshal(baseMsg)
+	if err != nil {
+		c.logger.Error("failed to marshal synthesis TaskMessage",
+			"execution_id", dagState.ExecutionID, "error", err)
+		c.errorsCount.Add(1)
+		// Fall back to mechanical rollup.
+		c.triggerRollup(ctx, dagState)
+		return
+	}
+
+	subject := fmt.Sprintf("agent.task.%s", parentKey)
+	if err := c.deps.NATSClient.PublishToStream(ctx, subject, data); err != nil {
+		c.logger.Error("failed to publish synthesis TaskMessage",
+			"execution_id", dagState.ExecutionID, "subject", subject, "error", err)
+		c.errorsCount.Add(1)
+		// Fall back to mechanical rollup.
+		c.triggerRollup(ctx, dagState)
+		return
+	}
+
+	c.logger.Info("dispatched lead synthesis task",
+		"execution_id", dagState.ExecutionID,
+		"parent_quest_id", dagState.ParentQuestID,
+		"loop_id", loopID,
+		"lead_agent_id", leadAgentID,
+		"outputs_count", len(outputs))
+}
+
+// collectSubQuestOutputs loads and returns outputs from all completed sub-quests.
+func (c *Component) collectSubQuestOutputs(ctx context.Context, dagState *DAGExecutionState) map[string]any {
+	outputs := make(map[string]any, len(dagState.CompletedNodes))
+	if c.graph == nil {
+		return outputs
+	}
+	for _, nodeID := range dagState.CompletedNodes {
+		subQuestID, ok := dagState.NodeQuestIDs[nodeID]
+		if !ok || subQuestID == "" {
+			continue
+		}
+		questEntity, err := c.graph.GetQuest(ctx, domain.QuestID(subQuestID))
+		if err != nil {
+			c.logger.Warn("failed to load sub-quest for synthesis",
+				"sub_quest_id", subQuestID, "node_id", nodeID, "error", err)
+			continue
+		}
+		quest := domain.QuestFromEntityState(questEntity)
+		if quest != nil && quest.Output != nil {
+			outputs[nodeID] = quest.Output
+		}
+	}
+	return outputs
+}
+
+// buildLeadSynthesisPrompt constructs the system prompt for the lead's
+// synthesis loop, presenting all sub-quest outputs for combination.
+func buildLeadSynthesisPrompt(dagState *DAGExecutionState, outputs map[string]any) string {
+	var sb strings.Builder
+	sb.WriteString("You are the party lead. All sub-quests are complete and reviewed.\n\n")
+	sb.WriteString("Your job: combine the sub-quest outputs below into a single, cohesive deliverable.\n\n")
+
+	sb.WriteString("ORIGINAL QUEST:\n")
+	sb.WriteString(dagState.QuestTitle)
+	sb.WriteString("\n\n")
+
+	sb.WriteString("SUB-QUEST OUTPUTS:\n")
+	for nodeID, output := range outputs {
+		// Find the node objective for context.
+		objective := ""
+		for _, node := range dagState.DAG.Nodes {
+			if node.ID == nodeID {
+				objective = node.Objective
+				break
+			}
+		}
+		fmt.Fprintf(&sb, "--- %s", nodeID)
+		if objective != "" {
+			fmt.Fprintf(&sb, " (%s)", objective)
+		}
+		sb.WriteString(" ---\n")
+		fmt.Fprintf(&sb, "%v\n\n", output)
+	}
+
+	sb.WriteString("INSTRUCTIONS:\n")
+	sb.WriteString("1. Combine these outputs into a single coherent result that fulfills the original quest.\n")
+	sb.WriteString("2. Do not simply concatenate — integrate, organize, and ensure consistency.\n")
+	sb.WriteString("3. Respond with [INTENT: work_product] followed by the final deliverable.\n")
+	return sb.String()
+}
+
+// =============================================================================
 // ROLLUP
 // =============================================================================
 
+// triggerRollupWithResult submits a pre-synthesized result as the parent quest
+// output. Called by onSynthesisCompleted after the lead combines sub-quest outputs.
+func (c *Component) triggerRollupWithResult(ctx context.Context, dagState *DAGExecutionState, result string) {
+	c.rollupsTriggered.Add(1)
+
+	c.logger.Info("triggering DAG rollup with synthesized result",
+		"execution_id", dagState.ExecutionID,
+		"parent_quest_id", dagState.ParentQuestID,
+		"result_length", len(result))
+
+	if c.questBoardRef != nil {
+		parentID := domain.QuestID(dagState.ParentQuestID)
+		if err := c.questBoardRef.SubmitResult(ctx, parentID, result); err != nil {
+			c.logger.Error("failed to submit synthesized rollup result to questboard",
+				"parent_quest_id", dagState.ParentQuestID, "error", err)
+			c.errorsCount.Add(1)
+		}
+	}
+
+	if c.partyCoord != nil && dagState.PartyID != "" {
+		partyID := domain.PartyID(dagState.PartyID)
+		if err := c.partyCoord.DisbandParty(ctx, partyID, "DAG completed"); err != nil {
+			c.logger.Warn("failed to disband party after rollup",
+				"party_id", dagState.PartyID, "error", err)
+		}
+	}
+
+	c.completedDAGKeys.Store(dagState.ParentQuestID, true)
+
+	delete(c.dagCache, dagState.ExecutionID)
+	for key, ds := range c.dagBySubQuest {
+		if ds.ExecutionID == dagState.ExecutionID {
+			delete(c.dagBySubQuest, key)
+		}
+	}
+
+	c.logger.Info("DAG rollup complete (synthesized)",
+		"execution_id", dagState.ExecutionID,
+		"parent_quest_id", dagState.ParentQuestID)
+}
+
 // triggerRollup collects outputs from all completed sub-quests, submits the
 // aggregated result to the parent quest via questboard, and disbands the party.
-// Called when isDAGComplete returns true.
+// Used as fallback when synthesis dispatch fails.
 func (c *Component) triggerRollup(ctx context.Context, dagState *DAGExecutionState) {
 	c.rollupsTriggered.Add(1)
 
@@ -1043,6 +1223,7 @@ func dagStateFromQuest(quest *domain.Quest, defaultRetries int) *DAGExecutionSta
 		ExecutionID:    quest.DAGExecutionID,
 		ParentQuestID:  string(quest.ID),
 		PartyID:        partyID,
+		QuestTitle:     quest.Title,
 		DAG:            dag,
 		NodeStates:     nodeStates,
 		NodeQuestIDs:   nodeQuestIDs,

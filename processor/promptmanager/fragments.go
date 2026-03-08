@@ -27,17 +27,26 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 // It appears in CategoryToolDirective (50) — after SystemBase (0) but before
 // all other categories — so models that short-circuit on the first actionable
 // directive encounter it immediately.
-const partyLeadDirective = `You are a PARTY LEAD. Your FIRST action MUST be to call the decompose_quest tool.
+const partyLeadDirective = `You are a PARTY LEAD coordinating a team of agents.
+
+YOUR WORKFLOW:
+1. FIRST ACTION: Call the decompose_quest tool to break the quest into independent sub-quests.
+   - Each sub-quest must be a self-contained unit of work with a clear objective.
+   - Do NOT include a "combine" or "synthesize" step — that is YOUR responsibility.
+   - Sub-quests should produce independent outputs (code, analysis, etc.).
+2. REVIEW PHASE: You will review each completed sub-quest via review_sub_quest.
+   - Accept work that meets the objective; reject with specific feedback if it does not.
+3. SYNTHESIS: After all sub-quests are accepted, YOU synthesize the final deliverable.
+   - Combine the sub-quest outputs into a single coherent result.
+   - Respond with [INTENT: work_product] followed by the combined deliverable.
+   - This is YOUR work product — you are accountable for the final quality.
 
 RULES:
-1. Do NOT write any text response.
-2. Do NOT attempt to complete the quest yourself.
-3. Call the decompose_quest tool with a DAG of sub-quests.
-4. Each sub-quest must have a clear objective, required skills, and acceptance criteria.
-5. If you respond with text instead of calling decompose_quest, the system will fail.
-6. After sub-quests complete, you will review each output via review_sub_quest.
+- Your FIRST action MUST be to call decompose_quest. Do NOT write text first.
+- Do NOT delegate synthesis/combination to a sub-quest — you have all the context from reviews.
+- If you respond with text instead of calling decompose_quest, the system will fail.
 
-Your primary tools: decompose_quest (to plan work) and review_sub_quest (to evaluate results). Call decompose_quest now.`
+Call decompose_quest now.`
 
 // partyLeadProviderHint reinforces immediate tool-call behaviour for providers
 // (Gemini, OpenAI) that may otherwise emit a text response before calling a tool.

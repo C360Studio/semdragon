@@ -284,6 +284,9 @@ type DAGExecutionState struct {
 	// Used when calling partycoord.AssignTask and partycoord.DisbandParty.
 	PartyID string `json:"party_id"`
 
+	// QuestTitle is the parent quest title, stored for synthesis prompt context.
+	QuestTitle string `json:"quest_title,omitempty"`
+
 	// DAG is the validated quest DAG proposed by the lead agent.
 	DAG QuestDAG `json:"dag"`
 

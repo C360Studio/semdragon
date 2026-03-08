@@ -49,6 +49,12 @@ const (
 	// The event loop stores the answer in DAGExecutionState and resets the node
 	// to NodeAssigned so questbridge re-dispatches the member's sub-quest.
 	dagEventClarificationAnswered
+
+	// dagEventSynthesisCompleted is emitted when the AGENT stream delivers a
+	// LoopCompletedEvent for a synthesis loop (LoopID prefixed with "synthesis-").
+	// The lead has combined all sub-quest outputs into a final deliverable.
+	// The event loop calls triggerRollup with the synthesized result.
+	dagEventSynthesisCompleted
 )
 
 // dagEvent carries all data the event loop needs to process one DAG lifecycle
@@ -330,6 +336,13 @@ func parseLeadLoopCompletion(c *Component, msg jetstream.Msg) (dagEvent, bool) {
 	if strings.HasPrefix(evt.LoopID, "clarify-") {
 		return dagEvent{
 			Type:   dagEventClarificationAnswered,
+			LoopID: evt.LoopID,
+			Result: evt.Result,
+		}, true
+	}
+	if strings.HasPrefix(evt.LoopID, "synthesis-") {
+		return dagEvent{
+			Type:   dagEventSynthesisCompleted,
 			LoopID: evt.LoopID,
 			Result: evt.Result,
 		}, true
