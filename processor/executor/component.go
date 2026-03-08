@@ -245,7 +245,12 @@ func (c *Component) Start(ctx context.Context) error {
 	}
 
 	// Register graph_query tool backed by the board KV bucket.
-	c.toolRegistry.RegisterGraphQuery(c.buildGraphQueryFunc())
+	// graph_query is a read-only entity lookup — register it unconditionally
+	// only when builtins are enabled, so the registry is truly empty when
+	// EnableBuiltins=false (e.g. external-only tool configurations).
+	if c.config.EnableBuiltins {
+		c.toolRegistry.RegisterGraphQuery(c.buildGraphQueryFunc())
+	}
 
 	// Create prompt assembler if domain catalog is configured
 	opts := []Option{

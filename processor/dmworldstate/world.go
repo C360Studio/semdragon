@@ -221,7 +221,9 @@ func (w *WorldStateAggregator) computeWorldStats(
 ) domain.WorldStats {
 	stats := domain.WorldStats{}
 
-	// Agent statistics
+	// Agent statistics.
+	// ActiveAgents = on_quest + in_battle (agents currently doing work).
+	// Idle agents are available for work but not yet assigned; they count separately.
 	for _, agent := range agents {
 		if agent == nil {
 			continue

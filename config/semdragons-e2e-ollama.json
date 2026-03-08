@@ -30,7 +30,7 @@
       "enabled": true,
       "config": {
         "board": "board1",
-        "max_entities": 1000,
+        "max_entities": 10000,
         "workspace_dir": "/workspace"
       }
     }

@@ -26,6 +26,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -432,20 +433,21 @@ func TestToolCallValidation(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	callID := "call-validate-001"
-	// ToolCall with a valid ID but empty Name. Validate() may reject this, or
-	// the registry lookup will fail with "unknown tool: ".
-	call := agentic.ToolCall{
+	// ToolCall with a valid ID but empty Name. BaseMessage.MarshalJSON validates
+	// the payload, so we cannot use publishToolCall (it would fail at marshal time).
+	// Instead, craft the BaseMessage wire format manually so the handler receives
+	// a structurally-valid envelope wrapping an invalid ToolCall.
+	// The handler will unmarshal it successfully, then call Validate() and return
+	// an error ToolResult to tool.result.call-validate-001.
+	rawCall := agentic.ToolCall{
 		ID:   callID,
-		Name: "", // Empty name — must produce an error result.
+		Name: "", // Empty name — handler's Validate() must reject this.
 		Metadata: map[string]any{
 			"agent_id":   "test-agent",
 			"trust_tier": journeymanTier,
 		},
 	}
-
-	// Publish to tool.execute.unknown; the subject-level tool token is only
-	// used by the unmarshal-failure path, not the validation path.
-	publishToolCall(t, tc.Client, ctx, "tool.execute.unknown", call)
+	publishInvalidToolCall(t, tc.Client, ctx, "tool.execute.unknown", rawCall)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error == "" {
@@ -770,14 +772,55 @@ func ensureAgentStream(t *testing.T, client *natsclient.Client) {
 	}
 }
 
-// publishToolCall serialises a ToolCall to JSON and publishes it to the
-// given subject on the AGENT JetStream stream.
+// publishToolCall wraps a ToolCall in a BaseMessage envelope (required by the
+// questtools handler) and publishes it to the given subject on the AGENT stream.
 func publishToolCall(t *testing.T, client *natsclient.Client, ctx context.Context, subject string, call agentic.ToolCall) {
 	t.Helper()
 
-	data, err := json.Marshal(call)
+	baseMsg := message.NewBaseMessage(call.Schema(), &call, "test")
+	data, err := json.Marshal(baseMsg)
 	if err != nil {
-		t.Fatalf("marshal ToolCall: %v", err)
+		t.Fatalf("marshal ToolCall BaseMessage: %v", err)
+	}
+
+	if err := client.PublishToStream(ctx, subject, data); err != nil {
+		t.Fatalf("PublishToStream(%q): %v", subject, err)
+	}
+}
+
+// publishInvalidToolCall crafts a BaseMessage wire-format JSON containing a
+// ToolCall that fails Validate() (e.g. empty Name). BaseMessage.MarshalJSON
+// rejects invalid payloads, so this helper bypasses that by constructing the
+// envelope JSON directly. The handler will unmarshal it, call Validate(), and
+// publish an error ToolResult back to tool.result.{call.ID}.
+func publishInvalidToolCall(t *testing.T, client *natsclient.Client, ctx context.Context, subject string, call agentic.ToolCall) {
+	t.Helper()
+
+	payloadBytes, err := json.Marshal(call)
+	if err != nil {
+		t.Fatalf("marshal invalid ToolCall payload: %v", err)
+	}
+
+	// Construct the BaseMessage wire format by hand, matching the structure that
+	// message.BaseMessage.MarshalJSON produces.
+	wire := map[string]any{
+		"id": "invalid-call-envelope",
+		"type": map[string]any{
+			"domain":   agentic.Domain,
+			"category": agentic.CategoryToolCall,
+			"version":  agentic.SchemaVersion,
+		},
+		"payload": json.RawMessage(payloadBytes),
+		"meta": map[string]any{
+			"created_at":  0,
+			"received_at": 0,
+			"source":      "test",
+		},
+	}
+
+	data, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatalf("marshal BaseMessage wire format: %v", err)
 	}
 
 	if err := client.PublishToStream(ctx, subject, data); err != nil {
@@ -829,11 +872,16 @@ func pollForToolResult(t *testing.T, client *natsclient.Client, ctx context.Cont
 				t.Logf("ack warning for %q: %v", subject, ackErr)
 			}
 
-			var result agentic.ToolResult
-			if err := json.Unmarshal(msg.Data(), &result); err != nil {
-				t.Fatalf("unmarshal ToolResult: %v", err)
+			// The component wraps ToolResult in a BaseMessage envelope.
+			var baseMsg message.BaseMessage
+			if err := json.Unmarshal(msg.Data(), &baseMsg); err != nil {
+				t.Fatalf("unmarshal ToolResult BaseMessage: %v", err)
 			}
-			return result
+			resultPtr, ok := baseMsg.Payload().(*agentic.ToolResult)
+			if !ok {
+				t.Fatalf("unexpected payload type in tool result: %T", baseMsg.Payload())
+			}
+			return *resultPtr
 		}
 	}
 

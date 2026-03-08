@@ -62,9 +62,8 @@ func (c *Component) PostQuest(ctx context.Context, quest domain.Quest) (*domain.
 	if quest.MaxAttempts == 0 {
 		quest.MaxAttempts = c.config.DefaultMaxAttempts
 	}
-	// Ensure all quests go through boss battle review by default
-	quest.Constraints.RequireReview = true
-	if quest.Constraints.ReviewLevel == 0 {
+	// When a quest opts into review, ensure a review level is set.
+	if quest.Constraints.RequireReview && quest.Constraints.ReviewLevel == 0 {
 		quest.Constraints.ReviewLevel = domain.ReviewStandard
 	}
 	if quest.BaseXP == 0 {

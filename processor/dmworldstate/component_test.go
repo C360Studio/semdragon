@@ -188,13 +188,13 @@ func TestWorldState_AgentCounts_Accurate(t *testing.T) {
 		t.Fatalf("WorldState failed: %v", err)
 	}
 
-	// Idle agents count toward both ActiveAgents and IdleAgents.
+	// Idle agents are available for work but not assigned; they count in IdleAgents only.
 	if state.Stats.IdleAgents != 2 {
 		t.Errorf("Stats.IdleAgents = %d, want 2", state.Stats.IdleAgents)
 	}
-	// ActiveAgents = idle(2) + on_quest(1) = 3.
-	if state.Stats.ActiveAgents != 3 {
-		t.Errorf("Stats.ActiveAgents = %d, want 3", state.Stats.ActiveAgents)
+	// ActiveAgents = on_quest(1) only; idle agents are not considered active.
+	if state.Stats.ActiveAgents != 1 {
+		t.Errorf("Stats.ActiveAgents = %d, want 1", state.Stats.ActiveAgents)
 	}
 	if state.Stats.CooldownAgents != 1 {
 		t.Errorf("Stats.CooldownAgents = %d, want 1", state.Stats.CooldownAgents)

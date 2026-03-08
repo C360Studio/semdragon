@@ -461,11 +461,12 @@ func TestAutonomousQuestClaim(t *testing.T) {
 				continue
 			}
 			updatedQuest := domain.QuestFromEntityState(questEntity)
-			if updatedQuest == nil || updatedQuest.Status != domain.QuestClaimed {
+			// Accept QuestInProgress too: executeClaimQuest transitions claimed→in_progress immediately.
+			if updatedQuest == nil || (updatedQuest.Status != domain.QuestClaimed && updatedQuest.Status != domain.QuestInProgress) {
 				continue
 			}
 
-			// Quest is claimed! Verify agent is on_quest
+			// Quest is claimed (or already started)! Verify agent is on_quest
 			agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
 			if err != nil {
 				t.Fatalf("GetAgent failed: %v", err)
@@ -578,7 +579,8 @@ func TestAutonomousQuestClaim_FallsThrough(t *testing.T) {
 				continue
 			}
 			updatedQuest := domain.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
+			// Accept QuestInProgress too: executeClaimQuest transitions claimed→in_progress immediately.
+			if updatedQuest != nil && (updatedQuest.Status == domain.QuestClaimed || updatedQuest.Status == domain.QuestInProgress) {
 				if updatedQuest.ClaimedBy == nil || domain.AgentID(*updatedQuest.ClaimedBy) != agentID {
 					t.Errorf("Good quest claimed by wrong agent: %v", updatedQuest.ClaimedBy)
 				}
@@ -1722,7 +1724,8 @@ func TestClaimApprovalGate_FullAuto(t *testing.T) {
 				continue
 			}
 			updatedQuest := domain.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
+			// Accept QuestInProgress too: executeClaimQuest transitions claimed→in_progress immediately.
+			if updatedQuest != nil && (updatedQuest.Status == domain.QuestClaimed || updatedQuest.Status == domain.QuestInProgress) {
 				return // success: claimed without approval
 			}
 		}
@@ -1827,7 +1830,8 @@ func TestClaimApprovalGate_Supervised_Approved(t *testing.T) {
 				continue
 			}
 			updatedQuest := domain.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
+			// Accept QuestInProgress too: executeClaimQuest transitions claimed→in_progress immediately.
+			if updatedQuest != nil && (updatedQuest.Status == domain.QuestClaimed || updatedQuest.Status == domain.QuestInProgress) {
 				return // success: approved and claimed
 			}
 		}
@@ -2163,7 +2167,8 @@ func TestFullLifecycle(t *testing.T) {
 				continue
 			}
 			updatedQuest := domain.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
+			// Accept QuestInProgress too: executeClaimQuest transitions claimed→in_progress immediately.
+			if updatedQuest != nil && (updatedQuest.Status == domain.QuestClaimed || updatedQuest.Status == domain.QuestInProgress) {
 				// Verify agent is on_quest
 				agentEntity, err := gc.GetAgent(ctx, domain.AgentID(agentID))
 				if err != nil {
@@ -2218,7 +2223,8 @@ quest1Claimed:
 				continue
 			}
 			updatedQuest := domain.QuestFromEntityState(questEntity)
-			if updatedQuest != nil && updatedQuest.Status == domain.QuestClaimed {
+			// Accept QuestInProgress too: executeClaimQuest transitions claimed→in_progress immediately.
+			if updatedQuest != nil && (updatedQuest.Status == domain.QuestClaimed || updatedQuest.Status == domain.QuestInProgress) {
 				if updatedQuest.ClaimedBy == nil || domain.AgentID(*updatedQuest.ClaimedBy) != agentID {
 					t.Errorf("quest2 ClaimedBy = %v, want %v", updatedQuest.ClaimedBy, agentID)
 				}

@@ -251,13 +251,18 @@ func validatePath(path, sandboxDir string) (string, error) {
 
 	// Resolve symlinks in the target path.
 	// If the file doesn't exist yet (write_file, patch_file), resolve the parent.
+	// If the parent doesn't exist either, fall back to the cleaned absolute path
+	// so the sandbox boundary check below can still reject traversals.
 	realPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
 		parentReal, parentErr := filepath.EvalSymlinks(filepath.Dir(absPath))
 		if parentErr != nil {
-			return "", fmt.Errorf("resolve parent path: %w", parentErr)
+			// Neither the file nor its parent exist. Use the cleaned absolute path
+			// so the sandbox prefix check still detects an escape attempt.
+			realPath = absPath
+		} else {
+			realPath = filepath.Join(parentReal, filepath.Base(absPath))
 		}
-		realPath = filepath.Join(parentReal, filepath.Base(absPath))
 	}
 
 	rel, err := filepath.Rel(realSandbox, realPath)
@@ -301,7 +306,8 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			},
 		},
 		Handler: readFileHandler,
-		MinTier: domain.TierApprentice, // Level 1+ — read-only, safe for all agents
+		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillResearch, domain.SkillAnalysis},
+		MinTier: domain.TierJourneyman, // Level 6+ — filesystem access requires basic trust
 	})
 
 	r.Register(RegisteredTool{
@@ -344,7 +350,8 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			},
 		},
 		Handler: listDirectoryHandler,
-		MinTier: domain.TierApprentice, // Level 1+ — read-only, safe for all agents
+		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillResearch, domain.SkillAnalysis},
+		MinTier: domain.TierJourneyman, // Level 6+ — filesystem access requires basic trust
 	})
 
 	r.Register(RegisteredTool{
@@ -367,7 +374,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			},
 		},
 		Handler: searchTextHandler,
-		MinTier: domain.TierApprentice, // Level 1+ — read-only, safe for all agents
+		MinTier: domain.TierJourneyman, // Level 6+ — filesystem access requires basic trust
 	})
 
 	r.Register(RegisteredTool{
