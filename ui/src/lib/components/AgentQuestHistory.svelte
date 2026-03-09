@@ -22,8 +22,8 @@
 				return claimedBy === agentId || claimedBy.includes(agentId) || agentId.includes(claimedBy);
 			})
 			.sort((a, b) => {
-				const aTime = new Date(a.updated_at ?? a.created_at ?? 0).getTime();
-				const bTime = new Date(b.updated_at ?? b.created_at ?? 0).getTime();
+				const aTime = new Date(a.completed_at ?? a.started_at ?? a.claimed_at ?? a.posted_at ?? 0).getTime();
+				const bTime = new Date(b.completed_at ?? b.started_at ?? b.claimed_at ?? b.posted_at ?? 0).getTime();
 				return bTime - aTime;
 			});
 	});
@@ -75,7 +75,7 @@
 								</span>
 							</div>
 						</div>
-						<span class="item-time">{formatDate(quest.updated_at ?? quest.created_at)}</span>
+						<span class="item-time">{formatDate(quest.completed_at ?? quest.started_at ?? quest.claimed_at ?? quest.posted_at)}</span>
 					</a>
 				</li>
 			{/each}

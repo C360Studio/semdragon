@@ -180,6 +180,7 @@ function createTestGuild(overrides: Partial<Guild> = {}): Guild {
 		success_rate: 0.9,
 		quests_failed: 5,
 		shared_tools: [],
+		quorum_size: 3,
 		created_at: new Date().toISOString(),
 		...overrides
 	};

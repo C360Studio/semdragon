@@ -1,6 +1,10 @@
 <script lang="ts">
 	/**
 	 * Trajectory Timeline View - Step-by-step timeline for a trajectory
+	 *
+	 * Loads trimmed data by default (messages/tool_calls stripped).
+	 * Toggle "Full detail" to re-fetch with ?detail=full and see the
+	 * complete conversation thread per model_call step.
 	 */
 
 	import { page } from '$app/state';
@@ -25,6 +29,8 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let expandedSteps = $state<Set<number>>(new Set());
+	let fullDetail = $state(false);
+	let fullLoading = $state(false);
 
 	let leftPanelOpen = $state(true);
 	let rightPanelOpen = $state(false);
@@ -35,14 +41,18 @@
 	const totalTokensIn = $derived(trajectory?.total_tokens_in ?? 0);
 	const totalTokensOut = $derived(trajectory?.total_tokens_out ?? 0);
 
-	// Fetch trajectory data — re-runs when trajectoryId changes via client-side nav
+	// Side effect: fetch trajectory when route param or detail level changes.
+	// Only trajectoryId and fullDetail are read synchronously (tracked deps).
+	// Writes to trajectory/loading/error happen in async callbacks (untracked).
 	$effect(() => {
 		const tid = trajectoryId;
+		const detail = fullDetail ? ('full' as const) : undefined;
 		if (!tid) return;
 		const controller = new AbortController();
 		loading = true;
+		fullLoading = !!detail;
 		error = null;
-		api.getTrajectory(tid)
+		api.getTrajectory(tid, detail)
 			.then((t) => {
 				if (!controller.signal.aborted) trajectory = t;
 			})
@@ -53,7 +63,10 @@
 				}
 			})
 			.finally(() => {
-				if (!controller.signal.aborted) loading = false;
+				if (!controller.signal.aborted) {
+					loading = false;
+					fullLoading = false;
+				}
 			});
 		return () => controller.abort();
 	});
@@ -82,7 +95,14 @@
 	}
 
 	function hasExpandableContent(step: TrajectoryStep): boolean {
-		return !!(step.prompt || step.response || step.tool_result || step.tool_arguments);
+		return !!(
+			step.prompt ||
+			step.response ||
+			step.tool_result ||
+			step.tool_arguments ||
+			step.messages?.length ||
+			step.tool_calls?.length
+		);
 	}
 
 	function toggleStep(index: number) {
@@ -127,7 +147,9 @@
 	{#snippet centerPanel()}
 		<div class="trajectory-page" data-testid="trajectory-detail-page">
 			<header class="page-header">
-				<a href="/trajectories" class="back-link" data-testid="trajectory-back-link">Back to Trajectories</a>
+				<a href="/trajectories" class="back-link" data-testid="trajectory-back-link"
+					>Back to Trajectories</a
+				>
 			</header>
 
 			<div class="trajectory-header">
@@ -138,22 +160,34 @@
 			{#if quest}
 				<div class="quest-context" data-testid="trajectory-quest-context">
 					<a href="/quests/{quest.id}" class="quest-link">
-						<span class="quest-title" data-testid="trajectory-quest-title">{quest.title}</span>
-						<span class="quest-status" data-testid="trajectory-quest-status" data-status={quest.status}>{quest.status}</span>
+						<span class="quest-title" data-testid="trajectory-quest-title"
+							>{quest.title}</span
+						>
+						<span
+							class="quest-status"
+							data-testid="trajectory-quest-status"
+							data-status={quest.status}>{quest.status}</span
+						>
 					</a>
 				</div>
 
 				{#if quest.context_token_count || quest.context_sources?.length || quest.context_entities?.length}
 					<div class="context-metadata" data-testid="trajectory-context-metadata">
 						{#if quest.context_token_count}
-							<span class="context-chip">~{quest.context_token_count.toLocaleString()} context tokens</span>
+							<span class="context-chip"
+								>~{quest.context_token_count.toLocaleString()} context tokens</span
+							>
 						{/if}
 						{#if quest.context_entities?.length}
-							<span class="context-chip">{quest.context_entities.length} entities</span>
+							<span class="context-chip"
+								>{quest.context_entities.length} entities</span
+							>
 						{/if}
 						{#if quest.context_sources?.length}
 							<details class="context-sources-detail">
-								<summary class="context-chip">{quest.context_sources.length} prompt fragments</summary>
+								<summary class="context-chip"
+									>{quest.context_sources.length} prompt fragments</summary
+								>
 								<ul class="context-source-list">
 									{#each quest.context_sources as src}
 										<li><code>{src}</code></li>
@@ -177,16 +211,38 @@
 				{#if trajectory.outcome || totalTokensIn > 0}
 					<div class="trajectory-summary" data-testid="trajectory-summary">
 						{#if trajectory.outcome}
-							<span class="summary-item" data-testid="trajectory-outcome">Outcome: <strong>{trajectory.outcome}</strong></span>
+							<span class="summary-item" data-testid="trajectory-outcome"
+								>Outcome: <strong>{trajectory.outcome}</strong></span
+							>
 						{/if}
 						{#if totalTokensIn > 0 || totalTokensOut > 0}
-							<span class="summary-item" data-testid="trajectory-tokens">Tokens: {totalTokensIn.toLocaleString()} in / {totalTokensOut.toLocaleString()} out</span>
+							<span class="summary-item" data-testid="trajectory-tokens"
+								>Tokens: {totalTokensIn.toLocaleString()} in / {totalTokensOut.toLocaleString()}
+								out</span
+							>
 						{/if}
 						{#if trajectory.duration > 0}
-							<span class="summary-item" data-testid="trajectory-duration">Duration: {formatMs(trajectory.duration)}</span>
+							<span class="summary-item" data-testid="trajectory-duration"
+								>Duration: {formatMs(trajectory.duration)}</span
+							>
 						{/if}
 						{#if steps.length > 0}
 							<span class="summary-actions">
+								<button
+									class="text-btn"
+									class:active={fullDetail}
+									disabled={fullLoading}
+									data-testid="trajectory-full-toggle"
+									onclick={() => (fullDetail = !fullDetail)}
+								>
+									{#if fullLoading}
+										Loading...
+									{:else if fullDetail}
+										Trimmed view
+									{:else}
+										Full detail
+									{/if}
+								</button>
 								<button class="text-btn" onclick={expandAll}>Expand all</button>
 								<button class="text-btn" onclick={collapseAll}>Collapse all</button>
 							</span>
@@ -204,8 +260,14 @@
 						{#each steps as step, i}
 							{@const expanded = expandedSteps.has(i)}
 							{@const expandable = hasExpandableContent(step)}
-							<div class="timeline-event" data-testid="timeline-event" data-step-type={step.step_type}>
-								<div class="event-marker" data-step-type={step.step_type}>{stepIcon(step)}</div>
+							<div
+								class="timeline-event"
+								data-testid="timeline-event"
+								data-step-type={step.step_type}
+							>
+								<div class="event-marker" data-step-type={step.step_type}
+									>{stepIcon(step)}</div
+								>
 								<!-- svelte-ignore a11y_click_events_have_key_events -->
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<div
@@ -215,16 +277,29 @@
 									onclick={expandable ? () => toggleStep(i) : undefined}
 								>
 									<div class="event-header">
-										<span class="event-type" data-testid="event-type">{stepLabel(step)}</span>
-										<span class="event-time" data-testid="event-time">{formatTime(step.timestamp)}</span>
+										<span class="event-type" data-testid="event-type"
+											>{stepLabel(step)}</span
+										>
+										{#if step.model}
+											<span class="event-model">{step.model}</span>
+										{/if}
+										<span class="event-time" data-testid="event-time"
+											>{formatTime(step.timestamp)}</span
+										>
 										{#if step.duration > 0}
-											<span class="event-delta" data-testid="event-duration">{formatMs(step.duration)}</span>
+											<span class="event-delta" data-testid="event-duration"
+												>{formatMs(step.duration)}</span
+											>
 										{/if}
 										{#if step.tokens_in || step.tokens_out}
-											<span class="event-tokens" data-testid="event-tokens">{step.tokens_in ?? 0}/{step.tokens_out ?? 0} tok</span>
+											<span class="event-tokens" data-testid="event-tokens"
+												>{step.tokens_in ?? 0}/{step.tokens_out ?? 0} tok</span
+											>
 										{/if}
 										{#if expandable}
-											<span class="expand-indicator">{expanded ? '\u25BC' : '\u25B6'}</span>
+											<span class="expand-indicator"
+												>{expanded ? '\u25BC' : '\u25B6'}</span
+											>
 										{/if}
 									</div>
 
@@ -238,34 +313,125 @@
 
 									{#if expanded}
 										<div class="event-details">
-											{#if step.prompt}
+											{#if step.messages?.length}
 												<div class="detail-section">
-													<span class="detail-label">Prompt</span>
-													<pre class="detail-content" data-testid="event-prompt">{step.prompt}</pre>
+													<span class="detail-label"
+														>Messages ({step.messages.length})</span
+													>
+													<div class="chat-thread">
+														{#each step.messages as msg}
+															<div
+																class="chat-message"
+																data-role={msg.role}
+															>
+																<span class="chat-role"
+																	>{msg.role}</span
+																>
+																{#if msg.reasoning_content}
+																	<details
+																		class="reasoning-block"
+																	>
+																		<summary
+																			class="reasoning-label"
+																			>Reasoning</summary
+																		>
+																		<pre
+																			class="detail-content">{msg.reasoning_content}</pre>
+																	</details>
+																{/if}
+																{#if msg.content}
+																	<pre
+																		class="detail-content">{msg.content}</pre>
+																{/if}
+																{#if msg.tool_calls?.length}
+																	<div class="msg-tool-calls">
+																		{#each msg.tool_calls as tc}
+																			<div
+																				class="tool-call-chip"
+																			>
+																				<code
+																					>{tc.name}</code
+																				>
+																				{#if tc.arguments}
+																					<pre
+																						class="detail-content">{JSON.stringify(tc.arguments, null, 2)}</pre>
+																				{/if}
+																			</div>
+																		{/each}
+																	</div>
+																{/if}
+																{#if msg.tool_call_id}
+																	<span class="tool-call-ref"
+																		>tool_call_id: {msg.tool_call_id}</span
+																	>
+																{/if}
+															</div>
+														{/each}
+													</div>
+												</div>
+											{:else}
+												{#if step.prompt}
+													<div class="detail-section">
+														<span class="detail-label">Prompt</span>
+														<pre
+															class="detail-content"
+															data-testid="event-prompt">{step.prompt}</pre>
+													</div>
+												{/if}
+												{#if step.response}
+													<div class="detail-section">
+														<span class="detail-label">Response</span>
+														<pre
+															class="detail-content"
+															data-testid="event-response">{step.response}</pre>
+													</div>
+												{/if}
+											{/if}
+
+											{#if step.tool_calls?.length}
+												<div class="detail-section">
+													<span class="detail-label"
+														>Tool Calls ({step.tool_calls.length})</span
+													>
+													{#each step.tool_calls as tc}
+														<div class="tool-call-block">
+															<div class="tool-call-header">
+																<code>{tc.name}</code>
+																<span class="tool-call-ref"
+																	>id: {tc.id}</span
+																>
+															</div>
+															{#if tc.arguments}
+																<pre
+																	class="detail-content">{JSON.stringify(tc.arguments, null, 2)}</pre>
+															{/if}
+														</div>
+													{/each}
 												</div>
 											{/if}
-											{#if step.response}
-												<div class="detail-section">
-													<span class="detail-label">Response</span>
-													<pre class="detail-content" data-testid="event-response">{step.response}</pre>
-												</div>
-											{/if}
+
 											{#if step.tool_name}
 												<div class="detail-section">
 													<span class="detail-label">Tool</span>
-													<code class="detail-inline">{step.tool_name}</code>
+													<code class="detail-inline"
+														>{step.tool_name}</code
+													>
 												</div>
 											{/if}
 											{#if step.tool_arguments}
 												<div class="detail-section">
 													<span class="detail-label">Arguments</span>
-													<pre class="detail-content" data-testid="event-tool-args">{JSON.stringify(step.tool_arguments, null, 2)}</pre>
+													<pre
+														class="detail-content"
+														data-testid="event-tool-args">{JSON.stringify(step.tool_arguments, null, 2)}</pre>
 												</div>
 											{/if}
 											{#if step.tool_result}
 												<div class="detail-section">
 													<span class="detail-label">Result</span>
-													<pre class="detail-content" data-testid="event-tool-result">{step.tool_result}</pre>
+													<pre
+														class="detail-content"
+														data-testid="event-tool-result">{step.tool_result}</pre>
 												</div>
 											{/if}
 											{#if step.request_id}
@@ -461,6 +627,16 @@
 		background: var(--ui-surface-tertiary);
 	}
 
+	.text-btn.active {
+		color: var(--ui-interactive-primary);
+		background: var(--ui-surface-tertiary);
+	}
+
+	.text-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
 	/* Timeline */
 	.timeline {
 		position: relative;
@@ -527,6 +703,15 @@
 	.event-type {
 		font-weight: 600;
 		font-size: 0.875rem;
+	}
+
+	.event-model {
+		font-size: 0.75rem;
+		color: var(--ui-text-tertiary);
+		background: var(--ui-surface-tertiary);
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		font-family: monospace;
 	}
 
 	.event-time {
@@ -613,6 +798,92 @@
 		color: var(--ui-text-tertiary);
 		padding-top: var(--spacing-xs);
 		border-top: 1px solid var(--ui-border-subtle);
+	}
+
+	/* Chat thread (full detail mode) */
+	.chat-thread {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+		max-height: 600px;
+		overflow-y: auto;
+	}
+
+	.chat-message {
+		padding: var(--spacing-sm) var(--spacing-md);
+		border-radius: var(--radius-sm);
+		border-left: 3px solid var(--ui-border-subtle);
+	}
+
+	.chat-message[data-role='system'] {
+		border-left-color: var(--ui-text-tertiary);
+		background: var(--ui-surface-primary);
+	}
+
+	.chat-message[data-role='user'] {
+		border-left-color: var(--ui-interactive-primary);
+	}
+
+	.chat-message[data-role='assistant'] {
+		border-left-color: var(--status-success, #4caf50);
+	}
+
+	.chat-message[data-role='tool'] {
+		border-left-color: var(--ui-text-tertiary);
+		background: var(--ui-surface-primary);
+	}
+
+	.chat-role {
+		display: block;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-tertiary);
+		margin-bottom: 2px;
+	}
+
+	.chat-message .detail-content {
+		max-height: 400px;
+	}
+
+	.reasoning-block {
+		margin: var(--spacing-xs) 0;
+	}
+
+	.reasoning-label {
+		font-size: 0.75rem;
+		color: var(--ui-text-tertiary);
+		cursor: pointer;
+	}
+
+	.msg-tool-calls {
+		margin-top: var(--spacing-xs);
+	}
+
+	.tool-call-chip {
+		margin-top: var(--spacing-xs);
+	}
+
+	/* Tool call blocks (full detail mode) */
+	.tool-call-block {
+		background: var(--ui-surface-primary);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-sm);
+		padding: var(--spacing-sm);
+		margin-top: var(--spacing-xs);
+	}
+
+	.tool-call-header {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+	}
+
+	.tool-call-ref {
+		font-size: 0.6875rem;
+		font-family: monospace;
+		color: var(--ui-text-tertiary);
 	}
 
 	.loading,

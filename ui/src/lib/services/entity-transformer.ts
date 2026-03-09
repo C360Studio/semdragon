@@ -287,6 +287,7 @@ function transformGuild(key: string, entity: GraphEntity): Guild {
 		quests_failed: num(m.get('guild.stats.quests_failed')),
 		shared_tools: sharedTools,
 		quest_types: questTypes.length > 0 ? questTypes : undefined,
+		quorum_size: num(m.get('guild.config.quorum_size'), 3),
 		created_at: str(m.get('guild.lifecycle.created_at'))
 	};
 }

@@ -24,8 +24,8 @@
 				);
 			})
 			.sort((a, b) => {
-				const aTime = new Date(a.created_at ?? 0).getTime();
-				const bTime = new Date(b.created_at ?? 0).getTime();
+				const aTime = new Date(a.started_at ?? 0).getTime();
+				const bTime = new Date(b.started_at ?? 0).getTime();
 				return bTime - aTime;
 			});
 	});
@@ -71,7 +71,7 @@
 								{battle.status}
 							</span>
 						</div>
-						<span class="item-time">{formatDate(battle.created_at)}</span>
+						<span class="item-time">{formatDate(battle.started_at)}</span>
 					</a>
 				</li>
 			{/each}

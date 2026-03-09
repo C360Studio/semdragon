@@ -142,10 +142,10 @@ export function createSSEService() {
 
 		source.onerror = () => {
 			worldStore.setConnected(false);
-			worldStore.setLoading(true);
 			synced = false;
 			worldStore.setSynced(false);
-			// EventSource auto-reconnects after server-sent retry interval
+			// Don't set loading=true on reconnect — keep showing stale data.
+			// EventSource auto-reconnects after server-sent retry interval.
 		};
 	}
 

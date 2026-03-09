@@ -52,9 +52,13 @@
 
 			{#if worldStore.loading}
 				<div class="loading">Loading world state...</div>
-			{:else if worldStore.error}
+			{:else if !worldStore.connected}
+				<div class="reconnecting-banner" role="status">Reconnecting...</div>
+			{/if}
+
+			{#if worldStore.error}
 				<div class="error">{worldStore.error}</div>
-			{:else}
+			{:else if !worldStore.loading}
 				<!-- Stats Grid -->
 				<div class="stats-grid" data-testid="dashboard-stats">
 					<div class="stat-card" data-testid="stat-active-agents">
@@ -456,5 +460,22 @@
 
 	.error {
 		color: var(--status-error);
+	}
+
+	.reconnecting-banner {
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--status-warning-container);
+		color: var(--status-warning);
+		border-radius: var(--radius-md);
+		text-align: center;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		margin-bottom: var(--spacing-md);
+		animation: pulse-opacity 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-opacity {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.5; }
 	}
 </style>

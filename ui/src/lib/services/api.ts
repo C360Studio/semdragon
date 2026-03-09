@@ -151,8 +151,9 @@ export async function getBattle(id: BattleID): Promise<BossBattle> {
 // TRAJECTORIES
 // =============================================================================
 
-export async function getTrajectory(id: string): Promise<Trajectory> {
-	return fetchJson<Trajectory>(`/game/trajectories/${id}`);
+export async function getTrajectory(id: string, detail?: 'full'): Promise<Trajectory> {
+	const params = detail ? `?detail=${detail}` : '';
+	return fetchJson<Trajectory>(`/game/trajectories/${id}${params}`);
 }
 
 // =============================================================================

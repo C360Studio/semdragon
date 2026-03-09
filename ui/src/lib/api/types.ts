@@ -256,7 +256,7 @@ export type InterventionType = 'assist' | 'redirect' | 'takeover' | 'abort' | 'a
 // DISPLAY CONSTANTS
 // =============================================================================
 
-export const TrustTierNames: Record<TrustTier, string> = {
+export const TrustTierNames: Record<number, string> = {
 	0: 'Apprentice',
 	1: 'Journeyman',
 	2: 'Expert',
@@ -264,7 +264,7 @@ export const TrustTierNames: Record<TrustTier, string> = {
 	4: 'Grandmaster'
 };
 
-export const TrustTierLevelRanges: Record<TrustTier, [number, number]> = {
+export const TrustTierLevelRanges: Record<number, [number, number]> = {
 	0: [1, 5],
 	1: [6, 10],
 	2: [11, 15],
@@ -281,7 +281,7 @@ export const QuestDifficultyNames: Record<QuestDifficulty, string> = {
 	5: 'Legendary'
 };
 
-export const ReviewLevelNames: Record<ReviewLevel, string> = {
+export const ReviewLevelNames: Record<number, string> = {
 	0: 'Auto',
 	1: 'Standard',
 	2: 'Strict',
@@ -349,7 +349,7 @@ export const BuiltinTools: ToolInfo[] = [
 ];
 
 /** Returns tools available at a given trust tier. */
-export function toolsForTier(tier: TrustTier): ToolInfo[] {
+export function toolsForTier(tier: number): ToolInfo[] {
 	return BuiltinTools.filter((t) => t.min_tier <= tier);
 }
 
@@ -503,6 +503,27 @@ export interface TrajectoryStep {
 	tool_arguments?: Record<string, unknown>;
 	tool_result?: string;
 	duration: number;
+	messages?: ChatMessage[];
+	tool_calls?: ToolCallRef[];
+	model?: string;
+}
+
+export interface ChatMessage {
+	role: string;
+	content?: string;
+	name?: string;
+	reasoning_content?: string;
+	tool_calls?: ToolCallRef[];
+	tool_call_id?: string;
+}
+
+export interface ToolCallRef {
+	id: string;
+	name: string;
+	arguments?: Record<string, unknown>;
+	metadata?: Record<string, unknown>;
+	loop_id?: string;
+	trace_id?: string;
 }
 
 export interface SkillProficiency {
