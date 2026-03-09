@@ -620,6 +620,380 @@ func TestRenameFileRejectsDirectories(t *testing.T) {
 	assertContains(t, result.Error, "files only")
 }
 
+// TestCreateDirectoryHandler verifies that create_directory creates nested paths,
+// rejects empty paths, and rejects sandbox-escape attempts.
+func TestCreateDirectoryHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	// EvalSymlinks resolves macOS /var -> /private/var so validatePath sees the
+	// same real path for both the sandbox and the new directory.
+	realTmpDir, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	reg := NewToolRegistryWithSandbox(realTmpDir)
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{
+		Tier: domain.TierJourneyman,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
+		},
+	}
+	quest := &domain.Quest{}
+
+	t.Run("creates nested directory", func(t *testing.T) {
+		t.Parallel()
+		dirPath := filepath.Join(realTmpDir, "a", "b", "c")
+		call := makeToolCall("create_directory", map[string]any{
+			"path":         dirPath,
+			"_sandbox_dir": realTmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		if info, err := os.Stat(dirPath); err != nil || !info.IsDir() {
+			t.Errorf("expected directory %s to exist after create_directory", dirPath)
+		}
+	})
+
+	t.Run("empty path returns error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("create_directory", map[string]any{
+			"path":         "",
+			"_sandbox_dir": realTmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for empty path, got none")
+		}
+		assertContains(t, result.Error, "required")
+	})
+
+	t.Run("sandbox escape rejected", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("create_directory", map[string]any{
+			"path":         filepath.Join(realTmpDir, "..", "escaped"),
+			"_sandbox_dir": realTmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for sandbox-escaping path, got none")
+		}
+		assertContains(t, result.Error, "escapes sandbox")
+	})
+}
+
+// TestWebSearchHandler verifies that the web_search stub returns a provider
+// error for valid queries and an argument error for empty queries.
+func TestWebSearchHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	reg := NewToolRegistryWithSandbox(tmpDir)
+	reg.RegisterBuiltins()
+
+	// web_search requires SkillResearch — use Apprentice tier which is sufficient.
+	agent := &agentprogression.Agent{
+		Tier: domain.TierApprentice,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillResearch: {Level: domain.ProficiencyNovice},
+		},
+	}
+	quest := &domain.Quest{}
+
+	t.Run("valid query returns search provider stub error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("web_search", map[string]any{
+			"query":        "Go concurrency patterns",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected stub error from web_search, got none")
+		}
+		assertContains(t, result.Error, "search provider")
+	})
+
+	t.Run("empty query returns argument error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("web_search", map[string]any{
+			"query":        "",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for empty query, got none")
+		}
+		assertContains(t, result.Error, "query argument is required")
+	})
+}
+
+// TestReadFileHandler verifies content reading, missing-file errors, and truncation.
+func TestReadFileHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	reg := NewToolRegistryWithSandbox(tmpDir)
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
+	quest := &domain.Quest{}
+
+	t.Run("reads existing file content", func(t *testing.T) {
+		t.Parallel()
+		filePath := filepath.Join(tmpDir, "hello.txt")
+		mustWriteFile(t, filePath, "hello semdragons")
+		call := makeToolCall("read_file", map[string]any{
+			"path":         filePath,
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		assertContains(t, result.Content, "hello semdragons")
+	})
+
+	t.Run("non-existent file returns error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("read_file", map[string]any{
+			"path":         filepath.Join(tmpDir, "does_not_exist.txt"),
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error reading non-existent file, got none")
+		}
+		assertContains(t, result.Error, "failed to read file")
+	})
+
+	t.Run("file larger than 100KB is truncated", func(t *testing.T) {
+		t.Parallel()
+		// Build a file that exceeds maxFileReadSize (100,000 bytes).
+		largeContent := strings.Repeat("x", 101000)
+		filePath := filepath.Join(tmpDir, "large.txt")
+		mustWriteFile(t, filePath, largeContent)
+		call := makeToolCall("read_file", map[string]any{
+			"path":         filePath,
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		assertContains(t, result.Content, "(truncated)")
+	})
+}
+
+// TestListDirectoryHandler verifies [dir] and [file] prefixes and error on missing dir.
+func TestListDirectoryHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	reg := NewToolRegistryWithSandbox(tmpDir)
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
+	quest := &domain.Quest{}
+
+	// Populate a small tree: one file and one subdirectory.
+	mustWriteFile(t, filepath.Join(tmpDir, "readme.txt"), "docs")
+	if err := os.MkdirAll(filepath.Join(tmpDir, "subdir"), 0755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Run("lists files and directories with correct prefixes", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("list_directory", map[string]any{
+			"path":         tmpDir,
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		assertContains(t, result.Content, "[dir]")
+		assertContains(t, result.Content, "subdir")
+		assertContains(t, result.Content, "[file]")
+		assertContains(t, result.Content, "readme.txt")
+	})
+
+	t.Run("non-existent directory returns error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("list_directory", map[string]any{
+			"path":         filepath.Join(tmpDir, "ghost"),
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error listing non-existent directory, got none")
+		}
+		assertContains(t, result.Error, "failed to read directory")
+	})
+}
+
+// TestPatchFileHandler verifies successful replacement, not-found failure,
+// and ambiguous-match failure.
+func TestPatchFileHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	reg := NewToolRegistryWithSandbox(tmpDir)
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{
+		Tier: domain.TierJourneyman,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
+		},
+	}
+	quest := &domain.Quest{}
+
+	t.Run("patches file successfully", func(t *testing.T) {
+		t.Parallel()
+		filePath := filepath.Join(tmpDir, "patch_success.go")
+		mustWriteFile(t, filePath, "package main\n\nfunc hello() {}\n")
+		call := makeToolCall("patch_file", map[string]any{
+			"path":         filePath,
+			"old_text":     "func hello() {}",
+			"new_text":     "func hello() { return }",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		assertContains(t, result.Content, "patched")
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatalf("read back: %v", err)
+		}
+		assertContains(t, string(content), "func hello() { return }")
+	})
+
+	t.Run("fails when old_text not found", func(t *testing.T) {
+		t.Parallel()
+		filePath := filepath.Join(tmpDir, "patch_notfound.go")
+		mustWriteFile(t, filePath, "package main\n")
+		call := makeToolCall("patch_file", map[string]any{
+			"path":         filePath,
+			"old_text":     "func missing() {}",
+			"new_text":     "func replaced() {}",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error when old_text not found, got none")
+		}
+		assertContains(t, result.Error, "not found")
+	})
+
+	t.Run("fails when old_text is ambiguous", func(t *testing.T) {
+		t.Parallel()
+		filePath := filepath.Join(tmpDir, "patch_ambiguous.go")
+		mustWriteFile(t, filePath, "foo\nfoo\n")
+		call := makeToolCall("patch_file", map[string]any{
+			"path":         filePath,
+			"old_text":     "foo",
+			"new_text":     "bar",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for ambiguous old_text, got none")
+		}
+		assertContains(t, result.Error, "ambiguous")
+	})
+}
+
+// TestSearchTextCancelled verifies that a pre-cancelled context causes search_text
+// to return a cancellation error before doing any file I/O.
+func TestSearchTextCancelled(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	mustWriteFile(t, filepath.Join(tmpDir, "data.txt"), "some content to search")
+
+	reg := NewToolRegistryWithSandbox(tmpDir)
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
+	quest := &domain.Quest{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	call := makeToolCall("search_text", map[string]any{
+		"pattern":      "content",
+		"path":         filepath.Join(tmpDir, "data.txt"),
+		"_sandbox_dir": tmpDir,
+	})
+	result := reg.Execute(ctx, call, quest, agent)
+	if result.Error == "" {
+		t.Fatal("expected cancellation error, got none")
+	}
+	assertContains(t, result.Error, "cancel")
+}
+
+// TestRunTestsHandler verifies that an allowed but nonexistent package returns
+// a command-failed error (not a metacharacter or prefix-rejection error), and
+// that a rejected command prefix is refused.
+func TestRunTestsHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	reg := NewToolRegistryWithSandbox(tmpDir)
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{
+		Tier: domain.TierExpert,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen:    {Level: domain.ProficiencyNovice},
+			domain.SkillCodeReview: {Level: domain.ProficiencyNovice},
+		},
+	}
+	quest := &domain.Quest{}
+
+	t.Run("allowed prefix with nonexistent package runs shell and fails", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("run_tests", map[string]any{
+			// This is an allowed prefix but ./nonexistent will not be found.
+			// The command passes prefix+metacharacter checks and reaches runShellCommand.
+			"command":      "go test ./nonexistent",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		// We expect an error because the package doesn't exist, but it must NOT
+		// be the "shell metacharacters" or "only allows test commands" rejection.
+		if strings.Contains(result.Error, "shell metacharacters") {
+			t.Fatalf("command was incorrectly rejected for metacharacters: %s", result.Error)
+		}
+		if strings.Contains(result.Error, "only allows test commands") {
+			t.Fatalf("command was incorrectly rejected as disallowed prefix: %s", result.Error)
+		}
+		// The command should fail (no such package) — verify we got some output or error.
+		if result.Error == "" && result.Content == "" {
+			t.Fatal("expected error or output from failed go test command, got neither")
+		}
+	})
+
+	t.Run("rejected command prefix is refused", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("run_tests", map[string]any{
+			"command":      "rm -rf /tmp/something",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected rejection of disallowed command prefix, got none")
+		}
+		assertContains(t, result.Error, "only allows test commands")
+	})
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================
