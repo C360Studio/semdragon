@@ -129,9 +129,11 @@ mounted directory.
 
 After startup:
 
-- Dashboard: `http://localhost` (via Caddy)
-- REST API: `http://localhost:8080/api/game/` (direct) or `http://localhost/game/` (via Caddy)
-- NATS monitor: `http://localhost:8222`
+| URL | What |
+|-----|------|
+| `http://localhost` | Dashboard |
+| `http://localhost/game/` | REST API |
+| `http://localhost:8222` | NATS monitor |
 
 See [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) for advanced configuration including
 multi-model setups, capability routing, and fallback chains.
@@ -299,13 +301,13 @@ the reactive pipeline in action.
 SEED_E2E=true make up
 
 # Verify everything is running
-curl -s http://localhost:8080/health
+curl -s http://localhost/health
 open http://localhost
 ```
 
 ```bash
 # 2. Post a quest (agents are already on the board)
-curl -s -X POST http://localhost:8080/api/game/quests \
+curl -s -X POST http://localhost/game/quests \
   -H "Content-Type: application/json" \
   -d '{
     "objective": "Write a hello world function",
@@ -316,7 +318,7 @@ curl -s -X POST http://localhost:8080/api/game/quests \
 
 ```bash
 # 3. Watch the system react via SSE
-curl -N http://localhost:8080/message-logger/kv/semdragons-local-dev-board1/watch?pattern=*
+curl -N http://localhost/game/events
 ```
 
 You should see a chain of state changes as the processors react:
@@ -331,11 +333,11 @@ You should see a chain of state changes as the processors react:
 7. **Boss battle** — `bossbattle` evaluates quality, emits verdict
 8. **XP awarded** — `agentprogression` updates agent XP and potentially levels up
 
-The dashboard at `http://localhost:5173` shows all of this in real-time via the event feed.
+The dashboard at `http://localhost` shows all of this in real-time via the event feed.
 
 ```bash
 # 4. Check the final world state
-curl -s http://localhost:8080/api/game/world | jq .
+curl -s http://localhost/game/world | jq .
 ```
 
 **Note**: Steps 5-8 require a configured LLM provider (Ollama, Anthropic, or OpenAI). Without
@@ -350,7 +352,7 @@ the lifecycle manually with curl. This bypasses the boid engine and LLM executio
 
 ```bash
 # 1. Recruit an agent
-curl -s -X POST http://localhost:8080/api/game/agents \
+curl -s -X POST http://localhost/game/agents \
   -H "Content-Type: application/json" \
   -d '{"name": "Aria", "skills": ["code_generation"]}' | jq .
 
@@ -359,7 +361,7 @@ curl -s -X POST http://localhost:8080/api/game/agents \
 
 ```bash
 # 2. Post a quest
-curl -s -X POST http://localhost:8080/api/game/quests \
+curl -s -X POST http://localhost/game/quests \
   -H "Content-Type: application/json" \
   -d '{"objective": "Write a hello world function"}' | jq .
 
@@ -368,20 +370,20 @@ curl -s -X POST http://localhost:8080/api/game/quests \
 
 ```bash
 # 3. Claim (use full IDs from steps 1-2)
-curl -s -X POST http://localhost:8080/api/game/quests/{QUEST_ID}/claim \
+curl -s -X POST http://localhost/game/quests/{QUEST_ID}/claim \
   -H "Content-Type: application/json" \
   -d '{"agent_id": "{AGENT_ID}"}'
 
 # 4. Start
-curl -s -X POST http://localhost:8080/api/game/quests/{QUEST_ID}/start
+curl -s -X POST http://localhost/game/quests/{QUEST_ID}/start
 
 # 5. Submit result
-curl -s -X POST http://localhost:8080/api/game/quests/{QUEST_ID}/submit \
+curl -s -X POST http://localhost/game/quests/{QUEST_ID}/submit \
   -H "Content-Type: application/json" \
   -d '{"output": "func hello() string { return \"hello world\" }"}'
 
 # 6. Check world state
-curl -s http://localhost:8080/api/game/world | jq .
+curl -s http://localhost/game/world | jq .
 ```
 
 When `SEMDRAGONS_API_KEY` is set, write endpoints (POST) require the header
@@ -429,7 +431,7 @@ required — use curl or the dashboard:
 
 ```bash
 # Watch all entity state changes via SSE
-curl -N http://localhost:8080/game/events
+curl -N http://localhost/game/events
 
 # Or through Caddy (same-origin)
 curl -N http://localhost/game/events

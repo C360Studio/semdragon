@@ -23,7 +23,7 @@ make up-openai                 # OPENAI_API_KEY
 make up-ollama                 # local, no key needed
 
 # 3. Post a quest and watch agents work
-curl -s -X POST http://localhost:8080/api/game/quests \
+curl -s -X POST http://localhost/game/quests \
   -H "Content-Type: application/json" \
   -d '{"objective": "Write a hello world function", "difficulty": 0}'
 

@@ -102,27 +102,51 @@ BACKEND_PORT   ?= 8081
 # Start with mock LLM (no API key needed)
 up:
 	BACKEND_PORT=$(BACKEND_PORT) docker compose --profile mock up -d --build --wait
-	@echo "Stack is up. Dashboard: http://localhost:5173  API: http://localhost:$(BACKEND_PORT)"
+	@echo ""
+	@echo "  Dashboard: http://localhost"
+	@echo "  API:       http://localhost/game/"
+	@echo "  NATS:      http://localhost:8222"
+	@echo ""
 
 # Start with Gemini (set GEMINI_API_KEY in .env)
 up-gemini:
 	SEMDRAGONS_E2E_CONFIG=semdragons-e2e-gemini.json BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
-	@echo "Gemini stack is up. Dashboard: http://localhost  API: http://localhost:$(BACKEND_PORT)"
+	@echo ""
+	@echo "  Dashboard: http://localhost"
+	@echo "  API:       http://localhost/game/"
+	@echo "  NATS:      http://localhost:8222"
+	@echo "  Provider:  Gemini"
+	@echo ""
 
 # Start with Anthropic Claude (set ANTHROPIC_API_KEY in .env)
 up-anthropic:
 	SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
-	@echo "Anthropic stack is up. Dashboard: http://localhost  API: http://localhost:$(BACKEND_PORT)"
+	@echo ""
+	@echo "  Dashboard: http://localhost"
+	@echo "  API:       http://localhost/game/"
+	@echo "  NATS:      http://localhost:8222"
+	@echo "  Provider:  Anthropic Claude"
+	@echo ""
 
 # Start with OpenAI (set OPENAI_API_KEY in .env)
 up-openai:
 	SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
-	@echo "OpenAI stack is up. Dashboard: http://localhost  API: http://localhost:$(BACKEND_PORT)"
+	@echo ""
+	@echo "  Dashboard: http://localhost"
+	@echo "  API:       http://localhost/game/"
+	@echo "  NATS:      http://localhost:8222"
+	@echo "  Provider:  OpenAI"
+	@echo ""
 
 # Start with local Ollama (requires: ollama serve && ollama pull qwen2.5-coder:7b)
 up-ollama:
 	BACKEND_PORT=$(BACKEND_PORT) docker compose $(OLLAMA_COMPOSE) up -d --build --wait
-	@echo "Ollama stack is up. Dashboard: http://localhost  API: http://localhost:$(BACKEND_PORT)"
+	@echo ""
+	@echo "  Dashboard: http://localhost"
+	@echo "  API:       http://localhost/game/"
+	@echo "  NATS:      http://localhost:8222"
+	@echo "  Provider:  Ollama (local)"
+	@echo ""
 
 # Alias: up-cloud defaults to Gemini for backwards compat
 up-cloud: up-gemini
