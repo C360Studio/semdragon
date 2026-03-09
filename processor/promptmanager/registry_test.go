@@ -223,18 +223,18 @@ func TestGetFragmentsForContext_GuildGating(t *testing.T) {
 	})
 
 	tests := []struct {
-		name   string
-		guilds []domain.GuildID
-		want   bool
+		name  string
+		guild domain.GuildID
+		want  bool
 	}{
-		{"member gets fragment", []domain.GuildID{"guild-data"}, true},
-		{"non-member excluded", []domain.GuildID{"guild-other"}, false},
-		{"no guilds excluded", nil, false},
+		{"member gets fragment", domain.GuildID("guild-data"), true},
+		{"non-member excluded", domain.GuildID("guild-other"), false},
+		{"no guild excluded", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := AssemblyContext{Guilds: tt.guilds}
+			ctx := AssemblyContext{Guild: tt.guild}
 			fragments := reg.GetFragmentsForContext(ctx)
 
 			found := false

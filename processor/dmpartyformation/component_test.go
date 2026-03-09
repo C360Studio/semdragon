@@ -168,7 +168,7 @@ func TestFormParty_Balanced_SingleAgent(t *testing.T) {
 
 	quest := buildQuest(comp.boardConfig, "solo-quest", domain.DifficultyTrivial, nil, 1)
 	agents := []agentprogression.Agent{
-		buildAgent(comp.boardConfig, "lead-agent", 16, domain.TierMaster, nil),
+		buildAgent(comp.boardConfig, "lead-agent", 16, domain.TierMaster, ""),
 	}
 
 	party, err := comp.FormParty(ctx, quest, domain.PartyStrategyBalanced, agents)
@@ -259,7 +259,7 @@ func TestFormParty_Specialist_PrefersGuildAgents(t *testing.T) {
 	quest := buildQuestWithGuild(comp.boardConfig, "specialist-quest", domain.DifficultyModerate, guildID)
 
 	guildAgent := buildAgentInGuild(comp.boardConfig, "guild-coder", 16, domain.TierMaster, guildID)
-	nonGuildAgent := buildAgent(comp.boardConfig, "random-agent", 12, domain.TierExpert, nil)
+	nonGuildAgent := buildAgent(comp.boardConfig, "random-agent", 12, domain.TierExpert, "")
 
 	agents := []agentprogression.Agent{guildAgent, nonGuildAgent}
 
@@ -291,9 +291,9 @@ func TestFormParty_Mentor_RequiresMasterLead(t *testing.T) {
 	quest := buildQuest(comp.boardConfig, "mentor-quest", domain.DifficultyEpic, nil, 2)
 
 	// One master who can lead, plus two apprentices.
-	mentor := buildAgent(comp.boardConfig, "master-agent", 16, domain.TierMaster, nil)
-	apprentice1 := buildAgent(comp.boardConfig, "apprentice-1", 3, domain.TierApprentice, nil)
-	apprentice2 := buildAgent(comp.boardConfig, "apprentice-2", 5, domain.TierApprentice, nil)
+	mentor := buildAgent(comp.boardConfig, "master-agent", 16, domain.TierMaster, "")
+	apprentice1 := buildAgent(comp.boardConfig, "apprentice-1", 3, domain.TierApprentice, "")
+	apprentice2 := buildAgent(comp.boardConfig, "apprentice-2", 5, domain.TierApprentice, "")
 
 	agents := []agentprogression.Agent{mentor, apprentice1, apprentice2}
 
@@ -319,8 +319,8 @@ func TestFormParty_Mentor_NoLeadCapable_Errors(t *testing.T) {
 
 	// Only apprentices - none can lead.
 	agents := []agentprogression.Agent{
-		buildAgent(comp.boardConfig, "appr-1", 3, domain.TierApprentice, nil),
-		buildAgent(comp.boardConfig, "appr-2", 5, domain.TierApprentice, nil),
+		buildAgent(comp.boardConfig, "appr-1", 3, domain.TierApprentice, ""),
+		buildAgent(comp.boardConfig, "appr-2", 5, domain.TierApprentice, ""),
 	}
 
 	_, err := comp.FormParty(ctx, quest, domain.PartyStrategyMentor, agents)
@@ -347,8 +347,8 @@ func TestFormParty_Minimal_SingleMemberIfNoPartyRequired(t *testing.T) {
 	quest.MinPartySize = 1
 
 	agents := []agentprogression.Agent{
-		buildAgent(comp.boardConfig, "solo-master", 16, domain.TierMaster, nil),
-		buildAgent(comp.boardConfig, "extra-agent", 12, domain.TierExpert, nil),
+		buildAgent(comp.boardConfig, "solo-master", 16, domain.TierMaster, ""),
+		buildAgent(comp.boardConfig, "extra-agent", 12, domain.TierExpert, ""),
 	}
 
 	party, err := comp.FormParty(ctx, quest, domain.PartyStrategyMinimal, agents)
@@ -378,7 +378,7 @@ func TestRankAgentsForQuest_ReturnsRankedList(t *testing.T) {
 	agents := []agentprogression.Agent{
 		buildAgentWithSkills(comp.boardConfig, "skilled-coder", 12, domain.TierExpert,
 			[]domain.SkillTag{domain.SkillCodeGen}),
-		buildAgent(comp.boardConfig, "no-match-agent", 8, domain.TierJourneyman, nil),
+		buildAgent(comp.boardConfig, "no-match-agent", 8, domain.TierJourneyman, ""),
 	}
 
 	ranked := comp.RankAgentsForQuest(agents, quest)
@@ -408,7 +408,7 @@ func TestRankAgentsForQuest_NotRunning_ReturnsNil(t *testing.T) {
 
 	quest := buildQuest(comp.boardConfig, "unstarted-quest", domain.DifficultyTrivial, nil, 1)
 	agents := []agentprogression.Agent{
-		buildAgent(comp.boardConfig, "idle-agent", 5, domain.TierApprentice, nil),
+		buildAgent(comp.boardConfig, "idle-agent", 5, domain.TierApprentice, ""),
 	}
 
 	ranked := comp.RankAgentsForQuest(agents, quest)
@@ -434,7 +434,7 @@ func TestSuggestPartyMembers_ReturnsSortedByScore(t *testing.T) {
 	agents := []agentprogression.Agent{
 		buildAgentWithSkills(comp.boardConfig, "perfect-match", 12, domain.TierExpert,
 			[]domain.SkillTag{domain.SkillCodeGen}),
-		buildAgent(comp.boardConfig, "no-match", 5, domain.TierApprentice, nil),
+		buildAgent(comp.boardConfig, "no-match", 5, domain.TierApprentice, ""),
 	}
 
 	suggestions, err := comp.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)
@@ -462,8 +462,8 @@ func TestSuggestPartyMembers_CanLeadFlagAccurate(t *testing.T) {
 
 	quest := buildQuest(comp.boardConfig, "canlead-quest", domain.DifficultyModerate, nil, 2)
 
-	masterAgent := buildAgent(comp.boardConfig, "master-dm", 16, domain.TierMaster, nil)
-	apprenticeAgent := buildAgent(comp.boardConfig, "appr-dm", 3, domain.TierApprentice, nil)
+	masterAgent := buildAgent(comp.boardConfig, "master-dm", 16, domain.TierMaster, "")
+	apprenticeAgent := buildAgent(comp.boardConfig, "appr-dm", 3, domain.TierApprentice, "")
 	agents := []agentprogression.Agent{masterAgent, apprenticeAgent}
 
 	suggestions, err := comp.SuggestPartyMembers(agents, quest, domain.PartyStrategyBalanced)
@@ -493,7 +493,7 @@ func TestSuggestPartyMembers_SkillsCoveredPopulated(t *testing.T) {
 	// Agent covers both required skills.
 	fullCoverage := buildAgentWithSkills(comp.boardConfig, "full-coverage", 12, domain.TierExpert, requiredSkills)
 	// Agent covers none.
-	noCoverage := buildAgent(comp.boardConfig, "no-coverage", 8, domain.TierJourneyman, nil)
+	noCoverage := buildAgent(comp.boardConfig, "no-coverage", 8, domain.TierJourneyman, "")
 
 	suggestions, err := comp.SuggestPartyMembers([]agentprogression.Agent{fullCoverage, noCoverage}, quest, domain.PartyStrategyBalanced)
 	if err != nil {
@@ -540,7 +540,7 @@ func TestFormParty_FailsWhenNotRunning(t *testing.T) {
 
 	quest := buildQuest(comp.boardConfig, "blocked-quest", domain.DifficultyTrivial, nil, 1)
 	agents := []agentprogression.Agent{
-		buildAgent(comp.boardConfig, "idle", 16, domain.TierMaster, nil),
+		buildAgent(comp.boardConfig, "idle", 16, domain.TierMaster, ""),
 	}
 
 	_, err = comp.FormParty(ctx, quest, domain.PartyStrategyBalanced, agents)
@@ -605,10 +605,10 @@ func buildQuestWithGuild(config *domain.BoardConfig, name string, difficulty dom
 }
 
 // buildAgent creates a test agent without skills or guild membership.
-// The guilds parameter is reserved for future use.
-func buildAgent(config *domain.BoardConfig, name string, level int, tier domain.TrustTier, guilds []domain.GuildID) agentprogression.Agent {
+// The guild parameter sets the agent's single guild affiliation ("" means no guild).
+func buildAgent(config *domain.BoardConfig, name string, level int, tier domain.TrustTier, guild domain.GuildID) agentprogression.Agent {
 	agent := buildAgentWithSkills(config, name, level, tier, nil)
-	agent.Guilds = guilds
+	agent.Guild = guild
 	return agent
 }
 
@@ -637,7 +637,5 @@ func buildAgentWithSkills(config *domain.BoardConfig, name string, level int, ti
 }
 
 func buildAgentInGuild(config *domain.BoardConfig, name string, level int, tier domain.TrustTier, guildID domain.GuildID) agentprogression.Agent {
-	agent := buildAgent(config, name, level, tier, nil)
-	agent.Guilds = []domain.GuildID{guildID}
-	return agent
+	return buildAgent(config, name, level, tier, guildID)
 }

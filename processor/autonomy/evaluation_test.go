@@ -805,9 +805,6 @@ func TestDefaultConfig(t *testing.T) {
 	}
 
 	// Guild config defaults
-	if cfg.MaxGuildsPerAgent != 3 {
-		t.Errorf("MaxGuildsPerAgent = %d, want 3", cfg.MaxGuildsPerAgent)
-	}
 	if cfg.GuildJoinMinLevel != 3 {
 		t.Errorf("GuildJoinMinLevel = %d, want 3", cfg.GuildJoinMinLevel)
 	}
@@ -970,7 +967,7 @@ func TestComponent_ConfigSchema(t *testing.T) {
 
 	// Check guild properties exist
 	guildProps := []string{
-		"max_guilds_per_agent", "guild_join_min_level", "guild_suggestions_n",
+		"guild_join_min_level", "guild_suggestions_n",
 	}
 	for _, prop := range guildProps {
 		if _, ok := schema.Properties[prop]; !ok {
@@ -1460,7 +1457,7 @@ func TestActionsForState_Unknown(t *testing.T) {
 // =============================================================================
 
 // newTestComponentWithGuilds creates a Component with a non-nil guilds for unit tests.
-// The guilds component is a zero-value guildformation.Component — only GetAgentGuilds()
+// The guilds component is a zero-value guildformation.Component — only GetAgentGuild()
 // and ListGuilds() are safe to call on it (they use sync.Map zero-value semantics).
 func newTestComponentWithGuilds() *Component {
 	cfg := DefaultConfig()
@@ -1591,12 +1588,12 @@ func TestJoinGuild_ShouldExecute_MaxGuildsReached(t *testing.T) {
 		ID:     "test.local.game.board1.agent.guild8",
 		Status: domain.AgentIdle,
 		Level:  5,
-		Guilds: []domain.GuildID{"guild1", "guild2", "guild3"}, // 3 = MaxGuildsPerAgent
+		Guild: domain.GuildID("guild1"), // already in a guild
 	}
 	tracker := &agentTracker{agent: agent}
 
 	if act.shouldExecute(agent, tracker) {
-		t.Error("shouldExecute should be false when agent already at MaxGuildsPerAgent")
+		t.Error("shouldExecute should be false when agent already in a guild")
 	}
 }
 

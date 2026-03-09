@@ -3,6 +3,7 @@ package guildformation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -127,7 +128,7 @@ func (c *Component) evaluateAutoFormationForCachedFounders() {
 	var founders []*agentprogression.Agent
 	for _, a := range c.agents {
 		if a.Tier >= domain.TierExpert {
-			if guilds := c.GetAgentGuilds(a.ID); len(guilds) == 0 {
+			if c.GetAgentGuild(a.ID) == "" {
 				founders = append(founders, a)
 			}
 		}
@@ -153,7 +154,7 @@ func (c *Component) evaluateAutoFormation(trigger *agentprogression.Agent) {
 	}
 
 	// Only unguilded agents can found a guild.
-	if guilds := c.GetAgentGuilds(trigger.ID); len(guilds) > 0 {
+	if c.GetAgentGuild(trigger.ID) != "" {
 		return
 	}
 
@@ -161,7 +162,7 @@ func (c *Component) evaluateAutoFormation(trigger *agentprogression.Agent) {
 	c.agentsMu.RLock()
 	var candidates []*agentprogression.Agent
 	for _, a := range c.agents {
-		if guilds := c.GetAgentGuilds(a.ID); len(guilds) == 0 {
+		if c.GetAgentGuild(a.ID) == "" {
 			candidates = append(candidates, a)
 		}
 	}
@@ -403,6 +404,11 @@ func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agent
 		return errors.New("guild not found")
 	}
 
+	// Check if agent already belongs to a guild (single-guild constraint).
+	if existing := c.GetAgentGuild(agentID); existing != "" {
+		return fmt.Errorf("agent already belongs to guild %s", existing)
+	}
+
 	mu := c.guildMutex(guildID)
 	mu.Lock()
 	guild := val.(*domain.Guild)
@@ -452,8 +458,8 @@ func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agent
 	c.membersJoined.Add(1)
 	c.lastActivity.Store(now)
 
-	// Update the agent entity so its Guilds field reflects the new membership.
-	c.updateAgentGuilds(ctx, agentID, guildID, true)
+	// Update the agent entity so its Guild field reflects the new membership.
+	c.updateAgentGuild(ctx, agentID, guildID, true)
 
 	c.logger.Info("agent joined guild",
 		"guild_id", guildID,
@@ -523,8 +529,8 @@ func (c *Component) LeaveGuild(ctx context.Context, guildID domain.GuildID, agen
 
 	c.lastActivity.Store(now)
 
-	// Update the agent entity to remove the guild from its Guilds field.
-	c.updateAgentGuilds(ctx, agentID, guildID, false)
+	// Update the agent entity to clear its Guild field.
+	c.updateAgentGuild(ctx, agentID, guildID, false)
 
 	c.logger.Info("agent left guild",
 		"guild_id", guildID,
@@ -645,13 +651,13 @@ func (c *Component) DisbandGuild(ctx context.Context, guildID domain.GuildID, re
 	return nil
 }
 
-// updateAgentGuilds loads the agent entity and adds or removes a guild ID
-// from its Guilds field, then persists the update. Best-effort — guild entity
-// is the source of truth; this keeps the agent entity in sync for UI display.
-func (c *Component) updateAgentGuilds(ctx context.Context, agentID domain.AgentID, guildID domain.GuildID, add bool) {
+// updateAgentGuild loads the agent entity and sets or clears the Guild field,
+// then persists the update. Best-effort — guild entity is the source of truth;
+// this keeps the agent entity in sync for UI display.
+func (c *Component) updateAgentGuild(ctx context.Context, agentID domain.AgentID, guildID domain.GuildID, add bool) {
 	agentEntity, err := c.graph.GetAgent(ctx, agentID)
 	if err != nil {
-		c.logger.Debug("updateAgentGuilds: failed to load agent", "agent_id", agentID, "error", err)
+		c.logger.Debug("updateAgentGuild: failed to load agent", "agent_id", agentID, "error", err)
 		return
 	}
 	agent := agentprogression.AgentFromEntityState(agentEntity)
@@ -660,40 +666,23 @@ func (c *Component) updateAgentGuilds(ctx context.Context, agentID domain.AgentI
 	}
 
 	if add {
-		// Avoid duplicates
-		for _, g := range agent.Guilds {
-			if g == guildID {
-				return
-			}
-		}
-		agent.Guilds = append(agent.Guilds, guildID)
+		agent.Guild = guildID
 	} else {
-		filtered := make([]domain.GuildID, 0, len(agent.Guilds))
-		for _, g := range agent.Guilds {
-			if g != guildID {
-				filtered = append(filtered, g)
-			}
-		}
-		agent.Guilds = filtered
+		agent.Guild = ""
 	}
 
 	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.membership.updated"); err != nil {
-		c.logger.Debug("updateAgentGuilds: failed to persist", "agent_id", agentID, "error", err)
+		c.logger.Debug("updateAgentGuild: failed to persist", "agent_id", agentID, "error", err)
 	}
 }
 
-// GetAgentGuilds returns a copy of the guild IDs an agent belongs to.
-func (c *Component) GetAgentGuilds(agentID domain.AgentID) []domain.GuildID {
-	c.agentGuildsMu.Lock()
+// GetAgentGuild returns the guild ID the agent belongs to, or "" if unguilded.
+func (c *Component) GetAgentGuild(agentID domain.AgentID) domain.GuildID {
 	val, ok := c.agentGuilds.Load(agentID)
 	if !ok {
-		c.agentGuildsMu.Unlock()
-		return nil
+		return ""
 	}
-	guilds := val.([]domain.GuildID)
-	cp := append([]domain.GuildID(nil), guilds...)
-	c.agentGuildsMu.Unlock()
-	return cp
+	return val.(domain.GuildID)
 }
 
 // SubmitApplication submits an agent's application to join a pending guild.
@@ -1061,41 +1050,14 @@ func getMember(guild *domain.Guild, agentID domain.AgentID) *domain.GuildMember 
 	return nil
 }
 
-// addAgentGuild adds a guild to an agent's guild list.
-// Uses agentGuildsMu to prevent TOCTOU races on Load-then-Store.
+// addAgentGuild records that the agent now belongs to the given guild.
 func (c *Component) addAgentGuild(agentID domain.AgentID, guildID domain.GuildID) {
-	c.agentGuildsMu.Lock()
-	defer c.agentGuildsMu.Unlock()
-
-	val, ok := c.agentGuilds.Load(agentID)
-	var guilds []domain.GuildID
-	if ok {
-		guilds = val.([]domain.GuildID)
-	}
-	guilds = append(guilds, guildID)
-	c.agentGuilds.Store(agentID, guilds)
+	c.agentGuilds.Store(agentID, guildID)
 }
 
-// removeAgentGuild removes a guild from an agent's guild list.
-// Uses agentGuildsMu to prevent TOCTOU races on Load-then-Store.
-func (c *Component) removeAgentGuild(agentID domain.AgentID, guildID domain.GuildID) {
-	c.agentGuildsMu.Lock()
-	defer c.agentGuildsMu.Unlock()
-
-	val, ok := c.agentGuilds.Load(agentID)
-	if !ok {
-		return
-	}
-	guilds := val.([]domain.GuildID)
-	newGuilds := make([]domain.GuildID, 0, len(guilds)-1)
-	for _, g := range guilds {
-		if g != guildID {
-			newGuilds = append(newGuilds, g)
-		}
-	}
-	if len(newGuilds) > 0 {
-		c.agentGuilds.Store(agentID, newGuilds)
-	} else {
-		c.agentGuilds.Delete(agentID)
-	}
+// removeAgentGuild clears the agent's guild membership.
+func (c *Component) removeAgentGuild(agentID domain.AgentID, _ domain.GuildID) {
+	// The guildID parameter is accepted for call-site compatibility but agents
+	// have at most one guild, so we always clear the entire entry on removal.
+	c.agentGuilds.Delete(agentID)
 }

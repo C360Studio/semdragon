@@ -91,7 +91,7 @@ type AssemblyContext struct {
 	Tier         domain.TrustTier
 	Level        int
 	Skills       map[domain.SkillTag]domain.SkillProficiency
-	Guilds       []domain.GuildID
+	Guild        domain.GuildID
 	SystemPrompt string // from AgentConfig (override)
 	PersonaPrompt string // from AgentPersona
 

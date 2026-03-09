@@ -51,7 +51,7 @@ func TestXPPreservesAgentData(t *testing.T) {
 		XP:           200,
 		XPToLevel:    300,
 		Tier:         domain.TierApprentice,
-		Guilds:       []domain.GuildID{"guild-alpha", "guild-beta"},
+		Guild:        "guild-alpha",
 		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			domain.SkillCodeGen:  {Level: domain.ProficiencyJourneyman},
 			domain.SkillAnalysis: {Level: domain.ProficiencyExpert},
@@ -122,8 +122,8 @@ func TestXPPreservesAgentData(t *testing.T) {
 	if updatedAgent.DisplayName != "Shadow Weaver" {
 		t.Errorf("DisplayName was overwritten: got %q, want %q", updatedAgent.DisplayName, "Shadow Weaver")
 	}
-	if len(updatedAgent.Guilds) != 2 {
-		t.Errorf("Guilds were overwritten: got %d guilds, want 2", len(updatedAgent.Guilds))
+	if updatedAgent.Guild != "guild-alpha" {
+		t.Errorf("Guild was overwritten: got %q, want %q", updatedAgent.Guild, "guild-alpha")
 	}
 	if len(updatedAgent.SkillProficiencies) != 2 {
 		t.Errorf("Skills were overwritten: got %d skills, want 2", len(updatedAgent.SkillProficiencies))

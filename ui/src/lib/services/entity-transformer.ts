@@ -18,6 +18,8 @@ import type {
 	Guild,
 	GuildID,
 	GuildStatus,
+	GuildMember,
+	PartyMember,
 	BossBattle,
 	BattleID,
 	Party,
@@ -152,10 +154,9 @@ function transformAgent(key: string, entity: GraphEntity): Agent {
 		}
 	}
 
-	// Extract guild memberships
-	const guilds = tripleValues(entity.triples, 'agent.membership.guild').map((v) =>
-		guildId(str(v))
-	);
+	// Extract single guild membership
+	const guildRaw = m.get('agent.membership.guild');
+	const guild_id = guildRaw ? guildId(str(guildRaw)) : null;
 
 	const stats: AgentStats = {
 		quests_completed: num(m.get('agent.stats.quests_completed')),
@@ -187,7 +188,7 @@ function transformAgent(key: string, entity: GraphEntity): Agent {
 		tier,
 		equipment: [],
 		skill_proficiencies: skillProfs as Record<SkillTag, SkillProficiency>,
-		guilds,
+		guild_id,
 		stats,
 		config: { provider: '', model: '', system_prompt: '', temperature: 0, max_tokens: 0, metadata: {} },
 		is_npc: m.get('agent.npc.flag') === true,
@@ -257,13 +258,23 @@ function transformGuild(key: string, entity: GraphEntity): Guild {
 	const m = tripleMap(entity.triples);
 
 	const questTypes = tripleValues(entity.triples, 'guild.routing.quest_type').map((v) => str(v));
+	const sharedTools = tripleValues(entity.triples, 'guild.resource.tool').map((v) => str(v));
+
+	// Extract members from guild.membership.agent triples
+	const memberAgentIds = tripleValues(entity.triples, 'guild.membership.agent').map((v) => str(v));
+	const members: GuildMember[] = memberAgentIds.map((aid) => ({
+		agent_id: agentId(aid) as unknown as AgentID,
+		rank: (str(m.get(`guild.member.${aid}.rank`), 'member') as GuildMember['rank']),
+		contribution: num(m.get(`guild.member.${aid}.contribution`)),
+		joined_at: str(m.get(`guild.member.${aid}.joined_at`))
+	}));
 
 	return {
 		id: guildId(key),
 		name: str(m.get('guild.identity.name'), 'Unknown Guild'),
 		description: str(m.get('guild.identity.description')),
 		status: str(m.get('guild.status.state'), 'active') as GuildStatus,
-		members: [],
+		members,
 		max_members: num(m.get('guild.config.max_members'), 50),
 		min_level: num(m.get('guild.config.min_level'), 1),
 		founded: str(m.get('guild.founding.date')),
@@ -274,7 +285,7 @@ function transformGuild(key: string, entity: GraphEntity): Guild {
 		quests_handled: num(m.get('guild.stats.quests_handled')),
 		success_rate: num(m.get('guild.stats.success_rate')),
 		quests_failed: num(m.get('guild.stats.quests_failed')),
-		shared_tools: [],
+		shared_tools: sharedTools,
 		quest_types: questTypes.length > 0 ? questTypes : undefined,
 		created_at: str(m.get('guild.lifecycle.created_at'))
 	};
@@ -307,15 +318,33 @@ function transformBattle(key: string, entity: GraphEntity): BossBattle {
 function transformParty(key: string, entity: GraphEntity): Party {
 	const m = tripleMap(entity.triples);
 
+	// Extract members from party.membership.member triples
+	const memberAgentIds = tripleValues(entity.triples, 'party.membership.member').map((v) => str(v));
+	const members: PartyMember[] = memberAgentIds.map((aid) => ({
+		agent_id: agentId(aid) as unknown as AgentID,
+		role: str(m.get(`party.member.${aid}.role`), 'executor') as PartyMember['role'],
+		skills: [],
+		joined_at: ''
+	}));
+
+	// Extract sub-quest assignments from party.assignment.{questID} triples
+	const subQuestMap: Record<string, string> = {};
+	for (const triple of entity.triples) {
+		const match = triple.predicate.match(/^party\.assignment\.(.+)$/);
+		if (match) {
+			subQuestMap[match[1]] = str(triple.object);
+		}
+	}
+
 	return {
 		id: partyId(key),
 		name: str(m.get('party.identity.name'), 'Unknown Party'),
 		status: str(m.get('party.status.state'), 'forming') as Party['status'],
 		quest_id: questId(str(m.get('party.quest'))),
 		lead: agentId(str(m.get('party.lead'))),
-		members: [],
+		members,
 		strategy: (str(m.get('party.strategy'), 'balanced') as Party['strategy']),
-		sub_quest_map: {},
+		sub_quest_map: subQuestMap,
 		shared_context: [],
 		sub_results: {},
 		formed_at: str(m.get('party.lifecycle.formed_at'))

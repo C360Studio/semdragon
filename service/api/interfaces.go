@@ -61,7 +61,7 @@ type StoreProvider interface {
 	Catalog() []agentstore.StoreItem
 	GetItem(itemID string) (*agentstore.StoreItem, bool)
 	Purchase(ctx context.Context, agentID domain.AgentID, itemID string,
-		currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*agentstore.OwnedItem, error)
+		currentXP int64, currentLevel int, agentGuild domain.GuildID) (*agentstore.OwnedItem, error)
 	CanAfford(itemID string, currentXP int64) (bool, int64)
 	GetInventory(agentID domain.AgentID) *agentstore.AgentInventory
 	UseConsumable(ctx context.Context, agentID domain.AgentID,

@@ -980,18 +980,11 @@ func TestAutonomousGuildJoining(t *testing.T) {
 		case <-deadline:
 			t.Fatal("timed out waiting for autonomous guild join")
 		case <-time.After(100 * time.Millisecond):
-			agentGuilds := guilds.GetAgentGuilds(domain.AgentID(agentID))
-			if len(agentGuilds) > 0 {
+			agentGuild := guilds.GetAgentGuild(domain.AgentID(agentID))
+			if agentGuild != "" {
 				// Verify they joined the correct guild
-				found := false
-				for _, g := range agentGuilds {
-					if g == domain.GuildID(guild.ID) {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("agent joined wrong guild, got %v, want %v", agentGuilds, guild.ID)
+				if agentGuild != domain.GuildID(guild.ID) {
+					t.Errorf("agent joined wrong guild, got %v, want %v", agentGuild, guild.ID)
 				}
 				return
 			}
@@ -1051,13 +1044,13 @@ func TestNoGuildJoiningBelowMinLevel(t *testing.T) {
 	// Wait for several heartbeats — agent should NOT join
 	time.Sleep(800 * time.Millisecond)
 
-	agentGuilds := guilds.GetAgentGuilds(domain.AgentID(agentID))
-	if len(agentGuilds) > 0 {
-		t.Errorf("agent at level 3 should not join guild (min level = 10), but joined %v", agentGuilds)
+	agentGuild := guilds.GetAgentGuild(domain.AgentID(agentID))
+	if agentGuild != "" {
+		t.Errorf("agent at level 3 should not join guild (min level = 10), but joined %v", agentGuild)
 	}
 }
 
-func TestNoGuildJoiningAtMaxGuilds(t *testing.T) {
+func TestNoGuildJoiningWhenAlreadyGuilded(t *testing.T) {
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
@@ -1069,7 +1062,6 @@ func TestNoGuildJoiningAtMaxGuilds(t *testing.T) {
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
 	config.GuildJoinMinLevel = 1
-	config.MaxGuildsPerAgent = 1 // Max 1 guild
 
 	guilds := setupGuildComponent(t, client, "guildmax")
 	defer guilds.Stop(5 * time.Second)
@@ -1079,7 +1071,7 @@ func TestNoGuildJoiningAtMaxGuilds(t *testing.T) {
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 
-	// Create two guilds
+	// Create two guilds — the agent should not join either since it already has one
 	if _, err := guilds.CreateGuild(ctx, guildformation.CreateGuildParams{
 		Name:      "Guild One",
 		Culture:   "First guild",
@@ -1097,16 +1089,16 @@ func TestNoGuildJoiningAtMaxGuilds(t *testing.T) {
 		t.Fatalf("CreateGuild 2 failed: %v", err)
 	}
 
-	// Create agent already in 1 guild (at max)
+	// Create agent already belonging to a guild — single-guild semantics prevent joining another
 	agentInstance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
 	agent := &agentprogression.Agent{
 		ID:        agentID,
-		Name:      "maxguild-agent",
+		Name:      "alreadyguilded-agent",
 		Status:    domain.AgentIdle,
 		Level:     5,
 		Tier:      domain.TierApprentice,
-		Guilds:    []domain.GuildID{"existing-guild"}, // already at max (1)
+		Guild:     "existing-guild", // already in a guild
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -1119,9 +1111,9 @@ func TestNoGuildJoiningAtMaxGuilds(t *testing.T) {
 	// Wait for several heartbeats — agent should NOT join another guild
 	time.Sleep(800 * time.Millisecond)
 
-	agentGuilds := guilds.GetAgentGuilds(domain.AgentID(agentID))
-	if len(agentGuilds) > 0 {
-		t.Errorf("agent at MaxGuildsPerAgent should not join more guilds, but joined %v", agentGuilds)
+	agentGuild := guilds.GetAgentGuild(domain.AgentID(agentID))
+	if agentGuild != "" {
+		t.Errorf("agent already in a guild should not join another, but joined %v", agentGuild)
 	}
 }
 

@@ -300,7 +300,7 @@ func (c *Component) executeShop(ctx context.Context, agent *agentprogression.Age
 		return nil
 	}
 
-	_, err := c.store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guilds)
+	_, err := c.store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guild)
 	if err != nil {
 		c.logger.Warn("autonomous shop purchase failed",
 			"agent_id", agent.ID,
@@ -390,7 +390,7 @@ func (c *Component) executeShopStrategic(ctx context.Context, agent *agentprogre
 				return nil
 			}
 
-			_, err := c.store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guilds)
+			_, err := c.store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guild)
 			if err != nil {
 				c.logger.Warn("autonomous strategic purchase failed",
 					"agent_id", agent.ID,
@@ -650,11 +650,10 @@ func (c *Component) joinGuildAction() action {
 			if agent.Status != domain.AgentIdle && agent.Status != domain.AgentCooldown {
 				return false
 			}
-			// Use agent entity's Guilds field (from KV snapshot) for the guard.
-			// Agent.Guilds may be stale since JoinGuild doesn't update the agent entity,
-			// but executeJoinGuild filters out already-joined guilds via GetAgentGuilds
-			// and handles "already a member" errors gracefully.
-			return len(agent.Guilds) < c.config.MaxGuildsPerAgent
+			// Use agent entity's Guild field (from KV snapshot) for the guard.
+			// The field may be stale but executeJoinGuild uses the authoritative
+			// in-memory projection and handles "already a member" errors gracefully.
+			return agent.Guild == ""
 		},
 		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
 			return c.executeJoinGuild(ctx, agent)
@@ -666,7 +665,13 @@ func (c *Component) joinGuildAction() action {
 // Logs all N choices for observability before picking.
 func (c *Component) executeJoinGuild(ctx context.Context, agent *agentprogression.Agent) error {
 	allGuilds := c.guilds.ListGuilds()
-	currentGuildIDs := c.guilds.GetAgentGuilds(domain.AgentID(agent.ID))
+	currentGuild := c.guilds.GetAgentGuild(domain.AgentID(agent.ID))
+
+	// Build a slice for scoreGuilds filtering (already-member check).
+	var currentGuildIDs []domain.GuildID
+	if currentGuild != "" {
+		currentGuildIDs = []domain.GuildID{currentGuild}
+	}
 
 	suggestions := c.scoreGuilds(agent, allGuilds, currentGuildIDs)
 	if len(suggestions) == 0 {
@@ -887,10 +892,10 @@ func (c *Component) createGuildAction() action {
 				return false
 			}
 			// Only agents who are not already a guildmaster should propose.
-			// GetAgentGuilds uses the in-memory projection which is authoritative.
-			currentGuilds := c.guilds.GetAgentGuilds(agent.ID)
-			for _, gid := range currentGuilds {
-				guild, ok := c.guilds.GetGuild(gid)
+			// GetAgentGuild uses the in-memory projection which is authoritative.
+			currentGuild := c.guilds.GetAgentGuild(agent.ID)
+			if currentGuild != "" {
+				guild, ok := c.guilds.GetGuild(currentGuild)
 				if ok && guild.FoundedBy == agent.ID {
 					return false // Already a guildmaster
 				}
@@ -908,28 +913,30 @@ func (c *Component) createGuildAction() action {
 func (c *Component) executeCreateGuild(ctx context.Context, agent *agentprogression.Agent) error {
 	allGuilds := c.guilds.ListGuilds()
 
-	// Collect under-guilded agents from KV cache (exclude self).
+	// Collect unguilded agents from KV cache (exclude self).
 	c.trackersMu.RLock()
 	var candidates []*agentprogression.Agent
 	for _, tracker := range c.trackers {
 		if tracker.agent == nil || tracker.agent.ID == agent.ID {
 			continue
 		}
-		// Only consider agents not already in too many guilds.
-		peerGuilds := c.guilds.GetAgentGuilds(tracker.agent.ID)
-		if len(peerGuilds) < c.config.MaxGuildsPerAgent {
+		// Only consider agents not already in a guild.
+		if c.guilds.GetAgentGuild(tracker.agent.ID) == "" {
 			agentCopy := *tracker.agent
 			candidates = append(candidates, &agentCopy)
 		}
 	}
 	c.trackersMu.RUnlock()
 
-	// Score fellowship with each candidate. Use authoritative guild count
-	// from GetAgentGuilds (in-memory projection) rather than the potentially
-	// stale Agent.Guilds field from the KV snapshot.
+	// Score fellowship with each candidate. Use authoritative guild membership
+	// from GetAgentGuild (in-memory projection) rather than the potentially
+	// stale Agent.Guild field from the KV snapshot.
 	var fellows []fellowCandidate
 	for _, candidate := range candidates {
-		peerGuildCount := len(c.guilds.GetAgentGuilds(candidate.ID))
+		var peerGuildCount int
+		if c.guilds.GetAgentGuild(candidate.ID) != "" {
+			peerGuildCount = 1
+		}
 		score := scoreFellowship(agent, candidate, allGuilds, peerGuildCount)
 		if score > 0.3 { // Minimum fellowship threshold
 			fellows = append(fellows, fellowCandidate{agent: candidate, score: score})
@@ -1054,7 +1061,8 @@ func (c *Component) applyToGuildAction() action {
 			if agent.Status != domain.AgentIdle && agent.Status != domain.AgentCooldown {
 				return false
 			}
-			if len(agent.Guilds) >= c.config.MaxGuildsPerAgent {
+			// Only unguilded agents can apply.
+			if agent.Guild != "" {
 				return false
 			}
 			return c.guilds.HasPendingGuilds()
@@ -1068,7 +1076,12 @@ func (c *Component) applyToGuildAction() action {
 // executeApplyToGuild scores pending guilds and submits an application to the best match.
 func (c *Component) executeApplyToGuild(ctx context.Context, agent *agentprogression.Agent) error {
 	pending := c.guilds.ListPendingGuilds()
-	currentGuildIDs := c.guilds.GetAgentGuilds(agent.ID)
+	currentGuild := c.guilds.GetAgentGuild(agent.ID)
+
+	var currentGuildIDs []domain.GuildID
+	if currentGuild != "" {
+		currentGuildIDs = []domain.GuildID{currentGuild}
+	}
 
 	// Filter and score pending guilds using the same scoring infrastructure as joinGuild.
 	suggestions := c.scoreGuilds(agent, pending, currentGuildIDs)
@@ -1129,15 +1142,17 @@ func (c *Component) reviewGuildApplicationsAction() action {
 				return false
 			}
 			// Check: is this agent the founder of a pending guild with pending applications?
-			for _, gid := range c.guilds.GetAgentGuilds(agent.ID) {
-				guild, ok := c.guilds.GetGuild(gid)
-				if !ok || guild.Status != domain.GuildPending || guild.FoundedBy != agent.ID {
-					continue
-				}
-				for _, app := range guild.Applications {
-					if app.Status == domain.ApplicationPending {
-						return true
-					}
+			gid := c.guilds.GetAgentGuild(agent.ID)
+			if gid == "" {
+				return false
+			}
+			guild, ok := c.guilds.GetGuild(gid)
+			if !ok || guild.Status != domain.GuildPending || guild.FoundedBy != agent.ID {
+				return false
+			}
+			for _, app := range guild.Applications {
+				if app.Status == domain.ApplicationPending {
+					return true
 				}
 			}
 			return false
@@ -1160,42 +1175,44 @@ const (
 
 // executeReviewGuildApplications reviews all pending applications for guilds founded by this agent.
 func (c *Component) executeReviewGuildApplications(ctx context.Context, agent *agentprogression.Agent) error {
-	for _, gid := range c.guilds.GetAgentGuilds(agent.ID) {
-		guild, ok := c.guilds.GetGuild(gid)
-		if !ok || guild.Status != domain.GuildPending || guild.FoundedBy != agent.ID {
+	gid := c.guilds.GetAgentGuild(agent.ID)
+	if gid == "" {
+		return nil
+	}
+	guild, ok := c.guilds.GetGuild(gid)
+	if !ok || guild.Status != domain.GuildPending || guild.FoundedBy != agent.ID {
+		return nil
+	}
+
+	for _, app := range guild.Applications {
+		if app.Status != domain.ApplicationPending {
 			continue
 		}
 
-		for _, app := range guild.Applications {
-			if app.Status != domain.ApplicationPending {
-				continue
-			}
+		score, reason := c.scoreApplication(agent, guild, &app)
+		accepted := score >= reviewAcceptThreshold
 
-			score, reason := c.scoreApplication(agent, guild, &app)
-			accepted := score >= reviewAcceptThreshold
-
-			decision := "rejected"
-			if accepted {
-				decision = "accepted"
-			}
-
-			reviewReason := fmt.Sprintf("%s (score: %.2f, %s)", decision, score, reason)
-
-			if err := c.guilds.ReviewApplication(ctx, guild.ID, app.ID, agent.ID, accepted, reviewReason); err != nil {
-				c.logger.Warn("failed to review guild application",
-					"guild_id", guild.ID,
-					"app_id", app.ID,
-					"error", err)
-				continue
-			}
-
-			c.logger.Info("founder reviewed guild application",
-				"guild_id", guild.ID,
-				"applicant", app.ApplicantID,
-				"decision", decision,
-				"score", fmt.Sprintf("%.3f", score),
-				"reason", reason)
+		decision := "rejected"
+		if accepted {
+			decision = "accepted"
 		}
+
+		reviewReason := fmt.Sprintf("%s (score: %.2f, %s)", decision, score, reason)
+
+		if err := c.guilds.ReviewApplication(ctx, guild.ID, app.ID, agent.ID, accepted, reviewReason); err != nil {
+			c.logger.Warn("failed to review guild application",
+				"guild_id", guild.ID,
+				"app_id", app.ID,
+				"error", err)
+			continue
+		}
+
+		c.logger.Info("founder reviewed guild application",
+			"guild_id", guild.ID,
+			"applicant", app.ApplicantID,
+			"decision", decision,
+			"score", fmt.Sprintf("%.3f", score),
+			"reason", reason)
 	}
 
 	return nil

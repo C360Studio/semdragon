@@ -258,14 +258,12 @@ describe('transformAgent', () => {
 		});
 	});
 
-	it('extracts multiple guild memberships', () => {
+	it('extracts single guild membership (last value wins via tripleMap)', () => {
 		const entity = graphEntity(AGENT_KEY, fullAgentTriples());
 		const agent = transformEntity('agent', AGENT_KEY, entity) as Agent;
 
-		// tripleMap only keeps the last value, but tripleValues collects all
-		expect(agent.guilds).toHaveLength(2);
-		expect(agent.guilds).toContain(guildId('c360.prod.game.board1.guild.datawranglers'));
-		expect(agent.guilds).toContain(guildId('c360.prod.game.board1.guild.codesmiths'));
+		// tripleMap uses last-write-wins, so the last guild triple wins
+		expect(agent.guild_id).toBe(guildId('c360.prod.game.board1.guild.codesmiths'));
 	});
 
 	it('provides hardcoded defaults for non-triple fields', () => {
@@ -444,11 +442,11 @@ describe('transformAgent', () => {
 		expect(agent.skill_proficiencies['analysis'].level).toBe(1);
 	});
 
-	it('returns empty guilds when no membership triples', () => {
+	it('returns null guild_id when no membership triple', () => {
 		const entity = graphEntity(AGENT_KEY, []);
 		const agent = transformEntity('agent', AGENT_KEY, entity) as Agent;
 
-		expect(agent.guilds).toEqual([]);
+		expect(agent.guild_id).toBeNull();
 	});
 });
 
@@ -619,12 +617,34 @@ describe('transformGuild', () => {
 		expect(guild.quests_failed).toBe(0);
 	});
 
-	it('provides hardcoded defaults for non-triple fields', () => {
+	it('provides empty defaults for non-triple fields', () => {
 		const entity = graphEntity(GUILD_KEY, []);
 		const guild = transformEntity('guild', GUILD_KEY, entity) as Guild;
 
 		expect(guild.members).toEqual([]);
 		expect(guild.shared_tools).toEqual([]);
+	});
+
+	it('extracts guild members from membership triples', () => {
+		const entity = graphEntity(GUILD_KEY, [
+			...fullGuildTriples(),
+			triple('guild.membership.agent', 'agent-alpha'),
+			triple('guild.member.agent-alpha.rank', 'guildmaster'),
+			triple('guild.member.agent-alpha.contribution', 42),
+			triple('guild.membership.agent', 'agent-beta'),
+			triple('guild.member.agent-beta.rank', 'member'),
+			triple('guild.member.agent-beta.contribution', 10),
+			triple('guild.resource.tool', 'grep'),
+			triple('guild.resource.tool', 'curl')
+		]);
+		const guild = transformEntity('guild', GUILD_KEY, entity) as Guild;
+
+		expect(guild.members).toHaveLength(2);
+		expect(guild.members[0].rank).toBe('guildmaster');
+		expect(guild.members[0].contribution).toBe(42);
+		expect(guild.members[1].rank).toBe('member');
+		expect(guild.members[1].contribution).toBe(10);
+		expect(guild.shared_tools).toEqual(['grep', 'curl']);
 	});
 });
 
@@ -709,7 +729,7 @@ describe('transformParty', () => {
 		expect(party.formed_at).toBe('');
 	});
 
-	it('provides hardcoded defaults for non-triple fields', () => {
+	it('provides empty defaults for non-triple fields', () => {
 		const entity = graphEntity(PARTY_KEY, []);
 		const party = transformEntity('party', PARTY_KEY, entity) as Party;
 
@@ -717,6 +737,27 @@ describe('transformParty', () => {
 		expect(party.sub_quest_map).toEqual({});
 		expect(party.shared_context).toEqual([]);
 		expect(party.sub_results).toEqual({});
+	});
+
+	it('extracts party members and sub-quest assignments from triples', () => {
+		const entity = graphEntity(PARTY_KEY, [
+			triple('party.identity.name', 'Alpha Strike'),
+			triple('party.status.state', 'active'),
+			triple('party.quest', QUEST_KEY),
+			triple('party.lead', AGENT_KEY),
+			triple('party.lifecycle.formed_at', '2026-01-14T12:00:00Z'),
+			triple('party.membership.member', 'agent-1'),
+			triple('party.member.agent-1.role', 'lead'),
+			triple('party.membership.member', 'agent-2'),
+			triple('party.member.agent-2.role', 'executor'),
+			triple('party.assignment.quest-sub-1', 'agent-2')
+		]);
+		const party = transformEntity('party', PARTY_KEY, entity) as Party;
+
+		expect(party.members).toHaveLength(2);
+		expect(party.members[0].role).toBe('lead');
+		expect(party.members[1].role).toBe('executor');
+		expect(party.sub_quest_map).toEqual({ 'quest-sub-1': 'agent-2' });
 	});
 });
 
@@ -824,7 +865,7 @@ describe('empty triples array', () => {
 		expect(agent.level).toBe(1);
 		expect(agent.tier).toBe(0); // tierFromLevel(1) = Apprentice
 		expect(Object.keys(agent.skill_proficiencies)).toHaveLength(0);
-		expect(agent.guilds).toEqual([]);
+		expect(agent.guild_id).toBeNull();
 	});
 
 	it('produces valid quest with all defaults', () => {
@@ -894,7 +935,7 @@ describe('schema contract validation', () => {
 		'agent.lifecycle.updated_at': 'updated_at',
 		'agent.skill.{tag}.level': 'skill_proficiencies[tag].level',
 		'agent.skill.{tag}.total_xp': 'skill_proficiencies[tag].total_xp',
-		'agent.membership.guild': 'guilds[]'
+		'agent.membership.guild': 'guild_id'
 	};
 
 	const AGENT_IGNORED: Record<string, string> = {

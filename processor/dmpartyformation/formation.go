@@ -158,8 +158,8 @@ func (e *PartyFormationEngine) formSpecialistParty(
 ) (*partycoord.Party, error) {
 	guildAgents := make(map[domain.GuildID][]agentprogression.Agent)
 	for _, agent := range agents {
-		for _, guildID := range agent.Guilds {
-			guildAgents[guildID] = append(guildAgents[guildID], agent)
+		if agent.Guild != "" {
+			guildAgents[agent.Guild] = append(guildAgents[agent.Guild], agent)
 		}
 	}
 
@@ -485,12 +485,7 @@ func (e *PartyFormationEngine) isGuildMatch(agent agentprogression.Agent, quest 
 	if quest.GuildPriority == nil {
 		return false
 	}
-	for _, guildID := range agent.Guilds {
-		if guildID == *quest.GuildPriority {
-			return true
-		}
-	}
-	return false
+	return agent.Guild == *quest.GuildPriority
 }
 
 func (e *PartyFormationEngine) recommendRole(agent agentprogression.Agent, perms domain.TierPermissions) domain.PartyRole {

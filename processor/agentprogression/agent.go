@@ -37,7 +37,7 @@ type Agent struct {
 	// Capabilities & Trust
 	Tier      domain.TrustTier `json:"tier"`
 	Equipment []domain.Tool    `json:"equipment"`
-	Guilds    []domain.GuildID `json:"guilds"`
+	Guild     domain.GuildID   `json:"guild,omitempty"`
 
 	// Skill Proficiencies
 	SkillProficiencies map[domain.SkillTag]domain.SkillProficiency `json:"skill_proficiencies"`
@@ -215,10 +215,10 @@ func (a *Agent) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "agent.lifecycle.updated_at", Object: a.UpdatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
-	// Guild memberships
-	for _, guildID := range a.Guilds {
+	// Guild membership (single guild)
+	if a.Guild != "" {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.membership.guild", Object: string(guildID),
+			Subject: entityID, Predicate: "agent.membership.guild", Object: string(a.Guild),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -377,7 +377,7 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 
 		// Relationships
 		case "agent.membership.guild":
-			a.Guilds = append(a.Guilds, domain.GuildID(domain.AsString(triple.Object)))
+			a.Guild = domain.GuildID(domain.AsString(triple.Object))
 		case "agent.assignment.quest":
 			questID := domain.QuestID(domain.AsString(triple.Object))
 			a.CurrentQuest = &questID

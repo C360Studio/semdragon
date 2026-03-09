@@ -38,9 +38,8 @@ type Component struct {
 	// Same pattern as dagMutexes in questdagexec: LoadOrStore for safe concurrent creation.
 	guildMutexes sync.Map // map[domain.GuildID]*sync.Mutex
 
-	// Agent to guild mapping - in-memory projection
-	agentGuilds   sync.Map   // map[domain.AgentID][]domain.GuildID
-	agentGuildsMu sync.Mutex // protects Load-then-Store atomicity on agentGuilds
+	// Agent to guild mapping - in-memory projection (each agent belongs to at most one guild)
+	agentGuilds sync.Map // map[domain.AgentID]domain.GuildID
 
 	// KV watcher for agent entity state changes (entity-centric architecture)
 	agentWatch  jetstream.KeyWatcher

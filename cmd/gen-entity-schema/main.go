@@ -180,7 +180,7 @@ func extractAgent() EntitySchema {
 		XPToLevel:          100,
 		DeathCount:         0,
 		Tier:               domain.TierApprentice,
-		Guilds:             nil,
+		Guild:              "",
 		SkillProficiencies: nil,
 		Stats:              agentprogression.AgentStats{},
 		IsNPC:              false,
@@ -198,7 +198,7 @@ func extractAgent() EntitySchema {
 		XPToLevel:   8000,
 		DeathCount:  2,
 		Tier:        domain.TierJourneyman,
-		Guilds:      []domain.GuildID{"guild-1", "guild-2"},
+		Guild:       domain.GuildID("guild-1"),
 		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			domain.SkillTag(markerSkillA): {Level: 3, TotalXP: 5000},
 			domain.SkillTag(markerSkillB): {Level: 2, TotalXP: 2000},

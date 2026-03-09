@@ -291,12 +291,6 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Default:     30000,
 				Category:    "shopping",
 			},
-			"max_guilds_per_agent": {
-				Type:        "int",
-				Description: "Maximum guilds an agent can autonomously join",
-				Default:     3,
-				Category:    "guild",
-			},
 			"guild_join_min_level": {
 				Type:        "int",
 				Description: "Minimum agent level to autonomously join guilds",

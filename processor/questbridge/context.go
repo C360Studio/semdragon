@@ -52,8 +52,8 @@ func (b *entityKnowledgeBuilder) build(ctx context.Context, quest *domain.Quest,
 		}
 	}
 
-	// Guild context — load agent's first guild
-	if len(agent.Guilds) > 0 {
+	// Guild context — load agent's guild if they belong to one
+	if agent.Guild != "" {
 		if s, ids := b.formatGuildContext(ctx, agent); s != "" {
 			sections = append(sections, s)
 			entityIDs = append(entityIDs, ids...)
@@ -99,13 +99,9 @@ func (b *entityKnowledgeBuilder) formatAgentIdentity(agent *agentprogression.Age
 		sb.WriteString(fmt.Sprintf("Skills: %s\n", strings.Join(skills, ", ")))
 	}
 
-	// Guild memberships
-	if len(agent.Guilds) > 0 {
-		var guildNames []string
-		for _, g := range agent.Guilds {
-			guildNames = append(guildNames, string(g))
-		}
-		sb.WriteString(fmt.Sprintf("Guilds: %s\n", strings.Join(guildNames, ", ")))
+	// Guild membership
+	if agent.Guild != "" {
+		sb.WriteString(fmt.Sprintf("Guild: %s\n", string(agent.Guild)))
 	}
 
 	// Track record
@@ -218,9 +214,9 @@ func (b *entityKnowledgeBuilder) formatPartyContext(ctx context.Context, quest *
 	return sb.String(), entityIDs
 }
 
-// formatGuildContext loads the agent's first guild and formats it.
+// formatGuildContext loads the agent's guild and formats it.
 func (b *entityKnowledgeBuilder) formatGuildContext(ctx context.Context, agent *agentprogression.Agent) (string, []string) {
-	guildID := agent.Guilds[0]
+	guildID := agent.Guild
 	guildEntity, err := b.graph.GetGuild(ctx, guildID)
 	if err != nil {
 		b.logger.Debug("failed to load guild for context", "guild_id", guildID, "error", err)

@@ -352,7 +352,7 @@ func (e *DefaultExecutor) buildAssembledSystemPrompt(agent *agentprogression.Age
 		Tier:                agent.Tier,
 		Level:               agent.Level,
 		Skills:              agent.SkillProficiencies,
-		Guilds:              agent.Guilds,
+		Guild:               agent.Guild,
 		SystemPrompt:        agent.Config.SystemPrompt,
 		PersonaPrompt:       personaPrompt,
 		QuestTitle:          quest.Title,

@@ -1719,7 +1719,7 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owned, purchaseErr := s.getStore().Purchase(ctx, agentID, req.ItemID, agent.XP, agent.Level, agent.Guilds)
+	owned, purchaseErr := s.getStore().Purchase(ctx, agentID, req.ItemID, agent.XP, agent.Level, agent.Guild)
 	if purchaseErr != nil {
 		s.logger.Warn("Purchase failed", "agent_id", agentID, "item_id", req.ItemID, "error", purchaseErr)
 		s.writeJSON(w, map[string]any{

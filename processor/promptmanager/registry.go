@@ -176,7 +176,7 @@ func (r *PromptRegistry) fragmentMatches(f *PromptFragment, ctx AssemblyContext)
 	}
 
 	// Guild gating
-	if f.GuildID != nil && !slices.Contains(ctx.Guilds, *f.GuildID) {
+	if f.GuildID != nil && ctx.Guild != *f.GuildID {
 		return false
 	}
 

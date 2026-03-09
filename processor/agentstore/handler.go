@@ -362,7 +362,7 @@ func (c *Component) SetStock(itemID string, inStock bool) error {
 // Purchase buys an item for an agent. Reads agent entity from KV, mutates
 // inventory + XP, and writes back via EmitEntityUpdate. If the agent is in any
 // guild and the item has a GuildDiscount > 0, the effective cost is reduced.
-func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*OwnedItem, error) {
+func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuild domain.GuildID) (*OwnedItem, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -381,7 +381,7 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 
 	// Apply guild discount if the agent is in any guild and the item offers one.
 	effectiveCost := item.XPCost
-	if item.GuildDiscount > 0 && len(agentGuilds) > 0 {
+	if item.GuildDiscount > 0 && agentGuild != "" {
 		effectiveCost = int64(float64(item.XPCost) * (1.0 - item.GuildDiscount))
 		if effectiveCost < 0 {
 			effectiveCost = 0
@@ -500,7 +500,7 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 		"agent_id", agentID,
 		"item_id", itemID,
 		"xp_spent", effectiveCost,
-		"guild_discount_applied", item.GuildDiscount > 0 && len(agentGuilds) > 0)
+		"guild_discount_applied", item.GuildDiscount > 0 && agentGuild != "")
 
 	return owned, nil
 }

@@ -240,9 +240,9 @@ func TestComponent_CreateGuild(t *testing.T) {
 	}
 
 	// Agent-to-guild mapping should be updated
-	agentGuilds := comp.GetAgentGuilds(founderID)
-	if len(agentGuilds) != 1 {
-		t.Errorf("Agent guild count = %d, want 1", len(agentGuilds))
+	agentGuild := comp.GetAgentGuild(founderID)
+	if agentGuild == "" {
+		t.Error("Founder should have a guild after CreateGuild")
 	}
 
 	// Metrics should be updated
@@ -337,12 +337,12 @@ func TestComponent_JoinGuild(t *testing.T) {
 	}
 
 	// Agent-to-guild mapping should include new member
-	memberGuilds := comp.GetAgentGuilds(memberID)
-	if len(memberGuilds) != 1 {
-		t.Errorf("Member guild count = %d, want 1", len(memberGuilds))
+	memberGuild := comp.GetAgentGuild(memberID)
+	if memberGuild == "" {
+		t.Error("Member should have a guild after JoinGuild")
 	}
-	if memberGuilds[0] != guildID {
-		t.Errorf("Member guild = %v, want %v", memberGuilds[0], guildID)
+	if memberGuild != guildID {
+		t.Errorf("Member guild = %v, want %v", memberGuild, guildID)
 	}
 }
 
@@ -480,9 +480,9 @@ func TestComponent_LeaveGuild(t *testing.T) {
 	}
 
 	// Agent-to-guild mapping should be cleared
-	memberGuilds := comp.GetAgentGuilds(memberID)
-	if len(memberGuilds) != 0 {
-		t.Errorf("Member guild count = %d, want 0 after leaving", len(memberGuilds))
+	memberGuild := comp.GetAgentGuild(memberID)
+	if memberGuild != "" {
+		t.Errorf("Member guild should be empty after leaving, got %v", memberGuild)
 	}
 }
 
@@ -623,13 +623,13 @@ func TestComponent_DisbandGuild(t *testing.T) {
 	}
 
 	// Agent-to-guild mappings should be cleared for all former members
-	founderGuilds := comp.GetAgentGuilds(founderID)
-	if len(founderGuilds) != 0 {
-		t.Errorf("Founder guild count = %d, want 0 after disband", len(founderGuilds))
+	founderGuild := comp.GetAgentGuild(founderID)
+	if founderGuild != "" {
+		t.Errorf("Founder guild should be empty after disband, got %v", founderGuild)
 	}
-	memberGuilds := comp.GetAgentGuilds(memberID)
-	if len(memberGuilds) != 0 {
-		t.Errorf("Member guild count = %d, want 0 after disband", len(memberGuilds))
+	memberGuild := comp.GetAgentGuild(memberID)
+	if memberGuild != "" {
+		t.Errorf("Member guild should be empty after disband, got %v", memberGuild)
 	}
 }
 
@@ -698,7 +698,7 @@ func TestComponent_ListGuilds(t *testing.T) {
 	}
 }
 
-func TestComponent_GetAgentGuilds_MultiGuild(t *testing.T) {
+func TestComponent_GetAgentGuild_SingleGuildConstraint(t *testing.T) {
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
@@ -706,8 +706,8 @@ func TestComponent_GetAgentGuilds_MultiGuild(t *testing.T) {
 	comp := setupGuildComponent(t, client, "multiguild")
 	defer comp.Stop(5 * time.Second)
 
-	// An agent can belong to multiple guilds
-	agentID := makeAgentID(t, comp.BoardConfig(), "multi-member")
+	// An agent can only belong to one guild at a time
+	agentID := makeAgentID(t, comp.BoardConfig(), "single-member")
 	f1 := makeAgentID(t, comp.BoardConfig(), "multi-f1")
 	f2 := makeAgentID(t, comp.BoardConfig(), "multi-f2")
 
@@ -720,16 +720,26 @@ func TestComponent_GetAgentGuilds_MultiGuild(t *testing.T) {
 		t.Fatalf("CreateGuild 2 failed: %v", err)
 	}
 
+	// Joining the first guild should succeed
 	if err := comp.JoinGuild(ctx, domain.GuildID(g1.ID), agentID); err != nil {
 		t.Fatalf("JoinGuild 1 failed: %v", err)
 	}
-	if err := comp.JoinGuild(ctx, domain.GuildID(g2.ID), agentID); err != nil {
-		t.Fatalf("JoinGuild 2 failed: %v", err)
+
+	agentGuild := comp.GetAgentGuild(agentID)
+	if agentGuild != domain.GuildID(g1.ID) {
+		t.Errorf("Agent guild = %v, want %v", agentGuild, g1.ID)
 	}
 
-	agentGuilds := comp.GetAgentGuilds(agentID)
-	if len(agentGuilds) != 2 {
-		t.Errorf("Agent guild count = %d, want 2", len(agentGuilds))
+	// Attempting to join a second guild should fail — single-guild constraint
+	err = comp.JoinGuild(ctx, domain.GuildID(g2.ID), agentID)
+	if err == nil {
+		t.Error("JoinGuild should fail when agent already belongs to a guild")
+	}
+
+	// Guild membership should remain the first guild
+	agentGuild = comp.GetAgentGuild(agentID)
+	if agentGuild != domain.GuildID(g1.ID) {
+		t.Errorf("Agent guild should remain %v after failed join, got %v", g1.ID, agentGuild)
 	}
 }
 

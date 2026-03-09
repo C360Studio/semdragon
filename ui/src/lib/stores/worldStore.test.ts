@@ -51,7 +51,7 @@ function createTestAgent(overrides: Partial<Agent> = {}): Agent {
 		tier: 1,
 		status: 'idle',
 		equipment: [],
-		guilds: [],
+		guild_id: null,
 		death_count: 0,
 		skill_proficiencies: {} as Agent['skill_proficiencies'],
 		stats: {

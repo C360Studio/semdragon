@@ -207,34 +207,33 @@ func (s *Service) calculateDerivedStats(agent *agentprogression.Agent, skillBars
 
 // getGuildMemberships retrieves guild membership details.
 func (s *Service) getGuildMemberships(ctx context.Context, agent *agentprogression.Agent) []GuildMembership {
-	memberships := make([]GuildMembership, 0, len(agent.Guilds))
+	if agent.Guild == "" {
+		return nil
+	}
 
-	for _, guildID := range agent.Guilds {
-		entity, err := s.graph.GetGuild(ctx, guildID)
-		if err != nil {
-			continue
-		}
-		guild := domain.GuildFromEntityState(entity)
-		if guild == nil {
-			continue
-		}
+	entity, err := s.graph.GetGuild(ctx, agent.Guild)
+	if err != nil {
+		return nil
+	}
+	guild := domain.GuildFromEntityState(entity)
+	if guild == nil {
+		return nil
+	}
 
-		// Find agent's membership info
-		for _, member := range guild.Members {
-			if member.AgentID == agent.ID {
-				memberships = append(memberships, GuildMembership{
-					GuildID:      guildID,
-					GuildName:    guild.Name,
-					Rank:         member.Rank,
-					Contribution: member.Contribution,
-					JoinedAt:     member.JoinedAt.Format("2006-01-02"),
-				})
-				break
-			}
+	// Find agent's membership info
+	for _, member := range guild.Members {
+		if member.AgentID == agent.ID {
+			return []GuildMembership{{
+				GuildID:      agent.Guild,
+				GuildName:    guild.Name,
+				Rank:         member.Rank,
+				Contribution: member.Contribution,
+				JoinedAt:     member.JoinedAt.Format("2006-01-02"),
+			}}
 		}
 	}
 
-	return memberships
+	return nil
 }
 
 // buildEquipmentList creates the equipment list from agent tools.

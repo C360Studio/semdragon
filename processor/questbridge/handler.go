@@ -1560,7 +1560,7 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		Tier:                 agent.Tier,
 		Level:                agent.Level,
 		Skills:               agent.SkillProficiencies,
-		Guilds:               agent.Guilds,
+		Guild:                agent.Guild,
 		SystemPrompt:         agent.Config.SystemPrompt,
 		PersonaPrompt:        personaPrompt,
 		QuestTitle:           quest.Title,

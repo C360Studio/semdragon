@@ -160,7 +160,7 @@ type mockStore struct {
 	listItemsFn        func(agentTier domain.TrustTier) []agentstore.StoreItem
 	catalogFn          func() []agentstore.StoreItem
 	getItemFn          func(itemID string) (*agentstore.StoreItem, bool)
-	purchaseFn         func(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*agentstore.OwnedItem, error)
+	purchaseFn         func(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds domain.GuildID) (*agentstore.OwnedItem, error)
 	canAffordFn        func(itemID string, currentXP int64) (bool, int64)
 	getInventoryFn     func(agentID domain.AgentID) *agentstore.AgentInventory
 	useConsumableFn    func(ctx context.Context, agentID domain.AgentID, consumableID string, questID *domain.QuestID) error
@@ -188,7 +188,7 @@ func (m *mockStore) GetItem(itemID string) (*agentstore.StoreItem, bool) {
 	return nil, false
 }
 
-func (m *mockStore) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds []domain.GuildID) (*agentstore.OwnedItem, error) {
+func (m *mockStore) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuilds domain.GuildID) (*agentstore.OwnedItem, error) {
 	if m.purchaseFn != nil {
 		return m.purchaseFn(ctx, agentID, itemID, currentXP, currentLevel, agentGuilds)
 	}
@@ -2098,7 +2098,7 @@ func TestHandlePurchase(t *testing.T) {
 		body       map[string]string
 		getAgentFn func(context.Context, domain.AgentID) (*graph.EntityState, error)
 		getItemFn  func(string) (*agentstore.StoreItem, bool)
-		purchaseFn func(context.Context, domain.AgentID, string, int64, int, []domain.GuildID) (*agentstore.OwnedItem, error)
+		purchaseFn func(context.Context, domain.AgentID, string, int64, int, domain.GuildID) (*agentstore.OwnedItem, error)
 		wantStatus int
 		checkBody  func(t *testing.T, body []byte)
 	}{
@@ -2111,7 +2111,7 @@ func TestHandlePurchase(t *testing.T) {
 			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
 				return &tool, true
 			},
-			purchaseFn: func(_ context.Context, _ domain.AgentID, _ string, _ int64, _ int, _ []domain.GuildID) (*agentstore.OwnedItem, error) {
+			purchaseFn: func(_ context.Context, _ domain.AgentID, _ string, _ int64, _ int, _ domain.GuildID) (*agentstore.OwnedItem, error) {
 				return &agentstore.OwnedItem{ItemID: "web_search", ItemName: "Web Search", XPSpent: 50}, nil
 			},
 			wantStatus: http.StatusOK,
@@ -2135,7 +2135,7 @@ func TestHandlePurchase(t *testing.T) {
 			getItemFn: func(_ string) (*agentstore.StoreItem, bool) {
 				return &tool, true
 			},
-			purchaseFn: func(_ context.Context, _ domain.AgentID, _ string, _ int64, _ int, _ []domain.GuildID) (*agentstore.OwnedItem, error) {
+			purchaseFn: func(_ context.Context, _ domain.AgentID, _ string, _ int64, _ int, _ domain.GuildID) (*agentstore.OwnedItem, error) {
 				return nil, errors.New("insufficient XP")
 			},
 			wantStatus: http.StatusOK,

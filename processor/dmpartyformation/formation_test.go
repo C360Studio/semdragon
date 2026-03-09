@@ -205,7 +205,7 @@ func TestIsGuildMatch_NilGuildPriority_ReturnsFalse(t *testing.T) {
 	eng := testEngine()
 
 	agent := makeAgent("agent-1", domain.TierJourneyman, 8)
-	agent.Guilds = []domain.GuildID{"guild-alpha"}
+	agent.Guild = domain.GuildID("guild-alpha")
 
 	quest := makeQuest("q-1", nil, 1)
 	// GuildPriority is nil (zero value for *GuildID).
@@ -219,7 +219,7 @@ func TestIsGuildMatch_AgentNotInPriorityGuild_ReturnsFalse(t *testing.T) {
 	eng := testEngine()
 
 	agent := makeAgent("agent-1", domain.TierJourneyman, 8)
-	agent.Guilds = []domain.GuildID{"guild-alpha"}
+	agent.Guild = domain.GuildID("guild-alpha")
 
 	quest := makeQuest("q-1", nil, 1)
 	priorityGuild := domain.GuildID("guild-beta")
@@ -235,7 +235,7 @@ func TestIsGuildMatch_AgentInPriorityGuild_ReturnsTrue(t *testing.T) {
 
 	agent := makeAgent("agent-1", domain.TierJourneyman, 8)
 	targetGuild := domain.GuildID("guild-alpha")
-	agent.Guilds = []domain.GuildID{"guild-other", targetGuild}
+	agent.Guild = targetGuild
 
 	quest := makeQuest("q-1", nil, 1)
 	quest.GuildPriority = &targetGuild
@@ -249,7 +249,7 @@ func TestIsGuildMatch_AgentHasNoGuilds_ReturnsFalse(t *testing.T) {
 	eng := testEngine()
 
 	agent := makeAgent("agent-1", domain.TierJourneyman, 8)
-	// agent.Guilds is nil (zero value).
+	// agent.Guild is "" (zero value — no guild).
 
 	quest := makeQuest("q-1", nil, 1)
 	priorityGuild := domain.GuildID("guild-alpha")
@@ -459,10 +459,10 @@ func TestSuggestPartyMembers_GuildMatchFlagAccurate(t *testing.T) {
 	quest.GuildPriority = &targetGuild
 
 	inGuild := makeAgent("in-guild", domain.TierJourneyman, 7)
-	inGuild.Guilds = []domain.GuildID{targetGuild}
+	inGuild.Guild = targetGuild
 
 	notInGuild := makeAgent("out-guild", domain.TierJourneyman, 9)
-	notInGuild.Guilds = []domain.GuildID{"some-other-guild"}
+	notInGuild.Guild = domain.GuildID("some-other-guild")
 
 	agents := []agentprogression.Agent{inGuild, notInGuild}
 

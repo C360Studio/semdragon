@@ -128,7 +128,7 @@ func TestScoreFellowship_DiverseUnguilded(t *testing.T) {
 	b.Stats.PeerReviewAvg = 4.0
 	b.Stats.PeerReviewCount = 3
 
-	score := scoreFellowship(a, b, nil, len(b.Guilds))
+	score := scoreFellowship(a, b, nil, 0)
 
 	// Expect high score: fully disjoint skills (1.0 * 0.4) + high reputation + close level + unguilded
 	if score < 0.7 {
@@ -141,9 +141,9 @@ func TestScoreFellowship_SameSkillsGuilded(t *testing.T) {
 	skills := []domain.SkillTag{domain.SkillAnalysis}
 	a := makeAgent("a", 16, skills)
 	b := makeAgent("b", 16, skills)
-	b.Guilds = []domain.GuildID{"existing-guild"}
+	b.Guild = domain.GuildID("existing-guild")
 
-	score := scoreFellowship(a, b, nil, len(b.Guilds))
+	score := scoreFellowship(a, b, nil, 1)
 
 	// Same skills (0.0 * 0.4) + low guild need (0.3 * 0.15) → low score
 	if score > 0.5 {
@@ -155,7 +155,7 @@ func TestScoreFellowship_FounderGuildPenalty(t *testing.T) {
 	// Peer already in founder's guild should get extra penalty.
 	a := makeAgent("a", 16, []domain.SkillTag{domain.SkillAnalysis})
 	b := makeAgent("b", 16, []domain.SkillTag{domain.SkillCodeGen})
-	b.Guilds = []domain.GuildID{"founders-guild"}
+	b.Guild = domain.GuildID("founders-guild")
 
 	guild := &domain.Guild{
 		ID:        "founders-guild",
@@ -166,8 +166,8 @@ func TestScoreFellowship_FounderGuildPenalty(t *testing.T) {
 		},
 	}
 
-	scoreWithPenalty := scoreFellowship(a, b, []*domain.Guild{guild}, len(b.Guilds))
-	scoreWithoutPenalty := scoreFellowship(a, b, nil, len(b.Guilds))
+	scoreWithPenalty := scoreFellowship(a, b, []*domain.Guild{guild}, 1)
+	scoreWithoutPenalty := scoreFellowship(a, b, nil, 1)
 
 	if scoreWithPenalty >= scoreWithoutPenalty {
 		t.Errorf("founder guild penalty should reduce score: with=%.3f, without=%.3f",
@@ -181,8 +181,8 @@ func TestScoreFellowship_LevelProximity(t *testing.T) {
 	near := makeAgent("near", 16, []domain.SkillTag{domain.SkillCodeGen})
 	far := makeAgent("far", 5, []domain.SkillTag{domain.SkillCodeGen})
 
-	scoreNear := scoreFellowship(a, near, nil, len(near.Guilds))
-	scoreFar := scoreFellowship(a, far, nil, len(far.Guilds))
+	scoreNear := scoreFellowship(a, near, nil, 0)
+	scoreFar := scoreFellowship(a, far, nil, 0)
 
 	if scoreNear <= scoreFar {
 		t.Errorf("near level should score higher: near=%.3f, far=%.3f", scoreNear, scoreFar)

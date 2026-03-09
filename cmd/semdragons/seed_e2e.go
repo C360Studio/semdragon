@@ -250,7 +250,7 @@ func seedOneAgent(
 		XPToLevel:          xpToNext,
 		Tier:               tier,
 		IsNPC:              spec.isNPC,
-		Guilds:             nil,
+		Guild:              "",
 		SkillProficiencies: skillProfs,
 		Stats: agentprogression.AgentStats{
 			QuestsCompleted: spec.level * 5,
