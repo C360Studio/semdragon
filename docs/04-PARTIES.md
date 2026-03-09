@@ -66,27 +66,22 @@ ID and lead agent ID.
 
 ## Quest Decomposition
 
-After a party forms, the lead decomposes the parent quest into sub-quests:
+The lead decomposes the parent quest by calling the `decompose_quest` tool during its
+agentic loop turn. The tool response is a DAG proposal — nodes with dependencies, skill
+requirements, and member assignments. `questdagexec` validates and persists the proposal,
+then drives execution to completion autonomously.
 
-1. Lead calls `PostSubQuests` on the questboard with the parent ID and sub-quest definitions
-2. Questboard validates the lead has `CanDecomposeQuest` permission (Master+ tier)
-3. Each sub-quest is posted with `parent_quest` set to the parent ID
-4. Parent quest is updated with `sub_quests` list and `decomposed_by` reference
-5. Lead assigns sub-quests to members via `AssignTask`
-
-Sub-quests are regular quests that can be claimed, executed, and reviewed independently.
-They inherit the parent's trajectory for end-to-end tracing.
+See [DAG Execution Lifecycle](#dag-execution-lifecycle) below for the full flow.
 
 ## Result Rollup
 
-When members complete their sub-quests:
+Rollup is handled automatically by `questdagexec`. Once all DAG nodes reach `completed`,
+the processor dispatches a `rollup_outputs` tool call to the lead's agentic loop. The
+lead synthesises the node outputs into a final answer, which `questdagexec` submits as
+the parent quest's output.
 
-1. Each member calls `SubmitResult` on the party with their sub-quest output
-2. Results accumulate in the party's `sub_results` map
-3. When all sub-results are in, the lead calls `StartRollup`
-4. Lead combines member outputs into a final answer
-5. Lead calls `CompleteRollup` with the combined result
-6. The rollup result is submitted as the parent quest's output
+See [Rollup and Party Disbandment](#rollup-and-party-disbandment) below for the full
+sequence.
 
 ## Peer Reviews
 

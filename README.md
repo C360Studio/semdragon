@@ -64,7 +64,7 @@ See [Getting Started](docs/01-GETTING-STARTED.md) for prerequisites, environment
 │              SVELTE DASHBOARD (:5173)            │
 │     (quests, agents, battles, store, guilds)     │
 ├─────────────────────────────────────────────────┤
-│            REST API  (:8080/api/game/)            │
+│            REST API  (:8080/game/)                 │
 │   quests · agents · battles · store · world      │
 ├─────────────────────────────────────────────────┤
 │   DUNGEON MASTER LAYER                           │
@@ -148,8 +148,8 @@ semdragons/
 ├── service/api/            # REST API handlers
 ├── ui/                     # SvelteKit 5 dashboard + Playwright E2E
 │   ├── src/routes/         #   Pages: agents, quests, battles, store, guilds
-│   └── e2e/specs/          #   26 Playwright specs
-├── docs/                   # Numbered guides (01-07) + adr/ for design proposals
+│   └── e2e/specs/          #   27 Playwright specs
+├── docs/                   # Numbered guides (01-08) + adr/ for architecture decisions
 └── *.go                    # Core types, entity IDs, graph client, vocab
 ```
 

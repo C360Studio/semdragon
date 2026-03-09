@@ -110,35 +110,99 @@ Environment variables (set in `.env` or inline):
 | `SEED_E2E` | Set to `true` to pre-populate agents, quests, and guilds |
 | `SEMDRAGONS_API_KEY` | Auth key for write endpoints (empty = no auth) |
 
-### Agent Workspace
+### Agent Workspace and Sandbox
 
-Agents can read, write, list, and search files during quest execution. By default these
-operations target an empty `.workspace/` directory. To give agents access to your project:
+Agents use tools (`read_file`, `write_file`, `run_command`, etc.) during quest execution.
+**These tools need a workspace directory to operate in.** The workspace defines both what
+files agents can access and where they are contained.
+
+#### Docker Compose (recommended)
+
+Docker Compose mounts a host directory into the container at `/workspace`. The default config
+sets `sandbox_dir: "/workspace"` on both `questbridge` and `questtools`, so agents are
+confined to that mount.
+
+```yaml
+# From docker-compose.yml (backend service)
+volumes:
+  - ${WORKSPACE:-./.workspace}:/workspace
+```
+
+To give agents access to your project files:
 
 ```bash
 WORKSPACE=./my-project make up-cloud
 ```
 
-The workspace is mounted at `/workspace` inside the container. Both `questbridge` and
-`questtools` enforce a sandbox — agents cannot access anything outside the mounted directory.
-Tool access is also gated by trust tier:
-
-| Tool | Min Tier | Level |
-|------|----------|-------|
-| `read_file` | Apprentice | 1+ |
-| `list_directory` | Apprentice | 1+ |
-| `search_text` | Apprentice | 1+ |
-| `graph_query` | Apprentice | 1+ |
-| `patch_file` | Journeyman | 6+ |
-| `http_request` | Journeyman | 6+ |
-| `write_file` | Expert | 11+ |
-| `run_tests` | Expert | 11+ |
-| `run_command` | Master | 16+ |
+Without the `WORKSPACE` variable, a default `.workspace/` directory is created and mounted.
+Either way, the Docker mount itself is a hard boundary — agents literally cannot see files
+outside the mounted directory because they don't exist inside the container.
 
 **Scope your workspace.** Mount a project directory, not your home folder or root filesystem.
 Agents operate autonomously and a misconfigured quest could modify or delete files. The
 sandbox prevents escape, but it cannot prevent an agent from overwriting files *within* the
 mounted directory.
+
+#### Running without Docker (local development)
+
+When running `go run ./cmd/semdragons` directly, there is no Docker mount — agents run on
+your host filesystem. The sandbox is then enforced purely by the `sandbox_dir` config:
+
+- **`sandbox_dir` is set** (e.g., `"/tmp/agent-work"`): All file tool paths are validated
+  against this directory. Path traversal (`../`) is detected and rejected. Symlink escape
+  is checked via `filepath.EvalSymlinks`. `run_command` executes with `cmd.Dir` set to the
+  sandbox and a clean environment (only `PATH` and `HOME`).
+- **`sandbox_dir` is empty**: File tools (`read_file`, `write_file`, etc.) operate on the
+  **full filesystem** with no path validation. `run_command` refuses to execute entirely
+  (returns an error). This is the "explore the dashboard" mode — fine for testing without
+  real agent work.
+- **`sandbox_dir` points to a missing directory**: File tools will fail with path errors.
+  The default config ships with `sandbox_dir: "/workspace"` — this path exists inside the
+  Docker container but not on your host. When running locally, either create the directory
+  or change the path.
+
+**If you are running agents outside Docker, update `sandbox_dir`** in
+`config/semdragons.json` (under both `questbridge` and `questtools`) to a directory you
+are comfortable with agents reading and writing:
+
+```bash
+# Create a workspace directory for local development
+mkdir -p /tmp/semdragons-workspace
+
+# Then in config/semdragons.json, set both entries:
+#   "questbridge":  { "sandbox_dir": "/tmp/semdragons-workspace" }
+#   "questtools":   { "sandbox_dir": "/tmp/semdragons-workspace" }
+```
+
+#### Defense Layers
+
+The sandbox is defense-in-depth, not a single wall:
+
+| Layer | What it does | Enforced by |
+|-------|-------------|-------------|
+| Docker mount | Agents cannot see files outside the mounted directory | Docker/container runtime |
+| `sandbox_dir` config | Path validation on every file tool call | `questtools` + `executor.ToolRegistry` |
+| Path traversal check | Rejects `../` and symlink escapes | `validatePath()` in `executor/tools.go` |
+| Trust tier gating | Lower-tier agents cannot use dangerous tools | `questtools` checks tier before execution |
+| Clean environment | `run_command` strips env vars (only `PATH`, `HOME`) | `executor/tools.go` |
+
+**This sandbox prevents accidental escapes.** It is adequate for trusted agents in a
+controlled environment. For untrusted or adversarial agents, rely on container isolation
+(the Docker path) rather than the application-level sandbox alone.
+
+#### Tool Tier Requirements
+
+| Tool | Min Tier | Level | Notes |
+|------|----------|-------|-------|
+| `read_file` | Apprentice | 1+ | |
+| `list_directory` | Apprentice | 1+ | |
+| `search_text` | Apprentice | 1+ | |
+| `graph_query` | Apprentice | 1+ | Queries semsource entity graph |
+| `patch_file` | Journeyman | 6+ | Structured file modification |
+| `http_request` | Journeyman | 6+ | External API calls |
+| `write_file` | Expert | 11+ | |
+| `run_tests` | Expert | 11+ | Runs test suites in sandbox |
+| `run_command` | Master | 16+ | Requires sandbox; refuses without one |
 
 After startup:
 

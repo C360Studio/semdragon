@@ -205,42 +205,35 @@ party.disbanded  → {party_id: "p-456"}
 
 ---
 
-## Open Questions
+## Design Decisions
 
-1. **Guild formation**: Automatic based on demonstrated skills, or DM-created?
-   Probably both: auto-suggest, DM approves.
+The following questions arose during design and are now settled:
 
-2. **Inter-guild quests**: How do guilds collaborate on cross-domain quests?
-   Party system handles this - parties can draw from multiple guilds.
+- **Guild formation**: Both auto-suggest and DM-created. The `guildformation` processor performs
+  automatic clustering based on demonstrated skills and co-performance. The DM can also form guilds
+  manually via the API.
 
-3. **Agent memory across quests**: How much context carries over?
-   Guild library for persistent knowledge, party context for quest-scoped.
+- **Inter-guild quests**: The party system handles cross-guild collaboration. Parties can draw
+  members from multiple guilds; no separate inter-guild mechanism is needed.
 
-4. **Boids vs explicit assignment**: When does the DM override Boids suggestions?
-   DM always can. Boids is the default; DM intervenes when stakes are high.
+- **Agent memory**: Guild library for persistent cross-quest knowledge; party context for
+  quest-scoped memory. Agents are persistent KV entities and retain state across sessions.
 
-5. **Multi-session learning**: Do agents retain levels across sessions?
-   Yes - agents are persistent. Sessions are execution contexts, not agent lifetimes.
+- **Boids vs explicit assignment**: Boids is the default. DM modes (`full_auto`, `supervised`,
+  `manual`) control how much the DM overrides suggestions. In `supervised` and `manual` modes the
+  DM can intercept any boid suggestion before it becomes a claim.
 
-6. **Quest chains**: Long-running workflows that span multiple sessions?
-   Quest chains with persistent state. Parent quest stays open across sessions.
+- **Multi-session learning**: Yes. Agents are persistent entities stored in NATS KV; sessions are
+  execution contexts, not agent lifetimes. Levels and XP survive restarts.
 
-7. **PvP / competitive dynamics**: Should agents compete for quests?
-   The Boids engine already handles this implicitly via attraction scores.
-   Explicit competition could be interesting for A/B testing approaches.
+- **Quest chains**: Supported via `depends_on` with dependency validation. The parent quest remains
+  open across sessions until all dependencies resolve.
 
----
+- **Competitive dynamics**: The Boids engine handles competition implicitly via attraction scores.
+  Guild reputation further differentiates agents on shared quest pools, enabling A/B-style
+  competitive dynamics without explicit PvP mechanics.
 
-## What's Next
-
-- [x] Implement QuestBoard backed by semstreams (NATSQuestBoard)
-- [x] Implement DefaultBoidEngine with the six rules
-- [x] Wire up XP engine with real boss battle evaluators
-- [x] Build DM interface - ManualDM complete, automation modes pending
-- [x] Semstreams integration: Map GameEvents to trajectory spans
-- [x] Build guild auto-formation based on agent performance clustering
-- [x] Dashboard: The DM's scrying pool (visualize world state in real-time)
-- [x] Agent Store System: XP-based marketplace for tools and consumables
+For implementation details see [Getting Started](01-GETTING-STARTED.md).
 
 ---
 

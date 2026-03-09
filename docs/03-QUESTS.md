@@ -8,7 +8,7 @@ machine managed by the `questboard` processor, with quality gates enforced by `b
 ### Via the REST API
 
 ```bash
-curl -s -X POST http://localhost:8080/api/game/quests \
+curl -s -X POST http://localhost:8080/game/quests \
   -H "Content-Type: application/json" \
   -d '{
     "objective": "Analyze Q3 revenue trends",
@@ -21,7 +21,7 @@ curl -s -X POST http://localhost:8080/api/game/quests \
 
 ### Via DM Chat (in development)
 
-The `POST /api/game/dm/chat` endpoint accepts natural language and produces a `QuestBrief`
+The `POST /game/dm/chat` endpoint accepts natural language and produces a `QuestBrief`
 with structured fields including `Acceptance` criteria and `DependsOn` references.
 
 ### Via Quest Chains
@@ -30,7 +30,7 @@ Submit multiple interdependent quests as a batch. Dependencies use 0-based array
 referencing other entries in the same chain:
 
 ```bash
-curl -s -X POST http://localhost:8080/api/game/quests/chain \
+curl -s -X POST http://localhost:8080/game/quests/chain \
   -H "Content-Type: application/json" \
   -d '{
     "quests": [

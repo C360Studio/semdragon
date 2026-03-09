@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed** -- March 2026
+**Accepted** -- March 2026 (implemented; see [ADR-003](003-questdagexec-refactor.md) for subsequent refactor)
 
 ## Problem Statement
 

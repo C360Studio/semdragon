@@ -31,10 +31,11 @@ bucket that held the parent quest. This meant:
   which called `processDAGBucketEntry` again — an infinite loop requiring a revision
   comparison guard
 
-The refactor moves minimal init payload to `QUEST_DAGS` (written once by questbridge on
-DAG creation) and keeps the authoritative running state there, separate from the parent
-quest entity. The in-memory `dagCache` is a hot-path projection — the bucket is the source
-of truth.
+The refactor eliminated `QUEST_DAGS` entirely. All DAG state is now stored as `quest.dag.*`
+predicates on the parent quest entity in the graph's ENTITY_STATES bucket. `questbridge`
+writes these predicates directly when creating a DAG, and `questdagexec` reads/updates them
+via CAS on the parent quest entity. The in-memory `dagCache` is a hot-path projection — the
+entity state bucket is the source of truth.
 
 **Key takeaway**: the revision comparison guard, the merge logic (`nodeStateRank`,
 `mergeNodeLists`), and the CAS retry loop in `persistDAGState` existed *entirely* because
