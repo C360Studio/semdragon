@@ -81,6 +81,7 @@ export type BossBattle = Omit<RawBossBattle, 'id' | 'quest_id' | 'agent_id'> & {
 	id: BattleID;
 	quest_id: QuestID;
 	agent_id: AgentID;
+	loop_id?: string;
 };
 
 export type Party = Omit<RawParty, 'id' | 'quest_id' | 'lead' | 'members'> & {

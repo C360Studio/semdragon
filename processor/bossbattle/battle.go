@@ -24,6 +24,7 @@ type BossBattle struct {
 	AgentID domain.AgentID      `json:"agent_id"`
 	Level   domain.ReviewLevel  `json:"level"`
 	Status  domain.BattleStatus `json:"status"`
+	LoopID  string              `json:"loop_id,omitempty"`
 
 	Criteria    []domain.ReviewCriterion `json:"criteria"`
 	Results     []domain.ReviewResult    `json:"results,omitempty"`
@@ -59,6 +60,14 @@ func (b *BossBattle) Triples() []message.Triple {
 
 		// Lifecycle
 		{Subject: entityID, Predicate: "battle.lifecycle.started_at", Object: b.StartedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+	}
+
+	// Loop ID for trajectory observability (omitted when empty)
+	if b.LoopID != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "battle.execution.loop_id", Object: b.LoopID,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
 	}
 
 	// Criteria count
@@ -184,6 +193,10 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 				b.Verdict = &domain.BattleVerdict{}
 			}
 			b.Verdict.Feedback = domain.AsString(triple.Object)
+		// Execution metadata
+		case "battle.execution.loop_id":
+			b.LoopID = domain.AsString(triple.Object)
+
 		// Judges (legacy predicate — kept for backward compatibility)
 		case "battle.judge.id":
 			judgeIDs = append(judgeIDs, domain.AsString(triple.Object))

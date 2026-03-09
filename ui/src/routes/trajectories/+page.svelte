@@ -13,10 +13,22 @@
 	let leftPanelWidth = $state(280);
 	let rightPanelWidth = $state(320);
 
-	// Get unique trajectory IDs from quests
+	// Get unique trajectory IDs from quests and battles
 	const trajectoryIds = $derived(
-		[...new Set(worldStore.questList.map((q) => q.loop_id).filter((id): id is string => !!id))].slice(0, 20)
+		[...new Set([
+			...worldStore.questList.map((q) => q.loop_id),
+			...worldStore.battleList.map((b) => b.loop_id)
+		].filter((id): id is string => !!id))].slice(0, 30)
 	);
+
+	// Build lookup for trajectory source (quest or battle)
+	function trajectorySource(tid: string) {
+		const quest = worldStore.questList.find((q) => q.loop_id === tid);
+		if (quest) return { type: 'quest' as const, title: quest.title, status: quest.status, href: `/quests/${quest.id}` };
+		const battle = worldStore.battleList.find((b) => b.loop_id === tid);
+		if (battle) return { type: 'battle' as const, title: `Battle #${String(battle.id).slice(-6)}`, status: battle.status, href: `/battles/${battle.id}` };
+		return null;
+	}
 </script>
 
 <svelte:head>
@@ -50,12 +62,13 @@
 			<div class="trajectory-list" data-testid="trajectory-list">
 				<h2>Recent Trajectories</h2>
 				{#each trajectoryIds as trajectoryId}
-					{@const quest = worldStore.questList.find((q) => q.loop_id === trajectoryId)}
+					{@const source = trajectorySource(trajectoryId)}
 					<a href="/trajectories/{trajectoryId}" class="trajectory-item" data-testid="trajectory-item">
 						<span class="trajectory-id" data-testid="trajectory-item-id">{trajectoryId.slice(0, 12)}&hellip;</span>
-						{#if quest}
-							<span class="trajectory-quest" data-testid="trajectory-item-quest">{quest.title}</span>
-							<span class="trajectory-status" data-testid="trajectory-item-status" data-status={quest.status}>{quest.status}</span>
+						{#if source}
+							<span class="trajectory-type-badge" data-type={source.type}>{source.type}</span>
+							<span class="trajectory-quest" data-testid="trajectory-item-quest">{source.title}</span>
+							<span class="trajectory-status" data-testid="trajectory-item-status" data-status={source.status}>{source.status}</span>
 						{/if}
 					</a>
 				{:else}
@@ -133,6 +146,22 @@
 		font-size: 0.875rem;
 		color: var(--ui-text-tertiary);
 		flex-shrink: 0;
+	}
+
+	.trajectory-type-badge {
+		font-size: 0.625rem;
+		padding: 1px 6px;
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		font-weight: 600;
+		background: var(--ui-surface-tertiary);
+		color: var(--ui-text-tertiary);
+		flex-shrink: 0;
+	}
+
+	.trajectory-type-badge[data-type='battle'] {
+		background: var(--tier-master-container);
+		color: var(--tier-master);
 	}
 
 	.trajectory-quest {

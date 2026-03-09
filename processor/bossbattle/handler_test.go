@@ -8,6 +8,7 @@ import (
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/promptmanager"
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 )
 
@@ -482,6 +483,54 @@ func TestBossBattle_EntityID(t *testing.T) {
 	b := &BossBattle{ID: "c360.prod.game.board1.battle.abc"}
 	if got := b.EntityID(); got != string(b.ID) {
 		t.Errorf("EntityID() = %q, want %q", got, string(b.ID))
+	}
+}
+
+// battleToEntityState converts a BossBattle to graph.EntityState via Triples()
+// for round-trip reconstruction tests.
+func battleToEntityState(b *BossBattle) *graph.EntityState {
+	return &graph.EntityState{
+		ID:      b.EntityID(),
+		Triples: b.Triples(),
+	}
+}
+
+func TestBossBattle_LoopID_RoundTrip(t *testing.T) {
+	b := newTestBattle()
+	b.LoopID = "battle-c360-prod-game-board1-battle-abc123-deadbeef"
+	triples := b.Triples()
+
+	// Verify the triple is emitted
+	found := false
+	for _, tr := range triples {
+		if tr.Predicate == "battle.execution.loop_id" {
+			found = true
+			if tr.Object != b.LoopID {
+				t.Errorf("loop_id triple object = %v, want %q", tr.Object, b.LoopID)
+			}
+		}
+	}
+	if !found {
+		t.Error("battle.execution.loop_id triple not found")
+	}
+
+	// Verify round-trip through reconstruction
+	entity := battleToEntityState(b)
+	reconstructed := BattleFromEntityState(entity)
+	if reconstructed.LoopID != b.LoopID {
+		t.Errorf("reconstructed LoopID = %q, want %q", reconstructed.LoopID, b.LoopID)
+	}
+}
+
+func TestBossBattle_LoopID_EmptyNotEmitted(t *testing.T) {
+	b := newTestBattle()
+	b.LoopID = "" // heuristic evaluator — no trajectory
+	triples := b.Triples()
+
+	for _, tr := range triples {
+		if tr.Predicate == "battle.execution.loop_id" {
+			t.Error("battle.execution.loop_id should not be emitted when LoopID is empty")
+		}
 	}
 }
 
@@ -1920,7 +1969,7 @@ func TestDomainAwareEvaluator_NoLLMJudge_FallsBackToHeuristic(t *testing.T) {
 			},
 		},
 	}
-	e := NewDomainAwareEvaluator(catalog, nil, nil, nil)
+	e := NewDomainAwareEvaluator(catalog, nil, nil, nil, nil)
 
 	battle := &BossBattle{
 		ID:      "b1",
@@ -1947,7 +1996,7 @@ func TestDomainAwareEvaluator_NilRegistry_FallsBackToHeuristic(t *testing.T) {
 	catalog := &promptmanager.DomainCatalog{
 		JudgeSystemBase: "test judge",
 	}
-	e := NewDomainAwareEvaluator(catalog, nil, nil, nil) // nil registry, nil tokenLedger
+	e := NewDomainAwareEvaluator(catalog, nil, nil, nil, nil) // nil registry, nil tokenLedger, nil nats
 
 	battle := &BossBattle{
 		ID:      "b1",

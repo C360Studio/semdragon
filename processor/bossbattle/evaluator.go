@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/model"
 	agenticmodel "github.com/c360studio/semstreams/processor/agentic-model"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/promptmanager"
@@ -34,6 +36,7 @@ type EvaluationResult struct {
 	Pending          bool                  `json:"pending"`
 	PendingJudge     string                `json:"pending_judge,omitempty"`
 	PeerRatings      *domain.ReviewRatings `json:"peer_ratings,omitempty"`
+	LoopID           string                `json:"loop_id,omitempty"`
 }
 
 // computeVerdict builds an EvaluationResult from scored results and battle metadata.
@@ -137,6 +140,16 @@ var _ BattleEvaluator = (*DefaultBattleEvaluator)(nil)
 // judgeCapability is the model registry capability key for boss battle evaluation.
 const judgeCapability = "boss-battle"
 
+// trajectoryBucket is the NATS KV bucket name for storing agentic trajectories.
+const trajectoryBucket = "AGENT_TRAJECTORIES"
+
+// trajectoryWriter is the minimal interface required for writing battle trajectories.
+// Satisfied by *natsclient.Client — defined as an interface to avoid a direct import
+// and to keep the evaluator testable in isolation.
+type trajectoryWriter interface {
+	GetKeyValueBucket(ctx context.Context, name string) (jetstream.KeyValue, error)
+}
+
 // DomainAwareEvaluator extends DefaultBattleEvaluator with LLM-as-judge calls.
 // When an LLM judge is configured AND a model registry is available, it assembles
 // a judge prompt using the domain's JudgeSystemBase and calls the LLM.
@@ -147,15 +160,18 @@ type DomainAwareEvaluator struct {
 	assembler   *promptmanager.PromptAssembler
 	fallback    *DefaultBattleEvaluator
 	tokenLedger *tokenbudget.TokenLedger
+	nats        trajectoryWriter // for best-effort trajectory persistence; may be nil
 }
 
 // NewDomainAwareEvaluator creates an evaluator with domain catalog and model registry.
 // tokenLedger may be nil when token budget enforcement is not required.
+// nats may be nil when trajectory persistence is not needed.
 func NewDomainAwareEvaluator(
 	catalog *promptmanager.DomainCatalog,
 	registry model.RegistryReader,
 	assembler *promptmanager.PromptAssembler,
 	tokenLedger *tokenbudget.TokenLedger,
+	nats trajectoryWriter,
 ) *DomainAwareEvaluator {
 	return &DomainAwareEvaluator{
 		catalog:     catalog,
@@ -163,6 +179,7 @@ func NewDomainAwareEvaluator(
 		assembler:   assembler,
 		fallback:    NewDefaultBattleEvaluator(),
 		tokenLedger: tokenLedger,
+		nats:        nats,
 	}
 }
 
@@ -214,7 +231,7 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 	userMessage := formatOutputForJudge(output)
 
 	// Call the LLM
-	llmResults, checklistResults, feedback, peerRatings, tokenUsage, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
+	llmResults, checklistResults, feedback, peerRatings, tokenUsage, loopID, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
 
 	// Record token usage regardless of success/failure.
 	if e.tokenLedger != nil && (tokenUsage.PromptTokens > 0 || tokenUsage.CompletionTokens > 0) {
@@ -236,6 +253,7 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 
 	verdict := computeVerdict(results, battle, feedback, checklistResults...)
 	verdict.PeerRatings = peerRatings
+	verdict.LoopID = loopID
 	return verdict, nil
 }
 
@@ -250,16 +268,17 @@ func (e *DomainAwareEvaluator) hasLLMJudge(battle *BossBattle) bool {
 }
 
 // callLLMJudge makes a one-shot LLM call and parses the response into review results.
-// Returns results, checklist results, overall feedback, peer review ratings, token usage, and any error.
+// Returns results, checklist results, overall feedback, peer review ratings, token usage, loop ID, and any error.
+// The loop ID is non-empty when a trajectory was successfully queued for writing.
 func (e *DomainAwareEvaluator) callLLMJudge(
 	ctx context.Context,
 	endpoint *model.EndpointConfig,
 	systemPrompt, userMessage string,
 	battle *BossBattle,
-) ([]domain.ReviewResult, []ChecklistResult, string, *domain.ReviewRatings, agentic.TokenUsage, error) {
+) ([]domain.ReviewResult, []ChecklistResult, string, *domain.ReviewRatings, agentic.TokenUsage, string, error) {
 	client, err := agenticmodel.NewClient(endpoint)
 	if err != nil {
-		return nil, nil, "", nil, agentic.TokenUsage{}, fmt.Errorf("create LLM client: %w", err)
+		return nil, nil, "", nil, agentic.TokenUsage{}, "", fmt.Errorf("create LLM client: %w", err)
 	}
 
 	req := agentic.AgentRequest{
@@ -272,17 +291,72 @@ func (e *DomainAwareEvaluator) callLLMJudge(
 		Model: endpoint.Model,
 	}
 
+	callStart := time.Now()
 	resp, err := client.ChatCompletion(ctx, req)
+	callDuration := time.Since(callStart).Milliseconds()
 	if err != nil {
-		return nil, nil, "", nil, agentic.TokenUsage{}, fmt.Errorf("LLM chat completion: %w", err)
+		return nil, nil, "", nil, agentic.TokenUsage{}, "", fmt.Errorf("LLM chat completion: %w", err)
 	}
 
 	if resp.Status == agentic.StatusError {
-		return nil, nil, "", nil, resp.TokenUsage, fmt.Errorf("LLM returned error: %s", resp.Error)
+		return nil, nil, "", nil, resp.TokenUsage, "", fmt.Errorf("LLM returned error: %s", resp.Error)
+	}
+
+	// Build and persist a lightweight trajectory for observability.
+	// The loop ID links the battle entity to the trajectory in AGENT_TRAJECTORIES.
+	safeBattleID := strings.ReplaceAll(string(battle.ID), ".", "-")
+	loopID := fmt.Sprintf("battle-%s-%s", safeBattleID, domain.GenerateInstance())
+	now := time.Now()
+	traj := &agentic.Trajectory{
+		LoopID:         loopID,
+		StartTime:      callStart,
+		EndTime:        &now,
+		Outcome:        "completed",
+		TotalTokensIn:  resp.TokenUsage.PromptTokens,
+		TotalTokensOut: resp.TokenUsage.CompletionTokens,
+		Duration:       callDuration,
+		Steps: []agentic.TrajectoryStep{{
+			Timestamp: callStart,
+			StepType:  "model_call",
+			RequestID: fmt.Sprintf("battle-%s", battle.ID),
+			Prompt:    systemPrompt,
+			Response:  resp.Message.Content,
+			TokensIn:  resp.TokenUsage.PromptTokens,
+			TokensOut: resp.TokenUsage.CompletionTokens,
+			Duration:  callDuration,
+			Model:     endpoint.Model,
+			Messages: []agentic.ChatMessage{
+				{Role: "system", Content: systemPrompt},
+				{Role: "user", Content: userMessage},
+				{Role: "assistant", Content: resp.Message.Content},
+			},
+		}},
+	}
+	if e.nats != nil {
+		e.writeTrajectory(ctx, loopID, traj)
 	}
 
 	results, checklistResults, feedback, peerRatings, parseErr := parseJudgeResponse(resp.Message.Content, battle)
-	return results, checklistResults, feedback, peerRatings, resp.TokenUsage, parseErr
+	return results, checklistResults, feedback, peerRatings, resp.TokenUsage, loopID, parseErr
+}
+
+// writeTrajectory persists a battle trajectory to the AGENT_TRAJECTORIES KV bucket.
+// All failures are logged as warnings — never propagated — so a trajectory write
+// failure cannot affect the evaluation outcome.
+func (e *DomainAwareEvaluator) writeTrajectory(ctx context.Context, loopID string, traj *agentic.Trajectory) {
+	bucket, err := e.nats.GetKeyValueBucket(ctx, trajectoryBucket)
+	if err != nil {
+		slog.Warn("failed to get trajectory bucket", "bucket", trajectoryBucket, "error", err)
+		return
+	}
+	data, err := json.Marshal(traj)
+	if err != nil {
+		slog.Warn("failed to marshal battle trajectory", "loop_id", loopID, "error", err)
+		return
+	}
+	if _, err := bucket.Put(ctx, loopID, data); err != nil {
+		slog.Warn("failed to write battle trajectory", "loop_id", loopID, "error", err)
+	}
 }
 
 // judgeResponse is the expected JSON structure from the LLM judge.

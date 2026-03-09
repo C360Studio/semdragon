@@ -189,6 +189,16 @@
 					</dl>
 				</section>
 
+				{#if battle.loop_id}
+					<section class="trajectory-section">
+						<h2>LLM Trajectory</h2>
+						<a href="/trajectories/{battle.loop_id}" class="trajectory-link">
+							<span class="trajectory-icon">&#9654;</span>
+							View full judge trajectory timeline
+						</a>
+					</section>
+				{/if}
+
 				<ActivityFeed battleId={battle.id} />
 			{:else}
 				<div class="not-found">
@@ -294,14 +304,16 @@
 	.criteria-section,
 	.verdict-section,
 	.judges-section,
-	.timeline-section {
+	.timeline-section,
+	.trajectory-section {
 		margin-bottom: var(--spacing-xl);
 	}
 
 	.criteria-section h2,
 	.verdict-section h2,
 	.judges-section h2,
-	.timeline-section h2 {
+	.timeline-section h2,
+	.trajectory-section h2 {
 		font-size: 1rem;
 		margin-bottom: var(--spacing-md);
 	}
@@ -524,6 +536,29 @@
 
 	.timeline-list dd {
 		margin: 0;
+	}
+
+	.trajectory-link {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--ui-surface-secondary);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		color: var(--ui-interactive-primary);
+		text-decoration: none;
+		font-weight: 500;
+		transition: border-color 150ms ease;
+	}
+
+	.trajectory-link:hover {
+		border-color: var(--ui-border-interactive);
+		text-decoration: none;
+	}
+
+	.trajectory-icon {
+		font-size: 0.75rem;
 	}
 
 	.not-found {

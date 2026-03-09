@@ -17,10 +17,13 @@
 
 	const trajectoryId = $derived(page.params.id ?? '');
 	const quest = $derived(worldStore.questList.find((q) => q.loop_id === trajectoryId));
+	const battle = $derived(worldStore.battleList.find((b) => b.loop_id === trajectoryId));
 
 	$effect(() => {
 		if (quest) {
 			pageContext.set([{ type: 'quest', id: quest.id, label: quest.title }]);
+		} else if (battle) {
+			pageContext.set([{ type: 'battle', id: battle.id, label: `Battle #${String(battle.id).slice(-6)}` }]);
 		}
 		return () => pageContext.clear();
 	});
@@ -170,33 +173,40 @@
 						>
 					</a>
 				</div>
+			{:else if battle}
+				<div class="quest-context" data-testid="trajectory-battle-context">
+					<a href="/battles/{battle.id}" class="quest-link">
+						<span class="quest-title">Battle #{String(battle.id).slice(-6)}</span>
+						<span class="quest-status" data-status={battle.status}>{battle.status}</span>
+					</a>
+				</div>
+			{/if}
 
-				{#if quest.context_token_count || quest.context_sources?.length || quest.context_entities?.length}
-					<div class="context-metadata" data-testid="trajectory-context-metadata">
-						{#if quest.context_token_count}
-							<span class="context-chip"
-								>~{quest.context_token_count.toLocaleString()} context tokens</span
+			{#if quest && (quest.context_token_count || quest.context_sources?.length || quest.context_entities?.length)}
+				<div class="context-metadata" data-testid="trajectory-context-metadata">
+					{#if quest.context_token_count}
+						<span class="context-chip"
+							>~{quest.context_token_count.toLocaleString()} context tokens</span
+						>
+					{/if}
+					{#if quest.context_entities?.length}
+						<span class="context-chip"
+							>{quest.context_entities.length} entities</span
+						>
+					{/if}
+					{#if quest.context_sources?.length}
+						<details class="context-sources-detail">
+							<summary class="context-chip"
+								>{quest.context_sources.length} prompt fragments</summary
 							>
-						{/if}
-						{#if quest.context_entities?.length}
-							<span class="context-chip"
-								>{quest.context_entities.length} entities</span
-							>
-						{/if}
-						{#if quest.context_sources?.length}
-							<details class="context-sources-detail">
-								<summary class="context-chip"
-									>{quest.context_sources.length} prompt fragments</summary
-								>
-								<ul class="context-source-list">
-									{#each quest.context_sources as src}
-										<li><code>{src}</code></li>
-									{/each}
-								</ul>
-							</details>
-						{/if}
-					</div>
-				{/if}
+							<ul class="context-source-list">
+								{#each quest.context_sources as src}
+									<li><code>{src}</code></li>
+								{/each}
+							</ul>
+						</details>
+					{/if}
+				</div>
 			{/if}
 
 			{#if loading}

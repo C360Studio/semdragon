@@ -287,7 +287,7 @@ func (c *Component) Initialize() error {
 		promptRegistry := promptmanager.NewPromptRegistry()
 		promptRegistry.RegisterProviderStyles()
 		c.assembler = promptmanager.NewPromptAssembler(promptRegistry)
-		c.evaluator = NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler, c.tokenLedger)
+		c.evaluator = NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler, c.tokenLedger, c.deps.NATSClient)
 	} else {
 		c.evaluator = NewDefaultBattleEvaluator()
 	}

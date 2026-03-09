@@ -299,6 +299,8 @@ function transformGuild(key: string, entity: GraphEntity): Guild {
 function transformBattle(key: string, entity: GraphEntity): BossBattle {
 	const m = tripleMap(entity.triples);
 
+	const loopIdRaw = str(m.get('battle.execution.loop_id'));
+
 	return {
 		id: battleId(key),
 		quest_id: questId(str(m.get('battle.assignment.quest'))),
@@ -308,7 +310,8 @@ function transformBattle(key: string, entity: GraphEntity): BossBattle {
 		criteria: [],
 		results: [],
 		judges: [],
-		started_at: str(m.get('battle.lifecycle.started_at'))
+		started_at: str(m.get('battle.lifecycle.started_at')),
+		loop_id: loopIdRaw || undefined
 	};
 }
 

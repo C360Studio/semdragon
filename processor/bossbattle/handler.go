@@ -448,6 +448,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 		}
 		ab.battle.Results = result.Results
 		ab.battle.Verdict = &result.Verdict
+		ab.battle.LoopID = result.LoopID
 	}
 
 	// Persist final battle state (only if component is still running)
@@ -680,6 +681,7 @@ func battleFromEntityState(entity *graph.EntityState) *BossBattle {
 		AgentID:   domain.AgentID(semBattle.AgentID),
 		Level:     domain.ReviewLevel(semBattle.Level),
 		Status:    domain.BattleStatus(semBattle.Status),
+		LoopID:    semBattle.LoopID,
 		StartedAt: semBattle.StartedAt,
 	}
 	if semBattle.CompletedAt != nil {
