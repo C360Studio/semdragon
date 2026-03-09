@@ -67,14 +67,14 @@ ollama serve && ollama pull qwen2.5-coder:7b
 make up-ollama
 ```
 
-To switch cloud providers, set `SEMDRAGONS_CONFIG` before starting:
+To switch cloud providers, set `SEMDRAGONS_E2E_CONFIG` before starting:
 
 ```bash
 # Anthropic
-SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-e2e-anthropic.json make up-cloud
+SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json make up-cloud
 
 # OpenAI
-SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-e2e-openai.json make up-cloud
+SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json make up-cloud
 ```
 
 Stop everything with `make down`.
@@ -88,6 +88,7 @@ Environment variables (set in `.env` or inline):
 | `OPENAI_API_KEY` | OpenAI API key |
 | `WORKSPACE` | Directory mounted into the backend for agent file operations |
 | `SEED_E2E` | Set to `true` to pre-populate agents, quests, and guilds |
+| `SEMDRAGONS_E2E_CONFIG` | Config file name for cloud provider (default: Gemini) |
 | `SEMDRAGONS_API_KEY` | Auth key for write endpoints (empty = no auth) |
 
 ### Agent Workspace
@@ -318,6 +319,7 @@ You should see a chain of state changes as the processors react:
 2. **Boid suggestion** — `boidengine` computes attractions, suggests a claim
 3. **Agent claims** — quest status changes to `claimed`, agent status to `on_quest`
 4. **Quest starts** — `questbridge` detects `in_progress`, dispatches to LLM via AGENT stream
+4b. **Party decomposition** — if quest is complex, party lead decomposes via DAG; `questdagexec` drives sub-quest execution
 5. **LLM executes** — agent works the quest (requires a configured LLM provider)
 6. **Result submitted** — quest transitions to `in_review` (if review required) or `completed`
 7. **Boss battle** — `bossbattle` evaluates quality, emits verdict
@@ -397,9 +399,20 @@ make e2e-headed
 make e2e-install
 ```
 
-The 12 spec files in `ui/e2e/specs/` cover agent lifecycle, quest lifecycle, boss battles, SSE
+The 26 spec files in `ui/e2e/specs/` cover agent lifecycle, quest lifecycle, boss battles, SSE
 events, store purchases, tier gates, world state, and navigation. Backend-dependent specs
 auto-skip when no backend is reachable.
+
+For cloud LLM providers (requires API key in `.env`):
+
+```bash
+make e2e-gemini               # E2E with Gemini
+make e2e-anthropic            # E2E with Anthropic Claude
+make e2e-openai               # E2E with OpenAI
+make e2e-ollama               # E2E with local Ollama
+
+make e2e-help                 # Show all E2E targets and usage
+```
 
 ## Debugging
 

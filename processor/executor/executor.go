@@ -87,6 +87,7 @@ type DefaultExecutor struct {
 	registry        model.RegistryReader
 	toolRegistry    *ToolRegistry
 	promptAssembler *promptmanager.PromptAssembler // nil = legacy path
+	domainCatalog   *promptmanager.DomainCatalog   // nil = no checklist
 	maxTurns        int
 	maxTokens       int
 }
@@ -113,6 +114,13 @@ func WithMaxTokens(n int) Option {
 func WithPromptAssembler(pa *promptmanager.PromptAssembler) Option {
 	return func(e *DefaultExecutor) {
 		e.promptAssembler = pa
+	}
+}
+
+// WithDomainCatalog sets the domain catalog for structural checklist injection.
+func WithDomainCatalog(cat *promptmanager.DomainCatalog) Option {
+	return func(e *DefaultExecutor) {
+		e.domainCatalog = cat
 	}
 }
 
@@ -333,21 +341,28 @@ func (e *DefaultExecutor) buildAssembledSystemPrompt(agent *agentprogression.Age
 		}
 	}
 
+	// Inject structural checklist from domain catalog so agents self-check before submitting.
+	var checklist []promptmanager.ChecklistItem
+	if e.domainCatalog != nil && e.domainCatalog.ReviewConfig != nil {
+		checklist = e.domainCatalog.ReviewConfig.StructuralChecklist
+	}
+
 	ctx := promptmanager.AssemblyContext{
-		AgentID:          agent.ID,
-		Tier:             agent.Tier,
-		Level:            agent.Level,
-		Skills:           agent.SkillProficiencies,
-		Guilds:           agent.Guilds,
-		SystemPrompt:     agent.Config.SystemPrompt,
-		PersonaPrompt:    personaPrompt,
-		QuestTitle:       quest.Title,
-		QuestDescription: quest.Description,
-		QuestInput:       quest.Input,
-		RequiredSkills:   quest.RequiredSkills,
-		MaxDuration:      maxDuration,
-		MaxTokens:        quest.Constraints.MaxTokens,
-		Provider:         provider,
+		AgentID:             agent.ID,
+		Tier:                agent.Tier,
+		Level:               agent.Level,
+		Skills:              agent.SkillProficiencies,
+		Guilds:              agent.Guilds,
+		SystemPrompt:        agent.Config.SystemPrompt,
+		PersonaPrompt:       personaPrompt,
+		QuestTitle:          quest.Title,
+		QuestDescription:    quest.Description,
+		QuestInput:          quest.Input,
+		RequiredSkills:      quest.RequiredSkills,
+		MaxDuration:         maxDuration,
+		MaxTokens:           quest.Constraints.MaxTokens,
+		Provider:            provider,
+		StructuralChecklist: checklist,
 	}
 
 	result := e.promptAssembler.AssembleSystemPrompt(ctx)

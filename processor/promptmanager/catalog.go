@@ -67,4 +67,19 @@ type ReviewConfig struct {
 	// JudgesByLevel provides per-level judge overrides.
 	// When set, judges for the matching level take precedence over DefaultJudges.
 	JudgesByLevel map[domain.ReviewLevel][]domain.Judge
+
+	// StructuralChecklist defines binary pass/fail requirements that are checked
+	// alongside weighted criteria. Any checklist failure = automatic defeat
+	// regardless of criteria scores. Examples: "TDD required", "no tabs".
+	// These are also injected into agent task prompts so agents self-check.
+	StructuralChecklist []ChecklistItem
+}
+
+// ChecklistItem is a binary pass/fail structural requirement.
+// Unlike weighted criteria, checklist items have no score — they either pass or fail.
+type ChecklistItem struct {
+	// Name is a short identifier (e.g., "tdd-required").
+	Name string
+	// Requirement describes what must be true (e.g., "All code must include tests").
+	Requirement string
 }

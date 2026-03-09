@@ -130,6 +130,11 @@ type AssemblyContext struct {
 	// predecessor steps produced.
 	DependencyOutputs []DependencyOutput `json:"dependency_outputs,omitempty"`
 
+	// StructuralChecklist carries domain-specific pass/fail requirements that
+	// agents should self-check before submitting. These same items are enforced
+	// during boss battle review — any failure is automatic defeat.
+	StructuralChecklist []ChecklistItem `json:"structural_checklist,omitempty"`
+
 	// Resolution
 	Provider string // from resolved endpoint ("anthropic", "openai", etc.)
 }

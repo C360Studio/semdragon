@@ -28,23 +28,26 @@ type BattleEvaluator interface {
 
 // EvaluationResult holds the outcome of an evaluation.
 type EvaluationResult struct {
-	Results      []domain.ReviewResult `json:"results"`
-	Verdict      domain.BattleVerdict  `json:"verdict"`
-	Pending      bool                  `json:"pending"`
-	PendingJudge string                `json:"pending_judge,omitempty"`
-	PeerRatings  *domain.ReviewRatings `json:"peer_ratings,omitempty"`
+	Results          []domain.ReviewResult `json:"results"`
+	ChecklistResults []ChecklistResult     `json:"checklist_results,omitempty"`
+	Verdict          domain.BattleVerdict  `json:"verdict"`
+	Pending          bool                  `json:"pending"`
+	PendingJudge     string                `json:"pending_judge,omitempty"`
+	PeerRatings      *domain.ReviewRatings `json:"peer_ratings,omitempty"`
 }
 
 // computeVerdict builds an EvaluationResult from scored results and battle metadata.
 // Checks for human judge requirements (returns pending), then computes weighted score.
-func computeVerdict(results []domain.ReviewResult, battle *BossBattle, feedback string) *EvaluationResult {
+// Any checklist failure forces an automatic defeat regardless of criteria scores.
+func computeVerdict(results []domain.ReviewResult, battle *BossBattle, feedback string, checklistResults ...ChecklistResult) *EvaluationResult {
 	// Check for human judge requirement
 	for _, judge := range battle.Judges {
 		if judge.Type == domain.JudgeHuman {
 			return &EvaluationResult{
-				Results:      results,
-				Pending:      true,
-				PendingJudge: judge.ID,
+				Results:          results,
+				ChecklistResults: checklistResults,
+				Pending:          true,
+				PendingJudge:     judge.ID,
 			}
 		}
 	}
@@ -63,8 +66,21 @@ func computeVerdict(results []domain.ReviewResult, battle *BossBattle, feedback 
 		}
 	}
 
+	// Checklist failures are automatic defeats.
+	var failedChecks []string
+	for _, cl := range checklistResults {
+		if !cl.Passed {
+			allPassed = false
+			failedChecks = append(failedChecks, cl.Name)
+		}
+	}
+	if len(failedChecks) > 0 && feedback != "" {
+		feedback += fmt.Sprintf(" [STRUCTURAL FAILURES: %s]", strings.Join(failedChecks, ", "))
+	}
+
 	return &EvaluationResult{
-		Results: results,
+		Results:          results,
+		ChecklistResults: checklistResults,
 		Verdict: domain.BattleVerdict{
 			Passed:       allPassed,
 			QualityScore: totalScore,
@@ -178,6 +194,12 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 		return e.fallback.Evaluate(ctx, battle, quest, output)
 	}
 
+	// Resolve checklist from catalog
+	var checklist []promptmanager.ChecklistItem
+	if e.catalog.ReviewConfig != nil {
+		checklist = e.catalog.ReviewConfig.StructuralChecklist
+	}
+
 	// Assemble the judge prompt using domain catalog
 	assembled := e.assembler.AssembleJudgePrompt(
 		e.catalog.JudgeSystemBase,
@@ -185,13 +207,14 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 		quest.Title,
 		quest.Description,
 		endpoint.Provider,
+		checklist...,
 	)
 
 	// Format the quest output for the user message
 	userMessage := formatOutputForJudge(output)
 
 	// Call the LLM
-	llmResults, feedback, peerRatings, tokenUsage, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
+	llmResults, checklistResults, feedback, peerRatings, tokenUsage, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
 
 	// Record token usage regardless of success/failure.
 	if e.tokenLedger != nil && (tokenUsage.PromptTokens > 0 || tokenUsage.CompletionTokens > 0) {
@@ -211,7 +234,7 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 		feedback = "LLM judge evaluation complete"
 	}
 
-	verdict := computeVerdict(results, battle, feedback)
+	verdict := computeVerdict(results, battle, feedback, checklistResults...)
 	verdict.PeerRatings = peerRatings
 	return verdict, nil
 }
@@ -227,16 +250,16 @@ func (e *DomainAwareEvaluator) hasLLMJudge(battle *BossBattle) bool {
 }
 
 // callLLMJudge makes a one-shot LLM call and parses the response into review results.
-// Returns results, overall feedback, peer review ratings, token usage from the LLM, and any error.
+// Returns results, checklist results, overall feedback, peer review ratings, token usage, and any error.
 func (e *DomainAwareEvaluator) callLLMJudge(
 	ctx context.Context,
 	endpoint *model.EndpointConfig,
 	systemPrompt, userMessage string,
 	battle *BossBattle,
-) ([]domain.ReviewResult, string, *domain.ReviewRatings, agentic.TokenUsage, error) {
+) ([]domain.ReviewResult, []ChecklistResult, string, *domain.ReviewRatings, agentic.TokenUsage, error) {
 	client, err := agenticmodel.NewClient(endpoint)
 	if err != nil {
-		return nil, "", nil, agentic.TokenUsage{}, fmt.Errorf("create LLM client: %w", err)
+		return nil, nil, "", nil, agentic.TokenUsage{}, fmt.Errorf("create LLM client: %w", err)
 	}
 
 	req := agentic.AgentRequest{
@@ -251,15 +274,15 @@ func (e *DomainAwareEvaluator) callLLMJudge(
 
 	resp, err := client.ChatCompletion(ctx, req)
 	if err != nil {
-		return nil, "", nil, agentic.TokenUsage{}, fmt.Errorf("LLM chat completion: %w", err)
+		return nil, nil, "", nil, agentic.TokenUsage{}, fmt.Errorf("LLM chat completion: %w", err)
 	}
 
 	if resp.Status == agentic.StatusError {
-		return nil, "", nil, resp.TokenUsage, fmt.Errorf("LLM returned error: %s", resp.Error)
+		return nil, nil, "", nil, resp.TokenUsage, fmt.Errorf("LLM returned error: %s", resp.Error)
 	}
 
-	results, feedback, peerRatings, parseErr := parseJudgeResponse(resp.Message.Content, battle)
-	return results, feedback, peerRatings, resp.TokenUsage, parseErr
+	results, checklistResults, feedback, peerRatings, parseErr := parseJudgeResponse(resp.Message.Content, battle)
+	return results, checklistResults, feedback, peerRatings, resp.TokenUsage, parseErr
 }
 
 // judgeResponse is the expected JSON structure from the LLM judge.
@@ -269,6 +292,11 @@ type judgeResponse struct {
 		Score     float64 `json:"score"`
 		Reasoning string  `json:"reasoning"`
 	} `json:"criteria"`
+	Checklist []struct {
+		Name      string `json:"name"`
+		Passed    bool   `json:"passed"`
+		Reasoning string `json:"reasoning"`
+	} `json:"checklist,omitempty"`
 	OverallFeedback string `json:"overall_feedback"`
 	PeerReview      *struct {
 		Q1 int `json:"q1"`
@@ -277,23 +305,30 @@ type judgeResponse struct {
 	} `json:"peer_review,omitempty"`
 }
 
+// ChecklistResult holds the outcome of a single structural checklist item.
+type ChecklistResult struct {
+	Name      string `json:"name"`
+	Passed    bool   `json:"passed"`
+	Reasoning string `json:"reasoning"`
+}
+
 // parseJudgeResponse extracts per-criterion scores from the LLM response.
-// Returns results, overall feedback, peer review ratings, and any error.
+// Returns results, checklist results, overall feedback, peer review ratings, and any error.
 // Defensively handles malformed responses by returning an error (caller falls back to heuristic).
-func parseJudgeResponse(content string, battle *BossBattle) ([]domain.ReviewResult, string, *domain.ReviewRatings, error) {
+func parseJudgeResponse(content string, battle *BossBattle) ([]domain.ReviewResult, []ChecklistResult, string, *domain.ReviewRatings, error) {
 	// Extract JSON from response (may be wrapped in markdown code block)
 	jsonStr := extractJSON(content)
 	if jsonStr == "" {
-		return nil, "", nil, fmt.Errorf("no JSON found in LLM response")
+		return nil, nil, "", nil, fmt.Errorf("no JSON found in LLM response")
 	}
 
 	var resp judgeResponse
 	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
-		return nil, "", nil, fmt.Errorf("parse judge JSON: %w", err)
+		return nil, nil, "", nil, fmt.Errorf("parse judge JSON: %w", err)
 	}
 
 	if len(resp.Criteria) == 0 {
-		return nil, "", nil, fmt.Errorf("judge returned no criteria scores")
+		return nil, nil, "", nil, fmt.Errorf("judge returned no criteria scores")
 	}
 
 	// Map LLM scores to review results, matching by criterion name
@@ -324,7 +359,17 @@ func parseJudgeResponse(content string, battle *BossBattle) ([]domain.ReviewResu
 	}
 
 	if len(results) == 0 {
-		return nil, "", nil, fmt.Errorf("no matching criteria in judge response")
+		return nil, nil, "", nil, fmt.Errorf("no matching criteria in judge response")
+	}
+
+	// Extract checklist results if present
+	var checklistResults []ChecklistResult
+	for _, cl := range resp.Checklist {
+		checklistResults = append(checklistResults, ChecklistResult{
+			Name:      cl.Name,
+			Passed:    cl.Passed,
+			Reasoning: cl.Reasoning,
+		})
 	}
 
 	// Extract peer review ratings if present
@@ -337,7 +382,7 @@ func parseJudgeResponse(content string, battle *BossBattle) ([]domain.ReviewResu
 		}
 	}
 
-	return results, resp.OverallFeedback, peerRatings, nil
+	return results, checklistResults, resp.OverallFeedback, peerRatings, nil
 }
 
 // mergeResults combines LLM results with heuristic fallback for any unscored criteria.

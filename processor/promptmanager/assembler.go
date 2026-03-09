@@ -85,6 +85,19 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		usedIDs = append(usedIDs, "dependency-outputs")
 	}
 
+	// Inject structural checklist so agents self-check before submitting.
+	if len(ctx.StructuralChecklist) > 0 {
+		style := a.registry.GetStyle(ctx.Provider)
+		var reqs strings.Builder
+		reqs.WriteString("Your submission will be checked against these MANDATORY requirements. " +
+			"Any failure is an automatic review defeat. Self-check before submitting:\n")
+		for _, item := range ctx.StructuralChecklist {
+			reqs.WriteString(fmt.Sprintf("- %s: %s\n", item.Name, item.Requirement))
+		}
+		sections = append(sections, formatSection("Structural Requirements", reqs.String(), style))
+		usedIDs = append(usedIDs, "structural-checklist")
+	}
+
 	// Inject clarification answers from previous interactions (party lead or DM).
 	// These appear before agent overrides so the agent has context for its retry.
 	if len(ctx.ClarificationAnswers) > 0 {

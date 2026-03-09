@@ -42,7 +42,7 @@
         "url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
         "api_key_env": "OPENAI_API_KEY",
-        "max_tokens": 8192,
+        "max_tokens": 128000,
         "supports_tools": true
       }
     },
@@ -265,7 +265,7 @@
         "context": {
           "enabled": true,
           "compact_threshold": 0.6,
-          "tool_result_max_age": 3,
+          "tool_result_max_age": 20,
           "headroom_tokens": 6400,
           "summarization_model": "gpt-4o-mini"
         }

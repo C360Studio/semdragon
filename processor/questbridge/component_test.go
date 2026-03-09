@@ -309,17 +309,37 @@ func TestTaskMessageToolFiltering(t *testing.T) {
 		t.Fatal("Timed out waiting for TaskMessage")
 	}
 
-	// Verify no Journeyman-gated tools appear (read_file, write_file, list_directory, search_text
-	// all require TierJourneyman which is level 6+).
-	journeymanTools := map[string]bool{
+	// Apprentice-tier (level 1-5) agents should receive read-only tools
+	// (read_file, list_directory, search_text) but NOT Journeyman+ tools.
+	// Note: graph_query is NOT registered by RegisterBuiltins — it requires
+	// a live EntityQueryFunc and is registered separately via RegisterGraphQuery.
+	apprenticeTools := map[string]bool{
 		"read_file":      true,
-		"write_file":     true,
 		"list_directory": true,
 		"search_text":    true,
 	}
+	journeymanPlusTools := map[string]bool{
+		"write_file":   true,
+		"patch_file":   true,
+		"http_request": true,
+		"run_command":  true,
+		"run_tests":    true,
+	}
+
+	foundApprentice := map[string]bool{}
 	for _, tool := range taskMsg.Tools {
-		if journeymanTools[tool.Name] {
-			t.Errorf("Apprentice agent received Journeyman-gated tool %q", tool.Name)
+		if apprenticeTools[tool.Name] {
+			foundApprentice[tool.Name] = true
+		}
+		if journeymanPlusTools[tool.Name] {
+			t.Errorf("Apprentice agent received Journeyman+-gated tool %q", tool.Name)
+		}
+	}
+
+	// Verify apprentice read-only tools ARE present
+	for name := range apprenticeTools {
+		if !foundApprentice[name] {
+			t.Errorf("Apprentice agent missing expected tool %q", name)
 		}
 	}
 }

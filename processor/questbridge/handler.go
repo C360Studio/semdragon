@@ -689,8 +689,11 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		return
 	}
 
-	// All completed quests route through DM review.
-	// The domain config determines what happens: auto-pass, LLM judge, or human review.
+	// All quests route through in_review. Bossbattle determines the outcome:
+	// auto-pass (trivial quests), LLM judge, or human review based on the
+	// domain catalog's ReviewConfig and the quest's review level.
+	// Sub-quests are skipped by bossbattle and reviewed by the party lead
+	// via questdagexec instead.
 	quest.Status = domain.QuestInReview
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.submitted"); err != nil {
 		c.logger.Error("failed to emit quest submission for review",
@@ -1546,6 +1549,12 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		}
 	}
 
+	// Inject structural checklist from domain catalog so agents self-check before submitting.
+	var checklist []promptmanager.ChecklistItem
+	if c.config.DomainCatalog != nil && c.config.DomainCatalog.ReviewConfig != nil {
+		checklist = c.config.DomainCatalog.ReviewConfig.StructuralChecklist
+	}
+
 	assemblyCtx := promptmanager.AssemblyContext{
 		AgentID:              agent.ID,
 		Tier:                 agent.Tier,
@@ -1568,6 +1577,7 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		ClarificationAnswers: c.loadClarificationAnswers(quest),
 		ClarificationSource:  c.clarificationSource(quest),
 		DependencyOutputs:    c.loadDependencyOutputs(ctx, quest),
+		StructuralChecklist:  checklist,
 	}
 
 	return c.promptAssembler.AssembleSystemPrompt(assemblyCtx)

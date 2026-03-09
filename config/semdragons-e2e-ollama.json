@@ -282,7 +282,7 @@
         "context": {
           "enabled": true,
           "compact_threshold": 0.6,
-          "tool_result_max_age": 3,
+          "tool_result_max_age": 20,
           "headroom_tokens": 6400,
           "summarization_model": "ollama-coder"
         }

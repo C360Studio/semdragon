@@ -4,19 +4,15 @@
 # The base compose mockllm service uses profiles: ["mock"], so it is
 # automatically excluded when this override is used (no --profile mock).
 #
+# Only overrides that differ from the base docker-compose.yml are listed here.
+# The base already declares NATS URLs, SEED_E2E, API keys, etc.
+#
 # Examples:
 #   make up-cloud                                       # Gemini (default)
-#   SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-e2e-anthropic.json make up-cloud
+#   SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json make up-cloud
 
 services:
   backend:
     environment:
+      SEMDRAGONS_CONFIG: /etc/semdragons/${SEMDRAGONS_E2E_CONFIG:-semdragons-e2e-gemini.json}
       SEMDRAGONS_LOG_LEVEL: "${SEMDRAGONS_LOG_LEVEL:-info}"
-      SEMDRAGONS_NATS_URLS: nats://nats:4222
-      SEMDRAGONS_CONFIG: "${SEMDRAGONS_CONFIG:-/etc/semdragons/semdragons-e2e-gemini.json}"
-      SEED_E2E: "${SEED_E2E:-false}"
-      SEED_AGENTS: "${SEED_AGENTS:-true}"
-      SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
-      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"

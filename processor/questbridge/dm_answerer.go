@@ -139,7 +139,13 @@ func (r *registryAnswerer) callOpenAICompat(ctx context.Context, endpoint *model
 func (r *registryAnswerer) callAnthropic(ctx context.Context, endpoint *model.EndpointConfig, apiKey, systemPrompt, userMessage string) (string, error) {
 	url := "https://api.anthropic.com/v1/messages"
 	if endpoint.URL != "" {
-		url = endpoint.URL
+		u := endpoint.URL
+		if u[len(u)-1] == '/' {
+			u = u[:len(u)-1]
+		}
+		// endpoint.URL is the base (e.g. "https://api.anthropic.com/v1");
+		// append /messages for the Anthropic Messages API.
+		url = u + "/messages"
 	}
 
 	body := map[string]any{

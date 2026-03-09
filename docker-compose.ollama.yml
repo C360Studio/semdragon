@@ -9,10 +9,6 @@
 services:
   backend:
     environment:
-      SEMDRAGONS_NATS_URLS: nats://nats:4222
       SEMDRAGONS_CONFIG: /etc/semdragons/semdragons-e2e-ollama.json
-      SEED_E2E: "${SEED_E2E:-false}"
-      SEED_AGENTS: "${SEED_AGENTS:-true}"
-      SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
     extra_hosts:
       - "host.docker.internal:host-gateway"

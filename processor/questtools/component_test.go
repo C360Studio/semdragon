@@ -338,9 +338,9 @@ func TestToolExecutionTierRejection(t *testing.T) {
 // SKILL REJECTION TEST
 // =============================================================================
 
-// TestToolExecutionSkillRejection publishes a read_file ToolCall with a
-// Journeyman agent that has no required skills (code_generation, research, or
-// analysis). The component must publish a ToolResult with a skill error.
+// TestToolExecutionSkillRejection publishes a patch_file ToolCall with a
+// Journeyman agent that has no required skills (code_generation).
+// The component must publish a ToolResult with a skill error.
 func TestToolExecutionSkillRejection(t *testing.T) {
 	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
@@ -352,21 +352,23 @@ func TestToolExecutionSkillRejection(t *testing.T) {
 	callID := "call-skill-reject-001"
 	call := agentic.ToolCall{
 		ID:   callID,
-		Name: "read_file",
+		Name: "patch_file",
 		Arguments: map[string]any{
-			"path": "/tmp/irrelevant.txt",
+			"path":     "/tmp/irrelevant.txt",
+			"old_text": "foo",
+			"new_text": "bar",
 		},
 		Metadata: map[string]any{
 			"agent_id": "no-skill-agent",
 			// Journeyman tier satisfies the tier gate, but no matching skills.
 			"trust_tier": journeymanTier,
-			// planning is NOT in read_file's required skills [code_generation, research, analysis].
+			// planning is NOT in patch_file's required skills [code_generation].
 			"skills":   []any{string(domain.SkillPlanning)},
 			"quest_id": "quest-skill-reject-001",
 		},
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.read_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.patch_file", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error == "" {
@@ -681,7 +683,7 @@ func TestUnknownTool(t *testing.T) {
 // =============================================================================
 
 // TestNoMetadataDefaultsToApprentice verifies that a ToolCall with no Metadata
-// defaults to TierApprentice. read_file requires TierJourneyman, so the call
+// defaults to TierApprentice. write_file requires TierExpert, so the call
 // must be rejected with an insufficient-tier error.
 func TestNoMetadataDefaultsToApprentice(t *testing.T) {
 	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
@@ -694,14 +696,15 @@ func TestNoMetadataDefaultsToApprentice(t *testing.T) {
 	callID := "call-nometa-001"
 	call := agentic.ToolCall{
 		ID:   callID,
-		Name: "read_file",
+		Name: "write_file",
 		Arguments: map[string]any{
-			"path": "/tmp/anything.txt",
+			"path":    "/tmp/anything.txt",
+			"content": "test",
 		},
 		// Intentionally omit Metadata — handler defaults to TierApprentice.
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.read_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.write_file", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error == "" {

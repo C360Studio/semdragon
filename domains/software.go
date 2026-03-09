@@ -107,6 +107,12 @@ var SoftwarePromptCatalog = promptmanager.DomainCatalog{
 			{ID: "judge-auto", Type: domain.JudgeAutomated},
 			{ID: "judge-llm", Type: domain.JudgeLLM},
 		},
+		StructuralChecklist: []promptmanager.ChecklistItem{
+			{Name: "tests-included", Requirement: "All code changes must include corresponding tests. No untested code."},
+			{Name: "no-hardcoded-secrets", Requirement: "No hardcoded API keys, passwords, or secrets in source code."},
+			{Name: "error-handling", Requirement: "All errors must be handled or explicitly propagated. No silently swallowed errors."},
+			{Name: "no-debug-artifacts", Requirement: "No debug prints, TODO hacks, or commented-out code left in the submission."},
+		},
 	},
 }
 

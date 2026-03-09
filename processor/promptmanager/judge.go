@@ -20,6 +20,7 @@ func (a *PromptAssembler) AssembleJudgePrompt(
 	judgeBase string,
 	criteria []domain.ReviewCriterion,
 	questTitle, questDesc, provider string,
+	checklist ...ChecklistItem,
 ) AssembledPrompt {
 	style := a.registry.GetStyle(provider)
 
@@ -36,12 +37,27 @@ func (a *PromptAssembler) AssembleJudgePrompt(
 		sections = append(sections, formatSection("Evaluation Criteria", rubric, style))
 	}
 
+	// Structural checklist — binary pass/fail requirements
+	hasChecklist := len(checklist) > 0
+	if hasChecklist {
+		cl := formatChecklist(checklist, style)
+		sections = append(sections, formatSection("Structural Requirements", cl, style))
+	}
+
 	// Instructions — includes peer review ratings (DM reviewing the agent)
-	instructions := "Evaluate the submission against each criterion. " +
+	var instructions strings.Builder
+	instructions.WriteString("Evaluate the submission against each criterion. " +
 		"Score each criterion from 0.0 to 1.0. " +
 		"Provide specific reasoning for each score. " +
-		"A criterion passes if its score meets or exceeds its threshold.\n\n" +
-		"Additionally, provide peer review ratings on a 1-5 scale for these three questions:\n" +
+		"A criterion passes if its score meets or exceeds its threshold.\n\n")
+
+	if hasChecklist {
+		instructions.WriteString("IMPORTANT: Also check each structural requirement. " +
+			"These are BINARY (pass/fail). ANY structural requirement failure is an AUTOMATIC DEFEAT " +
+			"regardless of criteria scores.\n\n")
+	}
+
+	instructions.WriteString("Additionally, provide peer review ratings on a 1-5 scale for these three questions:\n" +
 		"  Q1: " + domain.LeaderToMemberQuestions[0] + "\n" +
 		"  Q2: " + domain.LeaderToMemberQuestions[1] + "\n" +
 		"  Q3: " + domain.LeaderToMemberQuestions[2] + "\n\n" +
@@ -56,14 +72,19 @@ func (a *PromptAssembler) AssembleJudgePrompt(
 		"  3 = Meets expectations — correct, complete, does what was asked (this is the baseline for competent work)\n" +
 		"  4 = Exceeds expectations — well-structured, thorough, handles edge cases\n" +
 		"  5 = Exceptional — production-quality, elegant, rare (most good work is a 3 or 4, not a 5)\n" +
-		"Rate honestly. A 3 for solid work is correct — not a 5.\n\n" +
-		"Respond with ONLY a JSON object in this exact format:\n" +
+		"Rate honestly. A 3 for solid work is correct — not a 5.\n\n")
+
+	instructions.WriteString("Respond with ONLY a JSON object in this exact format:\n" +
 		"```json\n" +
-		"{\"criteria\": [{\"name\": \"<criterion_name>\", \"score\": <0.0-1.0>, \"reasoning\": \"<explanation>\"}], " +
-		"\"overall_feedback\": \"<summary>\", " +
+		"{\"criteria\": [{\"name\": \"<criterion_name>\", \"score\": <0.0-1.0>, \"reasoning\": \"<explanation>\"}], ")
+	if hasChecklist {
+		instructions.WriteString("\"checklist\": [{\"name\": \"<item_name>\", \"passed\": true/false, \"reasoning\": \"<explanation>\"}], ")
+	}
+	instructions.WriteString("\"overall_feedback\": \"<summary>\", " +
 		"\"peer_review\": {\"q1\": <1-5>, \"q2\": <1-5>, \"q3\": <1-5>}}\n" +
-		"```"
-	sections = append(sections, formatSection("Instructions", instructions, style))
+		"```")
+
+	sections = append(sections, formatSection("Instructions", instructions.String(), style))
 
 	// Quest context for judge
 	var questParts []string
@@ -127,6 +148,50 @@ func formatRubricPlain(criteria []domain.ReviewCriterion) string {
 			b.WriteByte('\n')
 		}
 		fmt.Fprintf(&b, "- %s (weight: %.2f, threshold: %.2f): %s", c.Name, c.Weight, c.Threshold, c.Description)
+	}
+	return b.String()
+}
+
+// =============================================================================
+// STRUCTURAL CHECKLIST FORMATTING
+// =============================================================================
+
+// formatChecklist formats checklist items using provider-appropriate style.
+func formatChecklist(items []ChecklistItem, style ProviderStyle) string {
+	if style.PreferXML {
+		return formatChecklistXML(items)
+	}
+	if style.PreferMarkdown {
+		return formatChecklistMarkdown(items)
+	}
+	return formatChecklistPlain(items)
+}
+
+func formatChecklistXML(items []ChecklistItem) string {
+	var b strings.Builder
+	b.WriteString("Each requirement MUST pass. Any failure = automatic defeat.\n")
+	for _, item := range items {
+		fmt.Fprintf(&b, "<requirement>\n  <name>%s</name>\n  <check>%s</check>\n</requirement>\n", item.Name, item.Requirement)
+	}
+	return b.String()
+}
+
+func formatChecklistMarkdown(items []ChecklistItem) string {
+	var b strings.Builder
+	b.WriteString("Each requirement MUST pass. Any failure = automatic defeat.\n\n")
+	b.WriteString("| Requirement | Check |\n")
+	b.WriteString("|-------------|-------|\n")
+	for _, item := range items {
+		fmt.Fprintf(&b, "| %s | %s |\n", item.Name, item.Requirement)
+	}
+	return b.String()
+}
+
+func formatChecklistPlain(items []ChecklistItem) string {
+	var b strings.Builder
+	b.WriteString("Each requirement MUST pass. Any failure = automatic defeat.\n")
+	for _, item := range items {
+		fmt.Fprintf(&b, "- %s: %s\n", item.Name, item.Requirement)
 	}
 	return b.String()
 }

@@ -1,10 +1,7 @@
 .PHONY: build test test-integration test-all lint fmt tidy check schema check-schema openapi check-openapi mockllm \
        up down up-cloud up-ollama \
        e2e e2e-up e2e-down e2e-run e2e-wait e2e-install e2e-chromium e2e-headed e2e-ui e2e-clean e2e-report \
-       e2e-cloud e2e-cloud-up e2e-cloud-run e2e-cloud-down \
-       e2e-cloud-tiered e2e-cloud-tiered-up e2e-cloud-tiered-run e2e-cloud-tiered-down \
-       e2e-ollama e2e-ollama-up e2e-ollama-run e2e-ollama-down \
-       e2e-gemini e2e-anthropic e2e-openai e2e-spec e2e-nats-clean e2e-logs \
+       e2e-gemini e2e-anthropic e2e-openai e2e-ollama e2e-spec e2e-nats-clean e2e-logs e2e-help \
        ui-test ui-check
 
 # Build all packages
@@ -125,18 +122,34 @@ down:
 # =============================================================================
 # E2E Testing (Playwright + Docker Compose)
 # =============================================================================
+#
+# Env vars (unified):
+#   SEMDRAGONS_E2E_CONFIG  — config file name inside /etc/semdragons/ (set by Makefile per provider)
+#   E2E_LLM_MODE           — tells Playwright which LLM mode: mock|gemini|anthropic|openai|ollama
+#   BACKEND_PORT            — host port for the backend (default 8081)
+#   SPEC                    — run a single spec file (e.g. SPEC=quest-lifecycle)
+#
+# Quick reference:
+#   make e2e                  — mock LLM, all specs
+#   make e2e-gemini           — Gemini cloud, all specs
+#   make e2e-anthropic        — Anthropic cloud, all specs
+#   make e2e-openai           — OpenAI cloud, all specs
+#   make e2e-ollama           — local Ollama, all specs
+#   make e2e-help             — print full usage guide
 
-# ─── Default E2E (mock LLM) ─────────────────────────────────────────
+# Default spec — empty means "all specs"
+SPEC ?=
+_pw_spec = $(if $(SPEC),$(SPEC),)
+_pw_args = $(_pw_spec) --project=chromium
 
-# Full lifecycle: start stack, run tests, tear down
+# ─── Mock LLM (default, no API key needed) ────────────────────────
+
 e2e: e2e-install e2e-up e2e-wait e2e-run e2e-down
 
-# Start the Docker stack (nats + mockllm + backend + ui)
 e2e-up:
 	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) docker compose --profile mock up -d --build --wait
 	@echo "E2E stack is up. Backend: http://localhost:$(BACKEND_PORT)  UI: http://localhost:5173"
 
-# Wait for backend health (with retries)
 e2e-wait:
 	@echo "Waiting for backend health..."
 	@for i in $$(seq 1 30); do \
@@ -147,152 +160,81 @@ e2e-wait:
 		sleep 1; \
 	done
 
-# Run Playwright tests (stack must be running)
 e2e-run:
-	cd ui && E2E_MOCK_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test
+	cd ui && E2E_LLM_MODE=mock BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(_pw_args)
 
-# Run on chromium only (fast iteration)
 e2e-chromium:
-	cd ui && E2E_MOCK_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test --project=chromium
+	cd ui && E2E_LLM_MODE=mock BACKEND_PORT=$(BACKEND_PORT) npx playwright test --project=chromium
 
-# Run E2E tests in headed mode (shows browser)
 e2e-headed: e2e-install e2e-up e2e-wait
-	cd ui && E2E_MOCK_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test --headed
+	cd ui && E2E_LLM_MODE=mock BACKEND_PORT=$(BACKEND_PORT) npx playwright test --headed
 	$(MAKE) e2e-down
 
-# Run E2E tests with UI mode (interactive debugging)
 e2e-ui: e2e-install e2e-up e2e-wait
-	cd ui && E2E_MOCK_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test --ui
+	cd ui && E2E_LLM_MODE=mock BACKEND_PORT=$(BACKEND_PORT) npx playwright test --ui
 
-# Stop the Docker stack
 e2e-down:
 	docker compose --profile mock down -v --remove-orphans
 	@echo "E2E stack stopped."
 
-# Force clean slate (removes volumes)
-e2e-clean:
-	docker compose --profile mock down -v --remove-orphans
+e2e-clean: e2e-nats-clean
 
-# View E2E test report
 e2e-report:
 	cd ui && npx playwright show-report
 
-# Install Playwright browsers (first-time setup)
 e2e-install:
 	cd ui && npx playwright install --with-deps chromium
 
-# ─── Cloud LLM E2E (Gemini, Anthropic, OpenAI) ──────────────────────
+# ─── Cloud Providers (one command, full lifecycle) ─────────────────
+#
+# Each target: clean NATS → start stack with provider config → run tests → tear down.
+# API keys are read from .env or the environment.
 #
 # Usage:
-#   GEMINI_API_KEY=$GEMINI_API_KEY make e2e-cloud
-#   SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-e2e-anthropic.json ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY make e2e-cloud
-#   SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-e2e-openai.json OPENAI_API_KEY=$OPENAI_API_KEY make e2e-cloud
-
-e2e-cloud: e2e-install e2e-cloud-up e2e-wait e2e-cloud-run e2e-cloud-down
-
-# Start stack with cloud config (no mockllm, uses cloud API keys)
-e2e-cloud-up:
-	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
-	@echo "Cloud E2E stack is up. Backend: http://localhost:$(BACKEND_PORT)  UI: http://localhost:5173"
-
-# Run DM chat integration tests (chromium only — real LLM)
-e2e-cloud-run:
-	cd ui && E2E_REAL_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test dm-chat-integration --project=chromium
-
-# Stop the cloud stack
-e2e-cloud-down:
-	docker compose $(CLOUD_COMPOSE) down -v --remove-orphans
-	@echo "Cloud E2E stack stopped."
-
-# ─── Cloud LLM E2E — Tiered (multi-model Gemini) ─────────────────────
-#
-# Usage:
-#   GEMINI_API_KEY=$GEMINI_API_KEY make e2e-cloud-tiered
-
-TIERED_CONFIG = /etc/semdragons/semdragons-e2e-gemini-tiered.json
-
-e2e-cloud-tiered: e2e-install e2e-cloud-tiered-up e2e-wait e2e-cloud-tiered-run e2e-cloud-tiered-down
-
-# Start stack with tiered config
-e2e-cloud-tiered-up:
-	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) SEMDRAGONS_CONFIG=$(TIERED_CONFIG) docker compose $(CLOUD_COMPOSE) up -d --build --wait
-	@echo "Tiered E2E stack is up. Backend: http://localhost:$(BACKEND_PORT)  UI: http://localhost:5173"
-
-# Run model registry spec (chromium only — real LLM)
-e2e-cloud-tiered-run:
-	cd ui && E2E_REAL_LLM=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test model-registry --project=chromium
-
-# Stop the tiered stack
-e2e-cloud-tiered-down:
-	docker compose $(CLOUD_COMPOSE) down -v --remove-orphans
-	@echo "Tiered E2E stack stopped."
-
-# ─── Ollama E2E (local LLM) ─────────────────────────────────────────
-
-e2e-ollama: e2e-install e2e-ollama-up e2e-wait e2e-ollama-run e2e-ollama-down
-
-# Start stack with Ollama config (no mockllm, points at host Ollama)
-e2e-ollama-up:
-	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) docker compose $(OLLAMA_COMPOSE) up -d --build --wait
-	@echo "Ollama E2E stack is up. Backend: http://localhost:$(BACKEND_PORT)  UI: http://localhost:5173"
-
-# Run Ollama integration spec (chromium only)
-e2e-ollama-run:
-	cd ui && E2E_OLLAMA=true BACKEND_PORT=$(BACKEND_PORT) npx playwright test ollama-integration --project=chromium
-
-# Stop the Ollama stack
-e2e-ollama-down:
-	docker compose $(OLLAMA_COMPOSE) down -v --remove-orphans
-	@echo "Ollama E2E stack stopped."
-
-# =============================================================================
-# E2E Shortcuts — Provider-Specific (one command, full lifecycle)
-# =============================================================================
-#
-# Usage:
-#   make e2e-gemini                            # all cloud specs with Gemini
-#   make e2e-gemini SPEC=party-quest-dag-e2e   # single spec with Gemini
+#   make e2e-gemini                              # all specs
+#   make e2e-gemini SPEC=party-quest-dag-e2e     # single spec
 #   make e2e-anthropic SPEC=dm-chat-integration
-#   make e2e-openai SPEC=dm-chat-integration
-#
-# These read API keys from .env or the environment.
-# Override config: SEMDRAGONS_E2E_CONFIG=semdragons-e2e-gemini-tiered.json make e2e-gemini
-
-# Default spec — empty means "all cloud-compatible specs"
-SPEC ?=
-
-# Build the playwright test arguments from SPEC
-_pw_spec = $(if $(SPEC),$(SPEC),)
-_pw_args = $(_pw_spec) --project=chromium
+#   make e2e-openai SPEC=quest-lifecycle
 
 e2e-gemini: e2e-install e2e-nats-clean
-	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) SEMDRAGONS_E2E_CONFIG=$${SEMDRAGONS_E2E_CONFIG:-semdragons-e2e-gemini.json} \
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) \
+		SEMDRAGONS_E2E_CONFIG=$${SEMDRAGONS_E2E_CONFIG:-semdragons-e2e-gemini.json} \
 		docker compose $(CLOUD_COMPOSE) up -d --build --wait
 	@$(MAKE) e2e-wait
 	cd ui && E2E_LLM_MODE=gemini BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(_pw_args) || true
-	@$(MAKE) e2e-cloud-down
+	@$(MAKE) _e2e-cloud-down
 
 e2e-anthropic: e2e-install e2e-nats-clean
-	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json \
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) \
+		SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json \
 		docker compose $(CLOUD_COMPOSE) up -d --build --wait
 	@$(MAKE) e2e-wait
 	cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(_pw_args) || true
-	@$(MAKE) e2e-cloud-down
+	@$(MAKE) _e2e-cloud-down
 
 e2e-openai: e2e-install e2e-nats-clean
-	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json \
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) \
+		SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json \
 		docker compose $(CLOUD_COMPOSE) up -d --build --wait
 	@$(MAKE) e2e-wait
 	cd ui && E2E_LLM_MODE=openai BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(_pw_args) || true
-	@$(MAKE) e2e-cloud-down
+	@$(MAKE) _e2e-cloud-down
 
-# ─── Single Spec Runner ────────────────────────────────────────────
+# ─── Ollama (local LLM) ───────────────────────────────────────────
+
+e2e-ollama: e2e-install e2e-nats-clean
+	SEED_E2E=true BACKEND_PORT=$(BACKEND_PORT) \
+		docker compose $(OLLAMA_COMPOSE) up -d --build --wait
+	@$(MAKE) e2e-wait
+	cd ui && E2E_LLM_MODE=ollama BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(_pw_args) || true
+	@$(MAKE) _e2e-ollama-down
+
+# ─── Single Spec Runner (against running stack) ───────────────────
 #
-# Run one spec against whatever stack is already running.
 # Usage:
-#   make e2e-spec SPEC=party-quest-dag-e2e            # mock LLM
-#   make e2e-spec SPEC=dm-chat-integration MODE=gemini # real LLM
-#
+#   make e2e-spec SPEC=party-quest-dag-e2e             # mock LLM
+#   make e2e-spec SPEC=dm-chat-integration MODE=gemini  # real LLM
+
 MODE ?= mock
 e2e-spec:
 ifndef SPEC
@@ -300,18 +242,53 @@ ifndef SPEC
 endif
 	cd ui && E2E_LLM_MODE=$(MODE) BACKEND_PORT=$(BACKEND_PORT) npx playwright test $(SPEC) --project=chromium
 
-# ─── Utilities ──────────────────────────────────────────────────────
+# ─── Utilities ─────────────────────────────────────────────────────
 
-# Wipe NATS volumes (clean KV state between runs)
 e2e-nats-clean:
 	@docker compose --profile mock down -v --remove-orphans 2>/dev/null || true
 	@docker compose $(CLOUD_COMPOSE) down -v --remove-orphans 2>/dev/null || true
 	@echo "NATS volumes wiped."
 
-# Tail backend logs (useful alongside e2e-spec)
+_e2e-cloud-down:
+	docker compose $(CLOUD_COMPOSE) down -v --remove-orphans
+	@echo "Cloud E2E stack stopped."
+
+_e2e-ollama-down:
+	docker compose $(OLLAMA_COMPOSE) down -v --remove-orphans
+	@echo "Ollama E2E stack stopped."
+
 e2e-logs:
 	docker compose logs -f backend
 
-# Tail all service logs
 e2e-logs-all:
 	docker compose logs -f
+
+e2e-help:
+	@echo ""
+	@echo "E2E Test Targets"
+	@echo "================"
+	@echo ""
+	@echo "  make e2e                    Mock LLM, all specs (no API key needed)"
+	@echo "  make e2e-gemini             Gemini cloud, all specs"
+	@echo "  make e2e-anthropic          Anthropic cloud, all specs"
+	@echo "  make e2e-openai             OpenAI cloud, all specs"
+	@echo "  make e2e-ollama             Local Ollama, all specs"
+	@echo ""
+	@echo "  Add SPEC=<name> to run a single spec:"
+	@echo "    make e2e-gemini SPEC=quest-lifecycle"
+	@echo "    make e2e-anthropic SPEC=dm-chat-integration"
+	@echo ""
+	@echo "  Manual stack control:"
+	@echo "    make e2e-up               Start mock stack"
+	@echo "    make e2e-down             Stop mock stack"
+	@echo "    make e2e-spec SPEC=x      Run spec against running stack"
+	@echo "    make e2e-spec SPEC=x MODE=gemini"
+	@echo ""
+	@echo "  Utilities:"
+	@echo "    make e2e-nats-clean        Wipe NATS volumes"
+	@echo "    make e2e-logs              Tail backend logs"
+	@echo "    make e2e-report            Open Playwright report"
+	@echo ""
+	@echo "  API keys: set in .env or environment"
+	@echo "    GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY"
+	@echo ""

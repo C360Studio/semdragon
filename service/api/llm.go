@@ -56,7 +56,11 @@ func callLLM(ctx context.Context, endpoint *model.EndpointConfig, systemPrompt s
 func callAnthropic(ctx context.Context, endpoint *model.EndpointConfig, apiKey, systemPrompt string, messages []ChatMessage) (LLMResult, error) {
 	url := "https://api.anthropic.com/v1/messages"
 	if endpoint.URL != "" {
-		url = endpoint.URL
+		u := endpoint.URL
+		if u[len(u)-1] == '/' {
+			u = u[:len(u)-1]
+		}
+		url = u + "/messages"
 	}
 
 	type anthropicMessage struct {

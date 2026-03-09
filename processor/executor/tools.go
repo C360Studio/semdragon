@@ -306,8 +306,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			},
 		},
 		Handler: readFileHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillResearch, domain.SkillAnalysis},
-		MinTier: domain.TierJourneyman, // Level 6+ — filesystem access requires basic trust
+		MinTier: domain.TierApprentice, // Read-only — all tiers can read files
 	})
 
 	r.Register(RegisteredTool{
@@ -350,8 +349,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			},
 		},
 		Handler: listDirectoryHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillResearch, domain.SkillAnalysis},
-		MinTier: domain.TierJourneyman, // Level 6+ — filesystem access requires basic trust
+		MinTier: domain.TierApprentice, // Read-only — all tiers can list directories
 	})
 
 	r.Register(RegisteredTool{
@@ -374,7 +372,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			},
 		},
 		Handler: searchTextHandler,
-		MinTier: domain.TierJourneyman, // Level 6+ — filesystem access requires basic trust
+		MinTier: domain.TierApprentice, // Read-only — all tiers can search files
 	})
 
 	r.Register(RegisteredTool{

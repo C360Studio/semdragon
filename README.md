@@ -119,7 +119,7 @@ semdragons/
 ├── config/                 # Runtime config + model registry (semdragons.json, models.json)
 ├── domain/                 # Enums, config types, vocabulary (source of truth)
 ├── domains/                # Domain implementations: software, dnd, research
-├── processor/              # 16 reactive processors + 2 libraries
+├── processor/              # 18 reactive processors + 2 libraries
 │   ├── agentprogression/   #   XP and leveling on quest outcome
 │   ├── agentstore/         #   XP marketplace: tools, consumables
 │   ├── autonomy/           #   Heartbeat-driven agent decision loop
@@ -136,12 +136,14 @@ semdragons/
 │   ├── promptmanager/      #   Fragment-based domain-aware prompts (library)
 │   ├── questboard/         #   Quest lifecycle state machine
 │   ├── questbridge/        #   Quest-to-LLM bridge (AGENT stream)
+│   ├── questdagexec/       #   DAG execution for party quest decomposition
 │   ├── questtools/         #   Tool execution with tier/skill gates
-│   └── seeding/            #   Environment bootstrapping
+│   ├── seeding/            #   Environment bootstrapping
+│   └── tokenbudget/        #   Token budget tracking for context management
 ├── service/api/            # REST API handlers
 ├── ui/                     # SvelteKit 5 dashboard + Playwright E2E
 │   ├── src/routes/         #   Pages: agents, quests, battles, store, guilds
-│   └── e2e/specs/          #   23 Playwright specs
+│   └── e2e/specs/          #   26 Playwright specs
 ├── docs/                   # Numbered guides (01-07) + adr/ for design proposals
 └── *.go                    # Core types, entity IDs, graph client, vocab
 ```

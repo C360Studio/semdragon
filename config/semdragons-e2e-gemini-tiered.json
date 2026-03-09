@@ -42,7 +42,7 @@
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-2.5-flash-lite",
         "api_key_env": "GEMINI_API_KEY",
-        "max_tokens": 8192,
+        "max_tokens": 1048576,
         "supports_tools": true,
         "stream": true
       },
@@ -51,7 +51,7 @@
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-2.5-flash",
         "api_key_env": "GEMINI_API_KEY",
-        "max_tokens": 8192,
+        "max_tokens": 1048576,
         "supports_tools": true,
         "stream": true,
         "reasoning_effort": "low"
@@ -61,7 +61,7 @@
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-2.5-pro",
         "api_key_env": "GEMINI_API_KEY",
-        "max_tokens": 8192,
+        "max_tokens": 1048576,
         "supports_tools": true,
         "stream": true,
         "reasoning_effort": "medium"
@@ -320,7 +320,7 @@
         "context": {
           "enabled": true,
           "compact_threshold": 0.6,
-          "tool_result_max_age": 3,
+          "tool_result_max_age": 20,
           "headroom_tokens": 6400,
           "summarization_model": "gemini-flash"
         }

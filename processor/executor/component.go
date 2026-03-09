@@ -263,6 +263,7 @@ func (c *Component) Start(ctx context.Context) error {
 		promptRegistry.RegisterDomainCatalog(c.config.DomainCatalog)
 		promptmanager.RegisterBuiltinFragments(promptRegistry)
 		opts = append(opts, WithPromptAssembler(promptmanager.NewPromptAssembler(promptRegistry)))
+		opts = append(opts, WithDomainCatalog(c.config.DomainCatalog))
 	}
 
 	// Create executor
