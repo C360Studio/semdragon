@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +49,12 @@ const (
 	commandTimeout = 60 * time.Second
 	// httpRequestTimeout is the timeout for HTTP requests.
 	httpRequestTimeout = 30 * time.Second
+	// maxGlobResults is the maximum number of file paths returned by glob_files.
+	maxGlobResults = 200
+	// maxReadFileRangeLines is the maximum line range allowed by read_file_range.
+	maxReadFileRangeLines = 500
+	// maxContextLines is the maximum context lines allowed by search_text.
+	maxContextLines = 5
 )
 
 // ToolHandler executes a tool and returns the result.
@@ -354,6 +362,56 @@ func (r *ToolRegistry) RegisterBuiltins() {
 
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
+			Name:        "glob_files",
+			Description: "Find files by glob pattern within the sandbox. Supports ** for recursive matching.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"pattern": map[string]any{
+						"type":        "string",
+						"description": "Glob pattern to match, e.g. '**/*.go' or 'src/**/*.ts'",
+					},
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Base directory to search from. Defaults to sandbox root.",
+					},
+				},
+				"required": []any{"pattern"},
+			},
+		},
+		Handler: globFilesHandler,
+		MinTier: domain.TierApprentice, // Read-only — all tiers can search for files
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "read_file_range",
+			Description: "Read a specific line range from a file. Useful for navigating large files.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "The file path to read",
+					},
+					"start_line": map[string]any{
+						"type":        "integer",
+						"description": "First line to read (1-based)",
+					},
+					"end_line": map[string]any{
+						"type":        "integer",
+						"description": "Last line to read inclusive (defaults to start_line + 100)",
+					},
+				},
+				"required": []any{"path", "start_line"},
+			},
+		},
+		Handler: readFileRangeHandler,
+		MinTier: domain.TierApprentice, // Read-only — all tiers can read file ranges
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
 			Name:        "search_text",
 			Description: "Search for text patterns in files",
 			Parameters: map[string]any{
@@ -367,12 +425,48 @@ func (r *ToolRegistry) RegisterBuiltins() {
 						"type":        "string",
 						"description": "The file or directory to search in",
 					},
+					"file_glob": map[string]any{
+						"type":        "string",
+						"description": "Optional glob pattern to filter files (e.g. '*.go', '*.ts')",
+					},
+					"context_lines": map[string]any{
+						"type":        "integer",
+						"description": "Number of lines of context before and after each match (default 0, max 5)",
+					},
+					"regex": map[string]any{
+						"type":        "boolean",
+						"description": "Treat pattern as a regular expression instead of a literal string (default false)",
+					},
 				},
 				"required": []any{"pattern", "path"},
 			},
 		},
 		Handler: searchTextHandler,
 		MinTier: domain.TierApprentice, // Read-only — all tiers can search files
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "web_search",
+			Description: "Search the web and return results. Requires a search provider to be configured.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{
+						"type":        "string",
+						"description": "The search query",
+					},
+					"max_results": map[string]any{
+						"type":        "integer",
+						"description": "Maximum number of results to return (default 5, max 10)",
+					},
+				},
+				"required": []any{"query"},
+			},
+		},
+		Handler: webSearchHandler,
+		Skills:  []domain.SkillTag{domain.SkillResearch},
+		MinTier: domain.TierApprentice, // Research capability available to all tiers
 	})
 
 	r.Register(RegisteredTool{
@@ -401,6 +495,70 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler: patchFileHandler,
 		Skills:  []domain.SkillTag{domain.SkillCodeGen},
 		MinTier: domain.TierJourneyman, // Level 6+ — targeted edits require some trust
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "create_directory",
+			Description: "Create a directory (and any missing parents) within the sandbox.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "The directory path to create",
+					},
+				},
+				"required": []any{"path"},
+			},
+		},
+		Handler: createDirectoryHandler,
+		Skills:  []domain.SkillTag{domain.SkillCodeGen},
+		MinTier: domain.TierJourneyman, // Level 6+ — filesystem writes require trust
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "delete_file",
+			Description: "Delete a single file within the sandbox. Does not delete directories.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "The file path to delete",
+					},
+				},
+				"required": []any{"path"},
+			},
+		},
+		Handler: deleteFileHandler,
+		Skills:  []domain.SkillTag{domain.SkillCodeGen},
+		MinTier: domain.TierJourneyman, // Level 6+ — destructive operations require trust
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "rename_file",
+			Description: "Move or rename a file within the sandbox. Both source and destination must be within the sandbox.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"old_path": map[string]any{
+						"type":        "string",
+						"description": "The current file path",
+					},
+					"new_path": map[string]any{
+						"type":        "string",
+						"description": "The target file path",
+					},
+				},
+				"required": []any{"old_path", "new_path"},
+			},
+		},
+		Handler: renameFileHandler,
+		Skills:  []domain.SkillTag{domain.SkillCodeGen},
+		MinTier: domain.TierJourneyman, // Level 6+ — filesystem writes require trust
 	})
 
 	r.Register(RegisteredTool{
@@ -453,6 +611,26 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler: runTestsHandler,
 		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
 		MinTier: domain.TierExpert, // Level 11+ — test execution is a production capability
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "lint_check",
+			Description: "Run a linter and return the output. Supports common linters across Go, JS/TS, Python, and Rust.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command": map[string]any{
+						"type":        "string",
+						"description": "The lint command to run (e.g. 'go vet ./...', 'golangci-lint run', 'eslint src/')",
+					},
+				},
+				"required": []any{"command"},
+			},
+		},
+		Handler: lintCheckHandler,
+		Skills:  []domain.SkillTag{domain.SkillCodeReview},
+		MinTier: domain.TierExpert, // Level 11+ — lint execution is a production capability
 	})
 
 	r.Register(RegisteredTool{
@@ -712,6 +890,30 @@ func searchTextHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Que
 		}
 	}
 
+	// Parse optional enhanced parameters.
+	var opts searchOptions
+	if fg, ok := call.Arguments["file_glob"].(string); ok {
+		opts.fileGlob = fg
+	}
+	if cl, ok := call.Arguments["context_lines"].(float64); ok {
+		opts.contextLines = int(cl)
+	}
+	if rx, ok := call.Arguments["regex"].(bool); ok {
+		opts.useRegex = rx
+	}
+
+	// Pre-compile the regex once so we don't recompile per file during the walk.
+	if opts.useRegex {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return agentic.ToolResult{
+				CallID: call.ID,
+				Error:  fmt.Sprintf("invalid regex: %v", err),
+			}
+		}
+		opts.compiledRe = re
+	}
+
 	// Validate path is within sandbox
 	sandboxDir := getSandboxDir(call)
 	cleanPath, err := validatePath(path, sandboxDir)
@@ -746,10 +948,16 @@ func searchTextHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Que
 			if walkErr != nil || fileInfo.IsDir() {
 				return nil
 			}
+
+			// Apply file_glob filter if specified.
+			if opts.fileGlob != "" && !globMatchesName(opts.fileGlob, filepath.Base(filePath)) {
+				return nil
+			}
+
 			if len(matches) >= maxSearchMatches {
 				return filepath.SkipAll
 			}
-			fileMatches := searchInFile(filePath, pattern)
+			fileMatches := searchInFileWithOpts(filePath, pattern, opts)
 			matches = append(matches, fileMatches...)
 			return nil
 		})
@@ -766,7 +974,7 @@ func searchTextHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Que
 			}
 		}
 	} else {
-		matches = searchInFile(cleanPath, pattern)
+		matches = searchInFileWithOpts(cleanPath, pattern, opts)
 	}
 
 	if len(matches) == 0 {
@@ -791,28 +999,464 @@ func searchTextHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Que
 	}
 }
 
-// searchInFile searches for a pattern in a single file.
-func searchInFile(path, pattern string) []string {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-
-	var matches []string
-	lines := strings.Split(string(content), "\n")
-	for lineNum, line := range lines {
-		if strings.Contains(line, pattern) {
-			matches = append(matches, fmt.Sprintf("%s:%d: %s", path, lineNum+1, truncateLine(line, maxMatchLineLength)))
-		}
-	}
-	return matches
-}
-
 func truncateLine(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// =============================================================================
+// searchTextHandler — enhanced search with regex, file_glob, and context_lines
+// =============================================================================
+
+// searchOptions holds the optional parameters for searchInFileWithOpts.
+type searchOptions struct {
+	// fileGlob filters files by name pattern when walking a directory.
+	fileGlob string
+	// contextLines is how many lines before/after a match to include.
+	contextLines int
+	// useRegex treats the pattern as a compiled regexp.
+	useRegex bool
+	// compiledRe is a pre-compiled regex, set by the caller to avoid
+	// recompilation on every file during a directory walk.
+	compiledRe *regexp.Regexp
+}
+
+// searchInFileWithOpts searches for a pattern in a single file using opts.
+// It replaces the simple searchInFile for internal use while preserving
+// backward-compatible callers via the searchInFile wrapper.
+func searchInFileWithOpts(path, pattern string, opts searchOptions) []string {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	lines := strings.Split(string(content), "\n")
+
+	// Build a matcher function based on opts.
+	var matchFn func(line string) bool
+	if opts.useRegex && opts.compiledRe != nil {
+		matchFn = opts.compiledRe.MatchString
+	} else if opts.useRegex {
+		// Fallback: compile from pattern if caller did not pre-compile.
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return []string{fmt.Sprintf("error: invalid regex %q: %v", pattern, err)}
+		}
+		matchFn = re.MatchString
+	} else {
+		matchFn = func(line string) bool { return strings.Contains(line, pattern) }
+	}
+
+	// Clamp context lines.
+	nContext := opts.contextLines
+	if nContext < 0 {
+		nContext = 0
+	}
+	if nContext > maxContextLines {
+		nContext = maxContextLines
+	}
+
+	var matches []string
+	for lineNum, line := range lines {
+		if !matchFn(line) {
+			continue
+		}
+
+		if nContext == 0 {
+			matches = append(matches, fmt.Sprintf("%s:%d: %s", path, lineNum+1, truncateLine(line, maxMatchLineLength)))
+			continue
+		}
+
+		// Emit a "file:line --" header for the block then the context lines.
+		start := lineNum - nContext
+		if start < 0 {
+			start = 0
+		}
+		end := lineNum + nContext
+		if end >= len(lines) {
+			end = len(lines) - 1
+		}
+		for i := start; i <= end; i++ {
+			prefix := "  "
+			if i == lineNum {
+				prefix = "> "
+			}
+			matches = append(matches, fmt.Sprintf("%s:%d:%s%s", path, i+1, prefix, truncateLine(lines[i], maxMatchLineLength)))
+		}
+	}
+	return matches
+}
+
+// globMatchesName reports whether name matches the simple glob pattern
+// using filepath.Match semantics (no ** support — used per-segment).
+func globMatchesName(pattern, name string) bool {
+	matched, err := filepath.Match(pattern, name)
+	return err == nil && matched
+}
+
+// =============================================================================
+// glob_files handler
+// =============================================================================
+
+func globFilesHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	select {
+	case <-ctx.Done():
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+	default:
+	}
+
+	pattern, _ := call.Arguments["pattern"].(string)
+	if pattern == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "pattern argument is required"}
+	}
+
+	sandboxDir := getSandboxDir(call)
+
+	// Determine base path.
+	basePath := sandboxDir
+	if p, ok := call.Arguments["path"].(string); ok && p != "" {
+		basePath = p
+	}
+	if basePath == "" {
+		basePath = "."
+	}
+
+	cleanBase, err := validatePath(basePath, sandboxDir)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
+	}
+
+	info, err := os.Stat(cleanBase)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("base path not found: %v", err)}
+	}
+	if !info.IsDir() {
+		return agentic.ToolResult{CallID: call.ID, Error: "path must be a directory"}
+	}
+
+	var results []string
+
+	err = filepath.WalkDir(cleanBase, func(walkPath string, d os.DirEntry, walkErr error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if walkErr != nil {
+			return nil // skip unreadable entries
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if len(results) >= maxGlobResults {
+			return filepath.SkipAll
+		}
+
+		// Compute the path relative to cleanBase for pattern matching.
+		rel, err := filepath.Rel(cleanBase, walkPath)
+		if err != nil {
+			return nil
+		}
+
+		if matchGlobPattern(pattern, rel) {
+			results = append(results, walkPath)
+		}
+		return nil
+	})
+
+	if err != nil && err != filepath.SkipAll {
+		if err == context.Canceled || err == context.DeadlineExceeded {
+			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", err)}
+		}
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("walk failed: %v", err)}
+	}
+
+	if len(results) == 0 {
+		return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("No files matched pattern %q in %s", pattern, cleanBase)}
+	}
+
+	var sb strings.Builder
+	for _, p := range results {
+		sb.WriteString(p)
+		sb.WriteByte('\n')
+	}
+	if len(results) >= maxGlobResults {
+		sb.WriteString(fmt.Sprintf("\n... (showing first %d matches)", maxGlobResults))
+	}
+
+	return agentic.ToolResult{CallID: call.ID, Content: sb.String()}
+}
+
+// matchGlobPattern matches a relative file path against a glob pattern that
+// may contain ** for recursive directory matching.
+//
+// Rules:
+//   - A leading **/ matches any number of directory components (including zero).
+//   - A trailing /** matches everything under a directory.
+//   - ** in the middle matches any sequence of path segments.
+//   - Non-** segments are matched with filepath.Match against the corresponding
+//     segment from the file path.
+func matchGlobPattern(pattern, relPath string) bool {
+	// Normalise separators so tests run on Windows too.
+	pattern = filepath.ToSlash(pattern)
+	relPath = filepath.ToSlash(relPath)
+
+	patParts := strings.Split(pattern, "/")
+	pathParts := strings.Split(relPath, "/")
+	return matchSegments(patParts, pathParts)
+}
+
+// matchSegments recursively matches pattern segments against path segments.
+func matchSegments(pat, path []string) bool {
+	for len(pat) > 0 {
+		seg := pat[0]
+		if seg == "**" {
+			// ** can match zero or more path segments.
+			pat = pat[1:]
+			if len(pat) == 0 {
+				return true // ** at end matches everything remaining
+			}
+			// Try consuming 0..N path segments before the next pattern segment.
+			for i := 0; i <= len(path); i++ {
+				if matchSegments(pat, path[i:]) {
+					return true
+				}
+			}
+			return false
+		}
+
+		if len(path) == 0 {
+			return false
+		}
+
+		matched, err := filepath.Match(seg, path[0])
+		if err != nil || !matched {
+			return false
+		}
+		pat = pat[1:]
+		path = path[1:]
+	}
+	return len(path) == 0
+}
+
+// =============================================================================
+// read_file_range handler
+// =============================================================================
+
+func readFileRangeHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	select {
+	case <-ctx.Done():
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+	default:
+	}
+
+	path, _ := call.Arguments["path"].(string)
+	if path == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
+	}
+
+	// JSON numbers decode as float64.
+	startLineF, ok := call.Arguments["start_line"].(float64)
+	if !ok {
+		return agentic.ToolResult{CallID: call.ID, Error: "start_line argument must be an integer"}
+	}
+	startLine := int(startLineF)
+	if startLine < 1 {
+		return agentic.ToolResult{CallID: call.ID, Error: "start_line must be >= 1"}
+	}
+
+	endLine := startLine + 100
+	if endLineF, ok := call.Arguments["end_line"].(float64); ok {
+		endLine = int(endLineF)
+	}
+	if endLine < startLine {
+		return agentic.ToolResult{CallID: call.ID, Error: "end_line must be >= start_line"}
+	}
+	if endLine-startLine+1 > maxReadFileRangeLines {
+		endLine = startLine + maxReadFileRangeLines - 1
+	}
+
+	sandboxDir := getSandboxDir(call)
+	cleanPath, err := validatePath(path, sandboxDir)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
+	}
+
+	f, err := os.Open(cleanPath)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to open file: %v", err)}
+	}
+	defer f.Close()
+
+	var sb strings.Builder
+	scanner := bufio.NewScanner(f)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		if lineNum < startLine {
+			continue
+		}
+		if lineNum > endLine {
+			break
+		}
+		sb.WriteString(fmt.Sprintf("%d\t%s\n", lineNum, scanner.Text()))
+	}
+	if err := scanner.Err(); err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("error reading file: %v", err)}
+	}
+
+	if sb.Len() == 0 {
+		return agentic.ToolResult{
+			CallID:  call.ID,
+			Content: fmt.Sprintf("File has fewer than %d lines", startLine),
+		}
+	}
+
+	return agentic.ToolResult{CallID: call.ID, Content: sb.String()}
+}
+
+// =============================================================================
+// web_search handler (stub — requires external provider configuration)
+// =============================================================================
+
+func webSearchHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	select {
+	case <-ctx.Done():
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+	default:
+	}
+
+	query, _ := call.Arguments["query"].(string)
+	if query == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "query argument is required"}
+	}
+
+	// This is a stub. The handler shape and registration are complete so that a
+	// real search provider can be wired in by replacing this return statement.
+	return agentic.ToolResult{
+		CallID: call.ID,
+		Error:  "web_search requires a search provider to be configured. Contact your administrator to set up a search API key.",
+	}
+}
+
+// =============================================================================
+// create_directory handler
+// =============================================================================
+
+func createDirectoryHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	select {
+	case <-ctx.Done():
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+	default:
+	}
+
+	path, _ := call.Arguments["path"].(string)
+	if path == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
+	}
+
+	sandboxDir := getSandboxDir(call)
+	cleanPath, err := validatePath(path, sandboxDir)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
+	}
+
+	if err := os.MkdirAll(cleanPath, 0755); err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to create directory: %v", err)}
+	}
+
+	return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("Created directory: %s", cleanPath)}
+}
+
+// =============================================================================
+// delete_file handler
+// =============================================================================
+
+func deleteFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	select {
+	case <-ctx.Done():
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+	default:
+	}
+
+	path, _ := call.Arguments["path"].(string)
+	if path == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
+	}
+
+	sandboxDir := getSandboxDir(call)
+	cleanPath, err := validatePath(path, sandboxDir)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
+	}
+
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("path not found: %v", err)}
+	}
+	if info.IsDir() {
+		return agentic.ToolResult{CallID: call.ID, Error: "delete_file cannot delete directories; use a shell command for that"}
+	}
+
+	if err := os.Remove(cleanPath); err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to delete file: %v", err)}
+	}
+
+	return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("Deleted: %s", cleanPath)}
+}
+
+// =============================================================================
+// rename_file handler
+// =============================================================================
+
+func renameFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	select {
+	case <-ctx.Done():
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+	default:
+	}
+
+	oldPath, _ := call.Arguments["old_path"].(string)
+	newPath, _ := call.Arguments["new_path"].(string)
+	if oldPath == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "old_path argument is required"}
+	}
+	if newPath == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "new_path argument is required"}
+	}
+
+	sandboxDir := getSandboxDir(call)
+	cleanOld, err := validatePath(oldPath, sandboxDir)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("old_path: %v", err)}
+	}
+	cleanNew, err := validatePath(newPath, sandboxDir)
+	if err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("new_path: %v", err)}
+	}
+
+	// Reject directory renames — rename_file operates on files only.
+	info, statErr := os.Stat(cleanOld)
+	if statErr != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("source not found: %v", statErr)}
+	}
+	if info.IsDir() {
+		return agentic.ToolResult{CallID: call.ID, Error: "rename_file operates on files only; cannot rename directories"}
+	}
+
+	// Ensure the destination parent directory exists.
+	destDir := filepath.Dir(cleanNew)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to create destination directory: %v", err)}
+	}
+
+	if err := os.Rename(cleanOld, cleanNew); err != nil {
+		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("rename failed: %v", err)}
+	}
+
+	return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("Renamed %s -> %s", cleanOld, cleanNew)}
 }
 
 func patchFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
@@ -1094,6 +1738,23 @@ func runShellCommand(ctx context.Context, call agentic.ToolCall, timeout time.Du
 	}
 }
 
+// shellMetacharacters are dangerous shell operators that enable command chaining
+// or injection. Commands passed to allowlisted tools (run_tests, lint_check)
+// are rejected if they contain any of these to prevent Expert-tier agents
+// from bypassing the allowlist via shell metacharacters.
+var shellMetacharacters = []string{";", "&&", "||", "|", "$(", "`", ">", "<"}
+
+// containsShellMeta reports whether the command contains shell metacharacters
+// that could enable command chaining or injection.
+func containsShellMeta(command string) bool {
+	for _, meta := range shellMetacharacters {
+		if strings.Contains(command, meta) {
+			return true
+		}
+	}
+	return false
+}
+
 // allowedTestPrefixes are the commands that run_tests permits.
 // The tool validates that the command starts with one of these.
 var allowedTestPrefixes = []string{
@@ -1104,6 +1765,12 @@ var allowedTestPrefixes = []string{
 
 func runTestsHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
 	command, _ := call.Arguments["command"].(string)
+	if containsShellMeta(command) {
+		return agentic.ToolResult{
+			CallID: call.ID,
+			Error:  "run_tests does not allow shell metacharacters (;, &&, ||, |, $, `, >, <). Use run_command for compound commands.",
+		}
+	}
 	allowed := false
 	for _, prefix := range allowedTestPrefixes {
 		if strings.HasPrefix(command, prefix) {
@@ -1114,13 +1781,44 @@ func runTestsHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest
 	if !allowed {
 		return agentic.ToolResult{
 			CallID: call.ID,
-			Error:  fmt.Sprintf("run_tests only allows test commands (e.g. 'go test ./...', 'npm test'). Use run_command for general commands."),
+			Error:  "run_tests only allows test commands (e.g. 'go test ./...', 'npm test'). Use run_command for general commands.",
 		}
 	}
 	return runShellCommand(ctx, call, commandTimeout)
 }
 
 func runCommandHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	return runShellCommand(ctx, call, commandTimeout)
+}
+
+// allowedLintPrefixes are the commands that lint_check permits.
+var allowedLintPrefixes = []string{
+	"revive", "golangci-lint", "eslint", "npx eslint", "npm run lint",
+	"make lint", "pylint", "flake8", "mypy", "ruff",
+	"cargo clippy", "dotnet format", "go vet",
+}
+
+func lintCheckHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	command, _ := call.Arguments["command"].(string)
+	if containsShellMeta(command) {
+		return agentic.ToolResult{
+			CallID: call.ID,
+			Error:  "lint_check does not allow shell metacharacters (;, &&, ||, |, $, `, >, <). Use run_command for compound commands.",
+		}
+	}
+	allowed := false
+	for _, prefix := range allowedLintPrefixes {
+		if strings.HasPrefix(command, prefix) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return agentic.ToolResult{
+			CallID: call.ID,
+			Error:  "lint_check only allows linter commands (e.g. 'go vet ./...', 'golangci-lint run'). Use run_command for general commands.",
+		}
+	}
 	return runShellCommand(ctx, call, commandTimeout)
 }
 
