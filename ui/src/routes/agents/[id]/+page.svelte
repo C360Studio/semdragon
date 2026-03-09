@@ -149,7 +149,8 @@
 							<h2>Guilds</h2>
 							<div class="guilds-list">
 								{#each (agent.guilds ?? []) as guildId}
-									<a href="/guilds/{guildId}" class="guild-link">{guildId}</a>
+									{@const guild = worldStore.guilds.get(guildId)}
+									<a href="/guilds/{guildId}" class="guild-link">{guild?.name ?? String(guildId).split('.').pop()}</a>
 								{/each}
 							</div>
 						</section>

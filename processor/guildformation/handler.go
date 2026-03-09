@@ -452,6 +452,9 @@ func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agent
 	c.membersJoined.Add(1)
 	c.lastActivity.Store(now)
 
+	// Update the agent entity so its Guilds field reflects the new membership.
+	c.updateAgentGuilds(ctx, agentID, guildID, true)
+
 	c.logger.Info("agent joined guild",
 		"guild_id", guildID,
 		"agent_id", agentID)
@@ -519,6 +522,9 @@ func (c *Component) LeaveGuild(ctx context.Context, guildID domain.GuildID, agen
 	}
 
 	c.lastActivity.Store(now)
+
+	// Update the agent entity to remove the guild from its Guilds field.
+	c.updateAgentGuilds(ctx, agentID, guildID, false)
 
 	c.logger.Info("agent left guild",
 		"guild_id", guildID,
@@ -637,6 +643,43 @@ func (c *Component) DisbandGuild(ctx context.Context, guildID domain.GuildID, re
 		"final_members", len(members))
 
 	return nil
+}
+
+// updateAgentGuilds loads the agent entity and adds or removes a guild ID
+// from its Guilds field, then persists the update. Best-effort — guild entity
+// is the source of truth; this keeps the agent entity in sync for UI display.
+func (c *Component) updateAgentGuilds(ctx context.Context, agentID domain.AgentID, guildID domain.GuildID, add bool) {
+	agentEntity, err := c.graph.GetAgent(ctx, agentID)
+	if err != nil {
+		c.logger.Debug("updateAgentGuilds: failed to load agent", "agent_id", agentID, "error", err)
+		return
+	}
+	agent := agentprogression.AgentFromEntityState(agentEntity)
+	if agent == nil {
+		return
+	}
+
+	if add {
+		// Avoid duplicates
+		for _, g := range agent.Guilds {
+			if g == guildID {
+				return
+			}
+		}
+		agent.Guilds = append(agent.Guilds, guildID)
+	} else {
+		filtered := make([]domain.GuildID, 0, len(agent.Guilds))
+		for _, g := range agent.Guilds {
+			if g != guildID {
+				filtered = append(filtered, g)
+			}
+		}
+		agent.Guilds = filtered
+	}
+
+	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.membership.updated"); err != nil {
+		c.logger.Debug("updateAgentGuilds: failed to persist", "agent_id", agentID, "error", err)
+	}
 }
 
 // GetAgentGuilds returns a copy of the guild IDs an agent belongs to.

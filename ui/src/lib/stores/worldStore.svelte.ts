@@ -696,5 +696,10 @@ export const worldStore = {
 	setInventory,
 	getInventory: getInventoryFn,
 	setActiveEffects: setActiveEffectsFn,
-	getActiveEffects: getActiveEffectsFn
+	getActiveEffects: getActiveEffectsFn,
+
+	// Helpers
+	agentName(agentId: AgentID | string): string {
+		return agents.get(agentId as AgentID)?.name ?? String(agentId).split('.').pop() ?? String(agentId);
+	}
 };

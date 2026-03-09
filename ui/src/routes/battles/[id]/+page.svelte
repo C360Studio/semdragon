@@ -65,7 +65,7 @@
 					</div>
 					<div class="summary-item">
 						<span class="summary-label">Agent</span>
-						<a href="/agents/{battle.agent_id}" class="summary-value">{battle.agent_id}</a>
+						<a href="/agents/{battle.agent_id}" class="summary-value">{worldStore.agentName(battle.agent_id)}</a>
 					</div>
 					<div class="summary-item">
 						<span class="summary-label">Review Level</span>

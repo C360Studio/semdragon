@@ -122,7 +122,7 @@
 							<h2>Assignment</h2>
 							<dl>
 								<dt>Claimed By</dt>
-								<dd><a href="/agents/{quest.claimed_by}">{quest.claimed_by}</a></dd>
+								<dd><a href="/agents/{quest.claimed_by}">{worldStore.agentName(quest.claimed_by)}</a></dd>
 								{#if quest.party_id}
 									<dt>Party</dt>
 									<dd>{quest.party_id}</dd>

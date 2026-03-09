@@ -123,7 +123,7 @@
 							</div>
 							<div class="info-row">
 								<span class="label">Agent:</span>
-								<span class="value">{battle.agent_id}</span>
+								<span class="value">{worldStore.agentName(battle.agent_id)}</span>
 							</div>
 							<div class="info-row">
 								<span class="label">Review Level:</span>
@@ -178,7 +178,7 @@
 							<dt>Quest</dt>
 							<dd><a href="/quests/{battle.quest_id}">{battle.quest_id}</a></dd>
 							<dt>Agent</dt>
-							<dd><a href="/agents/{battle.agent_id}">{battle.agent_id}</a></dd>
+							<dd><a href="/agents/{battle.agent_id}">{worldStore.agentName(battle.agent_id)}</a></dd>
 							<dt>Review Level</dt>
 							<dd>{ReviewLevelNames[battle.level]}</dd>
 							<dt>Started</dt>

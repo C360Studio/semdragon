@@ -163,7 +163,7 @@
 									</div>
 									{#if quest.claimed_by}
 										<div class="quest-assignee">
-											Claimed by: {quest.claimed_by}
+											Claimed by: {worldStore.agentName(quest.claimed_by)}
 										</div>
 									{/if}
 								</button>
@@ -215,7 +215,7 @@
 							<dd>{quest.attempts} / {quest.max_attempts}</dd>
 							{#if quest.claimed_by}
 								<dt>Claimed By</dt>
-								<dd><a href="/agents/{quest.claimed_by}">{quest.claimed_by}</a></dd>
+								<dd><a href="/agents/{quest.claimed_by}">{worldStore.agentName(quest.claimed_by)}</a></dd>
 							{/if}
 							{#if quest.loop_id}
 								<dt>Trajectory</dt>
