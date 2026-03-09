@@ -190,10 +190,10 @@
 				</section>
 
 				{#if battle.loop_id}
-					<section class="trajectory-section">
-						<h2>LLM Trajectory</h2>
+					<section class="trajectory-section" aria-labelledby="trajectory-heading">
+						<h2 id="trajectory-heading">LLM Trajectory</h2>
 						<a href="/trajectories/{battle.loop_id}" class="trajectory-link">
-							<span class="trajectory-icon">&#9654;</span>
+							<span class="trajectory-icon" aria-hidden="true">&#9654;</span>
 							View full judge trajectory timeline
 						</a>
 					</section>

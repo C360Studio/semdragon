@@ -13,22 +13,21 @@
 	let leftPanelWidth = $state(280);
 	let rightPanelWidth = $state(320);
 
-	// Get unique trajectory IDs from quests and battles
-	const trajectoryIds = $derived(
-		[...new Set([
-			...worldStore.questList.map((q) => q.loop_id),
-			...worldStore.battleList.map((b) => b.loop_id)
-		].filter((id): id is string => !!id))].slice(0, 30)
-	);
+	type TrajectorySource = { type: 'quest' | 'battle'; title: string; status: string; href: string };
 
-	// Build lookup for trajectory source (quest or battle)
-	function trajectorySource(tid: string) {
-		const quest = worldStore.questList.find((q) => q.loop_id === tid);
-		if (quest) return { type: 'quest' as const, title: quest.title, status: quest.status, href: `/quests/${quest.id}` };
-		const battle = worldStore.battleList.find((b) => b.loop_id === tid);
-		if (battle) return { type: 'battle' as const, title: `Battle #${String(battle.id).slice(-6)}`, status: battle.status, href: `/battles/${battle.id}` };
-		return null;
-	}
+	// Pre-build map of trajectory ID → source for O(1) lookup per row
+	const trajectorySourceMap = $derived.by(() => {
+		const map = new Map<string, TrajectorySource>();
+		for (const q of worldStore.questList) {
+			if (q.loop_id) map.set(q.loop_id, { type: 'quest', title: q.title, status: q.status, href: `/quests/${q.id}` });
+		}
+		for (const b of worldStore.battleList) {
+			if (b.loop_id) map.set(b.loop_id, { type: 'battle', title: `Battle #${String(b.id).slice(-6)}`, status: b.status, href: `/battles/${b.id}` });
+		}
+		return map;
+	});
+
+	const trajectoryIds = $derived([...trajectorySourceMap.keys()].slice(0, 30));
 </script>
 
 <svelte:head>
@@ -54,15 +53,14 @@
 			<header class="page-header">
 				<h1 data-testid="trajectories-heading">Trajectory Explorer</h1>
 				<p class="page-description">
-					Browse the full event timeline for quests. Each trajectory captures the complete history of a
-					quest from creation to completion.
+					Browse the full LLM execution history for quests and boss battle reviews.
 				</p>
 			</header>
 
 			<div class="trajectory-list" data-testid="trajectory-list">
 				<h2>Recent Trajectories</h2>
 				{#each trajectoryIds as trajectoryId}
-					{@const source = trajectorySource(trajectoryId)}
+					{@const source = trajectorySourceMap.get(trajectoryId)}
 					<a href="/trajectories/{trajectoryId}" class="trajectory-item" data-testid="trajectory-item">
 						<span class="trajectory-id" data-testid="trajectory-item-id">{trajectoryId.slice(0, 12)}&hellip;</span>
 						{#if source}
@@ -197,6 +195,18 @@
 	.trajectory-status[data-status='failed'] {
 		background: var(--quest-failed-container);
 		color: var(--quest-failed);
+	}
+	.trajectory-status[data-status='active'] {
+		background: var(--tier-master-container);
+		color: var(--tier-master);
+	}
+	.trajectory-status[data-status='victory'] {
+		background: var(--status-success-container);
+		color: var(--status-success);
+	}
+	.trajectory-status[data-status='defeat'] {
+		background: var(--status-error-container);
+		color: var(--status-error);
 	}
 
 	.empty-state {
