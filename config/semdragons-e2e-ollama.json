@@ -350,7 +350,7 @@
     "autonomy": {
       "type": "processor",
       "name": "autonomy",
-      "enabled": false,
+      "enabled": true,
       "config": {
         "org": "local",
         "platform": "dev",
