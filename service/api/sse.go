@@ -89,17 +89,36 @@ func (s *Service) handleEvents(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
+	// Extend the write deadline before each write so the server's default
+	// WriteTimeout (10s) doesn't kill long-lived SSE connections.
+	rc := http.NewResponseController(w)
+	extendDeadline := func() {
+		_ = rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
+	}
+
+	// Heartbeat keeps the connection alive during quiet periods.
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			s.logger.Info("SSE client disconnected")
 			return
 
+		case <-heartbeat.C:
+			extendDeadline()
+			fmt.Fprintf(w, ": keepalive\n\n")
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+
 		case event, ok := <-eventChan:
 			if !ok {
 				errData, _ := json.Marshal(map[string]string{
 					"error": "Watcher closed unexpectedly",
 				})
+				extendDeadline()
 				fmt.Fprintf(w, "event: error\ndata: %s\n\n", errData)
 				if flusher, ok := w.(http.Flusher); ok {
 					flusher.Flush()
@@ -113,6 +132,7 @@ func (s *Service) handleEvents(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
+			extendDeadline()
 			fmt.Fprintf(w, "event: kv_change\nid: %d\ndata: %s\n\n", eventID.Add(1), data)
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
