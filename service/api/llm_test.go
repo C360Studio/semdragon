@@ -216,6 +216,12 @@ func TestCallAnthropic_ResponseParsing(t *testing.T) {
 	)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %q", ct)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, anthropicOKResponse(t, wantContent, wantPromptTok, wantComplTok)) //nolint:errcheck
 	}))
@@ -249,6 +255,9 @@ func TestCallAnthropic_ErrorResponse(t *testing.T) {
 	const errBody = `{"type":"error","error":{"type":"invalid_request_error","message":"bad request"}}`
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		io.WriteString(w, errBody) //nolint:errcheck
@@ -372,6 +381,12 @@ func TestCallOpenAICompat_ResponseParsing(t *testing.T) {
 	)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %q", ct)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, openAIOKResponse(t, wantContent, wantPrompt, wantCompl)) //nolint:errcheck
 	}))
@@ -405,6 +420,9 @@ func TestCallOpenAICompat_ErrorResponse(t *testing.T) {
 	const errBody = `{"error":{"message":"internal server error","type":"server_error"}}`
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		io.WriteString(w, errBody) //nolint:errcheck

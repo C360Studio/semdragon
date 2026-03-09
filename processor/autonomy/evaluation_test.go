@@ -1742,7 +1742,7 @@ func TestScoreGuilds_EmptyList(t *testing.T) {
 	}
 }
 
-func TestScoreGuilds_SkillAffinity(t *testing.T) {
+func TestScoreGuilds_SkillGapFill(t *testing.T) {
 	c := newTestComponentWithGuilds()
 	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score7",
@@ -1754,31 +1754,31 @@ func TestScoreGuilds_SkillAffinity(t *testing.T) {
 	}
 	guilds := []*domain.Guild{
 		{
-			ID:          "guild.match",
-			Name:        "Matching Guild",
+			ID:          "guild.overlap",
+			Name:        "Overlapping Guild",
 			Status:      "active",
 			MaxMembers:  20,
 			Reputation:  0.5,
 			SuccessRate: 0.5,
-			QuestTypes:  []string{"analysis", "synthesis"}, // full overlap
+			QuestTypes:  []string{"analysis", "synthesis"}, // full overlap — agent brings nothing new
 		},
 		{
-			ID:          "guild.nomatch",
-			Name:        "No Match Guild",
+			ID:          "guild.gaps",
+			Name:        "Gap Guild",
 			Status:      "active",
 			MaxMembers:  20,
 			Reputation:  0.5,
 			SuccessRate: 0.5,
-			QuestTypes:  []string{"combat", "exploration"}, // no overlap
+			QuestTypes:  []string{"combat", "exploration"}, // no overlap — agent fills all gaps
 		},
 	}
 	result := c.scoreGuilds(agent, guilds, "")
 	if len(result) != 2 {
 		t.Fatalf("scoreGuilds should return 2 results, got %d", len(result))
 	}
-	// Matching guild should score higher due to skill affinity
-	if result[0].GuildID != "guild.match" {
-		t.Errorf("guild with matching quest types should rank first, got %q", result[0].GuildID)
+	// Guild where agent fills skill gaps should rank first
+	if result[0].GuildID != "guild.gaps" {
+		t.Errorf("guild where agent fills gaps should rank first, got %q", result[0].GuildID)
 	}
 }
 
@@ -1945,7 +1945,8 @@ func TestConfigSchema_ApprovalProperties(t *testing.T) {
 // GUILD SCORING HELPER TESTS
 // =============================================================================
 
-func TestGuildSkillAffinity_FullOverlap(t *testing.T) {
+func TestGuildSkillGapFill_FullOverlap(t *testing.T) {
+	// Agent's skills fully overlap with guild quest types → no new skills → 0.0
 	agent := &agentprogression.Agent{
 		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"analysis": {},
@@ -1954,13 +1955,14 @@ func TestGuildSkillAffinity_FullOverlap(t *testing.T) {
 	guild := &domain.Guild{
 		QuestTypes: []string{"analysis"},
 	}
-	got := guildSkillAffinity(agent, guild)
-	if got != 1.0 {
-		t.Errorf("guildSkillAffinity = %.2f, want 1.0 for full overlap", got)
+	got := guildSkillGapFill(agent, guild)
+	if got != 0.0 {
+		t.Errorf("guildSkillGapFill = %.2f, want 0.0 when agent brings no new skills", got)
 	}
 }
 
-func TestGuildSkillAffinity_NoOverlap(t *testing.T) {
+func TestGuildSkillGapFill_NoOverlap(t *testing.T) {
+	// Agent's skills don't overlap with guild → all skills are new → 1.0
 	agent := &agentprogression.Agent{
 		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"analysis": {},
@@ -1969,13 +1971,14 @@ func TestGuildSkillAffinity_NoOverlap(t *testing.T) {
 	guild := &domain.Guild{
 		QuestTypes: []string{"combat"},
 	}
-	got := guildSkillAffinity(agent, guild)
-	if got != 0.0 {
-		t.Errorf("guildSkillAffinity = %.2f, want 0.0 for no overlap", got)
+	got := guildSkillGapFill(agent, guild)
+	if got != 1.0 {
+		t.Errorf("guildSkillGapFill = %.2f, want 1.0 when agent fills all gaps", got)
 	}
 }
 
-func TestGuildSkillAffinity_PartialOverlap(t *testing.T) {
+func TestGuildSkillGapFill_PartialOverlap(t *testing.T) {
+	// 1 of 2 agent skills is new → 0.5
 	agent := &agentprogression.Agent{
 		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"analysis":  {},
@@ -1985,33 +1988,33 @@ func TestGuildSkillAffinity_PartialOverlap(t *testing.T) {
 	guild := &domain.Guild{
 		QuestTypes: []string{"analysis", "combat"},
 	}
-	got := guildSkillAffinity(agent, guild)
+	got := guildSkillGapFill(agent, guild)
 	if got != 0.5 {
-		t.Errorf("guildSkillAffinity = %.2f, want 0.5 for partial overlap", got)
+		t.Errorf("guildSkillGapFill = %.2f, want 0.5 for partial gap fill", got)
 	}
 }
 
-func TestGuildSkillAffinity_NoQuestTypes(t *testing.T) {
+func TestGuildSkillGapFill_NoQuestTypes(t *testing.T) {
 	agent := &agentprogression.Agent{
 		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
 			"analysis": {},
 		},
 	}
 	guild := &domain.Guild{} // no QuestTypes
-	got := guildSkillAffinity(agent, guild)
+	got := guildSkillGapFill(agent, guild)
 	if got != 0.5 {
-		t.Errorf("guildSkillAffinity = %.2f, want 0.5 (neutral) for empty QuestTypes", got)
+		t.Errorf("guildSkillGapFill = %.2f, want 0.5 (neutral) for empty QuestTypes", got)
 	}
 }
 
-func TestGuildSkillAffinity_NoAgentSkills(t *testing.T) {
+func TestGuildSkillGapFill_NoAgentSkills(t *testing.T) {
 	agent := &agentprogression.Agent{} // no skills
 	guild := &domain.Guild{
 		QuestTypes: []string{"analysis"},
 	}
-	got := guildSkillAffinity(agent, guild)
+	got := guildSkillGapFill(agent, guild)
 	if got != 0.0 {
-		t.Errorf("guildSkillAffinity = %.2f, want 0.0 for agent with no skills", got)
+		t.Errorf("guildSkillGapFill = %.2f, want 0.0 for agent with no skills", got)
 	}
 }
 
@@ -2023,7 +2026,7 @@ func TestScoreGuild_HighReputation(t *testing.T) {
 		MaxMembers:  20,
 		Members:     []domain.GuildMember{{}}, // 1 member, 19 open
 	}
-	score, reason := scoreGuild(agent, guild)
+	score, reason := scoreGuild(agent, guild, 0)
 	if score <= 0 {
 		t.Errorf("scoreGuild should return positive score, got %.3f", score)
 	}
@@ -2038,7 +2041,7 @@ func TestScoreGuild_NoCapacity(t *testing.T) {
 		Reputation: 0.5,
 		MaxMembers: 0, // no cap
 	}
-	score, _ := scoreGuild(agent, guild)
+	score, _ := scoreGuild(agent, guild, 0)
 	// With no cap, capacity factor = 1.0
 	if score <= 0 {
 		t.Errorf("scoreGuild should return positive score with no member cap, got %.3f", score)

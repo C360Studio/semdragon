@@ -739,13 +739,20 @@ func (c *Component) executeJoinGuild(ctx context.Context, agent *agentprogressio
 // GUILD SCORING
 // =============================================================================
 // Scoring weights for guild selection. Each factor produces a 0.0-1.0 score.
+//   - Reputation     (25%): guild's standing in the ecosystem
+//   - Success        (20%): historical quest completion rate
+//   - Skill gap fill (20%): agent brings skills the guild doesn't already cover
+//   - Shared history (25%): max shared-win score with any current member
+//   - Capacity       (10%): how much room the guild has
+//
 // =============================================================================
 
 const (
-	guildWeightReputation = 0.35
-	guildWeightSuccess    = 0.25
-	guildWeightCapacity   = 0.15
-	guildWeightAffinity   = 0.25
+	guildWeightReputation    = 0.25
+	guildWeightSuccess       = 0.20
+	guildWeightSkillGapFill  = 0.20
+	guildWeightSharedHistory = 0.25
+	guildWeightCapacity      = 0.10
 )
 
 // GuildSuggestion represents a scored guild option for an agent.
@@ -774,7 +781,16 @@ func (c *Component) scoreGuilds(agent *agentprogression.Agent, guilds []*domain.
 			continue
 		}
 
-		score, reason := scoreGuild(agent, guild)
+		var maxSharedHistory float64
+		if c.guilds != nil {
+			for _, m := range guild.Members {
+				wins := c.guilds.SharedWins(domain.AgentID(agent.ID), m.AgentID)
+				if s := guildformation.SharedWinScore(wins); s > maxSharedHistory {
+					maxSharedHistory = s
+				}
+			}
+		}
+		score, reason := scoreGuild(agent, guild, maxSharedHistory)
 		suggestions = append(suggestions, GuildSuggestion{
 			GuildID:   guild.ID,
 			GuildName: guild.Name,
@@ -797,7 +813,9 @@ func (c *Component) scoreGuilds(agent *agentprogression.Agent, guilds []*domain.
 }
 
 // scoreGuild computes a weighted score for how well a guild fits an agent.
-func scoreGuild(agent *agentprogression.Agent, guild *domain.Guild) (float64, string) {
+// sharedHistoryScore is the max SharedWinScore across all current guild members,
+// reflecting whether the agent has already won quests alongside members of this guild.
+func scoreGuild(agent *agentprogression.Agent, guild *domain.Guild, sharedHistoryScore float64) (float64, string) {
 	reputation := guild.Reputation // Already 0.0-1.0
 
 	successRate := guild.SuccessRate // Already 0.0-1.0
@@ -809,14 +827,15 @@ func scoreGuild(agent *agentprogression.Agent, guild *domain.Guild) (float64, st
 		capacity = 1.0 // No cap = always room
 	}
 
-	affinity := guildSkillAffinity(agent, guild)
+	gapFill := guildSkillGapFill(agent, guild)
 
 	score := reputation*guildWeightReputation +
 		successRate*guildWeightSuccess +
-		capacity*guildWeightCapacity +
-		affinity*guildWeightAffinity
+		gapFill*guildWeightSkillGapFill +
+		sharedHistoryScore*guildWeightSharedHistory +
+		capacity*guildWeightCapacity
 
-	// Build reason string from dominant factor
+	// Build reason string from dominant factors
 	var parts []string
 	if reputation >= 0.7 {
 		parts = append(parts, "high reputation")
@@ -824,8 +843,11 @@ func scoreGuild(agent *agentprogression.Agent, guild *domain.Guild) (float64, st
 	if successRate >= 0.7 {
 		parts = append(parts, "strong success rate")
 	}
-	if affinity >= 0.5 {
-		parts = append(parts, "skill affinity")
+	if gapFill >= 0.5 {
+		parts = append(parts, "fills skill gaps")
+	}
+	if sharedHistoryScore >= 0.5 {
+		parts = append(parts, "shared history")
 	}
 	reason := "general fit"
 	if len(parts) > 0 {
@@ -835,15 +857,15 @@ func scoreGuild(agent *agentprogression.Agent, guild *domain.Guild) (float64, st
 	return score, reason
 }
 
-// guildSkillAffinity computes overlap between agent's skills and guild's QuestTypes.
-// Returns 0.0-1.0: higher means the guild handles quest types matching the agent's skills.
-// If the guild has no QuestTypes, returns 0.5 (neutral — no signal).
-func guildSkillAffinity(agent *agentprogression.Agent, guild *domain.Guild) float64 {
+// guildSkillGapFill measures how many unique skills the agent would bring to the guild.
+// Returns 0.0-1.0: higher means the agent contributes skills the guild doesn't already cover.
+// Guild coverage is approximated by its QuestTypes; if absent, returns 0.5 (neutral).
+func guildSkillGapFill(agent *agentprogression.Agent, guild *domain.Guild) float64 {
 	if len(guild.QuestTypes) == 0 {
-		return 0.5 // No quest type signal — neutral
+		return 0.5 // No data on what the guild covers — neutral
 	}
 	if len(agent.SkillProficiencies) == 0 {
-		return 0.0 // Agent has no skills — no affinity
+		return 0.0 // Agent has no skills to contribute
 	}
 
 	// Build set of guild quest types for O(1) lookup
@@ -852,15 +874,15 @@ func guildSkillAffinity(agent *agentprogression.Agent, guild *domain.Guild) floa
 		questTypeSet[qt] = true
 	}
 
-	// Count agent skills that match guild quest types
-	matches := 0
+	// Count skills the agent has that the guild doesn't already cover
+	newSkills := 0
 	for skill := range agent.SkillProficiencies {
-		if questTypeSet[string(skill)] {
-			matches++
+		if !questTypeSet[string(skill)] {
+			newSkills++
 		}
 	}
 
-	return float64(matches) / float64(len(agent.SkillProficiencies))
+	return float64(newSkills) / float64(len(agent.SkillProficiencies))
 }
 
 // createGuildAction returns the action for autonomously proposing guild creation.
@@ -926,7 +948,14 @@ func (c *Component) executeCreateGuild(ctx context.Context, agent *agentprogress
 		if c.guilds.GetAgentGuild(candidate.ID) != "" {
 			peerGuildCount = 1
 		}
-		score := scoreFellowship(agent, candidate, allGuilds, peerGuildCount)
+		wins := 0
+		var pairPeer float64
+		hasPair := false
+		if c.guilds != nil {
+			wins = c.guilds.SharedWins(agent.ID, candidate.ID)
+			pairPeer, hasPair = c.guilds.PairwisePeerScore(agent.ID, candidate.ID)
+		}
+		score := scoreFellowship(agent, candidate, allGuilds, peerGuildCount, wins, pairPeer, hasPair)
 		if score > 0.3 { // Minimum fellowship threshold
 			fellows = append(fellows, fellowCandidate{agent: candidate, score: score})
 		}
@@ -1273,18 +1302,20 @@ func (c *Component) scoreApplication(founder *agentprogression.Agent, guild *dom
 // =============================================================================
 // Fellowship measures social affinity between two agents. Higher scores indicate
 // agents who would work well together in a guild. Factors:
-//   - Skill complementarity (40%): diverse skills attract
-//   - Reputation      (30%): high peer review scores indicate good collaborators
-//   - Level proximity (15%): similar level agents relate better
-//   - Guild need      (15%): unguilded agents have higher incentive
+//   - Skill complementarity (30%): diverse skills attract
+//   - Shared wins          (30%): agents who won quests together bond more
+//   - Peer review          (25%): pairwise trust first, global average as fallback
+//   - Level proximity      (10%): similar level agents relate better
+//   - Guild need            (5%): unguilded agents have higher incentive
 //
 // =============================================================================
 
 const (
-	fellowWeightSkillComplement = 0.40
-	fellowWeightReputation      = 0.30
-	fellowWeightLevelProximity  = 0.15
-	fellowWeightGuildNeed       = 0.15
+	fellowWeightSkillComplement = 0.30
+	fellowWeightSharedWins      = 0.30
+	fellowWeightPeerReview      = 0.25
+	fellowWeightLevelProximity  = 0.10
+	fellowWeightGuildNeed       = 0.05
 )
 
 // fellowCandidate pairs an agent with its computed fellowship score.
@@ -1296,13 +1327,25 @@ type fellowCandidate struct {
 // scoreFellowship computes social affinity between two agents.
 // peerGuildCount is 0 or 1 based on whether the peer currently belongs to a guild
 // (from GetAgentGuild), reflecting the single-guild constraint.
+// sharedWins is the number of quests the two agents have won together.
+// pairwisePeer is the direct peer review score (0.0-1.0) from one agent to the other;
+// hasPairwise indicates whether a pairwise score is available. When false, falls back
+// to the global average reputation of both agents.
 // Returns 0.0-1.0: higher means stronger fellowship bond.
-func scoreFellowship(self, peer *agentprogression.Agent, guilds []*domain.Guild, peerGuildCount int) float64 {
+func scoreFellowship(self, peer *agentprogression.Agent, guilds []*domain.Guild, peerGuildCount int, sharedWins int, pairwisePeer float64, hasPairwise bool) float64 {
 	// Skill complementarity: agents with different skills complement each other.
 	skillComplement := skillComplementarity(self, peer)
 
-	// Reputation: both agents should have good peer review scores.
-	reputation := averageReputation(self, peer)
+	// Shared wins: agents who have won quests together bond more strongly.
+	sharedWinFactor := guildformation.SharedWinScore(sharedWins)
+
+	// Peer review: use direct pairwise score when available; fall back to global average.
+	var peerReview float64
+	if hasPairwise {
+		peerReview = pairwisePeer
+	} else {
+		peerReview = averageReputation(self, peer)
+	}
 
 	// Level proximity: agents within a few levels relate better.
 	// Decays toward 0 as gap grows; same level = 1.0.
@@ -1324,7 +1367,8 @@ func scoreFellowship(self, peer *agentprogression.Agent, guilds []*domain.Guild,
 	}
 
 	return skillComplement*fellowWeightSkillComplement +
-		reputation*fellowWeightReputation +
+		sharedWinFactor*fellowWeightSharedWins +
+		peerReview*fellowWeightPeerReview +
 		levelProximity*fellowWeightLevelProximity +
 		guildNeed*fellowWeightGuildNeed
 }

@@ -22,8 +22,13 @@ func (m *mockRegistry) Resolve(cap string) string { return m.caps[cap] }
 func (m *mockRegistry) GetEndpoint(name string) *model.EndpointConfig {
 	return m.endpoints[name]
 }
-func (m *mockRegistry) GetFallbackChain(key string) []string { return nil }
-func (m *mockRegistry) GetMaxTokens(name string) int        { return 0 }
+// GetFallbackChain satisfies model.RegistryReader — tests don't exercise fallback chains,
+// so the key parameter is genuinely unused in this mock.
+func (m *mockRegistry) GetFallbackChain(_ string) []string { return nil }
+
+// GetMaxTokens satisfies model.RegistryReader — tests hardcode token limits on the endpoint directly,
+// so the name parameter is genuinely unused in this mock.
+func (m *mockRegistry) GetMaxTokens(_ string) int { return 0 }
 func (m *mockRegistry) GetDefault() string                  { return "" }
 func (m *mockRegistry) ListCapabilities() []string          { return nil }
 func (m *mockRegistry) ListEndpoints() []string             { return nil }
@@ -432,6 +437,9 @@ func TestDMAnswerer_APIKeyResolution(t *testing.T) {
 	t.Run("empty api_key_env with no env var set returns error before HTTP call", func(t *testing.T) {
 		httpCalled := false
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Errorf("expected POST, got %s", r.Method)
+			}
 			httpCalled = true
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(openaiOKResponse("should not reach here")))

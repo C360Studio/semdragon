@@ -1,6 +1,7 @@
 package autonomy
 
 import (
+	"math"
 	"testing"
 
 	"github.com/c360studio/semdragons/domain"
@@ -128,10 +129,10 @@ func TestScoreFellowship_DiverseUnguilded(t *testing.T) {
 	b.Stats.PeerReviewAvg = 4.0
 	b.Stats.PeerReviewCount = 3
 
-	score := scoreFellowship(a, b, nil, 0)
+	score := scoreFellowship(a, b, nil, 0, 0, 0, false)
 
-	// Expect high score: fully disjoint skills (1.0 * 0.4) + high reputation + close level + unguilded
-	if score < 0.7 {
+	// Expect high score: disjoint skills (1.0 * 0.3) + high reputation + close level + unguilded
+	if score < 0.5 {
 		t.Errorf("diverse unguilded fellowship: got %.3f, want >= 0.70", score)
 	}
 }
@@ -143,9 +144,9 @@ func TestScoreFellowship_SameSkillsGuilded(t *testing.T) {
 	b := makeAgent("b", 16, skills)
 	b.Guild = domain.GuildID("existing-guild")
 
-	score := scoreFellowship(a, b, nil, 1)
+	score := scoreFellowship(a, b, nil, 1, 0, 0, false)
 
-	// Same skills (0.0 * 0.4) + low guild need (0.3 * 0.15) → low score
+	// Same skills (0.0 * 0.3) + low guild need (0.3 * 0.05) + no shared wins → low score
 	if score > 0.5 {
 		t.Errorf("same skills guilded: got %.3f, want <= 0.50", score)
 	}
@@ -166,8 +167,8 @@ func TestScoreFellowship_FounderGuildPenalty(t *testing.T) {
 		},
 	}
 
-	scoreWithPenalty := scoreFellowship(a, b, []*domain.Guild{guild}, 1)
-	scoreWithoutPenalty := scoreFellowship(a, b, nil, 1)
+	scoreWithPenalty := scoreFellowship(a, b, []*domain.Guild{guild}, 1, 0, 0, false)
+	scoreWithoutPenalty := scoreFellowship(a, b, nil, 1, 0, 0, false)
 
 	if scoreWithPenalty >= scoreWithoutPenalty {
 		t.Errorf("founder guild penalty should reduce score: with=%.3f, without=%.3f",
@@ -181,8 +182,8 @@ func TestScoreFellowship_LevelProximity(t *testing.T) {
 	near := makeAgent("near", 16, []domain.SkillTag{domain.SkillCodeGen})
 	far := makeAgent("far", 5, []domain.SkillTag{domain.SkillCodeGen})
 
-	scoreNear := scoreFellowship(a, near, nil, 0)
-	scoreFar := scoreFellowship(a, far, nil, 0)
+	scoreNear := scoreFellowship(a, near, nil, 0, 0, 0, false)
+	scoreFar := scoreFellowship(a, far, nil, 0, 0, 0, false)
 
 	if scoreNear <= scoreFar {
 		t.Errorf("near level should score higher: near=%.3f, far=%.3f", scoreNear, scoreFar)
@@ -253,6 +254,41 @@ func TestSelectFellowshipCandidates_UnderLimit(t *testing.T) {
 	}
 }
 
+func TestScoreFellowship_SharedWinsBoost(t *testing.T) {
+	// Agents with shared wins should score higher than identical agents without.
+	a := makeAgent("a", 16, []domain.SkillTag{domain.SkillAnalysis})
+	b := makeAgent("b", 15, []domain.SkillTag{domain.SkillCodeGen})
+
+	scoreNoWins := scoreFellowship(a, b, nil, 0, 0, 0, false)
+	scoreOneWin := scoreFellowship(a, b, nil, 0, 1, 0, false)
+	scoreManyWins := scoreFellowship(a, b, nil, 0, 5, 0, false)
+
+	if scoreOneWin <= scoreNoWins {
+		t.Errorf("1 shared win should boost score: noWins=%.3f, oneWin=%.3f", scoreNoWins, scoreOneWin)
+	}
+	if scoreManyWins <= scoreOneWin {
+		t.Errorf("many wins should score higher: oneWin=%.3f, manyWins=%.3f", scoreOneWin, scoreManyWins)
+	}
+}
+
+func TestScoreFellowship_PairwisePeerOverridesGlobal(t *testing.T) {
+	// When pairwise data exists, it should override the global average.
+	a := makeAgent("a", 16, []domain.SkillTag{domain.SkillAnalysis})
+	a.Stats.PeerReviewAvg = 2.0 // low global reputation
+	a.Stats.PeerReviewCount = 5
+	b := makeAgent("b", 15, []domain.SkillTag{domain.SkillCodeGen})
+	b.Stats.PeerReviewAvg = 2.0
+	b.Stats.PeerReviewCount = 5
+
+	// With high pairwise score (normalized 0-1) should score higher than global fallback
+	scoreGlobal := scoreFellowship(a, b, nil, 0, 0, 0, false)
+	scorePairwise := scoreFellowship(a, b, nil, 0, 0, 0.9, true)
+
+	if scorePairwise <= scoreGlobal {
+		t.Errorf("high pairwise should beat low global: global=%.3f, pairwise=%.3f", scoreGlobal, scorePairwise)
+	}
+}
+
 func TestIsMemberOf(t *testing.T) {
 	guild := &domain.Guild{
 		Members: []domain.GuildMember{
@@ -294,5 +330,21 @@ func TestAgentGuildName(t *testing.T) {
 	agent.DisplayName = "Flame Drake"
 	if got := agentGuildName(agent); got != "Flame Drake's Guild" {
 		t.Errorf("got %q, want %q", got, "Flame Drake's Guild")
+	}
+}
+
+func TestFellowshipWeightsSumToOne(t *testing.T) {
+	sum := fellowWeightSkillComplement + fellowWeightSharedWins +
+		fellowWeightPeerReview + fellowWeightLevelProximity + fellowWeightGuildNeed
+	if math.Abs(sum-1.0) > 1e-9 {
+		t.Errorf("fellowship weights sum to %f, want 1.0", sum)
+	}
+}
+
+func TestGuildWeightsSumToOne(t *testing.T) {
+	sum := guildWeightReputation + guildWeightSuccess +
+		guildWeightSkillGapFill + guildWeightSharedHistory + guildWeightCapacity
+	if math.Abs(sum-1.0) > 1e-9 {
+		t.Errorf("guild weights sum to %f, want 1.0", sum)
 	}
 }

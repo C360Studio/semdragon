@@ -11,6 +11,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semstreams/component"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -51,6 +52,12 @@ type Component struct {
 	// Agent state cache for detecting level/XP transitions that trigger clustering
 	agents   map[string]*agentprogression.Agent
 	agentsMu sync.RWMutex
+
+	// sharedWins is bootstrapped once at Start() and updated on each bootstrap.
+	// TODO: Add incremental KV watchers for quest and peer review entity types to
+	// keep the cache current without requiring a full restart. For now, bootstrap-only
+	// is acceptable since guild scoring runs periodically and stale-by-seconds is fine.
+	sharedWins *sharedWinsCache
 
 	// Internal state
 	running  atomic.Bool
@@ -244,6 +251,7 @@ func (c *Component) Initialize() error {
 
 	c.boardConfig = c.config.ToBoardConfig()
 	c.agents = make(map[string]*agentprogression.Agent)
+	c.sharedWins = newSharedWinsCache()
 	c.stopChan = make(chan struct{})
 
 	return nil
@@ -267,6 +275,10 @@ func (c *Component) Start(ctx context.Context) error {
 
 	// Create graph client for entity state reads and watches
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
+
+	// Bootstrap shared-wins cache from completed quest and peer review history.
+	// Errors are non-fatal — guild scoring degrades gracefully with an empty cache.
+	c.bootstrapSharedWins(ctx)
 
 	// Watch agent entity type for level/XP changes that trigger auto-formation clustering
 	if c.config.EnableAutoFormation {
@@ -353,4 +365,103 @@ func (c *Component) BoardConfig() *domain.BoardConfig {
 func (c *Component) guildMutex(id domain.GuildID) *sync.Mutex {
 	val, _ := c.guildMutexes.LoadOrStore(id, &sync.Mutex{})
 	return val.(*sync.Mutex)
+}
+
+// =============================================================================
+// SHARED WINS CACHE — Bootstrap + Public Accessors
+// =============================================================================
+
+// bootstrapSharedWins scans completed quests and peer reviews from KV to seed the
+// sharedWinsCache. It runs once at Start() time. Errors are logged and skipped so
+// that a NATS hiccup at startup does not prevent the component from running.
+func (c *Component) bootstrapSharedWins(ctx context.Context) {
+	questCount := 0
+	partyCount := 0
+	reviewCount := 0
+
+	// --- Phase 1: completed party quests → shared wins -----------------------
+	quests, err := c.graph.ListQuestsByPrefix(ctx, 0)
+	if err != nil {
+		c.logger.Warn("bootstrapSharedWins: failed to list quests", "err", err)
+	} else {
+		for i := range quests {
+			q := domain.QuestFromEntityState(&quests[i])
+			if q == nil || q.Status != domain.QuestCompleted || q.PartyID == nil {
+				continue
+			}
+
+			partyEntity, err := c.graph.GetParty(ctx, *q.PartyID)
+			if err != nil {
+				c.logger.Debug("bootstrapSharedWins: get party failed",
+					"party_id", *q.PartyID, "quest_id", q.ID, "err", err)
+				continue
+			}
+
+			party := partycoord.PartyFromEntityState(partyEntity)
+			if party == nil || len(party.Members) < 2 {
+				continue
+			}
+
+			memberIDs := make([]domain.AgentID, 0, len(party.Members)+1)
+			// Include the lead if they are not already in the Members slice.
+			leadIncluded := false
+			for _, m := range party.Members {
+				memberIDs = append(memberIDs, m.AgentID)
+				if m.AgentID == party.Lead {
+					leadIncluded = true
+				}
+			}
+			if party.Lead != "" && !leadIncluded {
+				memberIDs = append(memberIDs, party.Lead)
+			}
+
+			c.sharedWins.RecordPartyWin(memberIDs)
+			partyCount++
+			questCount++
+		}
+	}
+
+	// --- Phase 2: completed peer reviews → pairwise peer scores --------------
+	reviews, err := c.graph.ListPeerReviewsByPrefix(ctx, 0)
+	if err != nil {
+		c.logger.Warn("bootstrapSharedWins: failed to list peer reviews", "err", err)
+	} else {
+		for i := range reviews {
+			pr := domain.PeerReviewFromEntityState(&reviews[i])
+			if pr == nil || pr.Status != domain.PeerReviewCompleted {
+				continue
+			}
+			if pr.LeaderAvgRating > 0 {
+				c.sharedWins.RecordPeerReview(pr.LeaderID, pr.MemberID, pr.LeaderAvgRating)
+			}
+			if pr.MemberAvgRating > 0 {
+				c.sharedWins.RecordPeerReview(pr.MemberID, pr.LeaderID, pr.MemberAvgRating)
+			}
+			reviewCount++
+		}
+	}
+
+	c.logger.Info("bootstrapSharedWins complete",
+		"quests_scanned", questCount,
+		"parties_recorded", partyCount,
+		"reviews_recorded", reviewCount)
+}
+
+// SharedWins returns how many quests agents a and b completed together in the same party.
+// Returns 0 if the cache is not initialized or no shared wins have been recorded.
+func (c *Component) SharedWins(a, b domain.AgentID) int {
+	if c.sharedWins == nil {
+		return 0
+	}
+	return c.sharedWins.SharedWins(a, b)
+}
+
+// PairwisePeerScore returns the normalized (0–1) pairwise peer review score between
+// agents a and b. Returns (0, false) if the cache is not initialized or no reviews
+// have been recorded for the pair.
+func (c *Component) PairwisePeerScore(a, b domain.AgentID) (float64, bool) {
+	if c.sharedWins == nil {
+		return 0, false
+	}
+	return c.sharedWins.PairwisePeerScore(a, b)
 }

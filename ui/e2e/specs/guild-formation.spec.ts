@@ -80,6 +80,8 @@ test.describe('Guild Formation @integration', () => {
 		expect(guild!.id).toBeTruthy();
 		expect(guild!.name).toBeTruthy();
 		expect(guild!.founded_by).toBeTruthy();
+		// Seeded agents may be chosen instead of our test agents, so we only
+		// verify structure and constraints — not which specific agents were inducted.
 		expect(guild!.members.length).toBeGreaterThanOrEqual(2);
 
 		// Each member has required fields
@@ -98,14 +100,20 @@ test.describe('Guild Formation @integration', () => {
 		expect(fetched.id).toBe(guild!.id);
 		expect(fetched.members.length).toBe(guild!.members.length);
 
-		// Single-guild constraint: expert's guild field points to this guild
-		const refreshedExpert = await lifecycleApi.getAgent(extractInstance(expert.id));
-		expect(refreshedExpert.guild).toContain(guildInstance);
-		console.log(`[Guild E2E] Expert guild field: ${refreshedExpert.guild}`);
+		// Single-guild constraint: expert appears in exactly this guild's member list.
+		// The agent API response doesn't carry a guild backref field, so we verify
+		// via the guild's own member list instead.
+		const expertInGuild = fetched.members.some((m) =>
+			m.agent_id.includes(expertInstance)
+		);
+		expect(expertInGuild).toBe(true);
+		console.log(`[Guild E2E] Expert ${expertInstance} in guild ${guildInstance}: ${expertInGuild}`);
 
-		// No agent appears in more than one guild (single-guild invariant)
-		for (const g of guilds) {
-			for (const otherG of guilds) {
+		// No agent appears in more than one guild (single-guild invariant).
+		// Re-fetch to get a consistent snapshot in case formation continued.
+		const freshGuilds = await lifecycleApi.listGuilds();
+		for (const g of freshGuilds) {
+			for (const otherG of freshGuilds) {
 				if (g.id === otherG.id) continue;
 				const overlap = g.members.filter((m) =>
 					otherG.members.some((o) => o.agent_id === m.agent_id)
