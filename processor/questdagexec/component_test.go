@@ -4,15 +4,19 @@ package questdagexec
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
 )
 
@@ -236,24 +240,48 @@ func TestComponent_DAGWatchAndTransition(t *testing.T) {
 		}
 	}
 
+	// --- Wait for synthesis dispatch ---
+	// Both nodes are complete, so dispatchLeadSynthesis publishes a TaskMessage
+	// to the AGENT stream. We need to simulate the agentic-loop completing the
+	// synthesis by publishing a LoopCompletedEvent with "synthesis-" prefix.
+	waitForCondition(t, 10*time.Second, func() bool {
+		return comp.nodesCompleted.Load() == 2
+	}, "both nodes to be marked completed")
+
+	// Small delay for synthesis dispatch to hit the stream.
+	time.Sleep(200 * time.Millisecond)
+
+	// Publish a synthetic LoopCompletedEvent to agent.complete.*.
+	parentKey := strings.ReplaceAll(parentQuestID, ".", "-")
+	synthesisLoopID := fmt.Sprintf("synthesis-%s-test", parentKey)
+	synthResult := "Combined output from all sub-quests"
+	completedEvt := &agentic.LoopCompletedEvent{
+		LoopID:  synthesisLoopID,
+		TaskID:  parentQuestID,
+		Result:  synthResult,
+		Outcome: agentic.OutcomeSuccess,
+	}
+	baseMsg := message.NewBaseMessage(completedEvt.Schema(), completedEvt, "test")
+	data, marshalErr := json.Marshal(baseMsg)
+	if marshalErr != nil {
+		t.Fatalf("marshal synthesis LoopCompletedEvent: %v", marshalErr)
+	}
+	if pubErr := client.PublishToStream(ctx, fmt.Sprintf("agent.complete.%s", parentKey), data); pubErr != nil {
+		t.Fatalf("publish synthesis completion: %v", pubErr)
+	}
+
 	// --- Wait for rollup ---
 	waitForCondition(t, 15*time.Second, func() bool {
 		return qb.SubmitCallCount() > 0
 	}, "rollup submit call to questboard")
 
-	// Verify rollup was called with the parent quest ID.
+	// Verify rollup was called with the parent quest ID and synthesized result.
 	sc := qb.GetSubmitCall(0)
 	if sc.questID != domain.QuestID(parentQuestID) {
 		t.Errorf("rollup quest ID = %q, want %q", sc.questID, parentQuestID)
 	}
-
-	// Verify rollup result contains outputs from both sub-quests.
-	rollupResult, ok := sc.result.(map[string]any)
-	if !ok {
-		t.Fatalf("rollup result type = %T, want map[string]any", sc.result)
-	}
-	if len(rollupResult) != 2 {
-		t.Errorf("rollup result has %d entries, want 2", len(rollupResult))
+	if sc.result != synthResult {
+		t.Errorf("rollup result = %q, want %q", sc.result, synthResult)
 	}
 
 	// Verify party was disbanded.
