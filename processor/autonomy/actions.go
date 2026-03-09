@@ -667,13 +667,7 @@ func (c *Component) executeJoinGuild(ctx context.Context, agent *agentprogressio
 	allGuilds := c.guilds.ListGuilds()
 	currentGuild := c.guilds.GetAgentGuild(domain.AgentID(agent.ID))
 
-	// Build a slice for scoreGuilds filtering (already-member check).
-	var currentGuildIDs []domain.GuildID
-	if currentGuild != "" {
-		currentGuildIDs = []domain.GuildID{currentGuild}
-	}
-
-	suggestions := c.scoreGuilds(agent, allGuilds, currentGuildIDs)
+	suggestions := c.scoreGuilds(agent, allGuilds, currentGuild)
 	if len(suggestions) == 0 {
 		return nil
 	}
@@ -764,16 +758,11 @@ type GuildSuggestion struct {
 
 // scoreGuilds filters, scores, and ranks guilds for an agent.
 // Returns top N suggestions sorted descending by score.
-func (c *Component) scoreGuilds(agent *agentprogression.Agent, guilds []*domain.Guild, currentGuildIDs []domain.GuildID) []GuildSuggestion {
-	memberSet := make(map[domain.GuildID]bool, len(currentGuildIDs))
-	for _, gid := range currentGuildIDs {
-		memberSet[domain.GuildID(gid)] = true
-	}
-
+func (c *Component) scoreGuilds(agent *agentprogression.Agent, guilds []*domain.Guild, currentGuildID domain.GuildID) []GuildSuggestion {
 	var suggestions []GuildSuggestion
 	for _, guild := range guilds {
 		// Filter: already a member
-		if memberSet[guild.ID] {
+		if currentGuildID != "" && guild.ID == currentGuildID {
 			continue
 		}
 		// Filter: guild is full
@@ -1078,13 +1067,7 @@ func (c *Component) executeApplyToGuild(ctx context.Context, agent *agentprogres
 	pending := c.guilds.ListPendingGuilds()
 	currentGuild := c.guilds.GetAgentGuild(agent.ID)
 
-	var currentGuildIDs []domain.GuildID
-	if currentGuild != "" {
-		currentGuildIDs = []domain.GuildID{currentGuild}
-	}
-
-	// Filter and score pending guilds using the same scoring infrastructure as joinGuild.
-	suggestions := c.scoreGuilds(agent, pending, currentGuildIDs)
+	suggestions := c.scoreGuilds(agent, pending, currentGuild)
 	if len(suggestions) == 0 {
 		return nil
 	}

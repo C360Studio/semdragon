@@ -1617,7 +1617,7 @@ func TestScoreGuilds_FiltersFullGuilds(t *testing.T) {
 			Reputation: 0.9,
 		},
 	}
-	result := c.scoreGuilds(agent, guilds, nil)
+	result := c.scoreGuilds(agent, guilds, "")
 	if len(result) != 0 {
 		t.Errorf("scoreGuilds should filter full guilds, got %d results", len(result))
 	}
@@ -1639,7 +1639,7 @@ func TestScoreGuilds_FiltersBelowMinLevel(t *testing.T) {
 			Reputation: 0.9,
 		},
 	}
-	result := c.scoreGuilds(agent, guilds, nil)
+	result := c.scoreGuilds(agent, guilds, "")
 	if len(result) != 0 {
 		t.Errorf("scoreGuilds should filter guilds requiring higher level, got %d results", len(result))
 	}
@@ -1660,8 +1660,7 @@ func TestScoreGuilds_FiltersExistingMembers(t *testing.T) {
 			Reputation: 0.9,
 		},
 	}
-	currentGuilds := []domain.GuildID{"guild.already"}
-	result := c.scoreGuilds(agent, guilds, currentGuilds)
+	result := c.scoreGuilds(agent, guilds, "guild.already")
 	if len(result) != 0 {
 		t.Errorf("scoreGuilds should filter guilds agent is already in, got %d results", len(result))
 	}
@@ -1691,7 +1690,7 @@ func TestScoreGuilds_RanksByScore(t *testing.T) {
 			SuccessRate: 0.9,
 		},
 	}
-	result := c.scoreGuilds(agent, guilds, nil)
+	result := c.scoreGuilds(agent, guilds, "")
 	if len(result) != 2 {
 		t.Fatalf("scoreGuilds should return 2 results, got %d", len(result))
 	}
@@ -1725,7 +1724,7 @@ func TestScoreGuilds_ReturnsTopN(t *testing.T) {
 			Reputation: float64(i) * 0.2,
 		}
 	}
-	result := c.scoreGuilds(agent, guilds, nil)
+	result := c.scoreGuilds(agent, guilds, "")
 	if len(result) != 2 {
 		t.Errorf("scoreGuilds should return top %d, got %d", cfg.GuildSuggestionsN, len(result))
 	}
@@ -1737,7 +1736,7 @@ func TestScoreGuilds_EmptyList(t *testing.T) {
 		ID:    "test.local.game.board1.agent.score6",
 		Level: 5,
 	}
-	result := c.scoreGuilds(agent, nil, nil)
+	result := c.scoreGuilds(agent, nil, "")
 	if len(result) != 0 {
 		t.Errorf("scoreGuilds should return empty for nil guilds, got %d", len(result))
 	}
@@ -1773,7 +1772,7 @@ func TestScoreGuilds_SkillAffinity(t *testing.T) {
 			QuestTypes:  []string{"combat", "exploration"}, // no overlap
 		},
 	}
-	result := c.scoreGuilds(agent, guilds, nil)
+	result := c.scoreGuilds(agent, guilds, "")
 	if len(result) != 2 {
 		t.Fatalf("scoreGuilds should return 2 results, got %d", len(result))
 	}

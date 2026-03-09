@@ -65,30 +65,58 @@ test.describe('Guild Formation @integration', () => {
 
 		expect(guilds.length).toBeGreaterThanOrEqual(1);
 
-		// Find the guild that contains our expert agent
+		// Find the guild that contains our expert
 		const expertInstance = extractInstance(expert.id);
-		const guild = guilds.find(
-			(g: GuildResponse) =>
-				g.founder_id?.includes(expertInstance) ||
-				g.members?.some((m) => m.agent_id.includes(expertInstance))
+		const guild = guilds.find((g: GuildResponse) =>
+			g.members?.some((m) => m.agent_id.includes(expertInstance))
+		);
+		expect(guild).toBeTruthy();
+		console.log(
+			`[Guild E2E] Guild ${extractInstance(guild!.id)}: ${guild!.name}, ` +
+				`members=${guild!.members.length}, founder=${extractInstance(guild!.founded_by)}`
 		);
 
-		// The expert should be in at least one guild (founder or member)
-		if (guild) {
-			expect(guild.id).toBeTruthy();
-			expect(guild.name).toBeTruthy();
+		// Guild structure
+		expect(guild!.id).toBeTruthy();
+		expect(guild!.name).toBeTruthy();
+		expect(guild!.founded_by).toBeTruthy();
+		expect(guild!.members.length).toBeGreaterThanOrEqual(2);
 
-			// Verify GET /game/guilds/{id} works
-			const guildInstance = extractInstance(guild.id);
-			const fetched = await lifecycleApi.getGuild(guildInstance);
-			expect(fetched.id).toBe(guild.id);
+		// Each member has required fields
+		for (const member of guild!.members) {
+			expect(member.agent_id).toBeTruthy();
+			expect(member.rank).toMatch(/guildmaster|officer|veteran|member|initiate/);
+		}
+
+		// Exactly one guildmaster per guild
+		const masters = guild!.members.filter((m) => m.rank === 'guildmaster');
+		expect(masters.length).toBe(1);
+
+		// Verify GET /game/guilds/{id} returns consistent data
+		const guildInstance = extractInstance(guild!.id);
+		const fetched = await lifecycleApi.getGuild(guildInstance);
+		expect(fetched.id).toBe(guild!.id);
+		expect(fetched.members.length).toBe(guild!.members.length);
+
+		// Single-guild constraint: expert's guild field points to this guild
+		const refreshedExpert = await lifecycleApi.getAgent(extractInstance(expert.id));
+		expect(refreshedExpert.guild).toContain(guildInstance);
+		console.log(`[Guild E2E] Expert guild field: ${refreshedExpert.guild}`);
+
+		// No agent appears in more than one guild (single-guild invariant)
+		for (const g of guilds) {
+			for (const otherG of guilds) {
+				if (g.id === otherG.id) continue;
+				const overlap = g.members.filter((m) =>
+					otherG.members.some((o) => o.agent_id === m.agent_id)
+				);
+				expect(overlap.length).toBe(0);
+			}
 		}
 
 		// Verify guilds appear in world state
 		const world = await lifecycleApi.getWorldState();
-		if (world.guilds) {
-			expect((world.guilds as unknown[]).length).toBeGreaterThanOrEqual(1);
-		}
+		expect((world.guilds as unknown[]).length).toBeGreaterThanOrEqual(1);
 	});
 
 	test('agent recruited at level respects level and tier', async ({ lifecycleApi }) => {
