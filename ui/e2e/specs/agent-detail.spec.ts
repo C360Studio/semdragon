@@ -9,13 +9,29 @@ import { test, expect, hasBackend, hasLLM, extractInstance, retry, waitForHydrat
  *   1. Static profile info — name, tier, level, XP bar, stats cards, lifecycle
  *   2. Tabbed history — quests, parties, boss battles, collaborators
  *
- * "Page structure" tests work without a backend because the worldStore is
- * seeded from SSE on startup; any agent already in the roster is reachable
- * by navigating to it from the agents list.
+ * "Page structure" tests navigate from the roster (which uses full entity IDs),
+ * so the worldStore lookup always works.
  *
- * "History" tests seed fresh data via the lifecycle API so they are
- * deterministic regardless of pre-existing board state.
+ * "History" tests seed fresh data via the lifecycle API and navigate by
+ * instance ID. The detail page falls back to a suffix match when the
+ * exact branded-ID lookup misses, so instance IDs work. We still wait
+ * for SSE propagation before asserting on page content.
  */
+
+/**
+ * Navigate to an agent's detail page by instance ID and wait for SSE to
+ * propagate the entity into the worldStore so the page renders.
+ */
+async function gotoAgentDetail(page: import('@playwright/test').Page, agentInstance: string) {
+	// The worldStore is populated from a snapshot on page load + SSE deltas.
+	// A freshly recruited agent may not be in the snapshot yet, so we reload
+	// until the agent appears (each reload fetches a fresh snapshot).
+	await expect(async () => {
+		await page.goto(`/agents/${agentInstance}`);
+		await waitForHydration(page);
+		await expect(page.locator('[data-testid="agent-name"]')).toBeVisible({ timeout: 5_000 });
+	}).toPass({ timeout: 30_000 });
+}
 
 // ---------------------------------------------------------------------------
 // Page Structure (no backend required beyond what seeds the roster)
@@ -23,8 +39,6 @@ import { test, expect, hasBackend, hasLLM, extractInstance, retry, waitForHydrat
 
 test.describe('Agent Detail - Page Structure', () => {
 	test('displays agent name and tier badge', async ({ page, agentsPage }) => {
-		// Navigate to the roster, pick the first agent that has a profile link,
-		// and verify the detail page shows the matching name and a tier badge.
 		await agentsPage.goto();
 
 		const cardCount = await agentsPage.getVisibleAgentCount();
@@ -34,6 +48,7 @@ test.describe('Agent Detail - Page Structure', () => {
 		}
 
 		const cardDetails = await agentsPage.getAgentCardDetails(0);
+		await agentsPage.selectAgent(0);
 		await agentsPage.goToAgentProfile();
 		await waitForHydration(page);
 
@@ -62,12 +77,10 @@ test.describe('Agent Detail - Page Structure', () => {
 
 		await expect(page.locator('[data-testid="agent-level"]')).toBeVisible();
 
-		// The level value is a large number; verify it parses as a positive integer
 		const levelText = await page.locator('[data-testid="agent-level"] .level-value').textContent();
 		const level = parseInt(levelText?.trim() ?? '0', 10);
 		expect(level).toBeGreaterThanOrEqual(1);
 
-		// XP bar should be present inside the level card
 		await expect(page.locator('[data-testid="agent-level"] .xp-bar')).toBeVisible();
 	});
 
@@ -84,10 +97,8 @@ test.describe('Agent Detail - Page Structure', () => {
 		await agentsPage.goToAgentProfile();
 		await waitForHydration(page);
 
-		// The stats card uses a <dl class="stats-grid"> inside a .detail-card
 		await expect(page.locator('.stats-grid')).toBeVisible();
 
-		// Must show at least the quests-completed stat
 		const statsText = await page.locator('.stats-grid').textContent();
 		expect(statsText).toContain('Quests Completed');
 	});
@@ -131,13 +142,11 @@ test.describe('Agent Detail - History Tabs', () => {
 		const agent = await lifecycleApi.recruitAgent('e2e-tabs-structure-agent');
 		const agentInstance = extractInstance(agent.id);
 
-		await page.goto(`/agents/${agentInstance}`);
-		await waitForHydration(page);
+		await gotoAgentDetail(page, agentInstance);
 
 		await expect(page.locator('.history-section')).toBeVisible();
 		await expect(page.locator('.tab-bar[role="tablist"]')).toBeVisible();
 
-		// Should have exactly 4 tabs: Quests, Parties, Boss Battles, Collaborators
 		const tabs = page.locator('.tab-bar [role="tab"]');
 		await expect(tabs).toHaveCount(4);
 	});
@@ -148,14 +157,11 @@ test.describe('Agent Detail - History Tabs', () => {
 		const agent = await lifecycleApi.recruitAgent('e2e-tabs-default-agent');
 		const agentInstance = extractInstance(agent.id);
 
-		await page.goto(`/agents/${agentInstance}`);
-		await waitForHydration(page);
+		await gotoAgentDetail(page, agentInstance);
 
-		// The quests tab should be active (aria-selected="true") on first load
 		const questsTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Quests' });
 		await expect(questsTab).toHaveAttribute('aria-selected', 'true');
 
-		// The tab panel should be present
 		await expect(page.locator('[role="tabpanel"]')).toBeVisible();
 	});
 
@@ -165,20 +171,16 @@ test.describe('Agent Detail - History Tabs', () => {
 		const agent = await lifecycleApi.recruitAgent('e2e-tabs-switch-agent');
 		const agentInstance = extractInstance(agent.id);
 
-		await page.goto(`/agents/${agentInstance}`);
-		await waitForHydration(page);
+		await gotoAgentDetail(page, agentInstance);
 
-		// Click the "Boss Battles" tab
 		const battlesTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Boss Battles' });
 		await battlesTab.click();
 		await expect(battlesTab).toHaveAttribute('aria-selected', 'true');
 
-		// Click the "Parties" tab
 		const partiesTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Parties' });
 		await partiesTab.click();
 		await expect(partiesTab).toHaveAttribute('aria-selected', 'true');
 
-		// Click back to "Quests"
 		const questsTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Quests' });
 		await questsTab.click();
 		await expect(questsTab).toHaveAttribute('aria-selected', 'true');
@@ -187,15 +189,11 @@ test.describe('Agent Detail - History Tabs', () => {
 	test('tab counts reflect agent data', async ({ page, lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
 
-		// A fresh agent has no quests yet — all counts should be 0
 		const agent = await lifecycleApi.recruitAgent('e2e-tabs-count-agent');
 		const agentInstance = extractInstance(agent.id);
 
-		await page.goto(`/agents/${agentInstance}`);
-		await waitForHydration(page);
+		await gotoAgentDetail(page, agentInstance);
 
-		// Count badges are `.tab-count` spans inside each tab button.
-		// A newly recruited agent has 0 quests, parties, and battles.
 		const questsTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Quests' });
 		const questCountEl = questsTab.locator('.tab-count');
 		if ((await questCountEl.count()) > 0) {
@@ -203,7 +201,6 @@ test.describe('Agent Detail - History Tabs', () => {
 			expect(count).toBe(0);
 		}
 
-		// Collaborators tab has no count badge — verify the tab still renders
 		const collabTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Collaborators' });
 		await expect(collabTab).toBeVisible();
 		const collabCountEl = collabTab.locator('.tab-count');
@@ -220,32 +217,27 @@ test.describe('Agent Detail - Quest History', () => {
 		test.skip(!hasBackend(), 'Requires running backend');
 		test.setTimeout(120_000);
 
-		// 1. Recruit agent and create an easy quest (no LLM required — manual lifecycle)
 		const agent = await lifecycleApi.recruitAgent('e2e-quest-history-agent');
 		const agentInstance = extractInstance(agent.id);
 
 		const quest = await lifecycleApi.createQuest('E2E quest history test quest', 1);
 		const questInstance = extractInstance(quest.id);
 
-		// 2. Run the quest through to completion manually
 		const claimRes = await lifecycleApi.claimQuest(questInstance, agentInstance);
 		expect(claimRes.ok, `claim failed: ${claimRes.status}`).toBeTruthy();
 
 		const startRes = await lifecycleApi.startQuest(questInstance);
 		expect(startRes.ok, `start failed: ${startRes.status}`).toBeTruthy();
 
-		// Submit with output (bossbattle will auto-evaluate; we don't need LLM mode
-		// since we only care about the quest showing up, not the review result)
 		const submitRes = await lifecycleApi.submitQuest(questInstance, 'E2E test output');
 		expect(submitRes.ok, `submit failed: ${submitRes.status}`).toBeTruthy();
 
-		// 3. Wait for the quest to be associated with the agent in world state,
-		//    then navigate to the agent detail page and verify history
-		await page.goto(`/agents/${agentInstance}`);
-		await waitForHydration(page);
+		await gotoAgentDetail(page, agentInstance);
 
-		// The SSE feed should propagate the quest update — wait for it to appear
+		// Wait for quest to appear in the history list via SSE
 		await expect(async () => {
+			await page.reload();
+			await waitForHydration(page);
 			const historyList = page.locator('.quest-history .history-list');
 			await expect(historyList).toBeVisible({ timeout: 5000 });
 			const itemCount = await historyList.locator('li').count();
@@ -258,7 +250,6 @@ test.describe('Agent Detail - Quest History', () => {
 		test.skip(!hasLLM(), 'Requires LLM for quest auto-completion');
 		test.setTimeout(120_000);
 
-		// This test requires the full agentic loop so the quest reaches "completed".
 		const agent = await lifecycleApi.recruitAgent('e2e-quest-summary-agent');
 		const agentInstance = extractInstance(agent.id);
 
@@ -282,17 +273,18 @@ test.describe('Agent Detail - Quest History', () => {
 			{ timeout: 90_000, interval: 2000, message: 'Quest did not complete' }
 		);
 
-		await page.goto(`/agents/${agentInstance}`);
-		await waitForHydration(page);
-
-		// The summary row shows "N completed" and "N failed" chips
+		// Reload in retry loop — quest completion SSE may lag behind API
 		await expect(async () => {
+			await page.goto(`/agents/${agentInstance}`);
+			await waitForHydration(page);
+			await expect(page.locator('[data-testid="agent-name"]')).toBeVisible({ timeout: 5_000 });
+
 			const summaryRow = page.locator('.quest-history .summary-row');
 			await expect(summaryRow).toBeVisible({ timeout: 5000 });
 			const chips = summaryRow.locator('.summary-chip');
 			const count = await chips.count();
-			expect(count).toBeGreaterThanOrEqual(2); // at minimum "N completed" and "N failed"
-		}).toPass({ timeout: 15_000 });
+			expect(count).toBeGreaterThanOrEqual(2);
+		}).toPass({ timeout: 30_000 });
 	});
 });
 
@@ -305,7 +297,6 @@ test.describe('Agent Detail - Battle History', () => {
 		test.skip(!hasBackend() || !hasLLM(), 'Requires running backend and LLM');
 		test.setTimeout(120_000);
 
-		// 1. Recruit agent and create a quest that forces review (which spawns a battle)
 		const agent = await lifecycleApi.recruitAgent('e2e-battle-history-agent');
 		const agentInstance = extractInstance(agent.id);
 
@@ -318,7 +309,6 @@ test.describe('Agent Detail - Battle History', () => {
 		const startRes = await lifecycleApi.startQuest(questInstance);
 		expect(startRes.ok, `start failed: ${startRes.status}`).toBeTruthy();
 
-		// 2. Wait for a battle to be created for this quest
 		await retry(
 			async () => {
 				const battles = await lifecycleApi.listBattles();
@@ -334,14 +324,15 @@ test.describe('Agent Detail - Battle History', () => {
 			{ timeout: 90_000, interval: 2000, message: 'No battle appeared for quest' }
 		);
 
-		// 3. Navigate to the agent detail page and verify the battle appears
-		await page.goto(`/agents/${agentInstance}`);
-		await waitForHydration(page);
-
-		const battlesTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Boss Battles' });
-		await battlesTab.click();
-
+		// Reload in retry loop — battle SSE may lag behind the API confirmation
 		await expect(async () => {
+			await page.goto(`/agents/${agentInstance}`);
+			await waitForHydration(page);
+			await expect(page.locator('[data-testid="agent-name"]')).toBeVisible({ timeout: 5_000 });
+
+			const battlesTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Boss Battles' });
+			await battlesTab.click();
+
 			const historyList = page.locator('.battle-history .history-list');
 			await expect(historyList).toBeVisible({ timeout: 5000 });
 			const itemCount = await historyList.locator('li').count();
@@ -365,7 +356,6 @@ test.describe('Agent Detail - Battle History', () => {
 		const startRes = await lifecycleApi.startQuest(questInstance);
 		expect(startRes.ok, `start failed: ${startRes.status}`).toBeTruthy();
 
-		// Wait for a resolved battle (victory or defeat)
 		await retry(
 			async () => {
 				const battles = await lifecycleApi.listBattles();
@@ -382,28 +372,27 @@ test.describe('Agent Detail - Battle History', () => {
 			{ timeout: 90_000, interval: 2000, message: 'Battle did not resolve' }
 		);
 
-		await page.goto(`/agents/${agentInstance}`);
-		await waitForHydration(page);
-
-		const battlesTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Boss Battles' });
-		await battlesTab.click();
-
-		// The summary row shows "NW", "NL", and optionally "N% win rate"
+		// Reload in retry loop — battle SSE may lag behind API
 		await expect(async () => {
+			await page.goto(`/agents/${agentInstance}`);
+			await waitForHydration(page);
+			await expect(page.locator('[data-testid="agent-name"]')).toBeVisible({ timeout: 5_000 });
+
+			const battlesTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Boss Battles' });
+			await battlesTab.click();
+
 			const summaryRow = page.locator('.battle-history .summary-row');
 			await expect(summaryRow).toBeVisible({ timeout: 5000 });
 
 			const chips = summaryRow.locator('.summary-chip');
 			const count = await chips.count();
-			// At minimum: wins chip and losses chip
 			expect(count).toBeGreaterThanOrEqual(2);
 
-			// The first chip should end in "W" and the second in "L"
 			const winsText = (await chips.nth(0).textContent()) ?? '';
 			const lossesText = (await chips.nth(1).textContent()) ?? '';
 			expect(winsText.trim()).toMatch(/^\d+W$/);
 			expect(lossesText.trim()).toMatch(/^\d+L$/);
-		}).toPass({ timeout: 15_000 });
+		}).toPass({ timeout: 30_000 });
 	});
 });
 
@@ -416,21 +405,18 @@ test.describe('Agent Detail - Party History', () => {
 		test.skip(!hasBackend(), 'Requires running backend');
 		test.setTimeout(120_000);
 
-		// Recruit a Master-tier lead (level 16) so partycoord can auto-form a party
 		await lifecycleApi.recruitAgentAtLevel(`e2e-party-hist-lead-${Date.now()}`, 16, [
 			'analysis',
 			'coding'
 		]);
 
-		// Recruit a second member so the party has at least 2 agents
-		const member = await lifecycleApi.recruitAgent(`e2e-party-hist-member-${Date.now()}`);
-		const memberInstance = extractInstance(member.id);
+		await lifecycleApi.recruitAgent(`e2e-party-hist-member-${Date.now()}`);
 
-		// Create a party-required quest — partycoord will auto-form a party
 		const quest = await lifecycleApi.createQuestWithParty('E2E party history quest', 2);
 		const questInstance = extractInstance(quest.id);
 
-		// Wait for a party to form and claim the quest
+		// Wait for party to form and find an actual member
+		let memberInstance = '';
 		await retry(
 			async () => {
 				const parties = await lifecycleApi.listParties();
@@ -442,24 +428,30 @@ test.describe('Agent Detail - Party History', () => {
 				if (!match) {
 					throw new Error('Party not formed yet');
 				}
+				// Use the first member from the actual party
+				const firstMember = match.members?.[0];
+				if (!firstMember) {
+					throw new Error('Party has no members');
+				}
+				memberInstance = extractInstance(String(firstMember.agent_id));
 			},
 			{ timeout: 60_000, interval: 2000, message: 'Party did not form within 60s' }
 		);
 
-		// Navigate to the member's detail page and check the parties tab
-		// (The member agent is idle so partycoord should pick it up)
-		await page.goto(`/agents/${memberInstance}`);
-		await waitForHydration(page);
-
-		const partiesTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Parties' });
-		await partiesTab.click();
-
+		// Reload in retry loop — party SSE may lag behind the API confirmation
 		await expect(async () => {
+			await page.goto(`/agents/${memberInstance}`);
+			await waitForHydration(page);
+			await expect(page.locator('[data-testid="agent-name"]')).toBeVisible({ timeout: 10_000 });
+
+			const partiesTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Parties' });
+			await partiesTab.click();
+
 			const historyList = page.locator('.party-history .history-list');
 			await expect(historyList).toBeVisible({ timeout: 5000 });
 			const itemCount = await historyList.locator('li').count();
 			expect(itemCount).toBeGreaterThanOrEqual(1);
-		}).toPass({ timeout: 30_000 });
+		}).toPass({ timeout: 60_000 });
 	});
 });
 
@@ -472,18 +464,18 @@ test.describe('Agent Detail - Collaborators', () => {
 		test.skip(!hasBackend(), 'Requires running backend');
 		test.setTimeout(120_000);
 
-		// Same setup as party history: recruit a lead + a member, form a party
 		await lifecycleApi.recruitAgentAtLevel(`e2e-collab-lead-${Date.now()}`, 16, [
 			'analysis',
 			'coding'
 		]);
 
-		const member = await lifecycleApi.recruitAgent(`e2e-collab-member-${Date.now()}`);
-		const memberInstance = extractInstance(member.id);
+		await lifecycleApi.recruitAgent(`e2e-collab-member-${Date.now()}`);
 
 		const quest = await lifecycleApi.createQuestWithParty('E2E collaborators quest', 2);
 		const questInstance = extractInstance(quest.id);
 
+		// Wait for party to form and find an actual member
+		let memberInstance = '';
 		await retry(
 			async () => {
 				const parties = await lifecycleApi.listParties();
@@ -495,24 +487,30 @@ test.describe('Agent Detail - Collaborators', () => {
 				if (!match) {
 					throw new Error('Party not formed yet');
 				}
+				// Use the first member — they'll have at least one collaborator
+				const firstMember = match.members?.[0];
+				if (!firstMember) {
+					throw new Error('Party has no members');
+				}
+				memberInstance = extractInstance(String(firstMember.agent_id));
 			},
 			{ timeout: 60_000, interval: 2000, message: 'Party did not form within 60s' }
 		);
 
-		// Navigate to the member's detail page and check the collaborators tab
-		await page.goto(`/agents/${memberInstance}`);
-		await waitForHydration(page);
-
-		const collabTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Collaborators' });
-		await collabTab.click();
-
+		// Reload in retry loop — party SSE may lag behind the API confirmation
 		await expect(async () => {
+			await page.goto(`/agents/${memberInstance}`);
+			await waitForHydration(page);
+			await expect(page.locator('[data-testid="agent-name"]')).toBeVisible({ timeout: 10_000 });
+
+			const collabTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Collaborators' });
+			await collabTab.click();
+
 			const collabList = page.locator('.collaborators .collaborator-list');
 			await expect(collabList).toBeVisible({ timeout: 5000 });
 			const itemCount = await collabList.locator('li').count();
-			// At least the lead agent should appear as a collaborator
 			expect(itemCount).toBeGreaterThanOrEqual(1);
-		}).toPass({ timeout: 30_000 });
+		}).toPass({ timeout: 60_000 });
 	});
 });
 
@@ -527,8 +525,7 @@ test.describe('Agent Detail - Empty States', () => {
 		const agent = await lifecycleApi.recruitAgent('e2e-empty-state-agent');
 		const agentInstance = extractInstance(agent.id);
 
-		await page.goto(`/agents/${agentInstance}`);
-		await waitForHydration(page);
+		await gotoAgentDetail(page, agentInstance);
 
 		// Quests tab (default) — fresh agent has no quests
 		const questsTab = page.locator('.tab-bar [role="tab"]').filter({ hasText: 'Quests' });

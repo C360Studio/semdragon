@@ -18,7 +18,11 @@
 	import AgentCollaborators from '$components/AgentCollaborators.svelte';
 
 	const id = $derived(agentId(page.params.id ?? ''));
-	const agent = $derived(worldStore.agents.get(id));
+	const agent = $derived(
+		worldStore.agents.get(id) ??
+			worldStore.agentList.find((a) => String(a.id).endsWith('.' + page.params.id)) ??
+			undefined
+	);
 
 	$effect(() => {
 		if (agent) {
