@@ -44,7 +44,7 @@ Each key under `endpoints` is an arbitrary name used throughout the rest of the 
 
 | Field            | Type    | Required | Description                                              |
 |------------------|---------|----------|----------------------------------------------------------|
-| `provider`          | string  | yes      | `"anthropic"`, `"openai"`, or `"ollama"`                 |
+| `provider`          | string  | yes      | `"anthropic"`, `"openai"`, `"gemini"`, or `"ollama"`     |
 | `url`               | string  | no       | Base URL; defaults to provider standard if omitted       |
 | `model`             | string  | yes      | Provider model identifier                                |
 | `max_tokens`        | int     | yes      | Maximum tokens per request                               |
@@ -59,7 +59,7 @@ Each key under `endpoints` is an arbitrary name used throughout the rest of the 
 "endpoints": {
   "claude-4": {
     "provider": "anthropic",
-    "model": "claude-sonnet-4-5-20250514",
+    "model": "claude-sonnet-4-6",
     "max_tokens": 200000,
     "supports_tools": true,
     "tool_format": "anthropic",
@@ -246,7 +246,7 @@ It defines four endpoints and multiple capability tiers:
 
 | Endpoint      | Provider  | Model                         | Tools  |
 |---------------|-----------|-------------------------------|--------|
-| `claude-4`    | Anthropic | claude-sonnet-4-5-20250514    | yes    |
+| `claude-4`    | Anthropic | claude-sonnet-4-6    | yes    |
 | `gpt-4o`      | OpenAI    | gpt-4o                        | yes    |
 | `ollama`      | Ollama    | llama3.2                      | no     |
 | `ollama-tools`| Ollama    | llama3.1                      | yes    |
@@ -322,8 +322,42 @@ default.
    "api_key_env": "OPENAI_API_KEY"
    ```
 
-Any OpenAI-compatible endpoint (Azure OpenAI, local vLLM, LM Studio) works by setting
-`provider: "openai"` and pointing `url` at the alternative base URL.
+### Custom / Self-Hosted (OpenAI-compatible)
+
+Any service that exposes a `/chat/completions` endpoint works out of the box. Set
+`provider: "openai"` and point `url` at your service:
+
+```json
+"my-llm": {
+  "provider": "openai",
+  "url": "https://my-llm.example.com/v1",
+  "model": "my-model-name",
+  "api_key_env": "MY_LLM_API_KEY",
+  "max_tokens": 128000,
+  "supports_tools": true
+}
+```
+
+This works with vLLM, LM Studio, Azure OpenAI, OpenRouter, text-generation-inference,
+and any other service that implements the OpenAI chat completions API. Semdragons appends
+`/chat/completions` to the `url` automatically — provide the base URL only.
+
+If your service doesn't require an API key, omit `api_key_env`.
+
+The Gemini configs use this same approach — Google's Gemini API exposes an
+OpenAI-compatible endpoint at `https://generativelanguage.googleapis.com/v1beta/openai`.
+
+### Provider Routing
+
+Under the hood, there are only two HTTP paths:
+
+| Provider value | HTTP format | Auth header |
+|----------------|-------------|-------------|
+| `"anthropic"` | Anthropic Messages API (`/messages`) | `x-api-key` |
+| Everything else (`"openai"`, `"gemini"`, `"ollama"`, etc.) | OpenAI chat completions (`/chat/completions`) | `Authorization: Bearer` |
+
+If your service speaks OpenAI format, use `"openai"` as the provider regardless of who
+built it.
 
 ---
 
@@ -374,6 +408,7 @@ capability string as the model key, and `agentic-model` uses its own defaults.
 |---------------------|------------|----------------------------------------|
 | `ANTHROPIC_API_KEY` | Anthropic  | API key for all Anthropic endpoints    |
 | `OPENAI_API_KEY`    | OpenAI     | API key for all OpenAI endpoints       |
+| `GEMINI_API_KEY`    | Gemini     | API key for Google Gemini endpoints    |
 
 Set these in your shell or deployment environment before starting the service. The
 registry reads them at the time each LLM request is made, not at startup—so rotating

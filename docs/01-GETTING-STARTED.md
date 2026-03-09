@@ -73,7 +73,20 @@ make up-openai       # requires OPENAI_API_KEY in .env
 
 Each command loads the correct model config for that provider automatically.
 
-### Option C: Local Ollama (no API key, runs on your machine)
+### Option C: Custom / self-hosted LLM
+
+Any OpenAI-compatible service works — vLLM, LM Studio, Azure OpenAI, text-generation-inference,
+etc. Copy one of the E2E config files (e.g. `config/semdragons-e2e-openai.json`), change
+the `model_registry.endpoints` section to point at your service, and start with:
+
+```bash
+SEMDRAGONS_E2E_CONFIG=my-config.json make up-cloud
+```
+
+See [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md#custom--self-hosted-openai-compatible) for
+endpoint format details.
+
+### Option D: Local Ollama (no API key, runs on your machine)
 
 ```bash
 ollama serve && ollama pull qwen2.5-coder:7b
