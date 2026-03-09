@@ -1311,8 +1311,8 @@ type fellowCandidate struct {
 }
 
 // scoreFellowship computes social affinity between two agents.
-// peerGuildCount is the authoritative count from GetAgentGuilds (not the
-// potentially stale Agent.Guilds field).
+// peerGuildCount is 0 or 1 based on whether the peer currently belongs to a guild
+// (from GetAgentGuild), reflecting the single-guild constraint.
 // Returns 0.0-1.0: higher means stronger fellowship bond.
 func scoreFellowship(self, peer *agentprogression.Agent, guilds []*domain.Guild, peerGuildCount int) float64 {
 	// Skill complementarity: agents with different skills complement each other.
