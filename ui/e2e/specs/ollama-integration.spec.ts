@@ -452,22 +452,22 @@ test.describe('Semspec Hello-World Comparison @integration @ollama', () => {
 		const [coderAgent, analystAgent, seniorAgent] = await Promise.all([
 			findAgentByName(
 				() => lifecycleApi.getWorldState(),
-				'coder-journeyman'
+				'blade-runner'
 			),
 			findAgentByName(
 				() => lifecycleApi.getWorldState(),
-				'analyst-1'
+				'deep-diver'
 			),
 			findAgentByName(
 				() => lifecycleApi.getWorldState(),
-				'senior-dev'
+				'iron-coder'
 			)
 		]);
 
 		console.log('[Semspec Comparison] Agents found:');
-		console.log(`  coder-journeyman: id=${coderAgent.id}, level=${coderAgent.level}, tier=${coderAgent.tier}`);
-		console.log(`  analyst-1: id=${analystAgent.id}, level=${analystAgent.level}, tier=${analystAgent.tier}`);
-		console.log(`  senior-dev: id=${seniorAgent.id}, level=${seniorAgent.level}, tier=${seniorAgent.tier}`);
+		console.log(`  blade-runner: id=${coderAgent.id}, level=${coderAgent.level}, tier=${coderAgent.tier}`);
+		console.log(`  deep-diver: id=${analystAgent.id}, level=${analystAgent.level}, tier=${analystAgent.tier}`);
+		console.log(`  iron-coder: id=${seniorAgent.id}, level=${seniorAgent.level}, tier=${seniorAgent.tier}`);
 
 		const coderInstance = extractInstance(coderAgent.id);
 		const analystInstance = extractInstance(analystAgent.id);
@@ -480,9 +480,9 @@ test.describe('Semspec Hello-World Comparison @integration @ollama', () => {
 		// We must wait for them to finish before we can claim new quests.
 
 		for (const [name, instance, fullId] of [
-			['coder-journeyman', coderInstance, coderAgent.id],
-			['analyst-1', analystInstance, analystAgent.id],
-			['senior-dev', seniorInstance, seniorAgent.id]
+			['blade-runner', coderInstance, coderAgent.id],
+			['deep-diver', analystInstance, analystAgent.id],
+			['iron-coder', seniorInstance, seniorAgent.id]
 		] as const) {
 			await retry(
 				async () => {
@@ -736,9 +736,9 @@ test.describe('Semspec Hello-World Comparison @integration @ollama', () => {
 		// ---------------------------------------------------------------
 
 		const agentChecks = [
-			{ instance: coderInstance, name: 'coder-journeyman', initial: coderAgent },
-			{ instance: analystInstance, name: 'analyst-1', initial: analystAgent },
-			{ instance: seniorInstance, name: 'senior-dev', initial: seniorAgent }
+			{ instance: coderInstance, name: 'blade-runner', initial: coderAgent },
+			{ instance: analystInstance, name: 'deep-diver', initial: analystAgent },
+			{ instance: seniorInstance, name: 'iron-coder', initial: seniorAgent }
 		];
 
 		for (const { instance, name, initial } of agentChecks) {

@@ -126,61 +126,103 @@ func seedAgents(
 	boardCfg *domain.BoardConfig,
 ) error {
 	specs := []agentSpec{
-		// 3 apprentices (level 1-5)
+		// 1 grandmaster (level 19-20) — board anchor, broad generalist
 		{
-			namePattern: "apprentice-{n}",
-			level:       2,
-			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillAnalysis, domain.SkillResearch},
-			count:       2,
-		},
-		{
-			namePattern: "rookie-coder",
-			level:       4,
-			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
+			namePattern: "archon",
+			level:       20,
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillAnalysis, domain.SkillPlanning},
 			count:       1,
 		},
 
-		// 2 journeymen (level 6-10)
+		// 2 masters (level 16-18) — party leads across guilds
 		{
-			namePattern: "analyst-{n}",
+			namePattern: "forge-master",
+			level:       17,
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillPlanning},
+			count:       1,
+		},
+		{
+			namePattern: "lorekeeper",
+			level:       16,
+			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillResearch, domain.SkillSummarization, domain.SkillTraining},
+			count:       1,
+		},
+
+		// 3 experts (level 11-15) — guild founders; guildformation auto-clusters from Expert+ unguilded agents
+		{
+			namePattern: "iron-coder",
+			level:       14,
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillPlanning},
+			count:       1,
+		},
+		{
+			namePattern: "data-sage",
+			level:       13,
+			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillDataTransform, domain.SkillResearch},
+			count:       1,
+		},
+		{
+			namePattern: "herald",
+			level:       12,
+			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillCustomerComms, domain.SkillPlanning},
+			count:       1,
+		},
+
+		// 5 journeymen (level 6-10) — mid-tier workers with complementary coverage
+		{
+			namePattern: "blade-runner",
+			level:       9,
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
+			count:       1,
+		},
+		{
+			namePattern: "circuit-breaker",
+			level:       8,
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform},
+			count:       1,
+		},
+		{
+			namePattern: "deep-diver",
 			level:       8,
 			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillResearch},
 			count:       1,
 		},
 		{
-			namePattern: "coder-journeyman",
-			level:       9,
+			namePattern: "scroll-keeper",
+			level:       7,
+			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillResearch},
+			count:       1,
+		},
+		{
+			namePattern: "wire-tap",
+			level:       7,
+			skills:      []domain.SkillTag{domain.SkillDataTransform, domain.SkillAnalysis},
+			count:       1,
+		},
+
+		// 9 apprentices (level 1-5) — bottom-heavy pyramid; earn their way up through quest work
+		{
+			namePattern: "spark-{n}",
+			level:       3,
 			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
-			count:       1,
-		},
-
-		// 2 experts (level 11-15)
-		{
-			namePattern: "data-expert",
-			level:       13,
-			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillDataTransform, domain.SkillPlanning},
-			count:       1,
+			count:       3,
 		},
 		{
-			namePattern: "senior-dev",
-			level:       14,
-			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillPlanning},
-			count:       1,
+			namePattern: "ember-{n}",
+			level:       2,
+			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillResearch},
+			count:       3,
 		},
-
-		// 1 master (level 16-18)
 		{
-			namePattern: "archmage",
-			level:       17,
-			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillPlanning, domain.SkillResearch, domain.SkillTraining},
-			count:       1,
+			namePattern: "echo-{n}",
+			level:       2,
+			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillCustomerComms},
+			count:       2,
 		},
-
-		// 1 grandmaster (level 19-20)
 		{
-			namePattern: "grandmaster",
-			level:       20,
-			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillAnalysis, domain.SkillPlanning},
+			namePattern: "flint",
+			level:       4,
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillPlanning},
 			count:       1,
 		},
 	}
