@@ -5,6 +5,7 @@ package componentregistry
 
 import (
 	"github.com/c360studio/semstreams/component"
+	graphgateway "github.com/c360studio/semstreams/gateway/graph-gateway"
 	graphindex "github.com/c360studio/semstreams/processor/graph-index"
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 	graphquery "github.com/c360studio/semstreams/processor/graph-query"
@@ -39,9 +40,10 @@ func RegisterAll(registry *component.Registry) error {
 	// These provide entity persistence, indexing, and query capabilities
 	// that semdragons components depend on.
 	graphProcessors := []func(*component.Registry) error{
-		graphingest.Register, // Entity/triple ingestion and storage
-		graphindex.Register,  // Relationship and predicate indexes
-		graphquery.Register,  // Query coordination and PathRAG
+		graphingest.Register,  // Entity/triple ingestion and storage
+		graphindex.Register,   // Relationship and predicate indexes
+		graphquery.Register,   // Query coordination and PathRAG
+		graphgateway.Register, // GraphQL/MCP HTTP gateway
 	}
 
 	for _, register := range graphProcessors {
@@ -98,6 +100,7 @@ func RegisterProcessors(registry *component.Registry) error {
 		graphingest.Register,
 		graphindex.Register,
 		graphquery.Register,
+		graphgateway.Register,
 	}
 
 	for _, register := range graphProcessors {
@@ -147,6 +150,11 @@ func RegisterProcessors(registry *component.Registry) error {
 // ComponentNames returns the names of all registered components.
 func ComponentNames() []string {
 	return []string{
+		// Semstreams graph processors
+		"graph-ingest",
+		"graph-index",
+		"graph-query",
+		"graph-gateway",
 		// Semstreams agentic processors
 		"agentic-loop",
 		"agentic-model",
@@ -174,6 +182,11 @@ func ComponentNames() []string {
 // ProcessorNames returns the names of processor components.
 func ProcessorNames() []string {
 	return []string{
+		// Semstreams graph processors
+		"graph-ingest",
+		"graph-index",
+		"graph-query",
+		"graph-gateway",
 		// Semstreams agentic processors
 		"agentic-loop",
 		"agentic-model",

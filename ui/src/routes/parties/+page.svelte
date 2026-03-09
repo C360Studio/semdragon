@@ -116,6 +116,11 @@
 								<span class="info-value">{resolveAgentName(party.lead)}</span>
 							</div>
 						</div>
+						{#if party.status === 'disbanded' && party.disbanded_at}
+							<div class="disbanded-date">
+								Disbanded {new Date(party.disbanded_at).toLocaleDateString()}
+							</div>
+						{/if}
 					</a>
 				{:else}
 					<div class="empty-state">No parties found</div>
@@ -323,6 +328,14 @@
 		display: block;
 		font-size: 0.875rem;
 		font-weight: 500;
+	}
+
+	/* Disbanded date */
+	.disbanded-date {
+		margin-top: var(--spacing-sm);
+		font-size: 0.75rem;
+		color: var(--ui-text-tertiary);
+		font-style: italic;
 	}
 
 	/* Details Panel */

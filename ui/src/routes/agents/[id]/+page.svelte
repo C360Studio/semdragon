@@ -11,6 +11,11 @@
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import ActivityFeed from '$components/ActivityFeed.svelte';
+	import TabBar from '$components/TabBar.svelte';
+	import AgentQuestHistory from '$components/AgentQuestHistory.svelte';
+	import AgentPartyHistory from '$components/AgentPartyHistory.svelte';
+	import AgentBattleHistory from '$components/AgentBattleHistory.svelte';
+	import AgentCollaborators from '$components/AgentCollaborators.svelte';
 
 	const id = $derived(agentId(page.params.id ?? ''));
 	const agent = $derived(worldStore.agents.get(id));
@@ -58,6 +63,38 @@
 	const xpPercentage = $derived(
 		!agent || agent.xp_to_level === 0 ? 100 : Math.min((agent.xp / agent.xp_to_level) * 100, 100)
 	);
+
+	let activeHistoryTab = $state('quests');
+
+	const historyTabs = $derived.by(() => {
+		if (!agent) return [];
+		const agentIdStr = String(agent.id);
+
+		const questCount = worldStore.questList.filter((q) => {
+			if (!q.claimed_by) return false;
+			const cb = String(q.claimed_by);
+			return cb === agentIdStr || cb.includes(agentIdStr) || agentIdStr.includes(cb);
+		}).length;
+
+		const partyCount = worldStore.partyList.filter((p) =>
+			p.members.some((m) => {
+				const mid = String(m.agent_id);
+				return mid === agentIdStr || mid.includes(agentIdStr) || agentIdStr.includes(mid);
+			})
+		).length;
+
+		const battleCount = worldStore.battleList.filter((b) => {
+			const bid = String(b.agent_id);
+			return bid === agentIdStr || bid.includes(agentIdStr) || agentIdStr.includes(bid);
+		}).length;
+
+		return [
+			{ id: 'quests', label: 'Quests', count: questCount },
+			{ id: 'parties', label: 'Parties', count: partyCount },
+			{ id: 'battles', label: 'Boss Battles', count: battleCount },
+			{ id: 'collaborators', label: 'Collaborators' }
+		];
+	});
 </script>
 
 <svelte:head>
@@ -220,6 +257,22 @@
 					</section>
 				</div>
 
+				<section class="history-section">
+					<h2 class="section-heading">History</h2>
+					<TabBar tabs={historyTabs} bind:activeTab={activeHistoryTab} />
+					<div role="tabpanel" id="tab-panel-{activeHistoryTab}">
+						{#if activeHistoryTab === 'quests'}
+							<AgentQuestHistory agentId={String(agent.id)} />
+						{:else if activeHistoryTab === 'parties'}
+							<AgentPartyHistory agentId={String(agent.id)} />
+						{:else if activeHistoryTab === 'battles'}
+							<AgentBattleHistory agentId={String(agent.id)} />
+						{:else if activeHistoryTab === 'collaborators'}
+							<AgentCollaborators agentId={String(agent.id)} />
+						{/if}
+					</div>
+				</section>
+
 				<ActivityFeed agentId={agent.id} />
 			{:else}
 				<div class="not-found" data-testid="agent-not-found">
@@ -234,10 +287,14 @@
 	{#snippet rightPanel()}
 		<div class="details-panel">
 			<header class="panel-header">
-				<h2>Related</h2>
+				<h2>Collaborators</h2>
 			</header>
 			<div class="details-content">
-				<p class="empty-state">Agent context</p>
+				{#if agent}
+					<AgentCollaborators agentId={String(agent.id)} compact={true} />
+				{:else}
+					<p class="empty-state">Agent context</p>
+				{/if}
 			</div>
 		</div>
 	{/snippet}
@@ -503,6 +560,21 @@
 	.mono {
 		font-family: monospace;
 		font-size: 0.8125rem;
+	}
+
+	/* History section */
+	.history-section {
+		margin-top: var(--spacing-xl);
+		margin-bottom: var(--spacing-xl);
+	}
+
+	.section-heading {
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-tertiary);
+		margin: 0 0 var(--spacing-sm);
 	}
 
 	.not-found {

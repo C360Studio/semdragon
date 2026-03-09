@@ -15,7 +15,8 @@ export default defineConfig({
 		host: true,
 		proxy: {
 			'/game': backendUrl,
-			'/health': backendUrl
+			'/health': backendUrl,
+			'/graph-gateway': backendUrl
 		}
 	}
 });

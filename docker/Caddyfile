@@ -17,6 +17,13 @@
 		reverse_proxy backend:8080
 	}
 
+	# Graph gateway (GraphQL + MCP) → backend
+	handle /graph-gateway/* {
+		reverse_proxy backend:8080 {
+			flush_interval -1
+		}
+	}
+
 	# API docs (Swagger UI) → backend
 	handle /docs* {
 		reverse_proxy backend:8080
