@@ -9,6 +9,7 @@
 	import { ReviewLevelNames, battleId } from '$types';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
+	import ActivityFeed from '$components/ActivityFeed.svelte';
 
 	const id = $derived(battleId(page.params.id ?? ''));
 	const battle = $derived(worldStore.battles.get(id));
@@ -187,6 +188,8 @@
 						{/if}
 					</dl>
 				</section>
+
+				<ActivityFeed battleId={battle.id} />
 			{:else}
 				<div class="not-found">
 					<h2>Battle not found</h2>

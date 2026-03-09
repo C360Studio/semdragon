@@ -9,6 +9,7 @@
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import { TrustTierNames, type AgentID, type TrustTier, partyId } from '$types';
+	import ActivityFeed from '$components/ActivityFeed.svelte';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -152,6 +153,8 @@
 						</section>
 					</div>
 				</div>
+
+				<ActivityFeed partyId={party.id} />
 			{:else}
 				<div class="not-found" data-testid="party-not-found">
 					<h2>Party not found</h2>

@@ -31,8 +31,8 @@
 		<button
 			type="button"
 			class="chip-pin"
-			aria-label="Pin {label} to chat context"
-			title="Pin to chat context"
+			aria-label={variant === 'page' ? `Add ${label} to chat context` : `Insert ${label} into message`}
+			title={variant === 'page' ? 'Add to chat context' : 'Insert into message'}
 			onclick={onPin}
 		>
 			+
@@ -42,7 +42,7 @@
 		<button
 			type="button"
 			class="chip-remove"
-			aria-label="Remove {label} from context"
+			aria-label="Remove {label}"
 			onclick={onRemove}
 		>
 			&times;
@@ -111,28 +111,7 @@
 		white-space: nowrap;
 	}
 
-	.chip-remove {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 16px;
-		height: 16px;
-		border: none;
-		background: none;
-		padding: 0;
-		cursor: pointer;
-		color: var(--ui-text-tertiary);
-		font-size: 0.875rem;
-		line-height: 1;
-		border-radius: 50%;
-		transition: background-color 150ms ease;
-	}
-
-	.chip-remove:hover {
-		background: var(--ui-surface-secondary);
-		color: var(--ui-text-primary);
-	}
-
+	.chip-remove,
 	.chip-pin {
 		display: flex;
 		align-items: center;
@@ -140,7 +119,7 @@
 		width: 16px;
 		height: 16px;
 		border: none;
-		background: none;
+		background: var(--ui-surface-secondary);
 		padding: 0;
 		cursor: pointer;
 		color: var(--ui-text-tertiary);
@@ -148,11 +127,22 @@
 		font-weight: 600;
 		line-height: 1;
 		border-radius: 50%;
-		transition: background-color 150ms ease;
+		transition:
+			background-color 150ms ease,
+			color 150ms ease;
+	}
+
+	.chip-remove {
+		font-size: 0.875rem;
 	}
 
 	.chip-pin:hover {
-		background: var(--ui-surface-secondary);
-		color: var(--ui-interactive-primary);
+		background: var(--ui-interactive-primary);
+		color: var(--ui-surface-primary);
+	}
+
+	.chip-remove:hover {
+		background: var(--status-error);
+		color: var(--ui-surface-primary);
 	}
 </style>

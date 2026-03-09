@@ -214,27 +214,22 @@ func (e *DefaultBoidEngine) computeAttraction(
 	// Rule 5: Affinity - skill and guild match, weighted by rank and reputation
 	skillMatch := float64(matchingSkills)
 	guildMatch := 0.0
-	if quest.GuildPriority != nil {
-		for _, guildID := range agent.Guilds {
-			if guildID == *quest.GuildPriority {
-				// Base membership match
-				guildMatch = 1.0
+	if quest.GuildPriority != nil && agent.Guild == *quest.GuildPriority {
+		// Base membership match
+		guildMatch = 1.0
 
-				// Boost by rank: higher-ranked members have stronger affinity
-				// GuildBonusRate ranges 0.10 (initiate) to 0.25 (guildmaster)
-				if guild, ok := e.guilds[guildID]; ok {
-					for _, m := range guild.Members {
-						if m.AgentID == agent.ID {
-							guildMatch += m.Rank.GuildBonusRate() * 5.0 // 0.5–1.25 rank bonus
-							break
-						}
-					}
-					// Boost by reputation: reputable guilds provide stronger pull
-					// Reputation ranges 0.0–1.0
-					guildMatch *= 1.0 + guild.Reputation*0.5 // up to 1.5x multiplier
+		// Boost by rank: higher-ranked members have stronger affinity
+		// GuildBonusRate ranges 0.10 (initiate) to 0.25 (guildmaster)
+		if guild, ok := e.guilds[agent.Guild]; ok {
+			for _, m := range guild.Members {
+				if m.AgentID == agent.ID {
+					guildMatch += m.Rank.GuildBonusRate() * 5.0 // 0.5–1.25 rank bonus
+					break
 				}
-				break
 			}
+			// Boost by reputation: reputable guilds provide stronger pull
+			// Reputation ranges 0.0–1.0
+			guildMatch *= 1.0 + guild.Reputation*0.5 // up to 1.5x multiplier
 		}
 	}
 	attr.AffinityScore = (skillMatch + guildMatch) * rules.AffinityWeight
@@ -248,12 +243,20 @@ func (e *DefaultBoidEngine) computeAttraction(
 		attr.AffinityScore *= (1.0 + reputationMod*0.3)          // ±30% affinity
 	}
 
-	// Rule 6: Caution - avoid over-leveled quests
+	// Rule 6: Caution - avoid mismatched quests (both under- and over-leveled)
 	tierDiff := int(quest.MinTier) - int(agent.Tier)
 	if tierDiff > 0 {
+		// Quest is above agent's tier — strong penalty
 		attr.CautionScore = -float64(tierDiff) * rules.CautionWeight
+	} else if tierDiff < -1 {
+		// Agent is significantly overqualified — increasing penalty so grandmasters
+		// don't hog trivial quests. One tier above is fine (small bonus), but 2+
+		// tiers above gets progressively less attractive.
+		overqualified := float64(-tierDiff - 1) // 0 at 1 tier above, 1 at 2 tiers, etc.
+		attr.CautionScore = -overqualified * 0.5 * rules.CautionWeight
 	} else {
-		attr.CautionScore = 0.2 * rules.CautionWeight // Small bonus for being at/above level
+		// Agent is exactly one tier above or at level — slight bonus
+		attr.CautionScore = 0.2 * rules.CautionWeight
 	}
 
 	// Calculate total

@@ -10,6 +10,7 @@
 	import type { AgentID } from '$types';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
+	import ActivityFeed from '$components/ActivityFeed.svelte';
 
 	const id = $derived(guildId(page.params.id ?? ''));
 	const guild = $derived(worldStore.guilds.get(id));
@@ -181,6 +182,8 @@
 						</section>
 					{/if}
 				</div>
+
+				<ActivityFeed guildId={guild.id} />
 			{:else}
 				<div class="not-found" data-testid="guild-not-found">
 					<h2>Guild not found</h2>

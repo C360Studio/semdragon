@@ -74,7 +74,7 @@ export type Agent = Omit<RawAgent, 'id' | 'current_quest' | 'current_party' | 'g
 	id: AgentID;
 	current_quest?: QuestID | null;
 	current_party?: PartyID | null;
-	guilds?: GuildID[];
+	guild_id?: GuildID | null;
 };
 
 export type BossBattle = Omit<RawBossBattle, 'id' | 'quest_id' | 'agent_id'> & {
@@ -322,6 +322,35 @@ export function tierFromLevel(level: number): TrustTier {
 	if (level <= 15) return 2;
 	if (level <= 18) return 3;
 	return 4;
+}
+
+// =============================================================================
+// TOOL REGISTRY — mirrors processor/executor/tools.go RegisterBuiltins
+// =============================================================================
+
+export interface ToolInfo {
+	name: string;
+	description: string;
+	min_tier: TrustTier;
+	category: string;
+}
+
+/** Static tool definitions matching the Go ToolRegistry.RegisterBuiltins(). */
+export const BuiltinTools: ToolInfo[] = [
+	{ name: 'read_file', description: 'Read the contents of a file', min_tier: 0, category: 'filesystem' },
+	{ name: 'list_directory', description: 'List the contents of a directory', min_tier: 0, category: 'filesystem' },
+	{ name: 'search_text', description: 'Search for text patterns in files', min_tier: 0, category: 'filesystem' },
+	{ name: 'patch_file', description: 'Apply a targeted find-and-replace edit', min_tier: 1, category: 'filesystem' },
+	{ name: 'http_request', description: 'Make an HTTP request to a URL', min_tier: 1, category: 'network' },
+	{ name: 'write_file', description: 'Write content to a file', min_tier: 2, category: 'filesystem' },
+	{ name: 'run_tests', description: 'Run a test command in the workspace', min_tier: 2, category: 'execution' },
+	{ name: 'run_command', description: 'Run an arbitrary shell command', min_tier: 3, category: 'execution' },
+	{ name: 'decompose_quest', description: 'Break a quest into a DAG of sub-quests', min_tier: 3, category: 'coordination' },
+];
+
+/** Returns tools available at a given trust tier. */
+export function toolsForTier(tier: TrustTier): ToolInfo[] {
+	return BuiltinTools.filter((t) => t.min_tier <= tier);
 }
 
 // =============================================================================

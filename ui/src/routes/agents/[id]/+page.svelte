@@ -6,9 +6,11 @@
 	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
-	import { TrustTierNames, agentId } from '$types';
+	import { TrustTierNames, agentId, toolsForTier } from '$types';
+	import { resolveCapability, type ModelResolveResponse } from '$lib/services/api';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
+	import ActivityFeed from '$components/ActivityFeed.svelte';
 
 	const id = $derived(agentId(page.params.id ?? ''));
 	const agent = $derived(worldStore.agents.get(id));
@@ -24,6 +26,34 @@
 	let rightPanelOpen = $state(false);
 	let leftPanelWidth = $state(280);
 	let rightPanelWidth = $state(320);
+
+	const tools = $derived(agent ? toolsForTier(agent.tier) : []);
+
+	let modelAssignment = $state<ModelResolveResponse | null>(null);
+
+	$effect(() => {
+		if (!agent) {
+			modelAssignment = null;
+			return;
+		}
+		const tierName = TrustTierNames[agent.tier].toLowerCase();
+		resolveCapability(`agent-work.${tierName}`)
+			.then((res) => {
+				// If tier-specific key resolved to an endpoint, use it; otherwise fall back
+				if (res.endpoint_name) {
+					modelAssignment = res;
+				} else {
+					return resolveCapability('agent-work').then((fallback) => {
+						modelAssignment = fallback;
+					});
+				}
+			})
+			.catch(() => {
+				resolveCapability('agent-work')
+					.then((res) => { modelAssignment = res; })
+					.catch(() => { modelAssignment = null; });
+			});
+	});
 
 	const xpPercentage = $derived(
 		!agent || agent.xp_to_level === 0 ? 100 : Math.min((agent.xp / agent.xp_to_level) * 100, 100)
@@ -93,15 +123,18 @@
 					</section>
 
 					<section class="detail-card">
-						<h2>Equipment</h2>
-						<div class="equipment-list">
-							{#each agent.equipment as tool}
+						<h2>Tools</h2>
+						<div class="tools-list">
+							{#each tools as tool}
 								<div class="tool-item">
-									<span class="tool-name">{tool.name}</span>
-									<span class="tool-category">{tool.category}</span>
+									<div class="tool-header">
+										<span class="tool-name">{tool.name.replaceAll('_', ' ')}</span>
+										<span class="tool-category">{tool.category}</span>
+									</div>
+									<span class="tool-description">{tool.description}</span>
 								</div>
 							{:else}
-								<span class="empty-text">No equipment</span>
+								<span class="empty-text">No tools available</span>
 							{/each}
 						</div>
 					</section>
@@ -131,28 +164,38 @@
 					</section>
 
 					<section class="detail-card">
-						<h2>Configuration</h2>
-						<dl class="config-list">
-							<dt>Provider</dt>
-							<dd>{agent.config.provider}</dd>
-							<dt>Model</dt>
-							<dd>{agent.config.model}</dd>
-							<dt>Temperature</dt>
-							<dd>{agent.config.temperature}</dd>
-							<dt>Max Tokens</dt>
-							<dd>{agent.config.max_tokens}</dd>
-						</dl>
+						<h2>Model Assignment</h2>
+						{#if modelAssignment}
+							<dl class="config-list">
+								<dt>Capability</dt>
+								<dd class="mono">{modelAssignment.capability}</dd>
+								<dt>Endpoint</dt>
+								<dd class="mono">{modelAssignment.endpoint_name}</dd>
+								{#if modelAssignment.provider}
+									<dt>Provider</dt>
+									<dd>{modelAssignment.provider}</dd>
+								{/if}
+								{#if modelAssignment.model}
+									<dt>Model</dt>
+									<dd class="mono">{modelAssignment.model}</dd>
+								{/if}
+								{#if modelAssignment.fallback_chain && modelAssignment.fallback_chain.length > 1}
+									<dt>Fallbacks</dt>
+									<dd class="mono">{modelAssignment.fallback_chain.slice(1).join(' → ')}</dd>
+								{/if}
+							</dl>
+						{:else}
+							<span class="empty-text">Loading model assignment...</span>
+						{/if}
 					</section>
 
-					{#if (agent.guilds?.length ?? 0) > 0}
+					{#if agent.guild_id}
+						{@const guild = worldStore.guilds.get(agent.guild_id)}
 						<section class="detail-card">
-							<h2>Guilds</h2>
-							<div class="guilds-list">
-								{#each (agent.guilds ?? []) as guildId}
-									{@const guild = worldStore.guilds.get(guildId)}
-									<a href="/guilds/{guildId}" class="guild-link">{guild?.name ?? String(guildId).split('.').pop()}</a>
-								{/each}
-							</div>
+							<h2>Guild</h2>
+							<a href="/guilds/{agent.guild_id}" class="guild-link">
+								{guild?.name ?? String(agent.guild_id).split('.').pop()}
+							</a>
 						</section>
 					{/if}
 
@@ -176,6 +219,8 @@
 						</dl>
 					</section>
 				</div>
+
+				<ActivityFeed agentId={agent.id} />
 			{:else}
 				<div class="not-found" data-testid="agent-not-found">
 					<h2>Agent not found</h2>
@@ -377,7 +422,7 @@
 		text-transform: capitalize;
 	}
 
-	.equipment-list {
+	.tools-list {
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-sm);
@@ -385,15 +430,32 @@
 
 	.tool-item {
 		display: flex;
-		justify-content: space-between;
+		flex-direction: column;
+		gap: 2px;
 		padding: var(--spacing-sm);
 		background: var(--ui-surface-tertiary);
 		border-radius: var(--radius-md);
 	}
 
+	.tool-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.tool-name {
+		font-weight: 500;
+		text-transform: capitalize;
+	}
+
 	.tool-category {
 		font-size: 0.75rem;
 		color: var(--ui-text-tertiary);
+	}
+
+	.tool-description {
+		font-size: 0.75rem;
+		color: var(--ui-text-secondary);
 	}
 
 	.stats-grid,
@@ -427,12 +489,6 @@
 		color: var(--status-error);
 	}
 
-	.guilds-list {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--spacing-sm);
-	}
-
 	.guild-link {
 		padding: var(--spacing-xs) var(--spacing-sm);
 		background: var(--ui-surface-tertiary);
@@ -442,6 +498,11 @@
 	.empty-text {
 		color: var(--ui-text-tertiary);
 		font-style: italic;
+	}
+
+	.mono {
+		font-family: monospace;
+		font-size: 0.8125rem;
 	}
 
 	.not-found {

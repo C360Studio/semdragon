@@ -25,6 +25,11 @@ function set(newItems: PageContextItem[]) {
 	}
 }
 
+function remove(id: string) {
+	items = items.filter((i) => i.id !== id);
+	chatStore.removeContext(id);
+}
+
 function clear() {
 	items = [];
 }
@@ -34,5 +39,6 @@ export const pageContext = {
 		return items;
 	},
 	set,
+	remove,
 	clear
 };

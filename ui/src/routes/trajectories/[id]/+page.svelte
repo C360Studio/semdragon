@@ -392,15 +392,6 @@
 		font-family: monospace;
 	}
 
-	.context-chip.clickable {
-		cursor: pointer;
-	}
-
-	.context-chip.clickable:hover {
-		border-color: var(--ui-border-interactive);
-		color: var(--ui-text-primary);
-	}
-
 	.context-sources-detail {
 		display: inline-flex;
 		flex-direction: column;

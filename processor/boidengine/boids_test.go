@@ -247,6 +247,142 @@ func TestAffinityScore_NeutralPeerReputation(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// CAUTION SCORE (OVERQUALIFICATION) UNIT TESTS
+// =============================================================================
+
+func TestCautionScore_OverqualifiedAgent(t *testing.T) {
+	// Grandmaster (tier 4) vs apprentice quest (tier 0):
+	// tierDiff = 0 - 4 = -4, overqualified = 3
+	// CautionScore = -3 * 0.5 * 0.9 = -1.35
+	engine := NewDefaultBoidEngine()
+	rules := DefaultBoidRules()
+
+	agent := agentprogression.Agent{
+		ID:     "grandmaster",
+		Status: domain.AgentIdle,
+		Tier:   domain.TierGrandmaster, // tier 4
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			"code_gen": {},
+		},
+	}
+	quest := domain.Quest{
+		ID:             "trivial",
+		Status:         domain.QuestPosted,
+		MinTier:        domain.TierApprentice, // tier 0
+		RequiredSkills: []domain.SkillTag{"code_gen"},
+	}
+
+	attractions := engine.ComputeAttractions([]agentprogression.Agent{agent}, []domain.Quest{quest}, rules)
+	if len(attractions) == 0 {
+		t.Fatal("expected attraction result")
+	}
+
+	attr := attractions[0]
+	// overqualified = (4-0) - 1 = 3, penalty = -3 * 0.5 * 0.9 = -1.35
+	const wantCaution = -1.35
+	if math.Abs(attr.CautionScore-wantCaution) > 1e-9 {
+		t.Errorf("CautionScore = %.6f, want %.6f (grandmaster should be penalized for trivial quest)", attr.CautionScore, wantCaution)
+	}
+}
+
+func TestCautionScore_OneTierAbove(t *testing.T) {
+	// Journeyman (tier 1) vs apprentice quest (tier 0):
+	// tierDiff = 0 - 1 = -1, which is NOT < -1, so agent gets small bonus
+	engine := NewDefaultBoidEngine()
+	rules := DefaultBoidRules()
+
+	agent := agentprogression.Agent{
+		ID:     "journeyman",
+		Status: domain.AgentIdle,
+		Tier:   domain.TierJourneyman, // tier 1
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			"code_gen": {},
+		},
+	}
+	quest := domain.Quest{
+		ID:             "easy",
+		Status:         domain.QuestPosted,
+		MinTier:        domain.TierApprentice, // tier 0
+		RequiredSkills: []domain.SkillTag{"code_gen"},
+	}
+
+	attractions := engine.ComputeAttractions([]agentprogression.Agent{agent}, []domain.Quest{quest}, rules)
+	if len(attractions) == 0 {
+		t.Fatal("expected attraction result")
+	}
+
+	// One tier above: small bonus (0.2 * 0.9 = 0.18)
+	const wantCaution = 0.18
+	if math.Abs(attractions[0].CautionScore-wantCaution) > 1e-9 {
+		t.Errorf("CautionScore = %.6f, want %.6f (one tier above should get small bonus)", attractions[0].CautionScore, wantCaution)
+	}
+}
+
+func TestCautionScore_SameTier(t *testing.T) {
+	// Apprentice (tier 0) vs apprentice quest (tier 0):
+	// tierDiff = 0, small bonus
+	engine := NewDefaultBoidEngine()
+	rules := DefaultBoidRules()
+
+	agent := agentprogression.Agent{
+		ID:     "apprentice",
+		Status: domain.AgentIdle,
+		Tier:   domain.TierApprentice,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			"code_gen": {},
+		},
+	}
+	quest := domain.Quest{
+		ID:             "matching",
+		Status:         domain.QuestPosted,
+		MinTier:        domain.TierApprentice,
+		RequiredSkills: []domain.SkillTag{"code_gen"},
+	}
+
+	attractions := engine.ComputeAttractions([]agentprogression.Agent{agent}, []domain.Quest{quest}, rules)
+	if len(attractions) == 0 {
+		t.Fatal("expected attraction result")
+	}
+
+	const wantCaution = 0.18 // 0.2 * 0.9
+	if math.Abs(attractions[0].CautionScore-wantCaution) > 1e-9 {
+		t.Errorf("CautionScore = %.6f, want %.6f (same tier should get small bonus)", attractions[0].CautionScore, wantCaution)
+	}
+}
+
+func TestCautionScore_UnderLeveled(t *testing.T) {
+	// Apprentice (tier 0) vs expert quest (tier 2):
+	// tierDiff = 2 - 0 = 2, penalty = -2 * 0.9 = -1.8
+	engine := NewDefaultBoidEngine()
+	rules := DefaultBoidRules()
+
+	agent := agentprogression.Agent{
+		ID:     "apprentice",
+		Status: domain.AgentIdle,
+		Tier:   domain.TierApprentice,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			"code_gen": {},
+		},
+	}
+	quest := domain.Quest{
+		ID:             "hard",
+		Status:         domain.QuestPosted,
+		MinTier:        domain.TierExpert, // tier 2
+		RequiredSkills: []domain.SkillTag{"code_gen"},
+	}
+
+	attractions := engine.ComputeAttractions([]agentprogression.Agent{agent}, []domain.Quest{quest}, rules)
+	if len(attractions) == 0 {
+		t.Fatal("expected attraction result")
+	}
+
+	const wantCaution = -1.8 // -2 * 0.9
+	if math.Abs(attractions[0].CautionScore-wantCaution) > 1e-9 {
+		t.Errorf("CautionScore = %.6f, want %.6f (under-leveled should get strong penalty)", attractions[0].CautionScore, wantCaution)
+	}
+}
+
 func TestAffinityScore_NoPeerReviews(t *testing.T) {
 	// PeerReviewCount=0 → modifier branch is skipped entirely, no division by zero.
 	// AffinityScore equals the unmodified base value.

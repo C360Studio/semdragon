@@ -53,6 +53,14 @@
 		)
 	);
 
+	async function insertMention(type: string, label: string) {
+		const prefix = type === 'quest' ? '#' : '@';
+		const mention = `${prefix}${label} `;
+		input = input ? `${input.trimEnd()} ${mention}` : mention;
+		await tick();
+		inputEl?.focus();
+	}
+
 	function handleKeyDown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
@@ -112,7 +120,7 @@
 					type={item.type}
 					label={item.label}
 					variant="page"
-					onPin={() => chatStore.addContext({ type: item.type, id: item.id, label: item.label })}
+					onPin={() => { chatStore.addContext({ type: item.type, id: item.id, label: item.label }); insertMention(item.type, item.label); }}
 				/>
 			{/each}
 		</div>
@@ -194,7 +202,7 @@
 				{/if}
 			</div>
 
-			<!-- Page context chips -->
+			<!-- Page context chips (no x — page effect re-adds them immediately) -->
 			{#if pageContext.items.length > 0}
 				<div class="page-context-bar" data-testid="page-context-bar">
 					{#each pageContext.items as item}
@@ -202,7 +210,7 @@
 							type={item.type}
 							label={item.label}
 							variant="page"
-							onPin={() => chatStore.addContext({ type: item.type, id: item.id, label: item.label })}
+							onPin={() => insertMention(item.type, item.label)}
 						/>
 					{/each}
 				</div>
@@ -215,6 +223,7 @@
 						<ContextChip
 							type={item.type}
 							label={item.label}
+							onPin={() => insertMention(item.type, item.label)}
 							onRemove={() => chatStore.removeContext(item.id)}
 						/>
 					{/each}

@@ -9,6 +9,7 @@
 	import { QuestDifficultyNames, TrustTierNames, questId } from '$types';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
+	import ActivityFeed from '$components/ActivityFeed.svelte';
 
 	const id = $derived(questId(page.params.id ?? ''));
 	const quest = $derived(worldStore.quests.get(id));
@@ -140,6 +141,8 @@
 						</section>
 					{/if}
 				</div>
+
+				<ActivityFeed questId={quest.id} />
 			{:else}
 				<div class="not-found">
 					<h2>Quest not found</h2>

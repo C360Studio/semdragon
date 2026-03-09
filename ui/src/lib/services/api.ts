@@ -325,6 +325,40 @@ export async function getWorkspaceFile(path: string): Promise<string> {
 }
 
 // =============================================================================
+// MODEL REGISTRY
+// =============================================================================
+
+export interface ModelEndpointSummary {
+	name: string;
+	provider: string;
+	model: string;
+	max_tokens: number;
+	supports_tools: boolean;
+	reasoning_effort?: string;
+}
+
+export interface ModelRegistrySummary {
+	endpoints: ModelEndpointSummary[];
+	capabilities: string[];
+}
+
+export interface ModelResolveResponse {
+	capability: string;
+	endpoint_name: string;
+	model?: string;
+	provider?: string;
+	fallback_chain?: string[];
+}
+
+export async function getModelRegistry(): Promise<ModelRegistrySummary> {
+	return fetchJson<ModelRegistrySummary>('/game/models');
+}
+
+export async function resolveCapability(capability: string): Promise<ModelResolveResponse> {
+	return fetchJson<ModelResolveResponse>(`/game/models?resolve=${encodeURIComponent(capability)}`);
+}
+
+// =============================================================================
 // HEALTH (system endpoint — no /game/ prefix)
 // =============================================================================
 
@@ -368,5 +402,7 @@ export const api = {
 	setTokenBudget,
 	getWorkspaceTree,
 	getWorkspaceFile,
+	getModelRegistry,
+	resolveCapability,
 	healthCheck
 };
