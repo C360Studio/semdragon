@@ -11,6 +11,8 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/agentic"
+	"github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semstreams/message"
 )
 
 // TestBuiltinToolTierAlignment verifies that each tool registered by RegisterBuiltins
@@ -995,8 +997,578 @@ func TestRunTestsHandler(t *testing.T) {
 }
 
 // =============================================================================
+// writeFileHandler tests
+// =============================================================================
+
+// TestWriteFileHandler verifies that write_file creates files, creates parent
+// directories when missing, enforces the 1 MB size limit, and rejects sandbox
+// escape attempts.
+func TestWriteFileHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	// Resolve symlinks so validatePath sees the same canonical path on macOS.
+	realTmpDir, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	reg := NewToolRegistryWithSandbox(realTmpDir)
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{
+		Tier: domain.TierExpert,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
+		},
+	}
+	quest := &domain.Quest{}
+
+	t.Run("writes new file and verifies content", func(t *testing.T) {
+		t.Parallel()
+		filePath := filepath.Join(realTmpDir, "output.txt")
+		call := makeToolCall("write_file", map[string]any{
+			"path":         filePath,
+			"content":      "hello semdragons",
+			"_sandbox_dir": realTmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		assertContains(t, result.Content, "Successfully wrote")
+
+		got, readErr := os.ReadFile(filePath)
+		if readErr != nil {
+			t.Fatalf("read back: %v", readErr)
+		}
+		if string(got) != "hello semdragons" {
+			t.Errorf("file content = %q, want %q", string(got), "hello semdragons")
+		}
+	})
+
+	t.Run("creates parent directories when missing", func(t *testing.T) {
+		t.Parallel()
+		filePath := filepath.Join(realTmpDir, "nested", "deep", "file.txt")
+		call := makeToolCall("write_file", map[string]any{
+			"path":         filePath,
+			"content":      "nested content",
+			"_sandbox_dir": realTmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		if _, statErr := os.Stat(filePath); statErr != nil {
+			t.Errorf("expected file at %s after write_file: %v", filePath, statErr)
+		}
+	})
+
+	t.Run("rejects content exceeding 1 MB", func(t *testing.T) {
+		t.Parallel()
+		// maxFileWriteSize = 1<<20 = 1048576 bytes; write one byte over.
+		oversized := strings.Repeat("x", maxFileWriteSize+1)
+		call := makeToolCall("write_file", map[string]any{
+			"path":         filepath.Join(realTmpDir, "oversized.txt"),
+			"content":      oversized,
+			"_sandbox_dir": realTmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for oversized content, got none")
+		}
+		assertContains(t, result.Error, "too large")
+	})
+
+	t.Run("missing path argument returns error", func(t *testing.T) {
+		t.Parallel()
+		// path key present but not a string — handler checks .(string) ok.
+		call := makeToolCall("write_file", map[string]any{
+			"path":         42, // wrong type triggers !ok
+			"content":      "data",
+			"_sandbox_dir": realTmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for non-string path, got none")
+		}
+		assertContains(t, result.Error, "path argument must be a string")
+	})
+
+	t.Run("missing content argument returns error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("write_file", map[string]any{
+			"path":         filepath.Join(realTmpDir, "out.txt"),
+			"content":      123, // wrong type triggers !ok
+			"_sandbox_dir": realTmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for non-string content, got none")
+		}
+		assertContains(t, result.Error, "content argument must be a string")
+	})
+
+	t.Run("sandbox escape rejected", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("write_file", map[string]any{
+			"path":         filepath.Join(realTmpDir, "..", "escape.txt"),
+			"content":      "bad",
+			"_sandbox_dir": realTmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for sandbox-escaping path, got none")
+		}
+		assertContains(t, result.Error, "escapes sandbox")
+	})
+}
+
+// =============================================================================
+// httpRequestHandler tests
+// =============================================================================
+
+// TestHTTPRequestHandler verifies that http_request validates its arguments
+// and enforces SSRF protection (blocking private/loopback addresses).
+func TestHTTPRequestHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	reg := NewToolRegistryWithSandbox(tmpDir)
+	reg.RegisterBuiltins()
+
+	// http_request requires TierJourneyman and no specific skill.
+	agent := &agentprogression.Agent{Tier: domain.TierJourneyman}
+	quest := &domain.Quest{}
+
+	t.Run("empty url returns argument error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("http_request", map[string]any{
+			"url":          "",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for empty url, got none")
+		}
+		assertContains(t, result.Error, "url argument is required")
+	})
+
+	t.Run("url without http prefix returns error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("http_request", map[string]any{
+			"url":          "ftp://example.com",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for non-http url, got none")
+		}
+		assertContains(t, result.Error, "url must start with http://")
+	})
+
+	t.Run("invalid method returns error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("http_request", map[string]any{
+			"url":          "https://example.com",
+			"method":       "DELETE",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for DELETE method, got none")
+		}
+		assertContains(t, result.Error, "method must be GET or POST")
+	})
+
+	t.Run("localhost is blocked by SSRF protection", func(t *testing.T) {
+		t.Parallel()
+		// The custom httpToolClient transport blocks private and loopback addresses.
+		// 127.0.0.1 is always a loopback address; even if a server were running
+		// there the dial would be rejected before any connection is made.
+		call := makeToolCall("http_request", map[string]any{
+			"url":          "http://127.0.0.1:12345/",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected SSRF-rejection error for localhost, got none")
+		}
+		// The error should mention the request failing, not an argument error.
+		assertNotContains(t, result.Error, "url argument is required")
+		assertNotContains(t, result.Error, "method must be")
+	})
+}
+
+// =============================================================================
+// runCommandHandler tests
+// =============================================================================
+
+// TestRunCommandHandler verifies that run_command executes shell commands and
+// returns output on success, and an error on failure.
+func TestRunCommandHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	reg := NewToolRegistryWithSandbox(tmpDir)
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{Tier: domain.TierMaster}
+	quest := &domain.Quest{}
+
+	t.Run("successful echo command returns output", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("run_command", map[string]any{
+			"command":      "echo hello",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		assertContains(t, result.Content, "hello")
+	})
+
+	t.Run("failing command returns error with output", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("run_command", map[string]any{
+			"command":      "exit 1",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for failing command, got none")
+		}
+		assertContains(t, result.Error, "command failed")
+	})
+}
+
+// =============================================================================
+// graphQueryHandler tests
+// =============================================================================
+
+// TestGraphQueryHandler verifies graph_query argument validation, entity type
+// enforcement, limit capping, and successful query path via a mock queryFn.
+func TestGraphQueryHandler(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	// Apprentice tier is sufficient — graph_query has no skill requirement.
+	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
+	quest := &domain.Quest{}
+
+	t.Run("valid query returns formatted results", func(t *testing.T) {
+		t.Parallel()
+		reg := NewToolRegistryWithSandbox(tmpDir)
+		reg.RegisterBuiltins()
+		reg.RegisterGraphQuery(func(_ context.Context, entityType string, limit int) (string, error) {
+			return fmt.Sprintf("Found 1 %s(s) (limit=%d):\n\n--- test.entity ---\n{}", entityType, limit), nil
+		})
+
+		call := makeToolCall("graph_query", map[string]any{
+			"entity_type":  "agent",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		assertContains(t, result.Content, "agent")
+	})
+
+	t.Run("invalid entity_type returns error", func(t *testing.T) {
+		t.Parallel()
+		reg := NewToolRegistryWithSandbox(tmpDir)
+		reg.RegisterBuiltins()
+		reg.RegisterGraphQuery(func(_ context.Context, _ string, _ int) (string, error) {
+			return "should not be called", nil
+		})
+
+		call := makeToolCall("graph_query", map[string]any{
+			"entity_type":  "spaceship",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for invalid entity_type, got none")
+		}
+		assertContains(t, result.Error, "invalid entity_type")
+	})
+
+	t.Run("empty entity_type returns required error", func(t *testing.T) {
+		t.Parallel()
+		reg := NewToolRegistryWithSandbox(tmpDir)
+		reg.RegisterBuiltins()
+		reg.RegisterGraphQuery(func(_ context.Context, _ string, _ int) (string, error) {
+			return "should not be called", nil
+		})
+
+		call := makeToolCall("graph_query", map[string]any{
+			"entity_type":  "",
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error for empty entity_type, got none")
+		}
+		assertContains(t, result.Error, "entity_type argument is required")
+	})
+
+	t.Run("limit is capped at 100", func(t *testing.T) {
+		t.Parallel()
+		var capturedLimit int
+		reg := NewToolRegistryWithSandbox(tmpDir)
+		reg.RegisterBuiltins()
+		reg.RegisterGraphQuery(func(_ context.Context, _ string, limit int) (string, error) {
+			capturedLimit = limit
+			return "ok", nil
+		})
+
+		call := makeToolCall("graph_query", map[string]any{
+			"entity_type":  "quest",
+			"limit":        float64(9999),
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		if capturedLimit != 100 {
+			t.Errorf("limit = %d, want 100 (capped)", capturedLimit)
+		}
+	})
+
+	t.Run("custom limit within range is respected", func(t *testing.T) {
+		t.Parallel()
+		var capturedLimit int
+		reg := NewToolRegistryWithSandbox(tmpDir)
+		reg.RegisterBuiltins()
+		reg.RegisterGraphQuery(func(_ context.Context, _ string, limit int) (string, error) {
+			capturedLimit = limit
+			return "ok", nil
+		})
+
+		call := makeToolCall("graph_query", map[string]any{
+			"entity_type":  "guild",
+			"limit":        float64(42),
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		if capturedLimit != 42 {
+			t.Errorf("limit = %d, want 42", capturedLimit)
+		}
+	})
+}
+
+// =============================================================================
+// FormatEntitySummary tests
+// =============================================================================
+
+// TestFormatEntitySummary verifies that FormatEntitySummary returns an empty
+// string for an empty slice and returns formatted text for a non-empty slice.
+func TestFormatEntitySummary(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty slice returns empty string", func(t *testing.T) {
+		t.Parallel()
+		result := FormatEntitySummary([]graph.EntityState{}, "agent")
+		if result != "" {
+			t.Errorf("expected empty string for empty slice, got %q", result)
+		}
+	})
+
+	t.Run("non-empty slice returns formatted output", func(t *testing.T) {
+		t.Parallel()
+		entities := []graph.EntityState{
+			{
+				ID: "c360.prod.game.board1.agent.dragon",
+				Triples: []message.Triple{
+					{
+						Subject:   "c360.prod.game.board1.agent.dragon",
+						Predicate: "agent.progression.level",
+						Object:    float64(10),
+					},
+					{
+						Subject:   "c360.prod.game.board1.agent.dragon",
+						Predicate: "agent.identity.name",
+						Object:    "Dragon",
+					},
+				},
+			},
+		}
+		result := FormatEntitySummary(entities, "agent")
+		assertContains(t, result, "c360.prod.game.board1.agent.dragon")
+		assertContains(t, result, "agent.progression.level")
+		assertContains(t, result, "agent.identity.name")
+		assertContains(t, result, "Found 1 agent(s)")
+	})
+}
+
+// =============================================================================
+// GetToolsForQuest tests
+// =============================================================================
+
+// TestGetToolsForQuest verifies that GetToolsForQuest correctly filters tools
+// by agent tier, agent skills, and quest AllowedTools list.
+func TestGetToolsForQuest(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	t.Run("apprentice tier only sees apprentice tools", func(t *testing.T) {
+		t.Parallel()
+		reg := NewToolRegistryWithSandbox(tmpDir)
+		reg.RegisterBuiltins()
+
+		agent := &agentprogression.Agent{Tier: domain.TierApprentice}
+		quest := &domain.Quest{}
+
+		tools := reg.GetToolsForQuest(quest, agent)
+		names := toolNames(tools)
+
+		// Apprentice can read but not write.
+		assertContainsStr(t, names, "read_file")
+		assertContainsStr(t, names, "list_directory")
+		assertNotContainsStr(t, names, "write_file") // TierExpert required
+		assertNotContainsStr(t, names, "run_command") // TierMaster required
+	})
+
+	t.Run("master tier sees all tools (with required skills)", func(t *testing.T) {
+		t.Parallel()
+		reg := NewToolRegistryWithSandbox(tmpDir)
+		reg.RegisterBuiltins()
+
+		agent := &agentprogression.Agent{
+			Tier: domain.TierMaster,
+			SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+				domain.SkillCodeGen:    {Level: domain.ProficiencyNovice},
+				domain.SkillCodeReview: {Level: domain.ProficiencyNovice},
+			},
+		}
+		quest := &domain.Quest{}
+
+		tools := reg.GetToolsForQuest(quest, agent)
+		names := toolNames(tools)
+
+		assertContainsStr(t, names, "read_file")
+		assertContainsStr(t, names, "write_file")
+		assertContainsStr(t, names, "run_command")
+		assertContainsStr(t, names, "run_tests")
+	})
+
+	t.Run("quest AllowedTools restricts available tools", func(t *testing.T) {
+		t.Parallel()
+		reg := NewToolRegistryWithSandbox(tmpDir)
+		reg.RegisterBuiltins()
+
+		agent := &agentprogression.Agent{Tier: domain.TierApprentice}
+		quest := &domain.Quest{AllowedTools: []string{"read_file"}}
+
+		tools := reg.GetToolsForQuest(quest, agent)
+		names := toolNames(tools)
+
+		assertContainsStr(t, names, "read_file")
+		assertNotContainsStr(t, names, "list_directory") // not in AllowedTools
+	})
+
+	t.Run("agent without required skill cannot use skill-gated tool", func(t *testing.T) {
+		t.Parallel()
+		reg := NewToolRegistryWithSandbox(tmpDir)
+		reg.RegisterBuiltins()
+
+		// Expert tier but no SkillCodeGen — write_file requires it.
+		agent := &agentprogression.Agent{
+			Tier:               domain.TierExpert,
+			SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{},
+		}
+		quest := &domain.Quest{}
+
+		tools := reg.GetToolsForQuest(quest, agent)
+		names := toolNames(tools)
+
+		assertNotContainsStr(t, names, "write_file")
+	})
+}
+
+// =============================================================================
+// SetSandboxDir / GetSandboxDir tests
+// =============================================================================
+
+// TestSandboxDirGetterSetter verifies that SetSandboxDir and GetSandboxDir
+// round-trip correctly and that the registry starts with an empty sandbox.
+func TestSandboxDirGetterSetter(t *testing.T) {
+	t.Parallel()
+
+	reg := NewToolRegistry()
+
+	if got := reg.GetSandboxDir(); got != "" {
+		t.Errorf("initial sandbox dir = %q, want empty string", got)
+	}
+
+	reg.SetSandboxDir("/tmp/mybox")
+	if got := reg.GetSandboxDir(); got != "/tmp/mybox" {
+		t.Errorf("after SetSandboxDir, got %q, want %q", got, "/tmp/mybox")
+	}
+}
+
+// =============================================================================
+// containsToolName tests
+// =============================================================================
+
+// TestContainsToolName verifies the containsToolName helper.
+func TestContainsToolName(t *testing.T) {
+	t.Parallel()
+
+	allowed := []string{"read_file", "write_file", "run_tests"}
+
+	if !containsToolName(allowed, "write_file") {
+		t.Error("expected write_file to be found in allowed list")
+	}
+	if containsToolName(allowed, "delete_file") {
+		t.Error("expected delete_file NOT to be found in allowed list")
+	}
+	if containsToolName([]string{}, "any") {
+		t.Error("expected empty list to return false")
+	}
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
+
+// toolNames extracts the name strings from a slice of ToolDefinitions.
+func toolNames(tools []agentic.ToolDefinition) []string {
+	names := make([]string, len(tools))
+	for i, td := range tools {
+		names[i] = td.Name
+	}
+	return names
+}
+
+// assertContainsStr checks that a string slice contains the expected element.
+func assertContainsStr(t *testing.T, slice []string, want string) {
+	t.Helper()
+	for _, s := range slice {
+		if s == want {
+			return
+		}
+	}
+	t.Errorf("expected %q in %v", want, slice)
+}
+
+// assertNotContainsStr checks that a string slice does NOT contain the element.
+func assertNotContainsStr(t *testing.T, slice []string, want string) {
+	t.Helper()
+	for _, s := range slice {
+		if s == want {
+			t.Errorf("expected %q NOT to be in %v", want, slice)
+			return
+		}
+	}
+}
 
 // mustWriteFile creates intermediate directories and writes content to path.
 func mustWriteFile(t *testing.T, path, content string) {
