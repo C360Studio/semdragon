@@ -70,6 +70,21 @@
 		return 0;
 	});
 
+	// Derived: Recent store purchases from the global event stream
+	const recentPurchases = $derived(
+		worldStore.recentEvents
+			.filter((e) => e.type.startsWith('store.') || e.type.startsWith('agent.inventory.'))
+			.slice(0, 15)
+	);
+
+	function formatTime(timestamp: number): string {
+		const diff = Date.now() - timestamp;
+		if (diff < 60000) return 'just now';
+		if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+		if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+		return new Date(timestamp).toLocaleDateString();
+	}
+
 	// Load store data when agent changes
 	async function loadStoreData() {
 		if (!selectedAgentId) {
@@ -271,6 +286,27 @@
 					onSelect={selectItem}
 				/>
 			{/if}
+
+			<section class="recent-purchases">
+				<h2>Recent Purchases</h2>
+				<ul class="purchase-list">
+					{#each recentPurchases as event}
+						{@const agentName = event.agent_id ? worldStore.agentName(event.agent_id) : ''}
+						<li class="purchase-item">
+							<span class="purchase-icon">S</span>
+							<div class="purchase-body">
+								<span class="purchase-label">{event.type.split('.').slice(-1)[0]}</span>
+								{#if agentName}
+									<span class="purchase-agent">{agentName}</span>
+								{/if}
+							</div>
+							<span class="purchase-time">{formatTime(event.timestamp)}</span>
+						</li>
+					{:else}
+						<li class="purchase-empty">No recent store activity</li>
+					{/each}
+				</ul>
+			</section>
 		</div>
 	{/snippet}
 
@@ -315,7 +351,7 @@
 		height: 100%;
 		display: flex;
 		flex-direction: column;
-		overflow: hidden;
+		overflow-y: auto;
 	}
 
 	.store-header {
@@ -536,5 +572,90 @@
 		flex: 1;
 		overflow-y: auto;
 		padding: var(--spacing-md);
+	}
+
+	/* Recent Purchases */
+	.recent-purchases {
+		margin-top: auto;
+		border-top: 1px solid var(--ui-border-subtle);
+		padding: var(--spacing-md) var(--spacing-lg);
+	}
+
+	.recent-purchases h2 {
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-tertiary);
+		margin: 0 0 var(--spacing-md);
+	}
+
+	.purchase-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		background: var(--ui-surface-secondary);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-lg);
+		overflow: hidden;
+	}
+
+	.purchase-item {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--ui-surface-secondary);
+	}
+
+	.purchase-icon {
+		width: 20px;
+		height: 20px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-sm);
+		font-size: 0.625rem;
+		font-weight: 700;
+		flex-shrink: 0;
+		background: var(--status-success-container);
+		color: var(--status-success);
+	}
+
+	.purchase-body {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.purchase-label {
+		font-size: 0.8125rem;
+		text-transform: capitalize;
+	}
+
+	.purchase-agent {
+		font-size: 0.6875rem;
+		color: var(--ui-text-tertiary);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.purchase-time {
+		font-size: 0.6875rem;
+		color: var(--ui-text-tertiary);
+		flex-shrink: 0;
+	}
+
+	.purchase-empty {
+		padding: var(--spacing-md);
+		color: var(--ui-text-tertiary);
+		font-size: 0.875rem;
+		font-style: italic;
+		text-align: center;
 	}
 </style>

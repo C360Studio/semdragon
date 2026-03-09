@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
-	import { TrustTierNames, agentId, toolsForTier } from '$types';
+	import { TrustTierNames, agentId, toolsForTier, ConsumableTypeNames } from '$types';
 	import { resolveCapability, type ModelResolveResponse } from '$lib/services/api';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
@@ -45,28 +45,39 @@
 			modelAssignment = null;
 			return;
 		}
+		let cancelled = false;
 		const tierName = TrustTierNames[agent.tier].toLowerCase();
 		resolveCapability(`agent-work.${tierName}`)
 			.then((res) => {
-				// If tier-specific key resolved to an endpoint, use it; otherwise fall back
+				if (cancelled) return;
 				if (res.endpoint_name) {
 					modelAssignment = res;
 				} else {
 					return resolveCapability('agent-work').then((fallback) => {
-						modelAssignment = fallback;
+						if (!cancelled) modelAssignment = fallback;
 					});
 				}
 			})
 			.catch(() => {
+				if (cancelled) return;
 				resolveCapability('agent-work')
-					.then((res) => { modelAssignment = res; })
-					.catch(() => { modelAssignment = null; });
+					.then((res) => { if (!cancelled) modelAssignment = res; })
+					.catch(() => { if (!cancelled) modelAssignment = null; });
 			});
+		return () => { cancelled = true; };
 	});
 
 	const xpPercentage = $derived(
 		!agent || agent.xp_to_level === 0 ? 100 : Math.min((agent.xp / agent.xp_to_level) * 100, 100)
 	);
+
+	// Inventory: reactive from worldStore (populated by SSE or store page)
+	const inventory = $derived(agent ? worldStore.getInventory(agent.id) ?? null : null);
+	const ownedTools = $derived(inventory ? Object.values(inventory.owned_tools) : []);
+	const consumableList = $derived(
+		inventory ? Object.entries(inventory.consumables).filter(([, qty]) => qty > 0) : []
+	);
+	const bagIsEmpty = $derived(ownedTools.length === 0 && consumableList.length === 0);
 
 	let activeHistoryTab = $state('quests');
 
@@ -258,6 +269,55 @@
 								<dd>{new Date(agent.cooldown_until).toLocaleString()}</dd>
 							{/if}
 						</dl>
+					</section>
+
+					<section class="detail-card bag-of-holding" data-testid="bag-of-holding">
+						<h2>Bag of Holding</h2>
+						{#if !inventory || bagIsEmpty}
+							<div class="bag-empty">
+								<span class="empty-text">No items yet</span>
+								<a href="/store?agent={page.params.id}" class="store-link">Visit the Store</a>
+							</div>
+						{:else}
+							{#if ownedTools.length > 0}
+								<div class="bag-section">
+									<span class="bag-section-label">Tools</span>
+									<div class="bag-items">
+										{#each ownedTools as tool (tool.item_id)}
+											<div class="bag-item">
+												<span class="bag-item-name">{tool.item_name}</span>
+												{#if tool.purchase_type === 'rental' && tool.uses_remaining !== undefined}
+													<span class="bag-badge bag-badge--rental">{tool.uses_remaining} uses</span>
+												{:else}
+													<span class="bag-badge bag-badge--owned">Permanent</span>
+												{/if}
+											</div>
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							{#if consumableList.length > 0}
+								<div class="bag-section">
+									<span class="bag-section-label">Consumables</span>
+									<div class="bag-items">
+										{#each consumableList as [consumableId, qty]}
+											<div class="bag-item">
+												<span class="bag-item-name">
+													{ConsumableTypeNames[consumableId as keyof typeof ConsumableTypeNames] ?? consumableId.replaceAll('_', ' ')}
+												</span>
+												<span class="bag-badge bag-badge--qty">x{qty}</span>
+											</div>
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							<div class="bag-footer">
+								<span class="bag-total">Total spent: {inventory.total_spent.toLocaleString()} XP</span>
+								<a href="/store?agent={page.params.id}" class="store-link">Store</a>
+							</div>
+						{/if}
 					</section>
 				</div>
 
@@ -624,5 +684,95 @@
 	.empty-state {
 		color: var(--ui-text-tertiary);
 		font-size: 0.875rem;
+	}
+
+	/* Bag of Holding */
+	.bag-of-holding {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md);
+	}
+
+	.bag-empty {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.bag-section {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.bag-section-label {
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-tertiary);
+	}
+
+	.bag-items {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.bag-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		background: var(--ui-surface-tertiary);
+		border-radius: var(--radius-sm);
+	}
+
+	.bag-item-name {
+		font-size: 0.8125rem;
+		text-transform: capitalize;
+	}
+
+	.bag-badge {
+		font-size: 0.625rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+	}
+
+	.bag-badge--owned {
+		background: var(--status-success-container);
+		color: var(--status-success);
+	}
+
+	.bag-badge--rental {
+		background: var(--status-warning-container);
+		color: var(--status-warning);
+	}
+
+	.bag-badge--qty {
+		background: var(--ui-surface-primary);
+		color: var(--ui-text-secondary);
+		border: 1px solid var(--ui-border-subtle);
+	}
+
+	.bag-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding-top: var(--spacing-sm);
+		border-top: 1px solid var(--ui-border-subtle);
+		margin-top: auto;
+	}
+
+	.bag-total {
+		font-size: 0.75rem;
+		color: var(--ui-text-tertiary);
+	}
+
+	.store-link {
+		font-size: 0.75rem;
+		color: var(--ui-interactive-primary);
 	}
 </style>

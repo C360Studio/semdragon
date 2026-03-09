@@ -13,6 +13,7 @@
 		guildId = undefined,
 		partyId = undefined,
 		battleId = undefined,
+		eventTypes = undefined,
 		limit = 20
 	}: {
 		agentId?: AgentID;
@@ -20,12 +21,19 @@
 		guildId?: GuildID;
 		partyId?: PartyID;
 		battleId?: BattleID;
+		/** Filter by event type prefix (e.g. ['store.', 'agent.inventory.']). When set with no entity IDs, shows all events matching these prefixes. */
+		eventTypes?: string[];
 		limit?: number;
 	} = $props();
 
 	const events = $derived.by(() => {
+		const hasEntityFilter = agentId || questId || guildId || partyId || battleId;
 		return worldStore.recentEvents
 			.filter((e) => {
+				// If eventTypes is set, the event must match at least one prefix
+				if (eventTypes && !eventTypes.some((prefix) => e.type.startsWith(prefix))) return false;
+				// If no entity filters are set (and eventTypes handled above), show the event
+				if (!hasEntityFilter) return true;
 				if (agentId && e.agent_id === agentId) return true;
 				if (questId && e.quest_id === questId) return true;
 				if (guildId && e.guild_id === guildId) return true;
@@ -77,12 +85,13 @@
 	<h2>Recent Activity</h2>
 	<ul class="activity-list">
 		{#each events as event}
+			{@const detail = eventDetail(event)}
 			<li class="activity-item">
 				<span class="activity-icon" data-category={eventIcon(event.type)}>{eventIcon(event.type)}</span>
 				<div class="activity-body">
 					<span class="activity-label">{eventLabel(event.type)}</span>
-					{#if eventDetail(event)}
-						<span class="activity-detail">{eventDetail(event)}</span>
+					{#if detail}
+						<span class="activity-detail">{detail}</span>
 					{/if}
 				</div>
 				<span class="activity-time">{formatTime(event.timestamp)}</span>
