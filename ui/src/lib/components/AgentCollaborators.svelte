@@ -25,7 +25,7 @@
 		partyCount: number;
 	}
 
-	const collaborators = $derived.by((): CollaboratorEntry[] => {
+	const allCollaborators = $derived.by((): CollaboratorEntry[] => {
 		const counts = new Map<string, number>();
 
 		for (const party of worldStore.partyList) {
@@ -58,8 +58,16 @@
 		}
 
 		entries.sort((a, b) => b.partyCount - a.partyCount);
-		return compact ? entries.slice(0, 10) : entries;
+		return entries;
 	});
+
+	const compactLimit = 10;
+	const collaborators = $derived(
+		compact ? allCollaborators.slice(0, compactLimit) : allCollaborators
+	);
+	const truncatedCount = $derived(
+		compact ? Math.max(0, allCollaborators.length - compactLimit) : 0
+	);
 
 	function tierName(tier: number): string {
 		return TrustTierNames[tier as 0 | 1 | 2 | 3 | 4] ?? 'Unknown';
@@ -85,6 +93,9 @@
 				</li>
 			{/each}
 		</ul>
+		{#if truncatedCount > 0}
+			<p class="truncation-note">+{truncatedCount} more — see Collaborators tab</p>
+		{/if}
 	{:else}
 		<p class="empty-state">No collaborators yet</p>
 	{/if}
@@ -183,6 +194,14 @@
 		font-size: 0.75rem;
 		color: var(--ui-text-tertiary);
 		flex-shrink: 0;
+	}
+
+	.truncation-note {
+		font-size: 0.6875rem;
+		color: var(--ui-text-tertiary);
+		text-align: center;
+		padding: var(--spacing-xs) var(--spacing-md);
+		margin: 0;
 	}
 
 	.empty-state {

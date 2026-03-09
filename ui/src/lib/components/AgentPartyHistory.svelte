@@ -10,6 +10,7 @@
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { partyId as toPartyId, questId as toQuestId } from '$types';
 	import type { PartyStatus } from '$types';
+	import { formatDate } from '$lib/utils/format';
 
 	let { agentId }: { agentId: string } = $props();
 
@@ -52,13 +53,6 @@
 
 	function extractInstance(id: string): string {
 		return id.split('.').pop() ?? id;
-	}
-
-	function formatDate(dateStr: string | null | undefined): string {
-		if (!dateStr) return '—';
-		const d = new Date(dateStr);
-		if (isNaN(d.getTime())) return '—';
-		return d.toLocaleDateString();
 	}
 
 	function statusLabel(status: PartyStatus): string {

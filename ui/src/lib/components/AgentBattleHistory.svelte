@@ -9,6 +9,7 @@
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { questId as toQuestId } from '$types';
 	import type { BattleStatus } from '$types';
+	import { formatDate } from '$lib/utils/format';
 
 	let { agentId }: { agentId: string } = $props();
 
@@ -41,18 +42,6 @@
 		return quest?.title ?? questId.split('.').pop() ?? questId;
 	}
 
-	function formatDate(dateStr: string | null | undefined): string {
-		if (!dateStr) return '—';
-		const d = new Date(dateStr);
-		if (isNaN(d.getTime())) return '—';
-		const now = Date.now();
-		const diff = now - d.getTime();
-		if (diff < 60000) return 'just now';
-		if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-		if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-		return d.toLocaleDateString();
-	}
-
 	function outcomeBadgeStatus(status: BattleStatus): 'victory' | 'defeat' | 'active' | 'other' {
 		if (status === 'victory') return 'victory';
 		if (status === 'defeat') return 'defeat';
@@ -75,7 +64,7 @@
 			{#each agentBattles as battle (battle.id)}
 				<li class="history-item">
 					<a href="/battles/{battle.id}" class="item-link">
-						<div class="outcome-indicator" data-outcome={outcomeBadgeStatus(battle.status)}></div>
+						<div class="outcome-indicator" data-outcome={outcomeBadgeStatus(battle.status)} aria-hidden="true"></div>
 						<div class="item-main">
 							<span class="item-title">{resolveQuestTitle(battle.quest_id)}</span>
 							<span class="outcome-badge" data-outcome={outcomeBadgeStatus(battle.status)}>

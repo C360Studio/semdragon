@@ -9,6 +9,23 @@ export function formatTokenCount(n: number): string {
 	return n.toString();
 }
 
+/**
+ * Format a date string for compact display.
+ * Shows relative time for recent dates ("just now", "5m ago", "2h ago")
+ * and falls back to locale date string for older ones.
+ */
+export function formatDate(dateStr: string | null | undefined): string {
+	if (!dateStr) return '—';
+	const d = new Date(dateStr);
+	if (isNaN(d.getTime())) return '—';
+	const now = Date.now();
+	const diff = now - d.getTime();
+	if (diff < 60000) return 'just now';
+	if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+	if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+	return d.toLocaleDateString();
+}
+
 /** Format a USD cost for compact display */
 export function formatCostUSD(usd: number): string {
 	if (usd >= 1) return `$${usd.toFixed(2)}`;
