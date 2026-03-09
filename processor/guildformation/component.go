@@ -32,10 +32,15 @@ type Component struct {
 	boardConfig *domain.BoardConfig
 
 	// Guild state - in-memory projection
-	guilds sync.Map // map[domain.GuildID]*semdragons.Guild
+	guilds sync.Map // map[domain.GuildID]*domain.Guild
+
+	// Per-guild mutexes for protecting guild struct mutations.
+	// Same pattern as dagMutexes in questdagexec: LoadOrStore for safe concurrent creation.
+	guildMutexes sync.Map // map[domain.GuildID]*sync.Mutex
 
 	// Agent to guild mapping - in-memory projection
-	agentGuilds sync.Map // map[domain.AgentID][]domain.GuildID
+	agentGuilds   sync.Map   // map[domain.AgentID][]domain.GuildID
+	agentGuildsMu sync.Mutex // protects Load-then-Store atomicity on agentGuilds
 
 	// KV watcher for agent entity state changes (entity-centric architecture)
 	agentWatch  jetstream.KeyWatcher
@@ -342,4 +347,11 @@ func (c *Component) Stop(timeout time.Duration) error {
 // BoardConfig returns the board configuration.
 func (c *Component) BoardConfig() *domain.BoardConfig {
 	return c.boardConfig
+}
+
+// guildMutex returns or creates the per-guild mutex for the given guild ID.
+// Uses LoadOrStore for safe concurrent creation — same pattern as dagMutexes in questdagexec.
+func (c *Component) guildMutex(id domain.GuildID) *sync.Mutex {
+	val, _ := c.guildMutexes.LoadOrStore(id, &sync.Mutex{})
+	return val.(*sync.Mutex)
 }

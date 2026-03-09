@@ -336,7 +336,8 @@ func (c *Component) CreateGuild(ctx context.Context, params CreateGuildParams) (
 		CreatedAt:   now,
 	}
 
-	// Store guild in memory
+	// Store guild in memory — no mutex needed for a new guild since no other
+	// goroutine can reference this ID yet.
 	c.guilds.Store(guildID, guild)
 
 	// Update agent guild mapping
@@ -368,16 +369,27 @@ func (c *Component) CreateGuild(ctx context.Context, params CreateGuildParams) (
 		"culture", params.Culture,
 		"founder", params.FounderID)
 
-	return guild, nil
+	// Return a copy so the caller cannot mutate internal state.
+	cp := *guild
+	cp.Members = append([]domain.GuildMember(nil), guild.Members...)
+	return &cp, nil
 }
 
-// GetGuild returns a guild by ID.
+// GetGuild returns a copy of a guild by ID, safe for concurrent use.
 func (c *Component) GetGuild(guildID domain.GuildID) (*domain.Guild, bool) {
 	val, ok := c.guilds.Load(guildID)
 	if !ok {
 		return nil, false
 	}
-	return val.(*domain.Guild), true
+	mu := c.guildMutex(guildID)
+	mu.Lock()
+	original := val.(*domain.Guild)
+	cp := *original
+	cp.Members = append([]domain.GuildMember(nil), original.Members...)
+	cp.Applications = append([]domain.GuildApplication(nil), original.Applications...)
+	cp.QuestTypes = append([]string(nil), original.QuestTypes...)
+	mu.Unlock()
+	return &cp, true
 }
 
 // JoinGuild adds an agent to a guild.
@@ -390,15 +402,20 @@ func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agent
 	if !ok {
 		return errors.New("guild not found")
 	}
+
+	mu := c.guildMutex(guildID)
+	mu.Lock()
 	guild := val.(*domain.Guild)
 
 	// Check if already a member
-	if isMember(guild, domain.AgentID(agentID)) {
+	if isMember(guild, agentID) {
+		mu.Unlock()
 		return ErrAlreadyMember
 	}
 
 	// Check max size
 	if c.config.MaxGuildSize > 0 && len(guild.Members) >= c.config.MaxGuildSize {
+		mu.Unlock()
 		return ErrGuildFull
 	}
 
@@ -406,10 +423,11 @@ func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agent
 
 	// Add member
 	guild.Members = append(guild.Members, domain.GuildMember{
-		AgentID:  domain.AgentID(agentID),
+		AgentID:  agentID,
 		Rank:     domain.GuildRankInitiate,
 		JoinedAt: now,
 	})
+	mu.Unlock()
 
 	// Update agent guild mapping
 	c.addAgentGuild(agentID, guildID)
@@ -451,26 +469,32 @@ func (c *Component) LeaveGuild(ctx context.Context, guildID domain.GuildID, agen
 	if !ok {
 		return errors.New("guild not found")
 	}
+
+	mu := c.guildMutex(guildID)
+	mu.Lock()
 	guild := val.(*domain.Guild)
 
 	// Check if a member
-	if !isMember(guild, domain.AgentID(agentID)) {
+	if !isMember(guild, agentID) {
+		mu.Unlock()
 		return errors.New("not a member")
 	}
 
 	// Cannot leave if founder/guildmaster (must transfer first)
-	if guild.FoundedBy == domain.AgentID(agentID) {
+	if guild.FoundedBy == agentID {
+		mu.Unlock()
 		return errors.New("guildmaster must transfer leadership before leaving")
 	}
 
 	// Remove member
 	newMembers := make([]domain.GuildMember, 0, len(guild.Members)-1)
 	for _, m := range guild.Members {
-		if m.AgentID != domain.AgentID(agentID) {
+		if m.AgentID != agentID {
 			newMembers = append(newMembers, m)
 		}
 	}
 	guild.Members = newMembers
+	mu.Unlock()
 
 	// Update agent guild mapping
 	c.removeAgentGuild(agentID, guildID)
@@ -514,15 +538,20 @@ func (c *Component) PromoteMember(ctx context.Context, guildID domain.GuildID, a
 	if !ok {
 		return errors.New("guild not found")
 	}
+
+	mu := c.guildMutex(guildID)
+	mu.Lock()
 	guild := val.(*domain.Guild)
 
-	member := getMember(guild, domain.AgentID(agentID))
+	member := getMember(guild, agentID)
 	if member == nil {
+		mu.Unlock()
 		return errors.New("not a member")
 	}
 
 	oldRank := member.Rank
 	member.Rank = newRank
+	mu.Unlock()
 
 	now := time.Now()
 
@@ -566,14 +595,21 @@ func (c *Component) DisbandGuild(ctx context.Context, guildID domain.GuildID, re
 	if !ok {
 		return errors.New("guild not found")
 	}
+
+	mu := c.guildMutex(guildID)
+	mu.Lock()
 	guild := val.(*domain.Guild)
 
 	now := time.Now()
 	guild.Status = domain.GuildInactive
 
+	// Snapshot members for cleanup outside the lock.
+	members := append([]domain.GuildMember(nil), guild.Members...)
+	mu.Unlock()
+
 	// Remove all agent guild mappings
-	for _, member := range guild.Members {
-		c.removeAgentGuild(domain.AgentID(member.AgentID), guildID)
+	for _, member := range members {
+		c.removeAgentGuild(member.AgentID, guildID)
 	}
 
 	// Persist updated guild to KV
@@ -586,7 +622,7 @@ func (c *Component) DisbandGuild(ctx context.Context, guildID domain.GuildID, re
 		GuildID:          guildID,
 		GuildName:        guild.Name,
 		Reason:           reason,
-		FinalMemberCount: len(guild.Members),
+		FinalMemberCount: len(members),
 		Timestamp:        now,
 	}); err != nil {
 		c.errorsCount.Add(1)
@@ -598,18 +634,23 @@ func (c *Component) DisbandGuild(ctx context.Context, guildID domain.GuildID, re
 	c.logger.Info("guild disbanded",
 		"guild_id", guildID,
 		"reason", reason,
-		"final_members", len(guild.Members))
+		"final_members", len(members))
 
 	return nil
 }
 
-// GetAgentGuilds returns all guilds an agent belongs to.
+// GetAgentGuilds returns a copy of the guild IDs an agent belongs to.
 func (c *Component) GetAgentGuilds(agentID domain.AgentID) []domain.GuildID {
+	c.agentGuildsMu.Lock()
 	val, ok := c.agentGuilds.Load(agentID)
 	if !ok {
+		c.agentGuildsMu.Unlock()
 		return nil
 	}
-	return val.([]domain.GuildID)
+	guilds := val.([]domain.GuildID)
+	cp := append([]domain.GuildID(nil), guilds...)
+	c.agentGuildsMu.Unlock()
+	return cp
 }
 
 // SubmitApplication submits an agent's application to join a pending guild.
@@ -622,19 +663,25 @@ func (c *Component) SubmitApplication(ctx context.Context, guildID domain.GuildI
 	if !ok {
 		return errors.New("guild not found")
 	}
+
+	mu := c.guildMutex(guildID)
+	mu.Lock()
 	guild := val.(*domain.Guild)
 
 	if guild.Status != domain.GuildPending {
+		mu.Unlock()
 		return ErrGuildNotPending
 	}
 
 	if isMember(guild, agent.ID) {
+		mu.Unlock()
 		return ErrAlreadyMember
 	}
 
 	// Check for duplicate pending application
 	for _, app := range guild.Applications {
 		if app.ApplicantID == agent.ID && app.Status == domain.ApplicationPending {
+			mu.Unlock()
 			return ErrDuplicateApplication
 		}
 	}
@@ -661,6 +708,7 @@ func (c *Component) SubmitApplication(ctx context.Context, guildID domain.GuildI
 	}
 
 	guild.Applications = append(guild.Applications, app)
+	mu.Unlock()
 
 	// Persist to KV
 	if err := c.graph.EmitEntity(ctx, guild, domain.PredicateGuildApplicationSubmitted); err != nil {
@@ -687,13 +735,18 @@ func (c *Component) ReviewApplication(ctx context.Context, guildID domain.GuildI
 	if !ok {
 		return errors.New("guild not found")
 	}
+
+	mu := c.guildMutex(guildID)
+	mu.Lock()
 	guild := val.(*domain.Guild)
 
 	if guild.Status != domain.GuildPending {
+		mu.Unlock()
 		return ErrGuildNotPending
 	}
 
 	if guild.FoundedBy != founderID {
+		mu.Unlock()
 		return ErrNotFounder
 	}
 
@@ -706,9 +759,11 @@ func (c *Component) ReviewApplication(ctx context.Context, guildID domain.GuildI
 		}
 	}
 	if app == nil {
+		mu.Unlock()
 		return ErrApplicationNotFound
 	}
 	if app.Status != domain.ApplicationPending {
+		mu.Unlock()
 		return errors.New("application already reviewed")
 	}
 
@@ -717,21 +772,28 @@ func (c *Component) ReviewApplication(ctx context.Context, guildID domain.GuildI
 	app.Reason = reason
 	app.ReviewedAt = &now
 
+	var applicantID domain.AgentID
 	predicate := domain.PredicateGuildApplicationRejected
 	if accepted {
 		app.Status = domain.ApplicationAccepted
 		predicate = domain.PredicateGuildApplicationAccepted
+		applicantID = app.ApplicantID
 
 		// Add applicant as guild member
 		guild.Members = append(guild.Members, domain.GuildMember{
-			AgentID:  app.ApplicantID,
+			AgentID:  applicantID,
 			Rank:     domain.GuildRankInitiate,
 			JoinedAt: now,
 		})
-		c.addAgentGuild(app.ApplicantID, guildID)
-		c.membersJoined.Add(1)
 	} else {
 		app.Status = domain.ApplicationRejected
+	}
+	mu.Unlock()
+
+	// Agent guild mapping and metrics outside lock
+	if accepted {
+		c.addAgentGuild(applicantID, guildID)
+		c.membersJoined.Add(1)
 	}
 
 	// Persist to KV
@@ -749,29 +811,35 @@ func (c *Component) ReviewApplication(ctx context.Context, guildID domain.GuildI
 	c.logger.Info("application reviewed",
 		"guild_id", guildID,
 		"app_id", applicationID,
-		"applicant", app.ApplicantID,
+		"applicant", applicantID,
 		"decision", verb,
 		"reason", reason)
 
 	// Check if quorum is reached after acceptance
 	if accepted {
-		c.checkQuorum(ctx, guild)
+		c.checkQuorumLocked(ctx, guildID, guild)
 	}
 
 	return nil
 }
 
-// checkQuorum transitions a pending guild to active if the quorum is met.
-func (c *Component) checkQuorum(ctx context.Context, guild *domain.Guild) {
+// checkQuorumLocked transitions a pending guild to active if the quorum is met.
+// Acquires the per-guild mutex internally.
+func (c *Component) checkQuorumLocked(ctx context.Context, guildID domain.GuildID, guild *domain.Guild) {
+	mu := c.guildMutex(guildID)
+	mu.Lock()
 	if guild.Status != domain.GuildPending {
+		mu.Unlock()
 		return
 	}
 	if len(guild.Members) < guild.QuorumSize {
+		mu.Unlock()
 		return
 	}
 
 	guild.Status = domain.GuildActive
 	guild.FormationDeadline = nil
+	mu.Unlock()
 
 	if err := c.graph.EmitEntity(ctx, guild, domain.PredicateGuildActivated); err != nil {
 		c.errorsCount.Add(1)
@@ -787,6 +855,9 @@ func (c *Component) checkQuorum(ctx context.Context, guild *domain.Guild) {
 
 // dissolveGuild dissolves a pending guild that failed to reach quorum.
 func (c *Component) dissolveGuild(ctx context.Context, guild *domain.Guild, reason string) {
+	mu := c.guildMutex(guild.ID)
+	mu.Lock()
+
 	guild.Status = domain.GuildInactive
 
 	// Reject all remaining pending applications
@@ -799,8 +870,12 @@ func (c *Component) dissolveGuild(ctx context.Context, guild *domain.Guild, reas
 		}
 	}
 
+	// Snapshot members for cleanup outside the lock.
+	members := append([]domain.GuildMember(nil), guild.Members...)
+	mu.Unlock()
+
 	// Remove all agent guild mappings
-	for _, member := range guild.Members {
+	for _, member := range members {
 		c.removeAgentGuild(member.AgentID, guild.ID)
 	}
 
@@ -838,26 +913,42 @@ func (c *Component) runFormationTimeoutLoop() {
 func (c *Component) checkFormationTimeouts() {
 	now := time.Now()
 
-	c.guilds.Range(func(_, value any) bool {
+	// Collect expired guilds first, then dissolve outside the Range to avoid
+	// holding sync.Map's internal lock during dissolveGuild's I/O.
+	var expired []*domain.Guild
+	c.guilds.Range(func(key, value any) bool {
+		guildID := key.(domain.GuildID)
+		mu := c.guildMutex(guildID)
+		mu.Lock()
 		guild := value.(*domain.Guild)
-		if guild.Status == domain.GuildPending &&
+		isExpired := guild.Status == domain.GuildPending &&
 			guild.FormationDeadline != nil &&
-			now.After(*guild.FormationDeadline) {
-
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			c.dissolveGuild(ctx, guild, "formation timeout: quorum not met")
-			cancel()
+			now.After(*guild.FormationDeadline)
+		mu.Unlock()
+		if isExpired {
+			expired = append(expired, guild)
 		}
 		return true
 	})
+
+	for _, guild := range expired {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		c.dissolveGuild(ctx, guild, "formation timeout: quorum not met")
+		cancel()
+	}
 }
 
 // HasPendingGuilds returns true if at least one pending guild exists.
 // More efficient than ListPendingGuilds for guard checks.
 func (c *Component) HasPendingGuilds() bool {
 	found := false
-	c.guilds.Range(func(_, value any) bool {
-		if value.(*domain.Guild).Status == domain.GuildPending {
+	c.guilds.Range(func(key, value any) bool {
+		guildID := key.(domain.GuildID)
+		mu := c.guildMutex(guildID)
+		mu.Lock()
+		isPending := value.(*domain.Guild).Status == domain.GuildPending
+		mu.Unlock()
+		if isPending {
 			found = true
 			return false // stop iteration
 		}
@@ -869,7 +960,10 @@ func (c *Component) HasPendingGuilds() bool {
 // ListPendingGuilds returns all pending guilds as shallow copies.
 func (c *Component) ListPendingGuilds() []*domain.Guild {
 	var guilds []*domain.Guild
-	c.guilds.Range(func(_, value any) bool {
+	c.guilds.Range(func(key, value any) bool {
+		guildID := key.(domain.GuildID)
+		mu := c.guildMutex(guildID)
+		mu.Lock()
 		original := value.(*domain.Guild)
 		if original.Status == domain.GuildPending {
 			cp := *original
@@ -878,6 +972,7 @@ func (c *Component) ListPendingGuilds() []*domain.Guild {
 			cp.QuestTypes = append([]string(nil), original.QuestTypes...)
 			guilds = append(guilds, &cp)
 		}
+		mu.Unlock()
 		return true
 	})
 	return guilds
@@ -887,7 +982,10 @@ func (c *Component) ListPendingGuilds() []*domain.Guild {
 // Members and QuestTypes slices, safe for concurrent read without locks.
 func (c *Component) ListGuilds() []*domain.Guild {
 	var guilds []*domain.Guild
-	c.guilds.Range(func(_, value any) bool {
+	c.guilds.Range(func(key, value any) bool {
+		guildID := key.(domain.GuildID)
+		mu := c.guildMutex(guildID)
+		mu.Lock()
 		original := value.(*domain.Guild)
 		if original.Status == domain.GuildActive {
 			cp := *original
@@ -895,6 +993,7 @@ func (c *Component) ListGuilds() []*domain.Guild {
 			cp.QuestTypes = append([]string(nil), original.QuestTypes...)
 			guilds = append(guilds, &cp)
 		}
+		mu.Unlock()
 		return true
 	})
 	return guilds
@@ -920,7 +1019,11 @@ func getMember(guild *domain.Guild, agentID domain.AgentID) *domain.GuildMember 
 }
 
 // addAgentGuild adds a guild to an agent's guild list.
+// Uses agentGuildsMu to prevent TOCTOU races on Load-then-Store.
 func (c *Component) addAgentGuild(agentID domain.AgentID, guildID domain.GuildID) {
+	c.agentGuildsMu.Lock()
+	defer c.agentGuildsMu.Unlock()
+
 	val, ok := c.agentGuilds.Load(agentID)
 	var guilds []domain.GuildID
 	if ok {
@@ -931,7 +1034,11 @@ func (c *Component) addAgentGuild(agentID domain.AgentID, guildID domain.GuildID
 }
 
 // removeAgentGuild removes a guild from an agent's guild list.
+// Uses agentGuildsMu to prevent TOCTOU races on Load-then-Store.
 func (c *Component) removeAgentGuild(agentID domain.AgentID, guildID domain.GuildID) {
+	c.agentGuildsMu.Lock()
+	defer c.agentGuildsMu.Unlock()
+
 	val, ok := c.agentGuilds.Load(agentID)
 	if !ok {
 		return
