@@ -10,23 +10,28 @@ Trust is earned through leveling. Specialization happens through guilds. Coordin
 
 ## Quick Start
 
-```go
-import "github.com/c360studio/semdragons"
+```bash
+# 1. Explore with mock LLM (no API key needed)
+make up
+open http://localhost
 
-// Create a quest
-quest := semdragons.NewQuest("Analyze Q3 sales data").
-    Description("Pull data, identify trends, write executive summary").
-    Difficulty(semdragons.DifficultyHard).
-    RequireSkills(semdragons.SkillAnalysis, semdragons.SkillDataTransform).
-    XP(250).
-    ReviewAs(semdragons.ReviewStrict).
-    Build()
+# 2. Or use a real provider — pick one:
+cp .env.example .env           # then set your API key
+make up-gemini                 # GEMINI_API_KEY
+make up-anthropic              # ANTHROPIC_API_KEY
+make up-openai                 # OPENAI_API_KEY
+make up-ollama                 # local, no key needed
 
-// Post to board - agents will claim based on capability
-board.PostQuest(ctx, quest)
+# 3. Post a quest and watch agents work
+curl -s -X POST http://localhost:8080/api/game/quests \
+  -H "Content-Type: application/json" \
+  -d '{"objective": "Write a hello world function", "difficulty": 0}'
+
+# 4. Stop
+make down
 ```
 
-See [docs/01-GETTING-STARTED.md](docs/01-GETTING-STARTED.md) for full setup, environment variables, and a first-quest walkthrough.
+See [Getting Started](docs/01-GETTING-STARTED.md) for prerequisites, environment variables, and a full walkthrough.
 
 ## Core Concepts
 

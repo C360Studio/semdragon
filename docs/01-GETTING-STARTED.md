@@ -46,38 +46,45 @@ The root `docker-compose.yml` starts five containers:
 Caddy serves the UI and proxies `/game/*` and `/health` to the backend, making everything
 same-origin. SSE events stream without buffering via `flush_interval -1`.
 
+### Option A: Mock LLM (no API key)
+
 ```bash
-make up              # mock LLM — explore the UI, no API key needed
+make up
 open http://localhost
 ```
 
-To use a real LLM provider, copy `.env.example` to `.env` and set your API key:
+The mock LLM returns canned responses — useful for exploring the UI and understanding the
+quest lifecycle, but agents won't do real work.
+
+### Option B: Cloud provider
 
 ```bash
 cp .env.example .env
-# Edit .env — uncomment and set one provider key (Gemini, Anthropic, or OpenAI)
-
-make up-cloud        # uses your .env key, Gemini by default
+# Edit .env — uncomment and set your API key for one provider
 ```
 
-For local Ollama:
+Then start with the matching command:
+
+```bash
+make up-gemini       # requires GEMINI_API_KEY in .env
+make up-anthropic    # requires ANTHROPIC_API_KEY in .env
+make up-openai       # requires OPENAI_API_KEY in .env
+```
+
+Each command loads the correct model config for that provider automatically.
+
+### Option C: Local Ollama (no API key, runs on your machine)
 
 ```bash
 ollama serve && ollama pull qwen2.5-coder:7b
 make up-ollama
 ```
 
-To switch cloud providers, set `SEMDRAGONS_E2E_CONFIG` before starting:
+### Stopping
 
 ```bash
-# Anthropic
-SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json make up-cloud
-
-# OpenAI
-SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json make up-cloud
+make down
 ```
-
-Stop everything with `make down`.
 
 Environment variables (set in `.env` or inline):
 
@@ -88,7 +95,6 @@ Environment variables (set in `.env` or inline):
 | `OPENAI_API_KEY` | OpenAI API key |
 | `WORKSPACE` | Directory mounted into the backend for agent file operations |
 | `SEED_E2E` | Set to `true` to pre-populate agents, quests, and guilds |
-| `SEMDRAGONS_E2E_CONFIG` | Config file name for cloud provider (default: Gemini) |
 | `SEMDRAGONS_API_KEY` | Auth key for write endpoints (empty = no auth) |
 
 ### Agent Workspace

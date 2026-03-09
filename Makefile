@@ -1,5 +1,5 @@
 .PHONY: build test test-integration test-all lint fmt tidy check schema check-schema openapi check-openapi mockllm \
-       up down up-cloud up-ollama \
+       up down up-cloud up-gemini up-anthropic up-openai up-ollama \
        e2e e2e-up e2e-down e2e-run e2e-wait e2e-install e2e-chromium e2e-headed e2e-ui e2e-clean e2e-report \
        e2e-gemini e2e-anthropic e2e-openai e2e-ollama e2e-spec e2e-nats-clean e2e-logs e2e-help \
        ui-test ui-check
@@ -104,15 +104,28 @@ up:
 	BACKEND_PORT=$(BACKEND_PORT) docker compose --profile mock up -d --build --wait
 	@echo "Stack is up. Dashboard: http://localhost:5173  API: http://localhost:$(BACKEND_PORT)"
 
-# Start with cloud LLM (set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env)
-up-cloud:
-	BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
-	@echo "Cloud stack is up. Dashboard: http://localhost:5173  API: http://localhost:$(BACKEND_PORT)"
+# Start with Gemini (set GEMINI_API_KEY in .env)
+up-gemini:
+	SEMDRAGONS_E2E_CONFIG=semdragons-e2e-gemini.json BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@echo "Gemini stack is up. Dashboard: http://localhost  API: http://localhost:$(BACKEND_PORT)"
+
+# Start with Anthropic Claude (set ANTHROPIC_API_KEY in .env)
+up-anthropic:
+	SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@echo "Anthropic stack is up. Dashboard: http://localhost  API: http://localhost:$(BACKEND_PORT)"
+
+# Start with OpenAI (set OPENAI_API_KEY in .env)
+up-openai:
+	SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json BACKEND_PORT=$(BACKEND_PORT) docker compose $(CLOUD_COMPOSE) up -d --build --wait
+	@echo "OpenAI stack is up. Dashboard: http://localhost  API: http://localhost:$(BACKEND_PORT)"
 
 # Start with local Ollama (requires: ollama serve && ollama pull qwen2.5-coder:7b)
 up-ollama:
 	BACKEND_PORT=$(BACKEND_PORT) docker compose $(OLLAMA_COMPOSE) up -d --build --wait
-	@echo "Ollama stack is up. Dashboard: http://localhost:5173  API: http://localhost:$(BACKEND_PORT)"
+	@echo "Ollama stack is up. Dashboard: http://localhost  API: http://localhost:$(BACKEND_PORT)"
+
+# Alias: up-cloud defaults to Gemini for backwards compat
+up-cloud: up-gemini
 
 # Stop the stack (--remove-orphans handles any profile/override combination)
 down:
