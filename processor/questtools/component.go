@@ -168,6 +168,11 @@ func (c *Component) Start(ctx context.Context) error {
 	gc := semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 	c.toolRegistry.RegisterGraphQuery(c.buildGraphQueryFunc(gc))
 
+	// Register graph_search tool when a GraphQL endpoint is configured.
+	if c.config.GraphQLURL != "" {
+		c.toolRegistry.RegisterGraphSearch(c.config.GraphQLURL)
+	}
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())

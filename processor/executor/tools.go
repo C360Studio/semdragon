@@ -1884,6 +1884,312 @@ func (r *ToolRegistry) RegisterGraphQuery(queryFn EntityQueryFunc) {
 	})
 }
 
+// graphQLTimeout is the timeout for graph-gateway GraphQL requests.
+const graphQLTimeout = 30 * time.Second
+
+// =============================================================================
+// GRAPH SEARCH TOOL
+// =============================================================================
+
+// RegisterGraphSearch adds the graph_search tool to the registry.
+// graphqlURL is the graph-gateway GraphQL endpoint (e.g. "http://localhost:8082/graphql").
+// Unlike graph_query (which is limited to game entities), graph_search queries ALL
+// entities via GraphQL — including semsource entities such as docs, code, and repos.
+func (r *ToolRegistry) RegisterGraphSearch(graphqlURL string) {
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "graph_search",
+			Description: "Search the knowledge graph via GraphQL. Supports entity lookup, relationship traversal, predicate queries, and full-text search across all entities including source documentation and code.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query_type": map[string]any{
+						"type":        "string",
+						"description": "Type of graph query to execute",
+						"enum":        []any{"entity", "prefix", "predicate", "relationships", "search"},
+					},
+					"entity_id": map[string]any{
+						"type":        "string",
+						"description": "Entity ID for entity/relationships queries",
+					},
+					"prefix": map[string]any{
+						"type":        "string",
+						"description": "Entity ID prefix for prefix queries (e.g. 'c360.semsource.git')",
+					},
+					"predicate": map[string]any{
+						"type":        "string",
+						"description": "Predicate name for predicate queries (e.g. 'source.content.language')",
+					},
+					"search_text": map[string]any{
+						"type":        "string",
+						"description": "Search text for full-text search queries",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Maximum results to return (default 20, max 100)",
+					},
+				},
+				"required": []any{"query_type"},
+			},
+		},
+		Handler: graphSearchHandler(graphqlURL),
+		MinTier: domain.TierApprentice, // Read-only knowledge-graph access
+	})
+}
+
+// graphQLRequest is the JSON body sent to a GraphQL endpoint.
+type graphQLRequest struct {
+	Query     string         `json:"query"`
+	Variables map[string]any `json:"variables,omitempty"`
+}
+
+// graphQLResponse is the top-level envelope returned by a GraphQL endpoint.
+type graphQLResponse struct {
+	Data   map[string]json.RawMessage `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// graphSearchHandler returns a ToolHandler that dispatches GraphQL queries to
+// the configured graph-gateway endpoint based on the query_type argument.
+func graphSearchHandler(graphqlURL string) ToolHandler {
+	// graphSearchClient is a plain HTTP client — graphqlURL is operator-configured,
+	// not agent-supplied, so SSRF prevention is not required here.
+	client := &http.Client{Timeout: graphQLTimeout}
+
+	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+		select {
+		case <-ctx.Done():
+			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+		default:
+		}
+
+		queryType, _ := call.Arguments["query_type"].(string)
+		if queryType == "" {
+			return agentic.ToolResult{CallID: call.ID, Error: "query_type argument is required"}
+		}
+
+		limit := 20
+		if l, ok := call.Arguments["limit"].(float64); ok && l > 0 {
+			limit = min(int(l), 100)
+		}
+
+		gqlReq, err := buildGraphSearchQuery(queryType, limit, call.Arguments)
+		if err != nil {
+			return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
+		}
+
+		reqCtx, cancel := context.WithTimeout(ctx, graphQLTimeout)
+		defer cancel()
+
+		result, err := executeGraphQLQuery(reqCtx, client, graphqlURL, gqlReq)
+		if err != nil {
+			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("graph search failed: %v", err)}
+		}
+
+		return agentic.ToolResult{CallID: call.ID, Content: result}
+	}
+}
+
+// buildGraphSearchQuery constructs a parameterized GraphQL request for the given query_type.
+// Uses GraphQL variables instead of string interpolation to prevent injection.
+func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (graphQLRequest, error) {
+	switch queryType {
+	case "entity":
+		id, _ := args["entity_id"].(string)
+		if id == "" {
+			return graphQLRequest{}, fmt.Errorf("entity_id is required for entity queries")
+		}
+		return graphQLRequest{
+			Query:     `query($id: String!) { entity(id: $id) { id triples } }`,
+			Variables: map[string]any{"id": id},
+		}, nil
+
+	case "prefix":
+		prefix, _ := args["prefix"].(string)
+		if prefix == "" {
+			return graphQLRequest{}, fmt.Errorf("prefix is required for prefix queries")
+		}
+		return graphQLRequest{
+			Query:     `query($prefix: String!, $limit: Int) { entitiesByPrefix(prefix: $prefix, limit: $limit) { id type } }`,
+			Variables: map[string]any{"prefix": prefix, "limit": limit},
+		}, nil
+
+	case "predicate":
+		predicate, _ := args["predicate"].(string)
+		if predicate == "" {
+			return graphQLRequest{}, fmt.Errorf("predicate is required for predicate queries")
+		}
+		return graphQLRequest{
+			Query:     `query($predicate: String!, $limit: Int) { entitiesByPredicate(predicate: $predicate, limit: $limit) { id type } }`,
+			Variables: map[string]any{"predicate": predicate, "limit": limit},
+		}, nil
+
+	case "relationships":
+		id, _ := args["entity_id"].(string)
+		if id == "" {
+			return graphQLRequest{}, fmt.Errorf("entity_id is required for relationships queries")
+		}
+		return graphQLRequest{
+			Query:     `query($id: String!) { relationships(entityId: $id) { from to predicate } }`,
+			Variables: map[string]any{"id": id},
+		}, nil
+
+	case "search":
+		text, _ := args["search_text"].(string)
+		if text == "" {
+			return graphQLRequest{}, fmt.Errorf("search_text is required for search queries")
+		}
+		return graphQLRequest{
+			Query:     `query($query: String!, $maxCommunities: Int) { globalSearch(query: $query, maxCommunities: $maxCommunities) { entities { id type } count } }`,
+			Variables: map[string]any{"query": text, "maxCommunities": limit},
+		}, nil
+
+	default:
+		return graphQLRequest{}, fmt.Errorf("invalid query_type: %q (must be one of entity, prefix, predicate, relationships, search)", queryType)
+	}
+}
+
+// executeGraphQLQuery POSTs a GraphQL request to the endpoint and returns a formatted text summary.
+func executeGraphQLQuery(ctx context.Context, client *http.Client, graphqlURL string, gqlReq graphQLRequest) (string, error) {
+	body, err := json.Marshal(gqlReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, graphqlURL, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPResponseSize+1))
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		snippet := string(respBody)
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, snippet)
+	}
+
+	var gqlResp graphQLResponse
+	if err := json.Unmarshal(respBody, &gqlResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(gqlResp.Errors) > 0 {
+		msgs := make([]string, 0, len(gqlResp.Errors))
+		for _, e := range gqlResp.Errors {
+			msgs = append(msgs, e.Message)
+		}
+		return "", fmt.Errorf("GraphQL errors: %s", strings.Join(msgs, "; "))
+	}
+
+	return formatGraphSearchResult(gqlResp.Data), nil
+}
+
+// formatGraphSearchResult converts the GraphQL data map into a human-readable
+// text summary suitable for inclusion in an agent's tool result.
+func formatGraphSearchResult(data map[string]json.RawMessage) string {
+	if len(data) == 0 {
+		return "No results found."
+	}
+
+	var b strings.Builder
+
+	// entity query: single entity with triples.
+	if raw, ok := data["entity"]; ok {
+		var entity struct {
+			ID      string            `json:"id"`
+			Triples []json.RawMessage `json:"triples"`
+		}
+		if err := json.Unmarshal(raw, &entity); err != nil || entity.ID == "" {
+			b.WriteString("Entity not found.\n")
+			return b.String()
+		}
+		b.WriteString(fmt.Sprintf("Entity: %s\n", entity.ID))
+		b.WriteString(fmt.Sprintf("Triples (%d):\n", len(entity.Triples)))
+		for _, t := range entity.Triples {
+			b.WriteString("  ")
+			b.Write(t)
+			b.WriteByte('\n')
+		}
+		return b.String()
+	}
+
+	// relationships query: list of from/to/predicate edges.
+	if raw, ok := data["relationships"]; ok {
+		var rels []struct {
+			From      string `json:"from"`
+			To        string `json:"to"`
+			Predicate string `json:"predicate"`
+		}
+		if err := json.Unmarshal(raw, &rels); err != nil || len(rels) == 0 {
+			b.WriteString("No relationships found.\n")
+			return b.String()
+		}
+		b.WriteString(fmt.Sprintf("Relationships (%d):\n", len(rels)))
+		for _, rel := range rels {
+			b.WriteString(fmt.Sprintf("  %s -[%s]-> %s\n", rel.From, rel.Predicate, rel.To))
+		}
+		return b.String()
+	}
+
+	// globalSearch query: entities with count.
+	if raw, ok := data["globalSearch"]; ok {
+		var result struct {
+			Entities []struct {
+				ID   string `json:"id"`
+				Type string `json:"type"`
+			} `json:"entities"`
+			Count int `json:"count"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil || len(result.Entities) == 0 {
+			b.WriteString("No search results found.\n")
+			return b.String()
+		}
+		b.WriteString(fmt.Sprintf("Search results (%d total, showing %d):\n", result.Count, len(result.Entities)))
+		for _, e := range result.Entities {
+			b.WriteString(fmt.Sprintf("  [%s] %s\n", e.Type, e.ID))
+		}
+		return b.String()
+	}
+
+	// entitiesByPrefix / entitiesByPredicate: list of id+type pairs.
+	for fieldName, raw := range data {
+		var entities []struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &entities); err != nil {
+			b.WriteString(fmt.Sprintf("Failed to parse %s result.\n", fieldName))
+			continue
+		}
+		if len(entities) == 0 {
+			b.WriteString("No entities found.\n")
+			continue
+		}
+		b.WriteString(fmt.Sprintf("Entities (%d):\n", len(entities)))
+		for _, e := range entities {
+			b.WriteString(fmt.Sprintf("  [%s] %s\n", e.Type, e.ID))
+		}
+	}
+
+	return b.String()
+}
+
 // validGraphEntityTypes are the entity types permitted for graph_query.
 var validGraphEntityTypes = map[string]bool{
 	"quest": true, "agent": true, "guild": true, "party": true, "battle": true,
@@ -1910,10 +2216,7 @@ func graphQueryHandler(queryFn EntityQueryFunc) ToolHandler {
 
 		limit := 20
 		if l, ok := call.Arguments["limit"].(float64); ok && l > 0 {
-			limit = int(l)
-			if limit > 100 {
-				limit = 100
-			}
+			limit = min(int(l), 100)
 		}
 
 		result, err := queryFn(ctx, entityType, limit)

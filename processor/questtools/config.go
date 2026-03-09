@@ -15,6 +15,9 @@ type Config struct {
 	Timeout          string `json:"timeout"`
 	EnableBuiltins   bool   `json:"enable_builtins"`
 	SandboxDir       string `json:"sandbox_dir"`
+	// GraphQLURL is the graph-gateway GraphQL endpoint for the graph_search tool.
+	// When empty, graph_search is not registered. Example: "http://localhost:8082/graphql"
+	GraphQLURL string `json:"graphql_url,omitempty"`
 	// ConsumerNameSuffix disambiguates multiple instances consuming the same stream.
 	ConsumerNameSuffix   string `json:"consumer_name_suffix,omitempty"`
 	DeleteConsumerOnStop bool   `json:"delete_consumer_on_stop,omitempty"`

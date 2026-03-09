@@ -9,10 +9,14 @@ import (
 	graphindex "github.com/c360studio/semstreams/processor/graph-index"
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 	graphquery "github.com/c360studio/semstreams/processor/graph-query"
+	wsinput "github.com/c360studio/semstreams/input/websocket"
 
 	// Semstreams agentic processors
 	agenticloop "github.com/c360studio/semstreams/processor/agentic-loop"
 	agenticmodel "github.com/c360studio/semstreams/processor/agentic-model"
+
+	// semsource payload registration — triggers init() to register the entity payload type
+	_ "github.com/c360studio/semdragons/semsource"
 
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
@@ -40,6 +44,7 @@ func RegisterAll(registry *component.Registry) error {
 	// These provide entity persistence, indexing, and query capabilities
 	// that semdragons components depend on.
 	graphProcessors := []func(*component.Registry) error{
+		wsinput.Register,      // WebSocket input for semsource entity streaming
 		graphingest.Register,  // Entity/triple ingestion and storage
 		graphindex.Register,   // Relationship and predicate indexes
 		graphquery.Register,   // Query coordination and PathRAG
@@ -97,6 +102,7 @@ func RegisterAll(registry *component.Registry) error {
 func RegisterProcessors(registry *component.Registry) error {
 	// Register semstreams graph processors first
 	graphProcessors := []func(*component.Registry) error{
+		wsinput.Register,
 		graphingest.Register,
 		graphindex.Register,
 		graphquery.Register,
@@ -151,6 +157,7 @@ func RegisterProcessors(registry *component.Registry) error {
 func ComponentNames() []string {
 	return []string{
 		// Semstreams graph processors
+		"websocket_input",
 		"graph-ingest",
 		"graph-index",
 		"graph-query",
@@ -183,6 +190,7 @@ func ComponentNames() []string {
 func ProcessorNames() []string {
 	return []string{
 		// Semstreams graph processors
+		"websocket_input",
 		"graph-ingest",
 		"graph-index",
 		"graph-query",

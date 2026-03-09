@@ -122,6 +122,31 @@
     }
   },
   "components": {
+    "websocket_input": {
+      "type": "input",
+      "name": "websocket_input",
+      "enabled": false,
+      "config": {
+        "mode": "client",
+        "client": {
+          "url": "ws://localhost:9090/ws",
+          "reconnect": {
+            "enabled": true,
+            "initial_delay": "1s",
+            "max_delay": "30s",
+            "multiplier": 2.0
+          }
+        },
+        "ports": {
+          "outputs": [{
+            "name": "ws_data",
+            "subject": "graph.ingest.entity",
+            "type": "jetstream",
+            "stream_name": "GRAPH"
+          }]
+        }
+      }
+    },
     "graph-ingest": {
       "type": "processor",
       "name": "graph-ingest",
@@ -339,7 +364,8 @@
         "quest_loops_bucket": "QUEST_LOOPS",
         "timeout": "60s",
         "enable_builtins": true,
-        "sandbox_dir": "/workspace"
+        "sandbox_dir": "/workspace",
+        "graphql_url": "http://localhost:8082/graphql"
       }
     },
     "partycoord": {
