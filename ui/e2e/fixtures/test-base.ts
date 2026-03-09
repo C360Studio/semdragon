@@ -2,6 +2,7 @@ import { test as base, expect, type Page, type APIRequestContext } from '@playwr
 import { DashboardPage } from '../pages/dashboard.page';
 import { QuestsPage } from '../pages/quests.page';
 import { AgentsPage } from '../pages/agents.page';
+import { AgentDetailPage } from '../pages/agent-detail.page';
 import { GuildsPage, GuildDetailPage } from '../pages/guilds.page';
 import { SSEHelper } from './sse-helpers';
 import type { components } from '../../src/lib/api/generated';
@@ -271,6 +272,7 @@ export const test = base.extend<{
 	dashboardPage: DashboardPage;
 	questsPage: QuestsPage;
 	agentsPage: AgentsPage;
+	agentDetailPage: AgentDetailPage;
 	guildsPage: GuildsPage;
 	guildDetailPage: GuildDetailPage;
 	sseHelper: SSEHelper;
@@ -292,6 +294,10 @@ export const test = base.extend<{
 	agentsPage: async ({ page }, use) => {
 		const agentsPage = new AgentsPage(page);
 		await use(agentsPage);
+	},
+
+	agentDetailPage: async ({ page }, use) => {
+		await use(new AgentDetailPage(page));
 	},
 
 	guildsPage: async ({ page }, use) => {
