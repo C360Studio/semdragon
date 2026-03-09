@@ -468,6 +468,11 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				"error", err)
 		}
 
+		// Create DM peer review entity BEFORE quest mutations (retry clears ClaimedBy).
+		if ab.quest != nil && result != nil && result.PeerRatings != nil && ab.quest.ClaimedBy != nil {
+			c.emitDMPeerReview(persistCtx, ab.quest, result.PeerRatings, ab.battle.Verdict.Feedback)
+		}
+
 		// Bridge battle verdict → quest completion/failure
 		// Safe: no other processor modifies a quest while it's in_review.
 		if ab.quest != nil {
@@ -484,6 +489,37 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				if ab.quest.StartedAt != nil {
 					ab.quest.Duration = verdictNow.Sub(*ab.quest.StartedAt)
 				}
+			} else if ab.quest.Attempts < ab.quest.MaxAttempts && ab.quest.MaxAttempts > 1 {
+				// Retry: repost for another attempt with feedback injected
+				ab.quest.Attempts++
+				c.logger.Info("reposting quest for retry after battle defeat",
+					"quest", ab.quest.ID,
+					"attempt", ab.quest.Attempts,
+					"max_attempts", ab.quest.MaxAttempts,
+					"feedback", ab.battle.Verdict.Feedback)
+
+				// Release the agent so it (or another) can claim again
+				if ab.quest.ClaimedBy != nil {
+					agentEntity, agentErr := c.graph.GetAgent(persistCtx, *ab.quest.ClaimedBy)
+					if agentErr == nil {
+						agent := agentprogression.AgentFromEntityState(agentEntity)
+						if agent != nil {
+							agent.Status = domain.AgentIdle
+							agent.CurrentQuest = nil
+							agent.UpdatedAt = time.Now()
+							if writeErr := c.graph.EmitEntityUpdate(persistCtx, agent, "agent.status.idle"); writeErr != nil {
+								c.logger.Error("failed to release agent on retry repost", "error", writeErr)
+							}
+						}
+					}
+				}
+
+				ab.quest.Status = domain.QuestPosted
+				ab.quest.ClaimedBy = nil
+				ab.quest.ClaimedAt = nil
+				ab.quest.StartedAt = nil
+				ab.quest.FailureReason = ab.battle.Verdict.Feedback
+				ab.quest.FailureType = domain.FailureQuality
 			} else {
 				ab.quest.Status = domain.QuestFailed
 				ab.quest.FailureReason = ab.battle.Verdict.Feedback
@@ -497,10 +533,6 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 					"error", questErr)
 			}
 
-			// Create DM peer review entity — feeds into agentprogression running averages
-			if result != nil && result.PeerRatings != nil && ab.quest.ClaimedBy != nil {
-				c.emitDMPeerReview(persistCtx, ab.quest, result.PeerRatings, ab.battle.Verdict.Feedback)
-			}
 		}
 	} else {
 		c.logger.Debug("skipping battle persistence after shutdown",

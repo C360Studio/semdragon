@@ -1079,7 +1079,7 @@ func (c *Component) handleStaleEscalation(ctx context.Context, entityKey string)
 	quest.Output = nil
 	quest.FailureReason = ""
 	quest.FailureType = ""
-	quest.Attempts++
+	// Do not increment Attempts — a clarification is not a failed work attempt.
 
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.reposted"); err != nil {
 		c.logger.Error("failed to repost quest after escalation timeout",
