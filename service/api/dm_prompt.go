@@ -72,16 +72,16 @@ manually assigned.
 	// Mode-specific instructions
 	switch mode {
 	case domain.ChatModeQuest:
-		b.WriteString(`Your role is to help users create quests and quest chains through natural conversation.
-You should ask clarifying questions when the user's intent is unclear, and suggest
-appropriate difficulty levels, required skills, and acceptance criteria.
+		b.WriteString(`Your role is to help users create quest specs through natural conversation.
+A quest spec defines WHAT needs to be done and HOW to verify it — not HOW to do it.
+That is the agent's job.
 
 IMPORTANT: When the user describes work to be done, you MUST include a JSON block in your
 response with the quest specification. Do not just discuss the quest — always produce the
 structured JSON output. Use one of the two formats below.
 
 `)
-		s.writeQuestSchemaInstructions(&b)
+		s.writeQuestSpecInstructions(&b)
 		s.writeAvailableOptions(&b)
 
 	default: // converse
@@ -147,38 +147,137 @@ func buildSessionRecap(session *DMChatSession) string {
 	return b.String()
 }
 
-// writeQuestSchemaInstructions appends quest/chain JSON schema instructions to the builder.
-func (s *Service) writeQuestSchemaInstructions(b *strings.Builder) {
-	b.WriteString(`## Output Format
+// writeQuestSpecInstructions appends quest spec format instructions to the builder.
+// Teaches the DM to think in terms of goal → requirements → scenarios.
+func (s *Service) writeQuestSpecInstructions(b *strings.Builder) {
+	b.WriteString(`## Quest Spec Format
+
+A quest spec has four parts:
+
+1. **Goal** (required) — The desired outcome. Why does this work matter? One or two sentences.
+2. **Requirements** — Concrete constraints that must be satisfied. Short, testable statements.
+3. **Scenarios** — Named, testable outcomes that prove the requirements are met. Each
+   scenario has a name, description, and optional skills. If a scenario MUST wait for
+   another scenario to complete first, add a "depends_on" reference to that scenario's name.
+4. **Skills** — Aggregate skill tags needed across all scenarios.
+
+### Scenario Dependencies Drive Staffing
+
+The system uses scenario dependencies to decide how a quest is staffed:
+
+- **Independent scenarios** (no depends_on between them) → PARTY quest. Multiple agents
+  work on scenarios in parallel. This is significantly more effective for parallelizable work.
+- **Sequential scenarios** (each depends on the previous) → SOLO quest. One high-capability
+  agent handles the entire chain. Research shows multi-agent coordination DEGRADES
+  performance by 39-70% on sequential tasks.
+- **Mixed** (some independent, some dependent) → PARTY quest with a smaller team.
+
+Declare depends_on honestly — it determines whether a team or a solo agent handles the quest.
+If scenarios can genuinely be worked on simultaneously, do NOT add depends_on between them.
+
+## Output Format
 
 For a SINGLE quest, include a JSON block tagged as quest_brief:
 ` + "```json:quest_brief" + `
 {
-  "title": "Short descriptive title",
-  "description": "Detailed description of what needs to be done",
-  "difficulty": 2,
-  "skills": ["code_generation", "analysis"],
-  "acceptance": ["Criterion 1", "Criterion 2"]
+  "title": "Build user notification service",
+  "goal": "Users receive real-time notifications across email and in-app channels when workspace events occur",
+  "requirements": [
+    "Support email and in-app notification channels",
+    "Users can configure per-event notification preferences",
+    "Notifications delivered within 5 seconds of triggering event"
+  ],
+  "scenarios": [
+    {
+      "name": "In-app notification delivery",
+      "description": "When a workspace event fires and the user has in-app enabled, a notification appears in their feed within 5s",
+      "skills": ["code_generation"]
+    },
+    {
+      "name": "Email with preference check",
+      "description": "When a workspace event fires, the system checks user preferences and sends email only if enabled for that event type",
+      "skills": ["code_generation", "data_transformation"]
+    },
+    {
+      "name": "Preference configuration API",
+      "description": "User can GET and PUT their notification preferences per event type, with validation that event types and channels are valid",
+      "skills": ["code_generation", "analysis"]
+    }
+  ],
+  "difficulty": 3,
+  "skills": ["code_generation", "data_transformation", "analysis"]
 }
 ` + "```" + `
+
+The above example has three independent scenarios (no depends_on) → the system will
+staff it as a party quest with agents working in parallel.
+
+Here is a sequential example:
+` + "```json:quest_brief" + `
+{
+  "title": "Migrate legacy auth to OAuth2",
+  "goal": "Replace custom token auth with OAuth2 PKCE flow without breaking existing sessions",
+  "requirements": [
+    "Existing sessions remain valid during migration",
+    "New auth uses OAuth2 PKCE",
+    "Rollback plan if migration fails"
+  ],
+  "scenarios": [
+    {
+      "name": "OAuth2 provider integration",
+      "description": "Configure OAuth2 provider, implement PKCE flow, verify token exchange works"
+    },
+    {
+      "name": "Session migration bridge",
+      "description": "Build adapter that validates both old tokens and new OAuth2 tokens during transition period",
+      "depends_on": ["OAuth2 provider integration"]
+    },
+    {
+      "name": "Cutover and rollback",
+      "description": "Switch all endpoints to OAuth2-only with feature flag, verify rollback restores old auth",
+      "depends_on": ["Session migration bridge"]
+    }
+  ],
+  "difficulty": 4,
+  "skills": ["code_generation"]
+}
+` + "```" + `
+
+The above example has a linear dependency chain → the system will assign it to a single
+high-capability agent.
 
 For MULTIPLE related quests (a chain), include a JSON block tagged as quest_chain:
 ` + "```json:quest_chain" + `
 {
   "quests": [
     {
-      "title": "First quest",
-      "description": "...",
+      "title": "Research data sources",
+      "goal": "Identify and evaluate all available data sources for the pipeline",
       "difficulty": 1,
       "skills": ["research"],
-      "acceptance": ["..."]
+      "scenarios": [
+        {
+          "name": "Source inventory",
+          "description": "List all available data sources with format, volume, and refresh frequency"
+        }
+      ]
     },
     {
-      "title": "Second quest (depends on first)",
-      "description": "...",
-      "difficulty": 2,
-      "skills": ["code_generation"],
-      "acceptance": ["..."],
+      "title": "Build data pipeline",
+      "goal": "Implement the ETL pipeline using the sources identified in the research phase",
+      "difficulty": 3,
+      "skills": ["code_generation", "data_transformation"],
+      "scenarios": [
+        {
+          "name": "Extract and validate",
+          "description": "Pull data from each source and validate schema conformance"
+        },
+        {
+          "name": "Transform and load",
+          "description": "Apply business rules and load into target tables",
+          "depends_on": ["Extract and validate"]
+        }
+      ],
       "depends_on": [0]
     }
   ]
@@ -186,31 +285,15 @@ For MULTIPLE related quests (a chain), include a JSON block tagged as quest_chai
 ` + "```" + `
 
 Quests can include an optional "hints" object for advanced configuration:
-` + "```json:quest_brief" + `
-{
-  "title": "Build end-to-end data pipeline",
-  "description": "Research, transform, and validate the dataset",
-  "difficulty": 4,
-  "skills": ["research", "data_transformation", "code_generation"],
-  "acceptance": ["Pipeline runs successfully", "Output validated"],
-  "hints": {
-    "party_required": true,
-    "min_party_size": 3,
-    "review_level": 2
-  }
-}
-` + "```" + `
-The "hints" object is optional — omit it for simple quests. Available hint fields:
-- "party_required": true/false — whether the quest needs a party (team) of agents
-- "min_party_size": 2-5 — minimum agents in the party (default 2)
 - "review_level": 0-3 — review strictness (0=Auto, 1=Standard, 2=Strict, 3=Human)
 - "require_human_review": true/false — shorthand for review_level 3
 - "prefer_guild": "guild_id" — route to a specific guild
+- "party_required": true/false — manual override (normally the system decides based on scenarios)
+- "min_party_size": 2-5 — minimum agents in the party (default 2)
 
-IMPORTANT: When choosing skills for a quest, prefer skills that match agents currently
-available in the roster below. If no agents have the exact skill, pick the closest match
-from the roster's skill sets. This ensures agents can actually claim and work on the quest.
-If the quest genuinely requires a skill no agent has, use it anyway but note the gap.
+IMPORTANT: When choosing skills for scenarios and the quest, prefer skills that match
+agents currently available in the roster below. If no agents have the exact skill, pick
+the closest match. This ensures agents can actually claim and work on the quest.
 
 If the user's intent is unclear, ask ONE clarifying question — but still include your
 best-guess JSON block so the user can refine it. Prefer producing output over asking
@@ -244,11 +327,11 @@ func (s *Service) writeAvailableOptions(b *strings.Builder) {
 
 	b.WriteString("**Review levels**: 0=Auto, 1=Standard, 2=Strict, 3=Human\n\n")
 
-	b.WriteString("**Party quests**: Set `hints.party_required: true` when the quest:\n")
-	b.WriteString("- Requires 3+ distinct skills that no single agent covers\n")
-	b.WriteString("- Is Epic (4) or Legendary (5) difficulty\n")
-	b.WriteString("- Involves parallel sub-tasks best handled by a team\n")
-	b.WriteString("Party size range: 2-5. Default: 2.\n\n")
+	b.WriteString("**Solo vs Party**: The system decides based on scenario dependencies.\n")
+	b.WriteString("You do NOT need to set party_required — just declare depends_on honestly.\n")
+	b.WriteString("- Independent scenarios → party (agents work in parallel)\n")
+	b.WriteString("- Sequential chain → solo (one high-capability agent)\n")
+	b.WriteString("- Use `hints.party_required` only to manually override the system's decision.\n\n")
 }
 
 // writeWorldState appends the current world state summary including agent roster.

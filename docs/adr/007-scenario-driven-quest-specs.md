@@ -1,6 +1,6 @@
 # ADR-007: Scenario-Driven Quest Specs and Decomposability Classification
 
-## Status: Proposed
+## Status: Accepted
 
 ## Context
 

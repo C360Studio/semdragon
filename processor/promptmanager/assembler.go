@@ -48,7 +48,16 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 			if content.Len() > 0 {
 				content.WriteByte('\n')
 			}
-			content.WriteString(f.Content)
+			var text string
+			if f.ContentFunc != nil {
+				text = f.ContentFunc(ctx)
+			} else {
+				text = f.Content
+			}
+			if text == "" {
+				continue
+			}
+			content.WriteString(text)
 			usedIDs = append(usedIDs, f.ID)
 		}
 

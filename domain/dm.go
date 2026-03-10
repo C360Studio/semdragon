@@ -343,19 +343,119 @@ type QuestHints struct {
 }
 
 // =============================================================================
+// QUEST SCENARIO - A named execution scenario within a quest brief
+// =============================================================================
+
+// QuestScenario is a named sub-goal within a QuestBrief, used to express
+// parallelism, sequencing, or conditional paths at the briefing stage.
+// Dependencies refer to other scenarios by name within the same brief.
+type QuestScenario struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Skills      []string `json:"skills,omitempty"`
+	DependsOn   []string `json:"depends_on,omitempty"`
+}
+
+// =============================================================================
+// DECOMPOSABILITY - Classification of scenario dependency structure
+// =============================================================================
+
+// DecomposabilityClass categorises the dependency shape of a quest's scenarios.
+type DecomposabilityClass string
+
+const (
+	// DecomposableParallel indicates all scenarios are independent (no depends_on).
+	DecomposableParallel DecomposabilityClass = "parallel"
+	// DecomposableSequential indicates scenarios form a single linear chain.
+	DecomposableSequential DecomposabilityClass = "sequential"
+	// DecomposableMixed indicates a mix of parallel and sequential dependencies.
+	DecomposableMixed DecomposabilityClass = "mixed"
+	// DecomposableTrivial indicates 0 or 1 scenarios — no structure to classify.
+	DecomposableTrivial DecomposabilityClass = "trivial"
+)
+
+// ClassifyDecomposability inspects the scenario dependency graph of a QuestBrief
+// and returns the appropriate DecomposabilityClass.
+//
+// Rules:
+//   - 0 or 1 scenarios → Trivial
+//   - No scenarios have depends_on → Parallel
+//   - Exactly one root and each non-root depends on exactly the immediately
+//     preceding scenario (single linear chain) → Sequential
+//   - Otherwise → Mixed
+func ClassifyDecomposability(brief *QuestBrief) DecomposabilityClass {
+	if brief == nil || len(brief.Scenarios) <= 1 {
+		return DecomposableTrivial
+	}
+
+	if countRoots(brief.Scenarios) == len(brief.Scenarios) {
+		// Every scenario is a root — no dependencies at all.
+		return DecomposableParallel
+	}
+
+	if isLinearChain(brief.Scenarios) {
+		return DecomposableSequential
+	}
+
+	return DecomposableMixed
+}
+
+// countRoots returns the number of scenarios that have no depends_on entries.
+func countRoots(scenarios []QuestScenario) int {
+	count := 0
+	for _, s := range scenarios {
+		if len(s.DependsOn) == 0 {
+			count++
+		}
+	}
+	return count
+}
+
+// isLinearChain returns true when scenarios form a single linear chain
+// regardless of declaration order. A linear chain has one root, one tail,
+// and every node has at most one predecessor and one successor.
+func isLinearChain(scenarios []QuestScenario) bool {
+	if countRoots(scenarios) != 1 {
+		return false
+	}
+	// Build adjacency: each node has at most one child (successor).
+	// Also verify each non-root has exactly one dependency.
+	children := make(map[string]string, len(scenarios))
+	for _, s := range scenarios {
+		if len(s.DependsOn) == 0 {
+			continue // root
+		}
+		if len(s.DependsOn) != 1 {
+			return false // branching dependency — not linear
+		}
+		parent := s.DependsOn[0]
+		if _, hasChild := children[parent]; hasChild {
+			return false // parent already has a child — fork in the chain
+		}
+		children[parent] = s.Name
+	}
+	return true
+}
+
+// =============================================================================
 // QUEST BRIEF - Structured quest creation input
 // =============================================================================
 
 // QuestBrief is the JSON-friendly input for creating a single quest.
 // Both human-authored JSON and chat-assembled quests produce this structure.
+//
+// Goal replaces the old Description field; Requirements replaces Acceptance.
+// Scenarios express named sub-goals and their dependency relationships within
+// the quest. Use ClassifyDecomposability to inspect the scenario graph shape.
 type QuestBrief struct {
-	Title       string           `json:"title"`
-	Description string           `json:"description,omitempty"`
-	Difficulty  *QuestDifficulty `json:"difficulty,omitempty"`
-	Skills      []SkillTag       `json:"skills,omitempty"`
-	Acceptance  []string         `json:"acceptance,omitempty"`
-	DependsOn   []QuestID        `json:"depends_on,omitempty"`
-	Hints       *QuestHints      `json:"hints,omitempty"`
+	Title        string           `json:"title"`
+	Goal         string           `json:"goal"`
+	Requirements []string         `json:"requirements,omitempty"`
+	Scenarios    []QuestScenario  `json:"scenarios,omitempty"`
+	Difficulty   *QuestDifficulty `json:"difficulty,omitempty"`
+	Skills       []SkillTag       `json:"skills,omitempty"`
+	Hints        *QuestHints      `json:"hints,omitempty"`
+	DependsOn    []QuestID        `json:"depends_on,omitempty"`
 }
 
 // QuestChainBrief defines multiple interdependent quests submitted as one batch.
@@ -365,20 +465,25 @@ type QuestChainBrief struct {
 
 // QuestChainEntry is one quest within a chain. DependsOn uses array indices
 // (0-based) referring to other entries in the same chain.
+//
+// Goal replaces Description; Requirements replaces Acceptance; Scenarios
+// express named sub-goals within each chain entry.
 type QuestChainEntry struct {
-	Title       string           `json:"title"`
-	Description string           `json:"description,omitempty"`
-	Difficulty  *QuestDifficulty `json:"difficulty,omitempty"`
-	Skills      []SkillTag       `json:"skills,omitempty"`
-	Acceptance  []string         `json:"acceptance,omitempty"`
-	DependsOn   []int            `json:"depends_on,omitempty"`
-	Hints       *QuestHints      `json:"hints,omitempty"`
+	Title        string           `json:"title"`
+	Goal         string           `json:"goal,omitempty"`
+	Requirements []string         `json:"requirements,omitempty"`
+	Scenarios    []QuestScenario  `json:"scenarios,omitempty"`
+	Difficulty   *QuestDifficulty `json:"difficulty,omitempty"`
+	Skills       []SkillTag       `json:"skills,omitempty"`
+	DependsOn    []int            `json:"depends_on,omitempty"`
+	Hints        *QuestHints      `json:"hints,omitempty"`
 }
 
 // maxChainSize is the maximum number of quests in a single chain submission.
 const maxChainSize = 50
 
 // ValidateQuestBrief checks that a QuestBrief has all required fields.
+// When scenarios are present, scenario dependency graph integrity is also verified.
 func ValidateQuestBrief(b *QuestBrief) error {
 	if b == nil {
 		return fmt.Errorf("quest brief is nil")
@@ -386,11 +491,98 @@ func ValidateQuestBrief(b *QuestBrief) error {
 	if b.Title == "" {
 		return fmt.Errorf("quest brief: title is required")
 	}
+	if b.Goal == "" {
+		return fmt.Errorf("quest brief: goal is required")
+	}
 	if b.Difficulty != nil {
 		if err := validateDifficultyRange(*b.Difficulty); err != nil {
 			return fmt.Errorf("quest brief: %w", err)
 		}
 	}
+	if len(b.Scenarios) > 0 {
+		if err := ValidateScenarioDependencies(b.Scenarios); err != nil {
+			return fmt.Errorf("quest brief: %w", err)
+		}
+	}
+	return nil
+}
+
+// ValidateScenarioDependencies checks that a slice of QuestScenario values is
+// internally consistent:
+//   - All scenario names are non-empty
+//   - No duplicate names
+//   - All depends_on references name an existing scenario in the same slice
+//   - No self-references
+//   - No cycles (Kahn's algorithm topological sort)
+func ValidateScenarioDependencies(scenarios []QuestScenario) error {
+	// Single pass: validate names, descriptions, build name→index map.
+	idx := make(map[string]int, len(scenarios))
+	for i, s := range scenarios {
+		if s.Name == "" {
+			return fmt.Errorf("scenarios: name must not be empty")
+		}
+		if s.Description == "" {
+			return fmt.Errorf("scenarios: %q description must not be empty", s.Name)
+		}
+		if _, dup := idx[s.Name]; dup {
+			return fmt.Errorf("scenarios: duplicate name %q", s.Name)
+		}
+		idx[s.Name] = i
+	}
+
+	// Validate individual dependency entries.
+	for _, s := range scenarios {
+		depSeen := make(map[string]bool, len(s.DependsOn))
+		for _, dep := range s.DependsOn {
+			if dep == s.Name {
+				return fmt.Errorf("scenarios: %q cannot depend on itself", s.Name)
+			}
+			if _, known := idx[dep]; !known {
+				return fmt.Errorf("scenarios: %q depends on unknown scenario %q", s.Name, dep)
+			}
+			if depSeen[dep] {
+				return fmt.Errorf("scenarios: %q has duplicate dependency %q", s.Name, dep)
+			}
+			depSeen[dep] = true
+		}
+	}
+
+	// Cycle detection via Kahn's algorithm (topological sort).
+	n := len(scenarios)
+	inDegree := make([]int, n)
+	adj := make([][]int, n)
+	for i, s := range scenarios {
+		for _, dep := range s.DependsOn {
+			depIdx := idx[dep]
+			adj[depIdx] = append(adj[depIdx], i)
+			inDegree[i]++
+		}
+	}
+
+	queue := make([]int, 0, n)
+	for i, d := range inDegree {
+		if d == 0 {
+			queue = append(queue, i)
+		}
+	}
+
+	visited := 0
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		visited++
+		for _, next := range adj[node] {
+			inDegree[next]--
+			if inDegree[next] == 0 {
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	if visited != n {
+		return fmt.Errorf("scenario dependency cycle detected")
+	}
+
 	return nil
 }
 
@@ -415,6 +607,11 @@ func ValidateQuestChainBrief(chain *QuestChainBrief) error {
 		}
 		if entry.Difficulty != nil {
 			if err := validateDifficultyRange(*entry.Difficulty); err != nil {
+				return fmt.Errorf("quest chain brief: quest[%d] %w", i, err)
+			}
+		}
+		if len(entry.Scenarios) > 0 {
+			if err := ValidateScenarioDependencies(entry.Scenarios); err != nil {
 				return fmt.Errorf("quest chain brief: quest[%d] %w", i, err)
 			}
 		}

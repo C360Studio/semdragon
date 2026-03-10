@@ -43,6 +43,12 @@ type Quest struct {
 	DependsOn    []QuestID `json:"depends_on,omitempty"`    // Sibling dependencies (waits for these to complete)
 	Acceptance   []string  `json:"acceptance,omitempty"`    // Domain-flexible acceptance criteria
 
+	// Quest spec (from QuestBrief)
+	Goal                 string               `json:"goal,omitempty"`
+	Requirements         []string             `json:"requirements,omitempty"`
+	Scenarios            []QuestScenario      `json:"scenarios,omitempty"`
+	DecomposabilityClass DecomposabilityClass `json:"decomposability_class,omitempty"`
+
 	// Assignment
 	ClaimedBy     *AgentID `json:"claimed_by,omitempty"`
 	PartyID       *PartyID `json:"party_id,omitempty"`

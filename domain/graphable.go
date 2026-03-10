@@ -294,6 +294,32 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
+	// Quest spec (from brief)
+	if q.Goal != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.spec.goal", Object: q.Goal,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if len(q.Requirements) > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.spec.requirements", Object: q.Requirements,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if len(q.Scenarios) > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.spec.scenarios", Object: q.Scenarios,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.DecomposabilityClass != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.routing.class", Object: string(q.DecomposabilityClass),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
 	return triples
 }
 

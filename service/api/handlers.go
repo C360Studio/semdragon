@@ -207,10 +207,12 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 		ID:          domain.QuestID(questID),
 		Title:       req.Objective,
 		Description: req.Objective,
+		Goal:        req.Objective,
 		Status:      domain.QuestPosted,
 		Difficulty:  domain.DifficultyModerate,
 		BaseXP:      100,
-		MaxAttempts: 3,
+		MaxAttempts:          3,
+		DecomposabilityClass: domain.DecomposableTrivial,
 	}
 
 	if req.Hints != nil {
@@ -290,17 +292,30 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 		quest := domain.Quest{
 			ID:          domain.QuestID(questID),
 			Title:       entry.Title,
-			Description: entry.Description,
+			Description: entry.Goal,
 			Status:      domain.QuestPosted,
 			Difficulty:  difficulty,
 			BaseXP:      domain.DefaultXPForDifficulty(difficulty),
 			MinTier:     domain.TierFromDifficulty(difficulty),
 			MaxAttempts: 3,
 			PostedAt:    now,
-			Acceptance:  entry.Acceptance,
+			Acceptance:  entry.Requirements,
 		}
 
 		quest.RequiredSkills = append(quest.RequiredSkills, entry.Skills...)
+
+		// Populate structured spec fields from brief.
+		quest.Goal = entry.Goal
+		quest.Requirements = entry.Requirements
+		quest.Scenarios = entry.Scenarios
+
+		// Classify decomposability from scenarios.
+		brief := &domain.QuestBrief{
+			Title:     entry.Title,
+			Goal:      entry.Goal,
+			Scenarios: entry.Scenarios,
+		}
+		quest.DecomposabilityClass = domain.ClassifyDecomposability(brief)
 
 		if entry.Hints != nil {
 			if entry.Hints.RequireHumanReview {
@@ -326,6 +341,17 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 				quest.MinPartySize = 2 // default
 				if entry.Hints.MinPartySize != nil && *entry.Hints.MinPartySize >= 2 && *entry.Hints.MinPartySize <= 5 {
 					quest.MinPartySize = *entry.Hints.MinPartySize
+				}
+			}
+		}
+
+		// Set PartyRequired from classification if not explicitly set via hints.
+		if entry.Hints == nil || !entry.Hints.PartyRequired {
+			switch quest.DecomposabilityClass {
+			case domain.DecomposableParallel, domain.DecomposableMixed:
+				quest.PartyRequired = true
+				if quest.MinPartySize < 2 {
+					quest.MinPartySize = 2
 				}
 			}
 		}
@@ -1309,7 +1335,7 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 				retryMessages[len(messages)] = ChatMessage{Role: "assistant", Content: llmResponse}
 				retryMessages[len(messages)+1] = ChatMessage{
 					Role:    "user",
-					Content: "Please provide the quest specification as a JSON code block using the format from your instructions. Use ```json:quest_brief for a single quest or ```json:quest_chain for multiple quests.",
+					Content: "Please provide the quest specification as a ```json:quest_brief code block with title, goal, requirements, and scenarios. Use ```json:quest_chain if creating multiple quests.",
 				}
 
 				retryResult, retryErr := callLLM(ctx, endpoint, systemPrompt, retryMessages)

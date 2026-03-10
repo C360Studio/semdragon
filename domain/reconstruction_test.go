@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semstreams/message"
 )
 
 func TestQuestRoundTrip_ReviewConstraints(t *testing.T) {
@@ -325,6 +326,248 @@ func TestQuestRoundTrip_DAGFieldsEmpty(t *testing.T) {
 	}
 	if r.DAGNodeID != "" {
 		t.Errorf("DAGNodeID = %q, want empty", r.DAGNodeID)
+	}
+}
+
+func TestQuestRoundTrip_QuestSpecFields(t *testing.T) {
+	original := &Quest{
+		ID:          QuestID("test.dev.game.board1.quest.spec1"),
+		Title:       "Quest Spec Round Trip",
+		Description: "Testing Goal, Requirements, Scenarios, and DecomposabilityClass",
+		Status:      QuestPosted,
+		Difficulty:  DifficultyHard,
+		BaseXP:      400,
+		MaxAttempts: 3,
+		PostedAt:    time.Now().Truncate(time.Second),
+
+		Goal: "Build a distributed caching layer",
+		Requirements: []string{
+			"Must support TTL-based expiration",
+			"Must handle 10k req/s",
+			"Must be horizontally scalable",
+		},
+		Scenarios: []QuestScenario{
+			{
+				Name:        "cache-write",
+				Description: "Write path with TTL support",
+				Skills:      []string{"codegen", "systems"},
+			},
+			{
+				Name:        "cache-read",
+				Description: "Read path with cache-miss fallback",
+				Skills:      []string{"codegen"},
+				DependsOn:   []string{"cache-write"},
+			},
+			{
+				Name:        "cache-eviction",
+				Description: "TTL eviction loop",
+				Skills:      []string{"codegen", "systems"},
+				DependsOn:   []string{"cache-write"},
+			},
+		},
+		DecomposabilityClass: DecomposableMixed,
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if r.Goal != original.Goal {
+		t.Errorf("Goal = %q, want %q", r.Goal, original.Goal)
+	}
+
+	if len(r.Requirements) != len(original.Requirements) {
+		t.Fatalf("Requirements len = %d, want %d", len(r.Requirements), len(original.Requirements))
+	}
+	for i, req := range original.Requirements {
+		if r.Requirements[i] != req {
+			t.Errorf("Requirements[%d] = %q, want %q", i, r.Requirements[i], req)
+		}
+	}
+
+	if r.DecomposabilityClass != original.DecomposabilityClass {
+		t.Errorf("DecomposabilityClass = %q, want %q", r.DecomposabilityClass, original.DecomposabilityClass)
+	}
+
+	if len(r.Scenarios) != len(original.Scenarios) {
+		t.Fatalf("Scenarios len = %d, want %d", len(r.Scenarios), len(original.Scenarios))
+	}
+
+	orig0 := original.Scenarios[0]
+	got0 := r.Scenarios[0]
+	if got0.Name != orig0.Name {
+		t.Errorf("Scenarios[0].Name = %q, want %q", got0.Name, orig0.Name)
+	}
+	if got0.Description != orig0.Description {
+		t.Errorf("Scenarios[0].Description = %q, want %q", got0.Description, orig0.Description)
+	}
+	if len(got0.Skills) != len(orig0.Skills) {
+		t.Fatalf("Scenarios[0].Skills len = %d, want %d", len(got0.Skills), len(orig0.Skills))
+	}
+	for i, sk := range orig0.Skills {
+		if got0.Skills[i] != sk {
+			t.Errorf("Scenarios[0].Skills[%d] = %q, want %q", i, got0.Skills[i], sk)
+		}
+	}
+	if len(got0.DependsOn) != 0 {
+		t.Errorf("Scenarios[0].DependsOn len = %d, want 0", len(got0.DependsOn))
+	}
+
+	orig1 := original.Scenarios[1]
+	got1 := r.Scenarios[1]
+	if got1.Name != orig1.Name {
+		t.Errorf("Scenarios[1].Name = %q, want %q", got1.Name, orig1.Name)
+	}
+	if len(got1.DependsOn) != 1 || got1.DependsOn[0] != "cache-write" {
+		t.Errorf("Scenarios[1].DependsOn = %v, want [cache-write]", got1.DependsOn)
+	}
+
+	orig2 := original.Scenarios[2]
+	got2 := r.Scenarios[2]
+	if got2.Name != orig2.Name {
+		t.Errorf("Scenarios[2].Name = %q, want %q", got2.Name, orig2.Name)
+	}
+	if len(got2.DependsOn) != 1 || got2.DependsOn[0] != "cache-write" {
+		t.Errorf("Scenarios[2].DependsOn = %v, want [cache-write]", got2.DependsOn)
+	}
+}
+
+// TestQuestRoundTrip_ScenariosPostKVRoundTrip tests the asScenariosSlice helper's
+// []any-of-map[string]any path, which is what comes back after JSON unmarshalling
+// from NATS KV storage.
+func TestQuestRoundTrip_ScenariosPostKVRoundTrip(t *testing.T) {
+	// Simulate what NATS KV returns after JSON round-trip: []any of map[string]any
+	rawScenarios := []any{
+		map[string]any{
+			"name":        "setup",
+			"description": "Provision infrastructure",
+			"skills":      []any{"devops", "systems"},
+			"depends_on":  []any{},
+		},
+		map[string]any{
+			"name":        "deploy",
+			"description": "Deploy application artifacts",
+			"skills":      []any{"codegen"},
+			"depends_on":  []any{"setup"},
+		},
+		map[string]any{
+			// No "skills" or "depends_on" keys at all — missing fields stay zero
+			"name":        "verify",
+			"description": "Run smoke tests",
+		},
+	}
+
+	entity := &graph.EntityState{
+		ID: "test.dev.game.board1.quest.kv1",
+		Triples: []message.Triple{
+			{Predicate: "quest.spec.goal", Object: "Ship the release"},
+			{Predicate: "quest.spec.requirements", Object: []any{"Tested", "Documented"}},
+			{Predicate: "quest.spec.scenarios", Object: rawScenarios},
+			{Predicate: "quest.routing.class", Object: "sequential"},
+			{Predicate: "quest.status.state", Object: "posted"},
+			{Predicate: "quest.identity.title", Object: "KV Round-Trip Quest"},
+			{Predicate: "quest.lifecycle.posted_at", Object: time.Now().Format(time.RFC3339)},
+		},
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if r.Goal != "Ship the release" {
+		t.Errorf("Goal = %q, want %q", r.Goal, "Ship the release")
+	}
+
+	if r.DecomposabilityClass != DecomposableSequential {
+		t.Errorf("DecomposabilityClass = %q, want %q", r.DecomposabilityClass, DecomposableSequential)
+	}
+
+	if len(r.Requirements) != 2 {
+		t.Fatalf("Requirements len = %d, want 2", len(r.Requirements))
+	}
+	if r.Requirements[0] != "Tested" {
+		t.Errorf("Requirements[0] = %q, want %q", r.Requirements[0], "Tested")
+	}
+	if r.Requirements[1] != "Documented" {
+		t.Errorf("Requirements[1] = %q, want %q", r.Requirements[1], "Documented")
+	}
+
+	if len(r.Scenarios) != 3 {
+		t.Fatalf("Scenarios len = %d, want 3", len(r.Scenarios))
+	}
+
+	// Scenario 0: setup — has skills, empty depends_on slice
+	s0 := r.Scenarios[0]
+	if s0.Name != "setup" {
+		t.Errorf("Scenarios[0].Name = %q, want %q", s0.Name, "setup")
+	}
+	if s0.Description != "Provision infrastructure" {
+		t.Errorf("Scenarios[0].Description = %q, want %q", s0.Description, "Provision infrastructure")
+	}
+	if len(s0.Skills) != 2 {
+		t.Fatalf("Scenarios[0].Skills len = %d, want 2", len(s0.Skills))
+	}
+	if s0.Skills[0] != "devops" || s0.Skills[1] != "systems" {
+		t.Errorf("Scenarios[0].Skills = %v, want [devops systems]", s0.Skills)
+	}
+	// empty []any depends_on produces nil or empty after conversion — either is acceptable
+	if len(s0.DependsOn) != 0 {
+		t.Errorf("Scenarios[0].DependsOn = %v, want empty", s0.DependsOn)
+	}
+
+	// Scenario 1: deploy — depends on setup
+	s1 := r.Scenarios[1]
+	if s1.Name != "deploy" {
+		t.Errorf("Scenarios[1].Name = %q, want %q", s1.Name, "deploy")
+	}
+	if len(s1.DependsOn) != 1 || s1.DependsOn[0] != "setup" {
+		t.Errorf("Scenarios[1].DependsOn = %v, want [setup]", s1.DependsOn)
+	}
+
+	// Scenario 2: verify — missing skills and depends_on keys entirely
+	s2 := r.Scenarios[2]
+	if s2.Name != "verify" {
+		t.Errorf("Scenarios[2].Name = %q, want %q", s2.Name, "verify")
+	}
+	if len(s2.Skills) != 0 {
+		t.Errorf("Scenarios[2].Skills = %v, want empty", s2.Skills)
+	}
+	if len(s2.DependsOn) != 0 {
+		t.Errorf("Scenarios[2].DependsOn = %v, want empty", s2.DependsOn)
+	}
+}
+
+// TestQuestRoundTrip_QuestSpecFieldsEmpty verifies that a quest without spec
+// fields round-trips cleanly with zero values (no phantom data).
+func TestQuestRoundTrip_QuestSpecFieldsEmpty(t *testing.T) {
+	original := &Quest{
+		ID:          QuestID("test.dev.game.board1.quest.nospec"),
+		Title:       "No Spec Quest",
+		Status:      QuestPosted,
+		BaseXP:      100,
+		MaxAttempts: 3,
+		PostedAt:    time.Now().Truncate(time.Second),
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if r.Goal != "" {
+		t.Errorf("Goal = %q, want empty", r.Goal)
+	}
+	if len(r.Requirements) != 0 {
+		t.Errorf("Requirements = %v, want empty", r.Requirements)
+	}
+	if r.Scenarios != nil {
+		t.Errorf("Scenarios = %v, want nil", r.Scenarios)
+	}
+	if r.DecomposabilityClass != "" {
+		t.Errorf("DecomposabilityClass = %q, want empty", r.DecomposabilityClass)
 	}
 }
 

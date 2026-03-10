@@ -40,6 +40,12 @@
       "fallback": ["ollama-tools"],
       "requires_tools": true
     },
+    "quest-execution-sequential": {
+      "description": "Sequential quest execution — route to strongest reasoning model for chain-of-thought tasks",
+      "preferred": ["claude-4"],
+      "fallback": ["gpt-4o"],
+      "requires_tools": true
+    },
     "boss-battle": {
       "description": "Quest output evaluation by LLM judge",
       "preferred": ["claude-4"],

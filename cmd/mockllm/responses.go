@@ -6,26 +6,38 @@ package main
 //
 // Required fields per ValidateQuestBrief: title (non-empty).
 // Optional but useful for downstream processors: difficulty (1-5), skills,
-// acceptance criteria.
+// requirements (acceptance criteria), scenarios.
 const questBriefResponse = `Here is a quest based on your request.
 
 ` + "```" + `json:quest_brief
 {
   "title": "Mock Quest: Analyze Test Data",
-  "description": "Process the test dataset and generate a summary report covering all data points.",
+  "goal": "Process the test dataset and generate a summary report covering all data points.",
   "difficulty": 2,
   "skills": ["analysis", "summarization"],
-  "acceptance": [
+  "requirements": [
     "Summary report generated",
     "All data points processed",
     "Report saved to output directory"
+  ],
+  "scenarios": [
+    {
+      "name": "Data ingestion",
+      "description": "Load all CSV files from the input directory and validate schema conformance",
+      "skills": ["analysis"]
+    },
+    {
+      "name": "Summary generation",
+      "description": "Compute aggregate statistics and produce a formatted summary report",
+      "skills": ["summarization"]
+    }
   ]
 }
 ` + "```" + `
 
 The quest has been structured with a Journeyman difficulty level and requires
 analysis and summarization skills. Let me know if you would like to adjust the
-acceptance criteria or assign it to a specific guild.`
+requirements or assign it to a specific guild.`
 
 // questChainResponse is returned when the user's message requests a chain or
 // multiple quests. The ```json:quest_chain tagged block is parsed by
@@ -40,20 +52,20 @@ const questChainResponse = `Here is a two-quest chain for your workflow.
   "quests": [
     {
       "title": "Mock Quest: Gather Raw Data",
-      "description": "Collect and validate the raw input dataset from all configured sources.",
+      "goal": "Collect and validate the raw input dataset from all configured sources.",
       "difficulty": 1,
       "skills": ["data-gathering"],
-      "acceptance": [
+      "requirements": [
         "All data sources queried",
         "Raw dataset saved to staging area"
       ]
     },
     {
       "title": "Mock Quest: Process and Report",
-      "description": "Transform the validated raw data and produce the final analysis report.",
+      "goal": "Transform the validated raw data and produce the final analysis report.",
       "difficulty": 2,
       "skills": ["analysis", "summarization"],
-      "acceptance": [
+      "requirements": [
         "Data transformed successfully",
         "Report delivered to stakeholders"
       ],

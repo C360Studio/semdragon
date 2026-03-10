@@ -71,6 +71,11 @@
         "preferred": ["ollama-coder"],
         "requires_tools": true
       },
+      "quest-execution-sequential": {
+        "description": "Sequential quest execution — benefits from stronger reasoning models",
+        "preferred": ["ollama-coder"],
+        "requires_tools": true
+      },
       "boss-battle": {
         "description": "Quest output evaluation by LLM judge",
         "preferred": ["ollama-qwen3"],

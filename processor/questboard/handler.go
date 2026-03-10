@@ -171,8 +171,8 @@ func (c *Component) PostQuestChain(ctx context.Context, chain domain.QuestChainB
 	for _, entry := range chain.Quests {
 		q := domain.Quest{
 			Title:       entry.Title,
-			Description: entry.Description,
-			Acceptance:  entry.Acceptance,
+			Description: entry.Goal,
+			Acceptance:  entry.Requirements,
 		}
 		if entry.Difficulty != nil {
 			q.Difficulty = *entry.Difficulty
@@ -181,6 +181,19 @@ func (c *Component) PostQuestChain(ctx context.Context, chain domain.QuestChainB
 		}
 		q.RequiredSkills = entry.Skills
 
+		// Populate structured spec fields from brief.
+		q.Goal = entry.Goal
+		q.Requirements = entry.Requirements
+		q.Scenarios = entry.Scenarios
+
+		// Classify decomposability from scenarios.
+		brief := &domain.QuestBrief{
+			Title:     entry.Title,
+			Goal:      entry.Goal,
+			Scenarios: entry.Scenarios,
+		}
+		q.DecomposabilityClass = domain.ClassifyDecomposability(brief)
+
 		if entry.Hints != nil {
 			if entry.Hints.RequireHumanReview {
 				q.Constraints.RequireReview = true
@@ -188,6 +201,17 @@ func (c *Component) PostQuestChain(ctx context.Context, chain domain.QuestChainB
 			}
 			if entry.Hints.PreferGuild != nil {
 				q.GuildPriority = entry.Hints.PreferGuild
+			}
+		}
+
+		// Set PartyRequired from classification if not explicitly set via hints.
+		if entry.Hints == nil || !entry.Hints.PartyRequired {
+			switch q.DecomposabilityClass {
+			case domain.DecomposableParallel, domain.DecomposableMixed:
+				q.PartyRequired = true
+				if q.MinPartySize < 2 {
+					q.MinPartySize = 2
+				}
 			}
 		}
 
@@ -1020,171 +1044,11 @@ func (c *Component) getPartyByID(ctx context.Context, partyID domain.PartyID) (*
 }
 
 // questFromEntity reconstructs a Quest from a graph entity.
+// Delegates to domain.QuestFromEntityState, which is the single authoritative
+// reconstruction path and handles all predicates including quest.spec.goal,
+// quest.spec.requirements, quest.spec.scenarios, and quest.routing.class.
 func (c *Component) questFromEntity(entity *graph.EntityState) *domain.Quest {
-	if entity == nil {
-		return nil
-	}
-
-	quest := &domain.Quest{
-		ID: domain.QuestID(entity.ID),
-	}
-
-	for _, triple := range entity.Triples {
-		switch triple.Predicate {
-		case "quest.identity.title":
-			if v, ok := triple.Object.(string); ok {
-				quest.Title = v
-			}
-		case "quest.identity.description":
-			if v, ok := triple.Object.(string); ok {
-				quest.Description = v
-			}
-		case "quest.status.state":
-			if v, ok := triple.Object.(string); ok {
-				quest.Status = domain.QuestStatus(v)
-			}
-		case "quest.difficulty.level":
-			if v, ok := triple.Object.(float64); ok {
-				quest.Difficulty = domain.QuestDifficulty(int(v))
-			}
-		case "quest.tier.minimum":
-			if v, ok := triple.Object.(float64); ok {
-				quest.MinTier = domain.TrustTier(int(v))
-			}
-		case "quest.party.required":
-			if v, ok := triple.Object.(bool); ok {
-				quest.PartyRequired = v
-			}
-		case "quest.party.min_size":
-			if v, ok := triple.Object.(float64); ok {
-				quest.MinPartySize = int(v)
-			}
-		case "quest.xp.base":
-			if v, ok := triple.Object.(float64); ok {
-				quest.BaseXP = int64(v)
-			}
-		case "quest.attempts.current":
-			if v, ok := triple.Object.(float64); ok {
-				quest.Attempts = int(v)
-			}
-		case "quest.attempts.max":
-			if v, ok := triple.Object.(float64); ok {
-				quest.MaxAttempts = int(v)
-			}
-		case "quest.skill.required":
-			if v, ok := triple.Object.(string); ok {
-				quest.RequiredSkills = append(quest.RequiredSkills, domain.SkillTag(v))
-			}
-		case "quest.assignment.agent":
-			if v, ok := triple.Object.(string); ok {
-				agentID := domain.AgentID(v)
-				quest.ClaimedBy = &agentID
-			}
-		case "quest.assignment.party":
-			if v, ok := triple.Object.(string); ok {
-				partyID := domain.PartyID(v)
-				quest.PartyID = &partyID
-			}
-		case "quest.priority.guild":
-			if v, ok := triple.Object.(string); ok {
-				guildID := domain.GuildID(v)
-				quest.GuildPriority = &guildID
-			}
-		case "quest.parent.quest":
-			if v, ok := triple.Object.(string); ok {
-				parentID := domain.QuestID(v)
-				quest.ParentQuest = &parentID
-			}
-		case "quest.dependency.quest":
-			if v, ok := triple.Object.(string); ok {
-				quest.DependsOn = append(quest.DependsOn, domain.QuestID(v))
-			}
-		case "quest.acceptance.criterion":
-			if v, ok := triple.Object.(string); ok {
-				quest.Acceptance = append(quest.Acceptance, v)
-			}
-		case "quest.review.level":
-			if v, ok := triple.Object.(float64); ok {
-				quest.Constraints.ReviewLevel = domain.ReviewLevel(int(v))
-			}
-		case "quest.review.needs_review":
-			if v, ok := triple.Object.(bool); ok {
-				quest.Constraints.RequireReview = v
-			}
-		case "quest.verdict.passed":
-			if v, ok := triple.Object.(bool); ok {
-				if quest.Verdict == nil {
-					quest.Verdict = &domain.BattleVerdict{}
-				}
-				quest.Verdict.Passed = v
-			}
-		case "quest.verdict.score":
-			if v, ok := triple.Object.(float64); ok {
-				if quest.Verdict == nil {
-					quest.Verdict = &domain.BattleVerdict{}
-				}
-				quest.Verdict.QualityScore = v
-			}
-		case "quest.verdict.xp_awarded":
-			if v, ok := triple.Object.(float64); ok {
-				if quest.Verdict == nil {
-					quest.Verdict = &domain.BattleVerdict{}
-				}
-				quest.Verdict.XPAwarded = int64(v)
-			}
-		case "quest.verdict.feedback":
-			if v, ok := triple.Object.(string); ok {
-				if quest.Verdict == nil {
-					quest.Verdict = &domain.BattleVerdict{}
-				}
-				quest.Verdict.Feedback = v
-			}
-		case "quest.failure.escalated":
-			if v, ok := triple.Object.(bool); ok {
-				quest.Escalated = v
-			}
-		case "quest.failure.reason":
-			if v, ok := triple.Object.(string); ok {
-				quest.FailureReason = v
-			}
-		case "quest.failure.type":
-			if v, ok := triple.Object.(string); ok {
-				quest.FailureType = domain.FailureType(v)
-			}
-		case "quest.duration":
-			if v, ok := triple.Object.(string); ok {
-				if d, err := time.ParseDuration(v); err == nil {
-					quest.Duration = d
-				}
-			}
-		case "quest.lifecycle.posted_at":
-			if v, ok := triple.Object.(string); ok {
-				if t, err := time.Parse(time.RFC3339, v); err == nil {
-					quest.PostedAt = t
-				}
-			}
-		case "quest.lifecycle.claimed_at":
-			if v, ok := triple.Object.(string); ok {
-				if t, err := time.Parse(time.RFC3339, v); err == nil {
-					quest.ClaimedAt = &t
-				}
-			}
-		case "quest.lifecycle.started_at":
-			if v, ok := triple.Object.(string); ok {
-				if t, err := time.Parse(time.RFC3339, v); err == nil {
-					quest.StartedAt = &t
-				}
-			}
-		case "quest.lifecycle.completed_at":
-			if v, ok := triple.Object.(string); ok {
-				if t, err := time.Parse(time.RFC3339, v); err == nil {
-					quest.CompletedAt = &t
-				}
-			}
-		}
-	}
-
-	return quest
+	return domain.QuestFromEntityState(entity)
 }
 
 func (c *Component) validateAgentCanClaim(agent *agentprogression.Agent, quest *domain.Quest) error {

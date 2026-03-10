@@ -43,9 +43,13 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	reg := NewPromptRegistry()
 	RegisterBuiltinFragments(reg)
 
-	// Expect exactly 3 built-in fragments: lead directive + lead provider hint + sub-quest executor directive.
-	if got := reg.FragmentCount(); got != 3 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 3", got)
+	// Expect exactly 4 built-in fragments:
+	//   - party lead tool directive
+	//   - party lead provider hint
+	//   - sub-quest executor directive
+	//   - solo agent scenario directive
+	if got := reg.FragmentCount(); got != 4 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 4", got)
 	}
 }
 
@@ -370,6 +374,212 @@ func TestSubQuestExecutorDirective_ExcludedForPartyLead(t *testing.T) {
 
 	if strings.Contains(result.SystemMessage, "SUB-QUEST") {
 		t.Error("sub-quest directive should not appear for party leads")
+	}
+	if !strings.Contains(result.SystemMessage, "PARTY LEAD") {
+		t.Error("party lead directive should be present")
+	}
+}
+
+// =============================================================================
+// Party lead directive — scenario injection tests
+// =============================================================================
+
+func TestPartyLeadDirective_WithScenarios_InjectsQuestSpec(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:          domain.TierMaster,
+		Provider:      "openai",
+		PartyRequired: true,
+		IsPartyLead:   true,
+		QuestTitle:    "Build the system",
+		QuestGoal:     "Deliver a working auth service",
+		QuestRequirements: []string{
+			"Must use JWT tokens",
+			"Must support OAuth2",
+		},
+		QuestScenarios: []domain.QuestScenario{
+			{Name: "Design", Description: "Design the auth schema", Skills: []string{"architecture"}},
+			{Name: "Implement", Description: "Write the auth service", Skills: []string{"coding"}, DependsOn: []string{"Design"}},
+		},
+	})
+
+	if !strings.Contains(result.SystemMessage, "QUEST SPECIFICATION") {
+		t.Error("expected QUEST SPECIFICATION heading in party lead directive when scenarios present")
+	}
+	if !strings.Contains(result.SystemMessage, "Deliver a working auth service") {
+		t.Error("expected quest goal in party lead directive")
+	}
+	if !strings.Contains(result.SystemMessage, "Must use JWT tokens") {
+		t.Error("expected requirements in party lead directive")
+	}
+	if !strings.Contains(result.SystemMessage, "Design: Design the auth schema") {
+		t.Error("expected first scenario in party lead directive")
+	}
+	if !strings.Contains(result.SystemMessage, "Implement: Write the auth service") {
+		t.Error("expected second scenario in party lead directive")
+	}
+	if !strings.Contains(result.SystemMessage, "[depends_on: Design]") {
+		t.Error("expected depends_on in scenario listing")
+	}
+	if !strings.Contains(result.SystemMessage, "Map scenarios to sub-quests") {
+		t.Error("expected decomposition instruction when scenarios present")
+	}
+	if !strings.Contains(result.SystemMessage, "decompose_quest") {
+		t.Error("expected decompose_quest directive even with scenarios")
+	}
+}
+
+func TestPartyLeadDirective_WithoutScenarios_UsesBaseDirective(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:          domain.TierMaster,
+		Provider:      "openai",
+		PartyRequired: true,
+		IsPartyLead:   true,
+		QuestTitle:    "Build the feature",
+	})
+
+	// Without scenarios, base directive is used — no QUEST SPECIFICATION heading.
+	if strings.Contains(result.SystemMessage, "QUEST SPECIFICATION") {
+		t.Error("QUEST SPECIFICATION should not appear when no scenarios are present")
+	}
+	// The base directive text must still be present.
+	if !strings.Contains(result.SystemMessage, "PARTY LEAD") {
+		t.Error("expected PARTY LEAD heading in base directive")
+	}
+	if !strings.Contains(result.SystemMessage, "decompose_quest") {
+		t.Error("expected decompose_quest instruction in base directive")
+	}
+}
+
+func TestPartyLeadDirective_ScenarioSkillsRendered(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:          domain.TierMaster,
+		Provider:      "openai",
+		PartyRequired: true,
+		IsPartyLead:   true,
+		QuestScenarios: []domain.QuestScenario{
+			{Name: "Research", Description: "Gather requirements", Skills: []string{"analysis", "communication"}},
+		},
+	})
+
+	if !strings.Contains(result.SystemMessage, "[skills: analysis, communication]") {
+		t.Error("expected skill list rendered in scenario line")
+	}
+}
+
+// =============================================================================
+// Solo agent scenario directive tests
+// =============================================================================
+
+func TestSoloAgentScenarioDirective_IncludedWhenScenariosPresent(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:          domain.TierJourneyman,
+		Provider:      "openai",
+		PartyRequired: false,
+		IsSubQuest:    false,
+		QuestTitle:    "Implement feature",
+		QuestGoal:     "Build a caching layer",
+		QuestRequirements: []string{
+			"Use Redis",
+			"TTL configurable",
+		},
+		QuestScenarios: []domain.QuestScenario{
+			{Name: "Setup", Description: "Configure Redis connection"},
+			{Name: "Cache", Description: "Implement cache reads/writes", DependsOn: []string{"Setup"}},
+		},
+	})
+
+	if !strings.Contains(result.SystemMessage, "WORK PLAN") {
+		t.Error("expected WORK PLAN directive for solo agent with scenarios")
+	}
+	if !strings.Contains(result.SystemMessage, "Build a caching layer") {
+		t.Error("expected quest goal in work plan")
+	}
+	if !strings.Contains(result.SystemMessage, "Use Redis") {
+		t.Error("expected requirements in work plan")
+	}
+	if !strings.Contains(result.SystemMessage, "Setup: Configure Redis connection") {
+		t.Error("expected first scenario in work plan")
+	}
+	if !strings.Contains(result.SystemMessage, "Cache: Implement cache reads/writes") {
+		t.Error("expected second scenario in work plan")
+	}
+	if !strings.Contains(result.SystemMessage, "[depends_on: Setup]") {
+		t.Error("expected depends_on rendered in work plan scenario")
+	}
+
+	found := false
+	for _, id := range result.FragmentsUsed {
+		if id == "builtin.solo-agent.scenario-directive" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'builtin.solo-agent.scenario-directive' in FragmentsUsed")
+	}
+}
+
+func TestSoloAgentScenarioDirective_ExcludedWhenNoScenarios(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:          domain.TierJourneyman,
+		Provider:      "openai",
+		PartyRequired: false,
+		IsSubQuest:    false,
+		QuestTitle:    "Do some work",
+	})
+
+	if strings.Contains(result.SystemMessage, "WORK PLAN") {
+		t.Error("solo agent scenario directive should not appear when no scenarios are present")
+	}
+}
+
+func TestSoloAgentScenarioDirective_ExcludedForSubQuest(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:       domain.TierJourneyman,
+		Provider:   "openai",
+		IsSubQuest: true,
+		QuestScenarios: []domain.QuestScenario{
+			{Name: "Step1", Description: "Do step 1"},
+		},
+	})
+
+	// Sub-quest executor directive should be present, not the solo scenario directive.
+	if strings.Contains(result.SystemMessage, "WORK PLAN") {
+		t.Error("solo scenario directive should not appear for sub-quests")
+	}
+	if !strings.Contains(result.SystemMessage, "SUB-QUEST") {
+		t.Error("sub-quest executor directive should be present for sub-quests")
+	}
+}
+
+func TestSoloAgentScenarioDirective_ExcludedForPartyLead(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:          domain.TierMaster,
+		Provider:      "openai",
+		PartyRequired: true,
+		IsPartyLead:   true,
+		QuestScenarios: []domain.QuestScenario{
+			{Name: "Step1", Description: "Do step 1"},
+		},
+	})
+
+	// Party lead directive should be present; solo scenario directive should not.
+	if strings.Contains(result.SystemMessage, "WORK PLAN") {
+		t.Error("solo scenario directive should not appear for party leads")
 	}
 	if !strings.Contains(result.SystemMessage, "PARTY LEAD") {
 		t.Error("party lead directive should be present")

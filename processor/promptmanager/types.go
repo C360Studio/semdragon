@@ -66,6 +66,12 @@ type PromptFragment struct {
 	// true. Use this for context fields (e.g. PartyRequired, IsPartyLead) that
 	// have no corresponding struct gate.
 	Condition func(AssemblyContext) bool
+
+	// ContentFunc is an optional function that generates fragment content
+	// dynamically from the AssemblyContext. When set, it takes precedence over
+	// Content. Use this for fragments that need runtime data injected (e.g.
+	// quest scenarios, goal text).
+	ContentFunc func(AssemblyContext) string
 }
 
 // =============================================================================
@@ -96,12 +102,18 @@ type AssemblyContext struct {
 	PersonaPrompt string // from AgentPersona
 
 	// Quest details
-	QuestTitle       string
-	QuestDescription string
-	QuestInput       any
-	RequiredSkills   []domain.SkillTag
-	MaxDuration      string
-	MaxTokens        int
+	QuestTitle           string
+	QuestDescription     string
+	QuestInput           any
+	RequiredSkills       []domain.SkillTag
+	MaxDuration          string
+	MaxTokens            int
+	QuestGoal         string
+	QuestRequirements []string
+	QuestScenarios    []domain.QuestScenario
+	// DecomposabilityClass is used by questbridge for model routing (sequential
+	// quests route to stronger models) and available to fragments for future use.
+	DecomposabilityClass domain.DecomposabilityClass
 
 	// PeerFeedback carries low-rated peer review questions to be surfaced as
 	// warnings in the assembled prompt. Only questions with below-threshold ratings

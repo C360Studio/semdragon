@@ -14,6 +14,7 @@ import (
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semstreams/message"
+	"github.com/c360studio/semstreams/model"
 )
 
 // =============================================================================
@@ -1386,6 +1387,107 @@ func TestParseToolOutput(t *testing.T) {
 			}
 			if gotContent != tt.wantContent {
 				t.Errorf("parseToolOutput() content = %q; want %q", gotContent, tt.wantContent)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// resolveCapability
+// =============================================================================
+
+// capabilityMockRegistry satisfies model.RegistryReader with configurable
+// fallback chains so resolveCapability's chain-length checks work.
+type capabilityMockRegistry struct {
+	chains map[string][]string // capability key -> fallback chain
+}
+
+func (m *capabilityMockRegistry) Resolve(cap string) string        { return "" }
+func (m *capabilityMockRegistry) GetEndpoint(string) *model.EndpointConfig { return nil }
+func (m *capabilityMockRegistry) GetFallbackChain(key string) []string {
+	return m.chains[key]
+}
+func (m *capabilityMockRegistry) GetMaxTokens(string) int   { return 0 }
+func (m *capabilityMockRegistry) GetDefault() string                  { return "" }
+func (m *capabilityMockRegistry) ListCapabilities() []string          { return nil }
+func (m *capabilityMockRegistry) ListEndpoints() []string             { return nil }
+func (m *capabilityMockRegistry) ResolveSummarization() string        { return "" }
+
+func TestResolveCapability(t *testing.T) {
+	tests := []struct {
+		name   string
+		agent  *agentprogression.Agent
+		quest  *domain.Quest
+		chains map[string][]string
+		want   string
+	}{
+		{
+			name:  "sequential quest uses quest-execution-sequential when configured",
+			agent: &agentprogression.Agent{Tier: domain.TierJourneyman},
+			quest: &domain.Quest{DecomposabilityClass: domain.DecomposableSequential},
+			chains: map[string][]string{
+				"quest-execution-sequential": {"claude-opus"},
+				"agent-work":                {"claude-sonnet"},
+			},
+			want: "quest-execution-sequential",
+		},
+		{
+			name:  "sequential quest falls back to agent-work when sequential not configured",
+			agent: &agentprogression.Agent{Tier: domain.TierJourneyman},
+			quest: &domain.Quest{DecomposabilityClass: domain.DecomposableSequential},
+			chains: map[string][]string{
+				"agent-work": {"claude-sonnet"},
+			},
+			want: "agent-work",
+		},
+		{
+			name:  "parallel quest uses agent-work (not sequential)",
+			agent: &agentprogression.Agent{Tier: domain.TierJourneyman},
+			quest: &domain.Quest{DecomposabilityClass: domain.DecomposableParallel},
+			chains: map[string][]string{
+				"quest-execution-sequential": {"claude-opus"},
+				"agent-work":                {"claude-sonnet"},
+			},
+			want: "agent-work",
+		},
+		{
+			name:  "trivial quest uses agent-work",
+			agent: &agentprogression.Agent{Tier: domain.TierApprentice},
+			quest: &domain.Quest{DecomposabilityClass: domain.DecomposableTrivial},
+			chains: map[string][]string{
+				"agent-work": {"claude-sonnet"},
+			},
+			want: "agent-work",
+		},
+		{
+			name: "tier+skill key takes priority over bare agent-work",
+			agent: &agentprogression.Agent{Tier: domain.TierExpert},
+			quest: &domain.Quest{
+				RequiredSkills: []domain.SkillTag{domain.SkillCodeGen},
+			},
+			chains: map[string][]string{
+				"agent-work.expert.code_generation": {"specialized-model"},
+				"agent-work":                        {"default-model"},
+			},
+			want: "agent-work.expert.code_generation",
+		},
+		{
+			name:  "nil registry returns agent-work",
+			agent: &agentprogression.Agent{Tier: domain.TierJourneyman},
+			quest: &domain.Quest{DecomposabilityClass: domain.DecomposableSequential},
+			want:  "agent-work",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Component{}
+			if tt.chains != nil {
+				c.registry = &capabilityMockRegistry{chains: tt.chains}
+			}
+			got := c.resolveCapability(tt.agent, tt.quest)
+			if got != tt.want {
+				t.Errorf("resolveCapability() = %q, want %q", got, tt.want)
 			}
 		})
 	}

@@ -188,10 +188,72 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.ContextSources = AsStringSlice(triple.Object)
 		case "quest.context.entities":
 			q.ContextEntities = AsStringSlice(triple.Object)
+
+		// Quest spec
+		case "quest.spec.goal":
+			q.Goal = AsString(triple.Object)
+		case "quest.spec.requirements":
+			q.Requirements = AsStringSlice(triple.Object)
+		case "quest.spec.scenarios":
+			// Scenarios are stored as JSON; reconstruct from the raw object.
+			q.Scenarios = asScenariosSlice(triple.Object)
+		case "quest.routing.class":
+			q.DecomposabilityClass = DecomposabilityClass(AsString(triple.Object))
 		}
 	}
 
 	return q
+}
+
+// asScenariosSlice converts a triple Object to []QuestScenario.
+// The object may be a raw []QuestScenario (in-process), a JSON-encoded
+// []interface{} (after KV round-trip), or nil.
+func asScenariosSlice(obj any) []QuestScenario {
+	if obj == nil {
+		return nil
+	}
+	// Direct type assertion (in-process)
+	if scenarios, ok := obj.([]QuestScenario); ok {
+		return scenarios
+	}
+	// After KV round-trip: JSON deserialised as []any of map[string]any
+	raw, ok := obj.([]any)
+	if !ok {
+		return nil
+	}
+	scenarios := make([]QuestScenario, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		s := QuestScenario{}
+		if v, ok := m["name"].(string); ok {
+			s.Name = v
+		}
+		if v, ok := m["description"].(string); ok {
+			s.Description = v
+		}
+		if skills, ok := m["skills"].([]any); ok {
+			for _, sk := range skills {
+				if str, ok := sk.(string); ok {
+					s.Skills = append(s.Skills, str)
+				}
+			}
+		}
+		if deps, ok := m["depends_on"].([]any); ok {
+			for _, d := range deps {
+				if str, ok := d.(string); ok {
+					s.DependsOn = append(s.DependsOn, str)
+				}
+			}
+		}
+		scenarios = append(scenarios, s)
+	}
+	if len(scenarios) == 0 {
+		return nil
+	}
+	return scenarios
 }
 
 // GuildFromEntityState reconstructs a Guild from graph EntityState.
@@ -570,7 +632,7 @@ func AsBool(v interface{}) bool {
 }
 
 // AsTime converts an interface value to time.Time.
-func AsTime(v interface{}) time.Time {
+func AsTime(v any) time.Time {
 	if v == nil {
 		return time.Time{}
 	}

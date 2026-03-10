@@ -1634,6 +1634,10 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		ClarificationSource:  c.clarificationSource(quest),
 		DependencyOutputs:    c.loadDependencyOutputs(ctx, quest),
 		StructuralChecklist:  checklist,
+		QuestGoal:            quest.Goal,
+		QuestRequirements:    quest.Requirements,
+		QuestScenarios:       quest.Scenarios,
+		DecomposabilityClass: quest.DecomposabilityClass,
 	}
 
 	return c.promptAssembler.AssembleSystemPrompt(assemblyCtx)
@@ -1694,11 +1698,27 @@ func buildUserPrompt(quest *domain.Quest) string {
 // CAPABILITY RESOLUTION
 // =============================================================================
 
-// resolveCapability builds a capability key from the agent tier and quest primary skill.
-// Falls back through tier-only and then bare "agent-work" keys.
+// resolveCapability builds a capability key from the agent tier, quest primary
+// skill, and decomposability class. Sequential quests try a dedicated capability
+// key first ("quest-execution-sequential") so operators can route them to a
+// higher-capability model — research shows accelerating returns from model
+// intelligence on sequential reasoning tasks.
+//
+// Resolution order:
+//  1. quest-execution-sequential (if DecomposabilityClass == sequential)
+//  2. agent-work.{tier}.{skill}
+//  3. agent-work.{tier}
+//  4. agent-work
 func (c *Component) resolveCapability(agent *agentprogression.Agent, quest *domain.Quest) string {
 	if c.registry == nil {
 		return "agent-work"
+	}
+
+	// Sequential quests benefit from stronger models — try a dedicated capability first.
+	if quest.DecomposabilityClass == domain.DecomposableSequential {
+		if chain := c.registry.GetFallbackChain("quest-execution-sequential"); len(chain) > 0 {
+			return "quest-execution-sequential"
+		}
 	}
 
 	tier := agent.Tier.String()
