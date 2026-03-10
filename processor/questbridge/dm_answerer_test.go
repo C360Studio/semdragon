@@ -32,6 +32,7 @@ func (m *mockRegistry) GetMaxTokens(_ string) int { return 0 }
 func (m *mockRegistry) GetDefault() string                  { return "" }
 func (m *mockRegistry) ListCapabilities() []string          { return nil }
 func (m *mockRegistry) ListEndpoints() []string             { return nil }
+func (m *mockRegistry) ResolveSummarization() string        { return "" }
 
 // anthropicOKResponse returns a minimal valid Anthropic Messages API response body.
 func anthropicOKResponse(text string) string {

@@ -346,6 +346,8 @@ export const BuiltinTools: ToolInfo[] = [
 	{ name: 'write_file', description: 'Write content to a file', min_tier: 2, category: 'filesystem' },
 	{ name: 'run_tests', description: 'Run a test command in the workspace', min_tier: 2, category: 'execution' },
 	{ name: 'run_command', description: 'Run an arbitrary shell command', min_tier: 3, category: 'execution' },
+	{ name: 'submit_work_product', description: 'Submit completed deliverable for review', min_tier: 0, category: 'terminal' },
+	{ name: 'ask_clarification', description: 'Ask the quest issuer a clarifying question', min_tier: 0, category: 'terminal' },
 	{ name: 'decompose_quest', description: 'Break a quest into a DAG of sub-quests', min_tier: 3, category: 'coordination' },
 ];
 
@@ -632,6 +634,124 @@ export interface ChatResponse {
 export interface PurchaseRequest {
 	agent_id: AgentID;
 	item_id: string;
+}
+
+// =============================================================================
+// SETTINGS TYPES — Used by Settings page and /game/settings endpoints
+// =============================================================================
+
+export interface SettingsResponse {
+	platform: PlatformInfo;
+	nats: NATSInfo;
+	models: ModelRegistrySettings;
+	components: ComponentInfo[];
+	workspace: WorkspaceInfo;
+	token_budget?: TokenBudgetConfig;
+	websocket_input: WebsocketInputInfo;
+}
+
+export interface WebsocketInputInfo {
+	enabled: boolean;
+	url: string;
+	connected: boolean;
+	healthy: boolean;
+	status?: string;
+}
+
+export interface PlatformInfo {
+	org: string;
+	platform: string;
+	board: string;
+}
+
+export interface NATSInfo {
+	connected: boolean;
+	url: string;
+	latency_ms?: number;
+}
+
+export interface ModelRegistrySettings {
+	endpoints: ModelEndpointInfo[];
+	capabilities: Record<string, CapabilityInfo>;
+	defaults: ModelDefaultsInfo;
+}
+
+export interface ModelEndpointInfo {
+	name: string;
+	provider: string;
+	model: string;
+	url?: string;
+	max_tokens: number;
+	supports_tools: boolean;
+	tool_format?: string;
+	api_key_env?: string;
+	api_key_set: boolean;
+	stream?: boolean;
+	reasoning_effort?: string;
+	input_price_per_1m_tokens?: number;
+	output_price_per_1m_tokens?: number;
+}
+
+export interface CapabilityInfo {
+	description: string;
+	preferred: string[];
+	fallback?: string[];
+	requires_tools?: boolean;
+}
+
+export interface ModelDefaultsInfo {
+	model: string;
+	capability?: string;
+}
+
+export interface ComponentInfo {
+	name: string;
+	type: string;
+	enabled: boolean;
+	running: boolean;
+	healthy: boolean;
+	status?: string;
+	uptime_seconds?: number;
+	error_count?: number;
+	last_error?: string;
+}
+
+export interface WorkspaceInfo {
+	dir: string;
+	exists: boolean;
+	writable?: boolean;
+}
+
+export interface TokenBudgetConfig {
+	global_hourly_limit: number;
+	endpoint_pricing?: Record<string, EndpointPricing>;
+}
+
+export interface EndpointPricing {
+	input_per_1m_tokens: number;
+	output_per_1m_tokens: number;
+}
+
+export type HealthStatus = 'ok' | 'warning' | 'error';
+export type OverallHealth = 'healthy' | 'degraded' | 'unhealthy';
+
+export interface HealthResponse {
+	overall: OverallHealth;
+	checks: HealthCheck[];
+	checklist: ChecklistItem[];
+}
+
+export interface HealthCheck {
+	name: string;
+	status: HealthStatus;
+	message: string;
+	latency?: string;
+}
+
+export interface ChecklistItem {
+	label: string;
+	met: boolean;
+	help_text?: string;
 }
 
 /** Subset of SkillImprovementResult for event display */

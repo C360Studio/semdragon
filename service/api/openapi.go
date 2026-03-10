@@ -629,6 +629,42 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 			},
 
+			// ── Settings ────────────────────────────────────────
+			"/settings": {
+				GET: &service.OperationSpec{
+					Summary:     "Get settings",
+					Description: "Returns the current runtime configuration including platform identity, NATS status, LLM providers, capabilities, components, workspace, and token budget. API key values are never exposed.",
+					Tags:        []string{"Settings"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Current settings", ContentType: "application/json", SchemaRef: "#/components/schemas/SettingsResponse"},
+					},
+				},
+				POST: &service.OperationSpec{
+					Summary:     "Update settings",
+					Description: "Mutates runtime-configurable settings (model registry, token budget). Auth required. Platform and NATS settings require a restart. Changes are persisted to disk and propagated via KV.",
+					Tags:        []string{"Settings"},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Settings updates (partial)",
+						SchemaRef:   "#/components/schemas/UpdateSettingsRequest",
+						Required:    true,
+					},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Updated settings", ContentType: "application/json", SchemaRef: "#/components/schemas/SettingsResponse"},
+						"400": {Description: "Validation error"},
+					},
+				},
+			},
+			"/settings/health": {
+				GET: &service.OperationSpec{
+					Summary:     "Get settings health",
+					Description: "Runs live validation checks (NATS, LLM keys, workspace, streams, buckets) and returns an onboarding checklist showing prerequisite status.",
+					Tags:        []string{"Settings"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Health checks and onboarding checklist", ContentType: "application/json", SchemaRef: "#/components/schemas/HealthResponse"},
+					},
+				},
+			},
+
 			// ── SSE ─────────────────────────────────────────────
 			"/events": {
 				GET: &service.OperationSpec{
@@ -660,6 +696,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			},
 		},
 		Tags: []service.TagSpec{
+			{Name: "Settings", Description: "Runtime configuration, health checks, and onboarding"},
 			{Name: "Model Registry", Description: "Model registry introspection and capability resolution"},
 			{Name: "Board Control", Description: "Board play/pause control"},
 			{Name: "World", Description: "Game world state"},
@@ -742,6 +779,22 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			// Token budget types
 			reflect.TypeOf(tokenbudget.TokenStats{}),
 			reflect.TypeOf(tokenbudget.UsageSnapshot{}),
+
+			// Settings types
+			reflect.TypeOf(SettingsResponse{}),
+			reflect.TypeOf(PlatformInfo{}),
+			reflect.TypeOf(NATSInfo{}),
+			reflect.TypeOf(ModelRegistryView{}),
+			reflect.TypeOf(ModelEndpointView{}),
+			reflect.TypeOf(CapabilityView{}),
+			reflect.TypeOf(ModelDefaultsView{}),
+			reflect.TypeOf(ComponentInfoView{}),
+			reflect.TypeOf(WorkspaceInfoView{}),
+			reflect.TypeOf(TokenBudgetView{}),
+			reflect.TypeOf(HealthResponse{}),
+			reflect.TypeOf(HealthCheck{}),
+			reflect.TypeOf(ChecklistItem{}),
+			reflect.TypeOf(WebsocketInputView{}),
 		},
 
 		// Request body types — the generator reflects these to build components.schemas
@@ -761,6 +814,13 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(DMChatContextRef{}),
 			reflect.TypeOf(DMChatHistoryItem{}),
 			reflect.TypeOf(SetTokenBudgetRequest{}),
+
+			// Settings request types
+			reflect.TypeOf(UpdateSettingsRequest{}),
+			reflect.TypeOf(ModelRegistryUpdate{}),
+			reflect.TypeOf(EndpointUpdate{}),
+			reflect.TypeOf(CapabilityUpdate{}),
+			reflect.TypeOf(WebsocketInputUpdate{}),
 		},
 	}
 }

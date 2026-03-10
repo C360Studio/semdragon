@@ -1,0 +1,705 @@
+<script lang="ts">
+	/**
+	 * Settings Page - System configuration, health, and onboarding
+	 *
+	 * Three-panel layout:
+	 * - Left: ExplorerNav
+	 * - Center: Settings sections (collapsible cards)
+	 * - Right: Contextual help for active section
+	 */
+
+	import { onMount, onDestroy } from 'svelte';
+	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
+	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
+	import {
+		SettingsSection,
+		ConnectionCard,
+		LLMProviderTable,
+		CapabilityRouting,
+		ComponentTable,
+		OnboardingChecklist,
+		SettingsHelp
+	} from '$components/settings';
+	import { getSettings, getSettingsHealth, updateSettings, ApiError } from '$services/api';
+	import type { SettingsResponse, HealthResponse } from '$types';
+
+	// Panel state
+	let leftPanelOpen = $state(true);
+	let rightPanelOpen = $state(true);
+	let leftPanelWidth = $state(240);
+	let rightPanelWidth = $state(280);
+
+	// Data state
+	let settings = $state<SettingsResponse | null>(null);
+	let health = $state<HealthResponse | null>(null);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
+	let backendUnavailable = $state(false);
+
+	// Active section for help panel
+	let activeSection = $state('');
+
+	// Websocket input editing state
+	let wsUrlEditing = $state(false);
+	let wsUrlDraft = $state('');
+	let wsSaving = $state(false);
+
+	// Health auto-refresh
+	let healthInterval: ReturnType<typeof setInterval> | undefined;
+
+	// Derived: checklist items that are not met
+	const unmetCount = $derived(
+		health ? health.checklist.filter((i) => !i.met).length : 0
+	);
+
+	async function loadData() {
+		loading = true;
+		error = null;
+		backendUnavailable = false;
+
+		const [settingsResult, healthResult] = await Promise.allSettled([
+			getSettings(),
+			getSettingsHealth()
+		]);
+
+		if (settingsResult.status === 'fulfilled') {
+			settings = settingsResult.value;
+		} else {
+			// Network errors (fetch throws TypeError), not API errors
+			if (!(settingsResult.reason instanceof ApiError)) {
+				backendUnavailable = true;
+			}
+			error =
+				settingsResult.reason instanceof Error
+					? settingsResult.reason.message
+					: 'Failed to load settings';
+			console.error('Failed to load settings:', settingsResult.reason);
+		}
+
+		if (healthResult.status === 'fulfilled') {
+			health = healthResult.value;
+		} else {
+			console.warn('Failed to load health:', healthResult.reason);
+		}
+
+		loading = false;
+	}
+
+	async function refreshHealth() {
+		try {
+			health = await getSettingsHealth();
+		} catch (err) {
+			console.warn('Health refresh failed:', err);
+		}
+	}
+
+	async function toggleWebsocket() {
+		if (!settings || wsSaving) return;
+		wsSaving = true;
+		try {
+			settings = await updateSettings({
+				websocket_input: { enabled: !settings.websocket_input.enabled }
+			});
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update websocket';
+		} finally {
+			wsSaving = false;
+		}
+	}
+
+	function startEditingWsUrl() {
+		if (!settings) return;
+		wsUrlDraft = settings.websocket_input.url;
+		wsUrlEditing = true;
+	}
+
+	function cancelEditingWsUrl() {
+		wsUrlEditing = false;
+		wsUrlDraft = '';
+	}
+
+	async function saveWsUrl() {
+		if (!settings || wsSaving || !wsUrlDraft.trim()) return;
+		wsSaving = true;
+		try {
+			settings = await updateSettings({
+				websocket_input: { url: wsUrlDraft.trim() }
+			});
+			wsUrlEditing = false;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update websocket URL';
+		} finally {
+			wsSaving = false;
+		}
+	}
+
+	onMount(() => {
+		loadData();
+		healthInterval = setInterval(refreshHealth, 30_000);
+	});
+
+	onDestroy(() => {
+		if (healthInterval) clearInterval(healthInterval);
+	});
+</script>
+
+<svelte:head>
+	<title>Settings - Semdragons</title>
+</svelte:head>
+
+<ThreePanelLayout
+	{leftPanelOpen}
+	{rightPanelOpen}
+	{leftPanelWidth}
+	{rightPanelWidth}
+	onLeftWidthChange={(w) => (leftPanelWidth = w)}
+	onRightWidthChange={(w) => (rightPanelWidth = w)}
+	onToggleLeft={() => (leftPanelOpen = !leftPanelOpen)}
+	onToggleRight={() => (rightPanelOpen = !rightPanelOpen)}
+>
+	{#snippet leftPanel()}
+		<ExplorerNav />
+	{/snippet}
+
+	{#snippet centerPanel()}
+		<div class="settings-main">
+			<header class="settings-header">
+				<h1>Settings</h1>
+				<button class="refresh-btn" onclick={loadData} disabled={loading} aria-label="Refresh settings">
+					Refresh
+				</button>
+			</header>
+
+			{#if error}
+				<div class="error-banner" role="alert">
+					<span>{error}</span>
+					<button onclick={() => (error = null)} aria-label="Dismiss error">&times;</button>
+				</div>
+			{/if}
+
+			{#if loading}
+				<div class="loading-state">
+					{#each [0, 1, 2, 3] as _}
+						<div class="skeleton-section"></div>
+					{/each}
+				</div>
+			{:else if backendUnavailable}
+				<div class="unavailable-state">
+					<div class="unavailable-icon">*</div>
+					<h2>Backend Unavailable</h2>
+					<p>Cannot reach the Semdragons API. Make sure the backend is running.</p>
+					<button class="retry-btn" onclick={loadData}>Retry</button>
+				</div>
+			{:else if settings}
+				<div class="sections">
+					<!-- Onboarding Checklist (shown prominently if items are unmet) -->
+					{#if health && unmetCount > 0}
+						<SettingsSection
+							title="Getting Started"
+							badge="{unmetCount} remaining"
+							badgeVariant="warning"
+							onfocus={() => (activeSection = 'checklist')}
+						>
+							<OnboardingChecklist items={health.checklist} />
+						</SettingsSection>
+					{/if}
+
+					<!-- Connection Status -->
+					<SettingsSection
+						title="Connection"
+						badge={settings.nats.connected ? 'Connected' : 'Disconnected'}
+						badgeVariant={settings.nats.connected ? 'success' : 'error'}
+						onfocus={() => (activeSection = 'connection')}
+					>
+						<ConnectionCard nats={settings.nats} overall={health?.overall} />
+					</SettingsSection>
+
+					<!-- Platform Identity -->
+					<SettingsSection
+						title="Platform Identity"
+						badge="Restart required"
+						badgeVariant="neutral"
+						onfocus={() => (activeSection = 'platform')}
+					>
+						<div class="kv-grid">
+							<div class="kv-pair">
+								<span class="kv-key">Org</span>
+								<span class="kv-value">{settings.platform.org}</span>
+							</div>
+							<div class="kv-pair">
+								<span class="kv-key">Platform</span>
+								<span class="kv-value">{settings.platform.platform}</span>
+							</div>
+							<div class="kv-pair">
+								<span class="kv-key">Board</span>
+								<span class="kv-value">{settings.platform.board}</span>
+							</div>
+						</div>
+					</SettingsSection>
+
+					<!-- LLM Providers -->
+					<SettingsSection
+						title="LLM Providers"
+						badge="{settings.models.endpoints.length} endpoints"
+						onfocus={() => (activeSection = 'providers')}
+					>
+						<LLMProviderTable
+							endpoints={settings.models.endpoints}
+							defaultModel={settings.models.defaults.model}
+						/>
+					</SettingsSection>
+
+					<!-- Capability Routing -->
+					<SettingsSection
+						title="Capability Routing"
+						badge="{Object.keys(settings.models.capabilities).length} capabilities"
+						onfocus={() => (activeSection = 'capabilities')}
+					>
+						<CapabilityRouting
+							capabilities={settings.models.capabilities}
+							defaultCapability={settings.models.defaults.capability}
+						/>
+					</SettingsSection>
+
+					<!-- Components -->
+					<SettingsSection
+						title="Components"
+						badge="{settings.components.filter(c => c.running).length}/{settings.components.length} running"
+						onfocus={() => (activeSection = 'components')}
+					>
+						<ComponentTable components={settings.components} />
+					</SettingsSection>
+
+					<!-- WebSocket Input (semsource) -->
+					<SettingsSection
+						title="WebSocket Input"
+						badge={settings.websocket_input.enabled
+							? settings.websocket_input.connected ? 'Connected' : 'Disconnected'
+							: 'Disabled'}
+						badgeVariant={settings.websocket_input.enabled
+							? settings.websocket_input.connected ? 'success' : 'warning'
+							: 'neutral'}
+						onfocus={() => (activeSection = 'websocket')}
+					>
+						<div class="ws-section">
+							<div class="ws-toggle-row">
+								<span class="ws-toggle-label">WebSocket Input</span>
+								<button
+									class="ws-toggle"
+									class:active={settings.websocket_input.enabled}
+									onclick={toggleWebsocket}
+									disabled={wsSaving}
+									aria-label={settings.websocket_input.enabled ? 'Disable websocket input' : 'Enable websocket input'}
+								>
+									{settings.websocket_input.enabled ? 'Enabled' : 'Disabled'}
+								</button>
+							</div>
+
+							<div class="kv-grid">
+								<div class="kv-pair ws-url-pair">
+									<span class="kv-key">URL</span>
+									{#if wsUrlEditing}
+										<div class="ws-url-edit">
+											<input
+												type="text"
+												class="ws-url-input"
+												bind:value={wsUrlDraft}
+												placeholder="ws://host:port/path"
+												onkeydown={(e) => { if (e.key === 'Enter') saveWsUrl(); if (e.key === 'Escape') cancelEditingWsUrl(); }}
+											/>
+											<button class="ws-url-btn save" onclick={saveWsUrl} disabled={wsSaving || !wsUrlDraft.trim()}>Save</button>
+											<button class="ws-url-btn cancel" onclick={cancelEditingWsUrl}>Cancel</button>
+										</div>
+									{:else}
+										<button class="ws-url-display" onclick={startEditingWsUrl}>
+											<span class="mono">{settings.websocket_input.url || '(not configured)'}</span>
+											<span class="edit-hint">edit</span>
+										</button>
+									{/if}
+								</div>
+								{#if settings.websocket_input.enabled}
+									<div class="kv-pair">
+										<span class="kv-key">Status</span>
+										<span class="kv-value">{settings.websocket_input.status || (settings.websocket_input.healthy ? 'Healthy' : 'Unhealthy')}</span>
+									</div>
+								{/if}
+							</div>
+						</div>
+					</SettingsSection>
+
+					<!-- Workspace -->
+					<SettingsSection
+						title="Workspace"
+						badge={settings.workspace.exists ? 'OK' : 'Missing'}
+						badgeVariant={settings.workspace.exists ? 'success' : 'error'}
+						onfocus={() => (activeSection = 'workspace')}
+					>
+						<div class="kv-grid">
+							<div class="kv-pair">
+								<span class="kv-key">Directory</span>
+								<span class="kv-value mono">{settings.workspace.dir || '(not configured)'}</span>
+							</div>
+							<div class="kv-pair">
+								<span class="kv-key">Exists</span>
+								<span class="kv-value">{settings.workspace.exists ? 'Yes' : 'No'}</span>
+							</div>
+							{#if settings.workspace.writable !== undefined}
+								<div class="kv-pair">
+									<span class="kv-key">Writable</span>
+									<span class="kv-value">{settings.workspace.writable ? 'Yes' : 'No'}</span>
+								</div>
+							{/if}
+						</div>
+					</SettingsSection>
+
+					<!-- Token Budget -->
+					{#if settings.token_budget}
+						<SettingsSection
+							title="Token Budget"
+							onfocus={() => (activeSection = 'budget')}
+						>
+							<div class="kv-grid">
+								<div class="kv-pair">
+									<span class="kv-key">Hourly Limit</span>
+									<span class="kv-value mono">
+										{settings.token_budget.global_hourly_limit === 0
+											? 'Unlimited'
+											: settings.token_budget.global_hourly_limit.toLocaleString()}
+									</span>
+								</div>
+							</div>
+						</SettingsSection>
+					{/if}
+
+					<!-- All-clear checklist (collapsed when all met) -->
+					{#if health && unmetCount === 0}
+						<SettingsSection
+							title="Getting Started"
+							open={false}
+							badge="All clear"
+							badgeVariant="success"
+							onfocus={() => (activeSection = 'checklist')}
+						>
+							<OnboardingChecklist items={health.checklist} />
+						</SettingsSection>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{/snippet}
+
+	{#snippet rightPanel()}
+		<SettingsHelp {activeSection} />
+	{/snippet}
+</ThreePanelLayout>
+
+<style>
+	.settings-main {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		overflow-y: auto;
+	}
+
+	.settings-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: var(--spacing-md) var(--spacing-lg);
+		border-bottom: 1px solid var(--ui-border-subtle);
+		flex-shrink: 0;
+	}
+
+	.settings-header h1 {
+		margin: 0;
+		font-size: 1.25rem;
+	}
+
+	.refresh-btn {
+		padding: var(--spacing-xs) var(--spacing-md);
+		font-size: 0.8125rem;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-primary);
+		cursor: pointer;
+		transition: border-color 150ms ease;
+	}
+
+	.refresh-btn:hover:not(:disabled) {
+		border-color: var(--ui-border-interactive);
+	}
+
+	.refresh-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.error-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--status-error-container);
+		color: var(--status-error);
+		font-size: 0.875rem;
+		flex-shrink: 0;
+	}
+
+	.error-banner button {
+		padding: var(--spacing-xs);
+		background: none;
+		border: none;
+		color: inherit;
+		font-size: 1.25rem;
+		cursor: pointer;
+		opacity: 0.7;
+	}
+
+	.error-banner button:hover {
+		opacity: 1;
+	}
+
+	.sections {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md);
+		padding: var(--spacing-lg);
+	}
+
+	/* Loading */
+	.loading-state {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md);
+		padding: var(--spacing-lg);
+	}
+
+	.skeleton-section {
+		height: 80px;
+		background: linear-gradient(
+			90deg,
+			var(--ui-surface-secondary) 0%,
+			var(--ui-surface-tertiary) 50%,
+			var(--ui-surface-secondary) 100%
+		);
+		background-size: 200% 100%;
+		border-radius: var(--radius-lg);
+		animation: shimmer 1.5s infinite;
+	}
+
+	@keyframes shimmer {
+		0% { background-position: 200% 0; }
+		100% { background-position: -200% 0; }
+	}
+
+	/* Unavailable */
+	.unavailable-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		flex: 1;
+		padding: var(--spacing-xl);
+		text-align: center;
+		color: var(--ui-text-secondary);
+	}
+
+	.unavailable-icon {
+		width: 48px;
+		height: 48px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-lg);
+		background: var(--ui-surface-tertiary);
+		color: var(--ui-text-tertiary);
+		font-size: 1.5rem;
+		font-weight: 700;
+		margin-bottom: var(--spacing-md);
+	}
+
+	.unavailable-state h2 {
+		margin: 0 0 var(--spacing-sm);
+		font-size: 1.125rem;
+		color: var(--ui-text-primary);
+	}
+
+	.unavailable-state p {
+		margin: 0 0 var(--spacing-lg);
+		font-size: 0.875rem;
+		max-width: 400px;
+		line-height: 1.5;
+	}
+
+	.retry-btn {
+		padding: var(--spacing-xs) var(--spacing-lg);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-primary);
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: border-color 150ms ease;
+	}
+
+	.retry-btn:hover {
+		border-color: var(--ui-border-interactive);
+	}
+
+	/* Key-value grid */
+	.kv-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+		gap: var(--spacing-sm);
+	}
+
+	.kv-pair {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--ui-surface-primary);
+		border-radius: var(--radius-md);
+		border: 1px solid var(--ui-border-subtle);
+	}
+
+	.kv-key {
+		font-size: 0.6875rem;
+		color: var(--ui-text-tertiary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.kv-value {
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.mono {
+		font-family: monospace;
+		font-size: 0.8125rem;
+	}
+
+	/* WebSocket section */
+	.ws-section {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md);
+	}
+
+	.ws-toggle-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--spacing-md);
+	}
+
+	.ws-toggle-label {
+		font-size: 0.8125rem;
+		font-weight: 500;
+	}
+
+	.ws-toggle {
+		padding: var(--spacing-xs) var(--spacing-md);
+		font-size: 0.75rem;
+		font-weight: 500;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-full);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-secondary);
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.ws-toggle.active {
+		background: var(--status-success-container);
+		color: var(--status-success);
+		border-color: var(--status-success);
+	}
+
+	.ws-toggle:hover:not(:disabled) {
+		border-color: var(--ui-border-interactive);
+	}
+
+	.ws-toggle:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.ws-url-pair {
+		grid-column: 1 / -1;
+	}
+
+	.ws-url-display {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		text-align: left;
+		color: var(--ui-text-primary);
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.ws-url-display:hover .edit-hint {
+		opacity: 1;
+	}
+
+	.edit-hint {
+		font-size: 0.6875rem;
+		color: var(--ui-text-tertiary);
+		opacity: 0;
+		transition: opacity 150ms ease;
+	}
+
+	.ws-url-edit {
+		display: flex;
+		gap: var(--spacing-xs);
+		align-items: center;
+	}
+
+	.ws-url-input {
+		flex: 1;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: 0.8125rem;
+		font-family: monospace;
+		border: 1px solid var(--ui-border-interactive);
+		border-radius: var(--radius-sm);
+		background: var(--ui-surface-primary);
+		color: var(--ui-text-primary);
+		outline: none;
+	}
+
+	.ws-url-input:focus {
+		border-color: var(--ui-border-focus);
+	}
+
+	.ws-url-btn {
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: 0.75rem;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.ws-url-btn.save {
+		background: var(--status-success-container);
+		color: var(--status-success);
+		border-color: var(--status-success);
+	}
+
+	.ws-url-btn.cancel {
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-secondary);
+	}
+
+	.ws-url-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+</style>

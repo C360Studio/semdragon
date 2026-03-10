@@ -35,7 +35,9 @@ import type {
 	ChatResponse,
 	DMChatSession,
 	BoardStatus,
-	TokenStats
+	TokenStats,
+	SettingsResponse,
+	HealthResponse
 } from '$types';
 
 // =============================================================================
@@ -360,6 +362,25 @@ export async function resolveCapability(capability: string): Promise<ModelResolv
 }
 
 // =============================================================================
+// SETTINGS
+// =============================================================================
+
+export async function getSettings(): Promise<SettingsResponse> {
+	return fetchJson<SettingsResponse>('/game/settings');
+}
+
+export async function getSettingsHealth(): Promise<HealthResponse> {
+	return fetchJson<HealthResponse>('/game/settings/health');
+}
+
+export async function updateSettings(body: {
+	websocket_input?: { enabled?: boolean; url?: string };
+	token_budget?: { global_hourly_limit: number };
+}): Promise<SettingsResponse> {
+	return postJson<SettingsResponse>('/game/settings', body);
+}
+
+// =============================================================================
 // HEALTH (system endpoint — no /game/ prefix)
 // =============================================================================
 
@@ -405,5 +426,8 @@ export const api = {
 	getWorkspaceFile,
 	getModelRegistry,
 	resolveCapability,
+	getSettings,
+	getSettingsHealth,
+	updateSettings,
 	healthCheck
 };

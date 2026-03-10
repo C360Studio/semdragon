@@ -22,7 +22,10 @@
       }
     },
     "component-manager": {
-      "enabled": true
+      "enabled": true,
+      "config": {
+        "watch_config": true
+      }
     },
     "game": {
       "enabled": true,

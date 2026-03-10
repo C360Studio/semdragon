@@ -415,6 +415,11 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"board/tokens", cors(s.handleTokenStats))
 	mux.HandleFunc("POST "+prefix+"board/tokens/budget", cors(requireAuth(apiKey, s.handleSetTokenBudget)))
 
+	// Settings
+	mux.HandleFunc("GET "+prefix+"settings", cors(s.handleGetSettings))
+	mux.HandleFunc("GET "+prefix+"settings/health", cors(s.handleSettingsHealth))
+	mux.HandleFunc("POST "+prefix+"settings", cors(requireAuth(apiKey, s.handleUpdateSettings)))
+
 	// Model registry
 	mux.HandleFunc("GET "+prefix+"models", cors(s.handleGetModels))
 
