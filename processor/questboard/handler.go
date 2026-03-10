@@ -859,40 +859,150 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 	quest.FailureReason = reason
 	quest.FailureType = domain.FailureQuality
 
-	reposted := quest.Attempts < quest.MaxAttempts
-	if reposted {
-		// Reset agent status before clearing quest assignment (agentprogression
-		// skips reposted quests because ClaimedBy is nil after repost)
-		if quest.ClaimedBy != nil {
-			repostAgent, agentErr := c.getAgentByID(ctx, *quest.ClaimedBy)
-			if agentErr == nil {
-				repostAgent.Status = domain.AgentIdle
-				repostAgent.CurrentQuest = nil
-				repostAgent.UpdatedAt = time.Now()
-				if writeErr := c.graph.EmitEntityUpdate(ctx, repostAgent, "agent.status.idle"); writeErr != nil {
-					c.errorsCount.Add(1)
-					c.logger.Error("failed to reset agent status on fail-repost", "error", writeErr)
-				}
+	// Release agent before changing quest state (agentprogression skips
+	// reposted quests because ClaimedBy is nil after repost).
+	if quest.ClaimedBy != nil {
+		repostAgent, agentErr := c.getAgentByID(ctx, *quest.ClaimedBy)
+		if agentErr == nil {
+			repostAgent.Status = domain.AgentIdle
+			repostAgent.CurrentQuest = nil
+			repostAgent.UpdatedAt = time.Now()
+			if writeErr := c.graph.EmitEntityUpdate(ctx, repostAgent, "agent.status.idle"); writeErr != nil {
+				c.errorsCount.Add(1)
+				c.logger.Error("failed to reset agent status on fail", "error", writeErr)
 			}
 		}
+	}
+
+	reposted := quest.Attempts < quest.MaxAttempts
+	predicate := "quest.failed"
+
+	switch {
+	case reposted:
+		// Normal retry — clear and repost (no DM involvement)
 		quest.Status = domain.QuestPosted
 		quest.ClaimedBy = nil
 		quest.PartyID = nil
 		quest.ClaimedAt = nil
 		quest.StartedAt = nil
 		quest.Output = nil
-	} else {
+
+	case c.config.Triage.Enabled && quest.Difficulty >= c.config.Triage.MinDifficultyForTriage:
+		// Terminal boundary + triage enabled — hold for DM evaluation.
+		// Record this attempt in failure history before entering triage.
+		record := domain.FailureRecord{
+			Attempt:       quest.Attempts,
+			FailureType:   quest.FailureType,
+			FailureReason: reason,
+			Output:        quest.Output,
+			LoopID:        quest.LoopID,
+			Timestamp:     time.Now(),
+		}
+		if quest.ClaimedBy != nil {
+			record.AgentID = *quest.ClaimedBy
+		}
+		quest.FailureHistory = append(quest.FailureHistory, record)
+		quest.Status = domain.QuestPendingTriage
+		// Preserve Output — DM needs it for evaluation.
+		quest.ClaimedBy = nil
+		quest.PartyID = nil
+		quest.ClaimedAt = nil
+		quest.StartedAt = nil
+		predicate = domain.PredicateQuestPendingTriage
+
+	default:
+		// Terminal failure (triage disabled or quest below difficulty threshold)
 		quest.Status = domain.QuestFailed
 	}
 
-	// Emit updated quest to graph (KV write is the event — agent_progression watches for failed)
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.failed"); err != nil {
+	if err := c.graph.EmitEntityUpdate(ctx, quest, predicate); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "FailQuest", "emit update")
 	}
 
-	// End trace if quest reached terminal state (not reposted)
-	if !reposted {
+	// End trace if quest reached terminal state (not reposted or triaged)
+	if quest.Status == domain.QuestFailed {
+		c.traces.EndQuestTrace(questID)
+	}
+
+	return nil
+}
+
+// TriageDecision holds the DM's triage decision for a quest that has
+// exhausted its retry attempts.
+type TriageDecision struct {
+	Path           domain.RecoveryPath `json:"path"`
+	Analysis       string              `json:"analysis"`
+	SalvagedOutput any                 `json:"salvaged_output,omitempty"`
+	AntiPatterns   []string            `json:"anti_patterns,omitempty"`
+}
+
+// TriageQuest applies a DM triage decision to a quest in pending_triage status.
+// Salvage and TPK paths bump MaxAttempts by 1 to grant one more shot with
+// enriched context. Escalate transitions to escalated. Terminal marks final failed.
+func (c *Component) TriageQuest(ctx context.Context, questID domain.QuestID, decision TriageDecision) error {
+	if !c.running.Load() {
+		return errors.New("component not running")
+	}
+
+	c.lastActivity.Store(time.Now())
+	c.messagesProcessed.Add(1)
+
+	quest, err := c.getQuestByID(ctx, questID)
+	if err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "QuestBoard", "TriageQuest", "load quest")
+	}
+
+	if quest.Status != domain.QuestPendingTriage {
+		return fmt.Errorf("quest not in pending_triage: %s", quest.Status)
+	}
+
+	quest.RecoveryPath = decision.Path
+	quest.FailureAnalysis = decision.Analysis
+
+	var predicate string
+
+	switch decision.Path {
+	case domain.RecoverySalvage:
+		quest.SalvagedOutput = decision.SalvagedOutput
+		quest.MaxAttempts++
+		quest.Status = domain.QuestPosted
+		// Preserve Output — agent can reference both Output and SalvagedOutput.
+		predicate = domain.PredicateQuestTriaged
+
+	case domain.RecoveryTPK:
+		quest.AntiPatterns = decision.AntiPatterns
+		quest.Output = nil // Clear output — total wipe
+		quest.MaxAttempts++
+		quest.Status = domain.QuestPosted
+		predicate = domain.PredicateQuestTriaged
+
+	case domain.RecoveryEscalate:
+		quest.Status = domain.QuestEscalated
+		quest.Escalated = true
+		predicate = domain.PredicateQuestEscalated
+
+	case domain.RecoveryTerminal:
+		quest.Status = domain.QuestFailed
+		predicate = "quest.failed"
+
+	default:
+		return fmt.Errorf("unknown recovery path: %s", decision.Path)
+	}
+
+	if err := c.graph.EmitEntityUpdate(ctx, quest, predicate); err != nil {
+		c.errorsCount.Add(1)
+		return errs.Wrap(err, "QuestBoard", "TriageQuest", "emit update")
+	}
+
+	c.logger.Info("quest triaged",
+		"quest_id", questID,
+		"path", decision.Path,
+		"new_status", quest.Status,
+	)
+
+	if quest.Status == domain.QuestFailed {
 		c.traces.EndQuestTrace(questID)
 	}
 

@@ -146,6 +146,18 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.FailureReason = AsString(triple.Object)
 		case "quest.failure.type":
 			q.FailureType = FailureType(AsString(triple.Object))
+		case "quest.failure.history":
+			q.FailureHistory = asFailureRecordSlice(triple.Object)
+
+		// Failure recovery (triage)
+		case "quest.recovery.path":
+			q.RecoveryPath = RecoveryPath(AsString(triple.Object))
+		case "quest.recovery.analysis":
+			q.FailureAnalysis = AsString(triple.Object)
+		case "quest.recovery.salvaged":
+			q.SalvagedOutput = triple.Object
+		case "quest.recovery.antipatterns":
+			q.AntiPatterns = AsStringSlice(triple.Object)
 
 		// Duration
 		case "quest.duration":
@@ -254,6 +266,43 @@ func asScenariosSlice(obj any) []QuestScenario {
 		return nil
 	}
 	return scenarios
+}
+
+// asFailureRecordSlice converts a triple Object to []FailureRecord.
+// Handles both []FailureRecord (in-process) and []any of map[string]any (after KV round-trip).
+func asFailureRecordSlice(obj any) []FailureRecord {
+	if obj == nil {
+		return nil
+	}
+	if records, ok := obj.([]FailureRecord); ok {
+		return records
+	}
+	raw, ok := obj.([]any)
+	if !ok {
+		return nil
+	}
+	records := make([]FailureRecord, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		r := FailureRecord{
+			Attempt:       AsInt(m["attempt"]),
+			FailureType:   FailureType(AsString(m["failure_type"])),
+			FailureReason: AsString(m["failure_reason"]),
+			Output:        m["output"],
+			AgentID:       AgentID(AsString(m["agent_id"])),
+			LoopID:        AsString(m["loop_id"]),
+			TriageVerdict: AsString(m["triage_verdict"]),
+			Timestamp:     AsTime(m["timestamp"]),
+		}
+		records = append(records, r)
+	}
+	if len(records) == 0 {
+		return nil
+	}
+	return records
 }
 
 // GuildFromEntityState reconstructs a Guild from graph EntityState.

@@ -1021,6 +1021,26 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 		return
 	}
 
+	// Delegate to questboard when available — this routes through the triage
+	// gate which may hold the quest for DM evaluation instead of terminal failure.
+	// Questboard handles agent release internally.
+	if c.questFailer != nil {
+		// Ensure LoopID is set on the quest entity before delegating, so
+		// questboard's FailQuest can capture it in the FailureRecord.
+		quest.LoopID = mapping.LoopID
+		if writeErr := c.graph.EmitEntityUpdate(ctx, quest, "quest.execution.loop_id"); writeErr != nil {
+			c.logger.Error("failed to write loop_id before failQuest delegation", "error", writeErr)
+		}
+		if failErr := c.questFailer.FailQuest(ctx, questID, reason); failErr != nil {
+			c.logger.Error("questboard FailQuest failed, falling back to direct failure",
+				"quest_id", questID, "error", failErr)
+			// Fall through to direct failure below.
+		} else {
+			return
+		}
+	}
+
+	// Legacy path: set QuestFailed directly when no questboard is wired.
 	quest.Status = domain.QuestFailed
 	quest.LoopID = mapping.LoopID
 	quest.FailureReason = reason
@@ -1638,9 +1658,32 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		QuestRequirements:    quest.Requirements,
 		QuestScenarios:       quest.Scenarios,
 		DecomposabilityClass: quest.DecomposabilityClass,
+		FailureHistory:       convertFailureHistory(quest.FailureHistory),
+		SalvagedOutput:       domain.AsString(quest.SalvagedOutput),
+		FailureAnalysis:      quest.FailureAnalysis,
+		RecoveryPath:         string(quest.RecoveryPath),
+		AntiPatterns:         quest.AntiPatterns,
 	}
 
 	return c.promptAssembler.AssembleSystemPrompt(assemblyCtx)
+}
+
+// convertFailureHistory maps domain.FailureRecord to promptmanager.FailureHistorySummary
+// for injection into the prompt assembly context.
+func convertFailureHistory(records []domain.FailureRecord) []promptmanager.FailureHistorySummary {
+	if len(records) == 0 {
+		return nil
+	}
+	summaries := make([]promptmanager.FailureHistorySummary, len(records))
+	for i, r := range records {
+		summaries[i] = promptmanager.FailureHistorySummary{
+			Attempt:       r.Attempt,
+			FailureType:   string(r.FailureType),
+			FailureReason: r.FailureReason,
+			TriageVerdict: r.TriageVerdict,
+		}
+	}
+	return summaries
 }
 
 // buildLegacySystemPrompt is the fallback string concatenation path.

@@ -109,6 +109,12 @@ Both sub-tasks can be executed in parallel since they have no dependencies.`
 // QuestNode objects with id, objective, skills, acceptance, depends_on, difficulty).
 const dagDecompositionArgs = `{"goal":"Complete the requested work through parallel sub-tasks","nodes":[{"id":"node-1","objective":"Implement the first component of the task","skills":["code_generation"],"acceptance":["Code compiles","Tests pass"],"depends_on":[],"difficulty":2},{"id":"node-2","objective":"Implement the second component of the task","skills":["code_generation"],"acceptance":["Code compiles","Tests pass"],"depends_on":[],"difficulty":2}]}`
 
+// triageResponse is returned when the system prompt matches a DM triage evaluation.
+// The questboard triage module sends a system prompt containing "recovery path" and
+// a user message with quest failure details. The mock always returns "salvage" to
+// exercise the most interesting recovery path in E2E tests.
+const triageResponse = `{"path":"salvage","analysis":"The agent produced partial useful output that can be built upon. The core approach is sound but incomplete — granting one more attempt with the existing work preserved.","salvaged_output":"Partial implementation completed. Core data structures defined and initial processing pipeline functional.","anti_patterns":["Attempting to process all data in a single pass without checkpointing"]}`
+
 // reviewAcceptArgs was previously a static constant with a placeholder sub_quest_id.
 // It is now built dynamically by buildReviewAcceptArgs() in router.go, which
 // extracts the real sub-quest ID from the prompt messages.

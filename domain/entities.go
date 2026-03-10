@@ -68,6 +68,13 @@ type Quest struct {
 	FailureReason string      `json:"failure_reason,omitempty"`
 	FailureType   FailureType `json:"failure_type,omitempty"`
 
+	// Failure recovery (populated by DM triage at terminal boundary)
+	FailureHistory  []FailureRecord `json:"failure_history,omitempty"`
+	RecoveryPath    RecoveryPath    `json:"recovery_path,omitempty"`
+	FailureAnalysis string          `json:"failure_analysis,omitempty"`
+	SalvagedOutput  any             `json:"salvaged_output,omitempty"`
+	AntiPatterns    []string        `json:"anti_patterns,omitempty"`
+
 	// Verdict (set on completion after boss battle)
 	Verdict *BattleVerdict `json:"verdict,omitempty"`
 
@@ -145,6 +152,32 @@ const (
 	// FailureAbandoned indicates the agent abandoned the quest.
 	FailureAbandoned FailureType = "abandoned"
 )
+
+// RecoveryPath categorizes the DM's triage decision for a failed quest.
+type RecoveryPath string
+
+const (
+	// RecoverySalvage preserves partial work and enriches retry context.
+	RecoverySalvage RecoveryPath = "salvage"
+	// RecoveryTPK clears output but injects anti-pattern warnings.
+	RecoveryTPK RecoveryPath = "tpk"
+	// RecoveryEscalate requires human DM attention regardless of auto mode.
+	RecoveryEscalate RecoveryPath = "escalate"
+	// RecoveryTerminal marks the quest as truly impossible.
+	RecoveryTerminal RecoveryPath = "terminal"
+)
+
+// FailureRecord captures one attempt's failure for DM triage context.
+type FailureRecord struct {
+	Attempt       int         `json:"attempt"`
+	FailureType   FailureType `json:"failure_type"`
+	FailureReason string      `json:"failure_reason"`
+	Output        any         `json:"output,omitempty"`
+	AgentID       AgentID     `json:"agent_id,omitempty"`
+	LoopID        string      `json:"loop_id,omitempty"`
+	TriageVerdict string      `json:"triage_verdict,omitempty"`
+	Timestamp     time.Time   `json:"timestamp"`
+}
 
 // BattleVerdict holds the outcome of a boss battle.
 // This type lives in domain because Quest.Verdict references it,

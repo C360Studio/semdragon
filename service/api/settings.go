@@ -190,6 +190,7 @@ type EndpointUpdate struct {
 	SupportsTools          bool           `json:"supports_tools" description:"Tool calling support"`
 	ToolFormat             string         `json:"tool_format,omitempty" description:"Tool format"`
 	APIKeyEnv              string         `json:"api_key_env,omitempty" description:"API key env var name"`
+	APIKeyValue            *string        `json:"api_key_value,omitempty" description:"Actual key value — written to .env, never stored in config"`
 	Stream                 bool           `json:"stream,omitempty" description:"SSE streaming"`
 	ReasoningEffort        string         `json:"reasoning_effort,omitempty" description:"Reasoning effort"`
 	InputPricePer1MTokens  float64        `json:"input_price_per_1m_tokens,omitempty" description:"Input cost"`
@@ -477,6 +478,7 @@ const questtoolsComponentName = "questtools"
 
 // assembleSearchConfigView reads the questtools component config and returns a view
 // that exposes search configuration without revealing the raw API key value.
+// The API key is looked up from the env var named by api_key_env.
 func (s *Service) assembleSearchConfigView() SearchConfigView {
 	cfg := s.getComponentConfig(questtoolsComponentName)
 	if cfg == nil {
@@ -485,18 +487,19 @@ func (s *Service) assembleSearchConfigView() SearchConfigView {
 
 	var raw struct {
 		Search *struct {
-			Provider string `json:"provider"`
-			APIKey   string `json:"api_key"`
-			BaseURL  string `json:"base_url"`
+			Provider  string `json:"provider"`
+			APIKeyEnv string `json:"api_key_env"`
+			BaseURL   string `json:"base_url"`
 		} `json:"search"`
 	}
 	if err := json.Unmarshal(cfg.Config, &raw); err != nil || raw.Search == nil {
 		return SearchConfigView{}
 	}
 
+	apiKeySet := raw.Search.APIKeyEnv != "" && os.Getenv(raw.Search.APIKeyEnv) != ""
 	return SearchConfigView{
 		Provider:  raw.Search.Provider,
-		APIKeySet: raw.Search.APIKey != "",
+		APIKeySet: apiKeySet,
 		BaseURL:   raw.Search.BaseURL,
 	}
 }
@@ -548,8 +551,22 @@ func (s *Service) applySearchConfigUpdate(ctx context.Context, update *SearchCon
 	if update.Provider != nil {
 		searchRaw["provider"] = *update.Provider
 	}
-	if update.APIKey != nil {
-		searchRaw["api_key"] = *update.APIKey
+	if update.APIKey != nil && *update.APIKey != "" {
+		// Derive the env var name from the provider. Default to BRAVE_SEARCH_API_KEY
+		// when the provider has not been set yet in this request.
+		provider, _ := searchRaw["provider"].(string)
+		if update.Provider != nil {
+			provider = *update.Provider
+		}
+		envVarName := searchAPIKeyEnvVar(provider)
+
+		// Write the key value to .env and set it in the process environment.
+		// The raw key is never persisted in config JSON or NATS KV.
+		if err := writeEnvVar(envVarName, *update.APIKey); err != nil {
+			return fmt.Errorf("failed to write search API key to .env: %w", err)
+		}
+		// Store only the env var name in config.
+		searchRaw["api_key_env"] = envVarName
 	}
 	if update.BaseURL != nil {
 		searchRaw["base_url"] = *update.BaseURL
@@ -667,11 +684,11 @@ func (s *Service) assembleModelRegistryView() ModelRegistryView {
 
 		// Try to get full capability config from concrete registry
 		if reg, ok := s.models.(*model.Registry); ok && reg.Capabilities != nil {
-			if cap, exists := reg.Capabilities[capName]; exists {
-				capView.Description = cap.Description
-				capView.Preferred = cap.Preferred
-				capView.Fallback = cap.Fallback
-				capView.RequiresTools = cap.RequiresTools
+			if capCfg, exists := reg.Capabilities[capName]; exists {
+				capView.Description = capCfg.Description
+				capView.Preferred = capCfg.Preferred
+				capView.Fallback = capCfg.Fallback
+				capView.RequiresTools = capCfg.RequiresTools
 			}
 		}
 
@@ -856,6 +873,21 @@ func (s *Service) applyModelRegistryUpdate(ctx context.Context, update *ModelReg
 				delete(updated.Endpoints, name)
 				continue
 			}
+
+			// When the caller provides an actual key value, persist it to .env
+			// and set it in the process environment. The raw value is never stored
+			// in config JSON or pushed to NATS KV — only the env var name travels
+			// through the config pipeline.
+			apiKeyEnv := ep.APIKeyEnv
+			if ep.APIKeyValue != nil && *ep.APIKeyValue != "" {
+				if apiKeyEnv == "" {
+					return fmt.Errorf("api_key_value provided for endpoint %q but api_key_env is not set", name)
+				}
+				if err := writeEnvVar(apiKeyEnv, *ep.APIKeyValue); err != nil {
+					return fmt.Errorf("failed to write API key for endpoint %q to .env: %w", name, err)
+				}
+			}
+
 			updated.Endpoints[name] = &model.EndpointConfig{
 				Provider:               ep.Provider,
 				URL:                    ep.URL,
@@ -863,7 +895,7 @@ func (s *Service) applyModelRegistryUpdate(ctx context.Context, update *ModelReg
 				MaxTokens:              ep.MaxTokens,
 				SupportsTools:          ep.SupportsTools,
 				ToolFormat:             ep.ToolFormat,
-				APIKeyEnv:              ep.APIKeyEnv,
+				APIKeyEnv:              apiKeyEnv,
 				Stream:                 ep.Stream,
 				ReasoningEffort:        ep.ReasoningEffort,
 				InputPricePer1MTokens:  ep.InputPricePer1MTokens,
@@ -958,6 +990,18 @@ func (s *Service) applyModelRegistryUpdate(ctx context.Context, update *ModelReg
 	s.models = &updated
 
 	return nil
+}
+
+// searchAPIKeyEnvVar returns the conventional environment variable name for a
+// search provider's API key. Falls back to BRAVE_SEARCH_API_KEY for unknown
+// or empty provider names because Brave is the only supported provider today.
+func searchAPIKeyEnvVar(provider string) string {
+	switch provider {
+	case "brave":
+		return "BRAVE_SEARCH_API_KEY"
+	default:
+		return "BRAVE_SEARCH_API_KEY"
+	}
 }
 
 // applyWebsocketInputUpdate mutates the websocket_input component config.

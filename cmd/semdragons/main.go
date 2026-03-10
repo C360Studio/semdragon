@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/config"
 	"github.com/c360studio/semstreams/metric"
@@ -65,6 +67,12 @@ func main() {
 }
 
 func run() error {
+	// 0. Load .env file if it exists. This must happen before any os.Getenv
+	// calls so that API keys stored in .env are visible to the rest of startup.
+	// Errors are silently ignored: the file is optional and its absence is normal
+	// in production environments that inject credentials via the OS environment.
+	_ = godotenv.Load()
+
 	// 1. Print banner
 	printBanner()
 
@@ -525,6 +533,11 @@ func wireComponentCrossReferences(registry *component.Registry) {
 			if ref, ok := qb.(questbridge.SubQuestPoster); ok {
 				setter.SetQuestBoard(ref)
 				slog.Info("wired questbridge → questboard")
+			}
+			// Also wire quest failure delegation for triage gate
+			if ref, ok := qb.(questbridge.QuestFailer); ok {
+				setter.SetQuestFailer(ref)
+				slog.Info("wired questbridge → questboard (quest failure triage)")
 			}
 		}
 	}

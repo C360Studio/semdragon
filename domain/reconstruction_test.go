@@ -596,3 +596,274 @@ func TestQuestRoundTrip_EmptyDependsOnAndAcceptance(t *testing.T) {
 		t.Errorf("Acceptance len = %d, want 0", len(r.Acceptance))
 	}
 }
+
+// TestQuestRoundTrip_FailureRecoveryFields verifies that all failure recovery
+// fields — including a multi-record FailureHistory with sub-field fidelity —
+// survive a full Triples() → QuestFromEntityState() round-trip.
+func TestQuestRoundTrip_FailureRecoveryFields(t *testing.T) {
+	ts1 := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
+	ts2 := time.Now().Add(-1 * time.Hour).Truncate(time.Second)
+	agentID := AgentID("test.dev.game.board1.agent.a1")
+
+	original := &Quest{
+		ID:          QuestID("test.dev.game.board1.quest.recovery1"),
+		Title:       "Recovery Round Trip",
+		Status:      QuestFailed,
+		PostedAt:    time.Now().Truncate(time.Second),
+		MaxAttempts: 3,
+		Attempts:    2,
+		FailureHistory: []FailureRecord{
+			{
+				Attempt:       1,
+				FailureType:   FailureTimeout,
+				FailureReason: "Exceeded time limit waiting for external service",
+				Output:        nil,
+				AgentID:       agentID,
+				LoopID:        "loop-abc-001",
+				TriageVerdict: "",
+				Timestamp:     ts1,
+			},
+			{
+				Attempt:       2,
+				FailureType:   FailureQuality,
+				FailureReason: "Output did not meet acceptance criteria",
+				Output:        "partial result",
+				AgentID:       agentID,
+				LoopID:        "loop-abc-002",
+				TriageVerdict: "salvage",
+				Timestamp:     ts2,
+			},
+		},
+		RecoveryPath:    RecoverySalvage,
+		FailureAnalysis: "Agent produced partial output but timed out on validation step",
+		SalvagedOutput:  "Partial implementation of the caching layer",
+		AntiPatterns:    []string{"Ignored timeout signals", "Did not validate input"},
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	// Recovery scalars
+	if r.RecoveryPath != RecoverySalvage {
+		t.Errorf("RecoveryPath = %q, want %q", r.RecoveryPath, RecoverySalvage)
+	}
+	if r.FailureAnalysis != original.FailureAnalysis {
+		t.Errorf("FailureAnalysis = %q, want %q", r.FailureAnalysis, original.FailureAnalysis)
+	}
+	if r.SalvagedOutput != original.SalvagedOutput {
+		t.Errorf("SalvagedOutput = %v, want %v", r.SalvagedOutput, original.SalvagedOutput)
+	}
+
+	// AntiPatterns slice
+	if len(r.AntiPatterns) != 2 {
+		t.Fatalf("AntiPatterns len = %d, want 2", len(r.AntiPatterns))
+	}
+	if r.AntiPatterns[0] != "Ignored timeout signals" {
+		t.Errorf("AntiPatterns[0] = %q, want %q", r.AntiPatterns[0], "Ignored timeout signals")
+	}
+	if r.AntiPatterns[1] != "Did not validate input" {
+		t.Errorf("AntiPatterns[1] = %q, want %q", r.AntiPatterns[1], "Did not validate input")
+	}
+
+	// FailureHistory length
+	if len(r.FailureHistory) != 2 {
+		t.Fatalf("FailureHistory len = %d, want 2", len(r.FailureHistory))
+	}
+
+	// Record 0: timeout, no triage verdict
+	rec0 := r.FailureHistory[0]
+	if rec0.Attempt != 1 {
+		t.Errorf("FailureHistory[0].Attempt = %d, want 1", rec0.Attempt)
+	}
+	if rec0.FailureType != FailureTimeout {
+		t.Errorf("FailureHistory[0].FailureType = %q, want %q", rec0.FailureType, FailureTimeout)
+	}
+	if rec0.FailureReason != "Exceeded time limit waiting for external service" {
+		t.Errorf("FailureHistory[0].FailureReason = %q, want %q", rec0.FailureReason, "Exceeded time limit waiting for external service")
+	}
+	if rec0.AgentID != agentID {
+		t.Errorf("FailureHistory[0].AgentID = %q, want %q", rec0.AgentID, agentID)
+	}
+	if rec0.LoopID != "loop-abc-001" {
+		t.Errorf("FailureHistory[0].LoopID = %q, want %q", rec0.LoopID, "loop-abc-001")
+	}
+	if rec0.TriageVerdict != "" {
+		t.Errorf("FailureHistory[0].TriageVerdict = %q, want empty", rec0.TriageVerdict)
+	}
+	if !rec0.Timestamp.Equal(ts1) {
+		t.Errorf("FailureHistory[0].Timestamp = %v, want %v", rec0.Timestamp, ts1)
+	}
+
+	// Record 1: quality failure, with triage verdict
+	rec1 := r.FailureHistory[1]
+	if rec1.Attempt != 2 {
+		t.Errorf("FailureHistory[1].Attempt = %d, want 2", rec1.Attempt)
+	}
+	if rec1.FailureType != FailureQuality {
+		t.Errorf("FailureHistory[1].FailureType = %q, want %q", rec1.FailureType, FailureQuality)
+	}
+	if rec1.FailureReason != "Output did not meet acceptance criteria" {
+		t.Errorf("FailureHistory[1].FailureReason = %q, want %q", rec1.FailureReason, "Output did not meet acceptance criteria")
+	}
+	if rec1.LoopID != "loop-abc-002" {
+		t.Errorf("FailureHistory[1].LoopID = %q, want %q", rec1.LoopID, "loop-abc-002")
+	}
+	if rec1.TriageVerdict != "salvage" {
+		t.Errorf("FailureHistory[1].TriageVerdict = %q, want %q", rec1.TriageVerdict, "salvage")
+	}
+	if !rec1.Timestamp.Equal(ts2) {
+		t.Errorf("FailureHistory[1].Timestamp = %v, want %v", rec1.Timestamp, ts2)
+	}
+}
+
+// TestQuestRoundTrip_FailureRecoveryEmpty verifies that a quest without
+// recovery fields reconstructs with zero values — no phantom data.
+func TestQuestRoundTrip_FailureRecoveryEmpty(t *testing.T) {
+	original := &Quest{
+		ID:          QuestID("test.dev.game.board1.quest.norecovery"),
+		Title:       "No Recovery Quest",
+		Status:      QuestPosted,
+		BaseXP:      100,
+		MaxAttempts: 3,
+		PostedAt:    time.Now().Truncate(time.Second),
+	}
+
+	entity := &graph.EntityState{
+		ID:      string(original.ID),
+		Triples: original.Triples(),
+	}
+
+	r := QuestFromEntityState(entity)
+
+	if len(r.FailureHistory) != 0 {
+		t.Errorf("FailureHistory = %v, want empty", r.FailureHistory)
+	}
+	if r.RecoveryPath != "" {
+		t.Errorf("RecoveryPath = %q, want empty", r.RecoveryPath)
+	}
+	if r.FailureAnalysis != "" {
+		t.Errorf("FailureAnalysis = %q, want empty", r.FailureAnalysis)
+	}
+	if r.SalvagedOutput != nil {
+		t.Errorf("SalvagedOutput = %v, want nil", r.SalvagedOutput)
+	}
+	if len(r.AntiPatterns) != 0 {
+		t.Errorf("AntiPatterns = %v, want empty", r.AntiPatterns)
+	}
+}
+
+// TestQuestRoundTrip_FailureHistoryPostKVRoundTrip simulates what NATS KV
+// returns after a JSON round-trip: the failure history arrives as []any of
+// map[string]any with string values for numeric and time fields. This
+// exercises the asFailureRecordSlice conversion path directly.
+func TestQuestRoundTrip_FailureHistoryPostKVRoundTrip(t *testing.T) {
+	ts := time.Now().Truncate(time.Second)
+	tsStr := ts.UTC().Format(time.RFC3339)
+
+	// Simulate raw KV data: attempt is a float64 (JSON number), timestamps
+	// are RFC3339 strings, all other fields are plain strings.
+	rawHistory := []any{
+		map[string]any{
+			"attempt":        float64(1),
+			"failure_type":   "timeout",
+			"failure_reason": "Deadline exceeded",
+			"agent_id":       "test.dev.game.board1.agent.a99",
+			"loop_id":        "loop-kv-001",
+			"triage_verdict": "",
+			"timestamp":      tsStr,
+		},
+		map[string]any{
+			"attempt":        float64(2),
+			"failure_type":   "quality",
+			"failure_reason": "Score below threshold",
+			"output":         "draft output",
+			"agent_id":       "test.dev.game.board1.agent.a99",
+			"loop_id":        "loop-kv-002",
+			"triage_verdict": "tpk",
+			"timestamp":      tsStr,
+		},
+	}
+
+	entity := &graph.EntityState{
+		ID: "test.dev.game.board1.quest.kvrecovery",
+		Triples: []message.Triple{
+			{Predicate: "quest.identity.title", Object: "KV Recovery Quest"},
+			{Predicate: "quest.status.state", Object: "failed"},
+			{Predicate: "quest.lifecycle.posted_at", Object: ts.UTC().Format(time.RFC3339)},
+			{Predicate: "quest.failure.history", Object: rawHistory},
+			{Predicate: "quest.recovery.path", Object: "tpk"},
+			{Predicate: "quest.recovery.analysis", Object: "Both attempts failed quality gate"},
+			{Predicate: "quest.recovery.antipatterns", Object: []any{"Skipped validation", "No error handling"}},
+		},
+	}
+
+	r := QuestFromEntityState(entity)
+
+	// Scalars
+	if r.RecoveryPath != RecoveryTPK {
+		t.Errorf("RecoveryPath = %q, want %q", r.RecoveryPath, RecoveryTPK)
+	}
+	if r.FailureAnalysis != "Both attempts failed quality gate" {
+		t.Errorf("FailureAnalysis = %q, want %q", r.FailureAnalysis, "Both attempts failed quality gate")
+	}
+
+	// AntiPatterns via AsStringSlice from []any
+	if len(r.AntiPatterns) != 2 {
+		t.Fatalf("AntiPatterns len = %d, want 2", len(r.AntiPatterns))
+	}
+	if r.AntiPatterns[0] != "Skipped validation" {
+		t.Errorf("AntiPatterns[0] = %q, want %q", r.AntiPatterns[0], "Skipped validation")
+	}
+	if r.AntiPatterns[1] != "No error handling" {
+		t.Errorf("AntiPatterns[1] = %q, want %q", r.AntiPatterns[1], "No error handling")
+	}
+
+	// FailureHistory converted from []any of map[string]any
+	if len(r.FailureHistory) != 2 {
+		t.Fatalf("FailureHistory len = %d, want 2", len(r.FailureHistory))
+	}
+
+	rec0 := r.FailureHistory[0]
+	if rec0.Attempt != 1 {
+		t.Errorf("FailureHistory[0].Attempt = %d, want 1", rec0.Attempt)
+	}
+	if rec0.FailureType != FailureTimeout {
+		t.Errorf("FailureHistory[0].FailureType = %q, want %q", rec0.FailureType, FailureTimeout)
+	}
+	if rec0.FailureReason != "Deadline exceeded" {
+		t.Errorf("FailureHistory[0].FailureReason = %q, want %q", rec0.FailureReason, "Deadline exceeded")
+	}
+	if rec0.AgentID != AgentID("test.dev.game.board1.agent.a99") {
+		t.Errorf("FailureHistory[0].AgentID = %q, want %q", rec0.AgentID, "test.dev.game.board1.agent.a99")
+	}
+	if rec0.LoopID != "loop-kv-001" {
+		t.Errorf("FailureHistory[0].LoopID = %q, want %q", rec0.LoopID, "loop-kv-001")
+	}
+	if rec0.TriageVerdict != "" {
+		t.Errorf("FailureHistory[0].TriageVerdict = %q, want empty", rec0.TriageVerdict)
+	}
+	if !rec0.Timestamp.Equal(ts) {
+		t.Errorf("FailureHistory[0].Timestamp = %v, want %v", rec0.Timestamp, ts)
+	}
+
+	rec1 := r.FailureHistory[1]
+	if rec1.Attempt != 2 {
+		t.Errorf("FailureHistory[1].Attempt = %d, want 2", rec1.Attempt)
+	}
+	if rec1.FailureType != FailureQuality {
+		t.Errorf("FailureHistory[1].FailureType = %q, want %q", rec1.FailureType, FailureQuality)
+	}
+	if rec1.TriageVerdict != "tpk" {
+		t.Errorf("FailureHistory[1].TriageVerdict = %q, want %q", rec1.TriageVerdict, "tpk")
+	}
+	if rec1.Output != "draft output" {
+		t.Errorf("FailureHistory[1].Output = %v, want %q", rec1.Output, "draft output")
+	}
+	if rec1.LoopID != "loop-kv-002" {
+		t.Errorf("FailureHistory[1].LoopID = %q, want %q", rec1.LoopID, "loop-kv-002")
+	}
+}

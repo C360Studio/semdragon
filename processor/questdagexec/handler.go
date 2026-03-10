@@ -263,7 +263,22 @@ func (c *Component) handleNodeFailed(ctx context.Context, dagState *DAGExecution
 		return
 	}
 
-	// No retries left — node fails permanently.
+	// No retries left — attempt triage if enabled, otherwise fail permanently.
+
+	// Create a peer review entity recording the failure so the member agent's
+	// prompt on future quests can surface corrective guidance.
+	c.createReviewEntity(ctx, dagState, nodeID)
+
+	if c.config.TriageEnabled {
+		// Route through DM triage instead of immediate parent escalation.
+		// The questboard triage watcher will evaluate and either repost
+		// (salvage/tpk) or fail/escalate the sub-quest.
+		dagState.NodeStates[nodeID] = NodePendingTriage
+		c.routeNodeToTriage(ctx, dagState, nodeID)
+		return
+	}
+
+	// Triage disabled — node fails permanently.
 	dagState.NodeStates[nodeID] = NodeFailed
 	dagState.FailedNodes = append(dagState.FailedNodes, nodeID)
 	c.nodesFailed.Add(1)
@@ -272,10 +287,6 @@ func (c *Component) handleNodeFailed(ctx context.Context, dagState *DAGExecution
 		"execution_id", dagState.ExecutionID,
 		"node_id", nodeID,
 		"parent_quest_id", dagState.ParentQuestID)
-
-	// Create a peer review entity recording the failure so the member agent's
-	// prompt on future quests can surface corrective guidance.
-	c.createReviewEntity(ctx, dagState, nodeID)
 
 	reason := fmt.Sprintf("DAG node %s failed after exhausting retries", nodeID)
 	c.escalateParent(ctx, dagState, reason)
@@ -1012,6 +1023,118 @@ func (c *Component) escalateParent(ctx context.Context, dagState *DAGExecutionSt
 			"parent_quest_id", dagState.ParentQuestID, "error", err)
 		c.errorsCount.Add(1)
 	}
+}
+
+// =============================================================================
+// TRIAGE ROUTING (called only from event loop goroutine)
+// =============================================================================
+
+// routeNodeToTriage transitions a sub-quest from failed to pending_triage
+// so the questboard triage watcher can evaluate it. Called when DAG node
+// retries are exhausted and triage is enabled.
+//
+// If the transition fails, falls back to immediate parent escalation.
+func (c *Component) routeNodeToTriage(ctx context.Context, dagState *DAGExecutionState, nodeID string) {
+	subQuestID := dagState.NodeQuestIDs[nodeID]
+	if subQuestID == "" {
+		c.logger.Warn("routeNodeToTriage: no sub-quest ID for node",
+			"execution_id", dagState.ExecutionID, "node_id", nodeID)
+		c.fallbackToEscalate(ctx, dagState, nodeID)
+		return
+	}
+
+	if c.graph == nil {
+		c.logger.Warn("routeNodeToTriage: graph client not set",
+			"execution_id", dagState.ExecutionID, "node_id", nodeID)
+		c.fallbackToEscalate(ctx, dagState, nodeID)
+		return
+	}
+
+	questEntity, err := c.graph.GetQuest(ctx, domain.QuestID(subQuestID))
+	if err != nil {
+		c.logger.Error("routeNodeToTriage: failed to load sub-quest",
+			"sub_quest_id", subQuestID, "error", err)
+		c.errorsCount.Add(1)
+		c.fallbackToEscalate(ctx, dagState, nodeID)
+		return
+	}
+
+	quest := domain.QuestFromEntityState(questEntity)
+	if quest == nil {
+		c.logger.Warn("routeNodeToTriage: quest reconstruction returned nil",
+			"sub_quest_id", subQuestID)
+		c.fallbackToEscalate(ctx, dagState, nodeID)
+		return
+	}
+
+	// Record the current failure in history before entering triage.
+	record := domain.FailureRecord{
+		Attempt:       quest.Attempts,
+		FailureType:   quest.FailureType,
+		FailureReason: quest.FailureReason,
+		Output:        quest.Output,
+		LoopID:        quest.LoopID,
+		Timestamp:     time.Now(),
+	}
+	if quest.ClaimedBy != nil {
+		record.AgentID = *quest.ClaimedBy
+	}
+	quest.FailureHistory = append(quest.FailureHistory, record)
+	quest.Status = domain.QuestPendingTriage
+
+	if emitErr := c.graph.EmitEntityUpdate(ctx, quest, domain.PredicateQuestPendingTriage); emitErr != nil {
+		c.logger.Error("routeNodeToTriage: failed to transition sub-quest to pending_triage",
+			"sub_quest_id", subQuestID, "error", emitErr)
+		c.errorsCount.Add(1)
+		c.fallbackToEscalate(ctx, dagState, nodeID)
+		return
+	}
+
+	c.logger.Info("DAG node routed to triage",
+		"execution_id", dagState.ExecutionID,
+		"node_id", nodeID,
+		"sub_quest_id", subQuestID,
+		"parent_quest_id", dagState.ParentQuestID)
+}
+
+// handleTriageRepost handles a sub-quest that was reposted after triage
+// (salvage or tpk path). Resets the node to pending and re-assigns.
+func (c *Component) handleTriageRepost(ctx context.Context, dagState *DAGExecutionState, nodeID string) {
+	dagState.NodeStates[nodeID] = NodePending
+	delete(dagState.NodeAssignees, nodeID)
+
+	c.logger.Info("DAG node triage completed — sub-quest reposted for retry",
+		"execution_id", dagState.ExecutionID, "node_id", nodeID)
+
+	c.promoteReadyNodes(dagState)
+	c.assignReadyNodes(ctx, dagState)
+}
+
+// handleTriageTerminal handles a sub-quest where triage decided terminal failure.
+// The node is permanently failed and the parent quest is escalated.
+func (c *Component) handleTriageTerminal(ctx context.Context, dagState *DAGExecutionState, nodeID string) {
+	dagState.NodeStates[nodeID] = NodeFailed
+	dagState.FailedNodes = append(dagState.FailedNodes, nodeID)
+	c.nodesFailed.Add(1)
+
+	c.logger.Warn("DAG node triage decided terminal — escalating parent",
+		"execution_id", dagState.ExecutionID,
+		"node_id", nodeID,
+		"parent_quest_id", dagState.ParentQuestID)
+
+	reason := fmt.Sprintf("DAG node %s failed after triage decided terminal", nodeID)
+	c.escalateParent(ctx, dagState, reason)
+}
+
+// fallbackToEscalate reverts a node from NodePendingTriage to NodeFailed
+// and escalates the parent. Used when the triage transition itself fails.
+func (c *Component) fallbackToEscalate(ctx context.Context, dagState *DAGExecutionState, nodeID string) {
+	dagState.NodeStates[nodeID] = NodeFailed
+	dagState.FailedNodes = append(dagState.FailedNodes, nodeID)
+	c.nodesFailed.Add(1)
+
+	reason := fmt.Sprintf("DAG node %s failed (triage routing failed, falling back to escalation)", nodeID)
+	c.escalateParent(ctx, dagState, reason)
 }
 
 // =============================================================================

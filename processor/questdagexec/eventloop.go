@@ -359,14 +359,39 @@ func (c *Component) handleSubQuestTransition(
 		c.handleNodeCompleted(ctx, dagState, nodeID)
 
 	case domain.QuestFailed:
-		c.handleNodeFailed(ctx, dagState, nodeID)
+		if dagState.NodeStates[nodeID] == NodePendingTriage {
+			// Triage decided terminal — fail permanently and escalate parent.
+			c.handleTriageTerminal(ctx, dagState, nodeID)
+		} else {
+			c.handleNodeFailed(ctx, dagState, nodeID)
+		}
 
 	case domain.QuestEscalated:
-		// Party sub-quest clarification: the member asked a question via the
-		// escalation path. Non-party escalations never reach here because only
-		// sub-quests tracked in dagBySubQuest trigger this handler.
-		dagState.NodeStates[nodeID] = NodeAwaitingClarification
-		c.dispatchLeadClarification(ctx, dagState, nodeID, entity)
+		if dagState.NodeStates[nodeID] == NodePendingTriage {
+			// Triage decided escalate — escalate parent quest.
+			c.handleTriageTerminal(ctx, dagState, nodeID)
+		} else {
+			// Party sub-quest clarification: the member asked a question via the
+			// escalation path. Non-party escalations never reach here because only
+			// sub-quests tracked in dagBySubQuest trigger this handler.
+			dagState.NodeStates[nodeID] = NodeAwaitingClarification
+			c.dispatchLeadClarification(ctx, dagState, nodeID, entity)
+		}
+
+	case domain.QuestPendingTriage:
+		// Sub-quest entered triage (quest-level retries exhausted with triage
+		// enabled, or routed by handleNodeFailed at DAG retry exhaustion).
+		dagState.NodeStates[nodeID] = NodePendingTriage
+		c.logger.Info("DAG node entered pending_triage",
+			"execution_id", dagState.ExecutionID, "node_id", nodeID)
+
+	case domain.QuestPosted:
+		if dagState.NodeStates[nodeID] == NodePendingTriage {
+			// Triage completed with salvage/tpk — sub-quest reposted for retry.
+			c.handleTriageRepost(ctx, dagState, nodeID)
+		}
+		// Normal reposts from retryNodeAssignment are handled inline before the
+		// KV event propagates back; no action needed here for those.
 
 	default:
 		c.logger.Debug("ignoring sub-quest status transition",

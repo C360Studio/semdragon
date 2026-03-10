@@ -1,6 +1,7 @@
 package promptmanager
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -658,5 +659,202 @@ func TestAssembly_DependencyOutputsBeforeClarifications(t *testing.T) {
 	}
 	if depIdx >= clarIdx {
 		t.Error("expected Dependency Outputs to appear before Previous Clarifications")
+	}
+}
+
+// =============================================================================
+// FAILURE RECOVERY INJECTION TESTS
+// =============================================================================
+
+func TestAssembly_WithFailureHistory(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierExpert,
+		FailureHistory: []FailureHistorySummary{
+			{Attempt: 1, FailureType: "timeout", FailureReason: "Exceeded the 30-minute time limit."},
+			{Attempt: 2, FailureType: "review_defeat", FailureReason: "Output did not satisfy acceptance criteria."},
+		},
+	})
+
+	if !strings.Contains(result.SystemMessage, "Failure Recovery") {
+		t.Error("expected 'Failure Recovery' section header in output")
+	}
+	if !strings.Contains(result.SystemMessage, "attempted before and failed") {
+		t.Error("expected 'attempted before and failed' text in failure recovery section")
+	}
+	if !strings.Contains(result.SystemMessage, "Attempt 1") {
+		t.Error("expected 'Attempt 1' in failure recovery section")
+	}
+	if !strings.Contains(result.SystemMessage, "timeout") {
+		t.Error("expected failure type 'timeout' in failure recovery section")
+	}
+	if !strings.Contains(result.SystemMessage, "Attempt 2") {
+		t.Error("expected 'Attempt 2' in failure recovery section")
+	}
+	if !strings.Contains(result.SystemMessage, "review_defeat") {
+		t.Error("expected failure type 'review_defeat' in failure recovery section")
+	}
+
+	if !slices.Contains(result.FragmentsUsed, "failure-recovery-context") {
+		t.Error("expected 'failure-recovery-context' in FragmentsUsed")
+	}
+}
+
+func TestAssembly_WithFailureHistory_XMLFormat(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:     domain.TierExpert,
+		Provider: "anthropic",
+		FailureHistory: []FailureHistorySummary{
+			{Attempt: 1, FailureType: "timeout", FailureReason: "Took too long."},
+		},
+	})
+
+	if !strings.Contains(result.SystemMessage, "<failure_recovery>") {
+		t.Error("expected <failure_recovery> XML open tag for Anthropic provider")
+	}
+	if !strings.Contains(result.SystemMessage, "</failure_recovery>") {
+		t.Error("expected </failure_recovery> XML close tag for Anthropic provider")
+	}
+}
+
+func TestAssembly_WithFailureHistory_MarkdownFormat(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:     domain.TierExpert,
+		Provider: "openai",
+		FailureHistory: []FailureHistorySummary{
+			{Attempt: 1, FailureType: "review_defeat", FailureReason: "Quality too low."},
+		},
+	})
+
+	if !strings.Contains(result.SystemMessage, "## Failure Recovery") {
+		t.Error("expected '## Failure Recovery' markdown header for OpenAI provider")
+	}
+}
+
+func TestAssembly_WithoutFailureHistory(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:           domain.TierExpert,
+		FailureHistory: nil, // explicitly empty
+	})
+
+	if strings.Contains(result.SystemMessage, "Failure Recovery") {
+		t.Error("should not include 'Failure Recovery' section when no failure history provided")
+	}
+
+	if slices.Contains(result.FragmentsUsed, "failure-recovery-context") {
+		t.Error("should not include 'failure-recovery-context' in FragmentsUsed when no failure history")
+	}
+}
+
+func TestAssembly_WithSalvagedOutput(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierExpert,
+		FailureHistory: []FailureHistorySummary{
+			{Attempt: 1, FailureType: "review_defeat", FailureReason: "Missing error handling."},
+		},
+		SalvagedOutput: "func parseInput(s string) (int, error) { return strconv.Atoi(s) }",
+	})
+
+	if !strings.Contains(result.SystemMessage, "Salvaged Work") {
+		t.Error("expected 'Salvaged Work' label in output when SalvagedOutput is set")
+	}
+	if !strings.Contains(result.SystemMessage, "build on this, do NOT redo it") {
+		t.Error("expected 'build on this, do NOT redo it' directive in output")
+	}
+	if !strings.Contains(result.SystemMessage, "func parseInput") {
+		t.Error("expected salvaged output content in system message")
+	}
+}
+
+func TestAssembly_WithAntiPatterns(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierExpert,
+		FailureHistory: []FailureHistorySummary{
+			{Attempt: 1, FailureType: "timeout", FailureReason: "Infinite loop in parser."},
+		},
+		AntiPatterns: []string{
+			"Using unbounded recursion on nested input",
+			"Ignoring the context cancellation signal",
+		},
+	})
+
+	if !strings.Contains(result.SystemMessage, "DO NOT repeat these mistakes") {
+		t.Error("expected 'DO NOT repeat these mistakes' directive in output")
+	}
+	if !strings.Contains(result.SystemMessage, "Using unbounded recursion on nested input") {
+		t.Error("expected first anti-pattern in output")
+	}
+	if !strings.Contains(result.SystemMessage, "Ignoring the context cancellation signal") {
+		t.Error("expected second anti-pattern in output")
+	}
+}
+
+func TestAssembly_WithFailureAnalysis(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierExpert,
+		FailureHistory: []FailureHistorySummary{
+			{Attempt: 1, FailureType: "review_defeat", FailureReason: "Logic was inverted."},
+		},
+		FailureAnalysis: "The agent consistently inverts boolean conditions under time pressure.",
+	})
+
+	if !strings.Contains(result.SystemMessage, "DM Failure Analysis") {
+		t.Error("expected 'DM Failure Analysis' label in output when FailureAnalysis is set")
+	}
+	if !strings.Contains(result.SystemMessage, "The agent consistently inverts boolean conditions") {
+		t.Error("expected FailureAnalysis content in system message")
+	}
+}
+
+func TestAssembly_FailureRecoveryOrdering(t *testing.T) {
+	assembler, _ := newTestAssembler()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier: domain.TierExpert,
+		PeerFeedback: []PeerFeedbackSummary{
+			{Question: "Code quality", AvgRating: 1.5},
+		},
+		FailureHistory: []FailureHistorySummary{
+			{Attempt: 1, FailureType: "timeout", FailureReason: "Took too long."},
+		},
+		DependencyOutputs: []DependencyOutput{
+			{NodeID: "node-1", Objective: "Prior step", Output: "Produced schema.json"},
+		},
+	})
+
+	msg := result.SystemMessage
+
+	peerIdx := strings.Index(msg, "Peer Feedback")
+	failureIdx := strings.Index(msg, "Failure Recovery")
+	depIdx := strings.Index(msg, "Dependency Outputs")
+
+	if peerIdx < 0 {
+		t.Fatal("expected 'Peer Feedback' section in output")
+	}
+	if failureIdx < 0 {
+		t.Fatal("expected 'Failure Recovery' section in output")
+	}
+	if depIdx < 0 {
+		t.Fatal("expected 'Dependency Outputs' section in output")
+	}
+
+	if peerIdx >= failureIdx {
+		t.Error("Peer Feedback should appear before Failure Recovery")
+	}
+	if failureIdx >= depIdx {
+		t.Error("Failure Recovery should appear before Dependency Outputs")
 	}
 }

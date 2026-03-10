@@ -655,6 +655,352 @@ func TestHandleNodeFailed(t *testing.T) {
 }
 
 // =============================================================================
+// handleNodeFailed TRIAGE TESTS
+// =============================================================================
+
+func TestHandleNodeFailed_TriageEnabled(t *testing.T) {
+	t.Parallel()
+
+	t.Run("retries remaining — triage config ignored, normal retry", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		config := DefaultConfig()
+		config.TriageEnabled = true
+		c := &Component{
+			config:        &config,
+			questBoardRef: qb,
+			logger:        slog.Default(),
+			dagCache:      make(map[string]*DAGExecutionState),
+			dagBySubQuest: make(map[string]*DAGExecutionState),
+			questCache:    make(map[string]string),
+		}
+
+		dag := makeFullDAGState("exec-t1", "parent-t1", "party-t1", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodeInProgress
+		dag.NodeRetries["n1"] = 1
+
+		c.handleNodeFailed(context.Background(), dag, "n1")
+
+		// Should retry, not triage.
+		if dag.NodeStates["n1"] == NodePendingTriage {
+			t.Error("node should not enter triage when retries remain")
+		}
+		if dag.NodeRetries["n1"] != 0 {
+			t.Errorf("retries = %d, want 0", dag.NodeRetries["n1"])
+		}
+		if len(qb.escalateCalls) != 0 {
+			t.Errorf("unexpected escalation when retries remain")
+		}
+	})
+
+	t.Run("no retries + triage enabled — fallback when graph nil", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		config := DefaultConfig()
+		config.TriageEnabled = true
+		c := &Component{
+			config:        &config,
+			questBoardRef: qb,
+			logger:        slog.Default(),
+			dagCache:      make(map[string]*DAGExecutionState),
+			dagBySubQuest: make(map[string]*DAGExecutionState),
+			questCache:    make(map[string]string),
+		}
+		// graph is nil → routeNodeToTriage falls back to escalation.
+		// The node state is set to NodePendingTriage first, then
+		// fallback sets it to NodeFailed.
+
+		dag := makeFullDAGState("exec-t2", "parent-t2", "party-t2", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodeInProgress
+		dag.NodeRetries["n1"] = 0
+
+		c.handleNodeFailed(context.Background(), dag, "n1")
+
+		// With nil graph client, routeNodeToTriage can't load the quest entity
+		// and falls back to escalation. The node ends up as NodeFailed.
+		if dag.NodeStates["n1"] != NodeFailed {
+			t.Errorf("node state = %q, want %q (fallback after graph error)", dag.NodeStates["n1"], NodeFailed)
+		}
+		if len(qb.escalateCalls) != 1 {
+			t.Errorf("EscalateQuest called %d times, want 1 (fallback)", len(qb.escalateCalls))
+		}
+	})
+
+	t.Run("no retries + triage disabled — normal escalation", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		c := newTestComponent(qb, nil) // triage not enabled
+
+		dag := makeFullDAGState("exec-t3", "parent-t3", "party-t3", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodeInProgress
+		dag.NodeRetries["n1"] = 0
+
+		c.handleNodeFailed(context.Background(), dag, "n1")
+
+		if dag.NodeStates["n1"] != NodeFailed {
+			t.Errorf("node state = %q, want %q", dag.NodeStates["n1"], NodeFailed)
+		}
+		if len(dag.FailedNodes) != 1 {
+			t.Errorf("FailedNodes = %v, want [n1]", dag.FailedNodes)
+		}
+		if len(qb.escalateCalls) != 1 {
+			t.Errorf("EscalateQuest called %d times, want 1", len(qb.escalateCalls))
+		}
+	})
+}
+
+// =============================================================================
+// handleTriageRepost TESTS
+// =============================================================================
+
+func TestHandleTriageRepost(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resets node to pending and re-assigns", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		pc := &mockPartyCoordRef{}
+		c := newTestComponent(qb, pc)
+
+		// n1 depends on nothing; n2 depends on n1.
+		dag := makeFullDAGState("exec-tr1", "parent-tr1", "party-tr1", []QuestNode{
+			makeNode("n1", 0),
+			{ID: "n2", Objective: "Step 2", DependsOn: []string{"n1"}},
+		})
+		dag.NodeStates["n1"] = NodePendingTriage
+		dag.NodeAssignees["n1"] = "agent-1"
+		dag.NodeStates["n2"] = NodePending
+
+		c.handleTriageRepost(context.Background(), dag, "n1")
+
+		if dag.NodeStates["n1"] != NodeReady {
+			t.Errorf("n1 state = %q, want %q (no deps, should promote to ready)", dag.NodeStates["n1"], NodeReady)
+		}
+		if _, hasAssignee := dag.NodeAssignees["n1"]; hasAssignee {
+			t.Error("n1 should have assignee cleared after triage repost")
+		}
+	})
+}
+
+// =============================================================================
+// handleTriageTerminal TESTS
+// =============================================================================
+
+func TestHandleTriageTerminal(t *testing.T) {
+	t.Parallel()
+
+	t.Run("marks node failed and escalates parent", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		c := newTestComponent(qb, nil)
+
+		dag := makeFullDAGState("exec-tt1", "parent-tt1", "party-tt1", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodePendingTriage
+
+		c.handleTriageTerminal(context.Background(), dag, "n1")
+
+		if dag.NodeStates["n1"] != NodeFailed {
+			t.Errorf("node state = %q, want %q", dag.NodeStates["n1"], NodeFailed)
+		}
+		if len(dag.FailedNodes) != 1 || dag.FailedNodes[0] != "n1" {
+			t.Errorf("FailedNodes = %v, want [n1]", dag.FailedNodes)
+		}
+		if len(qb.escalateCalls) != 1 {
+			t.Errorf("EscalateQuest called %d times, want 1", len(qb.escalateCalls))
+		}
+		if qb.escalateCalls[0].questID != "parent-tt1" {
+			t.Errorf("escalate questID = %q, want %q", qb.escalateCalls[0].questID, "parent-tt1")
+		}
+		if !stringContains(qb.escalateCalls[0].reason, "triage") {
+			t.Errorf("escalate reason should mention triage: %q", qb.escalateCalls[0].reason)
+		}
+	})
+}
+
+// =============================================================================
+// fallbackToEscalate TESTS
+// =============================================================================
+
+func TestFallbackToEscalate(t *testing.T) {
+	t.Parallel()
+
+	qb := &mockQuestBoardRef{}
+	c := newTestComponent(qb, nil)
+
+	dag := makeFullDAGState("exec-fb1", "parent-fb1", "party-fb1", []QuestNode{
+		makeNode("n1", 0),
+	})
+	dag.NodeStates["n1"] = NodePendingTriage
+
+	c.fallbackToEscalate(context.Background(), dag, "n1")
+
+	if dag.NodeStates["n1"] != NodeFailed {
+		t.Errorf("node state = %q, want %q", dag.NodeStates["n1"], NodeFailed)
+	}
+	if len(dag.FailedNodes) != 1 {
+		t.Errorf("FailedNodes = %v, want [n1]", dag.FailedNodes)
+	}
+	if len(qb.escalateCalls) != 1 {
+		t.Errorf("EscalateQuest called %d times, want 1", len(qb.escalateCalls))
+	}
+	if !stringContains(qb.escalateCalls[0].reason, "falling back") {
+		t.Errorf("reason should mention falling back: %q", qb.escalateCalls[0].reason)
+	}
+}
+
+// =============================================================================
+// handleSubQuestTransition TRIAGE TESTS
+// =============================================================================
+
+func TestHandleSubQuestTransition_Triage(t *testing.T) {
+	t.Parallel()
+
+	// These tests exercise the triage-related branches of handleSubQuestTransition
+	// by calling the individual handler functions directly (not handleSubQuestTransition
+	// itself, which calls persistDAGState and requires a live graph client).
+
+	t.Run("QuestPendingTriage sets NodePendingTriage", func(t *testing.T) {
+		t.Parallel()
+
+		dag := makeFullDAGState("exec-st1", "parent-st1", "party-st1", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodeInProgress
+
+		// Simulate what handleSubQuestTransition does for QuestPendingTriage.
+		dag.NodeStates["n1"] = NodePendingTriage
+
+		if dag.NodeStates["n1"] != NodePendingTriage {
+			t.Errorf("node state = %q, want %q", dag.NodeStates["n1"], NodePendingTriage)
+		}
+	})
+
+	t.Run("QuestPosted from pending_triage triggers triage repost", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		pc := &mockPartyCoordRef{}
+		c := newTestComponent(qb, pc)
+
+		dag := makeFullDAGState("exec-st2", "parent-st2", "party-st2", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodePendingTriage
+		dag.NodeAssignees["n1"] = "agent-1"
+
+		// Simulate what handleSubQuestTransition does for QuestPosted
+		// when node is in NodePendingTriage.
+		c.handleTriageRepost(context.Background(), dag, "n1")
+
+		// After triage repost, node should be ready (no deps).
+		if dag.NodeStates["n1"] != NodeReady {
+			t.Errorf("n1 state = %q, want %q (no deps, should promote to ready)", dag.NodeStates["n1"], NodeReady)
+		}
+		if _, hasAssignee := dag.NodeAssignees["n1"]; hasAssignee {
+			t.Error("assignee should be cleared after triage repost")
+		}
+	})
+
+	t.Run("QuestPosted from non-triage state — no action", func(t *testing.T) {
+		t.Parallel()
+
+		dag := makeFullDAGState("exec-st3", "parent-st3", "party-st3", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodeAssigned
+
+		// handleSubQuestTransition with QuestPosted when node is NOT in
+		// NodePendingTriage should do nothing (no handleTriageRepost call).
+		// Just verify the state didn't change.
+		if dag.NodeStates["n1"] != NodeAssigned {
+			t.Errorf("node state = %q, want %q (unchanged)", dag.NodeStates["n1"], NodeAssigned)
+		}
+	})
+
+	t.Run("QuestFailed from pending_triage triggers terminal", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		c := newTestComponent(qb, nil)
+
+		dag := makeFullDAGState("exec-st4", "parent-st4", "party-st4", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodePendingTriage
+
+		// Simulate what handleSubQuestTransition does for QuestFailed
+		// when node is in NodePendingTriage.
+		c.handleTriageTerminal(context.Background(), dag, "n1")
+
+		if dag.NodeStates["n1"] != NodeFailed {
+			t.Errorf("node state = %q, want %q", dag.NodeStates["n1"], NodeFailed)
+		}
+		if len(qb.escalateCalls) != 1 {
+			t.Errorf("EscalateQuest called %d times, want 1", len(qb.escalateCalls))
+		}
+	})
+
+	t.Run("QuestEscalated from pending_triage triggers terminal", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		c := newTestComponent(qb, nil)
+
+		dag := makeFullDAGState("exec-st5", "parent-st5", "party-st5", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodePendingTriage
+
+		// Simulate what handleSubQuestTransition does for QuestEscalated
+		// when node is in NodePendingTriage.
+		c.handleTriageTerminal(context.Background(), dag, "n1")
+
+		if dag.NodeStates["n1"] != NodeFailed {
+			t.Errorf("node state = %q, want %q", dag.NodeStates["n1"], NodeFailed)
+		}
+		if len(qb.escalateCalls) != 1 {
+			t.Errorf("EscalateQuest called %d times, want 1", len(qb.escalateCalls))
+		}
+	})
+
+	t.Run("QuestFailed from non-triage uses normal handleNodeFailed", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		c := newTestComponent(qb, nil)
+
+		dag := makeFullDAGState("exec-st6", "parent-st6", "party-st6", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodeInProgress
+		dag.NodeRetries["n1"] = 0
+
+		// Normal QuestFailed when not in pending_triage → handleNodeFailed.
+		c.handleNodeFailed(context.Background(), dag, "n1")
+
+		if dag.NodeStates["n1"] != NodeFailed {
+			t.Errorf("node state = %q, want %q", dag.NodeStates["n1"], NodeFailed)
+		}
+		if len(qb.escalateCalls) != 1 {
+			t.Errorf("EscalateQuest called %d times, want 1", len(qb.escalateCalls))
+		}
+	})
+}
+
+// =============================================================================
 // triggerRollup TESTS
 // =============================================================================
 

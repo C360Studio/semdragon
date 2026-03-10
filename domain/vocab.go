@@ -32,6 +32,12 @@ const (
 	// PredicateQuestFailed - Quest failed (may be re-posted).
 	PredicateQuestFailed = "quest.lifecycle.failed"
 
+	// PredicateQuestPendingTriage - Quest awaiting DM triage after exhausting retries.
+	PredicateQuestPendingTriage = "quest.lifecycle.pending_triage"
+
+	// PredicateQuestTriaged - DM triage decision applied to quest.
+	PredicateQuestTriaged = "quest.lifecycle.triaged"
+
 	// PredicateQuestEscalated - Quest escalated for higher-level attention.
 	PredicateQuestEscalated = "quest.lifecycle.escalated"
 
@@ -356,6 +362,12 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicateQuestFailed,
 		vocabulary.WithDescription("Quest failed, may be re-posted"),
+	)
+	vocabulary.Register(PredicateQuestPendingTriage,
+		vocabulary.WithDescription("Quest awaiting DM triage after exhausting retries"),
+	)
+	vocabulary.Register(PredicateQuestTriaged,
+		vocabulary.WithDescription("DM triage decision applied to quest"),
 	)
 	vocabulary.Register(PredicateQuestEscalated,
 		vocabulary.WithDescription("Quest escalated for higher-level attention"),

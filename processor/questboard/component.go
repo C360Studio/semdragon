@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/model"
+	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/util"
+	"github.com/c360studio/semdragons/processor/dmapproval"
 )
 
 // =============================================================================
@@ -44,6 +47,14 @@ type Component struct {
 	boardConfig *domain.BoardConfig
 	running     atomic.Bool
 	mu          sync.RWMutex
+
+	// Triage watcher (auto-triage for pending_triage quests)
+	triageWatch   jetstream.KeyWatcher
+	triageDoneCh  chan struct{}
+	triageStopCh  chan struct{}
+	triageCache   sync.Map // entityKey → domain.QuestStatus
+	registry      model.RegistryReader
+	approval      dmapproval.ApprovalRouter
 
 	// Metrics
 	messagesProcessed atomic.Uint64
@@ -258,23 +269,45 @@ func (c *Component) Start(ctx context.Context) error {
 	// Create graph client for graph system access
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 
+	// Resolve model registry from deps (optional — triage degrades gracefully without it)
+	if c.deps.ModelRegistry != nil {
+		c.registry = c.deps.ModelRegistry
+	}
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
+
+	// Start triage watcher if triage is enabled
+	if c.config.Triage.Enabled {
+		watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeQuest)
+		if err != nil {
+			c.running.Store(false)
+			return errors.New("start triage watcher: " + err.Error())
+		}
+		c.triageWatch = watcher
+		c.triageDoneCh = make(chan struct{})
+		c.triageStopCh = make(chan struct{})
+		go c.processTriageWatchUpdates()
+
+		c.logger.Info("triage watcher started",
+			"dm_mode", c.config.Triage.DMMode,
+			"min_difficulty", c.config.Triage.MinDifficultyForTriage,
+			"timeout_mins", c.config.Triage.TriageTimeoutMins)
+	}
 
 	c.logger.Info("questboard component started",
 		"org", c.config.Org,
 		"platform", c.config.Platform,
 		"board", c.config.Board,
-		"bucket", c.boardConfig.BucketName())
+		"bucket", c.boardConfig.BucketName(),
+		"triage_enabled", c.config.Triage.Enabled)
 
 	return nil
 }
 
 // Stop gracefully shuts down the component.
-// The timeout parameter is part of the LifecycleComponent interface but is not
-// currently needed as this component has no background goroutines to wait for.
-func (c *Component) Stop(_ time.Duration) error {
+func (c *Component) Stop(timeout time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -282,8 +315,41 @@ func (c *Component) Stop(_ time.Duration) error {
 		return nil
 	}
 
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	// Signal triage watcher to stop
+	if c.triageStopCh != nil {
+		close(c.triageStopCh)
+	}
+	if c.triageWatch != nil {
+		c.triageWatch.Stop()
+	}
+
+	// Wait for triage watcher goroutine with timeout
+	if c.triageDoneCh != nil {
+		select {
+		case <-c.triageDoneCh:
+		case <-time.After(timeout):
+			c.logger.Warn("stop timed out waiting for triage watcher")
+		}
+	}
+
 	c.running.Store(false)
 	c.logger.Info("questboard component stopped")
 
 	return nil
+}
+
+// SetApproval injects the approval router for assisted/supervised triage modes.
+// Must be called before Start.
+func (c *Component) SetApproval(approval dmapproval.ApprovalRouter) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetApproval called while running; ignored")
+		return
+	}
+	c.approval = approval
 }

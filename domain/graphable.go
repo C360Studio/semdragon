@@ -196,6 +196,38 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
+	// Failure recovery (triage)
+	if q.RecoveryPath != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.recovery.path", Object: string(q.RecoveryPath),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.FailureAnalysis != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.recovery.analysis", Object: q.FailureAnalysis,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.SalvagedOutput != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.recovery.salvaged", Object: q.SalvagedOutput,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if len(q.AntiPatterns) > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.recovery.antipatterns", Object: q.AntiPatterns,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if len(q.FailureHistory) > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.failure.history", Object: q.FailureHistory,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
 	// Duration
 	if q.Duration > 0 {
 		triples = append(triples, message.Triple{

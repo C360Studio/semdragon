@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -36,20 +37,27 @@ type SearchResult struct {
 type SearchConfig struct {
 	// Provider is the search provider type (e.g. "brave").
 	Provider string `json:"provider"`
-	// APIKey is the authentication key for the provider.
-	APIKey string `json:"api_key"`
+	// APIKeyEnv is the name of the environment variable that holds the API key.
+	// The actual key value is never stored in config — only the variable name.
+	APIKeyEnv string `json:"api_key_env"`
 	// BaseURL overrides the default API endpoint (optional).
 	BaseURL string `json:"base_url,omitempty"`
 }
 
 // NewSearchProvider creates a SearchProvider from configuration.
 // Returns an error if the provider type is unknown or config is invalid.
+// The API key is resolved from the environment variable named by APIKeyEnv.
 func NewSearchProvider(cfg SearchConfig) (SearchProvider, error) {
 	if cfg.Provider == "" {
 		return nil, fmt.Errorf("search provider type is required")
 	}
-	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("search API key is required")
+	if cfg.APIKeyEnv == "" {
+		return nil, fmt.Errorf("search api_key_env is required (set to the env var name holding the API key)")
+	}
+
+	apiKey := os.Getenv(cfg.APIKeyEnv)
+	if apiKey == "" {
+		return nil, fmt.Errorf("search API key env var %q is not set", cfg.APIKeyEnv)
 	}
 
 	switch cfg.Provider {
@@ -59,7 +67,7 @@ func NewSearchProvider(cfg SearchConfig) (SearchProvider, error) {
 			baseURL = braveDefaultBaseURL
 		}
 		return &braveSearchProvider{
-			apiKey:  cfg.APIKey,
+			apiKey:  apiKey,
 			baseURL: baseURL,
 		}, nil
 	default:

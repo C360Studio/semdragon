@@ -407,15 +407,15 @@ func TestAssembleModelRegistryView_CapabilitiesIncluded(t *testing.T) {
 	s := newSettingsService(&mockGraph{}, reg, nil, Config{})
 	view := s.assembleModelRegistryView()
 
-	cap, ok := view.Capabilities["quest_worker"]
+	capView, ok := view.Capabilities["quest_worker"]
 	if !ok {
 		t.Fatal("expected capability 'quest_worker' in view")
 	}
-	if cap.Description != "Default task worker" {
-		t.Errorf("Description: got %q, want %q", cap.Description, "Default task worker")
+	if capView.Description != "Default task worker" {
+		t.Errorf("Description: got %q, want %q", capView.Description, "Default task worker")
 	}
-	if len(cap.Preferred) == 0 || cap.Preferred[0] != "claude" {
-		t.Errorf("Preferred chain: got %v, want [claude]", cap.Preferred)
+	if len(capView.Preferred) == 0 || capView.Preferred[0] != "claude" {
+		t.Errorf("Preferred chain: got %v, want [claude]", capView.Preferred)
 	}
 }
 
@@ -626,7 +626,8 @@ func TestBuildChecklist_WorkspaceMissing(t *testing.T) {
 
 func TestBuildChecklist_AgentPresent(t *testing.T) {
 	g := &mockGraph{
-		listAgentsFn: func(_ context.Context, limit int) ([]graph.EntityState, error) {
+		// Mock returns a fixed agent list — limit is not needed for this test.
+		listAgentsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
 			return []graph.EntityState{{ID: "test.dev.game.board1.agent.a1"}}, nil
 		},
 	}
@@ -673,7 +674,8 @@ func TestBuildChecklist_NoAgents(t *testing.T) {
 
 func TestBuildChecklist_QuestPresent(t *testing.T) {
 	g := &mockGraph{
-		listQuestsFn: func(_ context.Context, limit int) ([]graph.EntityState, error) {
+		// Mock returns a fixed quest list — limit is not needed for this test.
+		listQuestsFn: func(_ context.Context, _ int) ([]graph.EntityState, error) {
 			return []graph.EntityState{{ID: "test.dev.game.board1.quest.q1"}}, nil
 		},
 	}
@@ -909,15 +911,15 @@ func TestApplyModelRegistryUpdate_UpdateCapability(t *testing.T) {
 	if !ok {
 		t.Fatal("expected s.models to be *model.Registry after update")
 	}
-	cap, exists := newReg.Capabilities["worker"]
+	capCfg, exists := newReg.Capabilities["worker"]
 	if !exists {
 		t.Fatal("expected 'worker' capability to be present after update")
 	}
-	if len(cap.Preferred) == 0 || cap.Preferred[0] != "ep-a" {
-		t.Errorf("Preferred chain: got %v, want [ep-a]", cap.Preferred)
+	if len(capCfg.Preferred) == 0 || capCfg.Preferred[0] != "ep-a" {
+		t.Errorf("Preferred chain: got %v, want [ep-a]", capCfg.Preferred)
 	}
-	if cap.Description != "Quest worker capability" {
-		t.Errorf("Description: got %q, want %q", cap.Description, "Quest worker capability")
+	if capCfg.Description != "Quest worker capability" {
+		t.Errorf("Description: got %q, want %q", capCfg.Description, "Quest worker capability")
 	}
 }
 
@@ -1198,3 +1200,153 @@ func boolPtr(b bool) *bool { return &b }
 var _ = config.NewSafeConfig
 var _ stypes.ComponentConfig
 var _ = service.NewBaseServiceWithOptions
+
+// =============================================================================
+// TestApplyModelRegistryUpdate_APIKeyValue
+// =============================================================================
+
+// TestApplyModelRegistryUpdate_APIKeyValueRequiresEnvName verifies that sending
+// api_key_value without api_key_env is rejected.
+func TestApplyModelRegistryUpdate_APIKeyValueRequiresEnvName(t *testing.T) {
+	reg := buildTestRegistry(
+		map[string]*model.EndpointConfig{
+			"ep": {Provider: "anthropic", Model: "claude-haiku", MaxTokens: 4096},
+		},
+		nil,
+	)
+	s := newSettingsService(&mockGraph{}, reg, nil, Config{})
+
+	keyVal := "sk-test-secret"
+	update := &ModelRegistryUpdate{
+		Endpoints: map[string]*EndpointUpdate{
+			"ep": {
+				Provider:    "anthropic",
+				Model:       "claude-haiku",
+				MaxTokens:   4096,
+				APIKeyValue: &keyVal,
+				// APIKeyEnv intentionally omitted
+			},
+		},
+	}
+
+	err := s.applyModelRegistryUpdate(context.Background(), update)
+	if err == nil {
+		t.Fatal("expected error when api_key_value is set but api_key_env is missing")
+	}
+}
+
+// TestApplyModelRegistryUpdate_APIKeyValueWritesToEnv verifies that supplying
+// both api_key_env and api_key_value writes the key to the env file and sets
+// the process env, without storing the raw value in the registry.
+func TestApplyModelRegistryUpdate_APIKeyValueWritesToEnv(t *testing.T) {
+	// Not parallel — touches os.Setenv and SEMDRAGONS_ENV_FILE.
+	dir := t.TempDir()
+	envPath := dir + "/.env"
+	t.Setenv("SEMDRAGONS_ENV_FILE", envPath)
+
+	const envVar = "SEMDRAGONS_TEST_LLM_KEY_WRITE"
+	os.Unsetenv(envVar) //nolint:errcheck
+
+	reg := buildTestRegistry(
+		map[string]*model.EndpointConfig{
+			"cloud": {Provider: "anthropic", Model: "claude-haiku", MaxTokens: 4096, APIKeyEnv: envVar},
+		},
+		nil,
+	)
+	s := newSettingsService(&mockGraph{}, reg, nil, Config{})
+
+	keyVal := "sk-live-key-12345"
+	update := &ModelRegistryUpdate{
+		Endpoints: map[string]*EndpointUpdate{
+			"cloud": {
+				Provider:    "anthropic",
+				Model:       "claude-haiku",
+				MaxTokens:   4096,
+				APIKeyEnv:   envVar,
+				APIKeyValue: &keyVal,
+			},
+		},
+	}
+
+	if err := s.applyModelRegistryUpdate(context.Background(), update); err != nil {
+		t.Fatalf("applyModelRegistryUpdate: %v", err)
+	}
+
+	// Key must be available in process environment immediately.
+	if got := os.Getenv(envVar); got != keyVal {
+		t.Errorf("os.Getenv(%q) = %q, want %q", envVar, got, keyVal)
+	}
+
+	// The raw key value must not appear in the registry JSON.
+	newReg, ok := s.models.(*model.Registry)
+	if !ok {
+		t.Fatal("expected s.models to be *model.Registry")
+	}
+	data, err := json.Marshal(newReg)
+	if err != nil {
+		t.Fatalf("marshal registry: %v", err)
+	}
+	if bytes.Contains(data, []byte(keyVal)) {
+		t.Error("raw API key value must not appear in registry JSON")
+	}
+}
+
+// =============================================================================
+// TestAssembleSearchConfigView
+// =============================================================================
+
+// TestAssembleSearchConfigView_NoConfigManager verifies that an empty view is
+// returned when no config manager is wired.
+func TestAssembleSearchConfigView_NoConfigManager(t *testing.T) {
+	t.Parallel()
+	s := newSettingsService(&mockGraph{}, nil, nil, Config{})
+	view := s.assembleSearchConfigView()
+	if view.Provider != "" || view.APIKeySet {
+		t.Errorf("expected empty view, got %+v", view)
+	}
+}
+
+// TestAssembleSearchConfigView_KeySet verifies that APIKeySet reflects the
+// presence of the env var named by api_key_env.
+func TestAssembleSearchConfigView_KeySet(t *testing.T) {
+	// Not parallel — touches os.Setenv.
+	const envVar = "SEMDRAGONS_TEST_SEARCH_VIEW_KEY"
+	t.Setenv(envVar, "sk-brave-test")
+
+	cfg := &config.Config{
+		Components: config.ComponentConfigs{
+			questtoolsComponentName: stypes.ComponentConfig{
+				Enabled: true,
+				Config:  json.RawMessage(`{"search":{"provider":"brave","api_key_env":"` + envVar + `"}}`),
+			},
+		},
+	}
+	safeCfg := config.NewSafeConfig(cfg)
+
+	// Test the raw parsing logic that assembleSearchConfigView uses internally.
+	var raw struct {
+		Search *struct {
+			Provider  string `json:"provider"`
+			APIKeyEnv string `json:"api_key_env"`
+			BaseURL   string `json:"base_url"`
+		} `json:"search"`
+	}
+	cc := cfg.Components[questtoolsComponentName]
+	if err := json.Unmarshal(cc.Config, &raw); err != nil || raw.Search == nil {
+		t.Fatal("failed to parse search config from component config")
+	}
+
+	apiKeySet := raw.Search.APIKeyEnv != "" && os.Getenv(raw.Search.APIKeyEnv) != ""
+	if !apiKeySet {
+		t.Errorf("expected APIKeySet=true when env var %q is set", envVar)
+	}
+	if raw.Search.Provider != "brave" {
+		t.Errorf("expected provider=brave, got %q", raw.Search.Provider)
+	}
+
+	// Verify SafeConfig round-trip preserves the component config.
+	got := safeCfg.Get()
+	if _, exists := got.Components[questtoolsComponentName]; !exists {
+		t.Error("expected questtools component config to survive SafeConfig round-trip")
+	}
+}

@@ -31,6 +31,10 @@ const (
 	// Injected directly by the assembler from AssemblyContext.PeerFeedback, not
 	// from the fragment registry, so it can carry runtime data (ratings, text).
 	CategoryPeerFeedback FragmentCategory = 250
+	// CategoryFailureRecovery contains previous attempt failure context,
+	// salvaged output, and anti-patterns. Injected by the assembler when
+	// a quest has failure history from DM triage.
+	CategoryFailureRecovery FragmentCategory = 275
 	// CategorySkillContext contains instructions for quest-required skills.
 	CategorySkillContext FragmentCategory = 300
 	// CategoryGuildKnowledge contains guild library knowledge fragments.
@@ -147,6 +151,14 @@ type AssemblyContext struct {
 	// during boss battle review — any failure is automatic defeat.
 	StructuralChecklist []ChecklistItem `json:"structural_checklist,omitempty"`
 
+	// Failure recovery context — injected when a quest has been triaged by the DM
+	// after exhausting retry attempts.
+	FailureHistory  []FailureHistorySummary `json:"failure_history,omitempty"`
+	SalvagedOutput  string                  `json:"salvaged_output,omitempty"`
+	FailureAnalysis string                  `json:"failure_analysis,omitempty"`
+	RecoveryPath    string                  `json:"recovery_path,omitempty"`
+	AntiPatterns    []string                `json:"anti_patterns,omitempty"`
+
 	// Resolution
 	Provider string // from resolved endpoint ("anthropic", "openai", etc.)
 }
@@ -173,6 +185,15 @@ type PeerFeedbackSummary struct {
 	Question    string  `json:"question"`
 	AvgRating   float64 `json:"avg_rating"`
 	Explanation string  `json:"explanation"`
+}
+
+// FailureHistorySummary is a lightweight record of one previous attempt's failure,
+// used in the prompt to give agents context about what went wrong before.
+type FailureHistorySummary struct {
+	Attempt       int    `json:"attempt"`
+	FailureType   string `json:"failure_type"`
+	FailureReason string `json:"failure_reason"`
+	TriageVerdict string `json:"triage_verdict,omitempty"`
 }
 
 // =============================================================================

@@ -1584,6 +1584,102 @@ func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, quest)
 }
 
+// triageRequest is the request body for POST /dm/triage/{questId}.
+type triageRequest struct {
+	Path           string   `json:"path"`                      // salvage, tpk, escalate, terminal
+	Analysis       string   `json:"analysis"`                  // DM's failure analysis
+	SalvagedOutput any      `json:"salvaged_output,omitempty"` // Curated partial work (salvage path)
+	AntiPatterns   []string `json:"anti_patterns,omitempty"`   // What NOT to do (tpk path)
+}
+
+func (s *Service) handleDMTriage(w http.ResponseWriter, r *http.Request) {
+	questID := r.PathValue("questId")
+	if !isValidPathID(questID) {
+		s.writeError(w, "invalid entity ID", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	var req triageRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBodySize)).Decode(&req); err != nil {
+		s.writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	path := domain.RecoveryPath(req.Path)
+	switch path {
+	case domain.RecoverySalvage, domain.RecoveryTPK, domain.RecoveryEscalate, domain.RecoveryTerminal:
+	default:
+		s.writeError(w, "invalid recovery path: must be salvage, tpk, escalate, or terminal", http.StatusBadRequest)
+		return
+	}
+
+	if req.Analysis == "" {
+		s.writeError(w, "analysis is required", http.StatusBadRequest)
+		return
+	}
+
+	// Load quest
+	questEntity, err := s.graph.GetQuest(ctx, domain.QuestID(questID))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to load quest", http.StatusInternalServerError)
+		return
+	}
+	quest := domain.QuestFromEntityState(questEntity)
+	if quest == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if quest.Status != domain.QuestPendingTriage {
+		s.writeError(w, "quest must be in pending_triage (status: "+string(quest.Status)+")", http.StatusConflict)
+		return
+	}
+
+	quest.RecoveryPath = path
+	quest.FailureAnalysis = req.Analysis
+
+	var predicate string
+
+	switch path {
+	case domain.RecoverySalvage:
+		quest.SalvagedOutput = req.SalvagedOutput
+		quest.MaxAttempts++
+		quest.Status = domain.QuestPosted
+		predicate = domain.PredicateQuestTriaged
+
+	case domain.RecoveryTPK:
+		quest.AntiPatterns = req.AntiPatterns
+		quest.Output = nil
+		quest.MaxAttempts++
+		quest.Status = domain.QuestPosted
+		predicate = domain.PredicateQuestTriaged
+
+	case domain.RecoveryEscalate:
+		quest.Status = domain.QuestEscalated
+		quest.Escalated = true
+		predicate = domain.PredicateQuestEscalated
+
+	case domain.RecoveryTerminal:
+		quest.Status = domain.QuestFailed
+		predicate = "quest.failed"
+	}
+
+	if err := s.graph.EmitEntityUpdate(ctx, quest, predicate); err != nil {
+		s.writeError(w, "failed to apply triage", http.StatusInternalServerError)
+		s.logger.Error("Failed to apply DM triage", "error", err, "quest_id", questID, "path", path)
+		return
+	}
+
+	s.logger.Info("DM triage applied", "quest_id", questID, "path", path, "new_status", quest.Status)
+	s.writeJSON(w, quest)
+}
+
 // extractClarificationQuestion extracts the agent's question text from the
 // quest output, stripping any structured [INTENT: clarification] header.
 func extractClarificationQuestion(output any) string {

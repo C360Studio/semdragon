@@ -200,8 +200,9 @@ const (
 	QuestInReview   QuestStatus = "in_review"
 	QuestCompleted  QuestStatus = "completed"
 	QuestFailed     QuestStatus = "failed"
-	QuestEscalated  QuestStatus = "escalated"
-	QuestCancelled  QuestStatus = "cancelled"
+	QuestEscalated      QuestStatus = "escalated"
+	QuestCancelled      QuestStatus = "cancelled"
+	QuestPendingTriage  QuestStatus = "pending_triage"
 )
 
 // QuestDifficulty represents the challenge level of a quest.

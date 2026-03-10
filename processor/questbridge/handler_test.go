@@ -1402,7 +1402,9 @@ type capabilityMockRegistry struct {
 	chains map[string][]string // capability key -> fallback chain
 }
 
-func (m *capabilityMockRegistry) Resolve(cap string) string        { return "" }
+// Resolve satisfies model.RegistryReader — resolveCapability only calls
+// GetFallbackChain, so the capability name is not needed in this mock.
+func (m *capabilityMockRegistry) Resolve(_ string) string { return "" }
 func (m *capabilityMockRegistry) GetEndpoint(string) *model.EndpointConfig { return nil }
 func (m *capabilityMockRegistry) GetFallbackChain(key string) []string {
 	return m.chains[key]

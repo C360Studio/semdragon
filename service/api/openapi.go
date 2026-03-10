@@ -628,6 +628,27 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					},
 				},
 			},
+			"/dm/triage/{questId}": {
+				POST: &service.OperationSpec{
+					Summary:     "DM triage failed quest",
+					Description: "Apply a DM triage decision to a quest in pending_triage status. Body: {path: salvage|tpk|escalate|terminal, analysis: string, salvaged_output?: any, anti_patterns?: string[]}. Salvage preserves partial work and retries. TPK clears output, adds anti-pattern warnings, retries. Escalate marks for human attention. Terminal marks permanently failed.",
+					Tags:        []string{"DM"},
+					Parameters: []service.ParameterSpec{
+						{Name: "questId", In: "path", Required: true, Description: "Quest ID (must be in pending_triage status)", Schema: service.Schema{Type: "string"}},
+					},
+					RequestBody: &service.RequestBodySpec{
+						Required:    true,
+						ContentType: "application/json",
+						SchemaRef:   "#/components/schemas/TriageDecision",
+					},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Triage applied, returns updated quest", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
+						"400": {Description: "Invalid request (bad path, missing analysis)"},
+						"404": {Description: "Quest not found"},
+						"409": {Description: "Quest not in pending_triage status"},
+					},
+				},
+			},
 
 			// ── Settings ────────────────────────────────────────
 			"/settings": {

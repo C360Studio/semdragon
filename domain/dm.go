@@ -173,6 +173,11 @@ const (
 	EventGuildCreated GameEventType = "guild.created"
 	EventGuildJoined  GameEventType = "guild.joined"
 
+	// EventQuestPendingTriage fires when a quest enters triage after exhausting retries.
+	EventQuestPendingTriage GameEventType = "quest.pending_triage"
+	// EventQuestTriaged fires when a DM triage decision is applied.
+	EventQuestTriaged GameEventType = "quest.triaged"
+
 	// EventDMIntervention fires when the DM acts on an ongoing quest.
 	EventDMIntervention GameEventType = "dm.intervention"
 	EventDMEscalation   GameEventType = "dm.escalation"
@@ -220,6 +225,7 @@ const (
 	InterventionTakeover InterventionType = "takeover"
 	InterventionAbort    InterventionType = "abort"
 	InterventionAugment  InterventionType = "augment"
+	InterventionTriage   InterventionType = "triage"
 )
 
 // Intervention represents a DM action on an ongoing quest.
@@ -266,6 +272,7 @@ const (
 	ApprovalAutonomyGuild      ApprovalType = "autonomy_guild"
 	ApprovalAutonomyGuildCreate ApprovalType = "autonomy_guild_create"
 	ApprovalAutonomyUse        ApprovalType = "autonomy_use"
+	ApprovalFailureTriage      ApprovalType = "failure_triage"
 )
 
 // ApprovalRequest represents a request for human approval.

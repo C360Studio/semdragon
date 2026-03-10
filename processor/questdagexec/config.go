@@ -34,6 +34,13 @@ type Config struct {
 	// TaskMessages.
 	StreamName string `json:"stream_name"`
 
+	// TriageEnabled activates DM triage at the DAG node exhaustion boundary.
+	// When true, nodes that exhaust MaxRetriesPerNode transition to
+	// pending_triage instead of immediately escalating the parent quest.
+	// The questboard's triage watcher processes the triage decision and
+	// either reposts (salvage/tpk) or fails/escalates the sub-quest.
+	TriageEnabled bool `json:"triage_enabled"`
+
 	// Domain selects a DomainCatalog for review prompt assembly (optional).
 	Domain string `json:"domain,omitempty"`
 }

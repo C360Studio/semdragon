@@ -62,6 +62,13 @@ const (
 	// The lead receives the question via the AGENT stream and provides an answer.
 	// The node transitions back to NodeAssigned after the lead responds.
 	NodeAwaitingClarification = "awaiting_clarification"
+
+	// NodePendingTriage means the sub-quest exhausted retries and is awaiting
+	// DM triage (the questboard FailQuest route sent it to pending_triage).
+	// The DAG pauses this node until triage completes — salvage/tpk reposts
+	// the sub-quest (→ posted transition triggers reassignment), escalate or
+	// terminal causes parent escalation.
+	NodePendingTriage = "pending_triage"
 )
 
 // =============================================================================

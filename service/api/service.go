@@ -393,6 +393,7 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("POST "+prefix+"dm/chat", cors(requireAuth(apiKey, s.handleDMChat)))
 	mux.HandleFunc("GET "+prefix+"dm/sessions/{id}", cors(s.handleGetDMSession))
 	mux.HandleFunc("POST "+prefix+"dm/intervene/{questId}", cors(requireAuth(apiKey, s.handleDMIntervene)))
+	mux.HandleFunc("POST "+prefix+"dm/triage/{questId}", cors(requireAuth(apiKey, s.handleDMTriage)))
 
 	// Peer Reviews
 	mux.HandleFunc("POST "+prefix+"reviews", cors(requireAuth(apiKey, s.handleCreateReview)))

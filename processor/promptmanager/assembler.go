@@ -81,6 +81,33 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		usedIDs = append(usedIDs, "peer-feedback-warnings")
 	}
 
+	// Inject failure recovery context when a quest has been triaged after previous failures.
+	// This gives the agent explicit knowledge of what went wrong and what to build on.
+	if len(ctx.FailureHistory) > 0 {
+		var recovery strings.Builder
+		recovery.WriteString("IMPORTANT: This quest has been attempted before and failed. Learn from previous failures:\n")
+		for _, fh := range ctx.FailureHistory {
+			recovery.WriteString(fmt.Sprintf("\n--- Attempt %d (failed: %s) ---\n%s\n", fh.Attempt, fh.FailureType, fh.FailureReason))
+			if fh.TriageVerdict != "" {
+				recovery.WriteString(fmt.Sprintf("DM Assessment: %s\n", fh.TriageVerdict))
+			}
+		}
+		if ctx.FailureAnalysis != "" {
+			recovery.WriteString(fmt.Sprintf("\nDM Failure Analysis: %s\n", ctx.FailureAnalysis))
+		}
+		if ctx.SalvagedOutput != "" {
+			recovery.WriteString(fmt.Sprintf("\nSalvaged Work (from previous attempt — build on this, do NOT redo it):\n%s\n", ctx.SalvagedOutput))
+		}
+		if len(ctx.AntiPatterns) > 0 {
+			recovery.WriteString("\nDO NOT repeat these mistakes:\n")
+			for _, ap := range ctx.AntiPatterns {
+				recovery.WriteString(fmt.Sprintf("- %s\n", ap))
+			}
+		}
+		sections = append(sections, formatSection("Failure Recovery", recovery.String(), style))
+		usedIDs = append(usedIDs, "failure-recovery-context")
+	}
+
 	// Inject dependency outputs from completed predecessor DAG nodes.
 	// These appear before clarifications and agent overrides so the agent
 	// knows what predecessor steps produced.
@@ -203,6 +230,8 @@ func categoryLabel(cat FragmentCategory) string {
 		return "Tier Guardrails"
 	case CategoryPeerFeedback:
 		return "Peer Feedback"
+	case CategoryFailureRecovery:
+		return "Failure Recovery"
 	case CategorySkillContext:
 		return "Skills"
 	case CategoryGuildKnowledge:

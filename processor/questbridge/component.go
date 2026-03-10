@@ -30,6 +30,12 @@ type SubQuestPoster interface {
 	PostSubQuests(ctx context.Context, parentID domain.QuestID, subQuests []domain.Quest, decomposer domain.AgentID) ([]domain.Quest, error)
 }
 
+// QuestFailer is the narrow interface questbridge needs from questboard
+// to delegate failure transitions through the triage gate.
+type QuestFailer interface {
+	FailQuest(ctx context.Context, questID domain.QuestID, reason string) error
+}
+
 // ClarificationAnswerer abstracts LLM inference for auto-DM clarification answering.
 // The default implementation uses the model registry's "dm-chat" capability
 // with a simple OpenAI-compatible HTTP call.
@@ -77,6 +83,10 @@ type Component struct {
 	// questBoard posts sub-quests when a lead agent completes a DAG decomposition.
 	// Optional: nil means DAG output from party quests is treated as normal output.
 	questBoard SubQuestPoster
+
+	// questFailer delegates quest failure transitions to questboard for triage.
+	// Optional: nil means questbridge sets QuestFailed directly (legacy path).
+	questFailer QuestFailer
 
 	// clarificationAnswerer auto-answers agent clarification questions when DMMode
 	// is full_auto. Optional: nil means escalated quests wait for human DM response.
@@ -365,6 +375,16 @@ func (c *Component) SetQuestBoard(qb SubQuestPoster) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.questBoard = qb
+}
+
+// SetQuestFailer injects the quest failure handler for triage delegation.
+// When set, questbridge delegates failure transitions to questboard's FailQuest
+// which routes through the triage gate. When nil, questbridge sets QuestFailed directly.
+// Safe to call before or after Start.
+func (c *Component) SetQuestFailer(qf QuestFailer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.questFailer = qf
 }
 
 // SetClarificationAnswerer injects the auto-DM answerer. When set and DMMode

@@ -81,6 +81,8 @@ type usage struct {
 var (
 	reChain      = regexp.MustCompile(`(?i)chain|multiple.*quest`)
 	reQuestBrief = regexp.MustCompile(`(?i)create.*quest|quest.*brief|build|analyze`)
+	// Matches the DM triage system prompt which contains "recovery path" or "triage".
+	reTriage = regexp.MustCompile(`(?i)recovery path.*salvage|triage.*retry`)
 	// Matches sub-quest entity IDs in prompts like: sub-quest "org.plat.game.board.quest.abc"
 	reSubQuestID = regexp.MustCompile(`sub-quest\s+"([^"]+)"`)
 )
@@ -137,7 +139,13 @@ func route(req chatRequest) chatResponse {
 		return routeToolCall(req.Tools, req.Messages)
 	}
 
-	// DM chat path: pattern-match on the last user message.
+	// DM chat path: check system prompt first for triage requests,
+	// then pattern-match on the last user message.
+	sysPrompt := systemMessage(req.Messages)
+	if reTriage.MatchString(sysPrompt) {
+		return completionResponse(triageResponse)
+	}
+
 	lastUser := lastUserMessage(req.Messages)
 	if reChain.MatchString(lastUser) {
 		return completionResponse(questChainResponse)
@@ -243,6 +251,19 @@ func hasToolResults(msgs []requestMsg) bool {
 		}
 	}
 	return false
+}
+
+// systemMessage returns the content of the first system-role message,
+// or an empty string if none is present.
+func systemMessage(msgs []requestMsg) string {
+	for _, m := range msgs {
+		if m.Role == "system" {
+			if s, ok := m.Content.(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // lastUserMessage returns the content string of the last user-role message,
