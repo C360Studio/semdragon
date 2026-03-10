@@ -12,15 +12,15 @@ Trust is earned through leveling. Specialization happens through guilds. Coordin
 
 ```bash
 # 1. Explore with mock LLM (no API key needed)
-make up
+task docker:up
 open http://localhost
 
 # 2. Or use a real provider — pick one:
 cp .env.example .env           # then set your API key
-make up-gemini                 # GEMINI_API_KEY
-make up-anthropic              # ANTHROPIC_API_KEY
-make up-openai                 # OPENAI_API_KEY
-make up-ollama                 # local, no key needed
+task docker:up:gemini          # GEMINI_API_KEY
+task docker:up:anthropic       # ANTHROPIC_API_KEY
+task docker:up:openai          # OPENAI_API_KEY
+task docker:up:ollama          # local, no key needed
 
 # 3. Post a quest and watch agents work
 curl -s -X POST http://localhost/game/quests \
@@ -28,7 +28,7 @@ curl -s -X POST http://localhost/game/quests \
   -d '{"objective": "Write a hello world function", "difficulty": 0}'
 
 # 4. Stop
-make down
+task docker:down
 ```
 
 See [Getting Started](docs/01-GETTING-STARTED.md) for prerequisites, environment variables, and a full walkthrough.
@@ -62,7 +62,8 @@ See [Getting Started](docs/01-GETTING-STARTED.md) for prerequisites, environment
 ```
 ┌─────────────────────────────────────────────────┐
 │              SVELTE DASHBOARD (:5173)            │
-│     (quests, agents, battles, store, guilds)     │
+│  (quests, agents, battles, store, guilds,        │
+│   settings, graph, trajectories)                 │
 ├─────────────────────────────────────────────────┤
 │            REST API  (:8080/game/)                 │
 │   quests · agents · battles · store · world      │
@@ -99,23 +100,24 @@ See [Getting Started](docs/01-GETTING-STARTED.md) for prerequisites, environment
 ## Development
 
 ```bash
-make build                    # Build all packages
-make test                     # Unit tests only (no Docker)
-make test-integration         # Integration tests (requires Docker)
-make test-all                 # All tests
-make lint                     # revive + go vet
-make check                    # fmt, tidy, lint, test-all
-make e2e                      # Full E2E suite (Playwright + Docker)
+task build                    # Build all packages
+task test                     # Unit tests only (no Docker)
+task test:integration         # Integration tests (requires Docker)
+task test:all                 # All tests
+task lint                     # revive + go vet
+task check                    # fmt, tidy, lint, test-all
+task e2e                      # Full E2E suite (Playwright + Docker)
 ```
 
 ## Project Structure
 
 ```
 semdragons/
-├── docker-compose.yml      # Full stack: nats + mockllm + backend + ui
-├── docker-compose.cloud.yml  # Cloud LLM override (Gemini/Anthropic/OpenAI)
-├── docker-compose.ollama.yml # Local Ollama override
-├── docker/                 # Dockerfiles + infrastructure config
+├── Taskfile.yml            # Task runner (build, test, docker, e2e targets)
+├── docker/                 # Compose files, Dockerfiles, infrastructure config
+│   ├── compose.yml         #   Full stack: nats + mockllm + backend + ui
+│   ├── Caddyfile           #   Reverse proxy config
+│   ├── ui.Dockerfile       #   SvelteKit production build
 │   ├── backend.Dockerfile  #   Multi-stage Go build
 │   ├── mockllm.Dockerfile  #   Mock LLM server
 │   └── nats-server.conf    #   NATS JetStream config
@@ -147,8 +149,9 @@ semdragons/
 │   └── tokenbudget/        #   Token budget tracking for context management
 ├── service/api/            # REST API handlers
 ├── ui/                     # SvelteKit 5 dashboard + Playwright E2E
-│   ├── src/routes/         #   Pages: agents, quests, battles, store, guilds
-│   └── e2e/specs/          #   27 Playwright specs
+│   ├── src/routes/         #   Pages: agents, quests, battles, store, guilds,
+│   │                       #         settings, graph, trajectories, workspace, parties
+│   └── e2e/specs/          #   Playwright E2E specs
 ├── docs/                   # Numbered guides (01-08) + adr/ for architecture decisions
 └── *.go                    # Core types, entity IDs, graph client, vocab
 ```

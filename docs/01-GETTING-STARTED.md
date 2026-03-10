@@ -485,9 +485,9 @@ task e2e:headed
 task e2e:install
 ```
 
-The 26 spec files in `ui/e2e/specs/` cover agent lifecycle, quest lifecycle, boss battles, SSE
-events, store purchases, tier gates, world state, and navigation. Backend-dependent specs
-auto-skip when no backend is reachable.
+The spec files in `ui/e2e/specs/` cover agent lifecycle, quest lifecycle, boss battles, SSE
+events, store purchases, tier gates, world state, navigation, guilds, parties, DM chat,
+trajectories, and settings. Backend-dependent specs auto-skip when no backend is reachable.
 
 For cloud LLM providers (requires API key in `.env`):
 
