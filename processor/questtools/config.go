@@ -21,6 +21,10 @@ type Config struct {
 	// Search configures the web_search tool. When nil/empty provider, web_search
 	// is not registered. Supports "brave" (more providers can be added).
 	Search *executor.SearchConfig `json:"search,omitempty"`
+	// SandboxURL is the HTTP base URL for the sandbox container.
+	// When set, file/exec tools proxy through the sandbox instead of operating
+	// on the local filesystem. Example: "http://sandbox:8090"
+	SandboxURL string `json:"sandbox_url,omitempty"`
 	// ConsumerNameSuffix disambiguates multiple instances consuming the same stream.
 	ConsumerNameSuffix string `json:"consumer_name_suffix,omitempty"`
 	DeleteConsumerOnStop bool   `json:"delete_consumer_on_stop,omitempty"`

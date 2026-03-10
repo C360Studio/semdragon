@@ -208,6 +208,49 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 			},
 
+			// ── Quest Artifacts ──────────────────────────────────
+			"/quests/{id}/artifacts": {
+				GET: &service.OperationSpec{
+					Summary:     "Download quest artifacts",
+					Description: "Downloads all artifact files for a quest as a zip archive. Includes a manifest.json with quest metadata at the root of the archive.",
+					Tags:        []string{"Quest Artifacts"},
+					Parameters:  []service.ParameterSpec{questIDParam},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Zip archive of quest artifacts", ContentType: "application/zip"},
+						"404": {Description: "Quest or artifacts not found"},
+						"503": {Description: "Artifact storage not available"},
+					},
+				},
+			},
+			"/quests/{id}/artifacts/list": {
+				GET: &service.OperationSpec{
+					Summary:     "List quest artifact files",
+					Description: "Returns a JSON list of artifact file paths for a quest.",
+					Tags:        []string{"Quest Artifacts"},
+					Parameters:  []service.ParameterSpec{questIDParam},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "List of artifact files", ContentType: "application/json"},
+						"503": {Description: "Artifact storage not available"},
+					},
+				},
+			},
+			"/quests/{id}/artifacts/{path}": {
+				GET: &service.OperationSpec{
+					Summary:     "Get single artifact file",
+					Description: "Serves a single artifact file by path within the quest's artifact storage.",
+					Tags:        []string{"Quest Artifacts"},
+					Parameters: []service.ParameterSpec{
+						questIDParam,
+						{Name: "path", In: "path", Required: true, Description: "File path within quest artifacts", Schema: service.Schema{Type: "string"}},
+					},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Artifact file content"},
+						"404": {Description: "Artifact not found"},
+						"503": {Description: "Artifact storage not available"},
+					},
+				},
+			},
+
 			// ── Agents ───────────────────────────────────────────
 			"/agents": {
 				GET: &service.OperationSpec{
@@ -723,6 +766,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			{Name: "World", Description: "Game world state"},
 			{Name: "Quests", Description: "Quest board operations"},
 			{Name: "Quest Lifecycle", Description: "Quest state transitions (claim, start, submit, complete, fail, abandon)"},
+			{Name: "Quest Artifacts", Description: "Quest artifact file storage and retrieval"},
 			{Name: "Agents", Description: "Agent management"},
 			{Name: "Peer Reviews", Description: "Blind peer review between party members"},
 			{Name: "Battles", Description: "Boss battle (automated review) operations"},

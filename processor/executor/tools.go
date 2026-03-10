@@ -69,6 +69,335 @@ type RegisteredTool struct {
 	MinTier    domain.TrustTier       // Minimum trust tier to use
 }
 
+// toolSpec holds the shared metadata for a tool registration.
+// Both RegisterBuiltins and RegisterSandboxTools use these specs,
+// supplying different Handler implementations.
+type toolSpec struct {
+	Definition agentic.ToolDefinition
+	MinTier    domain.TrustTier
+	Skills     []domain.SkillTag
+}
+
+// Shared tool specs — single source of truth for definition, tier, and skills.
+// Handlers are provided separately by RegisterBuiltins (local OS) and
+// RegisterSandboxTools (proxied through a SandboxClient).
+
+var readFileSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "read_file",
+		Description: "Read the contents of a file from the filesystem",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "The file path to read",
+				},
+			},
+			"required": []any{"path"},
+		},
+	},
+	MinTier: domain.TierApprentice, // Read-only — all tiers can read files
+}
+
+var readFileRangeSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "read_file_range",
+		Description: "Read a specific line range from a file. Useful for navigating large files.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "The file path to read",
+				},
+				"start_line": map[string]any{
+					"type":        "integer",
+					"description": "First line to read (1-based)",
+				},
+				"end_line": map[string]any{
+					"type":        "integer",
+					"description": "Last line to read inclusive (defaults to start_line + 100)",
+				},
+			},
+			"required": []any{"path", "start_line"},
+		},
+	},
+	MinTier: domain.TierApprentice, // Read-only — all tiers can read file ranges
+}
+
+var writeFileSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "write_file",
+		Description: "Write content to a file on the filesystem",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "The file path to write to",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "The content to write to the file",
+				},
+			},
+			"required": []any{"path", "content"},
+		},
+	},
+	Skills:  []domain.SkillTag{domain.SkillCodeGen},
+	MinTier: domain.TierExpert, // Level 11+ can write files (production capability)
+}
+
+var patchFileSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "patch_file",
+		Description: "Apply a targeted find-and-replace edit to a file. More precise than write_file for small changes.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "The file path to edit",
+				},
+				"old_text": map[string]any{
+					"type":        "string",
+					"description": "The exact text to find in the file",
+				},
+				"new_text": map[string]any{
+					"type":        "string",
+					"description": "The replacement text",
+				},
+			},
+			"required": []any{"path", "old_text", "new_text"},
+		},
+	},
+	Skills:  []domain.SkillTag{domain.SkillCodeGen},
+	MinTier: domain.TierJourneyman, // Level 6+ — targeted edits require some trust
+}
+
+var deleteFileSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "delete_file",
+		Description: "Delete a single file within the sandbox. Does not delete directories.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "The file path to delete",
+				},
+			},
+			"required": []any{"path"},
+		},
+	},
+	Skills:  []domain.SkillTag{domain.SkillCodeGen},
+	MinTier: domain.TierJourneyman, // Level 6+ — destructive operations require trust
+}
+
+var renameFileSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "rename_file",
+		Description: "Move or rename a file within the sandbox. Both source and destination must be within the sandbox.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"old_path": map[string]any{
+					"type":        "string",
+					"description": "The current file path",
+				},
+				"new_path": map[string]any{
+					"type":        "string",
+					"description": "The target file path",
+				},
+			},
+			"required": []any{"old_path", "new_path"},
+		},
+	},
+	Skills:  []domain.SkillTag{domain.SkillCodeGen},
+	MinTier: domain.TierJourneyman, // Level 6+ — filesystem writes require trust
+}
+
+var createDirectorySpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "create_directory",
+		Description: "Create a directory (and any missing parents) within the sandbox.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "The directory path to create",
+				},
+			},
+			"required": []any{"path"},
+		},
+	},
+	Skills:  []domain.SkillTag{domain.SkillCodeGen},
+	MinTier: domain.TierJourneyman, // Level 6+ — filesystem writes require trust
+}
+
+var listDirectorySpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "list_directory",
+		Description: "List the contents of a directory",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "The directory path to list",
+				},
+			},
+			"required": []any{"path"},
+		},
+	},
+	MinTier: domain.TierApprentice, // Read-only — all tiers can list directories
+}
+
+var globFilesSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "glob_files",
+		Description: "Find files by glob pattern within the sandbox. Supports ** for recursive matching.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"pattern": map[string]any{
+					"type":        "string",
+					"description": "Glob pattern to match, e.g. '**/*.go' or 'src/**/*.ts'",
+				},
+				"path": map[string]any{
+					"type":        "string",
+					"description": "Base directory to search from. Defaults to sandbox root.",
+				},
+			},
+			"required": []any{"pattern"},
+		},
+	},
+	MinTier: domain.TierApprentice, // Read-only — all tiers can search for files
+}
+
+var searchTextSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "search_text",
+		Description: "Search for text patterns in files",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"pattern": map[string]any{
+					"type":        "string",
+					"description": "The text pattern to search for",
+				},
+				"path": map[string]any{
+					"type":        "string",
+					"description": "The file or directory to search in",
+				},
+				"file_glob": map[string]any{
+					"type":        "string",
+					"description": "Optional glob pattern to filter files (e.g. '*.go', '*.ts')",
+				},
+				"context_lines": map[string]any{
+					"type":        "integer",
+					"description": "Number of lines of context before and after each match (default 0, max 5)",
+				},
+				"regex": map[string]any{
+					"type":        "boolean",
+					"description": "Treat pattern as a regular expression instead of a literal string (default false)",
+				},
+			},
+			"required": []any{"pattern", "path"},
+		},
+	},
+	MinTier: domain.TierApprentice, // Read-only — all tiers can search files
+}
+
+var runTestsSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "run_tests",
+		Description: "Run a test command in the workspace directory and return the output. Use for validating changes.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"command": map[string]any{
+					"type":        "string",
+					"description": "The test command to run (e.g. 'go test ./...', 'npm test', 'pytest')",
+				},
+			},
+			"required": []any{"command"},
+		},
+	},
+	Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
+	MinTier: domain.TierExpert, // Level 11+ — test execution is a production capability
+}
+
+var lintCheckSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "lint_check",
+		Description: "Run a linter and return the output. Supports common linters across Go, JS/TS, Python, and Rust.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"command": map[string]any{
+					"type":        "string",
+					"description": "The lint command to run (e.g. 'go vet ./...', 'golangci-lint run', 'eslint src/')",
+				},
+			},
+			"required": []any{"command"},
+		},
+	},
+	Skills:  []domain.SkillTag{domain.SkillCodeReview},
+	MinTier: domain.TierExpert, // Level 11+ — lint execution is a production capability
+}
+
+var runCommandSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "run_command",
+		Description: "Run an arbitrary shell command in the workspace directory. Use responsibly — this has full shell access within the sandbox.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"command": map[string]any{
+					"type":        "string",
+					"description": "The shell command to execute",
+				},
+			},
+			"required": []any{"command"},
+		},
+	},
+	MinTier: domain.TierMaster, // Level 16+ — unrestricted shell requires high trust
+}
+
+var httpRequestSpec = toolSpec{
+	Definition: agentic.ToolDefinition{
+		Name:        "http_request",
+		Description: "Make an HTTP request to a URL. Supports GET and POST methods.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"url": map[string]any{
+					"type":        "string",
+					"description": "The URL to request",
+				},
+				"method": map[string]any{
+					"type":        "string",
+					"description": "HTTP method (GET or POST). Defaults to GET.",
+					"enum":        []any{"GET", "POST"},
+				},
+				"body": map[string]any{
+					"type":        "string",
+					"description": "Request body (for POST requests)",
+				},
+				"content_type": map[string]any{
+					"type":        "string",
+					"description": "Content-Type header value (for POST requests). Defaults to application/json.",
+				},
+			},
+			"required": []any{"url"},
+		},
+	},
+	MinTier: domain.TierJourneyman, // Level 6+ — network access requires trust
+}
+
 // ToolRegistry manages available tools for agent execution.
 type ToolRegistry struct {
 	mu         sync.RWMutex
@@ -299,333 +628,101 @@ func getSandboxDir(call agentic.ToolCall) string {
 // RegisterBuiltins adds the standard built-in tools to the registry.
 func (r *ToolRegistry) RegisterBuiltins() {
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "read_file",
-			Description: "Read the contents of a file from the filesystem",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"path": map[string]any{
-						"type":        "string",
-						"description": "The file path to read",
-					},
-				},
-				"required": []any{"path"},
-			},
-		},
-		Handler: readFileHandler,
-		MinTier: domain.TierApprentice, // Read-only — all tiers can read files
+		Definition: readFileSpec.Definition,
+		Handler:    readFileHandler,
+		Skills:     readFileSpec.Skills,
+		MinTier:    readFileSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "write_file",
-			Description: "Write content to a file on the filesystem",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"path": map[string]any{
-						"type":        "string",
-						"description": "The file path to write to",
-					},
-					"content": map[string]any{
-						"type":        "string",
-						"description": "The content to write to the file",
-					},
-				},
-				"required": []any{"path", "content"},
-			},
-		},
-		Handler: writeFileHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen},
-		MinTier: domain.TierExpert, // Level 11+ can write files (production capability)
+		Definition: readFileRangeSpec.Definition,
+		Handler:    readFileRangeHandler,
+		Skills:     readFileRangeSpec.Skills,
+		MinTier:    readFileRangeSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "list_directory",
-			Description: "List the contents of a directory",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"path": map[string]any{
-						"type":        "string",
-						"description": "The directory path to list",
-					},
-				},
-				"required": []any{"path"},
-			},
-		},
-		Handler: listDirectoryHandler,
-		MinTier: domain.TierApprentice, // Read-only — all tiers can list directories
+		Definition: writeFileSpec.Definition,
+		Handler:    writeFileHandler,
+		Skills:     writeFileSpec.Skills,
+		MinTier:    writeFileSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "glob_files",
-			Description: "Find files by glob pattern within the sandbox. Supports ** for recursive matching.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"pattern": map[string]any{
-						"type":        "string",
-						"description": "Glob pattern to match, e.g. '**/*.go' or 'src/**/*.ts'",
-					},
-					"path": map[string]any{
-						"type":        "string",
-						"description": "Base directory to search from. Defaults to sandbox root.",
-					},
-				},
-				"required": []any{"pattern"},
-			},
-		},
-		Handler: globFilesHandler,
-		MinTier: domain.TierApprentice, // Read-only — all tiers can search for files
+		Definition: patchFileSpec.Definition,
+		Handler:    patchFileHandler,
+		Skills:     patchFileSpec.Skills,
+		MinTier:    patchFileSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "read_file_range",
-			Description: "Read a specific line range from a file. Useful for navigating large files.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"path": map[string]any{
-						"type":        "string",
-						"description": "The file path to read",
-					},
-					"start_line": map[string]any{
-						"type":        "integer",
-						"description": "First line to read (1-based)",
-					},
-					"end_line": map[string]any{
-						"type":        "integer",
-						"description": "Last line to read inclusive (defaults to start_line + 100)",
-					},
-				},
-				"required": []any{"path", "start_line"},
-			},
-		},
-		Handler: readFileRangeHandler,
-		MinTier: domain.TierApprentice, // Read-only — all tiers can read file ranges
+		Definition: deleteFileSpec.Definition,
+		Handler:    deleteFileHandler,
+		Skills:     deleteFileSpec.Skills,
+		MinTier:    deleteFileSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "search_text",
-			Description: "Search for text patterns in files",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"pattern": map[string]any{
-						"type":        "string",
-						"description": "The text pattern to search for",
-					},
-					"path": map[string]any{
-						"type":        "string",
-						"description": "The file or directory to search in",
-					},
-					"file_glob": map[string]any{
-						"type":        "string",
-						"description": "Optional glob pattern to filter files (e.g. '*.go', '*.ts')",
-					},
-					"context_lines": map[string]any{
-						"type":        "integer",
-						"description": "Number of lines of context before and after each match (default 0, max 5)",
-					},
-					"regex": map[string]any{
-						"type":        "boolean",
-						"description": "Treat pattern as a regular expression instead of a literal string (default false)",
-					},
-				},
-				"required": []any{"pattern", "path"},
-			},
-		},
-		Handler: searchTextHandler,
-		MinTier: domain.TierApprentice, // Read-only — all tiers can search files
+		Definition: renameFileSpec.Definition,
+		Handler:    renameFileHandler,
+		Skills:     renameFileSpec.Skills,
+		MinTier:    renameFileSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "patch_file",
-			Description: "Apply a targeted find-and-replace edit to a file. More precise than write_file for small changes.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"path": map[string]any{
-						"type":        "string",
-						"description": "The file path to edit",
-					},
-					"old_text": map[string]any{
-						"type":        "string",
-						"description": "The exact text to find in the file",
-					},
-					"new_text": map[string]any{
-						"type":        "string",
-						"description": "The replacement text",
-					},
-				},
-				"required": []any{"path", "old_text", "new_text"},
-			},
-		},
-		Handler: patchFileHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen},
-		MinTier: domain.TierJourneyman, // Level 6+ — targeted edits require some trust
+		Definition: createDirectorySpec.Definition,
+		Handler:    createDirectoryHandler,
+		Skills:     createDirectorySpec.Skills,
+		MinTier:    createDirectorySpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "create_directory",
-			Description: "Create a directory (and any missing parents) within the sandbox.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"path": map[string]any{
-						"type":        "string",
-						"description": "The directory path to create",
-					},
-				},
-				"required": []any{"path"},
-			},
-		},
-		Handler: createDirectoryHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen},
-		MinTier: domain.TierJourneyman, // Level 6+ — filesystem writes require trust
+		Definition: listDirectorySpec.Definition,
+		Handler:    listDirectoryHandler,
+		Skills:     listDirectorySpec.Skills,
+		MinTier:    listDirectorySpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "delete_file",
-			Description: "Delete a single file within the sandbox. Does not delete directories.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"path": map[string]any{
-						"type":        "string",
-						"description": "The file path to delete",
-					},
-				},
-				"required": []any{"path"},
-			},
-		},
-		Handler: deleteFileHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen},
-		MinTier: domain.TierJourneyman, // Level 6+ — destructive operations require trust
+		Definition: globFilesSpec.Definition,
+		Handler:    globFilesHandler,
+		Skills:     globFilesSpec.Skills,
+		MinTier:    globFilesSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "rename_file",
-			Description: "Move or rename a file within the sandbox. Both source and destination must be within the sandbox.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"old_path": map[string]any{
-						"type":        "string",
-						"description": "The current file path",
-					},
-					"new_path": map[string]any{
-						"type":        "string",
-						"description": "The target file path",
-					},
-				},
-				"required": []any{"old_path", "new_path"},
-			},
-		},
-		Handler: renameFileHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen},
-		MinTier: domain.TierJourneyman, // Level 6+ — filesystem writes require trust
+		Definition: searchTextSpec.Definition,
+		Handler:    searchTextHandler,
+		Skills:     searchTextSpec.Skills,
+		MinTier:    searchTextSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "http_request",
-			Description: "Make an HTTP request to a URL. Supports GET and POST methods.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"url": map[string]any{
-						"type":        "string",
-						"description": "The URL to request",
-					},
-					"method": map[string]any{
-						"type":        "string",
-						"description": "HTTP method (GET or POST). Defaults to GET.",
-						"enum":        []any{"GET", "POST"},
-					},
-					"body": map[string]any{
-						"type":        "string",
-						"description": "Request body (for POST requests)",
-					},
-					"content_type": map[string]any{
-						"type":        "string",
-						"description": "Content-Type header value (for POST requests). Defaults to application/json.",
-					},
-				},
-				"required": []any{"url"},
-			},
-		},
-		Handler: httpRequestHandler,
-		MinTier: domain.TierJourneyman, // Level 6+ — network access requires trust
+		Definition: runTestsSpec.Definition,
+		Handler:    runTestsHandler,
+		Skills:     runTestsSpec.Skills,
+		MinTier:    runTestsSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "run_tests",
-			Description: "Run a test command in the workspace directory and return the output. Use for validating changes.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"command": map[string]any{
-						"type":        "string",
-						"description": "The test command to run (e.g. 'go test ./...', 'npm test', 'pytest')",
-					},
-				},
-				"required": []any{"command"},
-			},
-		},
-		Handler: runTestsHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
-		MinTier: domain.TierExpert, // Level 11+ — test execution is a production capability
+		Definition: lintCheckSpec.Definition,
+		Handler:    lintCheckHandler,
+		Skills:     lintCheckSpec.Skills,
+		MinTier:    lintCheckSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "lint_check",
-			Description: "Run a linter and return the output. Supports common linters across Go, JS/TS, Python, and Rust.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"command": map[string]any{
-						"type":        "string",
-						"description": "The lint command to run (e.g. 'go vet ./...', 'golangci-lint run', 'eslint src/')",
-					},
-				},
-				"required": []any{"command"},
-			},
-		},
-		Handler: lintCheckHandler,
-		Skills:  []domain.SkillTag{domain.SkillCodeReview},
-		MinTier: domain.TierExpert, // Level 11+ — lint execution is a production capability
+		Definition: runCommandSpec.Definition,
+		Handler:    runCommandHandler,
+		Skills:     runCommandSpec.Skills,
+		MinTier:    runCommandSpec.MinTier,
 	})
 
 	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
-			Name:        "run_command",
-			Description: "Run an arbitrary shell command in the workspace directory. Use responsibly — this has full shell access within the sandbox.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"command": map[string]any{
-						"type":        "string",
-						"description": "The shell command to execute",
-					},
-				},
-				"required": []any{"command"},
-			},
-		},
-		Handler: runCommandHandler,
-		MinTier: domain.TierMaster, // Level 16+ — unrestricted shell requires high trust
+		Definition: httpRequestSpec.Definition,
+		Handler:    httpRequestHandler,
+		Skills:     httpRequestSpec.Skills,
+		MinTier:    httpRequestSpec.MinTier,
 	})
 
 	// Terminal tools — these stop the agentic loop on successful execution.

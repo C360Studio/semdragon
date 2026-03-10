@@ -163,6 +163,14 @@ func (c *Component) Start(ctx context.Context) error {
 	if c.config.EnableBuiltins {
 		c.toolRegistry.RegisterBuiltins()
 	}
+	// When sandbox_url is configured, register sandbox-proxied versions of
+	// file/exec tools. These overwrite the local filesystem handlers from
+	// RegisterBuiltins while leaving terminal and DAG tools untouched.
+	if c.config.SandboxURL != "" {
+		sandboxClient := executor.NewSandboxClient(c.config.SandboxURL)
+		c.toolRegistry.RegisterSandboxTools(sandboxClient)
+		c.logger.Info("sandbox tools registered", "sandbox_url", c.config.SandboxURL)
+	}
 	if c.config.Search != nil && c.config.Search.Provider != "" {
 		sp, err := executor.NewSearchProvider(*c.config.Search)
 		if err != nil {
