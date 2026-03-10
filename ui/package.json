@@ -54,6 +54,10 @@
   "dependencies": {
     "@floating-ui/dom": "^1.7.4",
     "d3": "^7.9.0",
+    "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "graphology-types": "^0.24.8",
+    "sigma": "^3.0.2",
     "svelte-hero-icons": "^5.2.0"
   }
 }

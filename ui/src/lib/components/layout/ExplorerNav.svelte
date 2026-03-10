@@ -102,6 +102,10 @@
 			<span class="nav-icon">T</span>
 			<span class="nav-label">Trajectories</span>
 		</a>
+		<a href="/graph" class="nav-item" class:active={isActive('/graph')} data-testid="nav-graph">
+			<span class="nav-icon">K</span>
+			<span class="nav-label">Knowledge Graph</span>
+		</a>
 		<a href="/store" class="nav-item" class:active={isActive('/store')} data-testid="nav-store">
 			<span class="nav-icon">S</span>
 			<span class="nav-label">Store</span>
