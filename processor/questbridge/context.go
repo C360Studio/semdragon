@@ -10,6 +10,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semdragons/semsource"
 	pkgcontext "github.com/c360studio/semstreams/pkg/context"
 )
 
@@ -17,9 +18,10 @@ import (
 // It queries related entities (party, guild, parent quest) and formats them as
 // structured text that agents can understand when starting a quest.
 type entityKnowledgeBuilder struct {
-	graph       *semdragons.GraphClient
-	budgetToken int
-	logger      *slog.Logger
+	graph          *semdragons.GraphClient
+	budgetToken    int
+	logger         *slog.Logger
+	manifestClient *semsource.ManifestClient
 }
 
 // entityKnowledge is the result of building entity context.
@@ -57,6 +59,13 @@ func (b *entityKnowledgeBuilder) build(ctx context.Context, quest *domain.Quest,
 		if s, ids := b.formatGuildContext(ctx, agent); s != "" {
 			sections = append(sections, s)
 			entityIDs = append(entityIDs, ids...)
+		}
+	}
+
+	// Source manifest — what's available in the knowledge graph (best-effort, non-blocking)
+	if b.manifestClient != nil {
+		if s := b.manifestClient.FormatForPrompt(ctx); s != "" {
+			sections = append(sections, s)
 		}
 	}
 

@@ -14,6 +14,7 @@ import (
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/tokenbudget"
+	"github.com/c360studio/semdragons/semsource"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/natsclient"
@@ -91,6 +92,10 @@ type Component struct {
 	// clarificationAnswerer auto-answers agent clarification questions when DMMode
 	// is full_auto. Optional: nil means escalated quests wait for human DM response.
 	clarificationAnswerer ClarificationAnswerer
+
+	// Semsource manifest client for injecting graph knowledge into agent prompts.
+	// Optional: nil means manifest section is omitted from entity knowledge.
+	manifestClient *semsource.ManifestClient
 
 	// Board pause integration
 	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
@@ -414,6 +419,16 @@ func (c *Component) SetToolRegistrySource(src ToolRegistrySource) {
 		return
 	}
 	c.toolRegistrySource = src
+}
+
+// SetManifestClient injects the semsource manifest client for graph knowledge injection.
+// When set, agent prompts include a section describing what data sources are available
+// in the knowledge graph. Safe to call before or after Start — the reference is checked
+// lazily when building entity knowledge.
+func (c *Component) SetManifestClient(mc *semsource.ManifestClient) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.manifestClient = mc
 }
 
 // SetPauseChecker injects the board pause checker. When paused, quest

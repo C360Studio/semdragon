@@ -37,6 +37,7 @@ import (
 	"github.com/c360studio/semdragons/processor/questbridge"
 	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semdragons/processor/questtools"
+	"github.com/c360studio/semdragons/semsource"
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
 
@@ -162,7 +163,7 @@ func run() error {
 	}
 
 	// 11. Run application with signal handling
-	return runWithSignalHandling(ctx, manager, componentRegistry, cliCfg.ShutdownTimeout)
+	return runWithSignalHandling(ctx, manager, componentRegistry, cfg, cliCfg.ShutdownTimeout)
 }
 
 // parseCLI parses and validates CLI flags.
@@ -457,7 +458,7 @@ func configureAndCreateServices(
 }
 
 // runWithSignalHandling starts services and handles shutdown signals.
-func runWithSignalHandling(ctx context.Context, manager *service.Manager, registry *component.Registry, shutdownTimeout time.Duration) error {
+func runWithSignalHandling(ctx context.Context, manager *service.Manager, registry *component.Registry, cfg *config.Config, shutdownTimeout time.Duration) error {
 	signalCtx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
@@ -465,7 +466,7 @@ func runWithSignalHandling(ctx context.Context, manager *service.Manager, regist
 	// have their sibling references from the first tick. Components are
 	// already instantiated (in registry.instances) after service creation;
 	// SetPartyCoord/SetQuestBoard are safe to call before Start.
-	wireComponentCrossReferences(registry)
+	wireComponentCrossReferences(registry, cfg)
 
 	slog.Info("Starting all services")
 	if err := manager.StartAll(signalCtx); err != nil {
@@ -492,8 +493,8 @@ func runWithSignalHandling(ctx context.Context, manager *service.Manager, regist
 // wireComponentCrossReferences injects sibling component references after all
 // components have been instantiated by the component manager but before Start.
 // Wires: partycoord → questboard, questdagexec → questboard + partycoord,
-// questbridge → questboard, autonomy → agentstore + guildformation + dmapproval.
-func wireComponentCrossReferences(registry *component.Registry) {
+// questbridge → questboard + questtools + manifest, autonomy → agentstore + guildformation + dmapproval.
+func wireComponentCrossReferences(registry *component.Registry, cfg *config.Config) {
 	qb := registry.Component(questboard.ComponentName)
 	pc := registry.Component(partycoord.ComponentName)
 	dex := registry.Component(questdagexec.ComponentName)
@@ -554,6 +555,19 @@ func wireComponentCrossReferences(registry *component.Registry) {
 		}
 	}
 
+	// Wire questbridge → semsource manifest client (best-effort, non-blocking).
+	// Derives HTTP base URL from websocket_input component config.
+	if qbr != nil && cfg != nil {
+		if setter, ok := qbr.(*questbridge.Component); ok {
+			if wsURL := extractWebsocketURLFromConfig(cfg); wsURL != "" {
+				if mc := semsource.NewManifestClient(wsURL, slog.Default()); mc != nil {
+					setter.SetManifestClient(mc)
+					slog.Info("wired questbridge → semsource manifest", "ws_url", wsURL)
+				}
+			}
+		}
+	}
+
 	// Wire autonomy → agentstore, guildformation, dmapproval
 	auto := registry.Component(autonomy.ComponentName)
 	if auto != nil {
@@ -578,6 +592,24 @@ func wireComponentCrossReferences(registry *component.Registry) {
 			}
 		}
 	}
+}
+
+// extractWebsocketURLFromConfig extracts the websocket URL from the
+// websocket_input component config, if present and enabled.
+func extractWebsocketURLFromConfig(cfg *config.Config) string {
+	cc, exists := cfg.Components["websocket_input"]
+	if !exists || !cc.Enabled || len(cc.Config) == 0 {
+		return ""
+	}
+	var wsConfig struct {
+		Client struct {
+			URL string `json:"url"`
+		} `json:"client"`
+	}
+	if err := json.Unmarshal(cc.Config, &wsConfig); err != nil {
+		return ""
+	}
+	return wsConfig.Client.URL
 }
 
 // startPProfServer starts a pprof HTTP server on the given port.
