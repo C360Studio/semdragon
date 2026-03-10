@@ -43,13 +43,14 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	reg := NewPromptRegistry()
 	RegisterBuiltinFragments(reg)
 
-	// Expect exactly 4 built-in fragments:
+	// Expect exactly 5 built-in fragments:
 	//   - party lead tool directive
 	//   - party lead provider hint
 	//   - sub-quest executor directive
 	//   - solo agent scenario directive
-	if got := reg.FragmentCount(); got != 4 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 4", got)
+	//   - solo agent work output directive
+	if got := reg.FragmentCount(); got != 5 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 5", got)
 	}
 }
 

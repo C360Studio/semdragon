@@ -211,10 +211,17 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 		return e.fallback.Evaluate(ctx, battle, quest, output)
 	}
 
-	// Resolve checklist from catalog
+	// Resolve checklist from catalog, filtered by the quest's tier and skills.
+	// Items are skipped when the quest doesn't meet the item's MinTier or
+	// doesn't require the item's skills — e.g., "tests-included" won't
+	// penalize apprentice-tier quests or analysis-only quests.
 	var checklist []promptmanager.ChecklistItem
 	if e.catalog.ReviewConfig != nil {
-		checklist = e.catalog.ReviewConfig.StructuralChecklist
+		checklist = promptmanager.FilterChecklist(
+			e.catalog.ReviewConfig.StructuralChecklist,
+			quest.MinTier,
+			quest.RequiredSkills,
+		)
 	}
 
 	// Assemble the judge prompt using domain catalog

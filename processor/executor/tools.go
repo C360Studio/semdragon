@@ -634,13 +634,13 @@ func (r *ToolRegistry) RegisterBuiltins() {
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
 			Name:        "submit_work_product",
-			Description: "Submit your completed deliverable for review. Call this tool when your work is finished.",
+			Description: "Submit your FINISHED work (code, analysis, results) for review. Only call this when you have completed the actual work — never use this to ask questions, request information, or describe plans. Your deliverable will be graded by a reviewer.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"deliverable": map[string]any{
 						"type":        "string",
-						"description": "The completed work product content",
+						"description": "The completed work product — must contain actual code, analysis, or results, not questions or plans",
 					},
 					"summary": map[string]any{
 						"type":        "string",
@@ -657,7 +657,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
 			Name:        "ask_clarification",
-			Description: "Ask the quest issuer a clarifying question when you need more information before you can proceed.",
+			Description: "Ask the quest issuer a question when you need more information. Use this instead of submit_work_product when you have questions or are unsure how to proceed. You will NOT be penalized for asking questions — this is the correct way to request guidance.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1386,6 +1386,17 @@ func submitWorkProductHandler(_ context.Context, call agentic.ToolCall, _ *domai
 		return agentic.ToolResult{CallID: call.ID, Error: "deliverable argument is required and must be non-empty"}
 	}
 
+	// Reject deliverables that are actually questions — tell the agent to use
+	// the right tool so they don't get penalized by the reviewer.
+	if looksLikeQuestion(deliverable) {
+		return agentic.ToolResult{
+			CallID: call.ID,
+			Error: "Your deliverable appears to be a question or request for information, not completed work. " +
+				"Use the ask_clarification tool instead — you will NOT be penalized for asking questions. " +
+				"Only use submit_work_product when you have finished work (code, analysis, results) to submit.",
+		}
+	}
+
 	summary, _ := call.Arguments["summary"].(string)
 
 	result := map[string]string{
@@ -1402,6 +1413,76 @@ func submitWorkProductHandler(_ context.Context, call agentic.ToolCall, _ *domai
 		Content:  string(jsonBytes),
 		StopLoop: true,
 	}
+}
+
+// looksLikeQuestion detects deliverables that are actually questions or requests
+// for information rather than completed work. This catches agents (especially
+// smaller models) that use submit_work_product instead of ask_clarification.
+func looksLikeQuestion(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) == 0 {
+		return false
+	}
+
+	lower := strings.ToLower(trimmed)
+
+	// If it contains code fences, it's probably real work even if it also has questions.
+	if strings.Contains(lower, "```") {
+		return false
+	}
+
+	// Short submissions with question marks are likely questions, not work.
+	hasQuestion := strings.Contains(trimmed, "?")
+	isShort := len(trimmed) < 2000
+
+	if !hasQuestion || !isShort {
+		return false
+	}
+
+	// Check for question-asking phrases that indicate this isn't work output.
+	questionPhrases := []string{
+		"could you provide",
+		"could you clarify",
+		"can you provide",
+		"can you clarify",
+		"can you tell me",
+		"i need more information",
+		"i need to know",
+		"i need clarification",
+		"what is the",
+		"what are the",
+		"where is the",
+		"where can i find",
+		"how should i",
+		"how do i",
+		"please provide",
+		"please clarify",
+		"before i can proceed",
+		"before proceeding",
+		"i have some questions",
+		"i have a few questions",
+		"the following questions",
+	}
+	for _, phrase := range questionPhrases {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+
+	// Fallback: if majority of non-empty lines end with "?", it's a question.
+	lines := strings.Split(trimmed, "\n")
+	var nonEmpty, questions int
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		nonEmpty++
+		if strings.HasSuffix(line, "?") {
+			questions++
+		}
+	}
+	return nonEmpty > 0 && float64(questions)/float64(nonEmpty) > 0.5
 }
 
 func askClarificationHandler(_ context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {

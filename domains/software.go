@@ -59,8 +59,9 @@ var SoftwarePromptCatalog = promptmanager.DomainCatalog{
 
 	TierGuardrails: map[domain.TrustTier]string{
 		domain.TierApprentice: "You are a Junior Developer. Your capabilities are limited:\n" +
-			"- You may ONLY read, summarize, classify, and analyze code\n" +
+			"- You may read, analyze, and write code in a sandboxed environment\n" +
 			"- You may NOT write to production systems, deploy, or make financial decisions\n" +
+			"- When a task requires code, write the code — do not just describe what you would do\n" +
 			"- Ask for guidance when uncertain about scope\n" +
 			"- Focus on accuracy over speed",
 		domain.TierJourneyman: "You are a Mid-Level Developer. You have expanded capabilities:\n" +
@@ -108,10 +109,15 @@ var SoftwarePromptCatalog = promptmanager.DomainCatalog{
 			{ID: "judge-llm", Type: domain.JudgeLLM},
 		},
 		StructuralChecklist: []promptmanager.ChecklistItem{
-			{Name: "tests-included", Requirement: "All code changes must include corresponding tests. No untested code."},
-			{Name: "no-hardcoded-secrets", Requirement: "No hardcoded API keys, passwords, or secrets in source code."},
-			{Name: "error-handling", Requirement: "All errors must be handled or explicitly propagated. No silently swallowed errors."},
-			{Name: "no-debug-artifacts", Requirement: "No debug prints, TODO hacks, or commented-out code left in the submission."},
+			{
+				Name:           "tests-included",
+				Requirement:    "All code changes must include corresponding tests. No untested code.",
+				MinTier:        domain.TierJourneyman,
+				RequiredSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform},
+			},
+			{Name: "no-hardcoded-secrets", Requirement: "No hardcoded API keys, passwords, or secrets in source code.", RequiredSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform}},
+			{Name: "error-handling", Requirement: "All errors must be handled or explicitly propagated. No silently swallowed errors.", RequiredSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform}},
+			{Name: "no-debug-artifacts", Requirement: "No debug prints, TODO hacks, or commented-out code left in the submission.", RequiredSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform}},
 		},
 	},
 }

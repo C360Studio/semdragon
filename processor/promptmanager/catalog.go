@@ -82,4 +82,43 @@ type ChecklistItem struct {
 	Name string
 	// Requirement describes what must be true (e.g., "All code must include tests").
 	Requirement string
+	// MinTier is the minimum trust tier for this item to apply.
+	// Items with a higher MinTier than the agent's tier are skipped during
+	// both prompt injection and judge evaluation. Zero value (TierApprentice)
+	// means the item applies to all tiers.
+	MinTier domain.TrustTier
+	// RequiredSkills limits this item to quests that require at least one of
+	// these skills. Empty means the item applies regardless of quest skills.
+	// Example: "tests-included" only applies to quests requiring CodeGen.
+	RequiredSkills []domain.SkillTag
+}
+
+// FilterChecklist returns only the checklist items that apply given the quest's
+// tier and required skills. An item is included when:
+//   - The quest's tier meets or exceeds the item's MinTier, AND
+//   - The item has no RequiredSkills, OR the quest's skills overlap with them.
+func FilterChecklist(items []ChecklistItem, tier domain.TrustTier, questSkills []domain.SkillTag) []ChecklistItem {
+	var filtered []ChecklistItem
+	for _, item := range items {
+		if tier < item.MinTier {
+			continue
+		}
+		if len(item.RequiredSkills) > 0 && !skillsOverlap(item.RequiredSkills, questSkills) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+// skillsOverlap returns true if any skill in a appears in b.
+func skillsOverlap(a, b []domain.SkillTag) bool {
+	for _, sa := range a {
+		for _, sb := range b {
+			if sa == sb {
+				return true
+			}
+		}
+	}
+	return false
 }

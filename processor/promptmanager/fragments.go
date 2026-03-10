@@ -21,6 +21,8 @@ import (
 //     agents to complete work and submit results via [INTENT: work_product].
 //   - Solo agent scenario directive (CategoryToolDirective) — renders quest scenarios
 //     as a structured work plan for solo (non-party, non-sub-quest) agents.
+//   - Solo agent work output directive (CategoryToolDirective) — reinforces that all
+//     solo agents must submit finished work, not descriptions or plans.
 //   - Gemini/OpenAI tool enforcement hint (CategoryProviderHints) — reinforces
 //     immediate tool-call behaviour for providers that may otherwise respond with text.
 //
@@ -30,6 +32,7 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerPartyLeadProviderHints(r)
 	registerSubQuestExecutorDirective(r)
 	registerSoloAgentScenarioDirective(r)
+	registerSoloAgentWorkOutputDirective(r)
 }
 
 // partyLeadDirectiveBase is the mandatory tool-call instruction for party leads
@@ -140,12 +143,13 @@ const subQuestExecutorDirective = `You are executing a SUB-QUEST assigned to you
 
 COMPLETION RULES:
 1. Complete the task described in the quest objective.
-2. Use available tools (read_file, write_file, patch_file, etc.) as needed to do the work.
+2. Use available tools (read_file, write_file, patch_file, etc.) as needed to understand the context.
 3. When you have finished, respond with [INTENT: work_product] followed by your complete deliverable.
-4. Your deliverable should contain the actual work output — code, analysis, or results — not a description of what you did.
-5. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
-6. Do NOT explore endlessly. Complete the work in as few iterations as possible.
-7. If the task is simple enough to answer directly (e.g., write a function), respond immediately with [INTENT: work_product] and the result.`
+4. Your deliverable MUST contain the actual work output — code, analysis, or results — not a description of what you did.
+5. If the task requires code, include BOTH implementation AND tests directly in your deliverable. Your reviewer can only see what you include — they cannot access external files.
+6. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
+7. Do NOT explore endlessly. Complete the work in as few iterations as possible.
+8. If the task is simple enough to answer directly (e.g., write a function), respond immediately with [INTENT: work_product] and the result.`
 
 // isSubQuestExecutor returns true for agents working on sub-quests within a
 // party DAG (party members executing DAG nodes, not the lead).
@@ -222,5 +226,32 @@ func registerSoloAgentScenarioDirective(r *PromptRegistry) {
 		Priority:    10, // After party lead directive (0) but distinct
 		Condition:   isSoloAgentWithScenarios,
 		ContentFunc: buildSoloAgentScenarioDirective,
+	})
+}
+
+// soloAgentWorkOutputDirective reinforces that solo agents must produce actual
+// work products (code, analysis, results) — not descriptions or plans. This is
+// the solo-agent equivalent of subQuestExecutorDirective rule #4 and applies to
+// all solo agents regardless of whether they have scenarios.
+const soloAgentWorkOutputDirective = `COMPLETION RULES:
+1. Use available tools (read_file, etc.) to understand the task, then produce your deliverable.
+2. Your deliverable MUST be the finished work output — code, implementation, analysis, or results.
+3. Do NOT submit a description of what you would do. Do NOT submit a plan. Submit the completed work itself.
+4. If the task requires code, include BOTH the implementation AND tests in your deliverable. Your reviewer can only evaluate what you include in the deliverable text — they cannot access external files.
+5. Format code deliverables with clear sections (e.g., "## Implementation" and "## Tests") so your reviewer can assess completeness.
+6. Complete the work in as few iterations as possible — avoid unnecessary exploration.`
+
+// isSoloAgent returns true for agents that are NOT a party lead or sub-quest executor.
+func isSoloAgent(ctx AssemblyContext) bool {
+	return !ctx.PartyRequired && !ctx.IsSubQuest
+}
+
+func registerSoloAgentWorkOutputDirective(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:       "builtin.solo-agent.work-output-directive",
+		Category: CategoryToolDirective,
+		Content:  soloAgentWorkOutputDirective,
+		Priority: 15, // After scenario directive (10)
+		Condition: isSoloAgent,
 	})
 }

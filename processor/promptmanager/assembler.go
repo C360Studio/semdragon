@@ -104,6 +104,13 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 				recovery.WriteString(fmt.Sprintf("- %s\n", ap))
 			}
 		}
+		// If any previous failure looks like the agent submitted a question instead
+		// of work, remind them about the correct tool.
+		if failuresMentionNoWork(ctx.FailureHistory) {
+			recovery.WriteString("\nCRITICAL: Your previous submission was rejected because you submitted a question or request for information instead of completed work. ")
+			recovery.WriteString("If you need more information, use the ask_clarification tool — you will NOT be penalized. ")
+			recovery.WriteString("Only use submit_work_product when you have actual finished work (code, analysis, results) to deliver.\n")
+		}
 		sections = append(sections, formatSection("Failure Recovery", recovery.String(), style))
 		usedIDs = append(usedIDs, "failure-recovery-context")
 	}
@@ -187,11 +194,44 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 const responseFormatInstruction = `When you have completed your work, you MUST call the submit_work_product tool with your deliverable.
 When you need more information before you can proceed, call the ask_clarification tool with your question.
 
-Do NOT write your final answer as plain text — always use one of these tools to signal completion or request clarification.`
+DELIVERABLE RULES:
+- Your deliverable MUST contain the actual work output: code, implementation, analysis, or results.
+- Do NOT submit a description of what you would do or a plan to do it — submit the finished work itself.
+- If the task requires code, include the FULL source code AND tests directly in the deliverable text. Your reviewer can only see what you put in the deliverable — they cannot access external files.
+- Do NOT write your final answer as plain text — always use one of these tools to signal completion or request clarification.`
 
 // =============================================================================
 // INTERNAL HELPERS
 // =============================================================================
+
+// failuresMentionNoWork returns true if any failure reason indicates the agent
+// submitted a question or empty response instead of actual work. Used to inject
+// explicit tool guidance (use ask_clarification) into the retry prompt.
+func failuresMentionNoWork(failures []FailureHistorySummary) bool {
+	for _, f := range failures {
+		lower := strings.ToLower(f.FailureReason)
+		for _, phrase := range []string{
+			"submitted a question",
+			"submitted a request for",
+			"no code was",
+			"no work was",
+			"submission is empty",
+			"completely empty",
+			"did not provide any code",
+			"did not provide the requested",
+			"submitted a plan",
+			"asking for guidance",
+			"asking for instructions",
+			"request for information",
+			"request for more",
+		} {
+			if strings.Contains(lower, phrase) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // groupByCategory groups fragments into a map keyed by category.
 func groupByCategory(fragments []*PromptFragment) map[FragmentCategory][]*PromptFragment {

@@ -643,8 +643,17 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		case "work_product":
 			// Extract deliverable as the actual quest output (strip JSON envelope).
 			output = content
-			c.logger.Info("tool-based work product submission",
-				"quest_id", questID, "agent_id", mapping.AgentID)
+			// Safety net: some models (especially smaller ones) submit questions
+			// via submit_work_product instead of ask_clarification. Detect this
+			// and reroute to the clarification path so they aren't penalized.
+			if isOutputClarificationRequest(content) {
+				isClarification = true
+				c.logger.Warn("agent submitted question via submit_work_product, rerouting to clarification",
+					"quest_id", questID, "agent_id", mapping.AgentID)
+			} else {
+				c.logger.Info("tool-based work product submission",
+					"quest_id", questID, "agent_id", mapping.AgentID)
+			}
 		case "clarification":
 			// Extract question as the quest output and signal clarification routing.
 			output = content
@@ -1627,9 +1636,14 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 	}
 
 	// Inject structural checklist from domain catalog so agents self-check before submitting.
+	// Filtered by quest tier and skills — agents only see requirements relevant to their work.
 	var checklist []promptmanager.ChecklistItem
 	if c.config.DomainCatalog != nil && c.config.DomainCatalog.ReviewConfig != nil {
-		checklist = c.config.DomainCatalog.ReviewConfig.StructuralChecklist
+		checklist = promptmanager.FilterChecklist(
+			c.config.DomainCatalog.ReviewConfig.StructuralChecklist,
+			quest.MinTier,
+			quest.RequiredSkills,
+		)
 	}
 
 	assemblyCtx := promptmanager.AssemblyContext{
