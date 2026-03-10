@@ -7,7 +7,7 @@ services:
     command: ["--config", "/etc/nats/nats-server.conf"]
     volumes:
       - nats-data:/data
-      - ./docker/nats-server.conf:/etc/nats/nats-server.conf:ro
+      - ./nats-server.conf:/etc/nats/nats-server.conf:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
@@ -18,7 +18,7 @@ services:
   mockllm:
     profiles: ["mock"]
     build:
-      context: .
+      context: ..
       dockerfile: docker/mockllm.Dockerfile
     ports:
       - "9090:9090"
@@ -30,7 +30,7 @@ services:
 
   backend:
     build:
-      context: .
+      context: ..
       dockerfile: docker/backend.Dockerfile
     depends_on:
       nats:
@@ -41,6 +41,7 @@ services:
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
       SEMDRAGONS_CONFIG: /etc/semdragons/${SEMDRAGONS_E2E_CONFIG:-semdragons-e2e.json}
+      SEMDRAGONS_LOG_LEVEL: "${SEMDRAGONS_LOG_LEVEL:-info}"
       SEED_E2E: "${SEED_E2E:-false}"
       SEED_AGENTS: "${SEED_AGENTS:-true}"
       SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
@@ -49,6 +50,8 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       SEMDRAGONS_DEBUG: "${SEMDRAGONS_DEBUG:-false}"
       SEMDRAGONS_DEBUG_PORT: "6060"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${BACKEND_PORT:-8081}:8080"
       - "36060:6060"
@@ -63,8 +66,8 @@ services:
 
   ui:
     build:
-      context: ./ui
-      dockerfile: Dockerfile
+      context: ../ui
+      dockerfile: ../docker/ui.Dockerfile
     depends_on:
       backend:
         condition: service_healthy
@@ -74,8 +77,8 @@ services:
     ports:
       - "5173:5173"
     volumes:
-      - ./ui/src:/app/src:ro
-      - ./ui/static:/app/static:ro
+      - ../ui/src:/app/src:ro
+      - ../ui/static:/app/static:ro
     stdin_open: true
     tty: true
 
@@ -87,7 +90,7 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
     restart: unless-stopped
 
 volumes:

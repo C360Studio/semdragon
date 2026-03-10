@@ -9,6 +9,7 @@ served separately. Docker Compose is the fastest path to a running system.
 Go 1.25+            go version
 Docker + Compose    docker --version && docker compose version
 Node.js 22+         node --version
+go-task             brew install go-task (or https://taskfile.dev/installation)
 revive              go install github.com/mgechev/revive@latest
 goimports           go install golang.org/x/tools/cmd/goimports@latest
 ```
@@ -33,7 +34,7 @@ route lower-tier agents to cheaper models.
 
 ## Quick Start with Docker Compose
 
-The root `docker-compose.yml` starts five containers:
+The `docker/compose.yml` starts five containers:
 
 | Service | Image | Ports | Purpose |
 |---------|-------|-------|---------|
@@ -49,7 +50,7 @@ same-origin. SSE events stream without buffering via `flush_interval -1`.
 ### Option A: Mock LLM (no API key)
 
 ```bash
-make up
+task docker:up
 open http://localhost
 ```
 
@@ -66,9 +67,9 @@ cp .env.example .env
 Then start with the matching command:
 
 ```bash
-make up-gemini       # requires GEMINI_API_KEY in .env
-make up-anthropic    # requires ANTHROPIC_API_KEY in .env
-make up-openai       # requires OPENAI_API_KEY in .env
+task docker:up:gemini       # requires GEMINI_API_KEY in .env
+task docker:up:anthropic    # requires ANTHROPIC_API_KEY in .env
+task docker:up:openai       # requires OPENAI_API_KEY in .env
 ```
 
 Each command loads the correct model config for that provider automatically.
@@ -80,7 +81,7 @@ etc. Copy one of the E2E config files (e.g. `config/semdragons-e2e-openai.json`)
 the `model_registry.endpoints` section to point at your service, and start with:
 
 ```bash
-SEMDRAGONS_E2E_CONFIG=my-config.json make up-cloud
+SEMDRAGONS_E2E_CONFIG=my-config.json task docker:up:openai
 ```
 
 See [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md#custom--self-hosted-openai-compatible) for
@@ -90,13 +91,13 @@ endpoint format details.
 
 ```bash
 ollama serve && ollama pull qwen2.5-coder:7b
-make up-ollama
+task docker:up:ollama
 ```
 
 ### Stopping
 
 ```bash
-make down
+task docker:down
 ```
 
 Environment variables (set in `.env` or inline):
@@ -123,7 +124,7 @@ sets `sandbox_dir: "/workspace"` on both `questbridge` and `questtools`, so agen
 confined to that mount.
 
 ```yaml
-# From docker-compose.yml (backend service)
+# From docker/compose.yml (backend service)
 volumes:
   - ${WORKSPACE:-./.workspace}:/workspace
 ```
@@ -131,7 +132,7 @@ volumes:
 To give agents access to your project files:
 
 ```bash
-WORKSPACE=./my-project make up-cloud
+WORKSPACE=./my-project task docker:up:gemini
 ```
 
 Without the `WORKSPACE` variable, a default `.workspace/` directory is created and mounted.
@@ -343,14 +344,14 @@ fragments gated by trust tier and skill). See [06-DOMAINS.md](06-DOMAINS.md) for
 ## Running Tests
 
 ```bash
-make test                     # Unit tests only (no Docker)
-make test-integration         # Integration tests (requires Docker — NATS via testcontainers)
-make test-all                 # All tests (unit + integration)
-make test-one TEST=TestName   # Specific unit test
-make test-one-integration TEST=TestName  # Specific integration test
-make lint                     # revive + go vet
-make check                    # fmt + tidy + lint + test-all
-make coverage                 # HTML coverage report → coverage.html
+task test                          # Unit tests only (no Docker)
+task test:integration              # Integration tests (requires Docker — NATS via testcontainers)
+task test:all                      # All tests (unit + integration)
+task test:one -- TestName          # Specific unit test
+task test:one-integration -- TestName  # Specific integration test
+task lint                          # revive + go vet
+task check                         # fmt + tidy + lint + test-all
+task test:coverage                 # HTML coverage report → coverage.html
 ```
 
 Frontend tests:
@@ -375,7 +376,7 @@ the reactive pipeline in action.
 
 ```bash
 # 1. Start with seeded data (mock LLM — no API key needed)
-SEED_E2E=true make up
+SEED_E2E=true task docker:up
 
 # Verify everything is running
 curl -s http://localhost/health
@@ -472,16 +473,16 @@ E2E tests use Playwright and require both backend and frontend running.
 
 ```bash
 # Full lifecycle: start containers → run tests → tear down
-make e2e
+task e2e
 
 # Interactive debugging with Playwright UI
-make e2e-ui
+task e2e:ui
 
 # Headed mode (shows browser)
-make e2e-headed
+task e2e:headed
 
 # Install Playwright browsers (first time)
-make e2e-install
+task e2e:install
 ```
 
 The 26 spec files in `ui/e2e/specs/` cover agent lifecycle, quest lifecycle, boss battles, SSE
@@ -491,12 +492,12 @@ auto-skip when no backend is reachable.
 For cloud LLM providers (requires API key in `.env`):
 
 ```bash
-make e2e-gemini               # E2E with Gemini
-make e2e-anthropic            # E2E with Anthropic Claude
-make e2e-openai               # E2E with OpenAI
-make e2e-ollama               # E2E with local Ollama
+task e2e:gemini               # E2E with Gemini
+task e2e:anthropic            # E2E with Anthropic Claude
+task e2e:openai               # E2E with OpenAI
+task e2e:ollama               # E2E with local Ollama
 
-make e2e-help                 # Show all E2E targets and usage
+task --list                   # Show all available tasks
 ```
 
 ## Debugging

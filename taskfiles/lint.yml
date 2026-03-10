@@ -1,0 +1,19 @@
+version: "3"
+
+tasks:
+  default:
+    desc: Run linters (revive + go vet)
+    cmds:
+      - revive -config revive.toml -formatter friendly ./...
+      - go vet ./...
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+      - goimports -w .
+
+  tidy:
+    desc: Tidy Go module dependencies
+    cmds:
+      - go mod tidy

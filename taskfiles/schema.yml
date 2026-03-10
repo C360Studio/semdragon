@@ -1,0 +1,25 @@
+version: "3"
+
+tasks:
+  entity:
+    desc: Generate entity schema JSON from Go Triples()
+    cmds:
+      - go run ./cmd/gen-entity-schema > ui/src/lib/services/entity-schema.generated.json
+
+  entity:check:
+    desc: Verify entity schema matches Go code
+    cmds:
+      - go run ./cmd/gen-entity-schema | grep -v generated_at > /tmp/schema-check-new.json
+      - grep -v generated_at ui/src/lib/services/entity-schema.generated.json > /tmp/schema-check-old.json
+      - diff /tmp/schema-check-new.json /tmp/schema-check-old.json && echo "Schema is up to date."
+
+  openapi:
+    desc: Generate OpenAPI 3.0 spec from Go reflection
+    cmds:
+      - go run ./cmd/openapi-gen > ui/static/openapi.json
+
+  openapi:check:
+    desc: Verify OpenAPI spec matches Go code
+    cmds:
+      - go run ./cmd/openapi-gen > /tmp/openapi-check.json
+      - diff /tmp/openapi-check.json ui/static/openapi.json && echo "OpenAPI spec is up to date."

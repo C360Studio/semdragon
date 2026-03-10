@@ -1,0 +1,41 @@
+version: "3"
+
+tasks:
+  default:
+    desc: Run unit tests (no Docker)
+    cmds:
+      - go test -race -v ./...
+
+  integration:
+    desc: Run integration tests (requires Docker)
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+    cmds:
+      - go test -race -v -tags=integration ./...
+
+  all:
+    desc: Run all tests (unit + integration)
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+    cmds:
+      - go test -race -v -tags=integration ./...
+
+  one:
+    desc: "Run a specific test: task test:one -- TestName"
+    cmds:
+      - go test -race -v -run {{.CLI_ARGS}} ./...
+
+  one-integration:
+    desc: "Run a specific integration test: task test:one-integration -- TestName"
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+    cmds:
+      - go test -race -v -tags=integration -run {{.CLI_ARGS}} ./...
+
+  coverage:
+    desc: Generate coverage report (unit + integration)
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+    cmds:
+      - go test -race -tags=integration -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html

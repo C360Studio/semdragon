@@ -1,0 +1,37 @@
+version: "3"
+
+dotenv: [".env"]
+
+includes:
+  build:
+    taskfile: ./taskfiles/build.yml
+    aliases: [b]
+  test:
+    taskfile: ./taskfiles/test.yml
+    aliases: [t]
+  lint:
+    taskfile: ./taskfiles/lint.yml
+    aliases: [l]
+  schema:
+    taskfile: ./taskfiles/schema.yml
+  ui:
+    taskfile: ./taskfiles/ui.yml
+  docker:
+    taskfile: ./taskfiles/docker.yml
+    aliases: [d]
+  e2e:
+    taskfile: ./taskfiles/e2e.yml
+
+tasks:
+  default:
+    desc: Build all packages
+    cmds:
+      - task: build:default
+
+  check:
+    desc: Full check — fmt, tidy, lint, test
+    cmds:
+      - task: lint:fmt
+      - task: lint:tidy
+      - task: lint:default
+      - task: test:all

@@ -1,0 +1,21 @@
+version: "3"
+
+tasks:
+  test:
+    desc: Run frontend unit tests (vitest)
+    dir: ui
+    cmds:
+      - npx vitest run
+
+  check:
+    desc: Run frontend type-check + lint
+    dir: ui
+    cmds:
+      - npx svelte-kit sync
+      - npx svelte-check
+
+  dev:
+    desc: Start frontend dev server
+    dir: ui
+    cmds:
+      - npm run dev
