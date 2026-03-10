@@ -381,6 +381,7 @@ export async function updateSettings(body: {
 		capabilities?: Record<string, CapabilityUpdate>;
 		defaults?: { model?: string; capability?: string };
 	};
+	search_config?: { provider?: string; api_key?: string; base_url?: string };
 }): Promise<SettingsResponse> {
 	return postJson<SettingsResponse>('/game/settings', body);
 }

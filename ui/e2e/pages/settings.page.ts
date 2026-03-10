@@ -23,9 +23,16 @@ export class SettingsPage extends BasePage {
 	readonly sectionLLMProviders: Locator;
 	readonly sectionCapabilityRouting: Locator;
 	readonly sectionComponents: Locator;
+	readonly sectionWebSearch: Locator;
 	readonly sectionWebsocketInput: Locator;
 	readonly sectionWorkspace: Locator;
 	readonly sectionTokenBudget: Locator;
+
+	// Token budget controls
+	readonly budgetDisplay: Locator;
+	readonly budgetInput: Locator;
+	readonly budgetSave: Locator;
+	readonly budgetCancel: Locator;
 
 	// WebSocket controls
 	readonly wsToggleBtn: Locator;
@@ -63,11 +70,18 @@ export class SettingsPage extends BasePage {
 			'[data-testid="settings-section-capability-routing"]'
 		);
 		this.sectionComponents = page.locator('[data-testid="settings-section-components"]');
+		this.sectionWebSearch = page.locator('[data-testid="settings-section-web-search"]');
 		this.sectionWebsocketInput = page.locator(
 			'[data-testid="settings-section-websocket-input"]'
 		);
 		this.sectionWorkspace = page.locator('[data-testid="settings-section-workspace"]');
 		this.sectionTokenBudget = page.locator('[data-testid="settings-section-token-budget"]');
+
+		// Token budget controls
+		this.budgetDisplay = page.locator('[data-testid="budget-display"]');
+		this.budgetInput = page.locator('[data-testid="budget-input"]');
+		this.budgetSave = page.locator('[data-testid="budget-save"]');
+		this.budgetCancel = page.locator('[data-testid="budget-cancel"]');
 
 		// WebSocket controls
 		this.wsToggleBtn = page.locator('[data-testid="ws-toggle-btn"]');

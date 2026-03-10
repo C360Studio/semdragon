@@ -28,6 +28,7 @@ type SettingsResponse struct {
 	Workspace      WorkspaceInfoView    `json:"workspace"`
 	TokenBudget    *TokenBudgetView     `json:"token_budget,omitempty"`
 	WebsocketInput WebsocketInputView   `json:"websocket_input"`
+	SearchConfig   SearchConfigView     `json:"search_config"`
 }
 
 // PlatformInfo describes the deployment identity.
@@ -116,6 +117,13 @@ type WebsocketInputView struct {
 	Status    string `json:"status,omitempty" description:"Human-readable status"`
 }
 
+// SearchConfigView exposes search configuration without revealing the raw API key.
+type SearchConfigView struct {
+	Provider  string `json:"provider" description:"Search provider (e.g. brave)"`
+	APIKeySet bool   `json:"api_key_set" description:"Whether an API key is configured"`
+	BaseURL   string `json:"base_url,omitempty" description:"Custom API endpoint"`
+}
+
 // =============================================================================
 // HEALTH TYPES
 // =============================================================================
@@ -150,12 +158,20 @@ type UpdateSettingsRequest struct {
 	ModelRegistry  *ModelRegistryUpdate  `json:"model_registry,omitempty" description:"Model registry changes"`
 	TokenBudget    *TokenBudgetView      `json:"token_budget,omitempty" description:"Token budget changes"`
 	WebsocketInput *WebsocketInputUpdate `json:"websocket_input,omitempty" description:"WebSocket input changes"`
+	SearchConfig   *SearchConfigUpdate   `json:"search_config,omitempty" description:"Web search configuration changes"`
 }
 
 // WebsocketInputUpdate describes mutations to the websocket input component.
 type WebsocketInputUpdate struct {
 	Enabled *bool   `json:"enabled,omitempty" description:"Enable or disable the websocket input"`
 	URL     *string `json:"url,omitempty" description:"WebSocket server URL to connect to"`
+}
+
+// SearchConfigUpdate describes mutations to the web search configuration.
+type SearchConfigUpdate struct {
+	Provider *string `json:"provider,omitempty" description:"Search provider type"`
+	APIKey   *string `json:"api_key,omitempty" description:"API key for the provider"`
+	BaseURL  *string `json:"base_url,omitempty" description:"Custom API endpoint"`
 }
 
 // ModelRegistryUpdate describes mutations to the model registry.
@@ -352,6 +368,14 @@ func (s *Service) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Search config update
+	if req.SearchConfig != nil {
+		if err := s.applySearchConfigUpdate(r.Context(), req.SearchConfig); err != nil {
+			s.writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	// Return updated state
 	resp := s.assembleSettingsResponse()
 	s.writeJSON(w, resp)
@@ -416,6 +440,9 @@ func (s *Service) assembleSettingsResponse() SettingsResponse {
 	// Websocket input
 	resp.WebsocketInput = s.assembleWebsocketInputView()
 
+	// Search config
+	resp.SearchConfig = s.assembleSearchConfigView()
+
 	return resp
 }
 
@@ -443,6 +470,121 @@ func (s *Service) assembleWebsocketInputView() WebsocketInputView {
 	}
 
 	return view
+}
+
+// questtoolsComponentName is the config key for the questtools component.
+const questtoolsComponentName = "questtools"
+
+// assembleSearchConfigView reads the questtools component config and returns a view
+// that exposes search configuration without revealing the raw API key value.
+func (s *Service) assembleSearchConfigView() SearchConfigView {
+	cfg := s.getComponentConfig(questtoolsComponentName)
+	if cfg == nil {
+		return SearchConfigView{}
+	}
+
+	var raw struct {
+		Search *struct {
+			Provider string `json:"provider"`
+			APIKey   string `json:"api_key"`
+			BaseURL  string `json:"base_url"`
+		} `json:"search"`
+	}
+	if err := json.Unmarshal(cfg.Config, &raw); err != nil || raw.Search == nil {
+		return SearchConfigView{}
+	}
+
+	return SearchConfigView{
+		Provider:  raw.Search.Provider,
+		APIKeySet: raw.Search.APIKey != "",
+		BaseURL:   raw.Search.BaseURL,
+	}
+}
+
+// applySearchConfigUpdate mutates the questtools component's search configuration.
+// Changes are pushed to KV and saved to disk following the same pattern as applyWebsocketInputUpdate.
+func (s *Service) applySearchConfigUpdate(ctx context.Context, update *SearchConfigUpdate) error {
+	if s.componentDeps == nil || s.componentDeps.Manager == nil {
+		return fmt.Errorf("config manager unavailable")
+	}
+
+	safeCfg := s.componentDeps.Manager.GetConfig()
+	if safeCfg == nil {
+		return fmt.Errorf("config not available")
+	}
+	cfg := safeCfg.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not available")
+	}
+
+	cloned := cfg.Clone()
+	if cloned.Components == nil {
+		cloned.Components = make(config.ComponentConfigs)
+	}
+
+	cc, exists := cloned.Components[questtoolsComponentName]
+	if !exists {
+		cc = types.ComponentConfig{}
+	}
+
+	// Unmarshal existing search config from the component's raw JSON.
+	var compCfg map[string]any
+	if len(cc.Config) > 0 {
+		if err := json.Unmarshal(cc.Config, &compCfg); err != nil {
+			return fmt.Errorf("failed to parse questtools config: %w", err)
+		}
+	}
+	if compCfg == nil {
+		compCfg = make(map[string]any)
+	}
+
+	// Extract existing search sub-object or start fresh.
+	searchRaw, _ := compCfg["search"].(map[string]any)
+	if searchRaw == nil {
+		searchRaw = make(map[string]any)
+	}
+
+	// Apply updates.
+	if update.Provider != nil {
+		searchRaw["provider"] = *update.Provider
+	}
+	if update.APIKey != nil {
+		searchRaw["api_key"] = *update.APIKey
+	}
+	if update.BaseURL != nil {
+		searchRaw["base_url"] = *update.BaseURL
+	}
+
+	compCfg["search"] = searchRaw
+
+	// Re-marshal the modified config back into the component's Config field.
+	rawConfig, err := json.Marshal(compCfg)
+	if err != nil {
+		return fmt.Errorf("failed to serialize questtools config: %w", err)
+	}
+	cc.Config = rawConfig
+	cloned.Components[questtoolsComponentName] = cc
+
+	// Update in-memory.
+	if err := safeCfg.Update(cloned); err != nil {
+		return fmt.Errorf("failed to update config: %w", err)
+	}
+
+	// Push to KV for multi-node propagation.
+	pushCtx, pushCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pushCancel()
+	if err := s.componentDeps.Manager.PushToKV(pushCtx); err != nil {
+		s.logger.Warn("failed to push config to KV", "error", err)
+	}
+
+	// Persist to disk.
+	if configPath := os.Getenv("SEMDRAGONS_CONFIG"); configPath != "" {
+		if err := cloned.SaveToFile(configPath); err != nil {
+			s.logger.Warn("failed to save config to disk", "error", err)
+		}
+	}
+
+	return nil
 }
 
 // getComponentConfig retrieves a component's config from the config manager.

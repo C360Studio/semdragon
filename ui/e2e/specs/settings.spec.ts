@@ -56,6 +56,12 @@ test.describe('Settings - Sections', () => {
 		await expect(badge).toHaveText(/\d+\/\d+ running/);
 	});
 
+	test('displays web search section', async ({ settingsPage }) => {
+		await expect(settingsPage.sectionWebSearch).toBeVisible();
+		const badge = settingsPage.getSectionBadge('settings-section-web-search');
+		await expect(badge).toHaveText(/Configured|Key missing|Not configured/);
+	});
+
 	test('displays websocket input section', async ({ settingsPage }) => {
 		await expect(settingsPage.sectionWebsocketInput).toBeVisible();
 		const badge = settingsPage.getSectionBadge('settings-section-websocket-input');
@@ -241,6 +247,157 @@ test.describe('Settings - WebSocket Controls', () => {
 			await settingsPage.wsUrlInput.fill(originalUrl);
 			await settingsPage.wsUrlSave.click();
 		}
+	});
+});
+
+test.describe('Settings - Token Budget Editing', () => {
+	test.beforeEach(async ({ settingsPage }) => {
+		test.skip(!hasBackend(), 'Requires backend');
+		await settingsPage.goto();
+	});
+
+	test('clicking budget value shows edit form', async ({ settingsPage }) => {
+		await settingsPage.budgetDisplay.click();
+		await expect(settingsPage.budgetInput).toBeVisible();
+		await expect(settingsPage.budgetSave).toBeVisible();
+		await expect(settingsPage.budgetCancel).toBeVisible();
+	});
+
+	test('cancel editing hides form', async ({ settingsPage }) => {
+		await settingsPage.budgetDisplay.click();
+		await expect(settingsPage.budgetInput).toBeVisible();
+
+		await settingsPage.budgetCancel.click();
+		await expect(settingsPage.budgetInput).not.toBeVisible();
+		await expect(settingsPage.budgetDisplay).toBeVisible();
+	});
+
+	test('save budget updates display', async ({ settingsPage }) => {
+		// Read original value for cleanup
+		const originalText = await settingsPage.budgetDisplay.locator('.mono').textContent();
+
+		await settingsPage.budgetDisplay.click();
+		await settingsPage.budgetInput.clear();
+		await settingsPage.budgetInput.fill('500000');
+		await settingsPage.budgetSave.click();
+
+		await expect(settingsPage.budgetDisplay).toBeVisible();
+		await expect(settingsPage.budgetDisplay.locator('.mono')).toHaveText('500,000');
+
+		// Restore original
+		await settingsPage.budgetDisplay.click();
+		await settingsPage.budgetInput.clear();
+		const restoreValue = originalText === 'Unlimited' ? '0' : originalText!.replace(/,/g, '');
+		await settingsPage.budgetInput.fill(restoreValue);
+		await settingsPage.budgetSave.click();
+	});
+});
+
+test.describe('Settings - LLM Provider Editing', () => {
+	test.beforeEach(async ({ settingsPage }) => {
+		test.skip(!hasBackend(), 'Requires backend');
+		await settingsPage.goto();
+	});
+
+	test('edit button visible on provider rows', async ({ settingsPage }) => {
+		const editBtn = settingsPage.sectionLLMProviders.locator('.row-btn.edit').first();
+		await expect(editBtn).toBeVisible();
+	});
+
+	test('clicking edit shows inline form', async ({ settingsPage }) => {
+		const editBtn = settingsPage.sectionLLMProviders.locator('.row-btn.edit').first();
+		await editBtn.click();
+		await expect(settingsPage.sectionLLMProviders.locator('.editing-row')).toBeVisible();
+	});
+
+	test('cancel edit hides form', async ({ settingsPage }) => {
+		const editBtn = settingsPage.sectionLLMProviders.locator('.row-btn.edit').first();
+		await editBtn.click();
+
+		const cancelBtn = settingsPage.sectionLLMProviders.locator('.editing-row .row-btn.cancel');
+		await cancelBtn.click();
+		await expect(settingsPage.sectionLLMProviders.locator('.editing-row')).not.toBeVisible();
+	});
+
+	test('add endpoint button visible', async ({ settingsPage }) => {
+		const addBtn = settingsPage.sectionLLMProviders.locator('.add-btn');
+		await expect(addBtn).toBeVisible();
+		await expect(addBtn).toHaveText(/Add Endpoint/);
+	});
+});
+
+test.describe('Settings - Capability Routing Editing', () => {
+	test.beforeEach(async ({ settingsPage }) => {
+		test.skip(!hasBackend(), 'Requires backend');
+		await settingsPage.goto();
+	});
+
+	test('edit button visible on capability cards', async ({ settingsPage }) => {
+		const editBtn = settingsPage.sectionCapabilityRouting.locator('.cap-edit-btn').first();
+		await expect(editBtn).toBeVisible();
+	});
+
+	test('clicking edit shows chain editor', async ({ settingsPage }) => {
+		const editBtn = settingsPage.sectionCapabilityRouting.locator('.cap-edit-btn').first();
+		await editBtn.click();
+		await expect(settingsPage.sectionCapabilityRouting.locator('.chain-editor')).toBeVisible();
+	});
+
+	test('cancel edit hides chain editor', async ({ settingsPage }) => {
+		const editBtn = settingsPage.sectionCapabilityRouting.locator('.cap-edit-btn').first();
+		await editBtn.click();
+
+		const cancelBtn = settingsPage.sectionCapabilityRouting.locator('.chain-cancel-btn');
+		await cancelBtn.click();
+		await expect(
+			settingsPage.sectionCapabilityRouting.locator('.chain-editor')
+		).not.toBeVisible();
+	});
+});
+
+test.describe('Settings - Web Search Config', () => {
+	test.beforeEach(async ({ settingsPage }) => {
+		test.skip(!hasBackend(), 'Requires backend');
+		await settingsPage.goto();
+	});
+
+	test('web search section shows provider status', async ({ settingsPage }) => {
+		await expect(settingsPage.sectionWebSearch).toBeVisible();
+		// Should show provider name or "None"
+		await expect(settingsPage.sectionWebSearch.locator('.kv-value').first()).toBeVisible();
+	});
+
+	test('configure/edit button visible', async ({ settingsPage }) => {
+		const btn = settingsPage.sectionWebSearch.locator('.section-edit-btn');
+		await expect(btn).toBeVisible();
+		await expect(btn).toHaveText(/Configure|Edit/);
+	});
+
+	test('clicking configure shows edit form', async ({ settingsPage }) => {
+		const btn = settingsPage.sectionWebSearch.locator('.section-edit-btn');
+		await btn.click();
+		await expect(settingsPage.sectionWebSearch.locator('.search-edit')).toBeVisible();
+	});
+
+	test('cancel editing hides form', async ({ settingsPage }) => {
+		const btn = settingsPage.sectionWebSearch.locator('.section-edit-btn');
+		await btn.click();
+
+		const cancelBtn = settingsPage.sectionWebSearch.locator('.inline-btn.cancel');
+		await cancelBtn.click();
+		await expect(settingsPage.sectionWebSearch.locator('.search-edit')).not.toBeVisible();
+	});
+});
+
+test.describe('Settings - Help Panel (new sections)', () => {
+	test.beforeEach(async ({ settingsPage }) => {
+		test.skip(!hasBackend(), 'Requires backend');
+		await settingsPage.goto();
+	});
+
+	test('hovering web search shows Web Search help', async ({ settingsPage }) => {
+		await settingsPage.hoverSection('settings-section-web-search');
+		await expect(settingsPage.helpTitle).toHaveText('Web Search');
 	});
 });
 

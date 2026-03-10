@@ -50,6 +50,13 @@
 	let budgetDraft = $state(0);
 	let budgetSaving = $state(false);
 
+	// Search config editing state
+	let searchEditing = $state(false);
+	let searchProviderDraft = $state('');
+	let searchApiKeyDraft = $state('');
+	let searchBaseUrlDraft = $state('');
+	let searchSaving = $state(false);
+
 	// General saving flag for provider/capability updates
 	let saving = $state(false);
 
@@ -212,6 +219,35 @@
 		}
 	}
 
+	// Search config editing
+	function startEditingSearch() {
+		if (!settings) return;
+		searchProviderDraft = settings.search_config.provider || 'brave';
+		searchApiKeyDraft = '';
+		searchBaseUrlDraft = settings.search_config.base_url || '';
+		searchEditing = true;
+	}
+
+	function cancelEditingSearch() {
+		searchEditing = false;
+	}
+
+	async function saveSearchConfig() {
+		if (searchSaving) return;
+		searchSaving = true;
+		try {
+			const update: Record<string, string> = { provider: searchProviderDraft };
+			if (searchApiKeyDraft) update.api_key = searchApiKeyDraft;
+			if (searchBaseUrlDraft) update.base_url = searchBaseUrlDraft;
+			settings = await updateSettings({ search_config: update });
+			searchEditing = false;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update search config';
+		} finally {
+			searchSaving = false;
+		}
+	}
+
 	onMount(() => {
 		loadData();
 		healthInterval = setInterval(refreshHealth, 30_000);
@@ -353,6 +389,80 @@
 						onfocus={() => (activeSection = 'components')}
 					>
 						<ComponentTable components={settings.components} />
+					</SettingsSection>
+
+					<!-- Web Search -->
+					<SettingsSection
+						title="Web Search"
+						badge={settings.search_config.provider
+							? settings.search_config.api_key_set ? 'Configured' : 'Key missing'
+							: 'Not configured'}
+						badgeVariant={settings.search_config.provider
+							? settings.search_config.api_key_set ? 'success' : 'warning'
+							: 'neutral'}
+						onfocus={() => (activeSection = 'search')}
+					>
+						{#if searchEditing}
+							<div class="search-edit">
+								<div class="kv-grid">
+									<div class="kv-pair">
+										<span class="kv-key">Provider</span>
+										<select class="inline-select" bind:value={searchProviderDraft}>
+											<option value="brave">Brave Search</option>
+										</select>
+									</div>
+									<div class="kv-pair">
+										<span class="kv-key">API Key</span>
+										<input
+											type="password"
+											class="inline-input"
+											bind:value={searchApiKeyDraft}
+											placeholder={settings.search_config.api_key_set ? '(unchanged)' : 'Enter API key'}
+										/>
+									</div>
+									<div class="kv-pair">
+										<span class="kv-key">Base URL (optional)</span>
+										<input
+											class="inline-input"
+											bind:value={searchBaseUrlDraft}
+											placeholder="Default endpoint"
+										/>
+									</div>
+								</div>
+								<div class="search-actions">
+									<button class="inline-btn save" onclick={saveSearchConfig} disabled={searchSaving || !searchProviderDraft}>Save</button>
+									<button class="inline-btn cancel" onclick={cancelEditingSearch}>Cancel</button>
+								</div>
+							</div>
+						{:else}
+							<div class="kv-grid">
+								<div class="kv-pair">
+									<span class="kv-key">Provider</span>
+									<span class="kv-value">{settings.search_config.provider || 'None'}</span>
+								</div>
+								<div class="kv-pair">
+									<span class="kv-key">API Key</span>
+									<span class="kv-value">
+										{#if !settings.search_config.provider}
+											--
+										{:else if settings.search_config.api_key_set}
+											<span class="key-dot ok"></span> Set
+										{:else}
+											<span class="key-dot error"></span> Missing
+										{/if}
+									</span>
+								</div>
+								{#if settings.search_config.base_url}
+									<div class="kv-pair">
+										<span class="kv-key">Base URL</span>
+										<span class="kv-value mono">{settings.search_config.base_url}</span>
+									</div>
+								{/if}
+							</div>
+							<button class="section-edit-btn" onclick={startEditingSearch}>
+								{settings.search_config.provider ? 'Edit' : 'Configure'}
+							</button>
+						{/if}
 					</SettingsSection>
 
 					<!-- WebSocket Input (semsource) -->
@@ -877,5 +987,60 @@
 	.inline-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.inline-select {
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: 0.8125rem;
+		border: 1px solid var(--ui-border-interactive);
+		border-radius: var(--radius-sm);
+		background: var(--ui-surface-primary);
+		color: var(--ui-text-primary);
+		outline: none;
+	}
+
+	/* Search config section */
+	.search-edit {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md);
+	}
+
+	.search-actions {
+		display: flex;
+		gap: var(--spacing-xs);
+	}
+
+	.section-edit-btn {
+		margin-top: var(--spacing-sm);
+		padding: var(--spacing-xs) var(--spacing-md);
+		font-size: 0.75rem;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-sm);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-secondary);
+		cursor: pointer;
+		transition: border-color 150ms ease;
+	}
+
+	.section-edit-btn:hover {
+		border-color: var(--ui-border-interactive);
+	}
+
+	/* Key dots (reused from provider table pattern) */
+	.key-dot {
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		border-radius: var(--radius-full);
+		margin-right: 4px;
+	}
+
+	.key-dot.ok {
+		background: var(--status-success);
+	}
+
+	.key-dot.error {
+		background: var(--status-error);
 	}
 </style>

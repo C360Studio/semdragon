@@ -648,6 +648,7 @@ export interface SettingsResponse {
 	workspace: WorkspaceInfo;
 	token_budget?: TokenBudgetConfig;
 	websocket_input: WebsocketInputInfo;
+	search_config: SearchConfigInfo;
 }
 
 export interface WebsocketInputInfo {
@@ -656,6 +657,12 @@ export interface WebsocketInputInfo {
 	connected: boolean;
 	healthy: boolean;
 	status?: string;
+}
+
+export interface SearchConfigInfo {
+	provider: string;
+	api_key_set: boolean;
+	base_url?: string;
 }
 
 export interface PlatformInfo {

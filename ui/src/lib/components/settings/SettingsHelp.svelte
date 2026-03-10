@@ -34,6 +34,10 @@
 			title: 'Token Budget',
 			body: 'The global hourly limit controls how many tokens agents can consume per hour across all LLM calls. Set to 0 for unlimited. When the limit is reached, a circuit breaker trips and quests queue until the next hourly window.'
 		},
+		search: {
+			title: 'Web Search',
+			body: 'Configures the web_search tool available to agents during quest execution. Requires a search provider API key (currently Brave Search is supported). When configured, agents with the research skill can search the web for information.'
+		},
 		websocket: {
 			title: 'WebSocket Input',
 			body: 'The WebSocket input connects to a semsource server to receive entity data (repos, docs, spec sheets) for injection into the entity graph. Toggle it on/off and set the URL to your semsource instance. Changes take effect immediately — the component manager watches for config updates via NATS KV.'
