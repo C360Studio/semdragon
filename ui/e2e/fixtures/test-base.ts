@@ -4,6 +4,7 @@ import { QuestsPage } from '../pages/quests.page';
 import { AgentsPage } from '../pages/agents.page';
 import { AgentDetailPage } from '../pages/agent-detail.page';
 import { GuildsPage, GuildDetailPage } from '../pages/guilds.page';
+import { SettingsPage } from '../pages/settings.page';
 import { SSEHelper } from './sse-helpers';
 import type { components } from '../../src/lib/api/generated';
 
@@ -275,6 +276,7 @@ export const test = base.extend<{
 	agentDetailPage: AgentDetailPage;
 	guildsPage: GuildsPage;
 	guildDetailPage: GuildDetailPage;
+	settingsPage: SettingsPage;
 	sseHelper: SSEHelper;
 	seedQuests: (quests: QuestPayload[]) => Promise<string[]>;
 	apiRequest: APIRequestContext;
@@ -306,6 +308,10 @@ export const test = base.extend<{
 
 	guildDetailPage: async ({ page }, use) => {
 		await use(new GuildDetailPage(page));
+	},
+
+	settingsPage: async ({ page }, use) => {
+		await use(new SettingsPage(page));
 	},
 
 	// SSE helper

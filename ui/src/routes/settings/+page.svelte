@@ -164,34 +164,34 @@
 	{#snippet centerPanel()}
 		<div class="settings-main">
 			<header class="settings-header">
-				<h1>Settings</h1>
-				<button class="refresh-btn" onclick={loadData} disabled={loading} aria-label="Refresh settings">
+				<h1 data-testid="settings-heading">Settings</h1>
+				<button class="refresh-btn" data-testid="settings-refresh-btn" onclick={loadData} disabled={loading} aria-label="Refresh settings">
 					Refresh
 				</button>
 			</header>
 
 			{#if error}
-				<div class="error-banner" role="alert">
+				<div class="error-banner" data-testid="settings-error-banner" role="alert">
 					<span>{error}</span>
 					<button onclick={() => (error = null)} aria-label="Dismiss error">&times;</button>
 				</div>
 			{/if}
 
 			{#if loading}
-				<div class="loading-state">
+				<div class="loading-state" data-testid="settings-loading">
 					{#each [0, 1, 2, 3] as _}
 						<div class="skeleton-section"></div>
 					{/each}
 				</div>
 			{:else if backendUnavailable}
-				<div class="unavailable-state">
+				<div class="unavailable-state" data-testid="settings-unavailable">
 					<div class="unavailable-icon">*</div>
 					<h2>Backend Unavailable</h2>
 					<p>Cannot reach the Semdragons API. Make sure the backend is running.</p>
 					<button class="retry-btn" onclick={loadData}>Retry</button>
 				</div>
 			{:else if settings}
-				<div class="sections">
+				<div class="sections" data-testid="settings-sections">
 					<!-- Onboarding Checklist (shown prominently if items are unmet) -->
 					{#if health && unmetCount > 0}
 						<SettingsSection
@@ -287,6 +287,7 @@
 								<button
 									class="ws-toggle"
 									class:active={settings.websocket_input.enabled}
+									data-testid="ws-toggle-btn"
 									onclick={toggleWebsocket}
 									disabled={wsSaving}
 									aria-label={settings.websocket_input.enabled ? 'Disable websocket input' : 'Enable websocket input'}
@@ -303,15 +304,16 @@
 											<input
 												type="text"
 												class="ws-url-input"
+												data-testid="ws-url-input"
 												bind:value={wsUrlDraft}
 												placeholder="ws://host:port/path"
 												onkeydown={(e) => { if (e.key === 'Enter') saveWsUrl(); if (e.key === 'Escape') cancelEditingWsUrl(); }}
 											/>
-											<button class="ws-url-btn save" onclick={saveWsUrl} disabled={wsSaving || !wsUrlDraft.trim()}>Save</button>
-											<button class="ws-url-btn cancel" onclick={cancelEditingWsUrl}>Cancel</button>
+											<button class="ws-url-btn save" data-testid="ws-url-save" onclick={saveWsUrl} disabled={wsSaving || !wsUrlDraft.trim()}>Save</button>
+											<button class="ws-url-btn cancel" data-testid="ws-url-cancel" onclick={cancelEditingWsUrl}>Cancel</button>
 										</div>
 									{:else}
-										<button class="ws-url-display" onclick={startEditingWsUrl}>
+										<button class="ws-url-display" data-testid="ws-url-display" onclick={startEditingWsUrl}>
 											<span class="mono">{settings.websocket_input.url || '(not configured)'}</span>
 											<span class="edit-hint">edit</span>
 										</button>
