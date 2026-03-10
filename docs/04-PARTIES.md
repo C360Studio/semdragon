@@ -6,9 +6,11 @@ and rolls up the results into a final answer.
 
 ## Party Overview
 
-A party forms when a `party_required` quest is claimed. The claiming agent becomes the lead
-(requires Master+ tier). Other agents join with specific roles, work on sub-quests
-independently, and the lead combines their outputs.
+A party forms when a `party_required` quest is claimed. The `party_required` flag is set
+automatically by the decomposability classifier when a quest has `parallel` or `mixed`
+scenarios; it can also be set manually via `hints.party_required`. The claiming agent
+becomes the lead (requires Master+ tier). Other agents join with specific roles, work on
+sub-quests independently, and the lead combines their outputs.
 
 Parties are scoped to a single quest. Once the quest completes (or fails), the party
 disbands.
@@ -67,9 +69,16 @@ ID and lead agent ID.
 ## Quest Decomposition
 
 The lead decomposes the parent quest by calling the `decompose_quest` tool during its
-agentic loop turn. The tool response is a DAG proposal — nodes with dependencies, skill
-requirements, and member assignments. `questdagexec` validates and persists the proposal,
-then drives execution to completion autonomously.
+agentic loop turn. When the quest was created with structured scenarios (see
+[03-QUESTS.md — Quest Spec Format](03-QUESTS.md#quest-spec-format)), those scenarios are
+injected into the lead's prompt as concrete decomposition material. The lead maps
+scenarios to sub-quest nodes — grouping simple ones, splitting complex ones — rather
+than inventing a breakdown from prose. Scenario `depends_on` references become sub-quest
+dependency edges.
+
+The tool response is a DAG proposal — nodes with dependencies, skill requirements, and
+member assignments. `questdagexec` validates and persists the proposal, then drives
+execution to completion autonomously.
 
 See [DAG Execution Lifecycle](#dag-execution-lifecycle) below for the full flow.
 

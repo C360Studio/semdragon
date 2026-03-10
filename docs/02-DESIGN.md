@@ -97,19 +97,33 @@ Level 19-20 │ GRANDMASTER  │ Can act as DM delegate, create quests, manage g
 ## Example Flow: "Analyze Q3 Sales Data and Send Summary to Stakeholders"
 
 ### 1. DM Creates Quest
+
+The DM posts a structured quest spec. Scenario dependencies signal that the first two
+scenarios are independent (data pull and analysis can run in parallel) while the summary
+and email delivery form a sequential tail — producing a `mixed` classification and a
+smaller party:
+
 ```go
 quest := NewQuest("Analyze Q3 sales and email stakeholders").
-    Description("Pull Q3 data, identify trends, write executive summary, email to VP list").
+    Goal("Stakeholders receive a data-backed Q3 summary via email").
+    Requirements("Include year-over-year comparison", "Cite all figures").
+    Scenarios(
+        QuestScenario{Name: "Extract Q3 data",    Skills: []string{"data_transformation"}},
+        QuestScenario{Name: "Analyze trends",      Skills: []string{"analysis"}},
+        QuestScenario{Name: "Write summary",       Skills: []string{"summarization"},
+            DependsOn: []string{"Extract Q3 data", "Analyze trends"}},
+        QuestScenario{Name: "Email to VP list",    Skills: []string{"customer_comms"},
+            DependsOn: []string{"Write summary"}},
+    ).
     Difficulty(DifficultyEpic).
-    RequireSkills(SkillAnalysis, SkillDataTransform, SkillCustomerComms).
-    RequireParty(3).
     XP(500).
     BonusXP(200).
     MaxDuration(30 * time.Minute).
-    ReviewAs(ReviewStrict).  // Dragon-level boss battle
+    ReviewAs(ReviewStrict). // Dragon-level boss battle
     Build()
 
 board.PostQuest(ctx, quest)
+// Decomposability: mixed → party_required set automatically
 ```
 
 ### 2. Boids Engine Suggests Party

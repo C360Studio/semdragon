@@ -106,18 +106,21 @@ and users exploring the system all land here. Nothing happens that changes game 
 
 **Purpose**: Create a single quest or a quest chain through conversational refinement.
 
-**System prompt**: DM persona + quest schema instructions (existing `quest_brief` and
-`quest_chain` JSON block format) + available skills/difficulties/review levels + world
-state summary + injected context.
+**System prompt**: DM persona + quest schema instructions (`quest_brief` and `quest_chain`
+JSON block format with goal, requirements, and scenarios per ADR-007) + available
+skills/difficulties/review levels + world state summary + injected context.
 
-This is essentially the current `handleDMChat` behavior, isolated to its own mode.
+This is essentially the current `handleDMChat` behavior, isolated to its own mode. The
+quest mode prompt teaches scenario-dependency thinking so the decomposability classifier
+can route party vs solo automatically.
 
 **Structured outputs**: `quest_brief` and `quest_chain`, extracted via the existing
-tagged JSON block parser (`extractTaggedJSON`).
+tagged JSON block parser (`extractTaggedJSON`). Both formats use the ADR-007 structure:
+`goal`, `requirements`, `scenarios` (with optional `depends_on` between scenarios).
 
 **Confirmation flow**:
 1. User describes what they want.
-2. DM asks clarifying questions (difficulty, skills, acceptance criteria).
+2. DM asks clarifying questions (difficulty, skills, scenario dependencies).
 3. DM produces a quest brief or chain in a tagged JSON block.
 4. Frontend renders the quest preview card with a "Post Quest" / "Post Chain" button.
 5. User clicks to post, or continues refining.
@@ -150,18 +153,18 @@ Master-tier agent refines each phase into detailed quests.
   "phases": [
     {
       "title": "Define proto schema",
-      "description": "Create .proto files for user service endpoints",
+      "goal": "Create .proto files covering all user service endpoints",
+      "requirements": ["Proto compiles", "All existing endpoints covered"],
       "difficulty": 2,
       "skills": ["code_generation", "analysis"],
-      "acceptance": ["Proto compiles", "All existing endpoints covered"],
       "depends_on": []
     },
     {
       "title": "Generate server stubs",
-      "description": "Run protoc and implement gRPC server handlers",
+      "goal": "Run protoc and implement gRPC server handlers",
+      "requirements": ["All handlers compile", "Unit tests pass"],
       "difficulty": 3,
       "skills": ["code_generation"],
-      "acceptance": ["All handlers compile", "Unit tests pass"],
       "depends_on": [0]
     }
   ],
@@ -525,12 +528,13 @@ type QuestPlan struct {
 
 // PlanPhase is one phase in a quest plan.
 type PlanPhase struct {
-    Title       string           `json:"title"`
-    Description string           `json:"description,omitempty"`
-    Difficulty  *QuestDifficulty `json:"difficulty,omitempty"`
-    Skills      []SkillTag       `json:"skills,omitempty"`
-    Acceptance  []string         `json:"acceptance,omitempty"`
-    DependsOn   []int            `json:"depends_on,omitempty"`
+    Title        string           `json:"title"`
+    Goal         string           `json:"goal,omitempty"`
+    Requirements []string         `json:"requirements,omitempty"`
+    Scenarios    []QuestScenario  `json:"scenarios,omitempty"`
+    Difficulty   *QuestDifficulty `json:"difficulty,omitempty"`
+    Skills       []SkillTag       `json:"skills,omitempty"`
+    DependsOn    []int            `json:"depends_on,omitempty"`
 }
 
 // AgentAction represents a DM-proposed agent management action.
@@ -543,8 +547,8 @@ type AgentAction struct {
 ### Validation
 
 ```go
-func ValidateQuestPlan(p *QuestPlan) error // objective required, 1-20 phases, valid deps
-func ValidateChatMode(m ChatMode) bool     // one of the four constants
+func ValidateQuestPlan(p *QuestPlan) error  // objective required, 1-20 phases, valid deps; each phase validated as QuestBrief
+func ValidateChatMode(m ChatMode) bool      // one of the four constants
 ```
 
 ---
@@ -699,7 +703,7 @@ gated by DMMode.
 1. When `decompose_with_agent` is true in plan execution, create planning quests
    with skill `planning`, difficulty based on phase difficulty, and the
    `quest.promotion.enabled` triple.
-2. The planning quest's input is the phase description and acceptance criteria.
+2. The planning quest's input is the phase goal, requirements, and scenarios.
 3. The planning quest's output (produced by the agent) is a quest chain.
 4. The questpromotion processor (Phase 4) automatically promotes the output.
 

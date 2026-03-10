@@ -65,7 +65,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 				POST: &service.OperationSpec{
 					Summary:     "Create quest",
-					Description: "Posts a new quest to the quest board.",
+					Description: "Posts a new quest to the quest board. Requires title and goal. Scenarios are optional but recommended — their dependency graph drives automatic party vs solo routing.",
 					Tags:        []string{"Quests"},
 					RequestBody: &service.RequestBodySpec{
 						Description: "Quest creation parameters",
@@ -74,7 +74,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					},
 					Responses: map[string]service.ResponseSpec{
 						"201": {Description: "Quest created", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
-						"400": {Description: "Invalid request body or missing objective"},
+						"400": {Description: "Invalid request body, missing title or goal, or invalid scenario dependencies"},
 					},
 				},
 			},

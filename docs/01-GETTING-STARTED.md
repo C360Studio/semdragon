@@ -388,7 +388,15 @@ open http://localhost
 curl -s -X POST http://localhost/game/quests \
   -H "Content-Type: application/json" \
   -d '{
-    "objective": "Write a hello world function",
+    "title": "Write a hello world function",
+    "goal": "Produce a working Go function that returns the string hello world",
+    "scenarios": [
+      {
+        "name": "Function implementation",
+        "description": "Write a Go function named Hello that returns the string hello world",
+        "skills": ["code_generation"]
+      }
+    ],
     "difficulty": 0,
     "skills": ["code_generation"]
   }' | jq .
@@ -441,7 +449,7 @@ curl -s -X POST http://localhost/game/agents \
 # 2. Post a quest
 curl -s -X POST http://localhost/game/quests \
   -H "Content-Type: application/json" \
-  -d '{"objective": "Write a hello world function"}' | jq .
+  -d '{"title": "Write a hello world function", "goal": "Return the string hello world"}' | jq .
 
 # Save the quest ID: "id": "local.dev.game.board1.quest.xyz789"
 ```

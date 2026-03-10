@@ -821,7 +821,7 @@ func (s *Service) buildChecklist(ctx context.Context) []ChecklistItem {
 			if questMet {
 				return ""
 			}
-			return "POST /api/game/quests with an objective to create your first quest"
+			return "POST /api/game/quests with a title and goal to create your first quest"
 		}(),
 	})
 

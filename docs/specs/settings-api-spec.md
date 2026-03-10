@@ -178,7 +178,7 @@ Runs live validation checks with per-check timeouts (3 seconds each). Returns an
     { "label": "API key set for LLM provider", "met": true, "help_text": "" },
     { "label": "Workspace directory exists and is writable", "met": false, "help_text": "Create the directory or update workspace_dir in config. For Docker: mounted automatically. For local dev: mkdir -p .workspace and set workspace_dir in config/semdragons.json services.game.config.workspace_dir" },
     { "label": "At least one agent recruited", "met": true },
-    { "label": "At least one quest posted", "met": false, "help_text": "POST /api/game/quests with an objective to create your first quest" }
+    { "label": "At least one quest posted", "met": false, "help_text": "POST /api/game/quests with a title and goal to create your first quest" }
   ]
 }
 ```

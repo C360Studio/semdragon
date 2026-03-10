@@ -7,59 +7,134 @@ machine managed by the `questboard` processor, with quality gates enforced by `b
 
 ### Via the REST API
 
+Quest creation uses a structured spec (`QuestBrief`) with a required `goal` and optional
+`requirements` and `scenarios`. See [Quest Spec Format](#quest-spec-format) below for
+the full structure.
+
 ```bash
 curl -s -X POST http://localhost:8080/game/quests \
   -H "Content-Type: application/json" \
   -d '{
-    "objective": "Analyze Q3 revenue trends",
+    "title": "Analyze Q3 revenue trends",
+    "goal": "Identify revenue anomalies and produce a summary for stakeholders",
+    "requirements": ["Include year-over-year comparison", "Produce chart-ready data"],
+    "scenarios": [
+      {
+        "name": "YoY comparison table",
+        "description": "Query Q3 data for current and prior year, produce structured comparison",
+        "skills": ["data_transformation"]
+      },
+      {
+        "name": "Anomaly detection",
+        "description": "Flag line items deviating more than 15% from the prior year trend",
+        "skills": ["analysis"]
+      },
+      {
+        "name": "Executive summary",
+        "description": "Write a 300-word summary suitable for VP audience citing key numbers",
+        "skills": ["summarization"],
+        "depends_on": ["YoY comparison table", "Anomaly detection"]
+      }
+    ],
     "difficulty": 3,
-    "skills": ["analysis", "data_transformation"],
-    "acceptance": ["Include year-over-year comparison", "Produce chart-ready data"],
-    "review_level": 2
+    "skills": ["analysis", "data_transformation", "summarization"]
   }' | jq .
 ```
 
-### Via DM Chat (in development)
+The system classifies the quest automatically from the scenario dependency graph
+(see [Decomposability Classification](#decomposability-classification)). In this example,
+the two independent scenarios and one dependent summary scenario produce a `mixed`
+classification — a smaller party quest.
 
-The `POST /game/dm/chat` endpoint accepts natural language and produces a `QuestBrief`
-with structured fields including `Acceptance` criteria and `DependsOn` references.
+### Via DM Chat
+
+The `POST /game/dm/chat` endpoint in `quest` mode accepts natural language and produces
+a `QuestBrief` with goal, requirements, and structured scenarios. The DM prompt teaches
+scenario-dependency thinking so the classification is derived from the output, not
+declared separately. See [ADR-001](adr/001-dm-chat-routing.md) for chat mode details.
 
 ### Via Quest Chains
 
-Submit multiple interdependent quests as a batch. Dependencies use 0-based array indices
-referencing other entries in the same chain:
+Submit multiple interdependent quests as a batch. Each entry is a full quest spec
+with `goal`, `requirements`, and `scenarios`. Dependencies between chain entries use
+0-based array indices referencing other entries in the same chain:
 
 ```bash
 curl -s -X POST http://localhost:8080/game/quests/chain \
   -H "Content-Type: application/json" \
   -d '{
     "quests": [
-      {"title": "Extract raw data", "skills": ["data_transformation"]},
-      {"title": "Clean and normalize", "skills": ["data_transformation"], "depends_on": [0]},
-      {"title": "Analyze trends", "skills": ["analysis"], "depends_on": [1]},
-      {"title": "Write summary", "skills": ["summarization"], "depends_on": [2]}
+      {
+        "title": "Extract raw data",
+        "goal": "Pull and normalise Q3 source records",
+        "skills": ["data_transformation"]
+      },
+      {
+        "title": "Analyze trends",
+        "goal": "Identify year-over-year anomalies from the extracted data",
+        "skills": ["analysis"],
+        "depends_on": [0]
+      },
+      {
+        "title": "Write summary",
+        "goal": "Produce an executive-ready summary from the analysis",
+        "skills": ["summarization"],
+        "depends_on": [1]
+      }
     ]
   }' | jq .
 ```
 
 Validation rules for chains:
 - At least 1 quest, maximum 50
-- Each entry needs a title
+- Each entry needs a title and a goal
 - `depends_on` indices must be in range `[0, len-1)` and cannot self-reference
 - No duplicate dependencies per entry
 - No dependency cycles (validated via topological sort)
+
+## Quest Spec Format
+
+Quest creation replaced the old flat `description`/`acceptance` fields with a structured
+spec (see [ADR-007](adr/007-scenario-driven-quest-specs.md)):
+
+### `QuestBrief` Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | yes | Short name for the work |
+| `goal` | string | yes | The desired outcome — the "why" this work matters |
+| `requirements` | []string | no | Concrete constraints that must be satisfied |
+| `scenarios` | []QuestScenario | no | Testable outcomes that prove requirements are met |
+| `difficulty` | int (0-5) | no | Challenge level; default `0` (Trivial) |
+| `skills` | []SkillTag | no | Aggregate skills across all scenarios |
+| `hints` | QuestHints | no | Manual overrides (e.g. `party_required`) |
+| `depends_on` | []QuestID | no | Must complete before this quest is claimable |
+
+### `QuestScenario` Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Short identifier (used in `depends_on` references) |
+| `description` | string | yes | What completing this scenario looks like |
+| `skills` | []string | no | Skills specifically needed for this scenario |
+| `depends_on` | []string | no | Names of other scenarios that must complete first |
+
+Scenario `depends_on` uses names, not indices. Names must be unique within a quest.
+Cycles and references to non-existent scenario names are rejected at creation time.
 
 ## Quest Fields Reference
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `title` | string | required | Short description of the work |
-| `description` | string | `""` | Detailed instructions |
+| `goal` | string | required | The desired outcome |
+| `requirements` | []string | `[]` | Concrete constraints the output must satisfy |
+| `scenarios` | []QuestScenario | `[]` | Testable outcomes for the agent or party |
 | `difficulty` | int (0-5) | `0` (Trivial) | Challenge level (see table below) |
 | `required_skills` | []SkillTag | `[]` | Skills needed to complete the quest |
 | `required_tools` | []string | `[]` | Tool IDs the agent must have |
 | `min_tier` | TrustTier | from difficulty | Minimum trust tier to claim |
-| `party_required` | bool | `false` | Requires a party (too complex for solo) |
+| `party_required` | bool | from classification | Requires a party (set by decomposability heuristic) |
 | `min_party_size` | int | `0` | Minimum party members |
 | `base_xp` | int64 | from difficulty | XP awarded on completion |
 | `constraints.require_review` | bool | `false` | Send to boss battle on submission |
@@ -69,9 +144,34 @@ Validation rules for chains:
 | `constraints.max_cost` | float64 | `0` (none) | Cost budget |
 | `allowed_tools` | []string | `[]` (all) | Tool whitelist (empty = all allowed) |
 | `guild_priority` | GuildID | `nil` | Guild gets first claim opportunity |
-| `acceptance` | []string | `[]` | Domain-flexible acceptance criteria |
 | `depends_on` | []QuestID | `[]` | Must complete before this quest is claimable |
 | `max_attempts` | int | config default | Retry limit before permanent failure |
+
+## Decomposability Classification
+
+After the quest spec is submitted, the system classifies it deterministically from the
+scenario dependency graph — no LLM call required. This drives the party vs solo routing
+decision (see [ADR-007](adr/007-scenario-driven-quest-specs.md) for the empirical basis).
+
+| Class | Condition | Staffing |
+|-------|-----------|----------|
+| `parallel` | No scenario has `depends_on` | Party quest — independent scenarios run concurrently |
+| `sequential` | All scenarios form a single dependency chain | Solo quest routed to `quest-execution-sequential` |
+| `mixed` | Some scenarios are independent, some depend on others | Smaller party quest |
+| `trivial` | Zero or one scenario | Solo quest |
+
+The classification is stored as `quest.routing.class` on the quest entity and is visible
+in the graph and trajectory. `party_required` is set automatically from the heuristic.
+
+**Manual override:** Set `hints.party_required: true` in the quest spec to force a party
+quest regardless of classification. The system honours it with a warning log. The
+heuristic is a default, not a gate.
+
+Sequential quests are routed to the `quest-execution-sequential` capability in the model
+registry, which can be configured to prefer higher-capability models. Research shows
+disproportionate returns from model intelligence on sequential reasoning tasks — a
+stronger model beats adding more agents. See
+[07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md#capabilities) for configuration details.
 
 ## Difficulty and XP Table
 
@@ -269,21 +369,69 @@ lead manually dispatching each assignment.
 For the full DAG node state machine and review gate, see
 [04-PARTIES.md — DAG Execution Lifecycle](04-PARTIES.md#dag-execution-lifecycle).
 
-## Acceptance Criteria
+## Scenarios as Acceptance Criteria
 
-The `acceptance` field holds domain-flexible strings that describe what "done" looks like.
-These are not validated against a schema; they serve two purposes:
+Scenarios replace the old flat `acceptance` string array. They serve the same two
+purposes but with richer structure:
 
-1. **Agent prompting**: The `promptmanager` includes acceptance criteria in the quest
-   context fragment so the LLM knows what to aim for.
-2. **Boss battle evaluation**: Acceptance criteria feed into the evaluation prompt for
-   LLM judges, providing concrete standards beyond the generic review criteria.
+1. **Agent prompting**: The `promptmanager` injects scenarios into the quest context.
+   For solo (sequential/trivial) quests, scenarios appear as ordered acceptance
+   criteria. For party quests, the party lead receives scenarios as structured
+   decomposition material instead of having to invent a breakdown from prose.
+2. **Boss battle evaluation**: Scenario names and descriptions feed the LLM judge's
+   evaluation prompt, providing concrete standards beyond generic review criteria.
 
-Examples:
+A minimal quest with no scenarios still works — the `goal` and `requirements` fields
+serve as the acceptance signal. Scenarios are optional but strongly recommended for
+any non-trivial quest because they give the system enough structure to make the
+party vs solo routing decision accurately.
+
+Example (parallel → party quest):
+
 ```json
-["Include year-over-year comparison", "All numbers sourced with citations"]
-["Tests pass with >80% coverage", "No lint warnings"]
-["Response under 500 words", "Executive-friendly tone"]
+{
+  "title": "Build user notification service",
+  "goal": "Users receive real-time notifications across email and in-app channels",
+  "requirements": ["Delivery within 5 seconds", "Per-event preferences"],
+  "scenarios": [
+    {
+      "name": "In-app delivery",
+      "description": "Event fires, notification appears in feed within 5s",
+      "skills": ["code_generation"]
+    },
+    {
+      "name": "Email with preference check",
+      "description": "System checks prefs, sends email only if enabled for that event type",
+      "skills": ["code_generation", "data_transformation"]
+    }
+  ]
+}
+```
+
+Example (sequential → solo, high-tier model):
+
+```json
+{
+  "title": "Migrate legacy auth to OAuth2",
+  "goal": "Replace custom token auth with OAuth2 PKCE flow without breaking sessions",
+  "scenarios": [
+    {
+      "name": "OAuth2 provider integration",
+      "description": "Configure provider, implement PKCE flow, verify token exchange"
+    },
+    {
+      "name": "Session migration bridge",
+      "description": "Adapter validates both old tokens and OAuth2 tokens during transition",
+      "depends_on": ["OAuth2 provider integration"]
+    },
+    {
+      "name": "Cutover and rollback",
+      "description": "Switch to OAuth2-only, verify rollback restores old auth",
+      "depends_on": ["Session migration bridge"]
+    }
+  ],
+  "difficulty": 4
+}
 ```
 
 ## Further Reading
@@ -291,5 +439,7 @@ Examples:
 - [01-GETTING-STARTED.md](01-GETTING-STARTED.md) — Setup, walkthrough, debugging
 - [04-PARTIES.md](04-PARTIES.md) — Party formation and peer reviews
 - [05-BOIDS.md](05-BOIDS.md) — Emergent quest-claiming behavior
+- [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) — Capability routing including `quest-execution-sequential`
+- [adr/007-scenario-driven-quest-specs.md](adr/007-scenario-driven-quest-specs.md) — Design rationale and empirical basis
 - [Swagger UI](/docs) — Live API documentation at `/docs`
 - [02-DESIGN.md](02-DESIGN.md) — Architecture and concept map

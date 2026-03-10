@@ -198,6 +198,28 @@ Trust tiers map to capability suffixes as follows:
 | Master       | 16–18  | `agent-work.master`      |
 | Grandmaster  | 19–20  | `agent-work.grandmaster` |
 
+### Sequential Quest Capability
+
+When a quest is classified as `sequential` by the decomposability classifier (see
+[03-QUESTS.md — Decomposability Classification](03-QUESTS.md#decomposability-classification)),
+`questbridge` resolves the `quest-execution-sequential` capability instead of the
+standard tier-qualified `agent-work` key. Configure this to prefer frontier models over
+the default tier routing:
+
+```json
+"quest-execution-sequential": {
+  "description": "Solo sequential quests — route to highest-capability model",
+  "preferred": ["claude-4"],
+  "fallback": ["gpt-4o", "ollama-tools"],
+  "requires_tools": true
+}
+```
+
+Research shows disproportionate returns from model capability on sequential reasoning
+tasks (top-quartile models achieve 23% above predicted linear scaling). A stronger model
+beats adding more agents for these quests. If this capability is not configured, the
+resolver falls back to the standard `agent-work` chain.
+
 ---
 
 ## Default Config (semdragons.json)
@@ -253,12 +275,13 @@ It defines four endpoints and multiple capability tiers:
 
 Capabilities in `models.json`:
 
-| Capability       | Preferred            | Fallback           | Notes                        |
-|------------------|----------------------|--------------------|------------------------------|
-| `agent-work`     | claude-4, gpt-4o     | ollama-tools       | Default agent execution      |
-| `boss-battle`    | claude-4             | gpt-4o, ollama     | LLM-as-judge evaluation      |
-| `quest-design`   | claude-4             | gpt-4o             | DM quest parameter decisions |
-| `agent-eval`     | claude-4             | gpt-4o             | Agent performance assessment |
+| Capability                    | Preferred            | Fallback           | Notes                              |
+|-------------------------------|----------------------|--------------------|-------------------------------------|
+| `agent-work`                  | claude-4, gpt-4o     | ollama-tools       | Default agent execution             |
+| `boss-battle`                 | claude-4             | gpt-4o, ollama     | LLM-as-judge evaluation             |
+| `quest-design`                | claude-4             | gpt-4o             | DM quest parameter decisions        |
+| `agent-eval`                  | claude-4             | gpt-4o             | Agent performance assessment        |
+| `quest-execution-sequential`  | claude-4             | gpt-4o             | Solo sequential quests (high-tier)  |
 
 The production Go code (`ProductionModelRegistry()` in `config.go`) mirrors this JSON
 exactly and includes the full tier-qualified capability hierarchy.
