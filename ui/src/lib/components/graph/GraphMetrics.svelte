@@ -97,13 +97,11 @@
 	.graph-metrics {
 		display: flex;
 		align-items: center;
-		flex-wrap: wrap;
 		gap: 6px;
 		padding: 6px 12px;
-		background: var(--ui-surface-secondary);
-		border-bottom: 1px solid var(--ui-border-subtle);
 		font-size: 11px;
-		min-height: 32px;
+		white-space: nowrap;
+		flex-shrink: 0;
 	}
 
 	.metrics-label {

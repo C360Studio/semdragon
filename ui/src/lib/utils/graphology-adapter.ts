@@ -10,7 +10,8 @@
  * Ported from semstreams-ui and adapted for semdragons game entity types.
  */
 
-import type Graph from 'graphology';
+import type AbstractGraph from 'graphology';
+type Graph = AbstractGraph;
 import type { GraphEntity, GraphRelationship } from '$lib/api/graph-types';
 import { getEntityColor, getPredicateColor } from '$lib/utils/entity-colors';
 
@@ -42,7 +43,7 @@ export function syncStoreToGraph(
 ): void {
 	// Preserve positions so FA2 layout survives re-sync
 	const positions = new Map<string, { x: number; y: number }>();
-	graph.forEachNode((id, attrs) => {
+	graph.forEachNode((id: string, attrs: Record<string, unknown>) => {
 		positions.set(id, { x: attrs.x as number, y: attrs.y as number });
 	});
 

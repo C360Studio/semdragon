@@ -376,6 +376,11 @@ export async function getSettingsHealth(): Promise<HealthResponse> {
 export async function updateSettings(body: {
 	websocket_input?: { enabled?: boolean; url?: string };
 	token_budget?: { global_hourly_limit: number };
+	model_registry?: {
+		endpoints?: Record<string, EndpointUpdate>;
+		capabilities?: Record<string, CapabilityUpdate>;
+		defaults?: { model?: string; capability?: string };
+	};
 }): Promise<SettingsResponse> {
 	return postJson<SettingsResponse>('/game/settings', body);
 }
@@ -386,6 +391,33 @@ export async function updateSettings(body: {
 
 export async function healthCheck(): Promise<{ status: string }> {
 	return fetchJson<{ status: string }>('/health');
+}
+
+// =============================================================================
+// SETTINGS UPDATE TYPES
+// =============================================================================
+
+export interface EndpointUpdate {
+	provider: string;
+	model: string;
+	url?: string;
+	max_tokens: number;
+	supports_tools: boolean;
+	tool_format?: string;
+	api_key_env?: string;
+	stream?: boolean;
+	reasoning_effort?: string;
+	input_price_per_1m_tokens?: number;
+	output_price_per_1m_tokens?: number;
+	remove?: boolean;
+}
+
+export interface CapabilityUpdate {
+	description?: string;
+	preferred?: string[];
+	fallback?: string[];
+	requires_tools?: boolean;
+	remove?: boolean;
 }
 
 // =============================================================================

@@ -21,7 +21,8 @@
 		SettingsHelp
 	} from '$components/settings';
 	import { getSettings, getSettingsHealth, updateSettings, ApiError } from '$services/api';
-	import type { SettingsResponse, HealthResponse } from '$types';
+	import type { EndpointUpdate, CapabilityUpdate } from '$services/api';
+	import type { SettingsResponse, HealthResponse, ModelEndpointInfo, CapabilityInfo } from '$types';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -43,6 +44,14 @@
 	let wsUrlEditing = $state(false);
 	let wsUrlDraft = $state('');
 	let wsSaving = $state(false);
+
+	// Token budget editing state
+	let budgetEditing = $state(false);
+	let budgetDraft = $state(0);
+	let budgetSaving = $state(false);
+
+	// General saving flag for provider/capability updates
+	let saving = $state(false);
 
 	// Health auto-refresh
 	let healthInterval: ReturnType<typeof setInterval> | undefined;
@@ -130,6 +139,76 @@
 			error = err instanceof Error ? err.message : 'Failed to update websocket URL';
 		} finally {
 			wsSaving = false;
+		}
+	}
+
+	// Token budget editing
+	function startEditingBudget() {
+		if (!settings?.token_budget) return;
+		budgetDraft = settings.token_budget.global_hourly_limit;
+		budgetEditing = true;
+	}
+
+	function cancelEditingBudget() {
+		budgetEditing = false;
+	}
+
+	async function saveBudget() {
+		if (budgetSaving || budgetDraft < 0) return;
+		budgetSaving = true;
+		try {
+			settings = await updateSettings({
+				token_budget: { global_hourly_limit: budgetDraft }
+			});
+			budgetEditing = false;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update token budget';
+		} finally {
+			budgetSaving = false;
+		}
+	}
+
+	// LLM Provider updates
+	async function saveEndpoint(name: string, update: EndpointUpdate) {
+		if (saving) return;
+		saving = true;
+		try {
+			settings = await updateSettings({
+				model_registry: { endpoints: { [name]: update } }
+			});
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update endpoint';
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function removeEndpoint(name: string) {
+		if (saving) return;
+		saving = true;
+		try {
+			settings = await updateSettings({
+				model_registry: { endpoints: { [name]: { remove: true } as EndpointUpdate } }
+			});
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to remove endpoint';
+		} finally {
+			saving = false;
+		}
+	}
+
+	// Capability updates
+	async function saveCapability(name: string, update: CapabilityUpdate) {
+		if (saving) return;
+		saving = true;
+		try {
+			settings = await updateSettings({
+				model_registry: { capabilities: { [name]: update } }
+			});
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update capability';
+		} finally {
+			saving = false;
 		}
 	}
 
@@ -246,6 +325,9 @@
 						<LLMProviderTable
 							endpoints={settings.models.endpoints}
 							defaultModel={settings.models.defaults.model}
+							onSave={saveEndpoint}
+							onRemove={removeEndpoint}
+							{saving}
 						/>
 					</SettingsSection>
 
@@ -258,6 +340,9 @@
 						<CapabilityRouting
 							capabilities={settings.models.capabilities}
 							defaultCapability={settings.models.defaults.capability}
+							endpointNames={settings.models.endpoints.map(e => e.name)}
+							onSave={saveCapability}
+							{saving}
 						/>
 					</SettingsSection>
 
@@ -361,13 +446,32 @@
 							onfocus={() => (activeSection = 'budget')}
 						>
 							<div class="kv-grid">
-								<div class="kv-pair">
+								<div class="kv-pair budget-pair">
 									<span class="kv-key">Hourly Limit</span>
-									<span class="kv-value mono">
-										{settings.token_budget.global_hourly_limit === 0
-											? 'Unlimited'
-											: settings.token_budget.global_hourly_limit.toLocaleString()}
-									</span>
+									{#if budgetEditing}
+										<div class="inline-edit">
+											<input
+												type="number"
+												class="inline-input"
+												data-testid="budget-input"
+												bind:value={budgetDraft}
+												min="0"
+												placeholder="0 = unlimited"
+												onkeydown={(e) => { if (e.key === 'Enter') saveBudget(); if (e.key === 'Escape') cancelEditingBudget(); }}
+											/>
+											<button class="inline-btn save" data-testid="budget-save" onclick={saveBudget} disabled={budgetSaving || budgetDraft < 0}>Save</button>
+											<button class="inline-btn cancel" data-testid="budget-cancel" onclick={cancelEditingBudget}>Cancel</button>
+										</div>
+									{:else}
+										<button class="editable-value" data-testid="budget-display" onclick={startEditingBudget}>
+											<span class="mono">
+												{settings.token_budget.global_hourly_limit === 0
+													? 'Unlimited'
+													: settings.token_budget.global_hourly_limit.toLocaleString()}
+											</span>
+											<span class="edit-hint">edit</span>
+										</button>
+									{/if}
 								</div>
 							</div>
 						</SettingsSection>
@@ -701,6 +805,76 @@
 	}
 
 	.ws-url-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	/* Shared inline edit styles (budget, etc.) */
+	.editable-value {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		text-align: left;
+		color: var(--ui-text-primary);
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.editable-value:hover .edit-hint {
+		opacity: 1;
+	}
+
+	.budget-pair {
+		grid-column: 1 / -1;
+	}
+
+	.inline-edit {
+		display: flex;
+		gap: var(--spacing-xs);
+		align-items: center;
+	}
+
+	.inline-input {
+		width: 140px;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: 0.8125rem;
+		font-family: monospace;
+		border: 1px solid var(--ui-border-interactive);
+		border-radius: var(--radius-sm);
+		background: var(--ui-surface-primary);
+		color: var(--ui-text-primary);
+		outline: none;
+	}
+
+	.inline-input:focus {
+		border-color: var(--ui-border-focus);
+	}
+
+	.inline-btn {
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: 0.75rem;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.inline-btn.save {
+		background: var(--status-success-container);
+		color: var(--status-success);
+		border-color: var(--status-success);
+	}
+
+	.inline-btn.cancel {
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-secondary);
+	}
+
+	.inline-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}

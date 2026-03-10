@@ -124,10 +124,11 @@ export interface GraphStoreAdapter {
 // =============================================================================
 
 /**
- * Default entity ID prefix filter — only load game entities.
- * Game entities always have "game" as the 3rd part of their 6-part ID.
+ * Default entity ID prefix filter.
+ * Empty string loads all entities — the visibleTypes filter handles
+ * narrowing to game entity types (quest, agent, party, guild, battle).
  */
-const DEFAULT_GAME_PREFIX = '.game.';
+const DEFAULT_GAME_PREFIX = '';
 
 /**
  * Default maximum nodes to load in a single query.

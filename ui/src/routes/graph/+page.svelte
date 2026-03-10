@@ -141,7 +141,7 @@
 
 	{#snippet centerPanel()}
 		<div class="graph-page" data-testid="graph-page">
-			<!-- Top bar: filters + metrics -->
+			<!-- Top bar: filters + metrics in a single horizontal row -->
 			<div class="graph-toolbar">
 				<GraphFilters
 					visibleTypes={graphStore.visibleTypes}
@@ -151,26 +151,25 @@
 					onShowAll={() => graphStore.showAllTypes()}
 					onHideAll={() => graphStore.hideAllTypes()}
 				/>
-				<div class="toolbar-right">
-					<GraphMetrics
-						entities={filteredEntities}
-						relationships={filteredRelationships}
-					/>
-					{#if graphStore.error}
-						<div class="error-banner" role="alert" data-testid="graph-error">
-							<span class="error-icon" aria-hidden="true">!</span>
-							{graphStore.error}
-							<button
-								class="error-dismiss"
-								onclick={() => graphStore.setError(null)}
-								aria-label="Dismiss error"
-							>
-								×
-							</button>
-						</div>
-					{/if}
-				</div>
+				<div class="toolbar-spacer"></div>
+				<GraphMetrics
+					entities={filteredEntities}
+					relationships={filteredRelationships}
+				/>
 			</div>
+			{#if graphStore.error}
+				<div class="error-banner" role="alert" data-testid="graph-error">
+					<span class="error-icon" aria-hidden="true">!</span>
+					{graphStore.error}
+					<button
+						class="error-dismiss"
+						onclick={() => graphStore.setError(null)}
+						aria-label="Dismiss error"
+					>
+						×
+					</button>
+				</div>
+			{/if}
 
 			<!-- Graph canvas — fills remaining height -->
 			<div class="canvas-wrapper">
@@ -205,20 +204,18 @@
 		overflow: hidden;
 	}
 
-	/* Toolbar: filters row across the top of center panel */
+	/* Toolbar: single horizontal row across the top of center panel */
 	.graph-toolbar {
 		display: flex;
-		align-items: stretch;
+		align-items: center;
 		flex-shrink: 0;
 		border-bottom: 1px solid var(--ui-border-subtle);
 		background: var(--ui-surface-secondary);
+		overflow-x: auto;
 	}
 
-	.toolbar-right {
+	.toolbar-spacer {
 		flex: 1;
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
 	}
 
 	/* Canvas fills all remaining height below the toolbar */

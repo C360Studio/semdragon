@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * GraphFilters - Filter controls for the graph visualization
+	 * GraphFilters - Horizontal filter toolbar for the graph visualization
 	 *
 	 * Provides:
 	 * - Entity type checkboxes (quest/agent/party/guild/battle/peer_review)
@@ -54,111 +54,170 @@
 </script>
 
 <div class="graph-filters" data-testid="graph-filters">
-	<!-- Search -->
-	<div class="filter-section">
-		<label class="section-label" for="graph-search">Search</label>
-		<div class="search-wrapper">
-			<input
-				id="graph-search"
-				type="search"
-				class="search-input"
-				placeholder="Filter by ID or name…"
-				value={search}
-				oninput={handleSearchInput}
-				onkeydown={handleSearchKeydown}
-				aria-label="Filter entities by ID or name"
-			/>
-			{#if search}
-				<button
-					class="clear-search"
-					onclick={() => onSearchChange('')}
-					aria-label="Clear search"
-					title="Clear"
-				>
-					×
-				</button>
-			{/if}
-		</div>
+	<!-- Entity type toggles -->
+	<div class="type-list" role="group" aria-label="Entity type filters">
+		{#each GAME_TYPES as type (type)}
+			{@const checked = visibleTypes.has(type)}
+			{@const color = ENTITY_TYPE_COLORS[type] ?? ENTITY_TYPE_COLORS.unknown}
+			<label
+				class="type-checkbox"
+				class:type-checked={checked}
+				style="--type-color: {color}"
+				data-testid="filter-type-{type}"
+			>
+				<input
+					type="checkbox"
+					{checked}
+					onchange={() => onToggleType(type)}
+					aria-label="Show {type} entities"
+				/>
+				<span class="type-dot" aria-hidden="true"></span>
+				<span class="type-name">{type.replaceAll('_', ' ')}</span>
+			</label>
+		{/each}
 	</div>
 
-	<!-- Entity type toggles -->
-	<div class="filter-section">
-		<div class="section-header">
-			<span class="section-label">Entity Types</span>
-			<div class="quick-actions">
-				<button class="quick-btn" onclick={onShowAll} title="Show all entity types">All</button>
-				<button class="quick-btn" onclick={onHideAll} title="Hide all entity types">None</button>
-			</div>
-		</div>
-		<div class="type-list" role="group" aria-label="Entity type filters">
-			{#each GAME_TYPES as type (type)}
-				{@const checked = visibleTypes.has(type)}
-				{@const color = ENTITY_TYPE_COLORS[type] ?? ENTITY_TYPE_COLORS.unknown}
-				<label
-					class="type-checkbox"
-					class:type-checked={checked}
-					style="--type-color: {color}"
-					data-testid="filter-type-{type}"
-				>
-					<input
-						type="checkbox"
-						{checked}
-						onchange={() => onToggleType(type)}
-						aria-label="Show {type} entities"
-					/>
-					<span class="type-dot" aria-hidden="true"></span>
-					<span class="type-name">{type.replaceAll('_', ' ')}</span>
-				</label>
-			{/each}
-		</div>
+	<!-- Quick actions -->
+	<div class="quick-actions">
+		<button class="quick-btn" onclick={onShowAll} title="Show all entity types">All</button>
+		<button class="quick-btn" onclick={onHideAll} title="Hide all entity types">None</button>
+	</div>
+
+	<span class="filter-sep" aria-hidden="true">|</span>
+
+	<!-- Search -->
+	<div class="search-wrapper">
+		<input
+			id="graph-search"
+			type="search"
+			class="search-input"
+			placeholder="Filter by ID or name…"
+			value={search}
+			oninput={handleSearchInput}
+			onkeydown={handleSearchKeydown}
+			aria-label="Filter entities by ID or name"
+		/>
+		{#if search}
+			<button
+				class="clear-search"
+				onclick={() => onSearchChange('')}
+				aria-label="Clear search"
+				title="Clear"
+			>
+				×
+			</button>
+		{/if}
 	</div>
 </div>
 
 <style>
 	.graph-filters {
 		display: flex;
-		flex-direction: column;
-		gap: 0;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 12px;
 		background: var(--ui-surface-secondary);
-		border-right: 1px solid var(--ui-border-subtle);
-		min-width: 180px;
+		font-size: 12px;
+		flex-shrink: 0;
+		min-height: 32px;
 	}
 
-	.filter-section {
-		padding: 10px 12px;
-		border-bottom: 1px solid var(--ui-border-subtle);
-	}
-
-	.section-header {
+	/* Type checkboxes — horizontal row */
+	.type-list {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 6px;
+		gap: 2px;
 	}
 
-	.section-label {
-		font-size: 10px;
-		font-weight: 600;
+	.type-checkbox {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 8px;
+		border-radius: 12px;
+		cursor: pointer;
+		transition: background-color 150ms ease;
+		font-size: 11px;
 		color: var(--ui-text-tertiary);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		display: block;
-		margin-bottom: 6px;
+		white-space: nowrap;
+		user-select: none;
 	}
 
-	.section-header .section-label {
-		margin-bottom: 0;
+	.type-checkbox:hover {
+		background: var(--ui-surface-tertiary);
+	}
+
+	.type-checkbox.type-checked {
+		color: var(--ui-text-primary);
+		background: color-mix(in srgb, var(--type-color, #6b7280) 12%, transparent);
+	}
+
+	.type-checkbox input[type='checkbox'] {
+		/* Visually hidden but accessible */
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		opacity: 0;
+		margin: 0;
+	}
+
+	.type-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		border: 2px solid var(--type-color, #6b7280);
+		flex-shrink: 0;
+		background: transparent;
+		transition: background-color 150ms ease;
+	}
+
+	.type-checked .type-dot {
+		background: var(--type-color, #6b7280);
+	}
+
+	.type-name {
+		text-transform: capitalize;
+	}
+
+	/* Quick-action buttons */
+	.quick-actions {
+		display: flex;
+		gap: 2px;
+	}
+
+	.quick-btn {
+		font-size: 10px;
+		padding: 2px 6px;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: 3px;
+		background: var(--ui-surface-primary);
+		color: var(--ui-text-secondary);
+		cursor: pointer;
+		transition: background-color 150ms ease, border-color 150ms ease;
+	}
+
+	.quick-btn:hover {
+		background: var(--ui-surface-tertiary);
+		border-color: var(--ui-border-strong);
+		color: var(--ui-text-primary);
+	}
+
+	.filter-sep {
+		color: var(--ui-border-subtle);
+		margin: 0 2px;
 	}
 
 	/* Search */
 	.search-wrapper {
 		position: relative;
+		min-width: 160px;
+		max-width: 240px;
 	}
 
 	.search-input {
 		width: 100%;
-		padding: 5px 28px 5px 8px;
-		font-size: 12px;
+		padding: 4px 28px 4px 8px;
+		font-size: 11px;
 		background: var(--ui-surface-primary);
 		border: 1px solid var(--ui-border-subtle);
 		border-radius: 4px;
@@ -181,8 +240,8 @@
 		right: 4px;
 		top: 50%;
 		transform: translateY(-50%);
-		width: 20px;
-		height: 20px;
+		width: 18px;
+		height: 18px;
 		border: none;
 		background: transparent;
 		color: var(--ui-text-tertiary);
@@ -197,82 +256,5 @@
 	.clear-search:hover {
 		background: var(--ui-surface-tertiary);
 		color: var(--ui-text-primary);
-	}
-
-	/* Quick-action buttons */
-	.quick-actions {
-		display: flex;
-		gap: 4px;
-	}
-
-	.quick-btn {
-		font-size: 10px;
-		padding: 1px 6px;
-		border: 1px solid var(--ui-border-subtle);
-		border-radius: 3px;
-		background: var(--ui-surface-primary);
-		color: var(--ui-text-secondary);
-		cursor: pointer;
-		transition: background-color 150ms ease, border-color 150ms ease;
-	}
-
-	.quick-btn:hover {
-		background: var(--ui-surface-tertiary);
-		border-color: var(--ui-border-strong);
-		color: var(--ui-text-primary);
-	}
-
-	/* Type checkboxes */
-	.type-list {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.type-checkbox {
-		display: flex;
-		align-items: center;
-		gap: 7px;
-		padding: 4px 6px;
-		border-radius: 4px;
-		cursor: pointer;
-		transition: background-color 150ms ease;
-		font-size: 12px;
-		color: var(--ui-text-secondary);
-	}
-
-	.type-checkbox:hover {
-		background: var(--ui-surface-tertiary);
-	}
-
-	.type-checkbox.type-checked {
-		color: var(--ui-text-primary);
-	}
-
-	.type-checkbox input[type='checkbox'] {
-		/* Visually hidden but accessible */
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		opacity: 0;
-		margin: 0;
-	}
-
-	.type-dot {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		border: 2px solid var(--type-color, #6b7280);
-		flex-shrink: 0;
-		background: transparent;
-		transition: background-color 150ms ease;
-	}
-
-	.type-checked .type-dot {
-		background: var(--type-color, #6b7280);
-	}
-
-	.type-name {
-		text-transform: capitalize;
 	}
 </style>

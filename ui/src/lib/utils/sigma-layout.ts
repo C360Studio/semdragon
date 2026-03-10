@@ -12,7 +12,8 @@
  * Ported from semstreams-ui.
  */
 
-import type Graph from 'graphology';
+import type AbstractGraph from 'graphology';
+type Graph = AbstractGraph;
 import FA2Layout from 'graphology-layout-forceatlas2/worker';
 
 /**

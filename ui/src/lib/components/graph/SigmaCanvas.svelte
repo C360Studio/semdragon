@@ -8,7 +8,7 @@
 	 * all others are faded to #525252. Edge dimming mirrors the same rule.
 	 */
 
-	import Graph from 'graphology';
+	import { MultiDirectedGraph } from 'graphology';
 	import Sigma from 'sigma';
 	import type { GraphEntity, GraphRelationship } from '$lib/api/graph-types';
 	import { syncStoreToGraph } from '$lib/utils/graphology-adapter';
@@ -40,8 +40,9 @@
 
 	let containerElement: HTMLDivElement;
 	let sigma: Sigma | null = null;
-	let graph: Graph | null = null;
+	let graph: MultiDirectedGraph | null = null;
 	let layout: LayoutController | null = null;
+	let lastEntityCount = 0;
 
 	// Initialise Sigma once the container is in the DOM — SSR safe
 	$effect(() => {
@@ -49,7 +50,7 @@
 		if (typeof window === 'undefined') return;
 		if (!containerElement) return;
 
-		graph = new Graph();
+		graph = new MultiDirectedGraph();
 		layout = new LayoutController();
 
 		sigma = new Sigma(graph, containerElement, {
@@ -134,8 +135,13 @@
 		void relationships.length;
 		if (entities.length === 0 && graph.order === 0) return;
 
+		const prevCount = lastEntityCount;
 		syncStoreToGraph(graph, entities, relationships);
-		layout.start(graph);
+		// Only restart layout when new data arrives (load/expand), not on filter toggle
+		if (entities.length !== prevCount) {
+			layout.start(graph);
+			lastEntityCount = entities.length;
+		}
 		sigma.refresh();
 	});
 
