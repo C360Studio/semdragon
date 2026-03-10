@@ -231,11 +231,11 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 	userMessage := formatOutputForJudge(output)
 
 	// Call the LLM
-	llmResults, checklistResults, feedback, peerRatings, tokenUsage, loopID, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
+	judgeResult, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
 
 	// Record token usage regardless of success/failure.
-	if e.tokenLedger != nil && (tokenUsage.PromptTokens > 0 || tokenUsage.CompletionTokens > 0) {
-		e.tokenLedger.Record(ctx, tokenUsage.PromptTokens, tokenUsage.CompletionTokens, "boss_battle", endpointName)
+	if e.tokenLedger != nil && judgeResult != nil && (judgeResult.TokenUsage.PromptTokens > 0 || judgeResult.TokenUsage.CompletionTokens > 0) {
+		e.tokenLedger.Record(ctx, judgeResult.TokenUsage.PromptTokens, judgeResult.TokenUsage.CompletionTokens, "boss_battle", endpointName)
 	}
 
 	if err != nil {
@@ -245,15 +245,16 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 	}
 
 	// Merge: use LLM results for criteria it scored, heuristic for any it missed
-	results := e.mergeResults(battle, llmResults)
+	results := e.mergeResults(battle, judgeResult.Results)
 
+	feedback := judgeResult.Feedback
 	if feedback == "" {
 		feedback = "LLM judge evaluation complete"
 	}
 
-	verdict := computeVerdict(results, battle, feedback, checklistResults...)
-	verdict.PeerRatings = peerRatings
-	verdict.LoopID = loopID
+	verdict := computeVerdict(results, battle, feedback, judgeResult.ChecklistResults...)
+	verdict.PeerRatings = judgeResult.PeerRatings
+	verdict.LoopID = judgeResult.LoopID
 	return verdict, nil
 }
 
@@ -267,18 +268,27 @@ func (e *DomainAwareEvaluator) hasLLMJudge(battle *BossBattle) bool {
 	return false
 }
 
+// llmJudgeResult holds all outputs from a single LLM judge call.
+type llmJudgeResult struct {
+	Results          []domain.ReviewResult
+	ChecklistResults []ChecklistResult
+	Feedback         string
+	PeerRatings      *domain.ReviewRatings
+	TokenUsage       agentic.TokenUsage
+	LoopID           string
+}
+
 // callLLMJudge makes a one-shot LLM call and parses the response into review results.
-// Returns results, checklist results, overall feedback, peer review ratings, token usage, loop ID, and any error.
-// The loop ID is non-empty when a trajectory was successfully queued for writing.
+// The LoopID is non-empty when a trajectory was successfully queued for writing.
 func (e *DomainAwareEvaluator) callLLMJudge(
 	ctx context.Context,
 	endpoint *model.EndpointConfig,
 	systemPrompt, userMessage string,
 	battle *BossBattle,
-) ([]domain.ReviewResult, []ChecklistResult, string, *domain.ReviewRatings, agentic.TokenUsage, string, error) {
+) (*llmJudgeResult, error) {
 	client, err := agenticmodel.NewClient(endpoint)
 	if err != nil {
-		return nil, nil, "", nil, agentic.TokenUsage{}, "", fmt.Errorf("create LLM client: %w", err)
+		return nil, fmt.Errorf("create LLM client: %w", err)
 	}
 
 	req := agentic.AgentRequest{
@@ -295,11 +305,11 @@ func (e *DomainAwareEvaluator) callLLMJudge(
 	resp, err := client.ChatCompletion(ctx, req)
 	callDuration := time.Since(callStart).Milliseconds()
 	if err != nil {
-		return nil, nil, "", nil, agentic.TokenUsage{}, "", fmt.Errorf("LLM chat completion: %w", err)
+		return nil, fmt.Errorf("LLM chat completion: %w", err)
 	}
 
 	if resp.Status == agentic.StatusError {
-		return nil, nil, "", nil, resp.TokenUsage, "", fmt.Errorf("LLM returned error: %s", resp.Error)
+		return &llmJudgeResult{TokenUsage: resp.TokenUsage}, fmt.Errorf("LLM returned error: %s", resp.Error)
 	}
 
 	// Build and persist a lightweight trajectory for observability.
@@ -337,7 +347,14 @@ func (e *DomainAwareEvaluator) callLLMJudge(
 	}
 
 	results, checklistResults, feedback, peerRatings, parseErr := parseJudgeResponse(resp.Message.Content, battle)
-	return results, checklistResults, feedback, peerRatings, resp.TokenUsage, loopID, parseErr
+	return &llmJudgeResult{
+		Results:          results,
+		ChecklistResults: checklistResults,
+		Feedback:         feedback,
+		PeerRatings:      peerRatings,
+		TokenUsage:       resp.TokenUsage,
+		LoopID:           loopID,
+	}, parseErr
 }
 
 // writeTrajectory persists a battle trajectory to the AGENT_TRAJECTORIES KV bucket.

@@ -2,6 +2,8 @@ package bossbattle
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/c360studio/semstreams/graph"
@@ -144,7 +146,8 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 		ID: domain.BattleID(entity.ID),
 	}
 
-	var judgeIDs []string
+	// Indexed judge predicates: battle.judge.N.id and battle.judge.N.type
+	judgeByIndex := make(map[int]*domain.Judge)
 
 	for _, triple := range entity.Triples {
 		switch triple.Predicate {
@@ -197,16 +200,69 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 		case "battle.execution.loop_id":
 			b.LoopID = domain.AsString(triple.Object)
 
-		// Judges (legacy predicate — kept for backward compatibility)
-		case "battle.judge.id":
-			judgeIDs = append(judgeIDs, domain.AsString(triple.Object))
+		default:
+			// Indexed judge predicates: battle.judge.N.id / battle.judge.N.type
+			if strings.HasPrefix(triple.Predicate, "battle.judge.") {
+				parseIndexedJudge(triple.Predicate, triple.Object, judgeByIndex)
+			}
 		}
 	}
 
-	// Reconstruct judges (we only store IDs in triples)
-	for _, id := range judgeIDs {
-		b.Judges = append(b.Judges, domain.Judge{ID: id})
-	}
+	// Reconstruct judges in index order
+	b.Judges = collectJudges(judgeByIndex)
 
 	return b
+}
+
+// parseIndexedJudge extracts judge ID or type from predicates like
+// "battle.judge.0.id" or "battle.judge.1.type" into the indexed map.
+// Also handles legacy 3-part predicates like "battle.judge.id".
+func parseIndexedJudge(predicate string, object any, judges map[int]*domain.Judge) {
+	// Expected: battle.judge.<N>.<field> (4 parts) or battle.judge.<field> (3 parts, legacy)
+	parts := strings.Split(predicate, ".")
+	if len(parts) == 3 {
+		// Legacy unindexed predicate: battle.judge.id (type was never emitted in legacy format)
+		if parts[2] == "id" {
+			nextIdx := len(judges)
+			judges[nextIdx] = &domain.Judge{ID: domain.AsString(object)}
+		}
+		return
+	}
+	if len(parts) != 4 {
+		return
+	}
+	idx, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return
+	}
+	if judges[idx] == nil {
+		judges[idx] = &domain.Judge{}
+	}
+	switch parts[3] {
+	case "id":
+		judges[idx].ID = domain.AsString(object)
+	case "type":
+		judges[idx].Type = domain.JudgeType(domain.AsString(object))
+	}
+}
+
+// collectJudges converts the indexed judge map to a sorted slice.
+func collectJudges(m map[int]*domain.Judge) []domain.Judge {
+	if len(m) == 0 {
+		return nil
+	}
+	// Find max index to size the slice
+	maxIdx := 0
+	for idx := range m {
+		if idx > maxIdx {
+			maxIdx = idx
+		}
+	}
+	judges := make([]domain.Judge, 0, len(m))
+	for i := 0; i <= maxIdx; i++ {
+		if j, ok := m[i]; ok {
+			judges = append(judges, *j)
+		}
+	}
+	return judges
 }

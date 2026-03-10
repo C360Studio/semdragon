@@ -195,7 +195,7 @@ func TestInventorySurvivesRestart(t *testing.T) {
 	}
 
 	// Purchase a permanent tool (web_search: 50 XP)
-	owned, err := comp1.Purchase(ctx, agentID, "web_search", 1000, 8, nil)
+	owned, err := comp1.Purchase(ctx, agentID, "web_search", 1000, 8, "")
 	if err != nil {
 		t.Fatalf("Purchase web_search failed: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestInventorySurvivesRestart(t *testing.T) {
 	}
 
 	// Purchase a rental tool (context_expander: 200 XP, 10 uses)
-	owned2, err := comp1.Purchase(ctx, agentID, "context_expander", 950, 8, nil)
+	owned2, err := comp1.Purchase(ctx, agentID, "context_expander", 950, 8, "")
 	if err != nil {
 		t.Fatalf("Purchase context_expander failed: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestInventorySurvivesRestart(t *testing.T) {
 	}
 
 	// Purchase a consumable (retry_token: 50 XP)
-	owned3, err := comp1.Purchase(ctx, agentID, "retry_token", 750, 8, nil)
+	owned3, err := comp1.Purchase(ctx, agentID, "retry_token", 750, 8, "")
 	if err != nil {
 		t.Fatalf("Purchase retry_token failed: %v", err)
 	}

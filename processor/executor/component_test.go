@@ -895,11 +895,4 @@ func makeQuest(id, title string, skills ...domain.SkillTag) *domain.Quest {
 	}
 }
 
-// toolNames extracts names from a slice of ToolDefinitions for error messages.
-func toolNames(tools []agentic.ToolDefinition) []string {
-	names := make([]string, len(tools))
-	for i, t := range tools {
-		names[i] = t.Name
-	}
-	return names
-}
+// toolNames is defined in tools_test.go (available in both unit and integration builds).

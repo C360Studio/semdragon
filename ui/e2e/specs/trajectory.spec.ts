@@ -163,7 +163,7 @@ test.describe('Trajectory List Page', () => {
 
 		await expect(page.getByTestId('trajectories-heading')).toHaveText('Trajectory Explorer');
 		await expect(page.getByTestId('trajectories-page')).toContainText(
-			'Browse the full event timeline'
+			'Browse the full LLM execution history'
 		);
 	});
 

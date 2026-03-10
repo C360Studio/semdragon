@@ -406,6 +406,9 @@ func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agent
 
 	// Check if agent already belongs to a guild (single-guild constraint).
 	if existing := c.GetAgentGuild(agentID); existing != "" {
+		if existing == guildID {
+			return ErrAlreadyMember
+		}
 		return fmt.Errorf("agent already belongs to guild %s", existing)
 	}
 

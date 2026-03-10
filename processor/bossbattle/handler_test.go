@@ -534,6 +534,57 @@ func TestBossBattle_LoopID_EmptyNotEmitted(t *testing.T) {
 	}
 }
 
+func TestBossBattle_JudgeRoundTrip(t *testing.T) {
+	b := newTestBattle()
+	// newTestBattle has 2 judges: judge-auto (Automated) and judge-llm-1 (LLM)
+
+	entity := battleToEntityState(b)
+	reconstructed := BattleFromEntityState(entity)
+
+	if len(reconstructed.Judges) != len(b.Judges) {
+		t.Fatalf("reconstructed %d judges, want %d", len(reconstructed.Judges), len(b.Judges))
+	}
+	for i, j := range reconstructed.Judges {
+		if j.ID != b.Judges[i].ID {
+			t.Errorf("judge[%d].ID = %q, want %q", i, j.ID, b.Judges[i].ID)
+		}
+		if j.Type != b.Judges[i].Type {
+			t.Errorf("judge[%d].Type = %q, want %q", i, j.Type, b.Judges[i].Type)
+		}
+	}
+}
+
+func TestBossBattle_JudgeLegacyFallback(t *testing.T) {
+	// Simulate legacy data with unindexed "battle.judge.id" predicate
+	entity := &graph.EntityState{
+		ID: "c360.prod.game.board1.battle.legacy",
+		Triples: []message.Triple{
+			{Subject: "c360.prod.game.board1.battle.legacy", Predicate: "battle.status.state", Object: "active"},
+			{Subject: "c360.prod.game.board1.battle.legacy", Predicate: "battle.judge.id", Object: "judge-old"},
+		},
+	}
+	b := BattleFromEntityState(entity)
+	if len(b.Judges) != 1 {
+		t.Fatalf("got %d judges, want 1", len(b.Judges))
+	}
+	if b.Judges[0].ID != "judge-old" {
+		t.Errorf("judge ID = %q, want %q", b.Judges[0].ID, "judge-old")
+	}
+}
+
+func TestBossBattle_JudgeNoJudges(t *testing.T) {
+	entity := &graph.EntityState{
+		ID: "c360.prod.game.board1.battle.nojudge",
+		Triples: []message.Triple{
+			{Subject: "c360.prod.game.board1.battle.nojudge", Predicate: "battle.status.state", Object: "active"},
+		},
+	}
+	b := BattleFromEntityState(entity)
+	if len(b.Judges) != 0 {
+		t.Errorf("got %d judges, want 0", len(b.Judges))
+	}
+}
+
 // =============================================================================
 // DEFAULT BATTLE EVALUATOR TESTS
 // =============================================================================
