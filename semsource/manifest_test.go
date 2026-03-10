@@ -85,7 +85,7 @@ func TestFetch_Success(t *testing.T) {
 
 func TestFetch_CacheFresh(t *testing.T) {
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		json.NewEncoder(w).Encode(ManifestPayload{
 			Sources: []SourceManifest{{Name: "repo"}},
@@ -109,7 +109,7 @@ func TestFetch_CacheFresh(t *testing.T) {
 
 func TestFetch_CacheExpired(t *testing.T) {
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		json.NewEncoder(w).Encode(ManifestPayload{
 			Sources: []SourceManifest{{Name: "repo"}},
@@ -149,7 +149,7 @@ func TestFetch_ServerDown_ReturnsStaleCacheIfAvailable(t *testing.T) {
 	payload := ManifestPayload{
 		Sources: []SourceManifest{{Name: "stale-repo"}},
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(payload)
 	}))
 
@@ -195,7 +195,7 @@ func TestFormatForPrompt_WithSources(t *testing.T) {
 			{Name: "specs", Type: "document", Description: "API specs", Status: "indexing"},
 		},
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(payload)
 	}))
 	defer srv.Close()
@@ -227,7 +227,7 @@ func TestFormatForPrompt_WithSources(t *testing.T) {
 
 func TestRefresh(t *testing.T) {
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		json.NewEncoder(w).Encode(ManifestPayload{
 			Sources: []SourceManifest{{Name: "repo"}},
