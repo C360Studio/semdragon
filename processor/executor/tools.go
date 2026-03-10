@@ -447,30 +447,6 @@ func (r *ToolRegistry) RegisterBuiltins() {
 
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
-			Name:        "web_search",
-			Description: "Search the web and return results. Requires a search provider to be configured.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"query": map[string]any{
-						"type":        "string",
-						"description": "The search query",
-					},
-					"max_results": map[string]any{
-						"type":        "integer",
-						"description": "Maximum number of results to return (default 5, max 10)",
-					},
-				},
-				"required": []any{"query"},
-			},
-		},
-		Handler: webSearchHandler,
-		Skills:  []domain.SkillTag{domain.SkillResearch},
-		MinTier: domain.TierApprentice, // Research capability available to all tiers
-	})
-
-	r.Register(RegisteredTool{
-		Definition: agentic.ToolDefinition{
 			Name:        "patch_file",
 			Description: "Apply a targeted find-and-replace edit to a file. More precise than write_file for small changes.",
 			Parameters: map[string]any{
@@ -650,6 +626,51 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		},
 		Handler: runCommandHandler,
 		MinTier: domain.TierMaster, // Level 16+ — unrestricted shell requires high trust
+	})
+
+	// Terminal tools — these stop the agentic loop on successful execution.
+	// submit_work_product replaces [INTENT: work_product] tags.
+	// ask_clarification replaces [INTENT: clarification] tags.
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "submit_work_product",
+			Description: "Submit your completed deliverable for review. Call this tool when your work is finished.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"deliverable": map[string]any{
+						"type":        "string",
+						"description": "The completed work product content",
+					},
+					"summary": map[string]any{
+						"type":        "string",
+						"description": "Brief summary of what was delivered",
+					},
+				},
+				"required": []any{"deliverable"},
+			},
+		},
+		Handler: submitWorkProductHandler,
+		MinTier: domain.TierApprentice, // All tiers can submit work
+	})
+
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "ask_clarification",
+			Description: "Ask the quest issuer a clarifying question when you need more information before you can proceed.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"question": map[string]any{
+						"type":        "string",
+						"description": "Your question for the quest issuer",
+					},
+				},
+				"required": []any{"question"},
+			},
+		},
+		Handler: askClarificationHandler,
+		MinTier: domain.TierApprentice, // All tiers can ask questions
 	})
 
 	decomposeExec := questdagexec.NewDecomposeExecutor()
@@ -1318,26 +1339,85 @@ func readFileRangeHandler(ctx context.Context, call agentic.ToolCall, _ *domain.
 }
 
 // =============================================================================
-// web_search handler (stub — requires external provider configuration)
+// web_search handler
 // =============================================================================
 
-func webSearchHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-	default:
+// makeWebSearchHandler returns a web_search handler backed by the given provider.
+func makeWebSearchHandler(provider SearchProvider) ToolHandler {
+	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+		select {
+		case <-ctx.Done():
+			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+		default:
+		}
+
+		query, _ := call.Arguments["query"].(string)
+		if query == "" {
+			return agentic.ToolResult{CallID: call.ID, Error: "query argument is required"}
+		}
+
+		maxResults := 5
+		if mr, ok := call.Arguments["max_results"].(float64); ok && mr > 0 {
+			maxResults = int(mr)
+		}
+
+		reqCtx, cancel := context.WithTimeout(ctx, httpRequestTimeout)
+		defer cancel()
+
+		results, err := provider.Search(reqCtx, query, maxResults)
+		if err != nil {
+			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("web search failed: %v", err)}
+		}
+
+		return agentic.ToolResult{
+			CallID:  call.ID,
+			Content: formatSearchResults(results, query),
+		}
+	}
+}
+
+// =============================================================================
+// TERMINAL TOOL HANDLERS (submit_work_product, ask_clarification)
+// =============================================================================
+
+func submitWorkProductHandler(_ context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	deliverable, _ := call.Arguments["deliverable"].(string)
+	if deliverable == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "deliverable argument is required and must be non-empty"}
 	}
 
-	query, _ := call.Arguments["query"].(string)
-	if query == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "query argument is required"}
+	summary, _ := call.Arguments["summary"].(string)
+
+	result := map[string]string{
+		"type":        "work_product",
+		"deliverable": deliverable,
+	}
+	if summary != "" {
+		result["summary"] = summary
 	}
 
-	// This is a stub. The handler shape and registration are complete so that a
-	// real search provider can be wired in by replacing this return statement.
+	jsonBytes, _ := json.Marshal(result)
 	return agentic.ToolResult{
-		CallID: call.ID,
-		Error:  "web_search requires a search provider to be configured. Contact your administrator to set up a search API key.",
+		CallID:   call.ID,
+		Content:  string(jsonBytes),
+		StopLoop: true,
+	}
+}
+
+func askClarificationHandler(_ context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	question, _ := call.Arguments["question"].(string)
+	if question == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "question argument is required and must be non-empty"}
+	}
+
+	jsonBytes, _ := json.Marshal(map[string]string{
+		"type":     "clarification",
+		"question": question,
+	})
+	return agentic.ToolResult{
+		CallID:   call.ID,
+		Content:  string(jsonBytes),
+		StopLoop: true,
 	}
 }
 
@@ -1886,6 +1966,39 @@ func (r *ToolRegistry) RegisterGraphQuery(queryFn EntityQueryFunc) {
 
 // graphQLTimeout is the timeout for graph-gateway GraphQL requests.
 const graphQLTimeout = 30 * time.Second
+
+// =============================================================================
+// WEB SEARCH TOOL (conditional registration)
+// =============================================================================
+
+// RegisterWebSearch adds the web_search tool to the registry backed by the
+// given SearchProvider. Call this only when a search provider is configured.
+func (r *ToolRegistry) RegisterWebSearch(provider SearchProvider) {
+	handler := makeWebSearchHandler(provider)
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "web_search",
+			Description: "Search the web and return results.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{
+						"type":        "string",
+						"description": "The search query",
+					},
+					"max_results": map[string]any{
+						"type":        "integer",
+						"description": "Maximum number of results to return (default 5, max 10)",
+					},
+				},
+				"required": []any{"query"},
+			},
+		},
+		Handler: handler,
+		Skills:  []domain.SkillTag{domain.SkillResearch},
+		MinTier: domain.TierApprentice,
+	})
+}
 
 // =============================================================================
 // GRAPH SEARCH TOOL

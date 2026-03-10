@@ -1,8 +1,8 @@
 package questtools
 
 import (
-
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/executor"
 )
 
 // Config holds all configuration for the questtools processor.
@@ -18,8 +18,11 @@ type Config struct {
 	// GraphQLURL is the graph-gateway GraphQL endpoint for the graph_search tool.
 	// When empty, graph_search is not registered. Example: "http://localhost:8082/graphql"
 	GraphQLURL string `json:"graphql_url,omitempty"`
+	// Search configures the web_search tool. When nil/empty provider, web_search
+	// is not registered. Supports "brave" (more providers can be added).
+	Search *executor.SearchConfig `json:"search,omitempty"`
 	// ConsumerNameSuffix disambiguates multiple instances consuming the same stream.
-	ConsumerNameSuffix   string `json:"consumer_name_suffix,omitempty"`
+	ConsumerNameSuffix string `json:"consumer_name_suffix,omitempty"`
 	DeleteConsumerOnStop bool   `json:"delete_consumer_on_stop,omitempty"`
 }
 

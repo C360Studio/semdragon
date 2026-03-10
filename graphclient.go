@@ -21,7 +21,7 @@ import (
 // entities and the KV bucket.
 //
 // Design: Components use GraphClient instead of direct storage operations.
-// Entity writes go to the board KV bucket (e.g., "semdragons-local-dev-board1"),
+// Entity writes go to the ENTITY_STATES KV bucket (shared with the graph pipeline),
 // which acts as both the source of truth and the event stream (the NATS KV "Twofer").
 type GraphClient struct {
 	nats   *natsclient.Client

@@ -66,9 +66,10 @@ type Component struct {
 	boardConfig *domain.BoardConfig
 
 	// Execution infrastructure
-	registry        model.RegistryReader
-	toolRegistry    *executor.ToolRegistry
-	promptAssembler *promptmanager.PromptAssembler
+	registry            model.RegistryReader
+	toolRegistry        *executor.ToolRegistry
+	toolRegistrySource  ToolRegistrySource // lazy provider from questtools (optional)
+	promptAssembler     *promptmanager.PromptAssembler
 
 	// QUEST_LOOPS KV bucket for crash recovery
 	questLoopsBucket jetstream.KeyValue
@@ -269,13 +270,17 @@ func (c *Component) Start(ctx context.Context) error {
 		c.logger.Info("auto-DM clarification answerer enabled (full_auto mode)")
 	}
 
-	// Create tool registry for tool definition filtering.
-	c.toolRegistry = executor.NewToolRegistry()
-	if c.config.SandboxDir != "" {
-		c.toolRegistry.SetSandboxDir(c.config.SandboxDir)
-	}
-	if c.config.EnableBuiltins {
-		c.toolRegistry.RegisterBuiltins()
+	// Build a local tool registry only when no external source was injected.
+	// When questtools is wired via SetToolRegistrySource, toolsForQuest()
+	// resolves the registry lazily at runtime (after questtools has started).
+	if c.toolRegistrySource == nil {
+		c.toolRegistry = executor.NewToolRegistry()
+		if c.config.SandboxDir != "" {
+			c.toolRegistry.SetSandboxDir(c.config.SandboxDir)
+		}
+		if c.config.EnableBuiltins {
+			c.toolRegistry.RegisterBuiltins()
+		}
 	}
 
 	// Create prompt assembler when a domain catalog is provided.
@@ -369,6 +374,26 @@ func (c *Component) SetClarificationAnswerer(ca ClarificationAnswerer) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.clarificationAnswerer = ca
+}
+
+// ToolRegistrySource provides tool definitions. Implemented by questtools.Component.
+// Using an interface avoids an import cycle and allows test mocking.
+type ToolRegistrySource interface {
+	ToolRegistry() *executor.ToolRegistry
+}
+
+// SetToolRegistrySource injects a lazy tool registry provider (typically questtools).
+// The registry is fetched at runtime when building tool lists for quests, so the
+// source doesn't need to be initialized at wiring time.
+// Must be called before Start.
+func (c *Component) SetToolRegistrySource(src ToolRegistrySource) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetToolRegistrySource called while running; ignored")
+		return
+	}
+	c.toolRegistrySource = src
 }
 
 // SetPauseChecker injects the board pause checker. When paused, quest

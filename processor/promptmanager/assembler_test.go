@@ -460,11 +460,11 @@ func TestAssembleSystemPrompt_ResponseFormatIncluded(t *testing.T) {
 		QuestTitle: "Test quest",
 	})
 
-	if !strings.Contains(result.SystemMessage, "[INTENT: work_product]") {
-		t.Error("expected response format instruction with work_product intent")
+	if !strings.Contains(result.SystemMessage, "submit_work_product") {
+		t.Error("expected response format instruction with submit_work_product tool")
 	}
-	if !strings.Contains(result.SystemMessage, "[INTENT: clarification]") {
-		t.Error("expected response format instruction with clarification intent")
+	if !strings.Contains(result.SystemMessage, "ask_clarification") {
+		t.Error("expected response format instruction with ask_clarification tool")
 	}
 }
 
@@ -479,12 +479,12 @@ func TestAssembleSystemPrompt_ResponseFormatAfterQuest(t *testing.T) {
 
 	msg := result.SystemMessage
 	questIdx := strings.Index(msg, "Test quest")
-	intentIdx := strings.Index(msg, "[INTENT:")
+	toolIdx := strings.Index(msg, "submit_work_product")
 
-	if questIdx < 0 || intentIdx < 0 {
+	if questIdx < 0 || toolIdx < 0 {
 		t.Fatal("expected both quest context and response format in output")
 	}
-	if questIdx >= intentIdx {
+	if questIdx >= toolIdx {
 		t.Error("response format instruction should come after quest context")
 	}
 }

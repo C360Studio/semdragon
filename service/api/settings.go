@@ -287,7 +287,7 @@ func (s *Service) handleSettingsHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Entity state bucket
-	bucketName := fmt.Sprintf("semdragons-%s-%s-%s", s.boardConfig.Org, s.boardConfig.Platform, s.boardConfig.Board)
+	bucketName := s.boardConfig.BucketName()
 	bucketCtx, bucketCancel := context.WithTimeout(ctx, 3*time.Second)
 	_, bucketErr := s.nats.GetKeyValueBucket(bucketCtx, bucketName)
 	bucketCancel()

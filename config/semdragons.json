@@ -220,7 +220,8 @@
           "inputs": [{
             "name": "http",
             "type": "http",
-            "subject": "/graphql"
+            "subject": ":8082",
+            "description": "HTTP server for GraphQL and MCP"
           }],
           "outputs": [
             {"name": "queries",   "type": "nats-request", "subject": "graph.query.*"},
@@ -229,9 +230,8 @@
         },
         "graphql_path": "/graphql",
         "mcp_path": "/mcp",
-        "bind_address": "localhost:8082",
-        "enable_playground": true,
-        "query_timeout": "30s"
+        "bind_address": ":8082",
+        "enable_playground": true
       }
     },
     "questboard": {

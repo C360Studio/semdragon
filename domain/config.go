@@ -153,10 +153,12 @@ func (c *BoardConfig) PeerReviewEntityID(instance string) string {
 	return c.EntityID(EntityTypePeerReview, instance)
 }
 
-// BucketName returns the KV bucket name for this board.
-// Format: semdragons-org-platform-board (dashes, not dots - NATS KV requirement)
+// BucketName returns the KV bucket name for entity state.
+// Uses the standard ENTITY_STATES bucket shared with the semstreams graph pipeline
+// (graph-ingest, graph-index, graph-query, graph-gateway). Six-part entity IDs
+// prevent collisions across orgs/platforms/boards within the same bucket.
 func (c *BoardConfig) BucketName() string {
-	return fmt.Sprintf("semdragons-%s-%s-%s", c.Org, c.Platform, c.Board)
+	return "ENTITY_STATES"
 }
 
 // --- Entity ID Parsing ---

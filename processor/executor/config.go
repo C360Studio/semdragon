@@ -23,6 +23,10 @@ type Config struct {
 	SandboxDir     string `json:"sandbox_dir"`     // Base directory for file operations
 	EnableBuiltins bool   `json:"enable_builtins"` // Register built-in tools
 
+	// Search configures the web_search tool. When nil/empty provider, web_search
+	// is not registered. Supports "brave" (more providers can be added).
+	Search *SearchConfig `json:"search,omitempty"`
+
 	// Domain prompt catalog (optional). When set, enables domain-aware prompt assembly
 	// instead of legacy string concatenation.
 	DomainCatalog *promptmanager.DomainCatalog `json:"-"`

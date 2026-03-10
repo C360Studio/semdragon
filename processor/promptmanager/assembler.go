@@ -146,14 +146,12 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 // =============================================================================
 
 // responseFormatInstruction is injected into every assembled system prompt.
-// It instructs the LLM to self-classify its output so questbridge can route
-// work products to review and clarification requests to the DM.
-const responseFormatInstruction = `Begin every response with exactly one intent declaration on its own line:
+// It instructs the LLM to use terminal tools to signal completion or clarification
+// so questbridge can route the output appropriately.
+const responseFormatInstruction = `When you have completed your work, you MUST call the submit_work_product tool with your deliverable.
+When you need more information before you can proceed, call the ask_clarification tool with your question.
 
-[INTENT: work_product] — You are delivering a completed result for the quest.
-[INTENT: clarification] — You need more information from the quest issuer before you can proceed.
-
-After the intent line, provide your response content. Do not omit the intent line.`
+Do NOT write your final answer as plain text — always use one of these tools to signal completion or request clarification.`
 
 // =============================================================================
 // INTERNAL HELPERS

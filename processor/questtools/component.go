@@ -163,6 +163,13 @@ func (c *Component) Start(ctx context.Context) error {
 	if c.config.EnableBuiltins {
 		c.toolRegistry.RegisterBuiltins()
 	}
+	if c.config.Search != nil && c.config.Search.Provider != "" {
+		sp, err := executor.NewSearchProvider(*c.config.Search)
+		if err != nil {
+			return fmt.Errorf("failed to create search provider: %w", err)
+		}
+		c.toolRegistry.RegisterWebSearch(sp)
+	}
 
 	// Register graph_query tool backed by the board KV bucket.
 	gc := semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
@@ -190,6 +197,13 @@ func (c *Component) Start(ctx context.Context) error {
 		"enable_builtins", c.config.EnableBuiltins)
 
 	return nil
+}
+
+// ToolRegistry returns the component's tool registry. Used by questbridge to
+// share tool definitions instead of building a duplicate registry.
+// Returns nil before Start has been called.
+func (c *Component) ToolRegistry() *executor.ToolRegistry {
+	return c.toolRegistry
 }
 
 // Stop signals the consumer goroutine and marks the component as stopped.

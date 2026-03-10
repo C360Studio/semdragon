@@ -203,7 +203,7 @@ Trust tiers map to capability suffixes as follows:
 ## Default Config (semdragons.json)
 
 The default config ships with a single Ollama endpoint. No API keys are needed; Ollama
-runs locally. This is the config used during `make test-integration` and local `make
+runs locally. This is the config used during `task test:integration` and local `task
 build` runs.
 
 ```json

@@ -632,12 +632,34 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 			"quest_id", questID)
 	}
 
-	quest.Output = output
 	quest.LoopID = mapping.LoopID
 
-	// Check if the agent is asking a clarifying question rather than delivering
-	// a work product.
-	if isOutputClarificationRequest(output) {
+	// Try tool-based JSON output first (submit_work_product / ask_clarification).
+	// Falls back to legacy intent tags and heuristic detection for non-compliant models.
+	isClarification := false
+	if outputType, content, ok := parseToolOutput(output); ok {
+		switch outputType {
+		case "work_product":
+			// Extract deliverable as the actual quest output (strip JSON envelope).
+			output = content
+			c.logger.Info("tool-based work product submission",
+				"quest_id", questID, "agent_id", mapping.AgentID)
+		case "clarification":
+			// Extract question as the quest output and signal clarification routing.
+			output = content
+			isClarification = true
+			c.logger.Info("tool-based clarification request",
+				"quest_id", questID, "agent_id", mapping.AgentID)
+		}
+	} else {
+		// Legacy fallback: detect clarification via intent tags or heuristic.
+		isClarification = isOutputClarificationRequest(output)
+	}
+
+	quest.Output = output
+
+	// Route clarification requests to the party lead or DM.
+	if isClarification {
 		// Enforce max clarification rounds to prevent infinite loops.
 		if c.config.MaxClarificationRounds > 0 && c.clarificationRoundCount(quest) >= c.config.MaxClarificationRounds {
 			c.logger.Warn("max clarification rounds exceeded, failing quest",
@@ -705,8 +727,37 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		"quest_id", questID, "review_level", quest.Constraints.ReviewLevel)
 }
 
+// parseToolOutput attempts to parse the loop output as a tool-based completion
+// JSON envelope produced by submit_work_product or ask_clarification.
+// Returns the output type ("work_product" or "clarification"), the extracted
+// content (deliverable or question), and whether parsing succeeded.
+func parseToolOutput(output string) (outputType, content string, ok bool) {
+	var envelope struct {
+		Type        string `json:"type"`
+		Deliverable string `json:"deliverable"`
+		Question    string `json:"question"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &envelope); err != nil {
+		return "", "", false
+	}
+	switch envelope.Type {
+	case "work_product":
+		if envelope.Deliverable == "" {
+			return "", "", false
+		}
+		return "work_product", envelope.Deliverable, true
+	case "clarification":
+		if envelope.Question == "" {
+			return "", "", false
+		}
+		return "clarification", envelope.Question, true
+	}
+	return "", "", false
+}
+
 // isOutputClarificationRequest returns true when the agent's output is a
 // clarification request rather than a work product.
+// This is a fallback for models that ignore the tool-calling instructions.
 //
 // Detection strategy (ordered by reliability):
 //  1. Structured intent tag: [INTENT: clarification] on the first non-empty line
@@ -1136,25 +1187,30 @@ func (c *Component) autoAnswerClarification(ctx context.Context, entityKey strin
 	// Quests escalated for other reasons (e.g. DAG node exhaustion) should not
 	// be auto-answered — they are truly terminal escalations.
 	outputText, _ := quest.Output.(string)
-	if !isOutputClarificationRequest(outputText) {
+
+	// Try tool-based JSON output first, then fall back to intent tag detection.
+	var question string
+	if _, content, ok := parseToolOutput(outputText); ok {
+		// Tool-based output: content is already the clean question text.
+		question = content
+	} else if !isOutputClarificationRequest(outputText) {
 		c.logger.Debug("auto-DM: escalated quest has no clarification intent, skipping",
 			"quest_id", quest.ID)
 		return
+	} else {
+		// Legacy: extract question from raw output, stripping intent header.
+		question = strings.TrimSpace(outputText)
+		if strings.HasPrefix(question, "[INTENT:") {
+			if idx := strings.Index(question, "\n"); idx >= 0 {
+				question = strings.TrimSpace(question[idx+1:])
+			}
+		}
 	}
 
-	// Extract the question from the quest output.
-	question := strings.TrimSpace(outputText)
 	if question == "" {
 		c.logger.Warn("auto-DM: no clarification question found on escalated quest",
 			"quest_id", quest.ID)
 		return
-	}
-
-	// Strip [INTENT: ...] header if present.
-	if strings.HasPrefix(question, "[INTENT:") {
-		if idx := strings.Index(question, "\n"); idx >= 0 {
-			question = strings.TrimSpace(question[idx+1:])
-		}
 	}
 
 	c.logger.Info("auto-DM: answering clarification via LLM",
@@ -1673,7 +1729,14 @@ func (c *Component) resolveCapability(agent *agentprogression.Agent, quest *doma
 // AllowedTools whitelist. Uses only root semdragons types to avoid subpackage
 // coupling.
 func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.Agent) []agentic.ToolDefinition {
-	if c.toolRegistry == nil {
+	// Resolve tool registry: prefer lazy source from questtools, fall back to local.
+	reg := c.toolRegistry
+	if c.toolRegistrySource != nil {
+		if src := c.toolRegistrySource.ToolRegistry(); src != nil {
+			reg = src
+		}
+	}
+	if reg == nil {
 		return nil
 	}
 
@@ -1682,7 +1745,7 @@ func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.A
 	// and solves the quest directly instead of decomposing.
 	isPartyLead := quest.PartyRequired && agent.Tier >= domain.TierMaster
 
-	all := c.toolRegistry.ListAll()
+	all := reg.ListAll()
 	result := make([]agentic.ToolDefinition, 0, len(all))
 
 	for _, tool := range all {

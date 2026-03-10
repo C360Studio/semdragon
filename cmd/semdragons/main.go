@@ -34,6 +34,7 @@ import (
 	"github.com/c360studio/semdragons/processor/questboard"
 	"github.com/c360studio/semdragons/processor/questbridge"
 	"github.com/c360studio/semdragons/processor/questdagexec"
+	"github.com/c360studio/semdragons/processor/questtools"
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
 
@@ -524,6 +525,18 @@ func wireComponentCrossReferences(registry *component.Registry) {
 			if ref, ok := qb.(questbridge.SubQuestPoster); ok {
 				setter.SetQuestBoard(ref)
 				slog.Info("wired questbridge → questboard")
+			}
+		}
+	}
+
+	// Wire questbridge → questtools (shared tool registry for definitions).
+	// Uses lazy ToolRegistrySource so questtools doesn't need to be started yet.
+	qt := registry.Component(questtools.ComponentName)
+	if qbr != nil && qt != nil {
+		if setter, ok := qbr.(*questbridge.Component); ok {
+			if ref, ok := qt.(questbridge.ToolRegistrySource); ok {
+				setter.SetToolRegistrySource(ref)
+				slog.Info("wired questbridge → questtools (shared tool registry)")
 			}
 		}
 	}

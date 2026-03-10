@@ -247,6 +247,24 @@
         "max_traversal_nodes": 100
       }
     },
+    "graph-gateway": {
+      "type": "gateway",
+      "name": "graph-gateway",
+      "enabled": true,
+      "config": {
+        "ports": {
+          "inputs": [{"name": "http", "type": "http", "subject": ":8082", "description": "HTTP server for GraphQL and MCP"}],
+          "outputs": [
+            {"name": "queries", "type": "nats-request", "subject": "graph.query.*"},
+            {"name": "mutations", "type": "nats-request", "subject": "graph.mutation.*"}
+          ]
+        },
+        "graphql_path": "/graphql",
+        "mcp_path": "/mcp",
+        "bind_address": ":8082",
+        "enable_playground": true
+      }
+    },
     "questboard": {
       "type": "processor",
       "name": "questboard",

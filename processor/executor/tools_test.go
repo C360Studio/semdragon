@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +39,8 @@ func TestBuiltinToolTierAlignment(t *testing.T) {
 		{tool: "search_text", wantTier: domain.TierApprentice, reason: "read-only text search"},
 		{tool: "glob_files", wantTier: domain.TierApprentice, reason: "read-only file discovery"},
 		{tool: "read_file_range", wantTier: domain.TierApprentice, reason: "read-only partial file access"},
-		{tool: "web_search", wantTier: domain.TierApprentice, reason: "research capability available to all tiers"},
+		{tool: "submit_work_product", wantTier: domain.TierApprentice, reason: "all tiers can submit work"},
+		{tool: "ask_clarification", wantTier: domain.TierApprentice, reason: "all tiers can ask questions"},
 
 		// Journeyman — targeted writes and network access require demonstrated trust.
 		{tool: "patch_file", wantTier: domain.TierJourneyman, reason: "targeted file edits require level 6+"},
@@ -95,13 +97,14 @@ func TestBuiltinToolCount(t *testing.T) {
 	//   http_request, run_tests, run_command           — 8 core tools
 	//   decompose_quest                                 — 1 DAG lead tool
 	//   review_sub_quest                               — 1 DAG review tool
-	//   glob_files, read_file_range, web_search        — 3 new Apprentice tools
+	//   glob_files, read_file_range                    — 2 read-only Apprentice tools
+	//   submit_work_product, ask_clarification         — 2 terminal tools (Apprentice)
 	//   create_directory, rename_file, delete_file     — 3 new Journeyman tools
 	//   lint_check                                     — 1 new Expert tool
 	//
-	// graph_query is intentionally excluded — it requires a live EntityQueryFunc
-	// and is registered separately via RegisterGraphQuery.
-	const wantCount = 17
+	// web_search is excluded — registered conditionally via RegisterWebSearch.
+	// graph_query is excluded — requires a live EntityQueryFunc (RegisterGraphQuery).
+	const wantCount = 18
 
 	reg := NewToolRegistry()
 	reg.RegisterBuiltins()
@@ -688,14 +691,22 @@ func TestCreateDirectoryHandler(t *testing.T) {
 	})
 }
 
-// TestWebSearchHandler verifies that the web_search stub returns a provider
-// error for valid queries and an argument error for empty queries.
+// mockSearchProvider is a test SearchProvider that returns canned results.
+type mockSearchProvider struct {
+	results []SearchResult
+	err     error
+}
+
+func (m *mockSearchProvider) Name() string { return "mock" }
+
+func (m *mockSearchProvider) Search(_ context.Context, _ string, _ int) ([]SearchResult, error) {
+	return m.results, m.err
+}
+
+// TestWebSearchHandler verifies that web_search calls the provider and formats results.
+// web_search is registered via RegisterWebSearch (not RegisterBuiltins).
 func TestWebSearchHandler(t *testing.T) {
 	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
 
 	// web_search requires SkillResearch — use Apprentice tier which is sufficient.
 	agent := &agentprogression.Agent{
@@ -706,30 +717,254 @@ func TestWebSearchHandler(t *testing.T) {
 	}
 	quest := &domain.Quest{}
 
-	t.Run("valid query returns search provider stub error", func(t *testing.T) {
+	t.Run("valid query returns formatted results", func(t *testing.T) {
 		t.Parallel()
-		call := makeToolCall("web_search", map[string]any{
-			"query":        "Go concurrency patterns",
-			"_sandbox_dir": tmpDir,
+		reg := NewToolRegistry()
+		reg.RegisterWebSearch(&mockSearchProvider{
+			results: []SearchResult{
+				{Title: "Go Concurrency Patterns", URL: "https://go.dev/blog/concurrency", Description: "Blog post about Go concurrency"},
+			},
 		})
+
+		call := makeToolCall("web_search", map[string]any{"query": "Go concurrency patterns"})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		assertContains(t, result.Content, "Go Concurrency Patterns")
+		assertContains(t, result.Content, "https://go.dev/blog/concurrency")
+	})
+
+	t.Run("provider error is surfaced", func(t *testing.T) {
+		t.Parallel()
+		reg := NewToolRegistry()
+		reg.RegisterWebSearch(&mockSearchProvider{
+			err: fmt.Errorf("API rate limited"),
+		})
+
+		call := makeToolCall("web_search", map[string]any{"query": "test"})
 		result := reg.Execute(context.Background(), call, quest, agent)
 		if result.Error == "" {
-			t.Fatal("expected stub error from web_search, got none")
+			t.Fatal("expected error, got none")
 		}
-		assertContains(t, result.Error, "search provider")
+		assertContains(t, result.Error, "API rate limited")
 	})
 
 	t.Run("empty query returns argument error", func(t *testing.T) {
 		t.Parallel()
-		call := makeToolCall("web_search", map[string]any{
-			"query":        "",
-			"_sandbox_dir": tmpDir,
-		})
+		reg := NewToolRegistry()
+		reg.RegisterWebSearch(&mockSearchProvider{})
+
+		call := makeToolCall("web_search", map[string]any{"query": ""})
 		result := reg.Execute(context.Background(), call, quest, agent)
 		if result.Error == "" {
 			t.Fatal("expected error for empty query, got none")
 		}
 		assertContains(t, result.Error, "query argument is required")
+	})
+
+	t.Run("no results returns empty message", func(t *testing.T) {
+		t.Parallel()
+		reg := NewToolRegistry()
+		reg.RegisterWebSearch(&mockSearchProvider{results: nil})
+
+		call := makeToolCall("web_search", map[string]any{"query": "nonexistent topic"})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
+		}
+		assertContains(t, result.Content, "No results found")
+	})
+}
+
+// TestSubmitWorkProductHandler verifies the submit_work_product terminal tool:
+// valid submissions produce JSON with type=work_product and StopLoop=true;
+// missing or empty deliverable returns an error.
+func TestSubmitWorkProductHandler(t *testing.T) {
+	t.Parallel()
+
+	reg := NewToolRegistry()
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
+	quest := &domain.Quest{}
+
+	cases := []struct {
+		name        string
+		args        map[string]any
+		wantErr     string // non-empty means we expect an error containing this substring
+		wantType    string // expected "type" field in JSON
+		wantSummary bool   // whether "summary" key must be present
+		stopLoop    bool   // expected StopLoop value on success
+	}{
+		{
+			name: "valid deliverable with summary",
+			args: map[string]any{
+				"deliverable": "Here is the code",
+				"summary":     "Implemented feature",
+			},
+			wantType:    "work_product",
+			wantSummary: true,
+			stopLoop:    true,
+		},
+		{
+			name: "valid deliverable without summary",
+			args: map[string]any{
+				"deliverable": "result content",
+			},
+			wantType:    "work_product",
+			wantSummary: false,
+			stopLoop:    true,
+		},
+		{
+			name:    "empty deliverable",
+			args:    map[string]any{"deliverable": ""},
+			wantErr: "deliverable",
+		},
+		{
+			name:    "missing deliverable",
+			args:    map[string]any{},
+			wantErr: "deliverable",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			call := makeToolCall("submit_work_product", tc.args)
+			result := reg.Execute(context.Background(), call, quest, agent)
+
+			if tc.wantErr != "" {
+				if result.Error == "" {
+					t.Fatalf("expected error containing %q, got none", tc.wantErr)
+				}
+				assertContains(t, result.Error, tc.wantErr)
+				return
+			}
+
+			if result.Error != "" {
+				t.Fatalf("unexpected error: %s", result.Error)
+			}
+			if !result.StopLoop {
+				t.Error("expected StopLoop=true, got false")
+			}
+
+			var payload map[string]string
+			if err := json.Unmarshal([]byte(result.Content), &payload); err != nil {
+				t.Fatalf("Content is not valid JSON: %v — content: %s", err, result.Content)
+			}
+			if payload["type"] != tc.wantType {
+				t.Errorf("type = %q, want %q", payload["type"], tc.wantType)
+			}
+			_, hasSummary := payload["summary"]
+			if hasSummary != tc.wantSummary {
+				t.Errorf("summary present = %v, want %v", hasSummary, tc.wantSummary)
+			}
+		})
+	}
+}
+
+// TestAskClarificationHandler verifies the ask_clarification terminal tool:
+// valid questions produce JSON with type=clarification and StopLoop=true;
+// missing or empty question returns an error.
+func TestAskClarificationHandler(t *testing.T) {
+	t.Parallel()
+
+	reg := NewToolRegistry()
+	reg.RegisterBuiltins()
+
+	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
+	quest := &domain.Quest{}
+
+	cases := []struct {
+		name     string
+		args     map[string]any
+		wantErr  string // non-empty means we expect an error containing this substring
+		wantType string // expected "type" field in JSON
+		stopLoop bool   // expected StopLoop value on success
+	}{
+		{
+			name:     "valid question",
+			args:     map[string]any{"question": "What format?"},
+			wantType: "clarification",
+			stopLoop: true,
+		},
+		{
+			name:    "empty question",
+			args:    map[string]any{"question": ""},
+			wantErr: "question",
+		},
+		{
+			name:    "missing question",
+			args:    map[string]any{},
+			wantErr: "question",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			call := makeToolCall("ask_clarification", tc.args)
+			result := reg.Execute(context.Background(), call, quest, agent)
+
+			if tc.wantErr != "" {
+				if result.Error == "" {
+					t.Fatalf("expected error containing %q, got none", tc.wantErr)
+				}
+				assertContains(t, result.Error, tc.wantErr)
+				return
+			}
+
+			if result.Error != "" {
+				t.Fatalf("unexpected error: %s", result.Error)
+			}
+			if !result.StopLoop {
+				t.Error("expected StopLoop=true, got false")
+			}
+
+			var payload map[string]string
+			if err := json.Unmarshal([]byte(result.Content), &payload); err != nil {
+				t.Fatalf("Content is not valid JSON: %v — content: %s", err, result.Content)
+			}
+			if payload["type"] != tc.wantType {
+				t.Errorf("type = %q, want %q", payload["type"], tc.wantType)
+			}
+		})
+	}
+}
+
+// TestRegisterWebSearchConditional verifies that RegisterBuiltins does not include
+// web_search, and that RegisterWebSearch adds it to the registry.
+// This enforces the contract that web_search is opt-in (requires a provider).
+func TestRegisterWebSearchConditional(t *testing.T) {
+	t.Parallel()
+
+	t.Run("RegisterBuiltins does not include web_search", func(t *testing.T) {
+		t.Parallel()
+
+		reg := NewToolRegistry()
+		reg.RegisterBuiltins()
+
+		if tool := reg.Get("web_search"); tool != nil {
+			t.Error("web_search should not be registered by RegisterBuiltins, but it was found")
+		}
+	})
+
+	t.Run("RegisterWebSearch adds web_search to registry", func(t *testing.T) {
+		t.Parallel()
+
+		reg := NewToolRegistry()
+		reg.RegisterWebSearch(&mockSearchProvider{})
+
+		tool := reg.Get("web_search")
+		if tool == nil {
+			t.Fatal("web_search should be registered after RegisterWebSearch, but it was not found")
+		}
+		if tool.Definition.Name != "web_search" {
+			t.Errorf("tool name = %q, want %q", tool.Definition.Name, "web_search")
+		}
 	})
 }
 

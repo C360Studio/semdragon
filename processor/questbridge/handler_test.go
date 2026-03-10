@@ -1297,3 +1297,97 @@ func TestIsOutputClarificationRequest(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// parseToolOutput
+// =============================================================================
+
+func TestParseToolOutput(t *testing.T) {
+	tests := []struct {
+		name            string
+		input           string
+		wantOutputType  string
+		wantContent     string
+		wantOK          bool
+	}{
+		{
+			name:           "valid work_product",
+			input:          `{"type":"work_product","deliverable":"Here is the code","summary":"Done"}`,
+			wantOutputType: "work_product",
+			wantContent:    "Here is the code",
+			wantOK:         true,
+		},
+		{
+			name:           "valid clarification",
+			input:          `{"type":"clarification","question":"What format?"}`,
+			wantOutputType: "clarification",
+			wantContent:    "What format?",
+			wantOK:         true,
+		},
+		{
+			name:           "work_product without summary",
+			input:          `{"type":"work_product","deliverable":"result"}`,
+			wantOutputType: "work_product",
+			wantContent:    "result",
+			wantOK:         true,
+		},
+		{
+			name:   "empty deliverable",
+			input:  `{"type":"work_product","deliverable":""}`,
+			wantOK: false,
+		},
+		{
+			name:   "empty question",
+			input:  `{"type":"clarification","question":""}`,
+			wantOK: false,
+		},
+		{
+			name:   "unknown type",
+			input:  `{"type":"other","deliverable":"x"}`,
+			wantOK: false,
+		},
+		{
+			name:   "missing type",
+			input:  `{"deliverable":"x"}`,
+			wantOK: false,
+		},
+		{
+			name:   "not JSON",
+			input:  "[INTENT: work_product]\nHere is the code",
+			wantOK: false,
+		},
+		{
+			name:   "empty string",
+			input:  "",
+			wantOK: false,
+		},
+		{
+			name:           "whitespace around JSON",
+			input:          `  {"type":"work_product","deliverable":"x"}  `,
+			wantOutputType: "work_product",
+			wantContent:    "x",
+			wantOK:         true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotType, gotContent, gotOK := parseToolOutput(tt.input)
+
+			if gotOK != tt.wantOK {
+				t.Errorf("parseToolOutput() ok = %v; want %v", gotOK, tt.wantOK)
+				return
+			}
+			if !tt.wantOK {
+				// When ok=false the other return values are unspecified — stop here.
+				return
+			}
+			if gotType != tt.wantOutputType {
+				t.Errorf("parseToolOutput() outputType = %q; want %q", gotType, tt.wantOutputType)
+			}
+			if gotContent != tt.wantContent {
+				t.Errorf("parseToolOutput() content = %q; want %q", gotContent, tt.wantContent)
+			}
+		})
+	}
+}
+

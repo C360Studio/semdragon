@@ -182,7 +182,8 @@ func routeToolCall(tools []toolDef, msgs []requestMsg) chatResponse {
 
 // routeWithToolResults handles the second+ turn of an agentic loop (tool
 // results are present). For DAG decomposition, returns the DAG JSON content
-// so questbridge can extract and process it.
+// so questbridge can extract and process it. For generic loops, calls
+// submit_work_product to cleanly terminate the loop.
 func routeWithToolResults(req chatRequest) chatResponse {
 	// Check what tool was last called by looking at tool_calls in messages.
 	for i := len(req.Messages) - 1; i >= 0; i-- {
@@ -193,10 +194,16 @@ func routeWithToolResults(req chatRequest) chatResponse {
 				return completionResponse(dagDecompositionContent)
 			case "review_sub_quest":
 				return completionResponse(reviewAcceptCompletion)
+			case "submit_work_product":
+				// submit_work_product sets StopLoop=true, so the loop should
+				// not reach here. If it does, just complete cleanly.
+				return completionResponse(completionContent)
 			}
 		}
 	}
-	return completionResponse(completionContent)
+	// Generic loop (filesystem tool result) → call submit_work_product to terminate.
+	return namedToolCallResponse("submit_work_product",
+		`{"deliverable":"The requested operation finished successfully. All output has been validated and is ready for review.","summary":"Task complete"}`)
 }
 
 // namedToolCallResponse returns a tool_calls response for a specific tool.

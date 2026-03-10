@@ -1,9 +1,8 @@
 package questbridge
 
 import (
-	"github.com/c360studio/semdragons/processor/promptmanager"
-
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/promptmanager"
 )
 
 // Config holds all configuration for the QuestBridge component.

@@ -309,16 +309,23 @@ Documentation in `/docs/`:
 
 ## Development Commands
 
+Uses [go-task](https://taskfile.dev) (`Taskfile.yml` + `taskfiles/`). Run `task --list` for all targets.
+
 ```bash
-make build          # Build all packages
-make test           # Run unit tests only (fast, no Docker)
-make test-integration  # Run integration tests only (requires Docker)
-make test-all       # Run all tests (unit + integration)
-make test-one TEST=TestName  # Run specific unit test
-make test-one-integration TEST=TestName  # Run specific integration test
-make lint           # Run revive + go vet
-make check          # Full check: fmt, tidy, lint, test-all
-make coverage       # Generate coverage report (includes integration)
+task build                  # Build all packages
+task test                   # Run unit tests only (fast, no Docker)
+task test:integration       # Run integration tests only (requires Docker)
+task test:all               # Run all tests (unit + integration)
+task test:one -- TestName   # Run specific unit test
+task test:one-integration -- TestName  # Run specific integration test
+task lint                   # Run revive + go vet
+task check                  # Full check: fmt, tidy, lint, test-all
+task test:coverage          # Generate coverage report (includes integration)
+task docker:up              # Start stack with mock LLM
+task docker:down            # Stop stack
+task e2e                    # E2E tests with mock LLM
+task e2e:gemini             # E2E with Gemini
+task e2e:spec -- name       # Single spec against running stack
 ```
 
 ### Test Categories
@@ -330,8 +337,8 @@ Tests are separated using Go build tags for faster feedback loops:
 | **Unit** | (none) | No | Root: `graphable_test.go`, `validation_test.go`, `reconstruction_test.go`, `namegen_test.go`, `trajectory_test.go`. Processors: `processor/promptmanager/*_test.go`, `processor/executor/executor_test.go` |
 | **Integration** | `//go:build integration` | Yes (NATS) | `processor/*/component_test.go` (questboard, bossbattle, agentprogression, agentstore, autonomy, boidengine, guildformation, partycoord, etc.) |
 
-**During development**: Use `make test` for fast iteration (unit tests only).
-**Before committing**: Use `make test-all` to run the full suite.
+**During development**: Use `task test` for fast iteration (unit tests only).
+**Before committing**: Use `task test:all` to run the full suite.
 
 Integration tests use `natsclient.NewTestClient(t, natsclient.WithKV())` which spins up NATS via testcontainers.
 

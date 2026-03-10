@@ -243,6 +243,13 @@ func (c *Component) Start(ctx context.Context) error {
 	if c.config.EnableBuiltins {
 		c.toolRegistry.RegisterBuiltins()
 	}
+	if c.config.Search != nil && c.config.Search.Provider != "" {
+		sp, err := NewSearchProvider(*c.config.Search)
+		if err != nil {
+			return fmt.Errorf("failed to create search provider: %w", err)
+		}
+		c.toolRegistry.RegisterWebSearch(sp)
+	}
 
 	// Register graph_query tool backed by the board KV bucket.
 	// graph_query is a read-only entity lookup — register it unconditionally
