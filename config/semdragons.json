@@ -294,10 +294,7 @@
         "org": "local",
         "platform": "dev",
         "board": "board1",
-        "enable_auto_formation": true,
-        "enable_quorum_formation": true,
-        "min_founding_members": 3,
-        "formation_timeout_sec": 300
+        "enable_auto_formation": true
       }
     },
     "boidengine": {
@@ -348,7 +345,7 @@
       "name": "filestore",
       "enabled": true,
       "config": {
-        "root_dir": "/workspace/artifacts",
+        "root_dir": "/tmp/artifacts",
         "create_if_missing": true
       }
     },
@@ -386,7 +383,11 @@
         "enable_builtins": true,
         "sandbox_dir": "/workspace",
         "sandbox_url": "http://sandbox:8090",
-        "graphql_url": "http://localhost:8082/graphql"
+        "graphql_url": "http://localhost:8082/graphql",
+        "search": {
+          "provider": "brave",
+          "api_key_env": "BRAVE_SEARCH_API_KEY"
+        }
       }
     },
     "partycoord": {
