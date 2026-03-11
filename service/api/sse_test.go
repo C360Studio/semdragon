@@ -93,12 +93,18 @@ func TestHandleEvents_SSEHeaders(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/game/events", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 
-	// Run handler in background; cancel after we get the first flush
-	go svc.handleEvents(rec, req)
+	// Run handler in background; cancel after we get the first flush.
+	// handlerDone signals when the goroutine exits so we can safely read rec.
+	handlerDone := make(chan struct{})
+	go func() {
+		defer close(handlerDone)
+		svc.handleEvents(rec, req)
+	}()
 
-	// Wait for headers to be set
+	// Wait for headers to be set, then cancel and wait for handler to exit.
 	time.Sleep(200 * time.Millisecond)
 	cancel()
+	<-handlerDone
 
 	resp := rec.Result()
 	defer resp.Body.Close()

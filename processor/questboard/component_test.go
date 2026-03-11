@@ -951,8 +951,8 @@ func TestClaimQuest_BlockedByUnmetDependency(t *testing.T) {
 	diffTrivial := domain.DifficultyTrivial
 	chain, err := comp.PostQuestChain(ctx, domain.QuestChainBrief{
 		Quests: []domain.QuestChainEntry{
-			{Title: "Quest A", Description: "First in chain", Difficulty: &diffTrivial, DependsOn: []int{}},
-			{Title: "Quest B", Description: "Depends on A", Difficulty: &diffTrivial, DependsOn: []int{0}},
+			{Title: "Quest A", Goal: "First in chain", Difficulty: &diffTrivial, DependsOn: []int{}},
+			{Title: "Quest B", Goal: "Depends on A", Difficulty: &diffTrivial, DependsOn: []int{0}},
 		},
 	})
 	if err != nil {
@@ -990,8 +990,8 @@ func TestClaimQuest_AllowedAfterDependencyCompleted(t *testing.T) {
 	diffTrivial := domain.DifficultyTrivial
 	chain, err := comp.PostQuestChain(ctx, domain.QuestChainBrief{
 		Quests: []domain.QuestChainEntry{
-			{Title: "Chain A", Description: "First quest", Difficulty: &diffTrivial, DependsOn: []int{}},
-			{Title: "Chain B", Description: "Depends on A", Difficulty: &diffTrivial, DependsOn: []int{0}},
+			{Title: "Chain A", Goal: "First quest", Difficulty: &diffTrivial, DependsOn: []int{}},
+			{Title: "Chain B", Goal: "Depends on A", Difficulty: &diffTrivial, DependsOn: []int{0}},
 		},
 	})
 	if err != nil {
