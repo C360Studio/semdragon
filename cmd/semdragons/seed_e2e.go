@@ -50,24 +50,15 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 
 	graph := semdragons.NewGraphClient(natsClient, boardCfg)
 
+	// Both modes seed agents. Full seed also seeds the store catalog.
+	// Quests are never seeded — users create them via DM chat or API.
+	if err := seedAgents(ctx, graph, boardCfg); err != nil {
+		return fmt.Errorf("seed: agents: %w", err)
+	}
+
 	if fullSeed {
-		// Agents start unguilded — guildformation auto-creates social guilds
-		// from Expert+ founders when it detects unguilded agents on startup.
-		if err := seedAgents(ctx, graph, boardCfg); err != nil {
-			return fmt.Errorf("seed e2e: seed agents: %w", err)
-		}
-
-		if err := seedQuests(ctx, graph, boardCfg); err != nil {
-			return fmt.Errorf("seed e2e: seed quests: %w", err)
-		}
-
 		if err := seedStore(ctx, graph); err != nil {
-			return fmt.Errorf("seed e2e: seed store: %w", err)
-		}
-	} else {
-		// Agents only — no quests or store.
-		if err := seedAgents(ctx, graph, boardCfg); err != nil {
-			return fmt.Errorf("seed agents: %w", err)
+			return fmt.Errorf("seed: store: %w", err)
 		}
 	}
 
@@ -312,65 +303,6 @@ func seedOneAgent(
 		"name", agent.Name,
 		"level", agent.Level,
 		"tier", tier.String())
-
-	return nil
-}
-
-// seedQuests creates a few quests in various states for E2E lifecycle testing.
-func seedQuests(ctx context.Context, graph *semdragons.GraphClient, boardCfg *domain.BoardConfig) error {
-	now := time.Now()
-
-	quests := []*domain.Quest{
-		{
-			ID:          domain.QuestID(boardCfg.QuestEntityID("e2e-easy")),
-			Title:       "E2E Easy Quest",
-			Description: "A simple quest for lifecycle testing",
-			Status:      domain.QuestPosted,
-			Difficulty:  domain.DifficultyEasy,
-			BaseXP:      100,
-			MaxAttempts: 3,
-			PostedAt:    now,
-		},
-		{
-			ID:          domain.QuestID(boardCfg.QuestEntityID("e2e-review")),
-			Title:       "E2E Review Quest",
-			Description: "A quest that requires boss battle review",
-			Status:      domain.QuestPosted,
-			Difficulty:  domain.DifficultyModerate,
-			BaseXP:      200,
-			MaxAttempts: 3,
-			PostedAt:    now,
-			Constraints: domain.QuestConstraints{
-				RequireReview: true,
-				ReviewLevel:   domain.ReviewStandard,
-			},
-		},
-		{
-			ID:          domain.QuestID(boardCfg.QuestEntityID("e2e-hard")),
-			Title:       "E2E Hard Quest",
-			Description: "A hard quest requiring expert tier",
-			Status:      domain.QuestPosted,
-			Difficulty:  domain.DifficultyHard,
-			BaseXP:      500,
-			MaxAttempts: 2,
-			PostedAt:    now,
-			RequiredSkills: []domain.SkillTag{
-				domain.SkillCodeGen,
-			},
-		},
-	}
-
-	for _, quest := range quests {
-		if err := graph.EmitEntity(ctx, quest, "quest.seeded"); err != nil {
-			return fmt.Errorf("create quest %q: %w", quest.Title, err)
-		}
-
-		slog.Info("Seeded quest",
-			"id", quest.ID,
-			"title", quest.Title,
-			"difficulty", quest.Difficulty,
-			"require_review", quest.Constraints.RequireReview)
-	}
 
 	return nil
 }
