@@ -32,7 +32,14 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: golangci/golangci-lint-action@v9
+      - name: Install revive
+        run: go install github.com/mgechev/revive@latest
+
+      - name: Revive
+        run: revive -config revive.toml -formatter friendly ./...
+
+      - name: Vet
+        run: go vet ./...
 
   build-and-push:
     needs: [test, lint]
