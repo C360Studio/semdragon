@@ -5,13 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/model"
@@ -1492,6 +1497,375 @@ func TestResolveCapability(t *testing.T) {
 				t.Errorf("resolveCapability() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// =============================================================================
+// Workspace lifecycle
+// =============================================================================
+
+// mockArtifactStore implements storage.Store for testing.
+type mockArtifactStore struct {
+	mu    sync.Mutex
+	files map[string][]byte
+}
+
+func newMockArtifactStore() *mockArtifactStore {
+	return &mockArtifactStore{files: make(map[string][]byte)}
+}
+
+func (s *mockArtifactStore) Put(_ context.Context, key string, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.files[key] = append([]byte(nil), data...)
+	return nil
+}
+
+func (s *mockArtifactStore) Get(_ context.Context, key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, ok := s.files[key]
+	if !ok {
+		return nil, fmt.Errorf("not found: %s", key)
+	}
+	return data, nil
+}
+
+func (s *mockArtifactStore) List(_ context.Context, prefix string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var keys []string
+	for k := range s.files {
+		if strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
+func (s *mockArtifactStore) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.files, key)
+	return nil
+}
+
+// newMockSandboxServer creates an httptest server that simulates the sandbox API
+// with pre-loaded workspace files for the given quest ID.
+func newMockSandboxServer(questID string, files map[string]string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/workspace/"):
+			// CreateWorkspace
+			w.WriteHeader(http.StatusCreated)
+
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workspace/"):
+			// DeleteWorkspace
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/workspace/"):
+			// ListWorkspaceFiles — returns all files as flat entries.
+			type entry struct {
+				Name  string `json:"name"`
+				IsDir bool   `json:"is_dir"`
+				Size  int64  `json:"size"`
+			}
+			var entries []entry
+			for path, content := range files {
+				entries = append(entries, entry{Name: path, Size: int64(len(content))})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"entries": entries})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/file":
+			// ReadFile — return content for the requested path.
+			path := r.URL.Query().Get("path")
+			content, ok := files[path]
+			if !ok {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"content": content, "size": len(content)})
+
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+}
+
+func TestSnapshotWorkspace_CopiesFilesToArtifactStore(t *testing.T) {
+	questID := "quest-snap-001"
+	workspaceFiles := map[string]string{
+		"main.go":           "package main\n",
+		"output/results.md": "# Results\nAll tests pass.\n",
+	}
+
+	server := newMockSandboxServer(questID, workspaceFiles)
+	defer server.Close()
+
+	store := newMockArtifactStore()
+	comp := &Component{
+		sandboxClient: executor.NewSandboxClient(server.URL),
+		artifactStore: store,
+		logger:        slog.Default(),
+	}
+
+	comp.snapshotWorkspace(context.Background(), questID)
+
+	// Verify all files were copied to the artifact store under quests/{questID}/.
+	for path, expectedContent := range workspaceFiles {
+		key := fmt.Sprintf("quests/%s/%s", questID, path)
+		data, err := store.Get(context.Background(), key)
+		if err != nil {
+			t.Errorf("expected artifact %q in store, got error: %v", key, err)
+			continue
+		}
+		if string(data) != expectedContent {
+			t.Errorf("artifact %q content = %q, want %q", key, string(data), expectedContent)
+		}
+	}
+}
+
+func TestSnapshotWorkspace_NoopWithoutSandboxClient(t *testing.T) {
+	comp := &Component{
+		logger: slog.Default(),
+	}
+
+	// Should not panic or error when sandboxClient is nil.
+	comp.snapshotWorkspace(context.Background(), "quest-noop")
+}
+
+func TestSnapshotWorkspace_EmptyWorkspace(t *testing.T) {
+	questID := "quest-empty"
+	server := newMockSandboxServer(questID, map[string]string{})
+	defer server.Close()
+
+	store := newMockArtifactStore()
+	comp := &Component{
+		sandboxClient: executor.NewSandboxClient(server.URL),
+		artifactStore: store,
+		logger:        slog.Default(),
+	}
+
+	comp.snapshotWorkspace(context.Background(), questID)
+
+	// No files should be in the store.
+	keys, _ := store.List(context.Background(), "quests/")
+	if len(keys) != 0 {
+		t.Errorf("expected 0 artifacts, got %d: %v", len(keys), keys)
+	}
+}
+
+func TestSnapshotWorkspace_SkipsStoreWhenNil(t *testing.T) {
+	questID := "quest-nostore"
+	workspaceFiles := map[string]string{"main.go": "package main\n"}
+
+	server := newMockSandboxServer(questID, workspaceFiles)
+	defer server.Close()
+
+	comp := &Component{
+		sandboxClient: executor.NewSandboxClient(server.URL),
+		artifactStore: nil, // no artifact store configured
+		logger:        slog.Default(),
+	}
+
+	// Should not panic — just creates workspace listing and deletes.
+	comp.snapshotWorkspace(context.Background(), questID)
+}
+
+func TestCleanupWorkspace_NoopWithoutSandboxClient(t *testing.T) {
+	comp := &Component{
+		logger: slog.Default(),
+	}
+
+	// Should not panic or error when sandboxClient is nil.
+	comp.cleanupWorkspace(context.Background(), "quest-noop")
+}
+
+func TestCleanupWorkspace_CallsDelete(t *testing.T) {
+	deleteCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workspace/") {
+			deleteCalled = true
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	comp := &Component{
+		sandboxClient: executor.NewSandboxClient(server.URL),
+		logger:        slog.Default(),
+	}
+
+	comp.cleanupWorkspace(context.Background(), "quest-cleanup-001")
+
+	if !deleteCalled {
+		t.Error("expected DeleteWorkspace to be called on sandbox")
+	}
+}
+
+func TestSnapshotWorkspace_PartialFailure_ContinuesAndCleanups(t *testing.T) {
+	questID := "quest-partial"
+	deleteCalled := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workspace/"):
+			deleteCalled = true
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/workspace/"):
+			// Return two files in workspace listing.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"entries": []map[string]any{
+					{"name": "good.txt", "is_dir": false, "size": 5},
+					{"name": "bad.txt", "is_dir": false, "size": 3},
+				},
+			})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/file":
+			path := r.URL.Query().Get("path")
+			if path == "bad.txt" {
+				// Simulate read failure for one file.
+				http.Error(w, "disk error", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"content": "hello", "size": 5})
+
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	store := newMockArtifactStore()
+	comp := &Component{
+		sandboxClient: executor.NewSandboxClient(server.URL),
+		artifactStore: store,
+		logger:        slog.Default(),
+	}
+
+	comp.snapshotWorkspace(context.Background(), questID)
+
+	// The good file should have been saved despite the bad file failing.
+	goodKey := fmt.Sprintf("quests/%s/good.txt", questID)
+	if _, err := store.Get(context.Background(), goodKey); err != nil {
+		t.Errorf("expected good.txt in store, got error: %v", err)
+	}
+
+	// The bad file should not be in the store.
+	badKey := fmt.Sprintf("quests/%s/bad.txt", questID)
+	if _, err := store.Get(context.Background(), badKey); err == nil {
+		t.Error("expected bad.txt to NOT be in store after read failure")
+	}
+
+	// Cleanup should still have been called.
+	if !deleteCalled {
+		t.Error("expected workspace cleanup after partial snapshot failure")
+	}
+}
+
+func TestSnapshotWorkspace_SkipsOversizedFiles(t *testing.T) {
+	questID := "quest-big"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workspace/"):
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/workspace/"):
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"entries": []map[string]any{
+					{"name": "small.txt", "is_dir": false, "size": 100},
+					{"name": "huge.bin", "is_dir": false, "size": 20 * 1024 * 1024}, // 20MB > 10MB limit
+				},
+			})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/file":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"content": "ok", "size": 2})
+
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	store := newMockArtifactStore()
+	comp := &Component{
+		sandboxClient: executor.NewSandboxClient(server.URL),
+		artifactStore: store,
+		logger:        slog.Default(),
+	}
+
+	comp.snapshotWorkspace(context.Background(), questID)
+
+	// Small file should be stored.
+	if _, err := store.Get(context.Background(), fmt.Sprintf("quests/%s/small.txt", questID)); err != nil {
+		t.Errorf("expected small.txt in store: %v", err)
+	}
+
+	// Huge file should be skipped.
+	if _, err := store.Get(context.Background(), fmt.Sprintf("quests/%s/huge.bin", questID)); err == nil {
+		t.Error("expected huge.bin to be skipped due to size limit")
+	}
+}
+
+func TestSnapshotWorkspace_CleansUpAfterSuccess(t *testing.T) {
+	questID := "quest-cleanup-verify"
+	deleteCalled := false
+
+	workspaceFiles := map[string]string{"main.go": "package main\n"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workspace/"):
+			deleteCalled = true
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/workspace/"):
+			type entry struct {
+				Name  string `json:"name"`
+				IsDir bool   `json:"is_dir"`
+				Size  int64  `json:"size"`
+			}
+			var entries []entry
+			for path, content := range workspaceFiles {
+				entries = append(entries, entry{Name: path, Size: int64(len(content))})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"entries": entries})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/file":
+			path := r.URL.Query().Get("path")
+			content := workspaceFiles[path]
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"content": content, "size": len(content)})
+
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	store := newMockArtifactStore()
+	comp := &Component{
+		sandboxClient: executor.NewSandboxClient(server.URL),
+		artifactStore: store,
+		logger:        slog.Default(),
+	}
+
+	comp.snapshotWorkspace(context.Background(), questID)
+
+	// Verify DeleteWorkspace was called after snapshot.
+	if !deleteCalled {
+		t.Error("expected workspace cleanup after successful snapshot")
 	}
 }
 

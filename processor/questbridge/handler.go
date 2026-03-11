@@ -256,11 +256,14 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 
 	// Create sandbox workspace before dispatching the task. The workspace
 	// provides an isolated filesystem for the agent's file operations.
-	// Best-effort: failure is logged but does not block quest execution.
+	// When sandbox is configured, workspace creation is required — without it
+	// every tool call would fail with "workspace not found".
 	if c.sandboxClient != nil {
 		if wsErr := c.sandboxClient.CreateWorkspace(ctx, questID); wsErr != nil {
-			c.logger.Warn("failed to create sandbox workspace",
+			c.logger.Error("sandbox workspace creation failed, cannot dispatch quest",
 				"quest_id", questID, "error", wsErr)
+			c.errorsCount.Add(1)
+			return
 		}
 	}
 
@@ -1401,6 +1404,98 @@ func (c *Component) cleanupMapping(ctx context.Context, questID string) {
 	c.activeLoops.Delete(questID)
 	if err := c.questLoopsBucket.Delete(ctx, questID); err != nil {
 		c.logger.Debug("failed to delete QUEST_LOOPS mapping (may already be gone)",
+			"quest_id", questID, "error", err)
+	}
+}
+
+// =============================================================================
+// WORKSPACE LIFECYCLE
+// =============================================================================
+
+// maxSnapshotFileSize is the maximum file size (10MB) that will be copied
+// during workspace snapshot. Larger files (e.g. compiled binaries) are skipped.
+const maxSnapshotFileSize = 10 * 1024 * 1024
+
+// snapshotWorkspace copies all files from the sandbox workspace to the artifact
+// store, then deletes the workspace. This preserves the agent's work products
+// for artifact download and boss battle review.
+// No-op when sandboxClient is nil.
+//
+// Uses a detached context with a deadline so that graceful shutdown does not
+// orphan the workspace mid-snapshot.
+func (c *Component) snapshotWorkspace(_ context.Context, questID string) {
+	if c.sandboxClient == nil {
+		return
+	}
+
+	// Use a bounded context independent of the parent so shutdown does not
+	// orphan a workspace mid-snapshot.
+	snapCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// List all files in the workspace. The sandbox API returns a recursive
+	// flat listing of all files (not just top-level entries).
+	files, err := c.sandboxClient.ListWorkspaceFiles(snapCtx, questID)
+	if err != nil {
+		c.logger.Warn("failed to list workspace files for snapshot",
+			"quest_id", questID, "error", err)
+		c.cleanupWorkspace(snapCtx, questID)
+		return
+	}
+
+	if len(files) == 0 {
+		c.logger.Debug("no workspace files to snapshot", "quest_id", questID)
+		c.cleanupWorkspace(snapCtx, questID)
+		return
+	}
+
+	// Copy files to the artifact store when available.
+	if c.artifactStore != nil {
+		snapshotted := 0
+		for _, f := range files {
+			if f.Size > maxSnapshotFileSize {
+				c.logger.Warn("skipping oversized file in snapshot",
+					"quest_id", questID, "path", f.Path, "size", f.Size)
+				continue
+			}
+
+			content, readErr := c.sandboxClient.ReadFile(snapCtx, questID, f.Path)
+			if readErr != nil {
+				c.logger.Warn("failed to read workspace file for snapshot",
+					"quest_id", questID, "path", f.Path, "error", readErr)
+				continue
+			}
+
+			storeKey := fmt.Sprintf("quests/%s/%s", questID, f.Path)
+			if putErr := c.artifactStore.Put(snapCtx, storeKey, content); putErr != nil {
+				c.logger.Warn("failed to write artifact to store",
+					"quest_id", questID, "key", storeKey, "error", putErr)
+				continue
+			}
+			snapshotted++
+		}
+		c.logger.Info("workspace snapshot complete",
+			"quest_id", questID, "files", snapshotted, "total", len(files))
+	} else {
+		c.logger.Warn("sandbox workspace has files but no artifact store configured",
+			"quest_id", questID, "files", len(files))
+	}
+
+	c.cleanupWorkspace(snapCtx, questID)
+}
+
+// cleanupWorkspace deletes the sandbox workspace for the given quest.
+// No-op when sandboxClient is nil. When called from failQuest (where the
+// parent context may be valid), uses a bounded detached context to ensure
+// cleanup completes even during shutdown.
+func (c *Component) cleanupWorkspace(_ context.Context, questID string) {
+	if c.sandboxClient == nil {
+		return
+	}
+	cleanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := c.sandboxClient.DeleteWorkspace(cleanCtx, questID); err != nil {
+		c.logger.Warn("failed to delete sandbox workspace",
 			"quest_id", questID, "error", err)
 	}
 }
