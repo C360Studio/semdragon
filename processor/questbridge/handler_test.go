@@ -18,8 +18,10 @@ import (
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/questdagexec"
+	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/model"
+	"github.com/c360studio/semstreams/storage"
 )
 
 // =============================================================================
@@ -1570,6 +1572,46 @@ func (s *mockArtifactStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// mockFilestoreComponent wraps a storage.Store and satisfies both
+// component.Discoverable and domain.ArtifactStoreProvider so it can be
+// returned by a mock ComponentRegistry under the "filestore" name.
+type mockFilestoreComponent struct {
+	store storage.Store
+}
+
+func (m *mockFilestoreComponent) ArtifactStore() storage.Store { return m.store }
+func (m *mockFilestoreComponent) Meta() component.Metadata {
+	return component.Metadata{Name: "filestore", Type: "storage"}
+}
+func (m *mockFilestoreComponent) InputPorts() []component.Port           { return nil }
+func (m *mockFilestoreComponent) OutputPorts() []component.Port          { return nil }
+func (m *mockFilestoreComponent) ConfigSchema() component.ConfigSchema   { return component.ConfigSchema{} }
+func (m *mockFilestoreComponent) Health() component.HealthStatus         { return component.HealthStatus{} }
+func (m *mockFilestoreComponent) DataFlow() component.FlowMetrics        { return component.FlowMetrics{} }
+
+// mockRegistryWithFilestore implements component.ComponentLookup.
+// It serves the wrapped store under "filestore"; all other names return nil.
+type mockRegistryWithFilestore struct {
+	comp *mockFilestoreComponent
+}
+
+func (r *mockRegistryWithFilestore) Component(name string) component.Discoverable {
+	if name == "filestore" && r.comp != nil {
+		return r.comp
+	}
+	return nil
+}
+
+// newRegistryWithStore wraps store in a mock registry suitable for use as
+// Component.deps.ComponentRegistry in workspace snapshot tests.
+// Pass nil to simulate the filestore component being absent.
+func newRegistryWithStore(store storage.Store) *mockRegistryWithFilestore {
+	if store == nil {
+		return &mockRegistryWithFilestore{}
+	}
+	return &mockRegistryWithFilestore{comp: &mockFilestoreComponent{store: store}}
+}
+
 // newMockSandboxServer creates an httptest server that simulates the sandbox API
 // with pre-loaded workspace files for the given quest ID.
 func newMockSandboxServer(questID string, files map[string]string) *httptest.Server {
@@ -1628,7 +1670,7 @@ func TestSnapshotWorkspace_CopiesFilesToArtifactStore(t *testing.T) {
 	store := newMockArtifactStore()
 	comp := &Component{
 		sandboxClient: executor.NewSandboxClient(server.URL),
-		artifactStore: store,
+		deps:          component.Dependencies{ComponentRegistry: newRegistryWithStore(store)},
 		logger:        slog.Default(),
 	}
 
@@ -1666,7 +1708,7 @@ func TestSnapshotWorkspace_EmptyWorkspace(t *testing.T) {
 	store := newMockArtifactStore()
 	comp := &Component{
 		sandboxClient: executor.NewSandboxClient(server.URL),
-		artifactStore: store,
+		deps:          component.Dependencies{ComponentRegistry: newRegistryWithStore(store)},
 		logger:        slog.Default(),
 	}
 
@@ -1688,8 +1730,8 @@ func TestSnapshotWorkspace_SkipsStoreWhenNil(t *testing.T) {
 
 	comp := &Component{
 		sandboxClient: executor.NewSandboxClient(server.URL),
-		artifactStore: nil, // no artifact store configured
-		logger:        slog.Default(),
+		// deps.ComponentRegistry is nil — simulates no filestore configured.
+		logger: slog.Default(),
 	}
 
 	// Should not panic — just creates workspace listing and warns.
@@ -1770,7 +1812,7 @@ func TestSnapshotWorkspace_PartialFailure_ContinuesAndCleanups(t *testing.T) {
 	store := newMockArtifactStore()
 	comp := &Component{
 		sandboxClient: executor.NewSandboxClient(server.URL),
-		artifactStore: store,
+		deps:          component.Dependencies{ComponentRegistry: newRegistryWithStore(store)},
 		logger:        slog.Default(),
 	}
 
@@ -1824,7 +1866,7 @@ func TestSnapshotWorkspace_SkipsOversizedFiles(t *testing.T) {
 	store := newMockArtifactStore()
 	comp := &Component{
 		sandboxClient: executor.NewSandboxClient(server.URL),
-		artifactStore: store,
+		deps:          component.Dependencies{ComponentRegistry: newRegistryWithStore(store)},
 		logger:        slog.Default(),
 	}
 
@@ -1880,7 +1922,7 @@ func TestSnapshotWorkspace_CleansUpAfterSuccess(t *testing.T) {
 	store := newMockArtifactStore()
 	comp := &Component{
 		sandboxClient: executor.NewSandboxClient(server.URL),
-		artifactStore: store,
+		deps:          component.Dependencies{ComponentRegistry: newRegistryWithStore(store)},
 		logger:        slog.Default(),
 	}
 

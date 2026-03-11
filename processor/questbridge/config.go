@@ -55,6 +55,11 @@ type Config struct {
 	// to the system prompt. 0 disables entity context injection. Default: 2000.
 	EntityContextBudget int `json:"entity_context_budget,omitempty"`
 
+	// SemsourceURL is the HTTP base URL of the semsource service.
+	// When set, questbridge self-initializes a ManifestClient to inject
+	// graph knowledge into agent prompts.
+	SemsourceURL string `json:"semsource_url,omitempty"`
+
 	// Domain selects which DomainCatalog to inject (e.g. "software", "dnd", "research").
 	Domain string `json:"domain,omitempty"`
 

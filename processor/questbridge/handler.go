@@ -619,14 +619,15 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	// whether the lead's output contains a DAG decomposition. A valid DAG
 	// triggers sub-quest posting and DAG state initialization instead of the
 	// normal in_review transition.
-	if quest.PartyRequired && c.questBoard != nil {
+	qb := c.resolveQuestBoard()
+	if quest.PartyRequired && qb != nil {
 		dag, ok := extractDAGFromOutput(output)
 		if ok {
 			c.logger.Info("detected DAG output from party quest lead",
 				"quest_id", questID,
 				"nodes", len(dag.Nodes))
 
-			if err := c.handleDAGDecomposition(ctx, quest, mapping, dag); err != nil {
+			if err := c.handleDAGDecomposition(ctx, quest, mapping, dag, qb); err != nil {
 				c.logger.Error("DAG decomposition failed, failing quest",
 					"quest_id", questID, "error", err)
 				quest.Status = domain.QuestFailed
@@ -852,13 +853,13 @@ func parseOutputIntent(text string) string {
 // the DAG execution state as quest.dag.* predicates on the parent quest entity.
 // Called only when quest.PartyRequired is true and the lead's loop output
 // contains a valid DAG structure.
-func (c *Component) handleDAGDecomposition(ctx context.Context, quest *domain.Quest, mapping *QuestLoopMapping, dag *questdagexec.QuestDAG) error {
+func (c *Component) handleDAGDecomposition(ctx context.Context, quest *domain.Quest, mapping *QuestLoopMapping, dag *questdagexec.QuestDAG, qb SubQuestPoster) error {
 	// Convert DAG nodes to domain.Quest values for PostSubQuests.
 	subQuests := dagNodesToQuests(dag.Nodes, quest)
 
 	// Post sub-quests via questboard. This validates the decomposer's tier
 	// (Master+), sets ParentQuest on each sub-quest, and writes them to KV.
-	posted, err := c.questBoard.PostSubQuests(ctx, quest.ID, subQuests, mapping.AgentID)
+	posted, err := qb.PostSubQuests(ctx, quest.ID, subQuests, mapping.AgentID)
 	if err != nil {
 		return fmt.Errorf("post sub-quests: %w", err)
 	}
@@ -1065,14 +1066,14 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 	// Delegate to questboard when available — this routes through the triage
 	// gate which may hold the quest for DM evaluation instead of terminal failure.
 	// Questboard handles agent release internally.
-	if c.questFailer != nil {
+	if qf := c.resolveQuestFailer(); qf != nil {
 		// Ensure LoopID is set on the quest entity before delegating, so
 		// questboard's FailQuest can capture it in the FailureRecord.
 		quest.LoopID = mapping.LoopID
 		if writeErr := c.graph.EmitEntityUpdate(ctx, quest, "quest.execution.loop_id"); writeErr != nil {
 			c.logger.Error("failed to write loop_id before failQuest delegation", "error", writeErr)
 		}
-		if failErr := c.questFailer.FailQuest(ctx, questID, reason); failErr != nil {
+		if failErr := qf.FailQuest(ctx, questID, reason); failErr != nil {
 			c.logger.Error("questboard FailQuest failed, falling back to direct failure",
 				"quest_id", questID, "error", failErr)
 			// Fall through to direct failure below.
@@ -1460,7 +1461,8 @@ func (c *Component) snapshotWorkspace(questID string) {
 	}
 
 	// Copy files to the artifact store when available.
-	if c.artifactStore != nil {
+	artifactStore := c.getArtifactStore()
+	if artifactStore != nil {
 		snapshotted := 0
 		for _, f := range files {
 			if f.Size > maxSnapshotFileSize {
@@ -1477,7 +1479,7 @@ func (c *Component) snapshotWorkspace(questID string) {
 			}
 
 			storeKey := fmt.Sprintf("quests/%s/%s", questID, f.Path)
-			if putErr := c.artifactStore.Put(snapCtx, storeKey, content); putErr != nil {
+			if putErr := artifactStore.Put(snapCtx, storeKey, content); putErr != nil {
 				c.logger.Warn("failed to write artifact to store",
 					"quest_id", questID, "key", storeKey, "error", putErr)
 				continue
@@ -1930,11 +1932,11 @@ func (c *Component) resolveCapability(agent *agentprogression.Agent, quest *doma
 // AllowedTools whitelist. Uses only root semdragons types to avoid subpackage
 // coupling.
 func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.Agent) []agentic.ToolDefinition {
-	// Resolve tool registry: prefer lazy source from questtools, fall back to local.
+	// Resolve tool registry: prefer questtools via ComponentRegistry, fall back to local.
 	reg := c.toolRegistry
-	if c.toolRegistrySource != nil {
-		if src := c.toolRegistrySource.ToolRegistry(); src != nil {
-			reg = src
+	if src := c.resolveToolRegistrySource(); src != nil {
+		if qtReg := src.ToolRegistry(); qtReg != nil {
+			reg = qtReg
 		}
 	}
 	if reg == nil {

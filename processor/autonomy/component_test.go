@@ -2238,12 +2238,33 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 	return setupComponentWithConfig(t, client, config)
 }
 
-// setupComponentWithDeps creates a component with store, guilds, and optional approval injected BEFORE Start.
-// SetStore/SetGuilds/SetApproval must be called before Start because the running guard rejects them.
+// setupComponentWithDeps creates a component with store, guilds, and optional approval
+// registered in a ComponentRegistry so the component resolves them lazily at call time.
 func setupComponentWithDeps(t *testing.T, client *natsclient.Client, config Config, store *agentstore.Component, guilds *guildformation.Component, approval ...*dmapproval.Component) *Component {
 	t.Helper()
 
-	deps := component.Dependencies{NATSClient: client}
+	// Build a registry with the sibling components so lazy resolvers find them.
+	reg := component.NewRegistry()
+	if store != nil {
+		if err := reg.RegisterInstance(agentstore.ComponentName, store); err != nil {
+			t.Fatalf("register agentstore: %v", err)
+		}
+	}
+	if guilds != nil {
+		if err := reg.RegisterInstance(guildformation.ComponentName, guilds); err != nil {
+			t.Fatalf("register guildformation: %v", err)
+		}
+	}
+	if len(approval) > 0 && approval[0] != nil {
+		if err := reg.RegisterInstance(dmapproval.ComponentName, approval[0]); err != nil {
+			t.Fatalf("register dmapproval: %v", err)
+		}
+	}
+
+	deps := component.Dependencies{
+		NATSClient:        client,
+		ComponentRegistry: reg,
+	}
 	ctx := context.Background()
 
 	comp, err := NewFromConfig(config, deps)
@@ -2257,17 +2278,6 @@ func setupComponentWithDeps(t *testing.T, client *natsclient.Client, config Conf
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
 	if err := gc.EnsureBucket(ctx); err != nil {
 		t.Fatalf("EnsureBucket failed: %v", err)
-	}
-
-	// Inject dependencies BEFORE Start
-	if store != nil {
-		comp.SetStore(store)
-	}
-	if guilds != nil {
-		comp.SetGuilds(guilds)
-	}
-	if len(approval) > 0 && approval[0] != nil {
-		comp.SetApproval(approval[0])
 	}
 
 	if err := comp.Start(ctx); err != nil {

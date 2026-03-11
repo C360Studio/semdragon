@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/storage/filestore"
 	"github.com/c360studio/semstreams/service"
 	"github.com/c360studio/semstreams/storage"
 )
@@ -18,33 +17,20 @@ import (
 // ARTIFACT STORAGE — lazy filestore resolution
 // =============================================================================
 
-// getArtifactStore lazily resolves the filestore component from the registry.
-// The sync.Once and storage.Store fields live on the Service struct for proper
-// test isolation and multi-instance correctness.
+// getArtifactStore resolves the filestore component from the registry on every call.
+// Fresh resolution ensures a restarted filestore is always picked up.
 func (s *Service) getArtifactStore() storage.Store {
-	s.artifactStoreOnce.Do(func() {
-		s.artifactStore = resolveFilestore(s.componentDeps, s.logger)
-	})
-	return s.artifactStore
+	return resolveFilestore(s.componentDeps, s.logger)
 }
 
 // resolveFilestore attempts to retrieve the filestore component from the
-// component registry. Returns nil if unavailable.
+// component registry via the ArtifactStoreProvider interface.
+// Returns nil if unavailable.
 func resolveFilestore(deps *service.Dependencies, logger *slog.Logger) storage.Store {
 	if deps == nil || deps.ComponentRegistry == nil {
 		return nil
 	}
-	comp := deps.ComponentRegistry.Component("filestore")
-	if comp == nil {
-		logger.Debug("filestore component not found in registry; artifact endpoints will return 503")
-		return nil
-	}
-	fsComp, ok := comp.(*filestore.Component)
-	if !ok {
-		logger.Warn("filestore component has unexpected type", "type", fmt.Sprintf("%T", comp))
-		return nil
-	}
-	return fsComp.GetStore()
+	return domain.ResolveArtifactStore(deps.ComponentRegistry, logger)
 }
 
 // =============================================================================

@@ -76,19 +76,10 @@ type Component struct {
 	// Execution infrastructure
 	registry            model.RegistryReader
 	toolRegistry        *executor.ToolRegistry
-	toolRegistrySource  ToolRegistrySource // lazy provider from questtools (optional)
 	promptAssembler     *promptmanager.PromptAssembler
 
 	// QUEST_LOOPS KV bucket for crash recovery
 	questLoopsBucket jetstream.KeyValue
-
-	// questBoard posts sub-quests when a lead agent completes a DAG decomposition.
-	// Optional: nil means DAG output from party quests is treated as normal output.
-	questBoard SubQuestPoster
-
-	// questFailer delegates quest failure transitions to questboard for triage.
-	// Optional: nil means questbridge sets QuestFailed directly (legacy path).
-	questFailer QuestFailer
 
 	// clarificationAnswerer auto-answers agent clarification questions when DMMode
 	// is full_auto. Optional: nil means escalated quests wait for human DM response.
@@ -96,9 +87,9 @@ type Component struct {
 
 	// Sandbox workspace lifecycle management.
 	// When sandboxClient is non-nil, questbridge creates per-quest workspaces
-	// before dispatch and snapshots files to artifactStore on completion.
+	// before dispatch and snapshots files to the artifact store on completion.
+	// The artifact store is resolved lazily via ComponentRegistry at snapshot time.
 	sandboxClient *executor.SandboxClient
-	artifactStore storage.Store // filestore for workspace snapshots
 
 	// Semsource manifest client for injecting graph knowledge into agent prompts.
 	// Optional: nil means manifest section is omitted from entity knowledge.
@@ -293,23 +284,28 @@ func (c *Component) Start(ctx context.Context) error {
 		c.logger.Info("auto-DM clarification answerer enabled (full_auto mode)")
 	}
 
-	// Build a local tool registry only when no external source was injected.
-	// When questtools is wired via SetToolRegistrySource, toolsForQuest()
-	// resolves the registry lazily at runtime (after questtools has started).
-	if c.toolRegistrySource == nil {
-		c.toolRegistry = executor.NewToolRegistry()
-		if c.config.SandboxDir != "" {
-			c.toolRegistry.SetSandboxDir(c.config.SandboxDir)
-		}
-		if c.config.EnableBuiltins {
-			c.toolRegistry.RegisterBuiltins()
-		}
+	// Build a local tool registry as fallback. toolsForQuest() resolves
+	// the registry lazily from questtools via ComponentRegistry at runtime,
+	// so this registry is only used when questtools is not available.
+	c.toolRegistry = executor.NewToolRegistry()
+	if c.config.SandboxDir != "" {
+		c.toolRegistry.SetSandboxDir(c.config.SandboxDir)
+	}
+	if c.config.EnableBuiltins {
+		c.toolRegistry.RegisterBuiltins()
 	}
 
 	// Create sandbox client when sandbox_url is configured.
 	if c.config.SandboxURL != "" {
 		c.sandboxClient = executor.NewSandboxClient(c.config.SandboxURL)
 		c.logger.Info("sandbox workspace lifecycle enabled", "sandbox_url", c.config.SandboxURL)
+	}
+
+	// Self-initialize semsource manifest client when semsource_url is configured.
+	// This replaces the old SetManifestClient setter injection path.
+	if c.config.SemsourceURL != "" {
+		c.manifestClient = semsource.NewManifestClient(c.config.SemsourceURL, c.logger)
+		c.logger.Info("semsource manifest client initialized", "semsource_url", c.config.SemsourceURL)
 	}
 
 	// Create prompt assembler when a domain catalog is provided.
@@ -386,24 +382,61 @@ func (c *Component) SetTokenLedger(l *tokenbudget.TokenLedger) {
 	c.tokenLedger = l
 }
 
-// SetQuestBoard injects the quest board poster for sub-quest creation.
-// When set, party quest completions that produce a valid DAG will trigger
-// sub-quest posting instead of transitioning directly to in_review.
-// Safe to call before or after Start — the reference is checked lazily when needed.
-func (c *Component) SetQuestBoard(qb SubQuestPoster) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.questBoard = qb
+// resolveQuestBoard resolves questboard's SubQuestPoster from the ComponentRegistry.
+// Returns nil when registry is unavailable or questboard doesn't implement the interface.
+func (c *Component) resolveQuestBoard() SubQuestPoster {
+	if c.deps.ComponentRegistry == nil {
+		return nil
+	}
+	comp := c.deps.ComponentRegistry.Component("questboard")
+	if comp == nil {
+		return nil
+	}
+	ref, ok := comp.(SubQuestPoster)
+	if !ok {
+		c.logger.Warn("questboard component does not implement SubQuestPoster",
+			"type", comp.Meta().Type)
+		return nil
+	}
+	return ref
 }
 
-// SetQuestFailer injects the quest failure handler for triage delegation.
-// When set, questbridge delegates failure transitions to questboard's FailQuest
-// which routes through the triage gate. When nil, questbridge sets QuestFailed directly.
-// Safe to call before or after Start.
-func (c *Component) SetQuestFailer(qf QuestFailer) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.questFailer = qf
+// resolveQuestFailer resolves questboard's QuestFailer from the ComponentRegistry.
+// Returns nil when registry is unavailable or questboard doesn't implement the interface.
+func (c *Component) resolveQuestFailer() QuestFailer {
+	if c.deps.ComponentRegistry == nil {
+		return nil
+	}
+	comp := c.deps.ComponentRegistry.Component("questboard")
+	if comp == nil {
+		return nil
+	}
+	ref, ok := comp.(QuestFailer)
+	if !ok {
+		c.logger.Warn("questboard component does not implement QuestFailer",
+			"type", comp.Meta().Type)
+		return nil
+	}
+	return ref
+}
+
+// resolveToolRegistrySource resolves questtools' ToolRegistrySource from the ComponentRegistry.
+// Returns nil when registry is unavailable or questtools doesn't implement the interface.
+func (c *Component) resolveToolRegistrySource() ToolRegistrySource {
+	if c.deps.ComponentRegistry == nil {
+		return nil
+	}
+	comp := c.deps.ComponentRegistry.Component("questtools")
+	if comp == nil {
+		return nil
+	}
+	ref, ok := comp.(ToolRegistrySource)
+	if !ok {
+		c.logger.Warn("questtools component does not implement ToolRegistrySource",
+			"type", comp.Meta().Type)
+		return nil
+	}
+	return ref
 }
 
 // SetClarificationAnswerer injects the auto-DM answerer. When set and DMMode
@@ -421,37 +454,11 @@ type ToolRegistrySource interface {
 	ToolRegistry() *executor.ToolRegistry
 }
 
-// SetToolRegistrySource injects a lazy tool registry provider (typically questtools).
-// The registry is fetched at runtime when building tool lists for quests, so the
-// source doesn't need to be initialized at wiring time.
-// Must be called before Start.
-func (c *Component) SetToolRegistrySource(src ToolRegistrySource) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.running.Load() {
-		c.logger.Warn("SetToolRegistrySource called while running; ignored")
-		return
-	}
-	c.toolRegistrySource = src
-}
-
-// SetManifestClient injects the semsource manifest client for graph knowledge injection.
-// When set, agent prompts include a section describing what data sources are available
-// in the knowledge graph. Safe to call before or after Start — the reference is checked
-// lazily when building entity knowledge.
-func (c *Component) SetManifestClient(mc *semsource.ManifestClient) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.manifestClient = mc
-}
-
-// SetArtifactStore injects the filestore for workspace snapshots.
-// When set alongside sandbox_url, completed quest workspaces are snapshotted
-// to this store before cleanup. Safe to call before or after Start.
-func (c *Component) SetArtifactStore(store storage.Store) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.artifactStore = store
+// getArtifactStore resolves the filestore lazily from the ComponentRegistry.
+// Returns nil when the registry is unavailable or filestore is not running.
+// Called at snapshot time so a restarted filestore component is always current.
+func (c *Component) getArtifactStore() storage.Store {
+	return domain.ResolveArtifactStore(c.deps.ComponentRegistry, c.logger)
 }
 
 // SetPauseChecker injects the board pause checker. When paused, quest

@@ -42,9 +42,6 @@ type Component struct {
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
 
-	// Sibling component reference injected before Start.
-	questBoardRef QuestBoardRef // see SetQuestBoard
-
 	// KV watch for quest state changes (facts about the world)
 	questWatch jetstream.KeyWatcher
 
@@ -326,16 +323,23 @@ func (c *Component) Stop(timeout time.Duration) error {
 	return nil
 }
 
-// =============================================================================
-// INJECTION METHODS
-// =============================================================================
-
-// SetQuestBoard injects the quest board reference for claiming party-required quests.
-// Safe to call before or after Start — the reference is checked lazily when needed.
-func (c *Component) SetQuestBoard(qb QuestBoardRef) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.questBoardRef = qb
+// resolveQuestBoard resolves questboard from the ComponentRegistry at call time.
+// Returns nil when the registry is unavailable or questboard is not registered.
+func (c *Component) resolveQuestBoard() QuestBoardRef {
+	if c.deps.ComponentRegistry == nil {
+		return nil
+	}
+	comp := c.deps.ComponentRegistry.Component("questboard")
+	if comp == nil {
+		return nil
+	}
+	ref, ok := comp.(QuestBoardRef)
+	if !ok {
+		c.logger.Warn("questboard component does not implement QuestBoardRef",
+			"type", comp.Meta().Type)
+		return nil
+	}
+	return ref
 }
 
 // createGraphClient creates the graph client for the component.

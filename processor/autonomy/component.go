@@ -19,11 +19,47 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boardcontrol"
 	"github.com/c360studio/semdragons/processor/dmapproval"
 	"github.com/c360studio/semdragons/processor/guildformation"
 )
+
+// =============================================================================
+// NARROW INTERFACES - Resolved lazily from the ComponentRegistry
+// =============================================================================
+
+// AgentStoreRef is the narrow interface autonomy needs from agentstore.
+// The concrete *agentstore.Component satisfies this interface.
+type AgentStoreRef interface {
+	ListItems(tier domain.TrustTier) []agentstore.StoreItem
+	Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, guild domain.GuildID) (*agentstore.OwnedItem, error)
+	UseConsumable(ctx context.Context, agentID domain.AgentID, consumableID string, questID *domain.QuestID) error
+	SeedCatalog(items []agentstore.StoreItem)
+}
+
+// GuildFormationRef is the narrow interface autonomy needs from guildformation.
+// The concrete *guildformation.Component satisfies this interface.
+type GuildFormationRef interface {
+	ListGuilds() []*domain.Guild
+	GetAgentGuild(agentID domain.AgentID) domain.GuildID
+	JoinGuild(ctx context.Context, guildID domain.GuildID, agentID domain.AgentID) error
+	SharedWins(a, b domain.AgentID) int
+	PairwisePeerScore(a, b domain.AgentID) (float64, bool)
+	GetGuild(guildID domain.GuildID) (*domain.Guild, bool)
+	CreateGuild(ctx context.Context, params guildformation.CreateGuildParams) (*domain.Guild, error)
+	HasPendingGuilds() bool
+	ListPendingGuilds() []*domain.Guild
+	SubmitApplication(ctx context.Context, guildID domain.GuildID, agent *agentprogression.Agent, message string) error
+	ReviewApplication(ctx context.Context, guildID domain.GuildID, applicationID string, founderID domain.AgentID, accepted bool, reason string) error
+}
+
+// DMApprovalRef is the narrow interface autonomy needs from dmapproval.
+// The concrete *dmapproval.Component satisfies this interface.
+type DMApprovalRef interface {
+	RequestApproval(ctx context.Context, req domain.ApprovalRequest) (*domain.ApprovalResponse, error)
+}
 
 // =============================================================================
 // COMPONENT - Autonomy processor as native semstreams component
@@ -44,10 +80,7 @@ type Component struct {
 	deps        component.Dependencies
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
-	boardConfig *domain.BoardConfig
-	store        *agentstore.Component      // Optional: nil disables shopping/consumable actions
-	guilds       *guildformation.Component // Optional: nil disables guild joining
-	approval     *dmapproval.Component     // Optional: nil auto-approves all actions
+	boardConfig  *domain.BoardConfig
 	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
 
 	// KV watcher for agent entity state changes
@@ -519,43 +552,56 @@ func (c *Component) BoardConfig() *domain.BoardConfig {
 	return c.boardConfig
 }
 
-// SetStore injects the agent store component for shopping and consumable actions.
-// When store is nil, all shopping/consumable actions safely return shouldExecute=false.
-// SetStore is ignored once the component is running to prevent concurrent store access.
-func (c *Component) SetStore(store *agentstore.Component) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.running.Load() {
-		c.logger.Warn("SetStore called while running; ignored")
-		return
+// resolveStore resolves the agentstore component from the ComponentRegistry at
+// call time. Returns nil when the registry is absent or the component is not
+// registered — callers degrade gracefully (shopping actions return shouldExecute=false).
+func (c *Component) resolveStore() AgentStoreRef {
+	if c.deps.ComponentRegistry == nil {
+		return nil
 	}
-	c.store = store
+	comp := c.deps.ComponentRegistry.Component(agentstore.ComponentName)
+	if comp == nil {
+		return nil
+	}
+	ref, ok := comp.(AgentStoreRef)
+	if !ok {
+		return nil
+	}
+	return ref
 }
 
-// SetGuilds injects the guild formation component for autonomous guild joining.
-// When guilds is nil, joinGuildAction safely returns shouldExecute=false.
-// SetGuilds is ignored once the component is running to prevent concurrent access.
-func (c *Component) SetGuilds(guilds *guildformation.Component) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.running.Load() {
-		c.logger.Warn("SetGuilds called while running; ignored")
-		return
+// resolveGuilds resolves the guildformation component from the ComponentRegistry
+// at call time. Returns nil when absent — guild actions return shouldExecute=false.
+func (c *Component) resolveGuilds() GuildFormationRef {
+	if c.deps.ComponentRegistry == nil {
+		return nil
 	}
-	c.guilds = guilds
+	comp := c.deps.ComponentRegistry.Component(guildformation.ComponentName)
+	if comp == nil {
+		return nil
+	}
+	ref, ok := comp.(GuildFormationRef)
+	if !ok {
+		return nil
+	}
+	return ref
 }
 
-// SetApproval injects the DM approval component for non-FullAuto modes.
-// When approval is nil, all actions auto-approve (same as FullAuto behavior).
-// SetApproval is ignored once the component is running to prevent concurrent access.
-func (c *Component) SetApproval(approval *dmapproval.Component) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.running.Load() {
-		c.logger.Warn("SetApproval called while running; ignored")
-		return
+// resolveApproval resolves the dmapproval component from the ComponentRegistry
+// at call time. Returns nil when absent — all actions auto-approve (FullAuto behaviour).
+func (c *Component) resolveApproval() DMApprovalRef {
+	if c.deps.ComponentRegistry == nil {
+		return nil
 	}
-	c.approval = approval
+	comp := c.deps.ComponentRegistry.Component(dmapproval.ComponentName)
+	if comp == nil {
+		return nil
+	}
+	ref, ok := comp.(DMApprovalRef)
+	if !ok {
+		return nil
+	}
+	return ref
 }
 
 // SetPauseChecker injects the board pause checker. When paused, heartbeat

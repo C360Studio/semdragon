@@ -31,7 +31,8 @@ var errNoViableClaim = errors.New("no viable quest to claim")
 // =============================================================================
 
 func (c *Component) requestApproval(ctx context.Context, approvalType domain.ApprovalType, title, details string, payload any) bool {
-	if c.approval == nil || c.config.DMMode == domain.DMFullAuto || c.config.DMMode == domain.DMAssisted {
+	approval := c.resolveApproval()
+	if approval == nil || c.config.DMMode == domain.DMFullAuto || c.config.DMMode == domain.DMAssisted {
 		return true
 	}
 	if c.config.SessionID == "" {
@@ -41,7 +42,7 @@ func (c *Component) requestApproval(ctx context.Context, approvalType domain.App
 	// Use the caller's context. In supervised/manual mode, evaluateAutonomy
 	// extends the evaluation timeout to ApprovalTimeout+10s, providing
 	// sufficient headroom for both the approval wait and subsequent I/O.
-	resp, err := c.approval.RequestApproval(ctx, domain.ApprovalRequest{
+	resp, err := approval.RequestApproval(ctx, domain.ApprovalRequest{
 		SessionID: c.config.SessionID,
 		Type:      approvalType,
 		Title:     title,
@@ -266,7 +267,7 @@ func (c *Component) shopAction() action {
 	return action{
 		name: "shop",
 		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
-			if c.store == nil {
+			if c.resolveStore() == nil {
 				return false
 			}
 			return c.shopBudget(agent) > 0
@@ -279,12 +280,17 @@ func (c *Component) shopAction() action {
 
 // executeShop computes budget, lists affordable items, and purchases the best one.
 func (c *Component) executeShop(ctx context.Context, agent *agentprogression.Agent) error {
+	store := c.resolveStore()
+	if store == nil {
+		return nil
+	}
+
 	budget := c.shopBudget(agent)
 	if budget <= 0 {
 		return nil
 	}
 
-	items := c.store.ListItems(agent.Tier)
+	items := store.ListItems(agent.Tier)
 	item := pickBestItem(agent, items, budget)
 	if item == nil {
 		return nil
@@ -300,7 +306,7 @@ func (c *Component) executeShop(ctx context.Context, agent *agentprogression.Age
 		return nil
 	}
 
-	_, err := c.store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guild)
+	_, err := store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guild)
 	if err != nil {
 		c.logger.Warn("autonomous shop purchase failed",
 			"agent_id", agent.ID,
@@ -337,7 +343,7 @@ func (c *Component) shopStrategicAction() action {
 	return action{
 		name: "shop_strategic",
 		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
-			if c.store == nil || agent.Status != domain.AgentOnQuest {
+			if c.resolveStore() == nil || agent.Status != domain.AgentOnQuest {
 				return false
 			}
 			needsShield := !hasConsumable(agent, string(agentstore.ConsumableQualityShield))
@@ -356,7 +362,12 @@ func (c *Component) shopStrategicAction() action {
 // executeShopStrategic buys quality_shield first (protects review), then xp_boost.
 // Cap at one purchase per heartbeat.
 func (c *Component) executeShopStrategic(ctx context.Context, agent *agentprogression.Agent) error {
-	items := c.store.ListItems(agent.Tier)
+	store := c.resolveStore()
+	if store == nil {
+		return nil
+	}
+
+	items := store.ListItems(agent.Tier)
 
 	// Priority: quality_shield > xp_boost
 	priorities := []agentstore.ConsumableType{
@@ -390,7 +401,7 @@ func (c *Component) executeShopStrategic(ctx context.Context, agent *agentprogre
 				return nil
 			}
 
-			_, err := c.store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guild)
+			_, err := store.Purchase(ctx, agent.ID, item.ID, agent.XP, agent.Level, agent.Guild)
 			if err != nil {
 				c.logger.Warn("autonomous strategic purchase failed",
 					"agent_id", agent.ID,
@@ -442,7 +453,7 @@ func (c *Component) useConsumableAction() action {
 	return action{
 		name: "use_consumable",
 		shouldExecute: func(agent *agentprogression.Agent, tracker *agentTracker) bool {
-			if c.store == nil {
+			if c.resolveStore() == nil {
 				return false
 			}
 			switch agent.Status {
@@ -467,6 +478,11 @@ func (c *Component) useConsumableAction() action {
 				return nil
 			}
 
+			store := c.resolveStore()
+			if store == nil {
+				return nil
+			}
+
 			// Approval gate: block in supervised/manual mode
 			if !c.requestApproval(ctx, domain.ApprovalAutonomyUse,
 				fmt.Sprintf("Agent %s wants to use %s", agent.Name, consumableID),
@@ -477,7 +493,7 @@ func (c *Component) useConsumableAction() action {
 				return nil
 			}
 
-			if err := c.store.UseConsumable(ctx, agent.ID, consumableID, agent.CurrentQuest); err != nil {
+			if err := store.UseConsumable(ctx, agent.ID, consumableID, agent.CurrentQuest); err != nil {
 				c.logger.Warn("autonomous consumable use failed",
 					"agent_id", agent.ID,
 					"consumable_id", consumableID,
@@ -511,7 +527,7 @@ func (c *Component) useCooldownSkipAction() action {
 	return action{
 		name: "use_cooldown_skip",
 		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
-			if c.store == nil || agent.Status != domain.AgentCooldown {
+			if c.resolveStore() == nil || agent.Status != domain.AgentCooldown {
 				return false
 			}
 			if !hasConsumable(agent, string(agentstore.ConsumableCooldownSkip)) {
@@ -524,6 +540,11 @@ func (c *Component) useCooldownSkipAction() action {
 			return remaining > c.config.CooldownSkipMinRemaining()
 		},
 		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
+			store := c.resolveStore()
+			if store == nil {
+				return nil
+			}
+
 			// Approval gate: block in supervised/manual mode
 			if !c.requestApproval(ctx, domain.ApprovalAutonomyUse,
 				fmt.Sprintf("Agent %s wants to skip cooldown", agent.Name),
@@ -534,7 +555,7 @@ func (c *Component) useCooldownSkipAction() action {
 				return nil
 			}
 
-			if err := c.store.UseConsumable(ctx, agent.ID, string(agentstore.ConsumableCooldownSkip), nil); err != nil {
+			if err := store.UseConsumable(ctx, agent.ID, string(agentstore.ConsumableCooldownSkip), nil); err != nil {
 				c.logger.Warn("autonomous cooldown skip failed",
 					"agent_id", agent.ID,
 					"error", err)
@@ -641,7 +662,7 @@ func (c *Component) joinGuildAction() action {
 	return action{
 		name: "join_guild",
 		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
-			if c.guilds == nil {
+			if c.resolveGuilds() == nil {
 				return false
 			}
 			if agent.Level < c.config.GuildJoinMinLevel {
@@ -664,8 +685,13 @@ func (c *Component) joinGuildAction() action {
 // executeJoinGuild scores available guilds and joins the best match.
 // Logs all N choices for observability before picking.
 func (c *Component) executeJoinGuild(ctx context.Context, agent *agentprogression.Agent) error {
-	allGuilds := c.guilds.ListGuilds()
-	currentGuild := c.guilds.GetAgentGuild(domain.AgentID(agent.ID))
+	guilds := c.resolveGuilds()
+	if guilds == nil {
+		return nil
+	}
+
+	allGuilds := guilds.ListGuilds()
+	currentGuild := guilds.GetAgentGuild(domain.AgentID(agent.ID))
 
 	suggestions := c.scoreGuilds(agent, allGuilds, currentGuild)
 	if len(suggestions) == 0 {
@@ -696,7 +722,7 @@ func (c *Component) executeJoinGuild(ctx context.Context, agent *agentprogressio
 		return nil
 	}
 
-	if err := c.guilds.JoinGuild(ctx, domain.GuildID(best.GuildID), domain.AgentID(agent.ID)); err != nil {
+	if err := guilds.JoinGuild(ctx, domain.GuildID(best.GuildID), domain.AgentID(agent.ID)); err != nil {
 		// "Already a member" means the KV agent snapshot was stale — not a real error.
 		// "Guild is full" can happen between scoring and joining — also not actionable.
 		if errors.Is(err, guildformation.ErrAlreadyMember) || errors.Is(err, guildformation.ErrGuildFull) {
@@ -765,9 +791,11 @@ type GuildSuggestion struct {
 
 // scoreGuilds filters, scores, and ranks guilds for an agent.
 // Returns top N suggestions sorted descending by score.
-func (c *Component) scoreGuilds(agent *agentprogression.Agent, guilds []*domain.Guild, currentGuildID domain.GuildID) []GuildSuggestion {
+func (c *Component) scoreGuilds(agent *agentprogression.Agent, guildList []*domain.Guild, currentGuildID domain.GuildID) []GuildSuggestion {
+	guildRef := c.resolveGuilds() // may be nil; shared-history scoring degrades gracefully
+
 	var suggestions []GuildSuggestion
-	for _, guild := range guilds {
+	for _, guild := range guildList {
 		// Filter: already a member
 		if currentGuildID != "" && guild.ID == currentGuildID {
 			continue
@@ -782,9 +810,9 @@ func (c *Component) scoreGuilds(agent *agentprogression.Agent, guilds []*domain.
 		}
 
 		var maxSharedHistory float64
-		if c.guilds != nil {
+		if guildRef != nil {
 			for _, m := range guild.Members {
-				wins := c.guilds.SharedWins(domain.AgentID(agent.ID), m.AgentID)
+				wins := guildRef.SharedWins(domain.AgentID(agent.ID), m.AgentID)
 				if s := guildformation.SharedWinScore(wins); s > maxSharedHistory {
 					maxSharedHistory = s
 				}
@@ -893,7 +921,8 @@ func (c *Component) createGuildAction() action {
 	return action{
 		name: "create_guild",
 		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
-			if c.guilds == nil {
+			guilds := c.resolveGuilds()
+			if guilds == nil {
 				return false
 			}
 			if agent.Level < c.config.GuildCreateMinLevel {
@@ -904,9 +933,9 @@ func (c *Component) createGuildAction() action {
 			}
 			// Only agents who are not already a guildmaster should propose.
 			// GetAgentGuild uses the in-memory projection which is authoritative.
-			currentGuild := c.guilds.GetAgentGuild(agent.ID)
+			currentGuild := guilds.GetAgentGuild(agent.ID)
 			if currentGuild != "" {
-				guild, ok := c.guilds.GetGuild(currentGuild)
+				guild, ok := guilds.GetGuild(currentGuild)
 				if ok && guild.FoundedBy == agent.ID {
 					return false // Already a guildmaster
 				}
@@ -922,7 +951,12 @@ func (c *Component) createGuildAction() action {
 // executeCreateGuild scores fellowship with other agents and proposes a guild
 // if enough candidates have strong affinity with this agent.
 func (c *Component) executeCreateGuild(ctx context.Context, agent *agentprogression.Agent) error {
-	allGuilds := c.guilds.ListGuilds()
+	guilds := c.resolveGuilds()
+	if guilds == nil {
+		return nil
+	}
+
+	allGuilds := guilds.ListGuilds()
 
 	// Collect unguilded agents from KV cache (exclude self).
 	c.trackersMu.RLock()
@@ -932,7 +966,7 @@ func (c *Component) executeCreateGuild(ctx context.Context, agent *agentprogress
 			continue
 		}
 		// Only consider agents not already in a guild.
-		if c.guilds.GetAgentGuild(tracker.agent.ID) == "" {
+		if guilds.GetAgentGuild(tracker.agent.ID) == "" {
 			agentCopy := *tracker.agent
 			candidates = append(candidates, &agentCopy)
 		}
@@ -945,16 +979,11 @@ func (c *Component) executeCreateGuild(ctx context.Context, agent *agentprogress
 	var fellows []fellowCandidate
 	for _, candidate := range candidates {
 		var peerGuildCount int
-		if c.guilds.GetAgentGuild(candidate.ID) != "" {
+		if guilds.GetAgentGuild(candidate.ID) != "" {
 			peerGuildCount = 1
 		}
-		wins := 0
-		var pairPeer float64
-		hasPair := false
-		if c.guilds != nil {
-			wins = c.guilds.SharedWins(agent.ID, candidate.ID)
-			pairPeer, hasPair = c.guilds.PairwisePeerScore(agent.ID, candidate.ID)
-		}
+		wins := guilds.SharedWins(agent.ID, candidate.ID)
+		pairPeer, hasPair := guilds.PairwisePeerScore(agent.ID, candidate.ID)
 		score := scoreFellowship(agent, candidate, allGuilds, peerGuildCount, wins, pairPeer, hasPair)
 		if score > 0.3 { // Minimum fellowship threshold
 			fellows = append(fellows, fellowCandidate{agent: candidate, score: score})
@@ -1020,7 +1049,7 @@ func (c *Component) executeCreateGuild(ctx context.Context, agent *agentprogress
 	}
 
 	// Create the guild via guildformation.
-	guild, err := c.guilds.CreateGuild(ctx, guildformation.CreateGuildParams{
+	guild, err := guilds.CreateGuild(ctx, guildformation.CreateGuildParams{
 		Name:      guildName,
 		Culture:   "Founded through fellowship and shared purpose",
 		FounderID: agent.ID,
@@ -1040,7 +1069,7 @@ func (c *Component) executeCreateGuild(ctx context.Context, agent *agentprogress
 		if invited >= c.config.GuildCreateMinFellows-1 {
 			break
 		}
-		if joinErr := c.guilds.JoinGuild(ctx, guild.ID, f.agent.ID); joinErr != nil {
+		if joinErr := guilds.JoinGuild(ctx, guild.ID, f.agent.ID); joinErr != nil {
 			c.logger.Debug("failed to add fellowship candidate to guild",
 				"guild_id", guild.ID,
 				"agent_id", f.agent.ID,
@@ -1070,7 +1099,8 @@ func (c *Component) applyToGuildAction() action {
 	return action{
 		name: "apply_to_guild",
 		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
-			if c.guilds == nil {
+			guilds := c.resolveGuilds()
+			if guilds == nil {
 				return false
 			}
 			if agent.Level < c.config.GuildJoinMinLevel {
@@ -1083,7 +1113,7 @@ func (c *Component) applyToGuildAction() action {
 			if agent.Guild != "" {
 				return false
 			}
-			return c.guilds.HasPendingGuilds()
+			return guilds.HasPendingGuilds()
 		},
 		execute: func(ctx context.Context, agent *agentprogression.Agent, _ *agentTracker) error {
 			return c.executeApplyToGuild(ctx, agent)
@@ -1093,8 +1123,13 @@ func (c *Component) applyToGuildAction() action {
 
 // executeApplyToGuild scores pending guilds and submits an application to the best match.
 func (c *Component) executeApplyToGuild(ctx context.Context, agent *agentprogression.Agent) error {
-	pending := c.guilds.ListPendingGuilds()
-	currentGuild := c.guilds.GetAgentGuild(agent.ID)
+	guilds := c.resolveGuilds()
+	if guilds == nil {
+		return nil
+	}
+
+	pending := guilds.ListPendingGuilds()
+	currentGuild := guilds.GetAgentGuild(agent.ID)
 
 	suggestions := c.scoreGuilds(agent, pending, currentGuild)
 	if len(suggestions) == 0 {
@@ -1104,7 +1139,7 @@ func (c *Component) executeApplyToGuild(ctx context.Context, agent *agentprogres
 	best := suggestions[0]
 
 	// Check we haven't already applied to this guild.
-	guild, ok := c.guilds.GetGuild(best.GuildID)
+	guild, ok := guilds.GetGuild(best.GuildID)
 	if !ok {
 		return nil
 	}
@@ -1121,7 +1156,7 @@ func (c *Component) executeApplyToGuild(ctx context.Context, agent *agentprogres
 	}
 	message := fmt.Sprintf("Skill affinity (score: %.2f): %s", best.Score, strings.Join(skillNames, ", "))
 
-	if err := c.guilds.SubmitApplication(ctx, best.GuildID, agent, message); err != nil {
+	if err := guilds.SubmitApplication(ctx, best.GuildID, agent, message); err != nil {
 		if errors.Is(err, guildformation.ErrDuplicateApplication) || errors.Is(err, guildformation.ErrAlreadyMember) {
 			return nil // Stale data, not a real error
 		}
@@ -1147,18 +1182,19 @@ func (c *Component) reviewGuildApplicationsAction() action {
 	return action{
 		name: "review_guild_applications",
 		shouldExecute: func(agent *agentprogression.Agent, _ *agentTracker) bool {
-			if c.guilds == nil {
+			guilds := c.resolveGuilds()
+			if guilds == nil {
 				return false
 			}
 			if agent.Status != domain.AgentIdle && agent.Status != domain.AgentCooldown {
 				return false
 			}
 			// Check: is this agent the founder of a pending guild with pending applications?
-			gid := c.guilds.GetAgentGuild(agent.ID)
+			gid := guilds.GetAgentGuild(agent.ID)
 			if gid == "" {
 				return false
 			}
-			guild, ok := c.guilds.GetGuild(gid)
+			guild, ok := guilds.GetGuild(gid)
 			if !ok || guild.Status != domain.GuildPending || guild.FoundedBy != agent.ID {
 				return false
 			}
@@ -1187,11 +1223,16 @@ const (
 
 // executeReviewGuildApplications reviews all pending applications for guilds founded by this agent.
 func (c *Component) executeReviewGuildApplications(ctx context.Context, agent *agentprogression.Agent) error {
-	gid := c.guilds.GetAgentGuild(agent.ID)
+	guilds := c.resolveGuilds()
+	if guilds == nil {
+		return nil
+	}
+
+	gid := guilds.GetAgentGuild(agent.ID)
 	if gid == "" {
 		return nil
 	}
-	guild, ok := c.guilds.GetGuild(gid)
+	guild, ok := guilds.GetGuild(gid)
 	if !ok || guild.Status != domain.GuildPending || guild.FoundedBy != agent.ID {
 		return nil
 	}
@@ -1211,7 +1252,7 @@ func (c *Component) executeReviewGuildApplications(ctx context.Context, agent *a
 
 		reviewReason := fmt.Sprintf("%s (score: %.2f, %s)", decision, score, reason)
 
-		if err := c.guilds.ReviewApplication(ctx, guild.ID, app.ID, agent.ID, accepted, reviewReason); err != nil {
+		if err := guilds.ReviewApplication(ctx, guild.ID, app.ID, agent.ID, accepted, reviewReason); err != nil {
 			c.logger.Warn("failed to review guild application",
 				"guild_id", guild.ID,
 				"app_id", app.ID,

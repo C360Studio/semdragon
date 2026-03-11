@@ -818,18 +818,18 @@ func (c *Component) triggerRollupWithResult(ctx context.Context, dagState *DAGEx
 		"parent_quest_id", dagState.ParentQuestID,
 		"result_length", len(result))
 
-	if c.questBoardRef != nil {
+	if qb := c.resolveQuestBoard(); qb != nil {
 		parentID := domain.QuestID(dagState.ParentQuestID)
-		if err := c.questBoardRef.SubmitResult(ctx, parentID, result); err != nil {
+		if err := qb.SubmitResult(ctx, parentID, result); err != nil {
 			c.logger.Error("failed to submit synthesized rollup result to questboard",
 				"parent_quest_id", dagState.ParentQuestID, "error", err)
 			c.errorsCount.Add(1)
 		}
 	}
 
-	if c.partyCoord != nil && dagState.PartyID != "" {
+	if pc := c.resolvePartyCoord(); pc != nil && dagState.PartyID != "" {
 		partyID := domain.PartyID(dagState.PartyID)
-		if err := c.partyCoord.DisbandParty(ctx, partyID, "DAG completed"); err != nil {
+		if err := pc.DisbandParty(ctx, partyID, "DAG completed"); err != nil {
 			c.logger.Warn("failed to disband party after rollup",
 				"party_id", dagState.PartyID, "error", err)
 		}
@@ -885,9 +885,9 @@ func (c *Component) triggerRollup(ctx context.Context, dagState *DAGExecutionSta
 		}
 	}
 
-	if c.questBoardRef != nil {
+	if qb := c.resolveQuestBoard(); qb != nil {
 		parentID := domain.QuestID(dagState.ParentQuestID)
-		if err := c.questBoardRef.SubmitResult(ctx, parentID, outputs); err != nil {
+		if err := qb.SubmitResult(ctx, parentID, outputs); err != nil {
 			c.logger.Error("failed to submit rollup result to questboard",
 				"parent_quest_id", dagState.ParentQuestID, "error", err)
 			c.errorsCount.Add(1)
@@ -895,9 +895,9 @@ func (c *Component) triggerRollup(ctx context.Context, dagState *DAGExecutionSta
 		}
 	}
 
-	if c.partyCoord != nil && dagState.PartyID != "" {
+	if pc := c.resolvePartyCoord(); pc != nil && dagState.PartyID != "" {
 		partyID := domain.PartyID(dagState.PartyID)
-		if err := c.partyCoord.DisbandParty(ctx, partyID, "DAG completed"); err != nil {
+		if err := pc.DisbandParty(ctx, partyID, "DAG completed"); err != nil {
 			c.logger.Warn("failed to disband party after rollup",
 				"party_id", dagState.PartyID, "error", err)
 		}
@@ -938,12 +938,14 @@ func (c *Component) promoteReadyNodes(dagState *DAGExecutionState) {
 // references. It wraps the questboard and partycoord interfaces into the
 // narrow interfaces expected by AssignReadyNodes.
 func (c *Component) assignReadyNodes(ctx context.Context, dagState *DAGExecutionState) {
-	if c.partyCoord == nil {
-		c.logger.Warn("partyCoord not set — skipping ready node assignment")
+	pc := c.resolvePartyCoord()
+	if pc == nil {
+		c.logger.Warn("partyCoord not available — skipping ready node assignment")
 		return
 	}
-	if c.questBoardRef == nil {
-		c.logger.Warn("questBoardRef not set — skipping ready node assignment")
+	qb := c.resolveQuestBoard()
+	if qb == nil {
+		c.logger.Warn("questBoardRef not available — skipping ready node assignment")
 		return
 	}
 
@@ -964,9 +966,9 @@ func (c *Component) assignReadyNodes(ctx context.Context, dagState *DAGExecution
 	}
 
 	deps := AssignmentDeps{
-		Members:     &partyCoordMemberLister{ref: c.partyCoord},
-		Tasks:       &partyCoordTaskAssigner{ref: c.partyCoord},
-		QuestClaims: &questBoardClaimer{ref: c.questBoardRef},
+		Members:     &partyCoordMemberLister{ref: pc},
+		Tasks:       &partyCoordTaskAssigner{ref: pc},
+		QuestClaims: &questBoardClaimer{ref: qb},
 	}
 
 	if err := AssignReadyNodes(ctx, dagState, deps); err != nil {
@@ -986,14 +988,16 @@ func (c *Component) assignReadyNodes(ctx context.Context, dagState *DAGExecution
 func (c *Component) retryNodeAssignment(ctx context.Context, dagState *DAGExecutionState, nodeID string) {
 	// Reset the sub-quest back to posted so ClaimAndStartForParty can re-claim it.
 	subQuestID, ok := dagState.NodeQuestIDs[nodeID]
-	if ok && c.questBoardRef != nil {
-		if err := c.questBoardRef.RepostForRetry(ctx, domain.QuestID(subQuestID)); err != nil {
-			c.logger.Error("failed to repost sub-quest for retry",
-				"execution_id", dagState.ExecutionID,
-				"node_id", nodeID,
-				"sub_quest_id", subQuestID,
-				"error", err)
-			c.errorsCount.Add(1)
+	if ok {
+		if qb := c.resolveQuestBoard(); qb != nil {
+			if err := qb.RepostForRetry(ctx, domain.QuestID(subQuestID)); err != nil {
+				c.logger.Error("failed to repost sub-quest for retry",
+					"execution_id", dagState.ExecutionID,
+					"node_id", nodeID,
+					"sub_quest_id", subQuestID,
+					"error", err)
+				c.errorsCount.Add(1)
+			}
 		}
 	}
 
@@ -1011,14 +1015,15 @@ func (c *Component) retryNodeAssignment(ctx context.Context, dagState *DAGExecut
 // escalateParent transitions the parent quest to escalated state via the
 // questboard. Called when a node fails permanently.
 func (c *Component) escalateParent(ctx context.Context, dagState *DAGExecutionState, reason string) {
-	if c.questBoardRef == nil {
-		c.logger.Warn("questBoardRef not set — cannot escalate parent quest",
+	qb := c.resolveQuestBoard()
+	if qb == nil {
+		c.logger.Warn("questBoardRef not available — cannot escalate parent quest",
 			"parent_quest_id", dagState.ParentQuestID, "reason", reason)
 		return
 	}
 
 	parentID := domain.QuestID(dagState.ParentQuestID)
-	if err := c.questBoardRef.EscalateQuest(ctx, parentID, reason); err != nil {
+	if err := qb.EscalateQuest(ctx, parentID, reason); err != nil {
 		c.logger.Error("failed to escalate parent quest",
 			"parent_quest_id", dagState.ParentQuestID, "error", err)
 		c.errorsCount.Add(1)
@@ -1178,10 +1183,14 @@ func (c *Component) isDAGComplete(dagState *DAGExecutionState) bool {
 // findLeadAgentID returns the lead agent ID from the party, or an empty
 // string if the party is unavailable.
 func (c *Component) findLeadAgentID(dagState *DAGExecutionState) string {
-	if c.partyCoord == nil || dagState.PartyID == "" {
+	if dagState.PartyID == "" {
 		return ""
 	}
-	party, ok := c.partyCoord.GetParty(domain.PartyID(dagState.PartyID))
+	pc := c.resolvePartyCoord()
+	if pc == nil {
+		return ""
+	}
+	party, ok := pc.GetParty(domain.PartyID(dagState.PartyID))
 	if !ok || party == nil {
 		return ""
 	}

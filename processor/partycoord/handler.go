@@ -530,9 +530,6 @@ func (c *Component) maybeInitiatePartyQuest(prev, curr *domain.Quest) {
 	if !curr.PartyRequired {
 		return
 	}
-	if c.questBoardRef == nil {
-		return // No questboard wired — cannot claim
-	}
 
 	// Only react to the transition into "posted" status
 	prevStatus := domain.QuestStatus("")
@@ -584,8 +581,16 @@ func (c *Component) maybeInitiatePartyQuest(prev, curr *domain.Quest) {
 		"lead", lead.ID,
 		"members_recruited", recruited)
 
+	// Resolve questboard lazily — it must be running before we can claim.
+	qb := c.resolveQuestBoard()
+	if qb == nil {
+		c.logger.Warn("party quest: questboard unavailable, cannot claim quest",
+			"quest_id", curr.ID)
+		return
+	}
+
 	// Claim the quest for the party (questboard validates lead tier + party size)
-	if err := c.questBoardRef.ClaimQuestForParty(ctx, curr.ID, party.ID); err != nil {
+	if err := qb.ClaimQuestForParty(ctx, curr.ID, party.ID); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("party quest: failed to claim quest for party",
 			"quest_id", curr.ID, "party_id", party.ID, "error", err)
@@ -593,7 +598,7 @@ func (c *Component) maybeInitiatePartyQuest(prev, curr *domain.Quest) {
 	}
 
 	// Start the quest (triggers questbridge → decompose → questdagexec)
-	if err := c.questBoardRef.StartQuest(ctx, curr.ID); err != nil {
+	if err := qb.StartQuest(ctx, curr.ID); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("party quest: failed to start quest",
 			"quest_id", curr.ID, "error", err)

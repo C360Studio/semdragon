@@ -71,8 +71,8 @@ type PartyCoordRef interface {
 // Concurrency model:
 //   - dagCache, dagBySubQuest, questCache: plain maps; ONLY accessed from the
 //     event loop goroutine (runEventLoop). No mutexes required.
-//   - questBoardRef, partyCoord: protected by mu; set before Start via
-//     SetQuestBoard / SetPartyCoord, then read-only during operation.
+//   - questBoardRef, partyCoord: resolved lazily at call time via
+//     resolveQuestBoard / resolvePartyCoord using deps.ComponentRegistry.
 //   - Metric atomics (nodesCompleted etc.): safe from any goroutine.
 // =============================================================================
 
@@ -83,12 +83,6 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
-
-	// Sibling component references injected before Start via SetQuestBoard /
-	// SetPartyCoord. Protected by mu during injection; read-only after Start.
-	mu            sync.Mutex
-	questBoardRef QuestBoardRef
-	partyCoord    PartyCoordRef
 
 	// events is the unified channel all producers write to. The event loop
 	// is the sole reader. Buffered to absorb bursts without blocking producers.
@@ -127,24 +121,45 @@ var (
 )
 
 // =============================================================================
-// INJECTION METHODS
+// SIBLING COMPONENT RESOLVERS
 // =============================================================================
 
-// SetQuestBoard injects the quest board reference for quest state transitions.
-// Must be called before Start. Protected by mu to allow safe injection from
-// the main goroutine while other initialization may be in progress.
-func (c *Component) SetQuestBoard(qb QuestBoardRef) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.questBoardRef = qb
+// resolveQuestBoard resolves questboard from the ComponentRegistry at call time.
+// Returns nil when the registry is unavailable or questboard is not registered.
+func (c *Component) resolveQuestBoard() QuestBoardRef {
+	if c.deps.ComponentRegistry == nil {
+		return nil
+	}
+	comp := c.deps.ComponentRegistry.Component("questboard")
+	if comp == nil {
+		return nil
+	}
+	ref, ok := comp.(QuestBoardRef)
+	if !ok {
+		c.logger.Warn("questboard component does not implement QuestBoardRef",
+			"type", comp.Meta().Type)
+		return nil
+	}
+	return ref
 }
 
-// SetPartyCoord injects the party coordination reference.
-// Must be called before Start. Protected by mu.
-func (c *Component) SetPartyCoord(pc PartyCoordRef) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.partyCoord = pc
+// resolvePartyCoord resolves partycoord from the ComponentRegistry at call time.
+// Returns nil when the registry is unavailable or partycoord is not registered.
+func (c *Component) resolvePartyCoord() PartyCoordRef {
+	if c.deps.ComponentRegistry == nil {
+		return nil
+	}
+	comp := c.deps.ComponentRegistry.Component("partycoord")
+	if comp == nil {
+		return nil
+	}
+	ref, ok := comp.(PartyCoordRef)
+	if !ok {
+		c.logger.Warn("partycoord component does not implement PartyCoordRef",
+			"type", comp.Meta().Type)
+		return nil
+	}
+	return ref
 }
 
 // =============================================================================
@@ -277,9 +292,6 @@ func (c *Component) Initialize() error {
 //     consumer) + 1 event loop. The quest watcher handles both bootstrap replay
 //     (priming questCache and dagCache from existing entities) and live events.
 func (c *Component) Start(ctx context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.running.Load() {
 		return errors.New("component already running")
 	}
@@ -319,9 +331,6 @@ func (c *Component) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the component.
 func (c *Component) Stop(timeout time.Duration) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if !c.running.Load() {
 		return nil
 	}
@@ -348,4 +357,3 @@ func (c *Component) Stop(timeout time.Duration) error {
 
 	return nil
 }
-

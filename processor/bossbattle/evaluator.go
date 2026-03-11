@@ -162,7 +162,7 @@ type DomainAwareEvaluator struct {
 	fallback      *DefaultBattleEvaluator
 	tokenLedger   *tokenbudget.TokenLedger
 	nats          trajectoryWriter // for best-effort trajectory persistence; may be nil
-	artifactStore storage.Store    // optional: workspace artifacts from filestore
+	artifactStoreResolver func() storage.Store // lazy resolver for workspace artifacts
 }
 
 // NewDomainAwareEvaluator creates an evaluator with domain catalog and model registry.
@@ -239,8 +239,8 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 	// Format the quest output for the user message. When an artifact store
 	// is available, include workspace files alongside the text output.
 	userMessage := formatOutputForJudge(output)
-	if e.artifactStore != nil {
-		if artifacts := e.loadArtifacts(ctx, quest.ID); artifacts != "" {
+	if store := e.resolveArtifactStore(); store != nil {
+		if artifacts := e.loadArtifacts(ctx, quest.ID, store); artifacts != "" {
 			userMessage = userMessage + "\n\n" + artifacts
 		}
 	}
@@ -574,9 +574,9 @@ const maxArtifactTotalSize = 512 * 1024
 
 // loadArtifacts reads workspace artifacts from the filestore and formats
 // them for the LLM judge. Returns empty string when no artifacts are found.
-func (e *DomainAwareEvaluator) loadArtifacts(ctx context.Context, questID domain.QuestID) string {
+func (e *DomainAwareEvaluator) loadArtifacts(ctx context.Context, questID domain.QuestID, store storage.Store) string {
 	prefix := fmt.Sprintf("quests/%s/", string(questID))
-	keys, err := e.artifactStore.List(ctx, prefix)
+	keys, err := store.List(ctx, prefix)
 	if err != nil {
 		slog.Debug("failed to list artifacts for judge", "quest_id", questID, "error", err)
 		return ""
@@ -593,7 +593,7 @@ func (e *DomainAwareEvaluator) loadArtifacts(ctx context.Context, questID domain
 	for _, key := range keys {
 		relPath := strings.TrimPrefix(key, prefix)
 
-		data, readErr := e.artifactStore.Get(ctx, key)
+		data, readErr := store.Get(ctx, key)
 		if readErr != nil {
 			sb.WriteString(fmt.Sprintf("### %s\n(error reading file)\n\n", relPath))
 			continue
@@ -652,10 +652,19 @@ func inferLanguage(path string) string {
 	}
 }
 
-// SetArtifactStore sets the filestore for loading workspace artifacts during evaluation.
-// Must be called during Initialize (single-threaded) before the evaluator processes battles.
-func (e *DomainAwareEvaluator) SetArtifactStore(store storage.Store) {
-	e.artifactStore = store
+// SetArtifactStoreResolver sets the lazy resolver for the artifact store.
+// Called during Initialize — the resolver is invoked at evaluation time so
+// a restarted filestore component is always picked up.
+func (e *DomainAwareEvaluator) SetArtifactStoreResolver(resolver func() storage.Store) {
+	e.artifactStoreResolver = resolver
+}
+
+// resolveArtifactStore invokes the resolver if set, returning nil otherwise.
+func (e *DomainAwareEvaluator) resolveArtifactStore() storage.Store {
+	if e.artifactStoreResolver == nil {
+		return nil
+	}
+	return e.artifactStoreResolver()
 }
 
 // clampScore ensures a score is within [0.0, 1.0].

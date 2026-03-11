@@ -47,10 +47,6 @@ type Component struct {
 	// Token budget enforcement
 	tokenLedger *tokenbudget.TokenLedger
 
-	// Artifact store for reading workspace files during evaluation.
-	// Optional: when nil, judge evaluates text output only.
-	artifactStore storage.Store
-
 	// KV watcher for quest entity state changes (entity-centric architecture)
 	questWatch  jetstream.KeyWatcher
 	watchDoneCh chan struct{}
@@ -274,19 +270,6 @@ func (c *Component) SetTokenLedger(l *tokenbudget.TokenLedger) {
 	c.tokenLedger = l
 }
 
-// SetArtifactStore injects the filestore for reading workspace artifacts
-// during battle evaluation. When set, the LLM judge receives file contents
-// from the agent's workspace in addition to the text output.
-// Must be called before Initialize.
-func (c *Component) SetArtifactStore(store storage.Store) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.running.Load() {
-		c.logger.Warn("SetArtifactStore called while running; ignored")
-		return
-	}
-	c.artifactStore = store
-}
 
 // Initialize performs one-time setup. No I/O operations here.
 func (c *Component) Initialize() error {
@@ -307,9 +290,9 @@ func (c *Component) Initialize() error {
 		promptRegistry.RegisterProviderStyles()
 		c.assembler = promptmanager.NewPromptAssembler(promptRegistry)
 		eval := NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler, c.tokenLedger, c.deps.NATSClient)
-		if c.artifactStore != nil {
-			eval.SetArtifactStore(c.artifactStore)
-		}
+		eval.SetArtifactStoreResolver(func() storage.Store {
+			return domain.ResolveArtifactStore(c.deps.ComponentRegistry, c.logger)
+		})
 		c.evaluator = eval
 	} else {
 		c.evaluator = NewDefaultBattleEvaluator()

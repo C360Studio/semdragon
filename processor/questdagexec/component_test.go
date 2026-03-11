@@ -148,8 +148,7 @@ func TestComponent_DAGWatchAndTransition(t *testing.T) {
 			},
 		},
 	}
-	comp.SetQuestBoard(qb)
-	comp.SetPartyCoord(pc)
+	comp.deps.ComponentRegistry = &mockComponentRegistry{qb: qb, pc: pc}
 
 	if err := comp.Start(ctx); err != nil {
 		t.Fatalf("Start failed: %v", err)

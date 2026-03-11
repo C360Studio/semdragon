@@ -3,9 +3,11 @@ module github.com/c360studio/semdragons
 go 1.25.3
 
 require (
-	github.com/c360studio/semstreams v1.0.0-alpha.24
+	github.com/c360studio/semstreams v1.0.0-alpha.28
+	github.com/joho/godotenv v1.5.1
 	github.com/nats-io/nats.go v1.48.0
 	github.com/nats-io/nuid v1.0.1
+	golang.org/x/sync v0.19.0
 )
 
 require (
@@ -35,7 +37,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
@@ -81,7 +82,6 @@ require (
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect

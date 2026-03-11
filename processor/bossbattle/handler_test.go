@@ -12,6 +12,7 @@ import (
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
+	"github.com/c360studio/semstreams/storage"
 )
 
 // =============================================================================
@@ -2187,9 +2188,9 @@ func TestLoadArtifacts_IncludesFileContents(t *testing.T) {
 	}}
 
 	eval := &DomainAwareEvaluator{}
-	eval.SetArtifactStore(store)
+	eval.SetArtifactStoreResolver(func() storage.Store { return store })
 
-	result := eval.loadArtifacts(context.Background(), "test-quest")
+	result := eval.loadArtifacts(context.Background(), "test-quest", store)
 
 	if !strings.Contains(result, "## Workspace Files") {
 		t.Error("expected workspace files header")
@@ -2214,9 +2215,9 @@ func TestLoadArtifacts_IncludesFileContents(t *testing.T) {
 func TestLoadArtifacts_EmptyStore(t *testing.T) {
 	store := &mockStore{files: map[string][]byte{}}
 	eval := &DomainAwareEvaluator{}
-	eval.SetArtifactStore(store)
+	eval.SetArtifactStoreResolver(func() storage.Store { return store })
 
-	result := eval.loadArtifacts(context.Background(), "test-quest")
+	result := eval.loadArtifacts(context.Background(), "test-quest", store)
 	if result != "" {
 		t.Errorf("expected empty string for no artifacts, got %q", result)
 	}
@@ -2234,9 +2235,9 @@ func TestLoadArtifacts_SkipsOversizedFiles(t *testing.T) {
 	}}
 
 	eval := &DomainAwareEvaluator{}
-	eval.SetArtifactStore(store)
+	eval.SetArtifactStoreResolver(func() storage.Store { return store })
 
-	result := eval.loadArtifacts(context.Background(), "q1")
+	result := eval.loadArtifacts(context.Background(), "q1", store)
 
 	if !strings.Contains(result, "package small") {
 		t.Error("expected small file content")

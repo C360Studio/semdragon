@@ -10,6 +10,7 @@ import (
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semstreams/component"
 )
 
 // =============================================================================
@@ -173,28 +174,71 @@ func (m *mockPartyCoordRef) DisbandCallCount() int {
 // COMPONENT FACTORY HELPERS
 // =============================================================================
 
+// mockComponentRegistry implements component.ComponentLookup for unit tests.
+// It serves mockQuestBoardRef under "questboard" and mockPartyCoordRef under
+// "partycoord". Pass nil for either to simulate the component being absent.
+type mockComponentRegistry struct {
+	qb *mockQuestBoardRef
+	pc *mockPartyCoordRef
+}
+
+func (r *mockComponentRegistry) Component(name string) component.Discoverable {
+	switch name {
+	case "questboard":
+		if r.qb != nil {
+			return r.qb
+		}
+	case "partycoord":
+		if r.pc != nil {
+			return r.pc
+		}
+	}
+	return nil
+}
+
+// The following methods implement component.Discoverable so the mocks can be
+// returned directly from the registry's Component() method. Only Meta() carries
+// meaningful data; the rest return zero values since tests never inspect them.
+func (m *mockQuestBoardRef) Meta() component.Metadata {
+	return component.Metadata{Name: "questboard", Type: "processor"}
+}
+func (m *mockQuestBoardRef) InputPorts() []component.Port  { return nil }
+func (m *mockQuestBoardRef) OutputPorts() []component.Port { return nil }
+func (m *mockQuestBoardRef) ConfigSchema() component.ConfigSchema {
+	return component.ConfigSchema{}
+}
+func (m *mockQuestBoardRef) Health() component.HealthStatus  { return component.HealthStatus{} }
+func (m *mockQuestBoardRef) DataFlow() component.FlowMetrics { return component.FlowMetrics{} }
+
+func (m *mockPartyCoordRef) Meta() component.Metadata {
+	return component.Metadata{Name: "partycoord", Type: "processor"}
+}
+func (m *mockPartyCoordRef) InputPorts() []component.Port  { return nil }
+func (m *mockPartyCoordRef) OutputPorts() []component.Port { return nil }
+func (m *mockPartyCoordRef) ConfigSchema() component.ConfigSchema {
+	return component.ConfigSchema{}
+}
+func (m *mockPartyCoordRef) Health() component.HealthStatus  { return component.HealthStatus{} }
+func (m *mockPartyCoordRef) DataFlow() component.FlowMetrics { return component.FlowMetrics{} }
+
 // newTestComponent constructs a Component with mocked sibling refs suitable
 // for unit tests. The graph client is nil since handler functions that load
 // quest entities from KV are tested via integration tests.
 //
 // Plain maps are initialized so event loop handler methods can be called
-// directly without nil-map panics.
+// directly without nil-map panics. Pass nil for qb or pc to simulate
+// the corresponding component being absent from the registry.
 func newTestComponent(qb *mockQuestBoardRef, pc *mockPartyCoordRef) *Component {
 	config := DefaultConfig()
 	c := &Component{
-		config:        &config,
+		config: &config,
+		deps: component.Dependencies{
+			ComponentRegistry: &mockComponentRegistry{qb: qb, pc: pc},
+		},
 		logger:        slog.Default(),
 		dagCache:      make(map[string]*DAGExecutionState),
 		dagBySubQuest: make(map[string]*DAGExecutionState),
 		questCache:    make(map[string]string),
-	}
-	// Assign through interface only when non-nil to avoid the Go
-	// "typed nil wraps to non-nil interface" trap.
-	if qb != nil {
-		c.questBoardRef = qb
-	}
-	if pc != nil {
-		c.partyCoord = pc
 	}
 	return c
 }
@@ -435,16 +479,7 @@ func TestHandleNodeCompleted(t *testing.T) {
 		t.Parallel()
 
 		qb := &mockQuestBoardRef{}
-		config := DefaultConfig()
-		c := &Component{
-			config:        &config,
-			questBoardRef: qb,
-			partyCoord:    &mockPartyCoordRef{},
-			logger:        slog.Default(),
-			dagCache:      make(map[string]*DAGExecutionState),
-			dagBySubQuest: make(map[string]*DAGExecutionState),
-			questCache:    make(map[string]string),
-		}
+		c := newTestComponent(qb, &mockPartyCoordRef{})
 
 		dag := makeFullDAGState("exec-c1", "parent-quest-1", "party-c1", []QuestNode{
 			makeNode("n1", 0),
@@ -495,16 +530,7 @@ func TestHandleNodeCompleted(t *testing.T) {
 
 		qb := &mockQuestBoardRef{}
 		pc := &mockPartyCoordRef{}
-		config := DefaultConfig()
-		c := &Component{
-			config:        &config,
-			questBoardRef: qb,
-			partyCoord:    pc,
-			logger:        slog.Default(),
-			dagCache:      make(map[string]*DAGExecutionState),
-			dagBySubQuest: make(map[string]*DAGExecutionState),
-			questCache:    make(map[string]string),
-		}
+		c := newTestComponent(qb, pc)
 
 		dag := makeFullDAGState("exec-c3", "parent-quest-3", "party-c3", []QuestNode{
 			makeNode("n1", 0),
@@ -668,8 +694,10 @@ func TestHandleNodeFailed_TriageEnabled(t *testing.T) {
 		config := DefaultConfig()
 		config.TriageEnabled = true
 		c := &Component{
-			config:        &config,
-			questBoardRef: qb,
+			config: &config,
+			deps: component.Dependencies{
+				ComponentRegistry: &mockComponentRegistry{qb: qb},
+			},
 			logger:        slog.Default(),
 			dagCache:      make(map[string]*DAGExecutionState),
 			dagBySubQuest: make(map[string]*DAGExecutionState),
@@ -703,8 +731,10 @@ func TestHandleNodeFailed_TriageEnabled(t *testing.T) {
 		config := DefaultConfig()
 		config.TriageEnabled = true
 		c := &Component{
-			config:        &config,
-			questBoardRef: qb,
+			config: &config,
+			deps: component.Dependencies{
+				ComponentRegistry: &mockComponentRegistry{qb: qb},
+			},
 			logger:        slog.Default(),
 			dagCache:      make(map[string]*DAGExecutionState),
 			dagBySubQuest: make(map[string]*DAGExecutionState),
@@ -1045,17 +1075,8 @@ func TestTriggerRollup(t *testing.T) {
 		t.Parallel()
 
 		pc := &mockPartyCoordRef{}
-		// Use the config struct directly so questBoardRef is a true nil interface,
-		// not a typed nil wrapped in an interface.
-		config := DefaultConfig()
-		c := &Component{
-			config:        &config,
-			partyCoord:    pc,
-			logger:        slog.Default(),
-			dagCache:      make(map[string]*DAGExecutionState),
-			dagBySubQuest: make(map[string]*DAGExecutionState),
-			questCache:    make(map[string]string),
-		}
+		// Pass nil qb so resolveQuestBoard returns nil — no SubmitResult call expected.
+		c := newTestComponent(nil, pc)
 
 		dag := makeFullDAGState("exec-r2", "parent-r2", "party-r2", []QuestNode{
 			makeNode("n1", 0),
@@ -1074,16 +1095,8 @@ func TestTriggerRollup(t *testing.T) {
 		t.Parallel()
 
 		qb := &mockQuestBoardRef{}
-		// Use the config struct directly so partyCoord is a true nil interface.
-		config := DefaultConfig()
-		c := &Component{
-			config:        &config,
-			questBoardRef: qb,
-			logger:        slog.Default(),
-			dagCache:      make(map[string]*DAGExecutionState),
-			dagBySubQuest: make(map[string]*DAGExecutionState),
-			questCache:    make(map[string]string),
-		}
+		// Pass nil pc so resolvePartyCoord returns nil — no DisbandParty call expected.
+		c := newTestComponent(qb, nil)
 
 		dag := makeFullDAGState("exec-r3", "parent-r3", "", []QuestNode{
 			makeNode("n1", 0),

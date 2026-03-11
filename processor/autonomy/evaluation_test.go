@@ -18,6 +18,41 @@ import (
 )
 
 // =============================================================================
+// TEST REGISTRY HELPERS
+// =============================================================================
+// Unit tests use component.NewRegistry + RegisterInstance to inject sibling
+// components without starting them. Zero-value agentstore.Component and
+// guildformation.Component have safe no-op semantics for SeedCatalog/ListItems
+// and GetAgentGuild/ListGuilds respectively.
+// =============================================================================
+
+// newTestRegistry builds a minimal *component.Registry with pre-registered zero-value
+// agentstore and guildformation components. The components are not started — only
+// methods backed by sync.Map (SeedCatalog, ListItems, GetAgentGuild, ListGuilds) are
+// safe to call on them. Execute paths that call Purchase/UseConsumable/JoinGuild are
+// not exercised in unit tests.
+func newTestRegistry(t *testing.T, store *agentstore.Component, guilds *guildformation.Component, approval *dmapproval.Component) *component.Registry {
+	t.Helper()
+	reg := component.NewRegistry()
+	if store != nil {
+		if err := reg.RegisterInstance(agentstore.ComponentName, store); err != nil {
+			t.Fatalf("failed to register agentstore in test registry: %v", err)
+		}
+	}
+	if guilds != nil {
+		if err := reg.RegisterInstance(guildformation.ComponentName, guilds); err != nil {
+			t.Fatalf("failed to register guildformation in test registry: %v", err)
+		}
+	}
+	if approval != nil {
+		if err := reg.RegisterInstance(dmapproval.ComponentName, approval); err != nil {
+			t.Fatalf("failed to register dmapproval in test registry: %v", err)
+		}
+	}
+	return reg
+}
+
+// =============================================================================
 // UNIT TESTS - Action matrix, interval mapping, config, backoff
 // =============================================================================
 // No Docker required. Run with: go test ./processor/autonomy/...
@@ -201,21 +236,25 @@ func TestClaimQuestAction_ShouldExecute_NotIdle(t *testing.T) {
 // SHOPPING ACTION TESTS
 // =============================================================================
 
-// newTestComponentWithStore creates a Component with a non-nil store for unit tests.
-// The store is a zero-value agentstore.Component -- only SeedCatalog() and ListItems()
-// are safe to call on it (they only use the sync.Map which has zero-value semantics).
-// Execute paths that call Purchase/UseConsumable are not exercised in unit tests.
-func newTestComponentWithStore() *Component {
+// newTestComponentWithStore creates a Component backed by a registry that contains a
+// zero-value agentstore.Component. Only SeedCatalog() and ListItems() are safe to
+// call on the store (they use sync.Map zero-value semantics). Execute paths that call
+// Purchase/UseConsumable are not exercised in unit tests.
+func newTestComponentWithStore(t *testing.T) *Component {
+	t.Helper()
 	cfg := DefaultConfig()
-	return &Component{
-		config:   &cfg,
+	store := &agentstore.Component{}
+	reg := newTestRegistry(t, store, nil, nil)
+	c := &Component{
+		config: &cfg,
+		deps:   component.Dependencies{ComponentRegistry: reg},
 		trackers: make(map[string]*agentTracker),
-		store:    &agentstore.Component{}, // non-nil sentinel; execute paths not tested here
 	}
+	return c
 }
 
 func TestShopAction_ShouldExecute_IdleWithSurplus(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.shopAction()
 
 	agent := &agentprogression.Agent{
@@ -232,7 +271,7 @@ func TestShopAction_ShouldExecute_IdleWithSurplus(t *testing.T) {
 }
 
 func TestShopAction_ShouldExecute_IdleNoSurplus(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.shopAction()
 
 	agent := &agentprogression.Agent{
@@ -249,7 +288,7 @@ func TestShopAction_ShouldExecute_IdleNoSurplus(t *testing.T) {
 }
 
 func TestShopAction_ShouldExecute_CooldownWithXP(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.shopAction()
 
 	agent := &agentprogression.Agent{
@@ -265,7 +304,7 @@ func TestShopAction_ShouldExecute_CooldownWithXP(t *testing.T) {
 }
 
 func TestShopAction_ShouldExecute_CooldownLowXP(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.shopAction()
 
 	agent := &agentprogression.Agent{
@@ -298,7 +337,7 @@ func TestShopAction_ShouldExecute_NilStore(t *testing.T) {
 }
 
 func TestShopAction_ShouldExecute_OnQuestIsFalse(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.shopAction()
 
 	agent := &agentprogression.Agent{
@@ -318,9 +357,9 @@ func TestShopAction_ShouldExecute_OnQuestIsFalse(t *testing.T) {
 // =============================================================================
 
 func TestShopStrategic_ShouldExecute_OnQuestMissingShield(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	// Seed the catalog so ListItems returns items
-	c.store.SeedCatalog(agentstore.DefaultCatalog())
+	c.resolveStore().SeedCatalog(agentstore.DefaultCatalog())
 	act := c.shopStrategicAction()
 
 	agent := &agentprogression.Agent{
@@ -337,7 +376,7 @@ func TestShopStrategic_ShouldExecute_OnQuestMissingShield(t *testing.T) {
 }
 
 func TestShopStrategic_ShouldExecute_HasBoth(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	// Catalog not seeded -- shouldExecute short-circuits on ownership check
 	// before reaching ListItems. Both consumables are already owned.
 	act := c.shopStrategicAction()
@@ -360,7 +399,7 @@ func TestShopStrategic_ShouldExecute_HasBoth(t *testing.T) {
 }
 
 func TestShopStrategic_ShouldExecute_NotOnQuest(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.shopStrategicAction()
 
 	agent := &agentprogression.Agent{
@@ -380,7 +419,7 @@ func TestShopStrategic_ShouldExecute_NotOnQuest(t *testing.T) {
 // =============================================================================
 
 func TestUseConsumable_ShouldExecute_IdleWithBoostAndSuggestions(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useConsumableAction()
 
 	agent := &agentprogression.Agent{
@@ -403,7 +442,7 @@ func TestUseConsumable_ShouldExecute_IdleWithBoostAndSuggestions(t *testing.T) {
 }
 
 func TestUseConsumable_ShouldExecute_IdleNoConsumables(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useConsumableAction()
 
 	agent := &agentprogression.Agent{
@@ -423,7 +462,7 @@ func TestUseConsumable_ShouldExecute_IdleNoConsumables(t *testing.T) {
 }
 
 func TestUseConsumable_ShouldExecute_IdleNoSuggestions(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useConsumableAction()
 
 	agent := &agentprogression.Agent{
@@ -441,7 +480,7 @@ func TestUseConsumable_ShouldExecute_IdleNoSuggestions(t *testing.T) {
 }
 
 func TestUseConsumable_ShouldExecute_OnQuestWithBoost(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useConsumableAction()
 
 	agent := &agentprogression.Agent{
@@ -459,7 +498,7 @@ func TestUseConsumable_ShouldExecute_OnQuestWithBoost(t *testing.T) {
 }
 
 func TestUseConsumable_ShouldExecute_OnQuestBoostAlreadyActive(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useConsumableAction()
 
 	agent := &agentprogression.Agent{
@@ -480,7 +519,7 @@ func TestUseConsumable_ShouldExecute_OnQuestBoostAlreadyActive(t *testing.T) {
 }
 
 func TestUseConsumable_ShouldExecute_InBattleWithShield(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useConsumableAction()
 
 	agent := &agentprogression.Agent{
@@ -498,7 +537,7 @@ func TestUseConsumable_ShouldExecute_InBattleWithShield(t *testing.T) {
 }
 
 func TestUseConsumable_ShouldExecute_InBattleShieldAlreadyActive(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useConsumableAction()
 
 	agent := &agentprogression.Agent{
@@ -523,7 +562,7 @@ func TestUseConsumable_ShouldExecute_InBattleShieldAlreadyActive(t *testing.T) {
 // =============================================================================
 
 func TestUseCooldownSkip_ShouldExecute_CooldownWithSkip(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useCooldownSkipAction()
 
 	future := time.Now().Add(5 * time.Minute) // 5min remaining > 30s threshold
@@ -543,7 +582,7 @@ func TestUseCooldownSkip_ShouldExecute_CooldownWithSkip(t *testing.T) {
 }
 
 func TestUseCooldownSkip_ShouldExecute_AlmostDone(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useCooldownSkipAction()
 
 	soon := time.Now().Add(5 * time.Second) // 5s remaining < 30s threshold
@@ -563,7 +602,7 @@ func TestUseCooldownSkip_ShouldExecute_AlmostDone(t *testing.T) {
 }
 
 func TestUseCooldownSkip_ShouldExecute_NoConsumable(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useCooldownSkipAction()
 
 	future := time.Now().Add(5 * time.Minute)
@@ -580,7 +619,7 @@ func TestUseCooldownSkip_ShouldExecute_NoConsumable(t *testing.T) {
 }
 
 func TestUseCooldownSkip_ShouldExecute_NilCooldownUntil(t *testing.T) {
-	c := newTestComponentWithStore()
+	c := newTestComponentWithStore(t)
 	act := c.useCooldownSkipAction()
 
 	agent := &agentprogression.Agent{
@@ -1456,20 +1495,24 @@ func TestActionsForState_Unknown(t *testing.T) {
 // GUILD JOINING TESTS
 // =============================================================================
 
-// newTestComponentWithGuilds creates a Component with a non-nil guilds for unit tests.
-// The guilds component is a zero-value guildformation.Component — only GetAgentGuild()
-// and ListGuilds() are safe to call on it (they use sync.Map zero-value semantics).
-func newTestComponentWithGuilds() *Component {
+// newTestComponentWithGuilds creates a Component backed by a registry that contains a
+// zero-value guildformation.Component. Only GetAgentGuild() and ListGuilds() are safe
+// to call on it (they use sync.Map zero-value semantics).
+func newTestComponentWithGuilds(t *testing.T) *Component {
+	t.Helper()
 	cfg := DefaultConfig()
-	return &Component{
-		config:   &cfg,
+	guilds := &guildformation.Component{}
+	reg := newTestRegistry(t, nil, guilds, nil)
+	c := &Component{
+		config: &cfg,
+		deps:   component.Dependencies{ComponentRegistry: reg},
 		trackers: make(map[string]*agentTracker),
-		guilds:   &guildformation.Component{},
 	}
+	return c
 }
 
 func TestJoinGuild_ShouldExecute_IdleUnguilded(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	act := c.joinGuildAction()
 
 	agent := &agentprogression.Agent{
@@ -1485,7 +1528,7 @@ func TestJoinGuild_ShouldExecute_IdleUnguilded(t *testing.T) {
 }
 
 func TestJoinGuild_ShouldExecute_CooldownUnguilded(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	act := c.joinGuildAction()
 
 	agent := &agentprogression.Agent{
@@ -1501,7 +1544,7 @@ func TestJoinGuild_ShouldExecute_CooldownUnguilded(t *testing.T) {
 }
 
 func TestJoinGuild_ShouldExecute_OnQuest(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	act := c.joinGuildAction()
 
 	agent := &agentprogression.Agent{
@@ -1517,7 +1560,7 @@ func TestJoinGuild_ShouldExecute_OnQuest(t *testing.T) {
 }
 
 func TestJoinGuild_ShouldExecute_InBattle(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	act := c.joinGuildAction()
 
 	agent := &agentprogression.Agent{
@@ -1549,7 +1592,7 @@ func TestJoinGuild_ShouldExecute_NilGuilds(t *testing.T) {
 }
 
 func TestJoinGuild_ShouldExecute_BelowMinLevel(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	act := c.joinGuildAction()
 
 	agent := &agentprogression.Agent{
@@ -1565,7 +1608,7 @@ func TestJoinGuild_ShouldExecute_BelowMinLevel(t *testing.T) {
 }
 
 func TestJoinGuild_ShouldExecute_AtMinLevel(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	act := c.joinGuildAction()
 
 	agent := &agentprogression.Agent{
@@ -1581,7 +1624,7 @@ func TestJoinGuild_ShouldExecute_AtMinLevel(t *testing.T) {
 }
 
 func TestJoinGuild_ShouldExecute_MaxGuildsReached(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	act := c.joinGuildAction()
 
 	agent := &agentprogression.Agent{
@@ -1602,7 +1645,7 @@ func TestJoinGuild_ShouldExecute_MaxGuildsReached(t *testing.T) {
 // =============================================================================
 
 func TestScoreGuilds_FiltersFullGuilds(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score1",
 		Level: 5,
@@ -1624,7 +1667,7 @@ func TestScoreGuilds_FiltersFullGuilds(t *testing.T) {
 }
 
 func TestScoreGuilds_FiltersBelowMinLevel(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score2",
 		Level: 3,
@@ -1646,7 +1689,7 @@ func TestScoreGuilds_FiltersBelowMinLevel(t *testing.T) {
 }
 
 func TestScoreGuilds_FiltersExistingMembers(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score3",
 		Level: 5,
@@ -1667,7 +1710,7 @@ func TestScoreGuilds_FiltersExistingMembers(t *testing.T) {
 }
 
 func TestScoreGuilds_RanksByScore(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score4",
 		Level: 5,
@@ -1705,11 +1748,8 @@ func TestScoreGuilds_RanksByScore(t *testing.T) {
 func TestScoreGuilds_ReturnsTopN(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.GuildSuggestionsN = 2 // only return top 2
-	c := &Component{
-		config:   &cfg,
-		trackers: make(map[string]*agentTracker),
-		guilds:   &guildformation.Component{},
-	}
+	c := newTestComponentWithGuilds(t)
+	c.config = &cfg
 	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score5",
 		Level: 5,
@@ -1731,7 +1771,7 @@ func TestScoreGuilds_ReturnsTopN(t *testing.T) {
 }
 
 func TestScoreGuilds_EmptyList(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score6",
 		Level: 5,
@@ -1743,7 +1783,7 @@ func TestScoreGuilds_EmptyList(t *testing.T) {
 }
 
 func TestScoreGuilds_SkillGapFill(t *testing.T) {
-	c := newTestComponentWithGuilds()
+	c := newTestComponentWithGuilds(t)
 	agent := &agentprogression.Agent{
 		ID:    "test.local.game.board1.agent.score7",
 		Level: 5,
@@ -1821,8 +1861,8 @@ func TestRequestApproval_NilApproval(t *testing.T) {
 	cfg.SessionID = "session-1"
 	c := &Component{
 		config:   &cfg,
-		approval: nil, // nil approval component
 		trackers: make(map[string]*agentTracker),
+		// registry is nil — resolveApproval returns nil, triggering auto-approve
 	}
 
 	if !c.requestApproval(context.Background(), domain.ApprovalAutonomyGuild, "test", "details", nil) {
@@ -1853,10 +1893,11 @@ func TestRequestApproval_Supervised_NotRunning_Denied(t *testing.T) {
 	cfg.ApprovalTimeoutMs = 1000 // short timeout for test
 
 	approvalComp := &dmapproval.Component{} // not started — RequestApproval will fail
+	reg := newTestRegistry(t, nil, nil, approvalComp)
 
 	c := &Component{
 		config:   &cfg,
-		approval: approvalComp,
+		deps:     component.Dependencies{ComponentRegistry: reg},
 		trackers: make(map[string]*agentTracker),
 		logger:   slog.Default(),
 	}
@@ -1874,10 +1915,11 @@ func TestRequestApproval_Manual_NotRunning_Denied(t *testing.T) {
 	cfg.ApprovalTimeoutMs = 1000
 
 	approvalComp := &dmapproval.Component{} // not started — RequestApproval will fail
+	reg := newTestRegistry(t, nil, nil, approvalComp)
 
 	c := &Component{
 		config:   &cfg,
-		approval: approvalComp,
+		deps:     component.Dependencies{ComponentRegistry: reg},
 		trackers: make(map[string]*agentTracker),
 		logger:   slog.Default(),
 	}

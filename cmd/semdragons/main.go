@@ -28,18 +28,6 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
-	"github.com/c360studio/semdragons/processor/agentstore"
-	"github.com/c360studio/semdragons/processor/autonomy"
-	"github.com/c360studio/semdragons/processor/bossbattle"
-	"github.com/c360studio/semdragons/processor/dmapproval"
-	"github.com/c360studio/semdragons/processor/guildformation"
-	"github.com/c360studio/semdragons/processor/partycoord"
-	"github.com/c360studio/semdragons/processor/questboard"
-	"github.com/c360studio/semdragons/processor/questbridge"
-	"github.com/c360studio/semdragons/processor/questdagexec"
-	"github.com/c360studio/semdragons/processor/questtools"
-	"github.com/c360studio/semdragons/semsource"
-	"github.com/c360studio/semdragons/storage/filestore"
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
 
@@ -165,7 +153,7 @@ func run() error {
 	}
 
 	// 11. Run application with signal handling
-	return runWithSignalHandling(ctx, manager, componentRegistry, cfg, cliCfg.ShutdownTimeout)
+	return runWithSignalHandling(ctx, manager, cliCfg.ShutdownTimeout)
 }
 
 // parseCLI parses and validates CLI flags.
@@ -460,15 +448,11 @@ func configureAndCreateServices(
 }
 
 // runWithSignalHandling starts services and handles shutdown signals.
-func runWithSignalHandling(ctx context.Context, manager *service.Manager, registry *component.Registry, cfg *config.Config, shutdownTimeout time.Duration) error {
+// All cross-component dependencies are resolved lazily via deps.ComponentRegistry
+// (set automatically by ComponentManager on every NewFromConfig call, including restarts).
+func runWithSignalHandling(ctx context.Context, manager *service.Manager, shutdownTimeout time.Duration) error {
 	signalCtx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
-
-	// Wire cross-component references BEFORE starting, so handlers
-	// have their sibling references from the first tick. Components are
-	// already instantiated (in registry.instances) after service creation;
-	// SetPartyCoord/SetQuestBoard are safe to call before Start.
-	wireComponentCrossReferences(registry, cfg)
 
 	slog.Info("Starting all services")
 	if err := manager.StartAll(signalCtx); err != nil {
@@ -492,152 +476,6 @@ func runWithSignalHandling(ctx context.Context, manager *service.Manager, regist
 	return nil
 }
 
-// wireComponentCrossReferences injects sibling component references after all
-// components have been instantiated by the component manager but before Start.
-// Wires: partycoord → questboard, questdagexec → questboard + partycoord,
-// questbridge → questboard + questtools + manifest, autonomy → agentstore + guildformation + dmapproval.
-func wireComponentCrossReferences(registry *component.Registry, cfg *config.Config) {
-	qb := registry.Component(questboard.ComponentName)
-	pc := registry.Component(partycoord.ComponentName)
-	dex := registry.Component(questdagexec.ComponentName)
-	qbr := registry.Component(questbridge.ComponentName)
-
-	// Wire partycoord → questboard (for ClaimQuestForParty on party-required quests)
-	if pc != nil && qb != nil {
-		if setter, ok := pc.(*partycoord.Component); ok {
-			if ref, ok := qb.(partycoord.QuestBoardRef); ok {
-				setter.SetQuestBoard(ref)
-				slog.Info("wired partycoord → questboard")
-			}
-		}
-	}
-
-	// Wire questdagexec → questboard + partycoord (for sub-quest lifecycle)
-	if dex != nil {
-		if setter, ok := dex.(*questdagexec.Component); ok {
-			if qb != nil {
-				if ref, ok := qb.(questdagexec.QuestBoardRef); ok {
-					setter.SetQuestBoard(ref)
-					slog.Info("wired questdagexec → questboard")
-				}
-			}
-			if pc != nil {
-				if ref, ok := pc.(questdagexec.PartyCoordRef); ok {
-					setter.SetPartyCoord(ref)
-					slog.Info("wired questdagexec → partycoord")
-				}
-			}
-		}
-	}
-
-	// Wire questbridge → questboard (for sub-quest posting on DAG decomposition)
-	if qbr != nil && qb != nil {
-		if setter, ok := qbr.(*questbridge.Component); ok {
-			if ref, ok := qb.(questbridge.SubQuestPoster); ok {
-				setter.SetQuestBoard(ref)
-				slog.Info("wired questbridge → questboard")
-			}
-			// Also wire quest failure delegation for triage gate
-			if ref, ok := qb.(questbridge.QuestFailer); ok {
-				setter.SetQuestFailer(ref)
-				slog.Info("wired questbridge → questboard (quest failure triage)")
-			}
-		}
-	}
-
-	// Wire questbridge → questtools (shared tool registry for definitions).
-	// Uses lazy ToolRegistrySource so questtools doesn't need to be started yet.
-	qt := registry.Component(questtools.ComponentName)
-	if qbr != nil && qt != nil {
-		if setter, ok := qbr.(*questbridge.Component); ok {
-			if ref, ok := qt.(questbridge.ToolRegistrySource); ok {
-				setter.SetToolRegistrySource(ref)
-				slog.Info("wired questbridge → questtools (shared tool registry)")
-			}
-		}
-	}
-
-	// Wire questbridge → semsource manifest client (best-effort, non-blocking).
-	// Derives HTTP base URL from websocket_input component config.
-	if qbr != nil && cfg != nil {
-		if setter, ok := qbr.(*questbridge.Component); ok {
-			if wsURL := extractWebsocketURLFromConfig(cfg); wsURL != "" {
-				if mc := semsource.NewManifestClient(wsURL, slog.Default()); mc != nil {
-					setter.SetManifestClient(mc)
-					slog.Info("wired questbridge → semsource manifest", "ws_url", wsURL)
-				}
-			}
-		}
-	}
-
-	// Wire filestore → questbridge + bossbattle (artifact store for workspace snapshots)
-	fs := registry.Component("filestore")
-	if fs != nil {
-		if fsc, ok := fs.(*filestore.Component); ok {
-			store := fsc.GetStore()
-			if store == nil {
-				slog.Warn("filestore component returned nil store, skipping artifact wiring")
-			} else {
-				if qbr != nil {
-					if setter, ok := qbr.(*questbridge.Component); ok {
-						setter.SetArtifactStore(store)
-						slog.Info("wired filestore → questbridge")
-					}
-				}
-				bb := registry.Component(bossbattle.ComponentName)
-				if bb != nil {
-					if setter, ok := bb.(*bossbattle.Component); ok {
-						setter.SetArtifactStore(store)
-						slog.Info("wired filestore → bossbattle")
-					}
-				}
-			}
-		}
-	}
-
-	// Wire autonomy → agentstore, guildformation, dmapproval
-	auto := registry.Component(autonomy.ComponentName)
-	if auto != nil {
-		if setter, ok := auto.(*autonomy.Component); ok {
-			if store := registry.Component(agentstore.ComponentName); store != nil {
-				if ref, ok := store.(*agentstore.Component); ok {
-					setter.SetStore(ref)
-					slog.Info("wired autonomy → agentstore")
-				}
-			}
-			if guilds := registry.Component(guildformation.ComponentName); guilds != nil {
-				if ref, ok := guilds.(*guildformation.Component); ok {
-					setter.SetGuilds(ref)
-					slog.Info("wired autonomy → guildformation")
-				}
-			}
-			if approval := registry.Component(dmapproval.ComponentName); approval != nil {
-				if ref, ok := approval.(*dmapproval.Component); ok {
-					setter.SetApproval(ref)
-					slog.Info("wired autonomy → dmapproval")
-				}
-			}
-		}
-	}
-}
-
-// extractWebsocketURLFromConfig extracts the websocket URL from the
-// websocket_input component config, if present and enabled.
-func extractWebsocketURLFromConfig(cfg *config.Config) string {
-	cc, exists := cfg.Components["websocket_input"]
-	if !exists || !cc.Enabled || len(cc.Config) == 0 {
-		return ""
-	}
-	var wsConfig struct {
-		Client struct {
-			URL string `json:"url"`
-		} `json:"client"`
-	}
-	if err := json.Unmarshal(cc.Config, &wsConfig); err != nil {
-		return ""
-	}
-	return wsConfig.Client.URL
-}
 
 // startPProfServer starts a pprof HTTP server on the given port.
 // The blank import of net/http/pprof registers handlers on DefaultServeMux.

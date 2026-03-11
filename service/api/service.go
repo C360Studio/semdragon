@@ -24,7 +24,6 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semstreams/storage"
 )
 
 // Config holds configuration for the semdragons-api service.
@@ -48,8 +47,6 @@ type Service struct {
 	world           WorldStateProvider // concrete type is *dmworldstate.WorldStateAggregator
 	store           StoreProvider      // concrete type is *agentstore.Component; nil if unavailable
 	storeOnce       sync.Once          // guards lazy store resolution
-	artifactStore     storage.Store      // filestore for quest artifacts; nil if unavailable
-	artifactStoreOnce sync.Once          // guards lazy artifact store resolution
 	componentDeps   *service.Dependencies // retained for lazy component resolution
 	models          ModelResolver      // concrete type is *model.Registry; nil if unavailable
 	nats            *natsclient.Client // direct NATS access for KV buckets outside graph
