@@ -615,10 +615,6 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		return
 	}
 
-	// Snapshot workspace files to the artifact store before transitioning status.
-	// Best-effort: snapshot failure is logged but does not block quest completion.
-	c.snapshotWorkspace(ctx, string(questID))
-
 	// When a party quest completes and we have a questboard reference, check
 	// whether the lead's output contains a DAG decomposition. A valid DAG
 	// triggers sub-quest posting and DAG state initialization instead of the
@@ -649,6 +645,11 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		c.logger.Debug("party quest output contains no DAG, using normal completion path",
 			"quest_id", questID)
 	}
+
+	// Snapshot workspace files to the artifact store before transitioning status.
+	// Best-effort: snapshot failure is logged but does not block quest completion.
+	// Placed after the DAG check so DAG decompositions are not delayed by snapshot I/O.
+	c.snapshotWorkspace(string(questID))
 
 	quest.LoopID = mapping.LoopID
 
@@ -1059,7 +1060,7 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 
 	// Clean up workspace on failure — no snapshot needed since the quest did not
 	// produce a successful work product.
-	c.cleanupWorkspace(ctx, string(questID))
+	c.cleanupWorkspace(string(questID))
 
 	// Delegate to questboard when available — this routes through the triage
 	// gate which may hold the quest for DM evaluation instead of terminal failure.
@@ -1432,7 +1433,7 @@ const maxSnapshotFileSize = 10 * 1024 * 1024
 //
 // Uses a detached context with a deadline so that graceful shutdown does not
 // orphan the workspace mid-snapshot.
-func (c *Component) snapshotWorkspace(_ context.Context, questID string) {
+func (c *Component) snapshotWorkspace(questID string) {
 	if c.sandboxClient == nil {
 		return
 	}
@@ -1448,13 +1449,13 @@ func (c *Component) snapshotWorkspace(_ context.Context, questID string) {
 	if err != nil {
 		c.logger.Warn("failed to list workspace files for snapshot",
 			"quest_id", questID, "error", err)
-		c.cleanupWorkspace(snapCtx, questID)
+		c.cleanupWorkspace(questID)
 		return
 	}
 
 	if len(files) == 0 {
 		c.logger.Debug("no workspace files to snapshot", "quest_id", questID)
-		c.cleanupWorkspace(snapCtx, questID)
+		c.cleanupWorkspace(questID)
 		return
 	}
 
@@ -1490,14 +1491,14 @@ func (c *Component) snapshotWorkspace(_ context.Context, questID string) {
 			"quest_id", questID, "files", len(files))
 	}
 
-	c.cleanupWorkspace(snapCtx, questID)
+	c.cleanupWorkspace(questID)
 }
 
 // cleanupWorkspace deletes the sandbox workspace for the given quest.
 // No-op when sandboxClient is nil. When called from failQuest (where the
 // parent context may be valid), uses a bounded detached context to ensure
 // cleanup completes even during shutdown.
-func (c *Component) cleanupWorkspace(_ context.Context, questID string) {
+func (c *Component) cleanupWorkspace(questID string) {
 	if c.sandboxClient == nil {
 		return
 	}

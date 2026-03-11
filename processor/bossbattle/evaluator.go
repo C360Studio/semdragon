@@ -653,6 +653,7 @@ func inferLanguage(path string) string {
 }
 
 // SetArtifactStore sets the filestore for loading workspace artifacts during evaluation.
+// Must be called during Initialize (single-threaded) before the evaluator processes battles.
 func (e *DomainAwareEvaluator) SetArtifactStore(store storage.Store) {
 	e.artifactStore = store
 }

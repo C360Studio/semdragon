@@ -1573,17 +1573,18 @@ func (s *mockArtifactStore) Delete(_ context.Context, key string) error {
 // newMockSandboxServer creates an httptest server that simulates the sandbox API
 // with pre-loaded workspace files for the given quest ID.
 func newMockSandboxServer(questID string, files map[string]string) *httptest.Server {
+	expectedPrefix := "/workspace/" + questID
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/workspace/"):
+		case r.Method == http.MethodPost && r.URL.Path == expectedPrefix:
 			// CreateWorkspace
 			w.WriteHeader(http.StatusCreated)
 
-		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workspace/"):
+		case r.Method == http.MethodDelete && r.URL.Path == expectedPrefix:
 			// DeleteWorkspace
 			w.WriteHeader(http.StatusNoContent)
 
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/workspace/"):
+		case r.Method == http.MethodGet && r.URL.Path == expectedPrefix:
 			// ListWorkspaceFiles — returns all files as flat entries.
 			type entry struct {
 				Name  string `json:"name"`
@@ -1631,7 +1632,7 @@ func TestSnapshotWorkspace_CopiesFilesToArtifactStore(t *testing.T) {
 		logger:        slog.Default(),
 	}
 
-	comp.snapshotWorkspace(context.Background(), questID)
+	comp.snapshotWorkspace( questID)
 
 	// Verify all files were copied to the artifact store under quests/{questID}/.
 	for path, expectedContent := range workspaceFiles {
@@ -1653,7 +1654,8 @@ func TestSnapshotWorkspace_NoopWithoutSandboxClient(t *testing.T) {
 	}
 
 	// Should not panic or error when sandboxClient is nil.
-	comp.snapshotWorkspace(context.Background(), "quest-noop")
+	comp.snapshotWorkspace( "quest-noop")
+	t.Log("no panic with nil sandboxClient")
 }
 
 func TestSnapshotWorkspace_EmptyWorkspace(t *testing.T) {
@@ -1668,7 +1670,7 @@ func TestSnapshotWorkspace_EmptyWorkspace(t *testing.T) {
 		logger:        slog.Default(),
 	}
 
-	comp.snapshotWorkspace(context.Background(), questID)
+	comp.snapshotWorkspace( questID)
 
 	// No files should be in the store.
 	keys, _ := store.List(context.Background(), "quests/")
@@ -1690,8 +1692,9 @@ func TestSnapshotWorkspace_SkipsStoreWhenNil(t *testing.T) {
 		logger:        slog.Default(),
 	}
 
-	// Should not panic — just creates workspace listing and deletes.
-	comp.snapshotWorkspace(context.Background(), questID)
+	// Should not panic — just creates workspace listing and warns.
+	comp.snapshotWorkspace( questID)
+	t.Log("no panic with nil artifactStore")
 }
 
 func TestCleanupWorkspace_NoopWithoutSandboxClient(t *testing.T) {
@@ -1700,7 +1703,8 @@ func TestCleanupWorkspace_NoopWithoutSandboxClient(t *testing.T) {
 	}
 
 	// Should not panic or error when sandboxClient is nil.
-	comp.cleanupWorkspace(context.Background(), "quest-noop")
+	comp.cleanupWorkspace( "quest-noop")
+	t.Log("no panic with nil sandboxClient")
 }
 
 func TestCleanupWorkspace_CallsDelete(t *testing.T) {
@@ -1720,7 +1724,7 @@ func TestCleanupWorkspace_CallsDelete(t *testing.T) {
 		logger:        slog.Default(),
 	}
 
-	comp.cleanupWorkspace(context.Background(), "quest-cleanup-001")
+	comp.cleanupWorkspace( "quest-cleanup-001")
 
 	if !deleteCalled {
 		t.Error("expected DeleteWorkspace to be called on sandbox")
@@ -1770,7 +1774,7 @@ func TestSnapshotWorkspace_PartialFailure_ContinuesAndCleanups(t *testing.T) {
 		logger:        slog.Default(),
 	}
 
-	comp.snapshotWorkspace(context.Background(), questID)
+	comp.snapshotWorkspace( questID)
 
 	// The good file should have been saved despite the bad file failing.
 	goodKey := fmt.Sprintf("quests/%s/good.txt", questID)
@@ -1824,7 +1828,7 @@ func TestSnapshotWorkspace_SkipsOversizedFiles(t *testing.T) {
 		logger:        slog.Default(),
 	}
 
-	comp.snapshotWorkspace(context.Background(), questID)
+	comp.snapshotWorkspace( questID)
 
 	// Small file should be stored.
 	if _, err := store.Get(context.Background(), fmt.Sprintf("quests/%s/small.txt", questID)); err != nil {
@@ -1880,7 +1884,7 @@ func TestSnapshotWorkspace_CleansUpAfterSuccess(t *testing.T) {
 		logger:        slog.Default(),
 	}
 
-	comp.snapshotWorkspace(context.Background(), questID)
+	comp.snapshotWorkspace( questID)
 
 	// Verify DeleteWorkspace was called after snapshot.
 	if !deleteCalled {

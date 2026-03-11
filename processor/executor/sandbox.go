@@ -992,14 +992,14 @@ func makeSandboxRunTestsHandler(client *SandboxClient) ToolHandler {
 		},
 		func(command string) error {
 			if containsShellMeta(command) {
-				return fmt.Errorf("run_tests does not allow shell metacharacters (;, &&, ||, |, $, `, >, <). Use run_command for compound commands.")
+				return fmt.Errorf("run_tests does not allow shell metacharacters (;, &&, ||, |, $, `, >, <) — use run_command for compound commands")
 			}
 			for _, prefix := range allowedTestPrefixes {
 				if strings.HasPrefix(command, prefix) {
 					return nil
 				}
 			}
-			return fmt.Errorf("run_tests only allows test commands (e.g. 'go test ./...', 'npm test'). Use run_command for general commands.")
+			return fmt.Errorf("run_tests only allows test commands (e.g. 'go test ./...', 'npm test') — use run_command for general commands")
 		},
 	)
 }
@@ -1016,14 +1016,14 @@ func makeSandboxLintCheckHandler(client *SandboxClient) ToolHandler {
 		},
 		func(command string) error {
 			if containsShellMeta(command) {
-				return fmt.Errorf("lint_check does not allow shell metacharacters (;, &&, ||, |, $, `, >, <). Use run_command for compound commands.")
+				return fmt.Errorf("lint_check does not allow shell metacharacters (;, &&, ||, |, $, `, >, <) — use run_command for compound commands")
 			}
 			for _, prefix := range allowedLintPrefixes {
 				if strings.HasPrefix(command, prefix) {
 					return nil
 				}
 			}
-			return fmt.Errorf("lint_check only allows linter commands (e.g. 'go vet ./...', 'golangci-lint run'). Use run_command for general commands.")
+			return fmt.Errorf("lint_check only allows linter commands (e.g. 'go vet ./...', 'golangci-lint run') — use run_command for general commands")
 		},
 	)
 }

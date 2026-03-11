@@ -30,6 +30,7 @@ import (
 	"github.com/c360studio/semdragons/componentregistry"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/autonomy"
+	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semdragons/processor/dmapproval"
 	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semdragons/processor/partycoord"
@@ -38,6 +39,7 @@ import (
 	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semdragons/processor/questtools"
 	"github.com/c360studio/semdragons/semsource"
+	"github.com/c360studio/semdragons/storage/filestore"
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
 
@@ -563,6 +565,31 @@ func wireComponentCrossReferences(registry *component.Registry, cfg *config.Conf
 				if mc := semsource.NewManifestClient(wsURL, slog.Default()); mc != nil {
 					setter.SetManifestClient(mc)
 					slog.Info("wired questbridge → semsource manifest", "ws_url", wsURL)
+				}
+			}
+		}
+	}
+
+	// Wire filestore → questbridge + bossbattle (artifact store for workspace snapshots)
+	fs := registry.Component("filestore")
+	if fs != nil {
+		if fsc, ok := fs.(*filestore.Component); ok {
+			store := fsc.GetStore()
+			if store == nil {
+				slog.Warn("filestore component returned nil store, skipping artifact wiring")
+			} else {
+				if qbr != nil {
+					if setter, ok := qbr.(*questbridge.Component); ok {
+						setter.SetArtifactStore(store)
+						slog.Info("wired filestore → questbridge")
+					}
+				}
+				bb := registry.Component(bossbattle.ComponentName)
+				if bb != nil {
+					if setter, ok := bb.(*bossbattle.Component); ok {
+						setter.SetArtifactStore(store)
+						slog.Info("wired filestore → bossbattle")
+					}
 				}
 			}
 		}

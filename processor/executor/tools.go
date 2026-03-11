@@ -744,7 +744,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 						"description": "Optional inline content for non-file work (analysis, research findings). Omit this when your work is in files — they are captured automatically.",
 					},
 				},
-				"required": []any{"summary"},
+				"required": []any{},
 			},
 		},
 		Handler: submitWorkProductHandler,

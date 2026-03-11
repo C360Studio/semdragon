@@ -343,6 +343,15 @@
         }
       }
     },
+    "filestore": {
+      "type": "storage",
+      "name": "filestore",
+      "enabled": true,
+      "config": {
+        "root_dir": "/workspace/artifacts",
+        "create_if_missing": true
+      }
+    },
     "questbridge": {
       "type": "processor",
       "name": "questbridge",
@@ -358,6 +367,7 @@
         "enable_builtins": true,
         "default_role": "general",
         "sandbox_dir": "/workspace",
+        "sandbox_url": "http://sandbox:8090",
         "dm_mode": "full_auto",
         "max_clarification_rounds": 3
       }
@@ -375,6 +385,7 @@
         "timeout": "60s",
         "enable_builtins": true,
         "sandbox_dir": "/workspace",
+        "sandbox_url": "http://sandbox:8090",
         "graphql_url": "http://localhost:8082/graphql"
       }
     },
