@@ -1,4 +1,4 @@
-import { test, expect, hasBackend } from '../fixtures/test-base';
+import { test, expect, hasBackend } from '../../fixtures/test-base';
 
 test.describe('Settings - Page Structure', () => {
 	test('displays page title', async ({ settingsPage }) => {
@@ -281,8 +281,10 @@ test.describe('Settings - Token Budget Editing', () => {
 		await settingsPage.budgetInput.fill('500000');
 		await settingsPage.budgetSave.click();
 
+		// Wait for the edit form to disappear (save round-trip complete)
+		await expect(settingsPage.budgetInput).not.toBeVisible({ timeout: 10000 });
 		await expect(settingsPage.budgetDisplay).toBeVisible();
-		await expect(settingsPage.budgetDisplay.locator('.mono')).toHaveText('500,000');
+		await expect(settingsPage.budgetDisplay.locator('.mono')).toHaveText('500,000', { timeout: 5000 });
 
 		// Restore original
 		await settingsPage.budgetDisplay.click();

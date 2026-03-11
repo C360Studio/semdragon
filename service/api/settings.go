@@ -351,6 +351,11 @@ func (s *Service) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, fmt.Sprintf("failed to set budget: %v", err), http.StatusBadRequest)
 			return
 		}
+		// Keep in-memory config in sync so GET /settings reflects the new value
+		// even when the config file on disk is read-only.
+		if s.config.TokenBudget != nil {
+			s.config.TokenBudget.GlobalHourlyLimit = req.TokenBudget.GlobalHourlyLimit
+		}
 	}
 
 	// Model registry update
