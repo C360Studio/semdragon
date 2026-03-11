@@ -1,0 +1,90 @@
+{
+  "model_registry": {
+    "endpoints": {
+      "gemini-pro": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-pro",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "medium"
+      },
+      "claude-sonnet": {
+        "provider": "anthropic",
+        "url": "https://api.anthropic.com/v1",
+        "model": "claude-sonnet-4-6",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "max_tokens": 200000,
+        "supports_tools": true
+      },
+      "claude-haiku": {
+        "provider": "anthropic",
+        "url": "https://api.anthropic.com/v1",
+        "model": "claude-haiku-4-5-20251001",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "max_tokens": 200000,
+        "supports_tools": true
+      }
+    },
+    "capabilities": {
+      "agent-work": {
+        "preferred": ["claude-sonnet", "claude-haiku"],
+        "requires_tools": true
+      },
+      "agent-work.apprentice": {
+        "preferred": ["claude-haiku"],
+        "requires_tools": true
+      },
+      "agent-work.journeyman": {
+        "preferred": ["claude-sonnet", "claude-haiku"],
+        "requires_tools": true
+      },
+      "agent-work.expert": {
+        "preferred": ["claude-sonnet"],
+        "requires_tools": true
+      },
+      "agent-work.master": {
+        "preferred": ["claude-sonnet"],
+        "requires_tools": true
+      },
+      "agent-work.grandmaster": {
+        "preferred": ["claude-sonnet"],
+        "requires_tools": true
+      },
+      "quest-execution-sequential": {
+        "preferred": ["claude-sonnet", "claude-haiku"],
+        "requires_tools": true
+      },
+      "boss-battle": {
+        "preferred": ["gemini-pro", "claude-sonnet"]
+      },
+      "quest-design": {
+        "preferred": ["gemini-pro", "claude-sonnet"]
+      },
+      "dm-chat": {
+        "preferred": ["gemini-pro", "claude-sonnet"]
+      }
+    },
+    "defaults": {
+      "model": "claude-sonnet"
+    }
+  },
+  "components": {
+    "agentic-loop": {
+      "config": {
+        "context": {
+          "tool_result_max_age": 20,
+          "summarization_model": "claude-haiku"
+        }
+      }
+    },
+    "agentic-model": {
+      "config": {
+        "timeout": "300s",
+        "retry": { "max_attempts": 2 }
+      }
+    }
+  }
+}
