@@ -1337,7 +1337,26 @@ func TestParseToolOutput(t *testing.T) {
 			wantOK:         true,
 		},
 		{
-			name:   "empty deliverable",
+			name:           "summary-only work_product (file-based work)",
+			input:          `{"type":"work_product","summary":"Built auth module with JWT tokens and tests"}`,
+			wantOutputType: "work_product",
+			wantContent:    "Built auth module with JWT tokens and tests",
+			wantOK:         true,
+		},
+		{
+			name:           "deliverable takes precedence over summary",
+			input:          `{"type":"work_product","deliverable":"inline content","summary":"summary text"}`,
+			wantOutputType: "work_product",
+			wantContent:    "inline content",
+			wantOK:         true,
+		},
+		{
+			name:   "empty deliverable and empty summary",
+			input:  `{"type":"work_product","deliverable":"","summary":""}`,
+			wantOK: false,
+		},
+		{
+			name:   "empty deliverable no summary",
 			input:  `{"type":"work_product","deliverable":""}`,
 			wantOK: false,
 		},

@@ -731,20 +731,20 @@ func (r *ToolRegistry) RegisterBuiltins() {
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
 			Name:        "submit_work_product",
-			Description: "Submit your FINISHED work (code, analysis, results) for review. Only call this when you have completed the actual work — never use this to ask questions, request information, or describe plans. Your deliverable will be graded by a reviewer.",
+			Description: "Submit your FINISHED work for review. Files you wrote/modified are captured automatically — you do NOT need to paste file contents. Provide a summary describing what you built and any design decisions. Only call this when you have completed the actual work — never use this to ask questions or describe plans.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"deliverable": map[string]any{
-						"type":        "string",
-						"description": "The completed work product — must contain actual code, analysis, or results, not questions or plans",
-					},
 					"summary": map[string]any{
 						"type":        "string",
-						"description": "Brief summary of what was delivered",
+						"description": "Summary of what was delivered — describe the files created/modified, design decisions, and how to verify the work",
+					},
+					"deliverable": map[string]any{
+						"type":        "string",
+						"description": "Optional inline content for non-file work (analysis, research findings). Omit this when your work is in files — they are captured automatically.",
 					},
 				},
-				"required": []any{"deliverable"},
+				"required": []any{"summary"},
 			},
 		},
 		Handler: submitWorkProductHandler,
@@ -1478,27 +1478,37 @@ func makeWebSearchHandler(provider SearchProvider) ToolHandler {
 // =============================================================================
 
 func submitWorkProductHandler(_ context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+	summary, _ := call.Arguments["summary"].(string)
 	deliverable, _ := call.Arguments["deliverable"].(string)
-	if deliverable == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "deliverable argument is required and must be non-empty"}
+
+	if summary == "" && deliverable == "" {
+		return agentic.ToolResult{CallID: call.ID, Error: "at least one of summary or deliverable is required"}
 	}
 
-	// Reject deliverables that are actually questions — tell the agent to use
-	// the right tool so they don't get penalized by the reviewer.
-	if looksLikeQuestion(deliverable) {
+	// When deliverable is provided, check if it's actually a question.
+	if deliverable != "" && looksLikeQuestion(deliverable) {
 		return agentic.ToolResult{
 			CallID: call.ID,
 			Error: "Your deliverable appears to be a question or request for information, not completed work. " +
 				"Use the ask_clarification tool instead — you will NOT be penalized for asking questions. " +
-				"Only use submit_work_product when you have finished work (code, analysis, results) to submit.",
+				"Only use submit_work_product when you have finished work to submit.",
 		}
 	}
 
-	summary, _ := call.Arguments["summary"].(string)
+	// Also check summary-only submissions for question patterns.
+	if deliverable == "" && summary != "" && looksLikeQuestion(summary) {
+		return agentic.ToolResult{
+			CallID: call.ID,
+			Error: "Your summary appears to be a question. " +
+				"Use the ask_clarification tool instead — you will NOT be penalized for asking questions.",
+		}
+	}
 
 	result := map[string]string{
-		"type":        "work_product",
-		"deliverable": deliverable,
+		"type": "work_product",
+	}
+	if deliverable != "" {
+		result["deliverable"] = deliverable
 	}
 	if summary != "" {
 		result["summary"] = summary

@@ -14,6 +14,7 @@ import (
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/pkg/errs"
+	"github.com/c360studio/semstreams/storage"
 	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -45,6 +46,10 @@ type Component struct {
 
 	// Token budget enforcement
 	tokenLedger *tokenbudget.TokenLedger
+
+	// Artifact store for reading workspace files during evaluation.
+	// Optional: when nil, judge evaluates text output only.
+	artifactStore storage.Store
 
 	// KV watcher for quest entity state changes (entity-centric architecture)
 	questWatch  jetstream.KeyWatcher
@@ -269,6 +274,20 @@ func (c *Component) SetTokenLedger(l *tokenbudget.TokenLedger) {
 	c.tokenLedger = l
 }
 
+// SetArtifactStore injects the filestore for reading workspace artifacts
+// during battle evaluation. When set, the LLM judge receives file contents
+// from the agent's workspace in addition to the text output.
+// Must be called before Initialize.
+func (c *Component) SetArtifactStore(store storage.Store) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running.Load() {
+		c.logger.Warn("SetArtifactStore called while running; ignored")
+		return
+	}
+	c.artifactStore = store
+}
+
 // Initialize performs one-time setup. No I/O operations here.
 func (c *Component) Initialize() error {
 	if c.config == nil {
@@ -287,7 +306,11 @@ func (c *Component) Initialize() error {
 		promptRegistry := promptmanager.NewPromptRegistry()
 		promptRegistry.RegisterProviderStyles()
 		c.assembler = promptmanager.NewPromptAssembler(promptRegistry)
-		c.evaluator = NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler, c.tokenLedger, c.deps.NATSClient)
+		eval := NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler, c.tokenLedger, c.deps.NATSClient)
+		if c.artifactStore != nil {
+			eval.SetArtifactStore(c.artifactStore)
+		}
+		c.evaluator = eval
 	} else {
 		c.evaluator = NewDefaultBattleEvaluator()
 	}

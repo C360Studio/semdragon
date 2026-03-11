@@ -779,7 +779,7 @@ func TestWebSearchHandler(t *testing.T) {
 
 // TestSubmitWorkProductHandler verifies the submit_work_product terminal tool:
 // valid submissions produce JSON with type=work_product and StopLoop=true;
-// missing or empty deliverable returns an error.
+// summary is required; deliverable is optional (for file-based work).
 func TestSubmitWorkProductHandler(t *testing.T) {
 	t.Parallel()
 
@@ -790,41 +790,54 @@ func TestSubmitWorkProductHandler(t *testing.T) {
 	quest := &domain.Quest{}
 
 	cases := []struct {
-		name        string
-		args        map[string]any
-		wantErr     string // non-empty means we expect an error containing this substring
-		wantType    string // expected "type" field in JSON
-		wantSummary bool   // whether "summary" key must be present
-		stopLoop    bool   // expected StopLoop value on success
+		name           string
+		args           map[string]any
+		wantErr        string // non-empty means we expect an error containing this substring
+		wantType       string // expected "type" field in JSON
+		wantSummary    bool   // whether "summary" key must be present
+		wantDelivrable bool   // whether "deliverable" key must be present
+		stopLoop       bool   // expected StopLoop value on success
 	}{
 		{
-			name: "valid deliverable with summary",
+			name: "deliverable with summary",
 			args: map[string]any{
 				"deliverable": "Here is the code",
 				"summary":     "Implemented feature",
 			},
-			wantType:    "work_product",
-			wantSummary: true,
-			stopLoop:    true,
+			wantType:       "work_product",
+			wantSummary:    true,
+			wantDelivrable: true,
+			stopLoop:       true,
 		},
 		{
-			name: "valid deliverable without summary",
+			name: "summary only (file-based work)",
+			args: map[string]any{
+				"summary": "Built auth module with JWT and wrote tests",
+			},
+			wantType:       "work_product",
+			wantSummary:    true,
+			wantDelivrable: false,
+			stopLoop:       true,
+		},
+		{
+			name: "deliverable only (legacy compat)",
 			args: map[string]any{
 				"deliverable": "result content",
 			},
-			wantType:    "work_product",
-			wantSummary: false,
-			stopLoop:    true,
+			wantType:       "work_product",
+			wantSummary:    false,
+			wantDelivrable: true,
+			stopLoop:       true,
 		},
 		{
-			name:    "empty deliverable",
-			args:    map[string]any{"deliverable": ""},
-			wantErr: "deliverable",
+			name:    "empty summary and empty deliverable",
+			args:    map[string]any{"summary": "", "deliverable": ""},
+			wantErr: "at least one",
 		},
 		{
-			name:    "missing deliverable",
+			name:    "no arguments",
 			args:    map[string]any{},
-			wantErr: "deliverable",
+			wantErr: "at least one",
 		},
 	}
 
@@ -860,6 +873,10 @@ func TestSubmitWorkProductHandler(t *testing.T) {
 			_, hasSummary := payload["summary"]
 			if hasSummary != tc.wantSummary {
 				t.Errorf("summary present = %v, want %v", hasSummary, tc.wantSummary)
+			}
+			_, hasDeliverable := payload["deliverable"]
+			if hasDeliverable != tc.wantDelivrable {
+				t.Errorf("deliverable present = %v, want %v", hasDeliverable, tc.wantDelivrable)
 			}
 		})
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/model"
 	agenticmodel "github.com/c360studio/semstreams/processor/agentic-model"
+	"github.com/c360studio/semstreams/storage"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semdragons/domain"
@@ -155,12 +156,13 @@ type trajectoryWriter interface {
 // a judge prompt using the domain's JudgeSystemBase and calls the LLM.
 // Falls back to heuristic evaluation when no LLM is available or on failure.
 type DomainAwareEvaluator struct {
-	catalog     *promptmanager.DomainCatalog
-	registry    model.RegistryReader
-	assembler   *promptmanager.PromptAssembler
-	fallback    *DefaultBattleEvaluator
-	tokenLedger *tokenbudget.TokenLedger
-	nats        trajectoryWriter // for best-effort trajectory persistence; may be nil
+	catalog       *promptmanager.DomainCatalog
+	registry      model.RegistryReader
+	assembler     *promptmanager.PromptAssembler
+	fallback      *DefaultBattleEvaluator
+	tokenLedger   *tokenbudget.TokenLedger
+	nats          trajectoryWriter // for best-effort trajectory persistence; may be nil
+	artifactStore storage.Store    // optional: workspace artifacts from filestore
 }
 
 // NewDomainAwareEvaluator creates an evaluator with domain catalog and model registry.
@@ -234,8 +236,14 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 		checklist...,
 	)
 
-	// Format the quest output for the user message
+	// Format the quest output for the user message. When an artifact store
+	// is available, include workspace files alongside the text output.
 	userMessage := formatOutputForJudge(output)
+	if e.artifactStore != nil {
+		if artifacts := e.loadArtifacts(ctx, quest.ID); artifacts != "" {
+			userMessage = userMessage + "\n\n" + artifacts
+		}
+	}
 
 	// Call the LLM
 	judgeResult, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
@@ -554,6 +562,99 @@ func formatOutputForJudge(output any) string {
 		}
 		return fmt.Sprintf("## Quest Output\n\n```json\n%s\n```", string(data))
 	}
+}
+
+// maxArtifactFileSize is the maximum individual file size (256KB) to include
+// in the judge prompt. Larger files are listed but content is omitted.
+const maxArtifactFileSize = 256 * 1024
+
+// maxArtifactTotalSize is the total budget (512KB) for all artifact content
+// in the judge prompt. Once exceeded, remaining files are listed without content.
+const maxArtifactTotalSize = 512 * 1024
+
+// loadArtifacts reads workspace artifacts from the filestore and formats
+// them for the LLM judge. Returns empty string when no artifacts are found.
+func (e *DomainAwareEvaluator) loadArtifacts(ctx context.Context, questID domain.QuestID) string {
+	prefix := fmt.Sprintf("quests/%s/", string(questID))
+	keys, err := e.artifactStore.List(ctx, prefix)
+	if err != nil {
+		slog.Debug("failed to list artifacts for judge", "quest_id", questID, "error", err)
+		return ""
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Workspace Files\n\n")
+	sb.WriteString(fmt.Sprintf("The agent produced %d file(s):\n\n", len(keys)))
+
+	totalSize := 0
+	for _, key := range keys {
+		relPath := strings.TrimPrefix(key, prefix)
+
+		data, readErr := e.artifactStore.Get(ctx, key)
+		if readErr != nil {
+			sb.WriteString(fmt.Sprintf("### %s\n(error reading file)\n\n", relPath))
+			continue
+		}
+
+		if len(data) > maxArtifactFileSize || totalSize+len(data) > maxArtifactTotalSize {
+			sb.WriteString(fmt.Sprintf("### %s\n(%d bytes — content omitted, too large)\n\n", relPath, len(data)))
+			continue
+		}
+
+		totalSize += len(data)
+		ext := inferLanguage(relPath)
+		sb.WriteString(fmt.Sprintf("### %s\n```%s\n%s\n```\n\n", relPath, ext, string(data)))
+	}
+
+	return sb.String()
+}
+
+// inferLanguage returns a code fence language hint from a file path extension.
+func inferLanguage(path string) string {
+	idx := strings.LastIndex(path, ".")
+	if idx < 0 {
+		return ""
+	}
+	switch strings.ToLower(path[idx:]) {
+	case ".go":
+		return "go"
+	case ".ts":
+		return "typescript"
+	case ".js":
+		return "javascript"
+	case ".py":
+		return "python"
+	case ".rs":
+		return "rust"
+	case ".json":
+		return "json"
+	case ".yaml", ".yml":
+		return "yaml"
+	case ".md":
+		return "markdown"
+	case ".sh", ".bash":
+		return "bash"
+	case ".sql":
+		return "sql"
+	case ".html":
+		return "html"
+	case ".css":
+		return "css"
+	case ".svelte":
+		return "svelte"
+	case ".toml":
+		return "toml"
+	default:
+		return ""
+	}
+}
+
+// SetArtifactStore sets the filestore for loading workspace artifacts during evaluation.
+func (e *DomainAwareEvaluator) SetArtifactStore(store storage.Store) {
+	e.artifactStore = store
 }
 
 // clampScore ensures a score is within [0.0, 1.0].

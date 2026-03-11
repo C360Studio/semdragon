@@ -758,10 +758,14 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 // JSON envelope produced by submit_work_product or ask_clarification.
 // Returns the output type ("work_product" or "clarification"), the extracted
 // content (deliverable or question), and whether parsing succeeded.
+//
+// For work_product: returns deliverable if present, otherwise summary.
+// Summary-only submissions indicate file-based work captured via workspace snapshot.
 func parseToolOutput(output string) (outputType, content string, ok bool) {
 	var envelope struct {
 		Type        string `json:"type"`
 		Deliverable string `json:"deliverable"`
+		Summary     string `json:"summary"`
 		Question    string `json:"question"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &envelope); err != nil {
@@ -769,10 +773,15 @@ func parseToolOutput(output string) (outputType, content string, ok bool) {
 	}
 	switch envelope.Type {
 	case "work_product":
-		if envelope.Deliverable == "" {
+		// Prefer deliverable (inline content); fall back to summary (file-based work).
+		text := envelope.Deliverable
+		if text == "" {
+			text = envelope.Summary
+		}
+		if text == "" {
 			return "", "", false
 		}
-		return "work_product", envelope.Deliverable, true
+		return "work_product", text, true
 	case "clarification":
 		if envelope.Question == "" {
 			return "", "", false
