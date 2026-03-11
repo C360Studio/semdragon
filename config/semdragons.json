@@ -31,7 +31,7 @@
       "enabled": true,
       "config": {
         "board": "board1",
-        "max_entities": 1000,
+        "max_entities": 10000,
         "workspace_dir": "/workspace",
         "token_budget": {
           "global_hourly_limit": 1000000,
@@ -137,7 +137,7 @@
       "config": {
         "mode": "client",
         "client": {
-          "url": "ws://localhost:9090/ws",
+          "url": "ws://semsource:7890/graph",
           "reconnect": {
             "enabled": true,
             "initial_delay": "1s",
@@ -357,7 +357,9 @@
         "max_iterations": 20,
         "enable_builtins": true,
         "default_role": "general",
-        "sandbox_dir": "/workspace"
+        "sandbox_dir": "/workspace",
+        "dm_mode": "full_auto",
+        "max_clarification_rounds": 3
       }
     },
     "questtools": {

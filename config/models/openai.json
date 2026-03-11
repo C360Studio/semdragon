@@ -1,0 +1,45 @@
+{
+  "model_registry": {
+    "endpoints": {
+      "gpt-4o-mini": {
+        "provider": "openai",
+        "url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "api_key_env": "OPENAI_API_KEY",
+        "max_tokens": 128000,
+        "supports_tools": true
+      }
+    },
+    "capabilities": {
+      "agent-work": {
+        "preferred": ["gpt-4o-mini"],
+        "requires_tools": true
+      },
+      "dm-chat": {
+        "preferred": ["gpt-4o-mini"]
+      },
+      "boss-battle": {
+        "preferred": ["gpt-4o-mini"]
+      }
+    },
+    "defaults": {
+      "model": "gpt-4o-mini"
+    }
+  },
+  "components": {
+    "agentic-loop": {
+      "config": {
+        "context": {
+          "tool_result_max_age": 20,
+          "summarization_model": "gpt-4o-mini"
+        }
+      }
+    },
+    "agentic-model": {
+      "config": {
+        "timeout": "300s",
+        "retry": { "max_attempts": 2 }
+      }
+    }
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "model_registry": {
+    "endpoints": {
+      "gemini-lite": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-flash-lite",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true
+      },
+      "gemini-flash": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-flash",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "low"
+      },
+      "gemini-pro": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-pro",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "medium"
+      },
+      "gemini-pro-low": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-pro",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "low"
+      }
+    },
+    "capabilities": {
+      "agent-work": {
+        "preferred": ["gemini-flash"],
+        "requires_tools": true
+      },
+      "agent-work.apprentice": {
+        "preferred": ["gemini-lite"],
+        "requires_tools": true
+      },
+      "agent-work.journeyman": {
+        "preferred": ["gemini-flash"],
+        "requires_tools": true
+      },
+      "agent-work.expert": {
+        "preferred": ["gemini-flash", "gemini-pro"],
+        "requires_tools": true
+      },
+      "agent-work.master": {
+        "preferred": ["gemini-pro-low", "gemini-flash"],
+        "requires_tools": true
+      },
+      "agent-work.grandmaster": {
+        "preferred": ["gemini-pro-low", "gemini-flash"],
+        "requires_tools": true
+      },
+      "boss-battle": {
+        "preferred": ["gemini-pro-low"]
+      },
+      "dm-chat": {
+        "preferred": ["gemini-pro"]
+      }
+    },
+    "defaults": {
+      "model": "gemini-flash"
+    }
+  },
+  "components": {
+    "agentic-loop": {
+      "config": {
+        "max_iterations": 10,
+        "context": {
+          "tool_result_max_age": 10,
+          "summarization_model": "gemini-flash"
+        }
+      }
+    },
+    "agentic-model": {
+      "config": {
+        "timeout": "300s",
+        "retry": { "max_attempts": 2 }
+      }
+    },
+    "questbridge": {
+      "config": {
+        "max_iterations": 10
+      }
+    }
+  }
+}

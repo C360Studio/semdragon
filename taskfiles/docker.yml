@@ -8,7 +8,7 @@ tasks:
   up:
     desc: Start stack with mock LLM (no API key needed)
     cmds:
-      - BACKEND_PORT={{.BACKEND_PORT}} {{.COMPOSE}} --profile mock up -d --build --wait
+      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_MODELS=/etc/semdragons/models/mock.json {{.COMPOSE}} --profile mock up -d --build --wait
       - echo ""
       - echo "  Dashboard{{":"}} http://localhost"
       - echo "  API{{":"}}       http://localhost/game/"
@@ -18,27 +18,27 @@ tasks:
   up:gemini:
     desc: Start with Gemini (set GEMINI_API_KEY in .env)
     cmds:
-      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_E2E_CONFIG=semdragons-e2e-gemini.json {{.COMPOSE}} up -d --build --wait
+      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_MODELS=/etc/semdragons/models/gemini.json {{.COMPOSE}} up -d --build --wait
 
   up:anthropic:
     desc: Start with Anthropic Claude (set ANTHROPIC_API_KEY in .env)
     cmds:
-      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_E2E_CONFIG=semdragons-e2e-anthropic.json {{.COMPOSE}} up -d --build --wait
+      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_MODELS=/etc/semdragons/models/anthropic.json {{.COMPOSE}} up -d --build --wait
 
   up:openai:
     desc: Start with OpenAI (set OPENAI_API_KEY in .env)
     cmds:
-      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_E2E_CONFIG=semdragons-e2e-openai.json {{.COMPOSE}} up -d --build --wait
+      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_MODELS=/etc/semdragons/models/openai.json {{.COMPOSE}} up -d --build --wait
 
   up:ollama:
     desc: "Start with local Ollama (requires: ollama serve)"
     cmds:
-      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_E2E_CONFIG=semdragons-e2e-ollama.json {{.COMPOSE}} up -d --build --wait
+      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_MODELS=/etc/semdragons/models/ollama.json {{.COMPOSE}} up -d --build --wait
 
   down:
     desc: Stop stack and remove volumes
     cmds:
-      - "{{.COMPOSE}} --profile mock down -v --remove-orphans"
+      - "{{.COMPOSE}} --profile mock --profile semsource down -v --remove-orphans"
       - echo "Stack stopped."
 
   logs:

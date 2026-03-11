@@ -11,6 +11,7 @@ import (
 // CLIConfig holds parsed CLI flags.
 type CLIConfig struct {
 	ConfigPath      string
+	ModelsPath      string
 	LogLevel        string
 	LogFormat       string
 	ShutdownTimeout time.Duration
@@ -31,6 +32,14 @@ func parseFlags() *CLIConfig {
 	flag.StringVar(&cfg.ConfigPath, "c",
 		getEnv("SEMDRAGONS_CONFIG", "config/semdragons.json"),
 		"Path to configuration file (shorthand)")
+
+	flag.StringVar(&cfg.ModelsPath, "models",
+		getEnv("SEMDRAGONS_MODELS", ""),
+		"Path to model overlay file, deep-merged over base config (env: SEMDRAGONS_MODELS)")
+
+	flag.StringVar(&cfg.ModelsPath, "m",
+		getEnv("SEMDRAGONS_MODELS", ""),
+		"Path to model overlay file (shorthand)")
 
 	flag.StringVar(&cfg.LogLevel, "log-level",
 		getEnv("SEMDRAGONS_LOG_LEVEL", "info"),
@@ -103,6 +112,7 @@ Examples:
 
 Environment Variables:
   SEMDRAGONS_CONFIG      Config file path
+  SEMDRAGONS_MODELS      Model overlay file path (deep-merged over base config)
   SEMDRAGONS_LOG_LEVEL   Log level
   SEMDRAGONS_LOG_FORMAT  Log format
   SEMDRAGONS_NATS_URLS   NATS server URLs (comma-separated)

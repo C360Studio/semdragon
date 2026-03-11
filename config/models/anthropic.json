@@ -1,0 +1,61 @@
+{
+  "model_registry": {
+    "endpoints": {
+      "claude-haiku": {
+        "provider": "anthropic",
+        "url": "https://api.anthropic.com/v1",
+        "model": "claude-haiku-4-5-20251001",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "max_tokens": 200000,
+        "supports_tools": true
+      },
+      "claude-sonnet": {
+        "provider": "anthropic",
+        "url": "https://api.anthropic.com/v1",
+        "model": "claude-sonnet-4-6",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "max_tokens": 200000,
+        "supports_tools": true
+      },
+      "claude-opus": {
+        "provider": "anthropic",
+        "url": "https://api.anthropic.com/v1",
+        "model": "claude-opus-4-6",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "max_tokens": 200000,
+        "supports_tools": true
+      }
+    },
+    "capabilities": {
+      "agent-work": {
+        "preferred": ["claude-sonnet", "claude-haiku"],
+        "requires_tools": true
+      },
+      "dm-chat": {
+        "preferred": ["claude-sonnet", "claude-haiku"]
+      },
+      "boss-battle": {
+        "preferred": ["claude-sonnet", "claude-haiku"]
+      }
+    },
+    "defaults": {
+      "model": "claude-sonnet"
+    }
+  },
+  "components": {
+    "agentic-loop": {
+      "config": {
+        "context": {
+          "tool_result_max_age": 20,
+          "summarization_model": "claude-haiku"
+        }
+      }
+    },
+    "agentic-model": {
+      "config": {
+        "timeout": "300s",
+        "retry": { "max_attempts": 2 }
+      }
+    }
+  }
+}

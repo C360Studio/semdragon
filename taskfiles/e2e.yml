@@ -17,7 +17,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { CONFIG: semdragons-e2e.json, PROFILE: mock }
+        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
         ignore_error: true
@@ -29,7 +29,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { CONFIG: semdragons-e2e-gemini.json }
+        vars: { MODELS: /etc/semdragons/models/gemini.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
         ignore_error: true
@@ -41,7 +41,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { CONFIG: semdragons-e2e-anthropic.json }
+        vars: { MODELS: /etc/semdragons/models/anthropic.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
         ignore_error: true
@@ -53,7 +53,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { CONFIG: semdragons-e2e-openai.json }
+        vars: { MODELS: /etc/semdragons/models/openai.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
         ignore_error: true
@@ -65,7 +65,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { CONFIG: semdragons-e2e-ollama.json }
+        vars: { MODELS: /etc/semdragons/models/ollama.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=ollama BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
         ignore_error: true
@@ -88,7 +88,7 @@ tasks:
     cmds:
       - task: install
       - task: stack:up
-        vars: { CONFIG: semdragons-e2e.json, PROFILE: mock }
+        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --headed
         ignore_error: true
@@ -99,7 +99,7 @@ tasks:
     cmds:
       - task: install
       - task: stack:up
-        vars: { CONFIG: semdragons-e2e.json, PROFILE: mock }
+        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
       - task: wait
       - cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --ui
 
@@ -117,7 +117,7 @@ tasks:
       - >-
         SEED_E2E=true
         BACKEND_PORT={{.BACKEND_PORT}}
-        SEMDRAGONS_E2E_CONFIG={{.CONFIG}}
+        SEMDRAGONS_MODELS={{.MODELS}}
         {{.COMPOSE}} {{if .PROFILE}}--profile {{.PROFILE}}{{end}}
         up -d --build --wait
 

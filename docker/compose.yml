@@ -63,7 +63,8 @@ services:
         condition: service_healthy
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
-      SEMDRAGONS_CONFIG: /etc/semdragons/${SEMDRAGONS_E2E_CONFIG:-semdragons-e2e.json}
+      SEMDRAGONS_CONFIG: /etc/semdragons/semdragons.json
+      SEMDRAGONS_MODELS: "${SEMDRAGONS_MODELS:-}"
       SEMDRAGONS_LOG_LEVEL: "${SEMDRAGONS_LOG_LEVEL:-info}"
       SEED_E2E: "${SEED_E2E:-false}"
       SEED_AGENTS: "${SEED_AGENTS:-true}"

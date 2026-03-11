@@ -92,7 +92,7 @@ func run() error {
 	}
 
 	// 3. Load and validate configuration
-	cfg, err := loadConfig(cliCfg.ConfigPath)
+	cfg, err := loadConfig(cliCfg.ConfigPath, cliCfg.ModelsPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -622,12 +622,30 @@ func startPProfServer(port int) {
 	}
 }
 
-// loadConfig loads configuration from the specified file path.
-func loadConfig(path string) (*config.Config, error) {
-	loader := config.NewLoader()
-	cfg, err := loader.LoadFile(path)
+// loadConfig loads the base configuration and optionally merges a model overlay.
+// The overlay file is deep-merged on top of the base: map values are merged
+// recursively, all other types are replaced. This allows model overlay files to
+// set just model_registry and component tuning without duplicating the full config.
+func loadConfig(basePath, modelsPath string) (*config.Config, error) {
+	baseData, err := os.ReadFile(basePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, fmt.Errorf("read base config %s: %w", basePath, err)
+	}
+
+	data := baseData
+	if modelsPath != "" {
+		merged, mergeErr := mergeOverlay(data, modelsPath)
+		if mergeErr != nil {
+			return nil, fmt.Errorf("merge models overlay: %w", mergeErr)
+		}
+		data = merged
+		fmt.Printf("Merged model overlay: %s\n", modelsPath)
+	}
+
+	loader := config.NewLoader()
+	cfg, err := loader.LoadFromBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 	return cfg, nil
 }

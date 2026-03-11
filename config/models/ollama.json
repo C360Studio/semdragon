@@ -1,0 +1,58 @@
+{
+  "model_registry": {
+    "endpoints": {
+      "ollama-coder": {
+        "provider": "ollama",
+        "url": "http://host.docker.internal:11434/v1",
+        "model": "qwen2.5-coder:7b",
+        "max_tokens": 32768,
+        "supports_tools": true,
+        "stream": true
+      },
+      "ollama-qwen3": {
+        "provider": "ollama",
+        "url": "http://host.docker.internal:11434/v1",
+        "model": "qwen3:14b",
+        "max_tokens": 40960,
+        "supports_tools": false,
+        "stream": true,
+        "options": {
+          "enable_thinking": false
+        }
+      }
+    },
+    "capabilities": {
+      "agent-work": {
+        "preferred": ["ollama-coder"],
+        "requires_tools": true
+      },
+      "dm-chat": {
+        "preferred": ["ollama-qwen3"],
+        "fallback": ["ollama-coder"]
+      },
+      "boss-battle": {
+        "preferred": ["ollama-qwen3"],
+        "fallback": ["ollama-coder"]
+      }
+    },
+    "defaults": {
+      "model": "ollama-coder"
+    }
+  },
+  "components": {
+    "agentic-loop": {
+      "config": {
+        "context": {
+          "tool_result_max_age": 20,
+          "summarization_model": "ollama-coder"
+        }
+      }
+    },
+    "agentic-model": {
+      "config": {
+        "timeout": "300s",
+        "retry": { "max_attempts": 2 }
+      }
+    }
+  }
+}

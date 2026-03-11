@@ -1,0 +1,43 @@
+{
+  "model_registry": {
+    "endpoints": {
+      "mock-llm": {
+        "provider": "openai",
+        "url": "http://mockllm:9090/v1",
+        "model": "mock-model",
+        "max_tokens": 128000,
+        "supports_tools": true
+      }
+    },
+    "capabilities": {
+      "agent-work": {
+        "preferred": ["mock-llm"],
+        "requires_tools": true
+      },
+      "dm-chat": {
+        "preferred": ["mock-llm"]
+      },
+      "boss-battle": {
+        "preferred": ["mock-llm"]
+      }
+    },
+    "defaults": {
+      "model": "mock-llm"
+    }
+  },
+  "components": {
+    "agentic-loop": {
+      "config": {
+        "context": {
+          "summarization_model": "mockllm"
+        }
+      }
+    },
+    "agentic-model": {
+      "config": {
+        "timeout": "300s",
+        "retry": { "max_attempts": 2 }
+      }
+    }
+  }
+}
