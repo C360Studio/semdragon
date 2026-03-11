@@ -174,9 +174,11 @@ func (c *Component) Start(ctx context.Context) error {
 	if c.config.Search != nil && c.config.Search.Provider != "" {
 		sp, err := executor.NewSearchProvider(*c.config.Search)
 		if err != nil {
-			return fmt.Errorf("failed to create search provider: %w", err)
+			c.logger.Warn("web_search tool disabled", "reason", err.Error())
+		} else {
+			c.toolRegistry.RegisterWebSearch(sp)
+			c.logger.Info("web_search tool registered", "provider", c.config.Search.Provider)
 		}
-		c.toolRegistry.RegisterWebSearch(sp)
 	}
 
 	// Register graph_query tool backed by the board KV bucket.
