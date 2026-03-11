@@ -21,6 +21,8 @@ includes:
     aliases: [d]
   e2e:
     taskfile: ./taskfiles/e2e.yml
+  demo:
+    taskfile: ./taskfiles/demo.yml
 
 tasks:
   default:

@@ -1,0 +1,35 @@
+version: "3"
+
+vars:
+  BACKEND_PORT: '{{.BACKEND_PORT | default "8081"}}'
+  COMPOSE: docker compose -f docker/compose.yml
+
+tasks:
+  full:
+    desc: "Full demo: semdragons + semsource + mock LLM"
+    cmds:
+      - BACKEND_PORT={{.BACKEND_PORT}} SEMDRAGONS_MODELS=/etc/semdragons/models/mock.json {{.COMPOSE}} --profile mock --profile semsource up -d --build --wait
+      - |
+        curl -sf -X PUT http://localhost:{{.BACKEND_PORT}}/game/api/settings/websocket \
+          -H 'Content-Type: application/json' \
+          -d '{"enabled": true, "url": "ws://semsource:7890/graph"}'
+      - echo ""
+      - echo "  Dashboard{{":"}}   http://localhost"
+      - echo "  API{{":"}}         http://localhost/game/"
+      - echo "  NATS{{":"}}        http://localhost:8222"
+      - echo ""
+
+  osh:
+    desc: "Demo: semsource ingesting opensensorhub/osh-core"
+    cmds:
+      - BACKEND_PORT={{.BACKEND_PORT}} SEMSOURCE_CONFIG=semsource-osh.json SEMDRAGONS_MODELS=/etc/semdragons/models/mock.json {{.COMPOSE}} --profile mock --profile semsource up -d --build --wait
+      - |
+        curl -sf -X PUT http://localhost:{{.BACKEND_PORT}}/game/api/settings/websocket \
+          -H 'Content-Type: application/json' \
+          -d '{"enabled": true, "url": "ws://semsource:7890/graph"}'
+      - echo ""
+      - echo "  Dashboard{{":"}}   http://localhost"
+      - echo "  API{{":"}}         http://localhost/game/"
+      - echo "  NATS{{":"}}        http://localhost:8222"
+      - echo "  semsource{{":"}}   scraping opensensorhub/osh-core (Java)"
+      - echo ""

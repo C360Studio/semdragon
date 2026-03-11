@@ -78,7 +78,7 @@ test.describe('Settings - Sections', () => {
 		await expect(settingsPage.sectionTokenBudget).toBeVisible();
 		// Should show either "Unlimited" or a number
 		await expect(
-			settingsPage.sectionTokenBudget.locator('.kv-value')
+			settingsPage.sectionTokenBudget.locator('.editable-value .mono')
 		).toHaveText(/Unlimited|\d/);
 	});
 

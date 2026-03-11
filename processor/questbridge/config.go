@@ -22,6 +22,11 @@ type Config struct {
 	MaxIterations  int    `json:"max_iterations"`
 	DefaultRole    string `json:"default_role"`
 
+	// SandboxURL is the HTTP base URL for the sandbox container.
+	// When set, questbridge creates per-quest workspaces before dispatch and
+	// snapshots workspace files to the filestore on completion.
+	SandboxURL string `json:"sandbox_url,omitempty"`
+
 	// EscalationTimeoutMins is how long a quest can stay escalated (waiting
 	// for DM clarification) before the agent is released and the quest reposted.
 	// Prevents agents from being stuck indefinitely if the DM never responds.

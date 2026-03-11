@@ -254,6 +254,16 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	}
 	tokenCount := pkgcontext.EstimateTokens(contextContent)
 
+	// Create sandbox workspace before dispatching the task. The workspace
+	// provides an isolated filesystem for the agent's file operations.
+	// Best-effort: failure is logged but does not block quest execution.
+	if c.sandboxClient != nil {
+		if wsErr := c.sandboxClient.CreateWorkspace(ctx, questID); wsErr != nil {
+			c.logger.Warn("failed to create sandbox workspace",
+				"quest_id", questID, "error", wsErr)
+		}
+	}
+
 	// Construct the TaskMessage.
 	// Sanitize questID for use in NATS subject tokens — entity IDs contain dots
 	// which are subject delimiters. Replace dots with hyphens so the ID is a single
@@ -601,6 +611,10 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 			"quest_id", questID, "current_status", quest.Status, "loop_id", mapping.LoopID)
 		return
 	}
+
+	// Snapshot workspace files to the artifact store before transitioning status.
+	// Best-effort: snapshot failure is logged but does not block quest completion.
+	c.snapshotWorkspace(ctx, string(questID))
 
 	// When a party quest completes and we have a questboard reference, check
 	// whether the lead's output contains a DAG decomposition. A valid DAG
@@ -1030,6 +1044,10 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 			"quest_id", questID, "current_status", quest.Status, "loop_id", mapping.LoopID)
 		return
 	}
+
+	// Clean up workspace on failure — no snapshot needed since the quest did not
+	// produce a successful work product.
+	c.cleanupWorkspace(ctx, string(questID))
 
 	// Delegate to questboard when available — this routes through the triage
 	// gate which may hold the quest for DM evaluation instead of terminal failure.

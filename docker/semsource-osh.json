@@ -1,0 +1,12 @@
+{
+  "namespace": "osh",
+  "sources": [
+    {
+      "type": "repo",
+      "url": "https://github.com/opensensorhub/osh-core",
+      "language": "java",
+      "branch": "master",
+      "watch": false
+    }
+  ]
+}

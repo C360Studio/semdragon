@@ -191,6 +191,42 @@ type sandboxSearchResp struct {
 	Output string `json:"output"`
 }
 
+// ListWorkspaceFiles returns all files in the workspace for the given quest ID.
+// Used by questbridge to snapshot workspace contents to the filestore on completion.
+func (c *SandboxClient) ListWorkspaceFiles(ctx context.Context, questID string) ([]WorkspaceFileEntry, error) {
+	listURL := fmt.Sprintf("/workspace/%s", questID)
+	var resp sandboxListResp
+	if err := c.doJSON(ctx, http.MethodGet, listURL, nil, &resp); err != nil {
+		return nil, fmt.Errorf("list workspace files: %w", err)
+	}
+	entries := make([]WorkspaceFileEntry, 0, len(resp.Entries))
+	for _, e := range resp.Entries {
+		if !e.IsDir {
+			entries = append(entries, WorkspaceFileEntry{
+				Path: e.Name,
+				Size: e.Size,
+			})
+		}
+	}
+	return entries, nil
+}
+
+// ReadFile reads a single file from the workspace. Returns the raw content bytes.
+func (c *SandboxClient) ReadFile(ctx context.Context, questID, path string) ([]byte, error) {
+	fileURL := "/file?" + url.Values{"quest_id": {questID}, "path": {path}}.Encode()
+	var resp sandboxReadFileResp
+	if err := c.doJSON(ctx, http.MethodGet, fileURL, nil, &resp); err != nil {
+		return nil, fmt.Errorf("read file %s: %w", path, err)
+	}
+	return []byte(resp.Content), nil
+}
+
+// WorkspaceFileEntry describes a file in a sandbox workspace.
+type WorkspaceFileEntry struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
 // =============================================================================
 // Quest ID extraction
 // =============================================================================

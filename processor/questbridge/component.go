@@ -18,6 +18,7 @@ import (
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/natsclient"
+	"github.com/c360studio/semstreams/storage"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -92,6 +93,12 @@ type Component struct {
 	// clarificationAnswerer auto-answers agent clarification questions when DMMode
 	// is full_auto. Optional: nil means escalated quests wait for human DM response.
 	clarificationAnswerer ClarificationAnswerer
+
+	// Sandbox workspace lifecycle management.
+	// When sandboxClient is non-nil, questbridge creates per-quest workspaces
+	// before dispatch and snapshots files to artifactStore on completion.
+	sandboxClient *executor.SandboxClient
+	artifactStore storage.Store // filestore for workspace snapshots
 
 	// Semsource manifest client for injecting graph knowledge into agent prompts.
 	// Optional: nil means manifest section is omitted from entity knowledge.
@@ -204,6 +211,7 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 			"enable_builtins":    {Type: "bool", Description: "Register built-in tools", Default: true, Category: "execution"},
 			"default_role":       {Type: "string", Description: "Default agent role", Default: "general", Category: "execution"},
 			"sandbox_dir":        {Type: "string", Description: "Base directory for file operations", Default: "", Category: "execution"},
+			"sandbox_url":        {Type: "string", Description: "Sandbox container HTTP URL for workspace lifecycle", Default: "", Category: "execution"},
 		},
 		Required: []string{"org", "platform", "board"},
 	}
@@ -296,6 +304,12 @@ func (c *Component) Start(ctx context.Context) error {
 		if c.config.EnableBuiltins {
 			c.toolRegistry.RegisterBuiltins()
 		}
+	}
+
+	// Create sandbox client when sandbox_url is configured.
+	if c.config.SandboxURL != "" {
+		c.sandboxClient = executor.NewSandboxClient(c.config.SandboxURL)
+		c.logger.Info("sandbox workspace lifecycle enabled", "sandbox_url", c.config.SandboxURL)
 	}
 
 	// Create prompt assembler when a domain catalog is provided.
@@ -429,6 +443,15 @@ func (c *Component) SetManifestClient(mc *semsource.ManifestClient) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.manifestClient = mc
+}
+
+// SetArtifactStore injects the filestore for workspace snapshots.
+// When set alongside sandbox_url, completed quest workspaces are snapshotted
+// to this store before cleanup. Safe to call before or after Start.
+func (c *Component) SetArtifactStore(store storage.Store) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.artifactStore = store
 }
 
 // SetPauseChecker injects the board pause checker. When paused, quest
