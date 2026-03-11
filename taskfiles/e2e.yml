@@ -188,6 +188,7 @@ tasks:
         SEED_E2E=true
         BACKEND_PORT={{.BACKEND_PORT}}
         SEMDRAGONS_MODELS={{.MODELS}}
+        {{if ne (env "DEBUG") ""}}SEMDRAGONS_LOG_LEVEL=debug{{end}}
         {{.COMPOSE}} {{if .PROFILE}}--profile {{.PROFILE}}{{end}}
         up -d --build --wait
 

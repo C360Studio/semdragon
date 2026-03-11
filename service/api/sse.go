@@ -60,13 +60,19 @@ func (s *Service) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create watcher for all keys
-	watcher, err := kv.WatchAll(ctx)
+	// Create watcher with an independent context so we control the lifecycle
+	// exclusively via Stop(). Using the request context causes NATS to tear
+	// down the subscription on disconnect, making Stop() return "invalid
+	// subscription" — a benign but noisy race.
+	watchCtx, watchCancel := context.WithCancel(context.Background())
+	watcher, err := kv.WatchAll(watchCtx)
 	if err != nil {
+		watchCancel()
 		s.sendSSEError(w, "Failed to create watcher", err)
 		return
 	}
 	defer func() {
+		watchCancel()
 		if stopErr := watcher.Stop(); stopErr != nil {
 			s.logger.Warn("failed to stop KV watcher", "error", stopErr)
 		}
