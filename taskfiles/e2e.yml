@@ -12,16 +12,48 @@ tasks:
       - npx playwright install --with-deps chromium
 
   default:
-    desc: Run E2E tests with mock LLM
+    desc: Run E2E tests with mock LLM (both tiers, clean state between)
     cmds:
       - task: install
       - task: clean
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
+      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
-      - task: stack:down
+      # Tier 2 needs clean state — tier 1 creates agents, quests, and triggers
+      # agentic loops that pollute the board. Rebuild from scratch.
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+        ignore_error: true
+      - task: maybe:down
+
+  tier1:
+    desc: Run Tier 1 tests only (parallel, fast)
+    cmds:
+      - task: install
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
+        ignore_error: true
+      - task: maybe:down
+
+  tier2:
+    desc: Run Tier 2 scenario tests only (serial, 1 worker)
+    cmds:
+      - task: install
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+        ignore_error: true
+      - task: maybe:down
 
   gemini:
     desc: Run E2E with Gemini
@@ -31,9 +63,15 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/gemini.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
+      - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
-      - task: stack:down
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/gemini.json }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+        ignore_error: true
+      - task: maybe:down
 
   anthropic:
     desc: Run E2E with Anthropic Claude
@@ -43,9 +81,15 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/anthropic.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
+      - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
-      - task: stack:down
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/anthropic.json }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+        ignore_error: true
+      - task: maybe:down
 
   openai:
     desc: Run E2E with OpenAI
@@ -55,9 +99,15 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/openai.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
+      - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
-      - task: stack:down
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/openai.json }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+        ignore_error: true
+      - task: maybe:down
 
   ollama:
     desc: Run E2E with local Ollama
@@ -67,21 +117,41 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/ollama.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=ollama BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=chromium
+      - cmd: cd ui && E2E_LLM_MODE=ollama BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/ollama.json }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=ollama BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+        ignore_error: true
+      - task: maybe:down
+
+  mock:
+    desc: Start mock E2E stack (use with e2e:spec to run individual specs)
+    cmds:
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
+      - task: wait
+      - cmd: echo "Mock stack ready. Run specs with{{":"}} task e2e:spec -- <spec-name>"
+
+  mock:down:
+    desc: Tear down mock E2E stack
+    cmds:
       - task: stack:down
 
   run:
     desc: Run Playwright tests against running stack
     dir: ui
     cmds:
-      - E2E_LLM_MODE={{.MODE | default "mock"}} BACKEND_PORT={{.BACKEND_PORT}} npx playwright test {{.CLI_ARGS}} --project=chromium
+      - E2E_LLM_MODE={{.MODE | default "mock"}} BACKEND_PORT={{.BACKEND_PORT}} npx playwright test {{.CLI_ARGS}}
 
   spec:
     desc: "Run single spec: task e2e:spec -- quest-lifecycle"
     dir: ui
     cmds:
-      - E2E_LLM_MODE={{.MODE | default "mock"}} BACKEND_PORT={{.BACKEND_PORT}} npx playwright test {{.CLI_ARGS}} --project=chromium
+      - E2E_LLM_MODE={{.MODE | default "mock"}} BACKEND_PORT={{.BACKEND_PORT}} npx playwright test {{.CLI_ARGS}}
 
   headed:
     desc: Run E2E in headed browser mode
@@ -92,7 +162,7 @@ tasks:
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --headed
         ignore_error: true
-      - task: stack:down
+      - task: maybe:down
 
   ui:
     desc: Open Playwright UI mode
@@ -131,6 +201,11 @@ tasks:
     cmds:
       - cmd: "{{.COMPOSE}} --profile mock down -v --remove-orphans 2>/dev/null"
         ignore_error: true
+
+  maybe:down:
+    internal: true
+    cmds:
+      - cmd: '{{if eq (env "DEBUG") ""}}{{.COMPOSE}} --profile mock down -v --remove-orphans{{else}}echo "DEBUG set — stack left running"{{end}}'
 
   wait:
     internal: true
