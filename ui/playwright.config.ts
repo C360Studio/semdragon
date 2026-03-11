@@ -44,6 +44,18 @@ export default defineConfig({
 		{
 			name: 'webkit',
 			use: { ...devices['Desktop Safari'] }
+		},
+		// Tier 1: all specs except scenarios/ (parallel, fast)
+		{
+			name: 'tier1',
+			testIgnore: /scenarios\//,
+			use: { ...devices['Desktop Chrome'] }
+		},
+		// Tier 2: scenario specs only (serial, 1 worker)
+		{
+			name: 'tier2-scenarios',
+			testMatch: /scenarios\//,
+			use: { ...devices['Desktop Chrome'] }
 		}
 	],
 
