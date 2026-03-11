@@ -45,15 +45,22 @@ export async function postQuestViaDMChat(
 	await input.fill(`/quest ${description}`);
 	await page.getByTestId('chat-send').click();
 
-	// Wait for quest preview to render (mock LLM returns quest_brief)
-	const preview = page.getByTestId('quest-preview');
-	await expect(preview).toBeVisible({ timeout });
+	// Wait for either a single quest preview or a quest chain preview.
+	// The mock LLM returns quest_brief for single quests and quest_chain
+	// when the prompt matches chain patterns.
+	const singlePreview = page.getByTestId('quest-preview');
+	const chainPreview = page.getByTestId('quest-chain-preview');
 
-	// Extract the title from the preview before clicking post
-	const titleText = await preview.textContent();
+	await expect(singlePreview.or(chainPreview)).toBeVisible({ timeout });
 
-	// Click "Post Quest" button
-	await page.getByTestId('post-quest-button').click();
+	let titleText: string | null;
+	if (await singlePreview.isVisible()) {
+		titleText = await singlePreview.textContent();
+		await page.getByTestId('post-quest-button').click();
+	} else {
+		titleText = await chainPreview.textContent();
+		await page.getByTestId('post-chain-button').click();
+	}
 
 	// Wait for the confirmation message
 	await expect(

@@ -60,7 +60,7 @@ test.describe.serial('Quest Pipeline', () => {
 		await test.step('post quest via DM chat', async () => {
 			await postQuestViaDMChat(
 				page,
-				'Write a Python function that reverses a string and include a docstring',
+				'Create a quest to analyze customer churn data and build a report',
 				{ timeout: isMockLLM() ? 30_000 : 60_000 }
 			);
 		});
