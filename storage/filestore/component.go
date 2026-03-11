@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/storage"
 )
 
 // filestoreSchema is the generated configuration schema for the filestore component.
@@ -59,6 +60,12 @@ func NewComponent(rawConfig json.RawMessage, deps component.Dependencies) (compo
 // GetStore returns the underlying *Store so that other components can obtain
 // the store directly without going through the component registry.
 func (c *Component) GetStore() *Store {
+	return c.store
+}
+
+// ArtifactStore implements domain.ArtifactStoreProvider so the component
+// registry can resolve the filestore for artifact operations.
+func (c *Component) ArtifactStore() storage.Store {
 	return c.store
 }
 

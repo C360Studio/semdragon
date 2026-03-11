@@ -188,9 +188,8 @@ func (c *Component) actionsForState(status domain.AgentStatus) []action {
 			c.claimQuestAction(),
 			c.useConsumableAction(),
 			c.shopAction(),
-			c.applyToGuildAction(),
-			c.joinGuildAction(),
-			c.createGuildAction(),
+			// Guild join/create/apply removed — guildformation processor is the
+			// single authority for guild membership to avoid write races.
 		}
 	case domain.AgentOnQuest:
 		return []action{
@@ -206,9 +205,7 @@ func (c *Component) actionsForState(status domain.AgentStatus) []action {
 			c.useCooldownSkipAction(),
 			c.reviewGuildApplicationsAction(),
 			c.shopAction(),
-			c.applyToGuildAction(),
-			c.joinGuildAction(),
-			c.createGuildAction(),
+			// Guild join/create/apply removed — see AgentIdle comment.
 		}
 	default:
 		// Retired or unknown

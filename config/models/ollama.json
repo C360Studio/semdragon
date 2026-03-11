@@ -30,6 +30,10 @@
         "preferred": ["ollama-qwen3"],
         "fallback": ["ollama-coder"]
       },
+      "quest-design": {
+        "preferred": ["ollama-qwen3"],
+        "fallback": ["ollama-coder"]
+      },
       "boss-battle": {
         "preferred": ["ollama-qwen3"],
         "fallback": ["ollama-coder"]

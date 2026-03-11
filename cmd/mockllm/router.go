@@ -280,49 +280,33 @@ func lastUserMessage(msgs []requestMsg) string {
 	return ""
 }
 
-// toolCallResponse picks the first tool from the request's tools list,
-// preferring list_directory or read_file as representative filesystem tools.
+// toolCallResponse picks a tool from the request's tools list.
+// Priority: write_file (expert agents) > list_directory > read_file > first tool.
+// This ensures expert agents exercise the workspace artifact path while
+// apprentice agents stick to read-only tools.
 func toolCallResponse(tools []toolDef) chatResponse {
 	name := tools[0].Function.Name
 	arguments := `{"path": "."}`
+
+	// Build a name→bool set for O(1) lookups.
+	toolNames := make(map[string]bool, len(tools))
 	for _, t := range tools {
-		switch t.Function.Name {
-		case "list_directory":
-			name = "list_directory"
-			arguments = `{"path": "."}`
-		case "read_file":
-			name = "read_file"
-			arguments = `{"path": "README.md"}`
-		}
+		toolNames[t.Function.Name] = true
 	}
-	if name == "read_file" {
+
+	switch {
+	case toolNames["write_file"]:
+		name = "write_file"
+		arguments = `{"path":"solution.py","content":"# Mock solution\nimport json\n\ndef analyze(data):\n    return {\"summary\": \"processed\", \"count\": len(data)}\n\nif __name__ == \"__main__\":\n    print(analyze([1,2,3]))\n"}`
+	case toolNames["list_directory"]:
+		name = "list_directory"
+		arguments = `{"path": "."}`
+	case toolNames["read_file"]:
+		name = "read_file"
 		arguments = `{"path": "README.md"}`
 	}
 
-	nilContent := (*string)(nil)
-	return chatResponse{
-		Choices: []choice{
-			{
-				Index: 0,
-				Message: responseMsg{
-					Role:    "assistant",
-					Content: nilContent,
-					ToolCalls: []toolCall{
-						{
-							ID:   "call_mock_1",
-							Type: "function",
-							Function: toolFuncCall{
-								Name:      name,
-								Arguments: arguments,
-							},
-						},
-					},
-				},
-				FinishReason: "tool_calls",
-			},
-		},
-		Usage: usage{PromptTokens: 100, CompletionTokens: 25, TotalTokens: 125},
-	}
+	return namedToolCallResponse(name, arguments)
 }
 
 // buildReviewAcceptArgs constructs review_sub_quest tool call arguments with

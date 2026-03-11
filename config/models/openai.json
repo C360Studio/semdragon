@@ -18,6 +18,9 @@
       "dm-chat": {
         "preferred": ["gpt-4o-mini"]
       },
+      "quest-design": {
+        "preferred": ["gpt-4o-mini"]
+      },
       "boss-battle": {
         "preferred": ["gpt-4o-mini"]
       }

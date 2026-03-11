@@ -71,6 +71,9 @@
       },
       "dm-chat": {
         "preferred": ["gemini-pro"]
+      },
+      "quest-design": {
+        "preferred": ["gemini-pro"]
       }
     },
     "defaults": {

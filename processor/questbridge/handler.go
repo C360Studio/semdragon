@@ -1478,7 +1478,12 @@ func (c *Component) snapshotWorkspace(questID string) {
 				continue
 			}
 
-			storeKey := fmt.Sprintf("quests/%s/%s", questID, f.Path)
+			// Use the instance portion of the quest ID as the storage key
+			// so the REST API (which receives short IDs from path params)
+			// can look up artifacts without needing to reconstruct the full
+			// entity ID.
+			instanceID := domain.ExtractInstance(questID)
+			storeKey := fmt.Sprintf("quests/%s/%s", instanceID, f.Path)
 			if putErr := artifactStore.Put(snapCtx, storeKey, content); putErr != nil {
 				c.logger.Warn("failed to write artifact to store",
 					"quest_id", questID, "key", storeKey, "error", putErr)

@@ -17,6 +17,9 @@
       "dm-chat": {
         "preferred": ["mock-llm"]
       },
+      "quest-design": {
+        "preferred": ["mock-llm"]
+      },
       "boss-battle": {
         "preferred": ["mock-llm"]
       }

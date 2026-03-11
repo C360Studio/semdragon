@@ -258,6 +258,7 @@ export interface LifecycleApi {
 	listGuilds: () => Promise<GuildResponse[]>;
 	getGuild: (id: string) => Promise<GuildResponse>;
 	recruitAgentAtLevel: (name: string, level: number, skills?: string[]) => Promise<AgentResponse>;
+	listQuestArtifacts: (questId: string) => Promise<{ quest_id: string; files: string[]; count: number }>;
 }
 
 /**
@@ -758,6 +759,18 @@ export const test = base.extend<{
 				});
 				if (!res.ok()) {
 					throw new Error(`recruitAgentAtLevel failed: ${res.status()} ${await res.text()}`);
+				}
+				return res.json();
+			},
+
+			listQuestArtifacts: async (questId) => {
+				const res = await apiContext.get(`/game/quests/${questId}/artifacts/list`);
+				if (!res.ok()) {
+					// 503 = filestore not available, 404 = no artifacts — both mean empty.
+					if (res.status() === 503 || res.status() === 404) {
+						return { quest_id: questId, files: [], count: 0 };
+					}
+					throw new Error(`listQuestArtifacts failed: ${res.status()} ${await res.text()}`);
 				}
 				return res.json();
 			}

@@ -34,6 +34,9 @@
       "dm-chat": {
         "preferred": ["claude-sonnet", "claude-haiku"]
       },
+      "quest-design": {
+        "preferred": ["claude-sonnet", "claude-haiku"]
+      },
       "boss-battle": {
         "preferred": ["claude-sonnet", "claude-haiku"]
       }
