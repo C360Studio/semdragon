@@ -18,7 +18,7 @@ type mockRegistry struct {
 	caps      map[string]string // capability -> endpoint name
 }
 
-func (m *mockRegistry) Resolve(cap string) string { return m.caps[cap] }
+func (m *mockRegistry) Resolve(capability string) string { return m.caps[capability] }
 func (m *mockRegistry) GetEndpoint(name string) *model.EndpointConfig {
 	return m.endpoints[name]
 }

@@ -100,8 +100,8 @@ func newSandboxTestServer(t *testing.T) (*httptest.Server, *executor.SandboxClie
 		json.NewEncoder(w).Encode(resp)
 	})
 
-	// POST /list — return canned directory listing
-	mux.HandleFunc("POST /list", func(w http.ResponseWriter, r *http.Request) {
+	// POST /list — return canned directory listing (static mock, request body unused)
+	mux.HandleFunc("POST /list", func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"entries": []map[string]any{
 				{"name": "main.go", "is_dir": false, "size": 100},
@@ -111,8 +111,8 @@ func newSandboxTestServer(t *testing.T) (*httptest.Server, *executor.SandboxClie
 		})
 	})
 
-	// POST /search — return canned search output
-	mux.HandleFunc("POST /search", func(w http.ResponseWriter, r *http.Request) {
+	// POST /search — return canned search output (static mock, request body unused)
+	mux.HandleFunc("POST /search", func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"output": "main.go:1:package main\nmain.go:5:func main() {\n",
 		})
