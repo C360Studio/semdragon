@@ -50,6 +50,12 @@ func DefaultModelRegistry() *model.Registry {
 				SupportsTools: true,
 				ToolFormat:    "openai",
 			},
+			"semembed": {
+				Provider:  "openai",
+				URL:       "http://semembed:8081/v1",
+				Model:     "BAAI/bge-small-en-v1.5",
+				MaxTokens: 0,
+			},
 		},
 		Capabilities: map[string]*model.CapabilityConfig{
 			// Global fallback (unchanged, backwards compatible)
@@ -108,6 +114,10 @@ func DefaultModelRegistry() *model.Registry {
 				Description: "Agent performance assessment",
 				Preferred:   []string{"ollama"},
 			},
+			"embedding": {
+				Description: "Vector embeddings for graph semantic search",
+				Preferred:   []string{"semembed"},
+			},
 		},
 		Defaults: model.DefaultsConfig{
 			Model: "ollama",
@@ -161,6 +171,25 @@ func ProductionModelRegistry() *model.Registry {
 				Model:         "llama3.2",
 				MaxTokens:     8192,
 				SupportsTools: false,
+			},
+			"gemini-flash-lite": {
+				Provider:  "google",
+				Model:     "gemini-2.5-flash-lite",
+				MaxTokens: 1048576,
+				APIKeyEnv: "GEMINI_API_KEY",
+			},
+			"gpt-nano": {
+				Provider:  "openai",
+				URL:       "https://api.openai.com/v1",
+				Model:     "gpt-4.1-nano",
+				MaxTokens: 1048576,
+				APIKeyEnv: "OPENAI_API_KEY",
+			},
+			"semembed": {
+				Provider:  "openai",
+				URL:       "http://semembed:8081/v1",
+				Model:     "BAAI/bge-small-en-v1.5",
+				MaxTokens: 0,
 			},
 		},
 		Capabilities: map[string]*model.CapabilityConfig{
@@ -239,6 +268,18 @@ func ProductionModelRegistry() *model.Registry {
 				Description: "Agent performance assessment",
 				Preferred:   []string{"claude-4"},
 				Fallback:    []string{"gpt-4o"},
+			},
+			"embedding": {
+				Description: "Vector embeddings for graph semantic search",
+				Preferred:   []string{"semembed"},
+			},
+			"community_summary": {
+				Description: "LLM community summaries for graph clustering",
+				Preferred:   []string{"gemini-flash-lite", "gpt-nano", "haiku"},
+			},
+			"query_classification": {
+				Description: "NLQ classification for graph queries",
+				Preferred:   []string{"gemini-flash-lite", "gpt-nano", "haiku"},
 			},
 		},
 		Defaults: model.DefaultsConfig{

@@ -8,6 +8,8 @@ import (
 	graphgateway "github.com/c360studio/semstreams/gateway/graph-gateway"
 	graphindex "github.com/c360studio/semstreams/processor/graph-index"
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
+	graphclustering "github.com/c360studio/semstreams/processor/graph-clustering"
+	graphembedding "github.com/c360studio/semstreams/processor/graph-embedding"
 	graphquery "github.com/c360studio/semstreams/processor/graph-query"
 	wsinput "github.com/c360studio/semstreams/input/websocket"
 
@@ -49,8 +51,10 @@ func RegisterAll(registry *component.Registry) error {
 		wsinput.Register,      // WebSocket input for semsource entity streaming
 		graphingest.Register,  // Entity/triple ingestion and storage
 		graphindex.Register,   // Relationship and predicate indexes
-		graphquery.Register,   // Query coordination and PathRAG
-		graphgateway.Register, // GraphQL/MCP HTTP gateway
+		graphquery.Register,      // Query coordination and PathRAG
+		graphembedding.Register,  // Vector embeddings (BM25 or HTTP)
+		graphclustering.Register, // Community detection and structural analysis
+		graphgateway.Register,    // GraphQL/MCP HTTP gateway
 	}
 
 	for _, register := range graphProcessors {
@@ -174,6 +178,8 @@ func ComponentNames() []string {
 		"graph-ingest",
 		"graph-index",
 		"graph-query",
+		"graph-embedding",
+		"graph-clustering",
 		"graph-gateway",
 		// Semstreams agentic processors
 		"agentic-loop",
@@ -209,6 +215,8 @@ func ProcessorNames() []string {
 		"graph-ingest",
 		"graph-index",
 		"graph-query",
+		"graph-embedding",
+		"graph-clustering",
 		"graph-gateway",
 		// Semstreams agentic processors
 		"agentic-loop",

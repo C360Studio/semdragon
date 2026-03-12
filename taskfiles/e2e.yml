@@ -32,6 +32,13 @@ tasks:
         ignore_error: true
       - task: maybe:down
 
+  tier0:
+    desc: Run Tier 0 cross-browser UI tests (no backend required)
+    cmds:
+      - task: install
+      - cmd: cd ui && npx playwright test --project=chromium --project=firefox --project=webkit
+        ignore_error: true
+
   tier1:
     desc: Run Tier 1 tests only (parallel, fast, autonomy off)
     cmds:

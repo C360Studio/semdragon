@@ -63,6 +63,12 @@
         "options": {
           "enable_thinking": false
         }
+      },
+      "semembed": {
+        "provider": "openai",
+        "url": "http://semembed:8081/v1",
+        "model": "BAAI/bge-small-en-v1.5",
+        "max_tokens": 0
       }
     },
     "capabilities": {
@@ -93,6 +99,10 @@
         "preferred": ["ollama-qwen3"],
         "fallback": ["ollama-coder"],
         "requires_tools": false
+      },
+      "embedding": {
+        "description": "Vector embeddings for graph semantic search",
+        "preferred": ["semembed"]
       }
     },
     "defaults": {
@@ -214,6 +224,56 @@
         "request_timeout": "5s",
         "max_traversal_depth": 5,
         "max_traversal_nodes": 100
+      }
+    },
+    "graph-embedding": {
+      "type": "processor",
+      "name": "graph-embedding",
+      "enabled": true,
+      "config": {
+        "ports": {
+          "inputs": [{
+            "name": "entity_watch",
+            "subject": "ENTITY_STATES",
+            "type": "kv-watch"
+          }],
+          "outputs": [{
+            "name": "embeddings",
+            "subject": "EMBEDDINGS_CACHE",
+            "type": "kv"
+          }]
+        },
+        "embedder_type": "http",
+        "batch_size": 50,
+        "cache_ttl": "1h"
+      }
+    },
+    "graph-clustering": {
+      "type": "processor",
+      "name": "graph-clustering",
+      "enabled": true,
+      "config": {
+        "ports": {
+          "inputs": [{
+            "name": "entity_watch",
+            "subject": "ENTITY_STATES",
+            "type": "kv-watch"
+          }],
+          "outputs": [{
+            "name": "communities",
+            "subject": "COMMUNITY_INDEX",
+            "type": "kv"
+          }]
+        },
+        "detection_interval": "30s",
+        "batch_size": 100,
+        "enable_llm": false,
+        "min_community_size": 2,
+        "max_iterations": 100,
+        "enable_structural": true,
+        "pivot_count": 16,
+        "max_hop_distance": 10,
+        "enable_anomaly_detection": false
       }
     },
     "graph-gateway": {

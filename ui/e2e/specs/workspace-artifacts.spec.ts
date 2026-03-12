@@ -50,7 +50,9 @@ const WORKSPACE_QUEST =
 // =============================================================================
 
 test.describe('Workspace Artifact Lifecycle @integration', () => {
-	test.describe.configure({ mode: isRealLLM() ? 'serial' : 'parallel' });
+	// Serial: tests drive quests through the agentic loop which processes
+	// tasks sequentially. Parallel runs cause consumer starvation and flaky timeouts.
+	test.describe.configure({ mode: 'serial' });
 
 	test.beforeEach(() => {
 		test.skip(
@@ -133,7 +135,9 @@ test.describe('Workspace Artifact Lifecycle @integration', () => {
 	test('boss battle with artifacts evaluates workspace files', async ({ lifecycleApi }) => {
 		// Full pipeline: Expert agent writes files → quest goes to review →
 		// boss battle judge loads artifacts from filestore → verdict issued.
-		test.setTimeout(isRealLLM() ? 180_000 : 90_000);
+		// Three sequential phases (quest exec + battle find + battle resolve),
+		// each with its own poll timeout, so test timeout must exceed their sum.
+		test.setTimeout(isRealLLM() ? 180_000 : 150_000);
 
 		// 1. Recruit Expert agent.
 		const agent = await lifecycleApi.recruitAgentAtLevel(`artifact-battle-${Date.now()}`, 11, [
@@ -235,7 +239,9 @@ test.describe('Workspace Artifact Lifecycle @integration', () => {
 // =============================================================================
 
 test.describe('Summary-Only Work Submissions @integration', () => {
-	test.describe.configure({ mode: isRealLLM() ? 'serial' : 'parallel' });
+	// Serial: tests drive quests through the agentic loop which processes
+	// tasks sequentially. Parallel runs cause consumer starvation and flaky timeouts.
+	test.describe.configure({ mode: 'serial' });
 
 	test.beforeEach(() => {
 		test.skip(

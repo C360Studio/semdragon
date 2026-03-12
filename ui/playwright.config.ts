@@ -33,25 +33,31 @@ export default defineConfig({
 	},
 
 	projects: [
+		// Tier 0: Cross-browser UI rendering tests.
+		// No backend or LLM required — tests page structure, navigation, layout.
+		// Excludes all integration specs and scenarios.
 		{
 			name: 'chromium',
+			testIgnore: /-integration|workspace-artifacts|web-search|quest-pipeline-e2e|scenarios\//,
 			use: { ...devices['Desktop Chrome'] }
 		},
 		{
 			name: 'firefox',
+			testIgnore: /-integration|workspace-artifacts|web-search|quest-pipeline-e2e|scenarios\//,
 			use: { ...devices['Desktop Firefox'] }
 		},
 		{
 			name: 'webkit',
+			testIgnore: /-integration|workspace-artifacts|web-search|quest-pipeline-e2e|scenarios\//,
 			use: { ...devices['Desktop Safari'] }
 		},
-		// Tier 1: all specs except scenarios/ (parallel, fast)
+		// Tier 1: API-driven integration + UI component checks (parallel, fast)
 		{
 			name: 'tier1',
 			testIgnore: /scenarios\//,
 			use: { ...devices['Desktop Chrome'] }
 		},
-		// Tier 2: scenario specs only (serial, 1 worker)
+		// Tier 2: Full user journeys through DM chat UI (serial, 1 worker)
 		{
 			name: 'tier2-scenarios',
 			testMatch: /scenarios\//,

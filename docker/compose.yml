@@ -28,6 +28,24 @@ services:
       timeout: 3s
       retries: 3
 
+  semembed:
+    image: ghcr.io/c360studio/semembed:latest
+    ports:
+      - "8083:8081"
+    environment:
+      - SEMEMBED_MODEL=BAAI/bge-small-en-v1.5
+      - SEMEMBED_PORT=8081
+      - RUST_LOG=info
+    volumes:
+      - semembed-cache:/home/semembed/.cache/fastembed
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
   sandbox:
     build:
       context: ..
@@ -61,6 +79,9 @@ services:
         required: false
       sandbox:
         condition: service_healthy
+      semembed:
+        condition: service_healthy
+        required: false
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
       SEMDRAGONS_CONFIG: "${SEMDRAGONS_CONFIG:-/etc/semdragons/semdragons.json}"
@@ -160,3 +181,4 @@ volumes:
   nats-data:
   nats-semsource-data:
   sandbox-workspace:
+  semembed-cache:
