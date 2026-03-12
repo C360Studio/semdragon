@@ -148,7 +148,11 @@ func (b *entityKnowledgeBuilder) formatQuestDetails(quest *domain.Quest) string 
 		parts = append(parts, sb.String())
 	}
 	if quest.MaxAttempts > 0 {
-		parts = append(parts, fmt.Sprintf("Attempt: %d of %d", quest.Attempts+1, quest.MaxAttempts))
+		display := quest.Attempts
+		if display > quest.MaxAttempts {
+			display = quest.MaxAttempts
+		}
+		parts = append(parts, fmt.Sprintf("Attempt: %d of %d", display, quest.MaxAttempts))
 	}
 
 	if len(parts) == 0 {
