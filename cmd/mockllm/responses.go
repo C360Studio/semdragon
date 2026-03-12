@@ -115,6 +115,14 @@ const dagDecompositionArgs = `{"goal":"Complete the requested work through paral
 // exercise the most interesting recovery path in E2E tests.
 const triageResponse = `{"path":"salvage","analysis":"The agent produced partial useful output that can be built upon. The core approach is sound but incomplete — granting one more attempt with the existing work preserved.","salvaged_output":"Partial implementation completed. Core data structures defined and initial processing pipeline functional.","anti_patterns":["Attempting to process all data in a single pass without checkpointing"]}`
 
+// webSearchArgs is the canned arguments for the web_search tool call.
+// Simulates a research query that an agent working on a research quest would issue.
+const webSearchArgs = `{"query":"best practices data validation Go","max_results":3}`
+
+// webSearchSubmitArgs is the submit_work_product arguments returned after
+// receiving web_search results. Contains a research summary deliverable.
+const webSearchSubmitArgs = `{"deliverable":"Based on web search results, the top 3 recommendations for input validation in Go web applications are:\n\n1. Use struct validation tags with a library like go-playground/validator for declarative field constraints.\n2. Sanitize all user input at the boundary layer before it reaches business logic.\n3. Implement allowlist-based validation rather than blocklist patterns for security-sensitive fields.\n\nAll recommendations are sourced from recent Go community documentation and security best practices guides.","summary":"Research complete: input validation best practices summarized"}`
+
 // reviewAcceptArgs was previously a static constant with a placeholder sub_quest_id.
 // It is now built dynamically by buildReviewAcceptArgs() in router.go, which
 // extracts the real sub-quest ID from the prompt messages.

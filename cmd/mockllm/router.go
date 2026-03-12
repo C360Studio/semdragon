@@ -85,6 +85,8 @@ var (
 	reTriage = regexp.MustCompile(`(?i)recovery path.*salvage|triage.*retry`)
 	// Matches sub-quest entity IDs in prompts like: sub-quest "org.plat.game.board.quest.abc"
 	reSubQuestID = regexp.MustCompile(`sub-quest\s+"([^"]+)"`)
+	// Matches research-oriented quest prompts that should trigger web_search.
+	reResearch = regexp.MustCompile(`(?i)research|search the web|find information|look up|investigate`)
 )
 
 // handleChatCompletions returns an http.HandlerFunc that logs and routes
@@ -184,6 +186,11 @@ func routeToolCall(tools []toolDef, msgs []requestMsg) chatResponse {
 		return namedToolCallResponse("answer_clarification", args)
 	}
 
+	// Research quest: call web_search if available and prompt matches research pattern.
+	if toolNames["web_search"] && isResearchPrompt(msgs) {
+		return namedToolCallResponse("web_search", webSearchArgs)
+	}
+
 	// Default: pick a filesystem tool for generic agentic loops.
 	return toolCallResponse(tools)
 }
@@ -202,6 +209,9 @@ func routeWithToolResults(req chatRequest) chatResponse {
 				return completionResponse(dagDecompositionContent)
 			case "review_sub_quest":
 				return completionResponse(reviewAcceptCompletion)
+			case "web_search":
+				// web_search result received — submit a research summary via submit_work_product.
+				return namedToolCallResponse("submit_work_product", webSearchSubmitArgs)
 			case "submit_work_product":
 				// submit_work_product sets StopLoop=true, so the loop should
 				// not reach here. If it does, just complete cleanly.
@@ -344,6 +354,17 @@ func extractSubQuestID(msgs []requestMsg) string {
 		}
 	}
 	return "__UNKNOWN_SUB_QUEST_ID__"
+}
+
+// isResearchPrompt checks whether the last user message or system prompt
+// contains research-related keywords that should trigger a web_search tool call.
+func isResearchPrompt(msgs []requestMsg) bool {
+	last := lastUserMessage(msgs)
+	if reResearch.MatchString(last) {
+		return true
+	}
+	sys := systemMessage(msgs)
+	return reResearch.MatchString(sys)
 }
 
 // completionResponse wraps a text string in a standard stop-finish choice.

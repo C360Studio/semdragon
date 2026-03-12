@@ -31,6 +31,30 @@
         "preferred": ["claude-sonnet", "claude-haiku"],
         "requires_tools": true
       },
+      "agent-work.apprentice": {
+        "preferred": ["claude-haiku"],
+        "requires_tools": true
+      },
+      "agent-work.journeyman": {
+        "preferred": ["claude-sonnet", "claude-haiku"],
+        "requires_tools": true
+      },
+      "agent-work.expert": {
+        "preferred": ["claude-sonnet"],
+        "requires_tools": true
+      },
+      "agent-work.master": {
+        "preferred": ["claude-sonnet"],
+        "requires_tools": true
+      },
+      "agent-work.grandmaster": {
+        "preferred": ["claude-sonnet"],
+        "requires_tools": true
+      },
+      "quest-execution-sequential": {
+        "preferred": ["claude-sonnet", "claude-haiku"],
+        "requires_tools": true
+      },
       "dm-chat": {
         "preferred": ["claude-sonnet", "claude-haiku"]
       },
