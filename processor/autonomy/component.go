@@ -87,8 +87,9 @@ type Component struct {
 	agentWatch  jetstream.KeyWatcher
 	watchDoneCh chan struct{}
 
-	// NATS subscription for boid suggestions
-	boidSub *natsclient.Subscription
+	// NATS subscriptions for boid suggestions
+	boidSub      *natsclient.Subscription
+	boidGuildSub *natsclient.Subscription
 
 	// Per-agent heartbeat trackers
 	trackers   map[string]*agentTracker
@@ -324,36 +325,6 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Default:     30000,
 				Category:    "shopping",
 			},
-			"guild_join_min_level": {
-				Type:        "int",
-				Description: "Minimum agent level to autonomously join guilds",
-				Default:     3,
-				Category:    "guild",
-			},
-			"guild_suggestions_n": {
-				Type:        "int",
-				Description: "Number of guild choices to evaluate before picking",
-				Default:     5,
-				Category:    "guild",
-			},
-			"guild_create_min_level": {
-				Type:        "int",
-				Description: "Minimum agent level to propose founding a guild (Master tier)",
-				Default:     16,
-				Category:    "guild",
-			},
-			"guild_create_min_fellows": {
-				Type:        "int",
-				Description: "Minimum fellowship candidates to propose a guild",
-				Default:     3,
-				Category:    "guild",
-			},
-			"guild_create_max_founders": {
-				Type:        "int",
-				Description: "Maximum founding members to invite when creating a guild",
-				Default:     6,
-				Category:    "guild",
-			},
 			"dm_mode": {
 				Type:        "string",
 				Description: "DM mode governing approval behavior (full_auto, assisted, supervised, manual)",
@@ -484,6 +455,15 @@ func (c *Component) Start(ctx context.Context) error {
 	}
 	c.boidSub = boidSub
 
+	// Subscribe to boid guild suggestions (join/form recommendations)
+	boidGuildSub, err := c.deps.NATSClient.Subscribe(ctx, "boid.guild.>", c.handleBoidGuildSuggestion)
+	if err != nil {
+		c.agentWatch.Stop()
+		c.boidSub.Unsubscribe()
+		return errs.Wrap(err, "autonomy", "Start", "subscribe boid guild suggestions")
+	}
+	c.boidGuildSub = boidGuildSub
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
@@ -520,6 +500,9 @@ func (c *Component) Stop(timeout time.Duration) error {
 	// Unsubscribe from boid suggestions
 	if c.boidSub != nil {
 		c.boidSub.Unsubscribe()
+	}
+	if c.boidGuildSub != nil {
+		c.boidGuildSub.Unsubscribe()
 	}
 
 	// Stop KV watcher to unblock the watch goroutine

@@ -16,9 +16,8 @@ type Config struct {
 	Board    string `json:"board"`
 
 	// Guild settings
-	MinMembersForFormation int  `json:"min_members_for_formation"`
-	MaxGuildSize           int  `json:"max_guild_size"`
-	EnableAutoFormation    bool `json:"enable_auto_formation"`
+	MinMembersForFormation int `json:"min_members_for_formation"`
+	MaxGuildSize           int `json:"max_guild_size"`
 
 	// Founding quorum settings
 	EnableQuorumFormation bool `json:"enable_quorum_formation"`
@@ -34,7 +33,6 @@ func DefaultConfig() Config {
 		Board:                  "main",
 		MinMembersForFormation: 3,
 		MaxGuildSize:           20,
-		EnableAutoFormation:    false,
 		EnableQuorumFormation:  false,
 		MinFoundingMembers:     3,
 		FormationTimeoutSec:    300,

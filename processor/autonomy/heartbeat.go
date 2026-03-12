@@ -20,11 +20,12 @@ import (
 
 // agentTracker holds per-agent heartbeat state.
 type agentTracker struct {
-	agent       *agentprogression.Agent
-	idleSince   time.Time                   // Process-local, not persisted
-	heartbeat   *time.Timer                 // Per-agent timer
-	interval    time.Duration               // Current heartbeat interval
-	suggestions []boidengine.SuggestedClaim // Ranked boid suggestions, best first
+	agent           *agentprogression.Agent
+	idleSince       time.Time                   // Process-local, not persisted
+	heartbeat       *time.Timer                 // Per-agent timer
+	interval        time.Duration               // Current heartbeat interval
+	suggestions     []boidengine.SuggestedClaim // Ranked boid quest suggestions, best first
+	guildSuggestion *boidengine.GuildSuggestion // Latest guild join/form suggestion (nil = none)
 }
 
 // resetHeartbeatForAgent creates or updates the heartbeat timer for an agent.

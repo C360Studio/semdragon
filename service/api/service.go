@@ -45,8 +45,7 @@ type Service struct {
 	*service.BaseService
 	graph           GraphQuerier       // concrete type is *semdragons.GraphClient
 	world           WorldStateProvider // concrete type is *dmworldstate.WorldStateAggregator
-	store           StoreProvider      // concrete type is *agentstore.Component; nil if unavailable
-	storeOnce       sync.Once          // guards lazy store resolution
+	store           StoreProvider      // concrete type is *agentstore.Component; nil if set directly (tests)
 	componentDeps   *service.Dependencies // retained for lazy component resolution
 	models          ModelResolver      // concrete type is *model.Registry; nil if unavailable
 	nats            *natsclient.Client // direct NATS access for KV buckets outside graph
@@ -147,17 +146,17 @@ func New(rawConfig json.RawMessage, deps *service.Dependencies) (service.Service
 	}, nil
 }
 
-// getStore lazily resolves the agent_store component from the registry.
-// Components are created after services, so eager resolution at construction
-// time finds nothing. sync.Once ensures the lookup happens only once.
+// getStore resolves the agent_store component from the registry.
+// Re-resolves on every call because the component manager may restart
+// components when config KV updates are detected (e.g. settings tests
+// saving config). During restart, the component's running flag is
+// temporarily false — callers should retry on transient failures.
 // If store was set directly (e.g. in tests), the pre-set value is preserved.
 func (s *Service) getStore() StoreProvider {
-	s.storeOnce.Do(func() {
-		if s.store == nil {
-			s.store = resolveStoreComponent(s.componentDeps, s.logger)
-		}
-	})
-	return s.store
+	if s.store != nil {
+		return s.store
+	}
+	return resolveStoreComponent(s.componentDeps, s.logger)
 }
 
 // resolveStoreComponent attempts to retrieve the agentstore component from the

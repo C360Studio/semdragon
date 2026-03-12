@@ -109,8 +109,8 @@ type agentSpec struct {
 }
 
 // seedAgents creates all E2E agents at their target levels.
-// Agents start unguilded — the guildformation processor auto-creates social
-// guilds from Expert+ founders when it detects unguilded agents.
+// Agents start unguilded — guilds form organically via boid engine
+// suggestions when agents build peer cohesion (shared wins + reviews).
 func seedAgents(
 	ctx context.Context,
 	graph *semdragons.GraphClient,

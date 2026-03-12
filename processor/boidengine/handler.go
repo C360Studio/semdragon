@@ -210,7 +210,7 @@ func (c *Component) handleAgentUpdate(entry jetstream.KeyValueEntry) {
 	c.agents[instance] = agent
 	c.agentsMu.Unlock()
 
-	c.logger.Debug("agent cache updated", "instance", instance, "status", agent.Status)
+	c.logger.Debug("agent cache updated", "instance", instance, "status", agent.Status, "guild", agent.Guild)
 }
 
 // handleQuestUpdate processes a quest state change from KV.
@@ -291,7 +291,7 @@ func (c *Component) handleGuildUpdate(entry jetstream.KeyValueEntry) {
 	c.guilds[instance] = guild
 	c.guildsMu.Unlock()
 
-	c.logger.Debug("guild cache updated", "instance", instance, "reputation", guild.Reputation)
+	c.logger.Debug("guild cache updated", "instance", instance, "status", guild.Status, "members", len(guild.Members), "reputation", guild.Reputation)
 }
 
 // =============================================================================
@@ -347,10 +347,6 @@ func (c *Component) computeAndPublish() {
 	}
 	c.questsMu.RUnlock()
 
-	if len(agents) == 0 || len(quests) == 0 {
-		return
-	}
-
 	// Provide guild context for rank/reputation scoring
 	c.guildsMu.RLock()
 	guildCtx := make(map[domain.GuildID]*domain.Guild, len(c.guilds))
@@ -361,15 +357,29 @@ func (c *Component) computeAndPublish() {
 
 	if engine, ok := c.boidEngine.(*DefaultBoidEngine); ok {
 		engine.SetGuildContext(guildCtx)
+		engine.SetCohesionData(c.resolveCohesion())
 	}
 
-	// Compute attractions
+	ctx := context.Background()
+
+	// --- Quest attractions (only when quests are available) ---
+	if len(agents) > 0 && len(quests) > 0 {
+		c.computeAndPublishQuestSuggestions(ctx, agents, quests)
+	}
+
+	// --- Guild suggestions (runs even with no quests) ---
+	if c.config.EnableGuildSuggestions && len(agents) > 0 {
+		c.computeAndPublishGuildSuggestions(ctx, agents, guildCtx)
+	}
+}
+
+// computeAndPublishQuestSuggestions computes quest attractions and publishes per-agent suggestions.
+func (c *Component) computeAndPublishQuestSuggestions(ctx context.Context, agents []agentprogression.Agent, quests []domain.Quest) {
 	attractions := c.boidEngine.ComputeAttractions(agents, quests, c.rules)
 	if len(attractions) == 0 {
 		return
 	}
 
-	// Get ranked suggestions per agent (top N, quests not removed from pool)
 	maxSuggestions := c.config.MaxSuggestionsPerAgent
 	if maxSuggestions <= 0 {
 		maxSuggestions = 3
@@ -379,8 +389,6 @@ func (c *Component) computeAndPublish() {
 		return
 	}
 
-	// Publish ranked list per agent (fire and forget)
-	ctx := context.Background()
 	totalPublished := 0
 	for agentID, suggestions := range topN {
 		subject := "boid.suggestions." + domain.ExtractInstance(string(agentID))
@@ -392,9 +400,7 @@ func (c *Component) computeAndPublish() {
 		}
 		if err := c.deps.NATSClient.Publish(ctx, subject, data); err != nil {
 			c.errorsCount.Add(1)
-			c.logger.Error("failed to publish suggestions",
-				"agent", agentID,
-				"error", err)
+			c.logger.Error("failed to publish suggestions", "agent", agentID, "error", err)
 			continue
 		}
 		if c.suggestionsBucket != nil {
@@ -408,11 +414,73 @@ func (c *Component) computeAndPublish() {
 
 	c.suggestionsComputed.Add(uint64(totalPublished))
 
-	c.logger.Debug("computed and published suggestions",
+	c.logger.Debug("computed and published quest suggestions",
 		"agents", len(agents),
 		"quests", len(quests),
 		"agents_with_suggestions", len(topN),
 		"total_suggestions", totalPublished)
+}
+
+// computeAndPublishGuildSuggestions computes guild join/form suggestions and publishes per-agent.
+func (c *Component) computeAndPublishGuildSuggestions(ctx context.Context, agents []agentprogression.Agent, guildCtx map[domain.GuildID]*domain.Guild) {
+	engine, ok := c.boidEngine.(*DefaultBoidEngine)
+	if !ok {
+		return
+	}
+
+	guildSuggestions := engine.ComputeGuildSuggestions(
+		agents, guildCtx,
+		c.config.GuildFormMinUnguilded,
+		c.config.GuildJoinThreshold,
+	)
+	if len(guildSuggestions) == 0 {
+		return
+	}
+
+	published := 0
+	for _, gs := range guildSuggestions {
+		subject := "boid.guild." + domain.ExtractInstance(string(gs.AgentID))
+		data, err := json.Marshal(gs)
+		if err != nil {
+			c.errorsCount.Add(1)
+			c.logger.Error("failed to marshal guild suggestion", "agent", gs.AgentID, "error", err)
+			continue
+		}
+		if err := c.deps.NATSClient.Publish(ctx, subject, data); err != nil {
+			c.errorsCount.Add(1)
+			c.logger.Error("failed to publish guild suggestion", "agent", gs.AgentID, "error", err)
+			continue
+		}
+		if c.suggestionsBucket != nil {
+			agentInstance := domain.ExtractInstance(string(gs.AgentID))
+			if _, putErr := c.suggestionsBucket.Put(ctx, "guild."+agentInstance, data); putErr != nil {
+				c.logger.Warn("failed to persist guild suggestion to KV", "agent", gs.AgentID, "error", putErr)
+			}
+		}
+		published++
+	}
+
+	c.logger.Debug("computed and published guild suggestions",
+		"agents", len(agents),
+		"guilds", len(guildCtx),
+		"guild_suggestions", published)
+}
+
+// resolveCohesion lazily resolves the CohesionData from the component registry.
+// Returns nil if guildformation is not registered (guild suggestions degrade gracefully).
+func (c *Component) resolveCohesion() CohesionData {
+	if c.deps.ComponentRegistry == nil {
+		return nil
+	}
+	comp := c.deps.ComponentRegistry.Component("guildformation")
+	if comp == nil {
+		return nil
+	}
+	cd, ok := comp.(CohesionData)
+	if !ok {
+		return nil
+	}
+	return cd
 }
 
 // =============================================================================

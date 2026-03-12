@@ -35,15 +35,6 @@ type Config struct {
 	// Consumable use thresholds
 	CooldownSkipMinRemainingMs int `json:"cooldown_skip_min_remaining_ms"` // Min remaining cooldown (ms) to justify using skip
 
-	// Guild joining thresholds
-	GuildJoinMinLevel int `json:"guild_join_min_level"` // Min agent level to autonomously join guilds
-	GuildSuggestionsN int `json:"guild_suggestions_n"`  // Number of guild choices to evaluate
-
-	// Guild creation thresholds
-	GuildCreateMinLevel   int `json:"guild_create_min_level"`   // Min agent level to propose a guild (Master tier)
-	GuildCreateMinFellows int `json:"guild_create_min_fellows"` // Min fellowship candidates to propose
-	GuildCreateMaxFounders int `json:"guild_create_max_founders"` // Max founding members to invite
-
 	// DM approval routing
 	DMMode            domain.DMMode `json:"dm_mode"`             // DM mode governing approval behavior
 	SessionID         string        `json:"session_id"`          // DM session ID for approval requests
@@ -69,12 +60,6 @@ func DefaultConfig() Config {
 		CooldownShopMinXP:          25,
 		StrategicShopMaxCost:       200,
 		CooldownSkipMinRemainingMs: 30000,
-
-		GuildJoinMinLevel:     3,
-		GuildSuggestionsN:     5,
-		GuildCreateMinLevel:    16, // Master tier
-		GuildCreateMinFellows:  3,  // Matches MinMembersForFormation
-		GuildCreateMaxFounders: 6,  // Initial founding group size
 
 		DMMode:            domain.DMFullAuto,
 		ApprovalTimeoutMs: 300000, // 5 minutes

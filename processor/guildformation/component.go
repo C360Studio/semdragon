@@ -8,12 +8,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semstreams/component"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 // =============================================================================
@@ -42,22 +42,17 @@ type Component struct {
 	// Agent to guild mapping - in-memory projection (each agent belongs to at most one guild)
 	agentGuilds sync.Map // map[domain.AgentID]domain.GuildID
 
-	// KV watcher for agent entity state changes (entity-centric architecture)
-	agentWatch  jetstream.KeyWatcher
-	watchDoneCh chan struct{}
-
 	// Timeout loop for pending guild dissolution
 	timeoutDoneCh chan struct{}
 
-	// Agent state cache for detecting level/XP transitions that trigger clustering
-	agents   map[string]*agentprogression.Agent
-	agentsMu sync.RWMutex
-
-	// sharedWins is bootstrapped once at Start() and updated on each bootstrap.
-	// TODO: Add incremental KV watchers for quest and peer review entity types to
-	// keep the cache current without requiring a full restart. For now, bootstrap-only
-	// is acceptable since guild scoring runs periodically and stale-by-seconds is fine.
+	// sharedWins is bootstrapped at Start() from existing KV state, then kept
+	// current by incremental KV watchers on quest and peer review entity types.
 	sharedWins *sharedWinsCache
+
+	// KV watchers for incremental shared wins updates
+	questWatch  jetstream.KeyWatcher
+	reviewWatch jetstream.KeyWatcher
+	watchDoneCh chan struct{}
 
 	// Internal state
 	running  atomic.Bool
@@ -98,15 +93,6 @@ func (c *Component) Meta() component.Metadata {
 // Entity-centric: watches ENTITY_STATES KV for agent level/XP changes that trigger clustering.
 func (c *Component) InputPorts() []component.Port {
 	return []component.Port{
-		{
-			Name:        "agent-state-watch",
-			Direction:   component.DirectionInput,
-			Required:    false,
-			Description: "Agent entity state changes via KV watch (detects level/XP transitions for auto-formation)",
-			Config: &component.KVWatchPort{
-				Bucket: "", // ENTITY_STATES bucket, watched dynamically
-			},
-		},
 	}
 }
 
@@ -157,12 +143,6 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Type:        "int",
 				Description: "Maximum members per guild",
 				Default:     20,
-				Category:    "guild",
-			},
-			"enable_auto_formation": {
-				Type:        "bool",
-				Description: "Enable automatic guild formation from skill clusters",
-				Default:     true,
 				Category:    "guild",
 			},
 			"enable_quorum_formation": {
@@ -250,7 +230,6 @@ func (c *Component) Initialize() error {
 	}
 
 	c.boardConfig = c.config.ToBoardConfig()
-	c.agents = make(map[string]*agentprogression.Agent)
 	c.sharedWins = newSharedWinsCache()
 	c.stopChan = make(chan struct{})
 
@@ -280,16 +259,10 @@ func (c *Component) Start(ctx context.Context) error {
 	// Errors are non-fatal — guild scoring degrades gracefully with an empty cache.
 	c.bootstrapSharedWins(ctx)
 
-	// Watch agent entity type for level/XP changes that trigger auto-formation clustering
-	if c.config.EnableAutoFormation {
-		watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeAgent)
-		if err != nil {
-			return err
-		}
-		c.agentWatch = watcher
-		c.watchDoneCh = make(chan struct{})
-		go c.processAgentWatchUpdates()
-	}
+	// Start incremental KV watchers for shared wins cache updates.
+	// These keep the cache current as quests complete and peer reviews are submitted.
+	// Failure is non-fatal — the bootstrap data is still available.
+	c.startCohesionWatchers(ctx)
 
 	// Start timeout loop for pending guild dissolution
 	if c.config.EnableQuorumFormation {
@@ -305,7 +278,6 @@ func (c *Component) Start(ctx context.Context) error {
 		"org", c.config.Org,
 		"platform", c.config.Platform,
 		"board", c.config.Board,
-		"auto_formation", c.config.EnableAutoFormation,
 		"quorum_formation", c.config.EnableQuorumFormation)
 
 	return nil
@@ -329,17 +301,23 @@ func (c *Component) Stop(timeout time.Duration) error {
 		close(c.stopChan)
 	})
 
-	// Stop KV watcher and wait for watch goroutine to exit
-	if c.agentWatch != nil {
-		c.agentWatch.Stop()
+	// Stop KV watchers
+	if c.questWatch != nil {
+		c.questWatch.Stop()
 	}
+	if c.reviewWatch != nil {
+		c.reviewWatch.Stop()
+	}
+
+	// Wait for cohesion watcher goroutine to exit
 	if c.watchDoneCh != nil {
 		select {
 		case <-c.watchDoneCh:
 		case <-time.After(timeout):
-			c.logger.Warn("guildformation stop timed out waiting for KV watcher")
+			c.logger.Warn("guildformation stop timed out waiting for cohesion watchers")
 		}
 	}
+
 	// Wait for timeout loop to exit
 	if c.timeoutDoneCh != nil {
 		select {
@@ -368,12 +346,14 @@ func (c *Component) guildMutex(id domain.GuildID) *sync.Mutex {
 }
 
 // =============================================================================
-// SHARED WINS CACHE — Bootstrap + Public Accessors
+// SHARED WINS CACHE — Bootstrap, Incremental Watchers, Public Accessors
 // =============================================================================
 
 // bootstrapSharedWins scans completed quests and peer reviews from KV to seed the
 // sharedWinsCache. It runs once at Start() time. Errors are logged and skipped so
 // that a NATS hiccup at startup does not prevent the component from running.
+// After bootstrap, incremental KV watchers (startCohesionWatchers) keep the cache
+// current as new quests complete and peer reviews are submitted.
 func (c *Component) bootstrapSharedWins(ctx context.Context) {
 	questCount := 0
 	partyCount := 0
@@ -445,6 +425,157 @@ func (c *Component) bootstrapSharedWins(ctx context.Context) {
 		"quests_scanned", questCount,
 		"parties_recorded", partyCount,
 		"reviews_recorded", reviewCount)
+}
+
+// startCohesionWatchers starts KV watchers for quest and peer review entities to
+// incrementally update the shared wins cache. Both watchers feed a single goroutine
+// so that cache updates are serialized.
+func (c *Component) startCohesionWatchers(ctx context.Context) {
+	questWatcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeQuest)
+	if err != nil {
+		c.logger.Warn("failed to start quest cohesion watcher", "error", err)
+	} else {
+		c.questWatch = questWatcher
+	}
+
+	reviewWatcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypePeerReview)
+	if err != nil {
+		c.logger.Warn("failed to start peer review cohesion watcher", "error", err)
+	} else {
+		c.reviewWatch = reviewWatcher
+	}
+
+	// Only start the goroutine if at least one watcher is active.
+	if c.questWatch != nil || c.reviewWatch != nil {
+		c.watchDoneCh = make(chan struct{})
+		go c.processCohesionUpdates(ctx)
+	}
+}
+
+// processCohesionUpdates handles KV watch updates for quest and peer review
+// entities, incrementally updating the shared wins cache. Historical entries
+// replayed before the nil sentinel are skipped — bootstrapSharedWins already
+// processed those. Only live updates after the sentinel are applied.
+func (c *Component) processCohesionUpdates(ctx context.Context) {
+	defer close(c.watchDoneCh)
+
+	// Set up channels, handling nil watchers gracefully.
+	var questUpdates, reviewUpdates <-chan jetstream.KeyValueEntry
+	if c.questWatch != nil {
+		questUpdates = c.questWatch.Updates()
+	}
+	if c.reviewWatch != nil {
+		reviewUpdates = c.reviewWatch.Updates()
+	}
+
+	// Skip replay entries — bootstrap already handled historical data.
+	questLive := c.questWatch == nil
+	reviewLive := c.reviewWatch == nil
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+
+		case <-ctx.Done():
+			return
+
+		case entry, ok := <-questUpdates:
+			if !ok {
+				questUpdates = nil
+				continue
+			}
+			if entry == nil {
+				questLive = true // nil sentinel: replay complete
+				continue
+			}
+			if !questLive {
+				continue // skip replay entries
+			}
+			c.handleQuestCohesionUpdate(ctx, entry)
+
+		case entry, ok := <-reviewUpdates:
+			if !ok {
+				reviewUpdates = nil
+				continue
+			}
+			if entry == nil {
+				reviewLive = true // nil sentinel: replay complete
+				continue
+			}
+			if !reviewLive {
+				continue // skip replay entries
+			}
+			c.handleReviewCohesionUpdate(entry)
+		}
+	}
+}
+
+// handleQuestCohesionUpdate checks if a quest entity transitioned to completed
+// with a party, and if so records shared wins for all party members.
+func (c *Component) handleQuestCohesionUpdate(ctx context.Context, entry jetstream.KeyValueEntry) {
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		return
+	}
+
+	q := domain.QuestFromEntityState(entityState)
+	if q == nil || q.Status != domain.QuestCompleted || q.PartyID == nil {
+		return
+	}
+
+	partyEntity, err := c.graph.GetParty(ctx, *q.PartyID)
+	if err != nil {
+		c.logger.Debug("cohesion watcher: get party failed",
+			"party_id", *q.PartyID, "quest_id", q.ID, "err", err)
+		return
+	}
+
+	party := partycoord.PartyFromEntityState(partyEntity)
+	if party == nil || len(party.Members) < 2 {
+		return
+	}
+
+	memberIDs := make([]domain.AgentID, 0, len(party.Members)+1)
+	leadIncluded := false
+	for _, m := range party.Members {
+		memberIDs = append(memberIDs, m.AgentID)
+		if m.AgentID == party.Lead {
+			leadIncluded = true
+		}
+	}
+	if party.Lead != "" && !leadIncluded {
+		memberIDs = append(memberIDs, party.Lead)
+	}
+
+	c.sharedWins.RecordPartyWin(memberIDs)
+
+	c.logger.Debug("cohesion watcher: recorded party win",
+		"quest_id", q.ID, "party_id", *q.PartyID, "members", len(memberIDs))
+}
+
+// handleReviewCohesionUpdate checks if a peer review entity transitioned to
+// completed and records pairwise ratings in the shared wins cache.
+func (c *Component) handleReviewCohesionUpdate(entry jetstream.KeyValueEntry) {
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		return
+	}
+
+	pr := domain.PeerReviewFromEntityState(entityState)
+	if pr == nil || pr.Status != domain.PeerReviewCompleted {
+		return
+	}
+
+	if pr.LeaderAvgRating > 0 {
+		c.sharedWins.RecordPeerReview(pr.LeaderID, pr.MemberID, pr.LeaderAvgRating)
+	}
+	if pr.MemberAvgRating > 0 {
+		c.sharedWins.RecordPeerReview(pr.MemberID, pr.LeaderID, pr.MemberAvgRating)
+	}
+
+	c.logger.Debug("cohesion watcher: recorded peer review",
+		"review_id", pr.ID, "leader", pr.LeaderID, "member", pr.MemberID)
 }
 
 // SharedWins returns how many quests agents a and b completed together in the same party.

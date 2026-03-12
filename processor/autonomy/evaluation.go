@@ -46,10 +46,11 @@ func (c *Component) evaluateAutonomy(instance string) {
 	// Build a stack-allocated tracker snapshot so action stubs never touch the
 	// live tracker pointer outside the lock.
 	trackerSnapshot := agentTracker{
-		agent:       agent,
-		idleSince:   tracker.idleSince,
-		interval:    tracker.interval,
-		suggestions: tracker.suggestions,
+		agent:           agent,
+		idleSince:       tracker.idleSince,
+		interval:        tracker.interval,
+		suggestions:     tracker.suggestions,
+		guildSuggestion: tracker.guildSuggestion,
 	}
 	c.trackersMu.RUnlock()
 
@@ -98,6 +99,16 @@ func (c *Component) evaluateAutonomy(instance string) {
 				}
 			} else {
 				actionTaken = act.name
+			}
+			// Clear stale guild suggestion after successful guild action
+			// so the agent doesn't retry on the next heartbeat before
+			// the KV update propagates.
+			if actionTaken == "join_guild" || actionTaken == "create_guild" {
+				c.trackersMu.Lock()
+				if t, ok := c.trackers[instance]; ok {
+					t.guildSuggestion = nil
+				}
+				c.trackersMu.Unlock()
 			}
 			break
 		}
@@ -186,10 +197,10 @@ func (c *Component) actionsForState(status domain.AgentStatus) []action {
 		return []action{
 			c.reviewGuildApplicationsAction(), // Founders process applications before claiming quests
 			c.claimQuestAction(),
+			c.joinGuildAction(),   // Boid-driven: fires when boid.guild suggestion of type "join" is cached
+			c.createGuildAction(), // Boid-driven: fires when boid.guild suggestion of type "form" is cached
 			c.useConsumableAction(),
 			c.shopAction(),
-			// Guild join/create/apply removed — guildformation processor is the
-			// single authority for guild membership to avoid write races.
 		}
 	case domain.AgentOnQuest:
 		return []action{
@@ -204,8 +215,8 @@ func (c *Component) actionsForState(status domain.AgentStatus) []action {
 		return []action{
 			c.useCooldownSkipAction(),
 			c.reviewGuildApplicationsAction(),
+			c.joinGuildAction(), // Boid-driven: fires on cooldown too
 			c.shopAction(),
-			// Guild join/create/apply removed — see AgentIdle comment.
 		}
 	default:
 		// Retired or unknown

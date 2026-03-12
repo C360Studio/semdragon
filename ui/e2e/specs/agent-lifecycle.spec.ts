@@ -57,6 +57,16 @@ test.describe('Agent Lifecycle', () => {
 		expect(retired.status).toBe('retired');
 	});
 
+	test('agent recruited at level respects level and tier', async ({ lifecycleApi }) => {
+		test.skip(!hasBackend(), 'Requires running backend');
+
+		const agent = await lifecycleApi.recruitAgentAtLevel(`level-test-${Date.now()}`, 15, [
+			'coding'
+		]);
+		expect(agent.level).toBe(15);
+		expect(agent.tier).toBeGreaterThanOrEqual(2); // Expert tier
+	});
+
 	test('agent status updates during quest lifecycle', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
 		test.setTimeout(120_000);

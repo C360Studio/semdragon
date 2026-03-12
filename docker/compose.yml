@@ -63,7 +63,7 @@ services:
         condition: service_healthy
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
-      SEMDRAGONS_CONFIG: /etc/semdragons/semdragons.json
+      SEMDRAGONS_CONFIG: "${SEMDRAGONS_CONFIG:-/etc/semdragons/semdragons.json}"
       SEMDRAGONS_MODELS: "${SEMDRAGONS_MODELS:-}"
       SEMDRAGONS_LOG_LEVEL: "${SEMDRAGONS_LOG_LEVEL:-info}"
       SEED_E2E: "${SEED_E2E:-false}"

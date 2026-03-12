@@ -140,6 +140,15 @@ func (c *Component) OutputPorts() []component.Port {
 				Subject: "boid.suggestions.*",
 			},
 		},
+		{
+			Name:        "boid-guild-suggestions",
+			Direction:   component.DirectionOutput,
+			Required:    false,
+			Description: "Guild join/form suggestions based on peer cohesion",
+			Config: &component.NATSPort{
+				Subject: "boid.guild.*",
+			},
+		},
 	}
 }
 
@@ -212,6 +221,24 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 				Description: "How many nearby agents to consider (default 5)",
 				Default:     5,
 				Category:    "timing",
+			},
+			"enable_guild_suggestions": {
+				Type:        "bool",
+				Description: "Compute guild join/form suggestions based on peer cohesion (default true)",
+				Default:     true,
+				Category:    "guild",
+			},
+			"guild_join_threshold": {
+				Type:        "float",
+				Description: "Min score for guild join suggestion (default 0.3)",
+				Default:     0.3,
+				Category:    "guild",
+			},
+			"guild_form_min_unguilded": {
+				Type:        "int",
+				Description: "Min unguilded agents to suggest forming a guild (default 3)",
+				Default:     3,
+				Category:    "guild",
 			},
 			"boid_suggestions_bucket": {
 				Type:        "string",

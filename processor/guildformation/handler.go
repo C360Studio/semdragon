@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/pkg/errs"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 // Sentinel errors for guild operations.
@@ -22,259 +20,6 @@ var (
 	ErrDuplicateApplication = errors.New("application already exists")
 	ErrApplicationNotFound  = errors.New("application not found")
 )
-
-// =============================================================================
-// KV WATCH HANDLER - Entity-centric agent state monitoring
-// =============================================================================
-// Watches agent entity state in KV directly. "Agent progressed" is a fact about
-// the world -- it belongs in KV Watch, not a NATS subscription.
-//
-// The watch detects level changes in agents and triggers social-model auto-formation
-// when enough unguilded agents exist and a qualified founder is available.
-// =============================================================================
-
-// processAgentWatchUpdates handles agent entity state changes from KV.
-// Detects level/tier transitions that should trigger guild auto-formation.
-func (c *Component) processAgentWatchUpdates() {
-	defer close(c.watchDoneCh)
-
-	for {
-		select {
-		case <-c.stopChan:
-			return
-		case entry, ok := <-c.agentWatch.Updates():
-			if !ok {
-				return
-			}
-			if entry == nil {
-				continue // Initial sync complete
-			}
-			c.handleAgentStateChange(entry)
-		}
-	}
-}
-
-// handleAgentStateChange processes an agent entity state change from KV.
-// Detects when an agent levels up and evaluates auto-formation.
-func (c *Component) handleAgentStateChange(entry jetstream.KeyValueEntry) {
-	if !c.running.Load() {
-		return
-	}
-
-	key := entry.Key()
-	instance := domain.ExtractInstance(key)
-	if instance == "" || instance == key {
-		c.logger.Warn("agent watch entry has unexpected key format", "key", key)
-		return
-	}
-
-	if entry.Operation() == jetstream.KeyValueDelete {
-		c.agentsMu.Lock()
-		delete(c.agents, instance)
-		c.agentsMu.Unlock()
-		c.logger.Debug("agent removed from guildformation cache", "instance", instance)
-		return
-	}
-
-	// Decode entity state and reconstruct the Agent from its triples.
-	entityState, err := semdragons.DecodeEntityState(entry)
-	if err != nil || entityState == nil {
-		c.logger.Warn("failed to decode agent entity state", "instance", instance, "error", err)
-		return
-	}
-	agent := agentprogression.AgentFromEntityState(entityState)
-	if agent == nil {
-		c.logger.Warn("failed to reconstruct agent from entity state", "instance", instance)
-		return
-	}
-
-	// Diff against cached state to detect level changes.
-	c.agentsMu.Lock()
-	prev, hadPrev := c.agents[instance]
-	c.agents[instance] = agent
-	c.agentsMu.Unlock()
-
-	if !hadPrev {
-		// New agent appeared. Check if this triggers auto-formation:
-		// either this agent is Expert+ (potential founder) or a cached
-		// Expert+ unguilded agent now has enough candidates.
-		if c.config.EnableAutoFormation {
-			if agent.Tier >= domain.TierExpert {
-				c.evaluateAutoFormation(agent)
-			} else {
-				c.evaluateAutoFormationForCachedFounders()
-			}
-		}
-		return
-	}
-
-	// React to tier promotions: re-evaluate guild formation for this agent.
-	if prev.Tier != agent.Tier || prev.Level != agent.Level {
-		c.logger.Debug("agent progressed, evaluating auto-formation",
-			"instance", instance,
-			"old_level", prev.Level,
-			"new_level", agent.Level,
-			"old_tier", prev.Tier,
-			"new_tier", agent.Tier)
-		c.evaluateAutoFormation(agent)
-	}
-}
-
-// evaluateAutoFormationForCachedFounders scans the agent cache for any Expert+
-// unguilded agent and re-evaluates auto-formation. Called when a new non-Expert
-// agent appears, since it may be the Nth candidate that tips the threshold.
-func (c *Component) evaluateAutoFormationForCachedFounders() {
-	c.agentsMu.RLock()
-	var founders []*agentprogression.Agent
-	for _, a := range c.agents {
-		if a.Tier >= domain.TierExpert {
-			if c.GetAgentGuild(a.ID) == "" {
-				founders = append(founders, a)
-			}
-		}
-	}
-	c.agentsMu.RUnlock()
-
-	for _, founder := range founders {
-		c.evaluateAutoFormation(founder)
-	}
-}
-
-// evaluateAutoFormation checks whether enough unguilded agents exist to form a
-// guild using the social model. Instead of clustering by shared skill, this
-// seeds diverse guilds led by an Expert+ founder.
-func (c *Component) evaluateAutoFormation(trigger *agentprogression.Agent) {
-	if !c.config.EnableAutoFormation {
-		return
-	}
-
-	// Gate: founder must be Expert+ tier (level 11+) -- founding is a leadership act.
-	if trigger.Tier < domain.TierExpert {
-		return
-	}
-
-	// Only unguilded agents can found a guild.
-	if c.GetAgentGuild(trigger.ID) != "" {
-		return
-	}
-
-	// Collect all unguilded agents from the cache.
-	c.agentsMu.RLock()
-	var candidates []*agentprogression.Agent
-	for _, a := range c.agents {
-		if c.GetAgentGuild(a.ID) == "" {
-			candidates = append(candidates, a)
-		}
-	}
-	c.agentsMu.RUnlock()
-
-	if len(candidates) < c.config.MinMembersForFormation {
-		return
-	}
-
-	// Diversity: pick candidates with different primary skills to seed mixed composition.
-	selected := selectDiverseCandidates(candidates, c.config.MinMembersForFormation, trigger.ID)
-	if len(selected) < c.config.MinMembersForFormation {
-		// Not enough diverse candidates; fall back to whatever we have.
-		selected = candidates
-		if len(selected) > c.config.MinMembersForFormation {
-			selected = selected[:c.config.MinMembersForFormation]
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	guild, err := c.CreateGuild(ctx, CreateGuildParams{
-		Name:      generateGuildName(trigger),
-		Culture:   "Founded through demonstrated expertise",
-		FounderID: trigger.ID,
-		MinLevel:  1,
-	})
-	if err != nil {
-		c.logger.Error("auto-formation guild creation failed",
-			"founder", trigger.ID,
-			"error", err)
-		c.errorsCount.Add(1)
-		return
-	}
-
-	c.logger.Info("auto-formed guild via social model",
-		"guild_id", guild.ID,
-		"guild_name", guild.Name,
-		"status", guild.Status,
-		"candidates", len(selected))
-
-	// In quorum mode, candidates must apply via autonomy — don't auto-add them.
-	if c.config.EnableQuorumFormation {
-		return
-	}
-
-	// Add remaining candidates (skip the founder who was added by CreateGuild).
-	for _, candidate := range selected {
-		if candidate.ID == trigger.ID {
-			continue
-		}
-		if err := c.JoinGuild(ctx, guild.ID, candidate.ID); err != nil {
-			c.logger.Warn("failed to add candidate to auto-formed guild",
-				"guild_id", guild.ID,
-				"agent_id", candidate.ID,
-				"error", err)
-		}
-	}
-}
-
-// selectDiverseCandidates picks agents with different primary skills, always
-// including the founder. Returns up to `count` agents.
-func selectDiverseCandidates(candidates []*agentprogression.Agent, count int, founderID domain.AgentID) []*agentprogression.Agent {
-	selected := make([]*agentprogression.Agent, 0, count)
-	seenSkills := make(map[domain.SkillTag]bool)
-
-	// Always include the founder first.
-	for _, c := range candidates {
-		if c.ID == founderID {
-			selected = append(selected, c)
-			for skill := range c.SkillProficiencies {
-				seenSkills[skill] = true
-			}
-			break
-		}
-	}
-
-	// Add candidates whose primary skill is not yet represented.
-	for _, c := range candidates {
-		if len(selected) >= count {
-			break
-		}
-		if c.ID == founderID {
-			continue
-		}
-		hasNewSkill := false
-		for skill := range c.SkillProficiencies {
-			if !seenSkills[skill] {
-				hasNewSkill = true
-				break
-			}
-		}
-		if hasNewSkill {
-			selected = append(selected, c)
-			for skill := range c.SkillProficiencies {
-				seenSkills[skill] = true
-			}
-		}
-	}
-
-	return selected
-}
-
-// generateGuildName creates a guild name from the founder's identity.
-func generateGuildName(founder *agentprogression.Agent) string {
-	name := founder.Name
-	if founder.DisplayName != "" {
-		name = founder.DisplayName
-	}
-	return name + "'s Guild"
-}
 
 // =============================================================================
 // GUILD HANDLERS
@@ -350,6 +95,11 @@ func (c *Component) CreateGuild(ctx context.Context, params CreateGuildParams) (
 		c.logger.Error("failed to persist guild to KV", "guild_id", guildID, "error", err)
 		// Continue -- in-memory state is valid, KV will catch up on next mutation.
 	}
+
+	// Update the founder's agent entity so its Guild field reflects the new
+	// membership. Without this, downstream watchers (boid engine, autonomy)
+	// see the founder as unguilded and keep triggering guild creation.
+	c.updateAgentGuild(ctx, params.FounderID, guildID, true)
 
 	// Publish guild created event
 	if err := SubjectGuildCreated.Publish(ctx, c.deps.NATSClient, GuildCreatedPayload{
@@ -660,11 +410,12 @@ func (c *Component) DisbandGuild(ctx context.Context, guildID domain.GuildID, re
 func (c *Component) updateAgentGuild(ctx context.Context, agentID domain.AgentID, guildID domain.GuildID, add bool) {
 	agentEntity, err := c.graph.GetAgent(ctx, agentID)
 	if err != nil {
-		c.logger.Debug("updateAgentGuild: failed to load agent", "agent_id", agentID, "error", err)
+		c.logger.Warn("updateAgentGuild: failed to load agent", "agent_id", agentID, "error", err)
 		return
 	}
 	agent := agentprogression.AgentFromEntityState(agentEntity)
 	if agent == nil {
+		c.logger.Warn("updateAgentGuild: agent reconstruction returned nil", "agent_id", agentID)
 		return
 	}
 
@@ -675,7 +426,10 @@ func (c *Component) updateAgentGuild(ctx context.Context, agentID domain.AgentID
 	}
 
 	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.membership.updated"); err != nil {
-		c.logger.Debug("updateAgentGuild: failed to persist", "agent_id", agentID, "error", err)
+		c.logger.Warn("updateAgentGuild: failed to persist", "agent_id", agentID, "error", err)
+	} else {
+		c.logger.Info("updateAgentGuild: agent guild updated",
+			"agent_id", agentID, "guild_id", guildID, "add", add)
 	}
 }
 

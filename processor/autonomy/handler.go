@@ -138,3 +138,53 @@ func (c *Component) handleBoidSuggestion(ctx context.Context, msg *nats.Msg) {
 			"top_score", suggestions[0].Score)
 	}
 }
+
+// =============================================================================
+// BOID GUILD SUGGESTION HANDLER - NATS pub/sub subscription
+// =============================================================================
+// Subscribes to boid.guild.> to cache the latest guild join/form suggestion per
+// agent. When a guild suggestion arrives, the heartbeat backoff is reset so the
+// agent evaluates the guild action sooner.
+// =============================================================================
+
+// handleBoidGuildSuggestion processes a boid engine guild suggestion from NATS.
+func (c *Component) handleBoidGuildSuggestion(ctx context.Context, msg *nats.Msg) {
+	if ctx.Err() != nil {
+		return
+	}
+	if !c.running.Load() {
+		return
+	}
+
+	var gs boidengine.GuildSuggestion
+	if err := json.Unmarshal(msg.Data, &gs); err != nil {
+		c.errorsCount.Add(1)
+		c.logger.Warn("failed to unmarshal boid guild suggestion", "error", err)
+		return
+	}
+
+	instance := domain.ExtractInstance(string(gs.AgentID))
+	if instance == "" {
+		c.logger.Warn("boid guild suggestion has invalid agent ID", "agent_id", gs.AgentID)
+		return
+	}
+
+	c.trackersMu.Lock()
+	defer c.trackersMu.Unlock()
+
+	tracker, exists := c.trackers[instance]
+	if !exists {
+		return
+	}
+
+	// Cache guild suggestion for idle or cooldown agents (guild actions fire in both states)
+	if tracker.agent != nil && (tracker.agent.Status == domain.AgentIdle || tracker.agent.Status == domain.AgentCooldown) {
+		tracker.guildSuggestion = &gs
+		c.resetHeartbeatInterval(instance)
+		c.logger.Debug("boid guild suggestion cached for agent",
+			"instance", instance,
+			"type", gs.Type,
+			"guild_id", gs.GuildID,
+			"score", gs.Score)
+	}
+}

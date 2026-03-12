@@ -35,7 +35,6 @@ func TestComponent_Lifecycle(t *testing.T) {
 	config.Org = "test"
 	config.Platform = "integration"
 	config.Board = "lifecycle"
-	config.EnableAutoFormation = false // Disable auto-formation so watcher is not started
 
 	comp, err := NewFromConfig(config, deps)
 	if err != nil {
@@ -170,7 +169,7 @@ func TestComponent_ConfigSchema(t *testing.T) {
 	}
 
 	// Check expected properties are declared
-	expectedProps := []string{"org", "platform", "board", "min_members_for_formation", "max_guild_size", "enable_auto_formation"}
+	expectedProps := []string{"org", "platform", "board", "min_members_for_formation", "max_guild_size"}
 	for _, prop := range expectedProps {
 		if _, exists := schema.Properties[prop]; !exists {
 			t.Errorf("Missing property %q in ConfigSchema", prop)
@@ -777,7 +776,6 @@ func setupGuildComponent(t *testing.T, client *natsclient.Client, board string) 
 	config.Org = "test"
 	config.Platform = "integration"
 	config.Board = board
-	config.EnableAutoFormation = false // Suppress agent watcher in unit tests
 
 	comp, err := NewFromConfig(config, deps)
 	if err != nil {

@@ -101,6 +101,21 @@ export class SettingsPage extends BasePage {
 		await this.waitForLoad();
 	}
 
+	/**
+	 * Override base waitForLoad — the settings page has SSE connections that
+	 * prevent networkidle from ever resolving. Wait for the heading or
+	 * unavailable state instead, which proves hydration + data fetch completed.
+	 */
+	async waitForLoad(): Promise<void> {
+		await this.page.waitForLoadState('domcontentloaded');
+		// Settings page renders either the heading (backend available)
+		// or the unavailable state (backend down). Either means loaded.
+		await Promise.race([
+			this.heading.waitFor({ state: 'visible', timeout: 10000 }),
+			this.unavailableState.waitFor({ state: 'visible', timeout: 10000 })
+		]);
+	}
+
 	async isLoaded(): Promise<boolean> {
 		try {
 			await expect(this.heading).toBeVisible({ timeout: 5000 });

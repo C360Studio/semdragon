@@ -3,6 +3,7 @@ version: "3"
 vars:
   BACKEND_PORT: '{{.BACKEND_PORT | default "8081"}}'
   COMPOSE: docker compose -f docker/compose.yml
+  TIER1_CONFIG: /etc/semdragons/semdragons-e2e-tier1.json
 
 tasks:
   install:
@@ -17,7 +18,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
+        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock, CONFIG: "{{.TIER1_CONFIG}}" }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
@@ -32,12 +33,12 @@ tasks:
       - task: maybe:down
 
   tier1:
-    desc: Run Tier 1 tests only (parallel, fast)
+    desc: Run Tier 1 tests only (parallel, fast, autonomy off)
     cmds:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
+        vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock, CONFIG: "{{.TIER1_CONFIG}}" }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
@@ -61,7 +62,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/gemini.json }
+        vars: { MODELS: /etc/semdragons/models/gemini.json, CONFIG: "{{.TIER1_CONFIG}}" }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
@@ -79,7 +80,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/anthropic.json }
+        vars: { MODELS: /etc/semdragons/models/anthropic.json, CONFIG: "{{.TIER1_CONFIG}}" }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
@@ -97,7 +98,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/openai.json }
+        vars: { MODELS: /etc/semdragons/models/openai.json, CONFIG: "{{.TIER1_CONFIG}}" }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
@@ -115,7 +116,7 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/ollama.json }
+        vars: { MODELS: /etc/semdragons/models/ollama.json, CONFIG: "{{.TIER1_CONFIG}}" }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=ollama BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
         ignore_error: true
@@ -188,6 +189,7 @@ tasks:
         SEED_E2E=true
         BACKEND_PORT={{.BACKEND_PORT}}
         SEMDRAGONS_MODELS={{.MODELS}}
+        {{if .CONFIG}}SEMDRAGONS_CONFIG={{.CONFIG}}{{end}}
         {{if ne (env "DEBUG") ""}}SEMDRAGONS_LOG_LEVEL=debug{{end}}
         {{.COMPOSE}} {{if .PROFILE}}--profile {{.PROFILE}}{{end}}
         up -d --build --wait

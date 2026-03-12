@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semstreams/natsclient"
+	"github.com/c360studio/semstreams/pkg/retry"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semdragons/domain"
@@ -21,6 +23,11 @@ import (
 )
 
 const maxRequestBodySize = 1 << 20 // 1 MB
+
+// errStoreUnavailable is returned inside retry closures when the agent_store
+// component is mid-restart (nil). This lets retry.Quick re-attempt rather
+// than panicking on a nil pointer dereference.
+var errStoreUnavailable = errors.New("store component unavailable")
 
 // isBucketNotFound returns true if the error indicates the KV bucket doesn't exist yet.
 // This is normal before components have started and created the entity states bucket.
@@ -877,14 +884,22 @@ func (s *Service) handleRecruitAgent(w http.ResponseWriter, r *http.Request) {
 	instance := domain.GenerateShortInstance()
 	agentID := s.graph.Config().AgentEntityID(instance)
 
+	// Compute XP at ~50% progress through the current level so agents
+	// recruited above level 1 have usable XP (matches seed_e2e formula).
+	xpToNext := int64(100 * math.Pow(1.5, float64(level)))
+	var startXP int64
+	if level > 1 {
+		startXP = xpToNext / 2
+	}
+
 	agent := &agentprogression.Agent{
 		ID:                 domain.AgentID(agentID),
 		Name:               req.Name,
 		DisplayName:        req.DisplayName,
 		Status:             domain.AgentIdle,
 		Level:              level,
-		XP:                 0,
-		XPToLevel:          100,
+		XP:                 startXP,
+		XPToLevel:          xpToNext,
 		Tier:               domain.TierFromLevel(level),
 		IsNPC:              req.IsNPC,
 		SkillProficiencies: make(map[domain.SkillTag]domain.SkillProficiency),
@@ -1731,7 +1746,8 @@ func (s *Service) handleGetDMSession(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 func (s *Service) handleListStore(w http.ResponseWriter, r *http.Request) {
-	if s.getStore() == nil {
+	store := s.getStore()
+	if store == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1754,15 +1770,16 @@ func (s *Service) handleListStore(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, "agent not found", http.StatusNotFound)
 			return
 		}
-		s.writeJSON(w, s.getStore().ListItems(agent.Tier))
+		s.writeJSON(w, store.ListItems(agent.Tier))
 		return
 	}
 
-	s.writeJSON(w, s.getStore().Catalog())
+	s.writeJSON(w, store.Catalog())
 }
 
 func (s *Service) handleGetStoreItem(w http.ResponseWriter, r *http.Request) {
-	if s.getStore() == nil {
+	store := s.getStore()
+	if store == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1773,7 +1790,7 @@ func (s *Service) handleGetStoreItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, ok := s.getStore().GetItem(id)
+	item, ok := store.GetItem(id)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -1831,7 +1848,12 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check tier gate before purchasing
-	item, itemOK := s.getStore().GetItem(req.ItemID)
+	store := s.getStore()
+	if store == nil {
+		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	item, itemOK := store.GetItem(req.ItemID)
 	if !itemOK {
 		s.writeError(w, "item not found", http.StatusNotFound)
 		return
@@ -1841,7 +1863,15 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owned, purchaseErr := s.getStore().Purchase(ctx, agentID, req.ItemID, agent.XP, agent.Level, agent.Guild)
+	// Retry purchase — the agent_store component may be mid-restart if a
+	// config KV update triggered a component restart cycle.
+	owned, purchaseErr := retry.DoWithResult(ctx, retry.Quick(), func() (*agentstore.OwnedItem, error) {
+		st := s.getStore()
+		if st == nil {
+			return nil, errStoreUnavailable
+		}
+		return st.Purchase(ctx, agentID, req.ItemID, agent.XP, agent.Level, agent.Guild)
+	})
 	if purchaseErr != nil {
 		s.logger.Warn("Purchase failed", "agent_id", agentID, "item_id", req.ItemID, "error", purchaseErr)
 		s.writeJSON(w, map[string]any{
@@ -1851,7 +1881,11 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inv := s.getStore().GetInventory(agentID)
+	store = s.getStore()
+	var inv *agentstore.AgentInventory
+	if store != nil {
+		inv = store.GetInventory(agentID)
+	}
 
 	s.writeJSON(w, map[string]any{
 		"success":      true,
@@ -1863,7 +1897,8 @@ func (s *Service) handlePurchase(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleGetInventory(w http.ResponseWriter, r *http.Request) {
-	if s.getStore() == nil {
+	store := s.getStore()
+	if store == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1874,7 +1909,7 @@ func (s *Service) handleGetInventory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inv := s.getStore().GetInventory(domain.AgentID(id))
+	inv := store.GetInventory(domain.AgentID(id))
 	s.writeJSON(w, inv)
 }
 
@@ -1912,7 +1947,15 @@ func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
 		questIDPtr = &qid
 	}
 
-	if err := s.getStore().UseConsumable(r.Context(), agentID, req.ConsumableID, questIDPtr); err != nil {
+	// Retry — agent_store may be mid-restart from a config KV update.
+	err := retry.Do(r.Context(), retry.Quick(), func() error {
+		st := s.getStore()
+		if st == nil {
+			return errStoreUnavailable
+		}
+		return st.UseConsumable(r.Context(), agentID, req.ConsumableID, questIDPtr)
+	})
+	if err != nil {
 		s.writeJSON(w, map[string]any{
 			"success": false,
 			"error":   err.Error(),
@@ -1920,9 +1963,14 @@ func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inv := s.getStore().GetInventory(agentID)
-	remaining := inv.ConsumableCount(req.ConsumableID)
-	effects := s.getStore().GetActiveEffects(agentID)
+	store := s.getStore()
+	var remaining int
+	var effects []agentstore.ActiveEffect
+	if store != nil {
+		inv := store.GetInventory(agentID)
+		remaining = inv.ConsumableCount(req.ConsumableID)
+		effects = store.GetActiveEffects(agentID)
+	}
 
 	s.writeJSON(w, map[string]any{
 		"success":        true,
@@ -1932,7 +1980,8 @@ func (s *Service) handleUseConsumable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleGetEffects(w http.ResponseWriter, r *http.Request) {
-	if s.getStore() == nil {
+	store := s.getStore()
+	if store == nil {
 		s.writeError(w, "store service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1943,7 +1992,7 @@ func (s *Service) handleGetEffects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	effects := s.getStore().GetActiveEffects(domain.AgentID(id))
+	effects := store.GetActiveEffects(domain.AgentID(id))
 	if effects == nil {
 		effects = make([]agentstore.ActiveEffect, 0)
 	}

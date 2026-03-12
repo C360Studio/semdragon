@@ -28,6 +28,11 @@ type Config struct {
 	// Suggestions
 	MaxSuggestionsPerAgent int `json:"max_suggestions_per_agent" schema:"type:int,description:Max ranked suggestions per agent (default 3)"`
 
+	// Guild suggestion settings
+	EnableGuildSuggestions bool    `json:"enable_guild_suggestions" schema:"type:bool,description:Compute guild join/form suggestions (default true)"`
+	GuildJoinThreshold    float64 `json:"guild_join_threshold" schema:"type:float,description:Min score for guild join suggestion (default 0.3)"`
+	GuildFormMinUnguilded int     `json:"guild_form_min_unguilded" schema:"type:int,description:Min unguilded agents to suggest forming (default 3)"`
+
 	// Observability
 	// BoidSuggestionsBucket is the NATS KV bucket where suggestions are persisted per agent.
 	// Empty string disables KV persistence. Suggestions auto-expire after 5 minutes.
@@ -50,7 +55,10 @@ func DefaultConfig() Config {
 		UpdateIntervalMs:       1000,
 		NeighborRadius:         rules.NeighborRadius,
 		MaxSuggestionsPerAgent: 3,
-		BoidSuggestionsBucket:  "BOID_SUGGESTIONS",
+		EnableGuildSuggestions: true,
+		GuildJoinThreshold:    0.3,
+		GuildFormMinUnguilded: 3,
+		BoidSuggestionsBucket: "BOID_SUGGESTIONS",
 	}
 }
 

@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures/test-base';
+import { test, expect, hasBackend } from '../fixtures/test-base';
 
 test.describe('Guild Registry', () => {
 	test.beforeEach(async ({ guildsPage }) => {
@@ -57,6 +57,14 @@ test.describe('Guild Registry', () => {
 	test('has correct page title', async ({ guildsPage }) => {
 		const title = await guildsPage.getTitle();
 		expect(title).toContain('Guilds');
+	});
+});
+
+test.describe('Guild API', () => {
+	test('GET /game/guilds returns array', async ({ lifecycleApi }) => {
+		test.skip(!hasBackend(), 'Requires running backend');
+		const guilds = await lifecycleApi.listGuilds();
+		expect(guilds).toBeInstanceOf(Array);
 	});
 });
 

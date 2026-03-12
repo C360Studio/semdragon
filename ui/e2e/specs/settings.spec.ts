@@ -1,4 +1,4 @@
-import { test, expect, hasBackend } from '../../fixtures/test-base';
+import { test, expect, hasBackend } from '../fixtures/test-base';
 
 test.describe('Settings - Page Structure', () => {
 	test('displays page title', async ({ settingsPage }) => {

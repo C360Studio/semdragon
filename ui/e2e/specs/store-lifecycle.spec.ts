@@ -38,24 +38,17 @@ test.describe('Store Lifecycle', () => {
 	test('purchase tool with sufficient XP', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
 
-		// Use a seeded high-level agent with XP
-		const world = await lifecycleApi.getWorldState();
-		const agents = (world.agents ?? []) as Array<{
-			id: string;
-			xp?: number;
-			level: number;
-			status: string;
-		}>;
+		// Recruit a dedicated agent at level 5 so we have known XP state.
+		// Level 5 agents have ~250 XP (midpoint) — more than enough for
+		// web_search (50 XP). Using our own agent avoids races with other
+		// tests that may also purchase items from seeded agents.
+		const agent = await lifecycleApi.recruitAgentAtLevel(
+			`store-purchase-${Date.now()}`,
+			5,
+			['coding']
+		);
 
-		// Find an agent with enough XP for web_search (50 XP)
-		const richAgent = agents.find((a) => (a.xp ?? 0) >= 50);
-		if (!richAgent) {
-			test.skip(true, 'No agent with sufficient XP found');
-			return;
-		}
-
-		const agentInstance = extractInstance(richAgent.id);
-		const result = await lifecycleApi.purchaseItem(richAgent.id, 'web_search');
+		const result = await lifecycleApi.purchaseItem(agent.id, 'web_search');
 
 		expect(result.success).toBe(true);
 		expect(result.xp_spent).toBe(50);

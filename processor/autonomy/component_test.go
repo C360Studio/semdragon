@@ -933,7 +933,6 @@ func TestAutonomousGuildJoining(t *testing.T) {
 	config.Board = "guildjoin"
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
-	config.GuildJoinMinLevel = 3
 
 	guilds := setupGuildComponent(t, client, "guildjoin")
 	defer guilds.Stop(5 * time.Second)
@@ -955,7 +954,7 @@ func TestAutonomousGuildJoining(t *testing.T) {
 		t.Fatalf("CreateGuild failed: %v", err)
 	}
 
-	// Create idle, unguilded agent at level 5 (above GuildJoinMinLevel=3)
+	// Create idle, unguilded agent at level 5
 	agentInstance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
 	agent := &agentprogression.Agent{
@@ -1003,7 +1002,6 @@ func TestNoGuildJoiningBelowMinLevel(t *testing.T) {
 	config.Board = "guildlowlvl"
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
-	config.GuildJoinMinLevel = 10 // High threshold
 
 	guilds := setupGuildComponent(t, client, "guildlowlvl")
 	defer guilds.Stop(5 * time.Second)
@@ -1023,7 +1021,7 @@ func TestNoGuildJoiningBelowMinLevel(t *testing.T) {
 		t.Fatalf("CreateGuild failed: %v", err)
 	}
 
-	// Create low-level agent (level 3 < GuildJoinMinLevel 10)
+	// Create low-level agent (level 3)
 	agentInstance := domain.GenerateInstance()
 	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
 	agent := &agentprogression.Agent{
@@ -1061,7 +1059,6 @@ func TestNoGuildJoiningWhenAlreadyGuilded(t *testing.T) {
 	config.Board = "guildmax"
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
-	config.GuildJoinMinLevel = 1
 
 	guilds := setupGuildComponent(t, client, "guildmax")
 	defer guilds.Stop(5 * time.Second)
@@ -1404,7 +1401,6 @@ func TestGuildIntentEmitted(t *testing.T) {
 	config.Board = "guildintent"
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
-	config.GuildJoinMinLevel = 3
 
 	guilds := setupGuildComponent(t, client, "guildintent")
 	defer guilds.Stop(5 * time.Second)
@@ -1570,7 +1566,6 @@ func setupGuildComponent(t *testing.T, client *natsclient.Client, board string) 
 	guildCfg.Org = "test"
 	guildCfg.Platform = "integration"
 	guildCfg.Board = board
-	guildCfg.EnableAutoFormation = false // No KV watcher needed; only CRUD operations
 
 	gc, err := guildformation.NewFromConfig(guildCfg, deps)
 	if err != nil {

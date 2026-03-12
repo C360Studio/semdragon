@@ -1,10 +1,15 @@
 // Package boidengine implements boid flocking rules for emergent agent behavior.
 // Agents flock toward quests they're best suited for using six rules:
 // Separation, Alignment, Cohesion, Hunger, Affinity, and Caution.
+//
+// Guild suggestions use peer review and shared-win data to organically pull
+// agents toward guilds with people they've worked well with.
 package boidengine
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
@@ -90,6 +95,25 @@ type SuggestedClaim struct {
 	Reason     string         `json:"reason"`     // Human-readable explanation
 }
 
+// GuildSuggestion is a recommendation for an agent to join or form a guild.
+// Type "join" means the agent should join an existing guild (GuildID set).
+// Type "form" means the agent should found a new guild (GuildID empty).
+type GuildSuggestion struct {
+	AgentID    domain.AgentID `json:"agent_id"`
+	GuildID    domain.GuildID `json:"guild_id,omitempty"`
+	Type       string         `json:"type"`       // "join" or "form"
+	Score      float64        `json:"score"`
+	Confidence float64        `json:"confidence"`
+	Reason     string         `json:"reason"`
+}
+
+// CohesionData provides pairwise agent relationship data for guild scoring.
+// Satisfied by *guildformation.Component without importing it (avoids import cycle).
+type CohesionData interface {
+	SharedWins(a, b domain.AgentID) int
+	PairwisePeerScore(a, b domain.AgentID) (float64, bool)
+}
+
 // DefaultBoidRules returns sensible defaults for boid weights.
 func DefaultBoidRules() BoidRules {
 	return BoidRules{
@@ -109,14 +133,21 @@ func DefaultBoidRules() BoidRules {
 
 // DefaultBoidEngine implements BoidEngine with standard flocking behavior.
 type DefaultBoidEngine struct {
-	rules  BoidRules
-	guilds map[domain.GuildID]*domain.Guild // Guild context for rank/reputation lookups
+	rules    BoidRules
+	guilds   map[domain.GuildID]*domain.Guild // Guild context for rank/reputation lookups
+	cohesion CohesionData                     // Pairwise peer review / shared wins (may be nil)
 }
 
 // SetGuildContext provides guild data for rank and reputation calculations.
 // Called by the component before each computation cycle.
 func (e *DefaultBoidEngine) SetGuildContext(guilds map[domain.GuildID]*domain.Guild) {
 	e.guilds = guilds
+}
+
+// SetCohesionData provides pairwise agent relationship data for guild scoring.
+// Called by the component before each computation cycle.
+func (e *DefaultBoidEngine) SetCohesionData(cd CohesionData) {
+	e.cohesion = cd
 }
 
 // NewDefaultBoidEngine creates a new boid engine with default rules.
@@ -390,6 +421,357 @@ func (e *DefaultBoidEngine) SuggestTopN(attractions []QuestAttraction, n int) ma
 	}
 
 	return result
+}
+
+// =============================================================================
+// GUILD SUGGESTIONS - Organic guild formation via peer cohesion
+// =============================================================================
+// Agents who've worked together and scored each other well feel a natural pull
+// to coalesce into guilds. Peer review + shared wins are 50% of the join score.
+// =============================================================================
+
+// Guild suggestion scoring weights for joining an existing guild.
+const (
+	guildJoinWeightPeerPull   = 0.25
+	guildJoinWeightSharedWins = 0.25
+	guildJoinWeightSkillGap   = 0.25
+	guildJoinWeightCapacity   = 0.15
+	guildJoinWeightReputation = 0.10
+)
+
+// Guild formation scoring weights.
+const (
+	guildFormWeightCohesion       = 0.50
+	guildFormWeightSkillDiversity = 0.30
+	guildFormWeightCandidateCount = 0.20
+)
+
+// ComputeGuildSuggestions computes guild join/form suggestions for unguilded agents.
+// Returns at most one suggestion per agent. Agents with existing guild membership
+// are skipped. Formation suggestions require Expert+ tier and sufficient unguilded
+// candidates with demonstrated peer cohesion.
+func (e *DefaultBoidEngine) ComputeGuildSuggestions(
+	agents []agentprogression.Agent,
+	guilds map[domain.GuildID]*domain.Guild,
+	minForFormation int,
+	joinThreshold float64,
+) []GuildSuggestion {
+	if len(agents) == 0 {
+		return nil
+	}
+
+	// Collect unguilded idle agents
+	var unguilded []agentprogression.Agent
+	for i := range agents {
+		if agents[i].Guild == "" && agents[i].Status == domain.AgentIdle {
+			unguilded = append(unguilded, agents[i])
+		}
+	}
+	if len(unguilded) == 0 {
+		return nil
+	}
+
+	// Build guild member skill sets for skill gap scoring
+	guildSkills := e.buildGuildSkillSets(guilds)
+
+	var suggestions []GuildSuggestion
+
+	for i := range unguilded {
+		agent := &unguilded[i]
+
+		// Try join first — any tier can join
+		if joinSugg, ok := e.scoreGuildJoin(agent, guilds, guildSkills, joinThreshold); ok {
+			// Expert+ agents still prefer joining if score is strong (> 0.5)
+			if agent.Tier >= domain.TierExpert && joinSugg.Score <= 0.5 {
+				// Weak join — check if formation is better
+				if formSugg, fok := e.scoreGuildFormation(agent, unguilded, minForFormation); fok {
+					suggestions = append(suggestions, formSugg)
+					continue
+				}
+			}
+			suggestions = append(suggestions, joinSugg)
+			continue
+		}
+
+		// No good join match — Expert+ can try formation
+		if agent.Tier >= domain.TierExpert {
+			if formSugg, ok := e.scoreGuildFormation(agent, unguilded, minForFormation); ok {
+				suggestions = append(suggestions, formSugg)
+			}
+		}
+	}
+
+	return suggestions
+}
+
+// scoreGuildJoin scores how well an agent fits each active guild.
+// Returns the best match above joinThreshold, or (zero, false) if none qualify.
+func (e *DefaultBoidEngine) scoreGuildJoin(
+	agent *agentprogression.Agent,
+	guilds map[domain.GuildID]*domain.Guild,
+	guildSkills map[domain.GuildID]map[domain.SkillTag]bool,
+	joinThreshold float64,
+) (GuildSuggestion, bool) {
+	var best GuildSuggestion
+	var bestScore float64
+
+	for _, guild := range guilds {
+		if guild.Status != domain.GuildActive {
+			continue
+		}
+		if guild.MaxMembers > 0 && len(guild.Members) >= guild.MaxMembers {
+			continue
+		}
+		if agent.Level < guild.MinLevel {
+			continue
+		}
+
+		// Peer pull: max pairwise peer score with any guild member
+		var peerPull float64
+		var sharedWinScore float64
+		if e.cohesion != nil {
+			for _, m := range guild.Members {
+				if ps, ok := e.cohesion.PairwisePeerScore(agent.ID, m.AgentID); ok && ps > peerPull {
+					peerPull = ps
+				}
+				wins := e.cohesion.SharedWins(agent.ID, m.AgentID)
+				if ws := sharedWinScoreFn(wins); ws > sharedWinScore {
+					sharedWinScore = ws
+				}
+			}
+		}
+
+		// Skill gap: fraction of agent skills NOT already covered by guild
+		skillGap := e.computeSkillGap(agent, guildSkills[guild.ID])
+
+		// Capacity
+		var capacity float64
+		if guild.MaxMembers > 0 {
+			capacity = float64(guild.MaxMembers-len(guild.Members)) / float64(guild.MaxMembers)
+		} else {
+			capacity = 1.0
+		}
+
+		// Reputation
+		reputation := guild.Reputation
+
+		// Cohesion component: agents who've worked well with guild members
+		cohesionScore := peerPull*guildJoinWeightPeerPull +
+			sharedWinScore*guildJoinWeightSharedWins
+		// Non-cohesion component: structural fit (skill gap, capacity, reputation)
+		structuralScore := skillGap*guildJoinWeightSkillGap +
+			capacity*guildJoinWeightCapacity +
+			reputation*guildJoinWeightReputation
+
+		// When there's no cohesion signal at all, dampen structural factors so that
+		// skill gap + capacity + reputation alone can't exceed the join threshold.
+		// This ensures agents gravitate toward guilds with people they've actually
+		// worked with, not just any guild with an open slot.
+		if peerPull == 0 && sharedWinScore == 0 {
+			structuralScore *= 0.4
+		}
+		score := cohesionScore + structuralScore
+
+		if score > bestScore {
+			bestScore = score
+			// Build reason from dominant factors
+			var parts []string
+			if peerPull >= 0.5 {
+				parts = append(parts, "strong peer reviews")
+			}
+			if sharedWinScore >= 0.5 {
+				parts = append(parts, "shared quest wins")
+			}
+			if skillGap >= 0.5 {
+				parts = append(parts, "fills skill gaps")
+			}
+			if reputation >= 0.7 {
+				parts = append(parts, "high reputation")
+			}
+			reason := "general fit"
+			if len(parts) > 0 {
+				reason = strings.Join(parts, ", ")
+			}
+
+			best = GuildSuggestion{
+				AgentID:    agent.ID,
+				GuildID:    guild.ID,
+				Type:       "join",
+				Score:      score,
+				Confidence: score, // Simple confidence = score
+				Reason:     reason,
+			}
+		}
+	}
+
+	if bestScore < joinThreshold {
+		return GuildSuggestion{}, false
+	}
+	return best, true
+}
+
+// scoreGuildFormation evaluates whether an Expert+ agent should found a new guild.
+// Formation requires enough unguilded candidates with demonstrated peer cohesion.
+func (e *DefaultBoidEngine) scoreGuildFormation(
+	agent *agentprogression.Agent,
+	unguilded []agentprogression.Agent,
+	minForFormation int,
+) (GuildSuggestion, bool) {
+	if len(unguilded) < minForFormation {
+		return GuildSuggestion{}, false
+	}
+
+	// Score pairwise cohesion between the founder and each other unguilded agent
+	type candidateScore struct {
+		id       domain.AgentID
+		cohesion float64
+	}
+	var candidates []candidateScore
+
+	for i := range unguilded {
+		other := &unguilded[i]
+		if other.ID == agent.ID {
+			continue
+		}
+
+		var peerScore float64
+		var winScore float64
+		if e.cohesion != nil {
+			if ps, ok := e.cohesion.PairwisePeerScore(agent.ID, other.ID); ok {
+				peerScore = ps
+			}
+			wins := e.cohesion.SharedWins(agent.ID, other.ID)
+			winScore = sharedWinScoreFn(wins)
+		}
+
+		cohesion := 0.5*winScore + 0.5*peerScore
+		if cohesion > 0 {
+			candidates = append(candidates, candidateScore{id: other.ID, cohesion: cohesion})
+		}
+	}
+
+	// Need at least minForFormation-1 candidates with some cohesion
+	if len(candidates)+1 < minForFormation {
+		return GuildSuggestion{}, false
+	}
+
+	// Sort by cohesion descending, take top N-1
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].cohesion > candidates[j].cohesion
+	})
+	topN := min(minForFormation-1, len(candidates))
+
+	// Average cohesion of top candidates
+	var avgCohesion float64
+	allSkills := make(map[domain.SkillTag]bool)
+	totalSkillSlots := 0
+	for skill := range agent.SkillProficiencies {
+		allSkills[skill] = true
+		totalSkillSlots++
+	}
+	for i := range topN {
+		avgCohesion += candidates[i].cohesion
+		// Find the candidate agent to get their skills
+		for j := range unguilded {
+			if unguilded[j].ID == candidates[i].id {
+				for skill := range unguilded[j].SkillProficiencies {
+					allSkills[skill] = true
+					totalSkillSlots++
+				}
+				break
+			}
+		}
+	}
+	avgCohesion /= float64(topN)
+
+	// Skill diversity: unique skills / total skill slots
+	var skillDiversity float64
+	if totalSkillSlots > 0 {
+		skillDiversity = float64(len(allSkills)) / float64(totalSkillSlots)
+	}
+
+	// Candidate count bonus: more candidates beyond minimum = stronger signal
+	candidateBonus := float64(len(candidates)+1-minForFormation) / float64(minForFormation)
+	if candidateBonus > 1.0 {
+		candidateBonus = 1.0
+	}
+
+	score := avgCohesion*guildFormWeightCohesion +
+		skillDiversity*guildFormWeightSkillDiversity +
+		candidateBonus*guildFormWeightCandidateCount
+
+	if score <= 0.3 {
+		return GuildSuggestion{}, false
+	}
+
+	var parts []string
+	if avgCohesion >= 0.5 {
+		parts = append(parts, fmt.Sprintf("strong cohesion (%.2f)", avgCohesion))
+	}
+	if skillDiversity >= 0.5 {
+		parts = append(parts, "diverse skills")
+	}
+	reason := "formation viable"
+	if len(parts) > 0 {
+		reason = strings.Join(parts, ", ")
+	}
+
+	return GuildSuggestion{
+		AgentID:    agent.ID,
+		Type:       "form",
+		Score:      score,
+		Confidence: avgCohesion, // Confidence driven by cohesion strength
+		Reason:     reason,
+	}, true
+}
+
+// buildGuildSkillSets builds a map of guild ID → set of skills covered by guild members.
+func (e *DefaultBoidEngine) buildGuildSkillSets(guilds map[domain.GuildID]*domain.Guild) map[domain.GuildID]map[domain.SkillTag]bool {
+	result := make(map[domain.GuildID]map[domain.SkillTag]bool, len(guilds))
+	for id, guild := range guilds {
+		skills := make(map[domain.SkillTag]bool)
+		// Use QuestTypes as a proxy for guild skill coverage
+		for _, qt := range guild.QuestTypes {
+			skills[domain.SkillTag(qt)] = true
+		}
+		result[id] = skills
+	}
+	return result
+}
+
+// computeSkillGap measures what fraction of the agent's skills are NOT already
+// covered by the guild. Returns 0.0–1.0: higher = agent fills more gaps.
+func (e *DefaultBoidEngine) computeSkillGap(agent *agentprogression.Agent, guildSkills map[domain.SkillTag]bool) float64 {
+	if len(agent.SkillProficiencies) == 0 {
+		return 0.0
+	}
+	if len(guildSkills) == 0 {
+		return 0.5 // No data — neutral
+	}
+	newSkills := 0
+	for skill := range agent.SkillProficiencies {
+		if !guildSkills[skill] {
+			newSkills++
+		}
+	}
+	return float64(newSkills) / float64(len(agent.SkillProficiencies))
+}
+
+// sharedWinScoreFn converts raw win count to 0–1 score using a stepped curve.
+// Mirrors guildformation.SharedWinScore but avoids the import cycle.
+//
+//	0 wins → 0.0, 1 win → 0.6, 2–3 → 0.8, 4+ → 1.0
+func sharedWinScoreFn(wins int) float64 {
+	switch {
+	case wins <= 0:
+		return 0.0
+	case wins == 1:
+		return 0.6
+	case wins <= 3:
+		return 0.8
+	default:
+		return 1.0
+	}
 }
 
 // Ensure DefaultBoidEngine implements BoidEngine.
