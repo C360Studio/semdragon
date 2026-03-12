@@ -120,6 +120,13 @@ system's actual capabilities.
 		b.WriteString("\n\n")
 	}
 
+	// Final reinforcement for quest mode — placed last so it's closest to the
+	// model's generation point. Gemini Pro sometimes ignores the JSON format
+	// instruction when it's buried in the middle of a long system prompt.
+	if mode == domain.ChatModeQuest {
+		b.WriteString("REMINDER: You MUST include a ```json:quest_brief or ```json:quest_chain code block in your response. Do not respond without structured JSON output.\n\n")
+	}
+
 	return b.String()
 }
 

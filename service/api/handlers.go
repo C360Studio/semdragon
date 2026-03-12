@@ -1303,8 +1303,15 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 	// Call LLM
 	llmResult, err := callLLM(ctx, endpoint, systemPrompt, messages)
 	if err != nil {
-		s.logger.Error("DM chat LLM call failed", "error", err, "endpoint", endpointName,
-			"trace_id", turnSpan.TraceID, "span_id", turnSpan.SpanID)
+		// Client disconnects (page navigation, browser close) cancel the request
+		// context. Log at Warn level since these are not server-side failures.
+		if ctx.Err() != nil {
+			s.logger.Warn("DM chat LLM call canceled (client disconnected)", "error", err,
+				"endpoint", endpointName, "trace_id", turnSpan.TraceID, "span_id", turnSpan.SpanID)
+		} else {
+			s.logger.Error("DM chat LLM call failed", "error", err, "endpoint", endpointName,
+				"trace_id", turnSpan.TraceID, "span_id", turnSpan.SpanID)
+		}
 		s.writeError(w, "LLM request failed", http.StatusBadGateway)
 		return
 	}
@@ -1350,7 +1357,7 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 				retryMessages[len(messages)] = ChatMessage{Role: "assistant", Content: llmResponse}
 				retryMessages[len(messages)+1] = ChatMessage{
 					Role:    "user",
-					Content: "Please provide the quest specification as a ```json:quest_brief code block with title, goal, requirements, and scenarios. Use ```json:quest_chain if creating multiple quests.",
+					Content: "Your response is missing the required JSON block. You MUST include a ```json:quest_brief code block containing {\"title\", \"goal\", \"requirements\", \"scenarios\", \"difficulty\", \"skills\"}. For multiple quests use ```json:quest_chain instead. Output the JSON now.",
 				}
 
 				retryResult, retryErr := callLLM(ctx, endpoint, systemPrompt, retryMessages)

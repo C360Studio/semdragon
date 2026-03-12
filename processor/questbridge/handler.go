@@ -691,18 +691,30 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	if isClarification {
 		// Enforce max clarification rounds to prevent infinite loops.
 		if c.config.MaxClarificationRounds > 0 && c.clarificationRoundCount(quest) >= c.config.MaxClarificationRounds {
-			c.logger.Warn("max clarification rounds exceeded, failing quest",
+			c.logger.Warn("max clarification rounds exceeded — releasing agent and reposting quest",
 				"quest_id", questID, "rounds", c.clarificationRoundCount(quest),
-				"max", c.config.MaxClarificationRounds)
-			quest.Status = domain.QuestFailed
-			quest.FailureReason = fmt.Sprintf("max clarification rounds (%d) exceeded", c.config.MaxClarificationRounds)
-			quest.FailureType = domain.FailureError
-			if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.failed"); err != nil {
-				c.logger.Error("failed to emit quest failure after max clarifications",
-					"quest_id", questID, "error", err)
-			}
+				"max", c.config.MaxClarificationRounds, "agent_id", mapping.AgentID)
+
+			// Clarification exhaustion is not a work failure — the agent simply
+			// couldn't proceed without more information. Release the agent and
+			// repost so a more capable agent can claim it. Do NOT increment
+			// Attempts: asking questions is not a penalty.
 			c.releaseAgent(ctx, mapping.AgentID)
-			c.errorsCount.Add(1)
+			quest.Status = domain.QuestPosted
+			quest.Escalated = false
+			quest.ClaimedBy = nil
+			quest.ClaimedAt = nil
+			quest.StartedAt = nil
+			quest.Output = nil
+			quest.FailureReason = ""
+			quest.FailureType = ""
+			// Preserve DMClarifications so the next agent has the Q&A context.
+
+			if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.reposted"); err != nil {
+				c.logger.Error("failed to repost quest after max clarifications",
+					"quest_id", questID, "error", err)
+				c.errorsCount.Add(1)
+			}
 			return
 		}
 
@@ -817,20 +829,13 @@ func isOutputClarificationRequest(output any) bool {
 		return intent == "clarification"
 	}
 
-	// Strategy 2: Heuristic — majority of non-empty lines are questions.
-	lines := strings.Split(trimmed, "\n")
-	var nonEmpty, questions int
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		nonEmpty++
-		if strings.HasSuffix(line, "?") {
-			questions++
-		}
-	}
-	return nonEmpty > 0 && float64(questions)/float64(nonEmpty) > 0.5
+	// Strategy 2: Heuristic — any question mark in unstructured output.
+	// If we reach this point, the model ignored tool-calling instructions
+	// (no submit_work_product or ask_clarification tool call, no intent tag).
+	// In that context, any "?" signals the model is asking for information
+	// rather than delivering work. Route through clarification so the agent
+	// isn't penalized by boss battle for a non-deliverable response.
+	return strings.Contains(trimmed, "?")
 }
 
 // parseOutputIntent extracts the intent value from a structured [INTENT: <value>]

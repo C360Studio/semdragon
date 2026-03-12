@@ -1268,7 +1268,7 @@ func TestIsOutputClarificationRequest(t *testing.T) {
 		{
 			"work product with a question",
 			"Here is the implementation.\nThe code handles errors.\nDoes this look right?",
-			false,
+			true, // new: any ? in unstructured output routes to clarification
 		},
 		{
 			"pure work product no tag",
