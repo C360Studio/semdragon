@@ -174,7 +174,7 @@ func (m *mockPartyCoordRef) DisbandCallCount() int {
 // COMPONENT FACTORY HELPERS
 // =============================================================================
 
-// mockComponentRegistry implements component.ComponentLookup for unit tests.
+// mockComponentRegistry implements component.Lookup for unit tests.
 // It serves mockQuestBoardRef under "questboard" and mockPartyCoordRef under
 // "partycoord". Pass nil for either to simulate the component being absent.
 type mockComponentRegistry struct {

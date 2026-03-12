@@ -18,7 +18,7 @@ type ArtifactStoreProvider interface {
 // via the ComponentRegistry and returns its storage.Store.
 // Returns nil when the registry is nil, the component is absent, or the
 // component does not implement ArtifactStoreProvider.
-func ResolveArtifactStore(registry component.ComponentLookup, logger *slog.Logger) storage.Store {
+func ResolveArtifactStore(registry component.Lookup, logger *slog.Logger) storage.Store {
 	if registry == nil {
 		return nil
 	}

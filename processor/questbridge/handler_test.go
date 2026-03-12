@@ -1589,7 +1589,7 @@ func (m *mockFilestoreComponent) ConfigSchema() component.ConfigSchema   { retur
 func (m *mockFilestoreComponent) Health() component.HealthStatus         { return component.HealthStatus{} }
 func (m *mockFilestoreComponent) DataFlow() component.FlowMetrics        { return component.FlowMetrics{} }
 
-// mockRegistryWithFilestore implements component.ComponentLookup.
+// mockRegistryWithFilestore implements component.Lookup.
 // It serves the wrapped store under "filestore"; all other names return nil.
 type mockRegistryWithFilestore struct {
 	comp *mockFilestoreComponent
