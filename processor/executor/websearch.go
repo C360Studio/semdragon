@@ -108,7 +108,9 @@ func (b *braveSearchProvider) Search(ctx context.Context, query string, maxResul
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Accept-Encoding", "gzip")
+	// Note: Do NOT set Accept-Encoding manually. Go's http.Transport handles
+	// gzip transparently when the header is absent, but if set explicitly,
+	// the caller must decompress the response body itself.
 	req.Header.Set("X-Subscription-Token", b.apiKey)
 
 	resp, err := httpToolClient.Do(req)
