@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -361,6 +362,42 @@ type QuestScenario struct {
 	Description string   `json:"description"`
 	Skills      []string `json:"skills,omitempty"`
 	DependsOn   []string `json:"depends_on,omitempty"`
+}
+
+// UnmarshalJSON handles LLM output quirks where depends_on or skills may be
+// a single string instead of an array (Gemini does this for single values).
+func (s *QuestScenario) UnmarshalJSON(data []byte) error {
+	// Use a raw struct to avoid infinite recursion.
+	var raw struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Skills      json.RawMessage `json:"skills,omitempty"`
+		DependsOn   json.RawMessage `json:"depends_on,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	s.Name = raw.Name
+	s.Description = raw.Description
+	s.Skills = flexStringSlice(raw.Skills)
+	s.DependsOn = flexStringSlice(raw.DependsOn)
+	return nil
+}
+
+// flexStringSlice unmarshals a JSON value that may be a string or []string.
+func flexStringSlice(data json.RawMessage) []string {
+	if len(data) == 0 {
+		return nil
+	}
+	var arr []string
+	if json.Unmarshal(data, &arr) == nil {
+		return arr
+	}
+	var single string
+	if json.Unmarshal(data, &single) == nil && single != "" {
+		return []string{single}
+	}
+	return nil
 }
 
 // =============================================================================
