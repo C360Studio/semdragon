@@ -218,10 +218,24 @@ func (c *Component) onReviewCompleted(ctx context.Context, evt dagEvent) {
 	entityKey := c.subQuestEntityKey(verdict.SubQuestID)
 	dagState := c.findDAGForSubQuest(entityKey)
 	if dagState == nil {
-		c.logger.Warn("review completion: sub-quest not part of any active DAG",
-			"loop_id", evt.LoopID, "sub_quest_id", verdict.SubQuestID,
-			"entity_key", entityKey)
-		return
+		// The LLM may have corrupted the sub-quest ID in its tool call response.
+		// Fall back to extracting the real sub-quest ID from the review loop ID,
+		// which we set ourselves and is guaranteed correct.
+		fallbackID := c.extractSubQuestFromLoopID(evt.LoopID)
+		if fallbackID != "" && fallbackID != verdict.SubQuestID {
+			c.logger.Warn("review completion: LLM returned wrong sub_quest_id, using loop ID fallback",
+				"loop_id", evt.LoopID, "llm_sub_quest_id", verdict.SubQuestID,
+				"fallback_sub_quest_id", fallbackID)
+			verdict.SubQuestID = fallbackID
+			entityKey = c.subQuestEntityKey(fallbackID)
+			dagState = c.findDAGForSubQuest(entityKey)
+		}
+		if dagState == nil {
+			c.logger.Warn("review completion: sub-quest not part of any active DAG",
+				"loop_id", evt.LoopID, "sub_quest_id", verdict.SubQuestID,
+				"entity_key", entityKey)
+			return
+		}
 	}
 
 	nodeID := c.findNodeForQuest(dagState, verdict.SubQuestID)

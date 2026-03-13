@@ -159,6 +159,10 @@ type AssemblyContext struct {
 	RecoveryPath    string                  `json:"recovery_path,omitempty"`
 	AntiPatterns    []string                `json:"anti_patterns,omitempty"`
 
+	// Iteration budget — tells the agent how many tool-use rounds it has.
+	// Set from questbridge/executor config so agents plan work accordingly.
+	MaxIterations int `json:"max_iterations,omitempty"`
+
 	// Resolution
 	Provider string // from resolved endpoint ("anthropic", "openai", etc.)
 }

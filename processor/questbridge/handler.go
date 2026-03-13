@@ -1808,6 +1808,7 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		QuestRequirements:    quest.Requirements,
 		QuestScenarios:       quest.Scenarios,
 		DecomposabilityClass: quest.DecomposabilityClass,
+		MaxIterations:        c.config.MaxIterations,
 		FailureHistory:       convertFailureHistory(quest.FailureHistory),
 		SalvagedOutput:       domain.AsString(quest.SalvagedOutput),
 		FailureAnalysis:      quest.FailureAnalysis,

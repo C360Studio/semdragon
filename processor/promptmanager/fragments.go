@@ -229,17 +229,29 @@ func registerSoloAgentScenarioDirective(r *PromptRegistry) {
 	})
 }
 
-// soloAgentWorkOutputDirective reinforces that solo agents must produce actual
+// buildSoloAgentWorkOutputDirective reinforces that solo agents must produce actual
 // work products (code, analysis, results) — not descriptions or plans. This is
 // the solo-agent equivalent of subQuestExecutorDirective rule #4 and applies to
 // all solo agents regardless of whether they have scenarios.
-const soloAgentWorkOutputDirective = `COMPLETION RULES:
-1. Use available tools (read_file, etc.) to understand the task, then produce your deliverable.
+//
+// When MaxIterations is set, injects a tool-use budget so the agent plans its
+// work instead of exploring open-endedly.
+func buildSoloAgentWorkOutputDirective(ctx AssemblyContext) string {
+	var b strings.Builder
+	b.WriteString("COMPLETION RULES:\n")
+
+	if ctx.MaxIterations > 0 {
+		b.WriteString(fmt.Sprintf("0. You have a budget of %d tool-use rounds. Plan your work to finish well within this budget. Do NOT explore open-endedly.\n", ctx.MaxIterations))
+	}
+
+	b.WriteString(`1. Use available tools (read_file, etc.) to understand the task, then produce your deliverable.
 2. Your deliverable MUST be the finished work output — code, implementation, analysis, or results.
 3. Do NOT submit a description of what you would do. Do NOT submit a plan. Submit the completed work itself.
 4. If the task requires code, include BOTH the implementation AND tests in your deliverable. Your reviewer can only evaluate what you include in the deliverable text — they cannot access external files.
 5. Format code deliverables with clear sections (e.g., "## Implementation" and "## Tests") so your reviewer can assess completeness.
-6. Complete the work in as few iterations as possible — avoid unnecessary exploration.`
+6. Complete the work in as few iterations as possible — avoid unnecessary exploration.`)
+	return b.String()
+}
 
 // isSoloAgent returns true for agents that are NOT a party lead or sub-quest executor.
 func isSoloAgent(ctx AssemblyContext) bool {
@@ -248,10 +260,10 @@ func isSoloAgent(ctx AssemblyContext) bool {
 
 func registerSoloAgentWorkOutputDirective(r *PromptRegistry) {
 	r.Register(&PromptFragment{
-		ID:       "builtin.solo-agent.work-output-directive",
-		Category: CategoryToolDirective,
-		Content:  soloAgentWorkOutputDirective,
-		Priority: 15, // After scenario directive (10)
-		Condition: isSoloAgent,
+		ID:          "builtin.solo-agent.work-output-directive",
+		Category:    CategoryToolDirective,
+		ContentFunc: buildSoloAgentWorkOutputDirective,
+		Priority:    15, // After scenario directive (10)
+		Condition:   isSoloAgent,
 	})
 }

@@ -236,7 +236,16 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 		return nil
 	}
 
-	// All suggestions exhausted — signal the evaluator to enter backoff
+	// All suggestions exhausted — clear stale suggestions from the live tracker
+	// so the agent doesn't retry the same failed list on the next heartbeat.
+	// Fresh suggestions from the boid engine will repopulate if valid quests exist.
+	c.trackersMu.Lock()
+	instance := domain.ExtractInstance(string(agent.ID))
+	if t, ok := c.trackers[instance]; ok {
+		t.suggestions = nil
+	}
+	c.trackersMu.Unlock()
+
 	return errNoViableClaim
 }
 

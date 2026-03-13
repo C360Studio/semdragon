@@ -26,6 +26,12 @@
         "api_key_env": "ANTHROPIC_API_KEY",
         "max_tokens": 200000,
         "supports_tools": true
+      },
+      "semembed": {
+        "provider": "openai",
+        "url": "http://semembed:8081/v1",
+        "model": "BAAI/bge-small-en-v1.5",
+        "max_tokens": 0
       }
     },
     "capabilities": {
@@ -65,6 +71,18 @@
       },
       "dm-chat": {
         "preferred": ["gemini-pro", "claude-sonnet"]
+      },
+      "embedding": {
+        "description": "Vector embeddings for graph semantic search",
+        "preferred": ["semembed"]
+      },
+      "community_summary": {
+        "description": "LLM community summaries for graph clustering",
+        "preferred": ["claude-haiku"]
+      },
+      "query_classification": {
+        "description": "NLQ classification for graph queries",
+        "preferred": ["claude-haiku"]
       }
     },
     "defaults": {

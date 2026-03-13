@@ -60,7 +60,7 @@ test.describe.serial('Quest Pipeline', () => {
 		await test.step('post quest via DM chat', async () => {
 			await postQuestViaDMChat(
 				page,
-				'Create a quest to analyze customer churn data and build a report',
+				'Create a quest to write a Python function that checks if a number is prime, with unit tests',
 				{ timeout: isMockLLM() ? 30_000 : 60_000 }
 			);
 		});

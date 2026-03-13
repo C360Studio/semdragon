@@ -7,6 +7,12 @@
         "model": "mock-model",
         "max_tokens": 128000,
         "supports_tools": true
+      },
+      "semembed": {
+        "provider": "openai",
+        "url": "http://semembed:8081/v1",
+        "model": "BAAI/bge-small-en-v1.5",
+        "max_tokens": 0
       }
     },
     "capabilities": {
@@ -21,6 +27,18 @@
         "preferred": ["mock-llm"]
       },
       "boss-battle": {
+        "preferred": ["mock-llm"]
+      },
+      "embedding": {
+        "description": "Vector embeddings for graph semantic search",
+        "preferred": ["semembed"]
+      },
+      "community_summary": {
+        "description": "LLM community summaries for graph clustering",
+        "preferred": ["mock-llm"]
+      },
+      "query_classification": {
+        "description": "NLQ classification for graph queries",
         "preferred": ["mock-llm"]
       }
     },

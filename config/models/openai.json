@@ -8,6 +8,12 @@
         "api_key_env": "OPENAI_API_KEY",
         "max_tokens": 128000,
         "supports_tools": true
+      },
+      "semembed": {
+        "provider": "openai",
+        "url": "http://semembed:8081/v1",
+        "model": "BAAI/bge-small-en-v1.5",
+        "max_tokens": 0
       }
     },
     "capabilities": {
@@ -22,6 +28,18 @@
         "preferred": ["gpt-4o-mini"]
       },
       "boss-battle": {
+        "preferred": ["gpt-4o-mini"]
+      },
+      "embedding": {
+        "description": "Vector embeddings for graph semantic search",
+        "preferred": ["semembed"]
+      },
+      "community_summary": {
+        "description": "LLM community summaries for graph clustering",
+        "preferred": ["gpt-4o-mini"]
+      },
+      "query_classification": {
+        "description": "NLQ classification for graph queries",
         "preferred": ["gpt-4o-mini"]
       }
     },
