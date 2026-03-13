@@ -245,7 +245,7 @@
 						<span class="file-count">{quests.length} quests</span>
 					{/if}
 					<button class="refresh-btn" onclick={loadQuests} aria-label="Refresh" disabled={questsLoading}>
-						R
+						&#x21bb;
 					</button>
 				</header>
 
@@ -307,7 +307,7 @@
 						ZIP
 					</a>
 					<button class="refresh-btn" onclick={() => selectQuest(selectedQuestId!)} aria-label="Refresh" disabled={treeLoading}>
-						R
+						&#x21bb;
 					</button>
 				</header>
 
