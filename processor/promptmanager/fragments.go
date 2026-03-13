@@ -38,18 +38,17 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerReviewBrief(r)
 }
 
-// partyLeadDirectiveBase is the mandatory tool-call instruction for party leads
-// when no quest scenarios are available. It appears in CategoryToolDirective (50) —
-// after SystemBase (0) but before all other categories — so models that
-// short-circuit on the first actionable directive encounter it immediately.
+// partyLeadDirectiveBase is the tool-call instruction for party leads when no
+// quest scenarios are available. API-level tool_choice=function enforces that
+// decompose_quest is called; this prompt provides workflow context and guidance.
 const partyLeadDirectiveBase = `You are a PARTY LEAD coordinating a team of agents.
 
 YOUR WORKFLOW:
-1. FIRST ACTION: Call the decompose_quest tool to break the quest into independent sub-quests.
+1. DECOMPOSE: Use the decompose_quest tool to break the quest into independent sub-quests.
    - Each sub-quest must be a self-contained unit of work with a clear objective.
    - Do NOT include a "combine" or "synthesize" step — that is YOUR responsibility.
    - Sub-quests should produce independent outputs (code, analysis, etc.).
-2. REVIEW PHASE: You will review each completed sub-quest via review_sub_quest.
+2. REVIEW: You will review each completed sub-quest via review_sub_quest.
    - Accept work that meets the objective; reject with specific feedback if it does not.
 3. SYNTHESIS: After all sub-quests are accepted, YOU synthesize the final deliverable.
    - Combine the sub-quest outputs into a single coherent result.
@@ -57,15 +56,13 @@ YOUR WORKFLOW:
    - This is YOUR work product — you are accountable for the final quality.
 
 RULES:
-- Your FIRST action MUST be to call decompose_quest. Do NOT write text first.
-- Do NOT delegate synthesis/combination to a sub-quest — you have all the context from reviews.
-- If you respond with text instead of calling decompose_quest, the system will fail.
-
-Call decompose_quest now.`
+- Do NOT delegate synthesis/combination to a sub-quest — you have all the context from reviews.`
 
 // partyLeadProviderHint reinforces immediate tool-call behaviour for providers
-// (Gemini, OpenAI) that may otherwise emit a text response before calling a tool.
-const partyLeadProviderHint = `When instructed to call a specific tool, you MUST call that tool as your first action. Do not provide a text response before calling the tool.`
+// (Gemini, OpenAI) that may emit a text preamble before calling a tool.
+// Belt-and-suspenders with API-level tool_choice — particularly important for
+// Gemini where force-specific tool_choice is unreliable (ADR-023 Phase 2).
+const partyLeadProviderHint = `When instructed to call a specific tool, call that tool as your first action. Do not provide a text response before calling the tool.`
 
 // isPartyLead is the shared Condition gate for both party lead fragments.
 func isPartyLead(ctx AssemblyContext) bool {
@@ -109,11 +106,11 @@ func buildPartyLeadDirective(ctx AssemblyContext) string {
 
 	b.WriteString(`
 YOUR WORKFLOW:
-1. FIRST ACTION: Call the decompose_quest tool to break the quest into independent sub-quests.
+1. DECOMPOSE: Use the decompose_quest tool to break the quest into sub-quests.
    - Use the scenarios above as your decomposition blueprint.
    - Each scenario should become one sub-quest. Preserve the depends_on relationships.
    - Do NOT include a "combine" or "synthesize" step — that is YOUR responsibility.
-2. REVIEW PHASE: You will review each completed sub-quest via review_sub_quest.
+2. REVIEW: You will review each completed sub-quest via review_sub_quest.
    - Accept work that meets the objective; reject with specific feedback if it does not.
 3. SYNTHESIS: After all sub-quests are accepted, YOU synthesize the final deliverable.
    - Combine the sub-quest outputs into a single coherent result.
@@ -121,11 +118,7 @@ YOUR WORKFLOW:
    - This is YOUR work product — you are accountable for the final quality.
 
 RULES:
-- Your FIRST action MUST be to call decompose_quest. Do NOT write text first.
-- Do NOT delegate synthesis/combination to a sub-quest — you have all the context from reviews.
-- If you respond with text instead of calling decompose_quest, the system will fail.
-
-Call decompose_quest now.`)
+- Do NOT delegate synthesis/combination to a sub-quest — you have all the context from reviews.`)
 
 	return b.String()
 }

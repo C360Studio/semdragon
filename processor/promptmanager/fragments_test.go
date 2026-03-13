@@ -72,8 +72,8 @@ func TestPartyLeadDirective_IncludedForPartyLead(t *testing.T) {
 	if !strings.Contains(result.SystemMessage, "PARTY LEAD") {
 		t.Error("expected PARTY LEAD heading in directive")
 	}
-	if !strings.Contains(result.SystemMessage, "Call decompose_quest now") {
-		t.Error("expected 'Call decompose_quest now' imperative in directive")
+	if !strings.Contains(result.SystemMessage, "Use the decompose_quest tool") {
+		t.Error("expected decompose_quest guidance in directive")
 	}
 
 	found := false
@@ -180,7 +180,7 @@ func TestPartyLeadProviderHint_IncludedForGemini(t *testing.T) {
 		IsPartyLead:   true,
 	})
 
-	if !strings.Contains(result.SystemMessage, "MUST call that tool as your first action") {
+	if !strings.Contains(result.SystemMessage, "call that tool as your first action") {
 		t.Error("expected provider hint for gemini party lead")
 	}
 
@@ -206,7 +206,7 @@ func TestPartyLeadProviderHint_IncludedForOpenAI(t *testing.T) {
 		IsPartyLead:   true,
 	})
 
-	if !strings.Contains(result.SystemMessage, "MUST call that tool as your first action") {
+	if !strings.Contains(result.SystemMessage, "call that tool as your first action") {
 		t.Error("expected provider hint for openai party lead")
 	}
 }

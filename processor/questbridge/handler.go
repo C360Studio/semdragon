@@ -286,7 +286,8 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 			Sources:       fragmentsToSources(assembled.FragmentsUsed),
 			ConstructedAt: time.Now(),
 		},
-		Tools: tools,
+		Tools:      tools,
+		ToolChoice: toolChoiceForQuest(quest, agent, tools),
 		Metadata: map[string]any{
 			"agent_id":    agentID,
 			"quest_id":    questID,
@@ -2008,6 +2009,33 @@ func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.A
 // to decompose rather than solve directly.
 func isLeadTool(name string) bool {
 	return name == "decompose_quest" || name == "review_sub_quest"
+}
+
+// toolChoiceForQuest determines the API-level tool choice constraint for a quest.
+// Returns nil for auto (model decides freely). This is a pure function so it can
+// be reused by any caller that assembles TaskMessages (e.g., future DM tool use).
+func toolChoiceForQuest(quest *domain.Quest, agent *agentprogression.Agent, tools []agentic.ToolDefinition) *agentic.ToolChoice {
+	if len(tools) == 0 {
+		return nil
+	}
+
+	// Party lead must decompose — force the specific tool.
+	isPartyLead := quest.PartyRequired && agent.Tier >= domain.TierMaster
+	if isPartyLead {
+		for _, t := range tools {
+			if t.Name == "decompose_quest" {
+				return &agentic.ToolChoice{Mode: "function", FunctionName: "decompose_quest"}
+			}
+		}
+	}
+
+	// Single tool available — force it.
+	if len(tools) == 1 {
+		return &agentic.ToolChoice{Mode: "function", FunctionName: tools[0].Name}
+	}
+
+	// Multiple tools — require tool use, let model choose which.
+	return &agentic.ToolChoice{Mode: "required"}
 }
 
 func agentHasAnySkill(agent *agentprogression.Agent, skills []domain.SkillTag) bool {

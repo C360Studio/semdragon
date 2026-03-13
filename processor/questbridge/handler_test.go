@@ -18,6 +18,7 @@ import (
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/questdagexec"
+	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/model"
@@ -1934,3 +1935,107 @@ func TestSnapshotWorkspace_CleansUpAfterSuccess(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// toolChoiceForQuest
+// =============================================================================
+
+func TestToolChoiceForQuest(t *testing.T) {
+	makeTools := func(names ...string) []agentic.ToolDefinition {
+		tools := make([]agentic.ToolDefinition, len(names))
+		for i, n := range names {
+			tools[i] = agentic.ToolDefinition{Name: n}
+		}
+		return tools
+	}
+
+	tests := []struct {
+		name         string
+		quest        *domain.Quest
+		agent        *agentprogression.Agent
+		tools        []agentic.ToolDefinition
+		wantMode     string
+		wantFunction string
+		wantNil      bool
+	}{
+		{
+			name:  "no tools returns nil",
+			quest: &domain.Quest{},
+			agent: &agentprogression.Agent{Tier: domain.TierJourneyman},
+			tools: nil,
+			wantNil: true,
+		},
+		{
+			name:         "party lead forces decompose_quest",
+			quest:        &domain.Quest{PartyRequired: true},
+			agent:        &agentprogression.Agent{Tier: domain.TierMaster},
+			tools:        makeTools("decompose_quest", "review_sub_quest"),
+			wantMode:     "function",
+			wantFunction: "decompose_quest",
+		},
+		{
+			name:     "party lead without decompose_quest falls through",
+			quest:    &domain.Quest{PartyRequired: true},
+			agent:    &agentprogression.Agent{Tier: domain.TierMaster},
+			tools:    makeTools("review_sub_quest"),
+			wantMode: "function",
+			wantFunction: "review_sub_quest",
+		},
+		{
+			name:     "non-lead on party quest gets required",
+			quest:    &domain.Quest{PartyRequired: true},
+			agent:    &agentprogression.Agent{Tier: domain.TierJourneyman},
+			tools:    makeTools("read_file", "submit_work_product"),
+			wantMode: "required",
+		},
+		{
+			name:         "single tool forces function",
+			quest:        &domain.Quest{},
+			agent:        &agentprogression.Agent{Tier: domain.TierJourneyman},
+			tools:        makeTools("submit_work_product"),
+			wantMode:     "function",
+			wantFunction: "submit_work_product",
+		},
+		{
+			name:     "multiple tools uses required",
+			quest:    &domain.Quest{},
+			agent:    &agentprogression.Agent{Tier: domain.TierExpert},
+			tools:    makeTools("read_file", "write_file", "submit_work_product"),
+			wantMode: "required",
+		},
+		{
+			name:     "sub-quest agent with tools gets required",
+			quest:    &domain.Quest{ParentQuest: questIDPtr("parent-quest-id")},
+			agent:    &agentprogression.Agent{Tier: domain.TierJourneyman},
+			tools:    makeTools("read_file", "ask_clarification", "submit_work_product"),
+			wantMode: "required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toolChoiceForQuest(tt.quest, tt.agent, tt.tools)
+
+			if tt.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil, got %+v", got)
+				}
+				return
+			}
+
+			if got == nil {
+				t.Fatal("expected non-nil ToolChoice")
+			}
+			if got.Mode != tt.wantMode {
+				t.Errorf("Mode = %q, want %q", got.Mode, tt.wantMode)
+			}
+			if got.FunctionName != tt.wantFunction {
+				t.Errorf("FunctionName = %q, want %q", got.FunctionName, tt.wantFunction)
+			}
+		})
+	}
+}
+
+func questIDPtr(s string) *domain.QuestID {
+	id := domain.QuestID(s)
+	return &id
+}
