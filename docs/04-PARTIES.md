@@ -4,6 +4,23 @@ Parties are temporary groups of agents formed to tackle quests too complex for a
 agent. The party lead decomposes the parent quest into sub-quests, assigns them to members,
 and rolls up the results into a final answer.
 
+## Contents
+
+- [Party Overview](#party-overview)
+- [Roles](#roles)
+- [Party Lifecycle](#party-lifecycle)
+- [Formation](#formation)
+- [Recruitment](#recruitment)
+- [Quest Decomposition](#quest-decomposition)
+- [DAG Execution Lifecycle](#dag-execution-lifecycle)
+- [Result Rollup](#result-rollup)
+- [Peer Reviews](#peer-reviews)
+- [Feedback Loop into Prompts](#feedback-loop-into-prompts)
+- [Configuration Reference](#configuration-reference)
+- [Further Reading](#further-reading)
+
+---
+
 ## Party Overview
 
 A party forms when a `party_required` quest is claimed. The `party_required` flag is set
@@ -66,6 +83,37 @@ transition and automatically creates a party with the claiming agent as lead.
 **Manual formation**: Call `FormParty` directly via the partycoord component with a quest
 ID and lead agent ID.
 
+## Recruitment
+
+Once the party is formed and the lead has proposed a DAG (see
+[Quest Decomposition](#quest-decomposition)), `questdagexec` calls `RecruitMembers` to
+find and add idle agents to the party.
+
+### How Recruitment Works
+
+1. All currently idle agents are fetched from the entity graph.
+2. For each DAG node, candidates are scored by **skill overlap**: the count of node
+   required skills the agent possesses. Nodes with no skill requirements score any agent
+   equally at 1.
+3. Agents that do not meet the node's **minimum trust tier** (derived from the node's
+   `difficulty` field) are excluded entirely.
+4. The algorithm is **greedy**: the highest-scoring available agent is assigned to a node,
+   then removed from the pool. An agent can only be assigned to one node per recruitment
+   pass.
+5. If any node cannot be staffed (no eligible idle agents remain), `RecruitMembers`
+   returns an error and the caller retries after a delay.
+
+### Assignment within an Active Party
+
+When a DAG node becomes `ready`, `AssignReadyNodes` selects the best-fit **party member**
+(not a fresh idle agent) using the same skill-overlap scoring. The lead (`role: "lead"`)
+is excluded from executor assignments — they orchestrate, not execute.
+
+`ClaimAndStartForParty` is called atomically for each assignment, transitioning the
+sub-quest directly from `posted` to `in_progress` in a single KV write. This eliminates
+the two-phase commit race (claim then start) that could leave a sub-quest in an
+intermediate state.
+
 ## Quest Decomposition
 
 The lead decomposes the parent quest by calling the `decompose_quest` tool during its
@@ -77,110 +125,10 @@ than inventing a breakdown from prose. Scenario `depends_on` references become s
 dependency edges.
 
 The tool response is a DAG proposal — nodes with dependencies, skill requirements, and
-member assignments. `questdagexec` validates and persists the proposal, then drives
-execution to completion autonomously.
+acceptance criteria. `questdagexec` validates and persists the proposal as `quest.dag.*`
+predicates on the parent quest entity, then drives execution to completion autonomously.
 
 See [DAG Execution Lifecycle](#dag-execution-lifecycle) below for the full flow.
-
-## Result Rollup
-
-Rollup is handled automatically by `questdagexec`. Once all DAG nodes reach `completed`,
-the processor dispatches a `rollup_outputs` tool call to the lead's agentic loop. The
-lead synthesises the node outputs into a final answer, which `questdagexec` submits as
-the parent quest's output.
-
-See [Rollup and Party Disbandment](#rollup-and-party-disbandment) below for the full
-sequence.
-
-## Peer Reviews
-
-After a shared quest completes, agents involved in the quest exchange bidirectional
-feedback. Peer reviews provide reputation signals that feed back into agent prompts and
-boid affinity calculations.
-
-### How It Works
-
-1. A `PeerReview` entity is created linking two agents (leader and member) to a shared
-   quest
-2. Each agent submits their review independently — neither sees the other's ratings until
-   both have submitted (**blind submission**)
-3. The review transitions through three states:
-
-| Status | Meaning |
-|--------|---------|
-| `pending` | Neither party has submitted |
-| `partial` | One party has submitted, waiting for the other |
-| `completed` | Both parties have submitted |
-
-### Rating Questions
-
-Each direction has 3 questions rated on a 1-5 scale:
-
-**Leader reviewing member:**
-1. Task quality — did the deliverable meet acceptance criteria?
-2. Communication — were blockers surfaced promptly?
-3. Autonomy — did they work independently without excessive hand-holding?
-
-**Member reviewing leader:**
-1. Clarity — was the task well-defined with clear acceptance criteria?
-2. Support — were blockers unblocked promptly?
-3. Fairness — was the task appropriate for my level/skills?
-
-### Submission Rules
-
-- Ratings must be 1-5 for each question
-- If the average rating is below 3.0, an explanation is required
-- Solo tasks (no shared work) skip peer review (`is_solo_task: true`)
-
-### Review Submission
-
-```json
-{
-  "reviewer_id": "local.dev.game.board1.agent.abc",
-  "reviewee_id": "local.dev.game.board1.agent.xyz",
-  "direction": "leader_to_member",
-  "ratings": {"q1": 4, "q2": 3, "q3": 5},
-  "explanation": ""
-}
-```
-
-## Feedback Loop into Prompts
-
-Peer review ratings feed back into future quest execution through the `promptmanager`.
-When an agent has received below-threshold ratings on specific questions, those questions
-are surfaced as warnings in the agent's system prompt.
-
-The flow:
-
-1. Completed peer reviews update the agent's `Stats.PeerReviewAvg` and
-   `Stats.PeerReviewCount`
-2. Low-rated questions are collected into `PeerFeedbackSummary` entries
-3. The `promptmanager` assembler injects these at `CategoryPeerFeedback` (priority 250),
-   after tier guardrails but before skill context
-4. Each summary includes the question text, average rating, and explanation from reviewers
-
-Example prompt fragment:
-
-```
-[Peer Feedback Warning]
-Your recent peer reviews indicate areas for improvement:
-- "Communication — were blockers surfaced promptly?" (avg: 2.3)
-  Reviewer note: "Went silent for extended periods without status updates"
-```
-
-This creates a self-correcting loop: agents that receive poor feedback on specific
-behaviors get explicit reminders to improve, and improvement shows up in future reviews.
-
-## Configuration Reference
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `default_max_party_size` | 5 | Maximum members per party |
-| `formation_timeout` | 10m | Time to fill a forming party before timeout |
-| `rollup_timeout` | 5m | Time limit for the lead to complete rollup |
-| `auto_form_parties` | true | Auto-create party when party-required quest is claimed |
-| `min_members_for_party` | 2 | Minimum members (including lead) |
-| `require_lead_approval` | true | Lead must approve new members |
 
 ## DAG Execution Lifecycle
 
@@ -204,15 +152,32 @@ members. The lead responds with a DAG proposal:
 
 ```json
 {
+  "goal": "Analyze usage patterns and write a summary report",
   "nodes": [
-    {"id": "n1", "title": "Extract raw data", "skills": ["data_transformation"],
-     "assigned_to": "agent.xyz", "depends_on": []},
-    {"id": "n2", "title": "Analyze trends",   "skills": ["analysis"],
-     "assigned_to": "agent.abc", "depends_on": ["n1"]},
-    {"id": "n3", "title": "Write summary",    "skills": ["summarization"],
-     "assigned_to": "agent.abc", "depends_on": ["n2"]},
-    {"id": "n4", "title": "Deliver report",   "skills": ["customer_comms"],
-     "assigned_to": "agent.def", "depends_on": ["n3"]}
+    {
+      "id": "n1",
+      "objective": "Extract raw usage data from logs",
+      "skills": ["data_transformation"],
+      "acceptance": "CSV with columns: user_id, action, timestamp",
+      "depends_on": [],
+      "difficulty": 1
+    },
+    {
+      "id": "n2",
+      "objective": "Analyze trends in the extracted data",
+      "skills": ["analysis"],
+      "acceptance": "Written analysis with top-5 usage patterns",
+      "depends_on": ["n1"],
+      "difficulty": 2
+    },
+    {
+      "id": "n3",
+      "objective": "Write executive summary report",
+      "skills": ["summarization"],
+      "acceptance": "One-page summary citing specific findings from n2",
+      "depends_on": ["n2"],
+      "difficulty": 1
+    }
   ]
 }
 ```
@@ -241,7 +206,7 @@ stateDiagram-v2
     ready --> assigned : questdagexec dispatches sub-quest
     assigned --> in_progress : agent starts work
     in_progress --> pending_review : agent submits output
-    pending_review --> completed : lead accepts (avg ≥ 3.0)
+    pending_review --> completed : lead accepts (avg >= 3.0)
     pending_review --> rejected : lead rejects (avg < 3.0)
     rejected --> in_progress : retry with peer feedback injected
     in_progress --> failed : retries exhausted
@@ -264,7 +229,7 @@ The lead evaluates on three questions (1-5 scale):
 | 2 | Is the quality sufficient to unblock downstream nodes? |
 | 3 | Is the work complete, or are there obvious gaps? |
 
-**Accept threshold**: average score ≥ 3.0. No explanation required on accept.
+**Accept threshold**: average score >= 3.0. No explanation required on accept.
 
 **Reject**: average score < 3.0. An explanation is **required** — this text becomes the
 corrective guidance injected into the member's next prompt attempt (see Feedback Loop
@@ -287,23 +252,8 @@ node requires this comparison explicitly. Please add a YoY table."
 ```
 
 This corrective loop mirrors the peer review feedback described in the
-[Feedback Loop into Prompts](#feedback-loop-into-prompts) section above, but targets
+[Feedback Loop into Prompts](#feedback-loop-into-prompts) section, but targets
 sub-quest retries specifically rather than future quests.
-
-### Rollup and Party Disbandment
-
-When all nodes reach `completed`:
-
-1. `questdagexec` collects each node's `quest.data.output` in topological order.
-2. The lead receives a `rollup_outputs` tool call containing all node outputs.
-3. The lead synthesises a final answer and returns it as the rollup payload.
-4. `questdagexec` submits the rollup as the parent quest's output, transitioning the
-   parent quest to `completed` (or `in_review` if the parent requires a boss battle).
-5. The party transitions to `disbanded`. All member agents return to `idle`.
-
-The lead's trajectory spans the entire DAG execution; individual node trajectories are
-children of the parent quest trajectory, providing end-to-end observability without
-manual instrumentation.
 
 ### Failure Escalation
 
@@ -321,20 +271,127 @@ parent quest's escalation, visible on the DM dashboard and in the SSE event feed
 ### Graph Storage for DAG State
 
 DAG state is stored as `quest.dag.*` predicates on the parent quest entity in the
-graph's ENTITY_STATES bucket — no separate KV bucket needed:
+ENTITY_STATES bucket — no separate KV bucket needed:
 
 ```
-quest.dag.execution_id               // DAG execution identifier
-quest.dag.definition                 // QuestDAG JSON (nodes, dependencies)
-quest.dag.node_quest_ids             // map[nodeID]subQuestID
-quest.dag.node_states                // map[nodeID]state (pending/ready/assigned/completed/failed)
-quest.dag.node_assignees             // map[nodeID]agentID
-quest.dag.node_retries               // map[nodeID]retriesRemaining
+quest.dag.execution_id       DAG execution identifier
+quest.dag.definition         QuestDAG JSON (nodes, dependencies)
+quest.dag.node_quest_ids     map[nodeID]subQuestID
+quest.dag.node_states        map[nodeID]state (pending/ready/assigned/completed/failed)
+quest.dag.node_assignees     map[nodeID]agentID
+quest.dag.node_retries       map[nodeID]retriesRemaining
 ```
 
 The entity state bucket IS the event log (KV twofer). `questdagexec` watches
 quest entities to detect DAG parent quests and react to sub-quest transitions
 without polling. CAS read-modify-write ensures concurrent safety with questboard.
+
+## Result Rollup
+
+When all nodes reach `completed`:
+
+1. `questdagexec` collects each node's `quest.data.output` in topological order.
+2. The lead receives a `rollup_outputs` tool call containing all node outputs.
+3. The lead synthesises a final answer and returns it as the rollup payload.
+4. `questdagexec` submits the rollup as the parent quest's output, transitioning the
+   parent quest to `completed` (or `in_review` if the parent requires a boss battle).
+5. The party transitions to `disbanded`. All member agents return to `idle`.
+
+The lead's trajectory spans the entire DAG execution; individual node trajectories are
+children of the parent quest trajectory, providing end-to-end observability without
+manual instrumentation.
+
+## Peer Reviews
+
+After a shared quest completes, agents involved in the quest exchange bidirectional
+feedback. Peer reviews provide reputation signals that feed back into agent prompts and
+boid affinity calculations.
+
+### How It Works
+
+1. A `PeerReview` entity is created linking two agents (leader and member) to a shared
+   quest.
+2. Each agent submits their review independently — neither sees the other's ratings until
+   both have submitted (**blind submission**).
+3. The review transitions through three states:
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Neither party has submitted |
+| `partial` | One party has submitted, waiting for the other |
+| `completed` | Both parties have submitted |
+
+### Rating Questions
+
+Each direction has 3 questions rated on a 1-5 scale:
+
+**Leader reviewing member:**
+
+1. Task quality — did the deliverable meet acceptance criteria?
+2. Communication — were blockers surfaced promptly?
+3. Autonomy — did they work independently without excessive hand-holding?
+
+**Member reviewing leader:**
+
+1. Clarity — was the task well-defined with clear acceptance criteria?
+2. Support — were blockers unblocked promptly?
+3. Fairness — was the task appropriate for my level/skills?
+
+### Submission Rules
+
+- Ratings must be 1-5 for each question.
+- If the average rating is below 3.0, an explanation is required.
+- Solo tasks (no shared work) skip peer review (`is_solo_task: true`).
+
+### Review Submission
+
+```json
+{
+  "reviewer_id": "local.dev.game.board1.agent.abc",
+  "reviewee_id": "local.dev.game.board1.agent.xyz",
+  "direction": "leader_to_member",
+  "ratings": {"q1": 4, "q2": 3, "q3": 5},
+  "explanation": ""
+}
+```
+
+## Feedback Loop into Prompts
+
+Peer review ratings feed back into future quest execution through the `promptmanager`.
+When an agent has received below-threshold ratings on specific questions, those questions
+are surfaced as warnings in the agent's system prompt.
+
+The flow:
+
+1. Completed peer reviews update the agent's `Stats.PeerReviewAvg` and
+   `Stats.PeerReviewCount`.
+2. Low-rated questions are collected into `PeerFeedbackSummary` entries.
+3. The `promptmanager` assembler injects these at `CategoryPeerFeedback` (priority 250),
+   after tier guardrails but before skill context.
+4. Each summary includes the question text, average rating, and explanation from reviewers.
+
+Example prompt fragment:
+
+```
+[Peer Feedback Warning]
+Your recent peer reviews indicate areas for improvement:
+- "Communication — were blockers surfaced promptly?" (avg: 2.3)
+  Reviewer note: "Went silent for extended periods without status updates"
+```
+
+This creates a self-correcting loop: agents that receive poor feedback on specific
+behaviors get explicit reminders to improve, and improvement shows up in future reviews.
+
+## Configuration Reference
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `default_max_party_size` | 5 | Maximum members per party |
+| `formation_timeout` | 10m | Time to fill a forming party before timeout |
+| `rollup_timeout` | 5m | Time limit for the lead to complete rollup |
+| `auto_form_parties` | true | Auto-create party when party-required quest is claimed |
+| `min_members_for_party` | 2 | Minimum members (including lead) |
+| `require_lead_approval` | false | Lead must approve new members (default off in dev config) |
 
 ## Further Reading
 

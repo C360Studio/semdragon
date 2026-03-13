@@ -15,6 +15,8 @@ hands back connection config.
 - [Default Config (semdragons.json)](#default-config-semdragonsjson)
 - [Production Config (models.json)](#production-config-modelsjson)
 - [Provider Setup](#provider-setup)
+- [Context Compaction](#context-compaction)
+- [Brave Search Tool](#brave-search-tool)
 - [How Processors Use the Registry](#how-processors-use-the-registry)
 - [Environment Variables](#environment-variables)
 
@@ -33,7 +35,7 @@ The registry is a JSON object with three top-level keys:
 ```
 
 The registry is loaded at startup via `semdragons.LoadModelRegistry(path)`. If the file
-is missing, `DefaultModelRegistry()` is used automatically—Ollama on localhost with no
+is missing, `DefaultModelRegistry()` is used automatically — Ollama on localhost with no
 API keys required.
 
 ---
@@ -42,16 +44,17 @@ API keys required.
 
 Each key under `endpoints` is an arbitrary name used throughout the rest of the config.
 
-| Field            | Type    | Required | Description                                              |
-|------------------|---------|----------|----------------------------------------------------------|
-| `provider`          | string  | yes      | `"anthropic"`, `"openai"`, `"gemini"`, or `"ollama"`     |
-| `url`               | string  | no       | Base URL; defaults to provider standard if omitted       |
-| `model`             | string  | yes      | Provider model identifier                                |
-| `max_tokens`        | int     | yes      | Maximum tokens per request                               |
-| `supports_tools`    | bool    | yes      | Whether this endpoint supports tool/function calling     |
-| `tool_format`       | string  | no       | `"anthropic"` or `"openai"`; required when tools enabled |
-| `api_key_env`       | string  | no       | Environment variable name holding the API key            |
-| `reasoning_effort`  | string  | no       | Reasoning effort level: `"none"`, `"low"`, `"medium"`, or `"high"` |
+| Field             | Type   | Required | Description                                              |
+|-------------------|--------|----------|----------------------------------------------------------|
+| `provider`        | string | yes      | `"anthropic"`, `"openai"`, `"gemini"`, or `"ollama"`     |
+| `url`             | string | no       | Base URL; defaults to provider standard if omitted       |
+| `model`           | string | yes      | Provider model identifier                                |
+| `max_tokens`      | int    | yes      | Maximum tokens per request                               |
+| `supports_tools`  | bool   | yes      | Whether this endpoint supports tool/function calling     |
+| `tool_format`     | string | no       | `"anthropic"` or `"openai"`; required when tools enabled |
+| `api_key_env`     | string | no       | Environment variable name holding the API key            |
+| `reasoning_effort`| string | no       | `"none"`, `"low"`, `"medium"`, or `"high"`               |
+| `stream`          | bool   | no       | Enable streaming responses (default false)               |
 
 **Example — three providers:**
 
@@ -59,7 +62,7 @@ Each key under `endpoints` is an arbitrary name used throughout the rest of the 
 "endpoints": {
   "claude-4": {
     "provider": "anthropic",
-    "model": "claude-sonnet-4-6",
+    "model": "claude-sonnet-4-5-20250514",
     "max_tokens": 200000,
     "supports_tools": true,
     "tool_format": "anthropic",
@@ -74,11 +77,11 @@ Each key under `endpoints` is an arbitrary name used throughout the rest of the 
     "tool_format": "openai",
     "api_key_env": "OPENAI_API_KEY"
   },
-  "ollama-qwen": {
+  "ollama-tools": {
     "provider": "ollama",
-    "url": "http://localhost:11434",
-    "model": "qwen2.5-coder:7b",
-    "max_tokens": 32768,
+    "url": "http://localhost:11434/v1",
+    "model": "llama3.1",
+    "max_tokens": 131072,
     "supports_tools": true,
     "tool_format": "openai"
   }
@@ -94,16 +97,15 @@ The optional `reasoning_effort` field controls thinking budget for reasoning-cap
 (OpenAI o3/o4-mini, Gemini 2.5 Flash/Pro). It is forwarded as the `reasoning_effort`
 parameter on OpenAI-compatible chat completion requests.
 
-| Value    | Behavior                                                    |
-|----------|-------------------------------------------------------------|
-| `"none"` | Disable reasoning entirely                                  |
-| `"low"`  | Minimal thinking — fast responses, lower cost               |
-| `"medium"` | Balanced thinking — good for most tasks                   |
-| `"high"` | Deep reasoning — thorough analysis, higher latency and cost |
+| Value      | Behavior                                                    |
+|------------|-------------------------------------------------------------|
+| `"none"`   | Disable reasoning entirely                                  |
+| `"low"`    | Minimal thinking — fast responses, lower cost               |
+| `"medium"` | Balanced thinking — good for most tasks                     |
+| `"high"`   | Deep reasoning — thorough analysis, higher latency and cost |
 
-Not all models support reasoning effort. Models that don't (e.g., Gemini 2.0 Flash Lite,
-GPT-4o) silently ignore the field. The value is exposed in the `GET /game/models` API
-response for dashboard display.
+Not all models support reasoning effort. Models that don't (e.g., GPT-4o) silently ignore
+the field. The value is exposed in the `GET /game/models` API response for dashboard display.
 
 ```json
 "gemini-flash": {
@@ -124,12 +126,23 @@ response for dashboard display.
 Each key under `capabilities` is a logical task name. Processors resolve these to
 endpoint names at runtime.
 
-| Field            | Type       | Required | Description                                              |
-|------------------|------------|----------|----------------------------------------------------------|
-| `description`    | string     | no       | Human-readable description of the capability             |
-| `preferred`      | []string   | yes      | Ordered list of endpoint names; first available is used  |
-| `fallback`       | []string   | no       | Tried in order if all preferred endpoints fail           |
-| `requires_tools` | bool       | no       | If `true`, only endpoints with `supports_tools` qualify  |
+| Field            | Type     | Required | Description                                              |
+|------------------|----------|----------|----------------------------------------------------------|
+| `description`    | string   | no       | Human-readable description of the capability             |
+| `preferred`      | []string | yes      | Ordered list of endpoint names; first available is used  |
+| `fallback`       | []string | no       | Tried in order if all preferred endpoints fail           |
+| `requires_tools` | bool     | no       | If `true`, only endpoints with `supports_tools` qualify  |
+
+**Capabilities used by default components:**
+
+| Capability                    | Used By               | Notes                                    |
+|-------------------------------|-----------------------|------------------------------------------|
+| `agent-work`                  | questbridge           | Default agent quest execution            |
+| `quest-execution-sequential`  | questbridge           | Solo sequential quests (stronger model)  |
+| `boss-battle`                 | bossbattle            | LLM-as-judge evaluation                  |
+| `quest-design`                | DM session handlers   | DM quest parameter decisions             |
+| `dm-chat`                     | service/api DM chat   | DM conversational interface              |
+| `embedding`                   | graph-embedding       | Vector embeddings for semantic search    |
 
 **Example:**
 
@@ -160,11 +173,11 @@ The registry supports **dotted capability keys** for fine-grained model selectio
 on agent trust tier and quest skill. The resolution chain from most-specific to least:
 
 ```
-agent-work.{tier}.{skill}   →   agent-work.{tier}   →   agent-work
+agent-work.{tier}.{skill}   ->   agent-work.{tier}   ->   agent-work
 ```
 
 This lets lower tiers use cheaper models while masters and grandmasters get frontier
-models—without any code changes, purely through config.
+models — without any code changes, purely through config.
 
 **Production examples:**
 
@@ -172,7 +185,7 @@ models—without any code changes, purely through config.
 "agent-work.apprentice": {
   "description": "Apprentice tier: small/fast models",
   "preferred": ["haiku", "gpt-mini"],
-  "fallback": ["ollama"],
+  "fallback": ["ollama-tools"],
   "requires_tools": true
 },
 "agent-work.expert": {
@@ -192,19 +205,18 @@ Trust tiers map to capability suffixes as follows:
 
 | Trust Tier   | Levels | Capability Suffix        |
 |--------------|--------|--------------------------|
-| Apprentice   | 1–5    | `agent-work.apprentice`  |
-| Journeyman   | 6–10   | `agent-work.journeyman`  |
-| Expert       | 11–15  | `agent-work.expert`      |
-| Master       | 16–18  | `agent-work.master`      |
-| Grandmaster  | 19–20  | `agent-work.grandmaster` |
+| Apprentice   | 1-5    | `agent-work.apprentice`  |
+| Journeyman   | 6-10   | `agent-work.journeyman`  |
+| Expert       | 11-15  | `agent-work.expert`      |
+| Master       | 16-18  | `agent-work.master`      |
+| Grandmaster  | 19-20  | `agent-work.grandmaster` |
 
 ### Sequential Quest Capability
 
 When a quest is classified as `sequential` by the decomposability classifier (see
-[03-QUESTS.md — Decomposability Classification](03-QUESTS.md#decomposability-classification)),
-`questbridge` resolves the `quest-execution-sequential` capability instead of the
-standard tier-qualified `agent-work` key. Configure this to prefer frontier models over
-the default tier routing:
+[03-QUESTS.md](03-QUESTS.md)), `questbridge` resolves `quest-execution-sequential`
+instead of the standard tier-qualified `agent-work` key. Configure this to prefer
+frontier models over the default tier routing:
 
 ```json
 "quest-execution-sequential": {
@@ -216,38 +228,71 @@ the default tier routing:
 ```
 
 Research shows disproportionate returns from model capability on sequential reasoning
-tasks (top-quartile models achieve 23% above predicted linear scaling). A stronger model
-beats adding more agents for these quests. If this capability is not configured, the
-resolver falls back to the standard `agent-work` chain.
+tasks. A stronger model beats adding more agents for these quests. If this capability is
+not configured, the resolver falls back to the standard `agent-work` chain.
 
 ---
 
 ## Default Config (semdragons.json)
 
-The default config ships with a single Ollama endpoint. No API keys are needed; Ollama
-runs locally. This is the config used during `task test:integration` and local `task
-build` runs.
+The default config ships with two Ollama endpoints. No API keys are needed; Ollama runs
+locally. This is the config used during `task docker:up` and local development.
 
 ```json
 "model_registry": {
   "endpoints": {
-    "ollama-qwen": {
+    "ollama-coder": {
       "provider": "ollama",
-      "url": "http://localhost:11434",
+      "url": "http://localhost:11434/v1",
       "model": "qwen2.5-coder:7b",
       "max_tokens": 32768,
-      "supports_tools": true
+      "supports_tools": true,
+      "stream": true
+    },
+    "ollama-qwen3": {
+      "provider": "ollama",
+      "url": "http://localhost:11434/v1",
+      "model": "qwen3:14b",
+      "max_tokens": 40960,
+      "supports_tools": false,
+      "stream": true,
+      "options": {
+        "enable_thinking": false
+      }
     }
   },
   "capabilities": {
     "agent-work": {
-      "description": "Default capability for agent quest execution",
-      "preferred": ["ollama-qwen"],
+      "description": "Code generation and tool-calling quest execution",
+      "preferred": ["ollama-coder"],
       "requires_tools": true
+    },
+    "quest-execution-sequential": {
+      "description": "Sequential quest execution — benefits from stronger reasoning models",
+      "preferred": ["ollama-coder"],
+      "requires_tools": true
+    },
+    "boss-battle": {
+      "description": "Quest output evaluation by LLM judge",
+      "preferred": ["ollama-qwen3"],
+      "fallback": ["ollama-coder"],
+      "requires_tools": false
+    },
+    "quest-design": {
+      "description": "DM quest parameter decisions",
+      "preferred": ["ollama-qwen3"],
+      "fallback": ["ollama-coder"],
+      "requires_tools": false
+    },
+    "dm-chat": {
+      "description": "DM conversational assistance",
+      "preferred": ["ollama-qwen3"],
+      "fallback": ["ollama-coder"],
+      "requires_tools": false
     }
   },
   "defaults": {
-    "model": "ollama-qwen",
+    "model": "ollama-coder",
     "capability": "agent-work"
   }
 }
@@ -266,22 +311,21 @@ deployment config.
 
 It defines four endpoints and multiple capability tiers:
 
-| Endpoint      | Provider  | Model                         | Tools  |
-|---------------|-----------|-------------------------------|--------|
-| `claude-4`    | Anthropic | claude-sonnet-4-6    | yes    |
-| `gpt-4o`      | OpenAI    | gpt-4o                        | yes    |
-| `ollama`      | Ollama    | llama3.2                      | no     |
-| `ollama-tools`| Ollama    | llama3.1                      | yes    |
+| Endpoint       | Provider  | Model                        | Tools |
+|----------------|-----------|------------------------------|-------|
+| `claude-4`     | Anthropic | claude-sonnet-4-5-20250514   | yes   |
+| `gpt-4o`       | OpenAI    | gpt-4o                       | yes   |
+| `ollama`       | Ollama    | llama3.2                     | no    |
+| `ollama-tools` | Ollama    | llama3.1                     | yes   |
 
 Capabilities in `models.json`:
 
-| Capability                    | Preferred            | Fallback           | Notes                              |
-|-------------------------------|----------------------|--------------------|-------------------------------------|
-| `agent-work`                  | claude-4, gpt-4o     | ollama-tools       | Default agent execution             |
-| `boss-battle`                 | claude-4             | gpt-4o, ollama     | LLM-as-judge evaluation             |
-| `quest-design`                | claude-4             | gpt-4o             | DM quest parameter decisions        |
-| `agent-eval`                  | claude-4             | gpt-4o             | Agent performance assessment        |
-| `quest-execution-sequential`  | claude-4             | gpt-4o             | Solo sequential quests (high-tier)  |
+| Capability     | Preferred        | Fallback          | Notes                           |
+|----------------|------------------|-------------------|---------------------------------|
+| `agent-work`   | claude-4, gpt-4o | ollama-tools      | Default agent execution         |
+| `boss-battle`  | claude-4         | gpt-4o, ollama    | LLM-as-judge evaluation         |
+| `quest-design` | claude-4         | gpt-4o            | DM quest parameter decisions    |
+| `agent-eval`   | claude-4         | gpt-4o            | Agent performance assessment    |
 
 The production Go code (`ProductionModelRegistry()` in `config.go`) mirrors this JSON
 exactly and includes the full tier-qualified capability hierarchy.
@@ -290,85 +334,25 @@ exactly and includes the full tier-qualified capability hierarchy.
 
 ## Provider Setup
 
-### Ollama (local, no API key)
+**Ollama** (local, no API key): Install from [ollama.com](https://ollama.com), pull your
+models (`ollama pull qwen2.5-coder:7b`), and set `"provider": "ollama"` with
+`"url": "http://localhost:11434/v1"`. Not all Ollama models support tools — check
+`supports_tools` before using for agent-work.
 
-1. Install Ollama from [ollama.com](https://ollama.com).
-2. Pull the model you want to use:
+**Anthropic**: Export `ANTHROPIC_API_KEY` and set `"api_key_env": "ANTHROPIC_API_KEY"`.
+No `url` field required; the SDK uses `https://api.anthropic.com` by default.
 
-   ```bash
-   ollama pull qwen2.5-coder:7b    # default dev model (supports tools)
-   ollama pull llama3.2             # lightweight, no tool support
-   ollama pull llama3.1             # tool-capable via OpenAI format
-   ```
+**OpenAI**: Export `OPENAI_API_KEY` and set `"provider": "openai"`,
+`"url": "https://api.openai.com/v1"`, `"api_key_env": "OPENAI_API_KEY"`.
 
-3. Verify Ollama is running:
+**Gemini**: Uses the OpenAI-compatible endpoint. Set `"provider": "openai"`,
+`"url": "https://generativelanguage.googleapis.com/v1beta/openai/"`,
+`"api_key_env": "GEMINI_API_KEY"`.
 
-   ```bash
-   curl http://localhost:11434/api/tags
-   ```
-
-Ollama uses `tool_format: "openai"` for tool calling. Ensure the model you pull
-advertises tool support—not all Ollama models do.
-
-### Anthropic
-
-1. Obtain an API key from [console.anthropic.com](https://console.anthropic.com).
-2. Export the key before starting the service:
-
-   ```bash
-   export ANTHROPIC_API_KEY="sk-ant-..."
-   ```
-
-3. Reference the key in your endpoint config:
-
-   ```json
-   "api_key_env": "ANTHROPIC_API_KEY"
-   ```
-
-No `url` field is required for Anthropic; the SDK uses `https://api.anthropic.com` by
-default.
-
-### OpenAI
-
-1. Obtain an API key from [platform.openai.com](https://platform.openai.com).
-2. Export the key before starting the service:
-
-   ```bash
-   export OPENAI_API_KEY="sk-..."
-   ```
-
-3. Reference the key and set the base URL in your endpoint config:
-
-   ```json
-   "provider": "openai",
-   "url": "https://api.openai.com/v1",
-   "api_key_env": "OPENAI_API_KEY"
-   ```
-
-### Custom / Self-Hosted (OpenAI-compatible)
-
-Any service that exposes a `/chat/completions` endpoint works out of the box. Set
-`provider: "openai"` and point `url` at your service:
-
-```json
-"my-llm": {
-  "provider": "openai",
-  "url": "https://my-llm.example.com/v1",
-  "model": "my-model-name",
-  "api_key_env": "MY_LLM_API_KEY",
-  "max_tokens": 128000,
-  "supports_tools": true
-}
-```
-
-This works with vLLM, LM Studio, Azure OpenAI, OpenRouter, text-generation-inference,
-and any other service that implements the OpenAI chat completions API. Semdragons appends
-`/chat/completions` to the `url` automatically — provide the base URL only.
-
-If your service doesn't require an API key, omit `api_key_env`.
-
-The Gemini configs use this same approach — Google's Gemini API exposes an
-OpenAI-compatible endpoint at `https://generativelanguage.googleapis.com/v1beta/openai`.
+**Custom / self-hosted**: Any service implementing the OpenAI chat completions API works.
+Set `"provider": "openai"` and point `url` at your service base URL. Works with vLLM,
+LM Studio, Azure OpenAI, OpenRouter, and text-generation-inference. Omit `api_key_env`
+if no key is required.
 
 ### Provider Routing
 
@@ -384,6 +368,69 @@ built it.
 
 ---
 
+## Context Compaction
+
+The `agentic-loop` processor supports automatic context compaction to prevent token
+budgets from being exhausted during long agent runs. Configure it in the
+`agentic-loop` component config:
+
+```json
+"agentic-loop": {
+  "config": {
+    "context": {
+      "enabled": true,
+      "compact_threshold": 0.6,
+      "tool_result_max_age": 3,
+      "headroom_tokens": 6400,
+      "summarization_model": "ollama-coder"
+    }
+  }
+}
+```
+
+| Field                  | Default | Description |
+|------------------------|---------|-------------|
+| `enabled`              | false   | Enable automatic context compaction |
+| `compact_threshold`    | 0.6     | Compact when context reaches this fraction of `max_tokens` |
+| `tool_result_max_age`  | 3       | Drop tool results older than N turns |
+| `headroom_tokens`      | 6400    | Minimum free tokens to maintain after compaction |
+| `summarization_model`  | —       | Endpoint name used for summarization during compaction |
+
+When the running context exceeds `compact_threshold * max_tokens`, the loop trims old
+tool results (those older than `tool_result_max_age` turns) and optionally summarizes
+earlier conversation turns using `summarization_model`. The compacted context always
+retains the system prompt and the most recent turns.
+
+Note: The mock LLM used in E2E tests (`cmd/mockllm`) runs with context compaction
+disabled to prevent it from interfering with canned response matching.
+
+---
+
+## Brave Search Tool
+
+The `questtools` processor optionally provides a `brave_search` tool for agents.
+Configure it in the `questtools` component config:
+
+```json
+"questtools": {
+  "config": {
+    "search": {
+      "provider": "brave",
+      "api_key_env": "BRAVE_SEARCH_API_KEY"
+    }
+  }
+}
+```
+
+When `search.provider` is set to `"brave"` and `BRAVE_SEARCH_API_KEY` is present in the
+environment, `questtools` registers the `brave_search` tool in the tool executor. Agents
+at Journeyman tier and above can use it to search the web during quest execution.
+
+If the environment variable is absent or `search` is omitted from config, the tool is
+not registered and agents fall back to other information-gathering approaches.
+
+---
+
 ## How Processors Use the Registry
 
 Processors receive a `model.RegistryReader` from `component.Dependencies.ModelRegistry`
@@ -391,14 +438,14 @@ at startup. The interface provides three methods:
 
 ```go
 type RegistryReader interface {
-    Resolve(capability string) string         // capability key → endpoint name
-    GetEndpoint(name string) *EndpointConfig  // endpoint name → connection config
+    Resolve(capability string) string         // capability key -> endpoint name
+    GetEndpoint(name string) *EndpointConfig  // endpoint name -> connection config
     GetFallbackChain(key string) []string     // existence check + full chain
     GetDefault() string                       // default endpoint name
 }
 ```
 
-**Resolution flow in questbridge and executor:**
+**Resolution flow in questbridge:**
 
 ```
 1. Determine agent trust tier and quest primary skill
@@ -406,9 +453,9 @@ type RegistryReader interface {
 3. Call GetFallbackChain(key) — non-nil means the key exists in the registry
 4. If missing, fall back to "agent-work.{tier}"
 5. If still missing, fall back to "agent-work"
-6. Call Resolve(capability) → endpoint name
-7. Call GetEndpoint(endpointName) → *EndpointConfig
-8. Pass EndpointConfig to agenticmodel.NewClient(endpoint) to get an LLM client
+6. Call Resolve(capability) -> endpoint name
+7. Call GetEndpoint(endpointName) -> *EndpointConfig
+8. Write resolved endpoint name into TaskMessage.Model before publishing to AGENT stream
 ```
 
 **Questbridge** writes the resolved endpoint name into the `TaskMessage.Model` field
@@ -427,14 +474,15 @@ capability string as the model key, and `agentic-model` uses its own defaults.
 
 ## Environment Variables
 
-| Variable            | Used By    | Description                            |
-|---------------------|------------|----------------------------------------|
-| `ANTHROPIC_API_KEY` | Anthropic  | API key for all Anthropic endpoints    |
-| `OPENAI_API_KEY`    | OpenAI     | API key for all OpenAI endpoints       |
-| `GEMINI_API_KEY`    | Gemini     | API key for Google Gemini endpoints    |
+| Variable             | Used By    | Description                            |
+|----------------------|------------|----------------------------------------|
+| `ANTHROPIC_API_KEY`  | Anthropic  | API key for all Anthropic endpoints    |
+| `OPENAI_API_KEY`     | OpenAI     | API key for all OpenAI endpoints       |
+| `GEMINI_API_KEY`     | Gemini     | API key for Google Gemini endpoints    |
+| `BRAVE_SEARCH_API_KEY` | questtools | API key for Brave Search tool        |
 
 Set these in your shell or deployment environment before starting the service. The
-registry reads them at the time each LLM request is made, not at startup—so rotating
+registry reads them at the time each LLM request is made, not at startup — so rotating
 keys does not require a restart.
 
 No environment variables are required for Ollama; it authenticates by network access

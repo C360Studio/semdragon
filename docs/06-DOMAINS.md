@@ -6,11 +6,33 @@ are "developers" completing "tasks" or "adventurers" completing "quests." Domain
 the vocabulary and behavioral instructions that make the framework feel native to a specific
 context.
 
+## Why Domains Matter
+
+Three things change when you switch domains, and nothing else does:
+
+1. **Terminology** — The UI, API responses, and log output use the domain's vocabulary.
+   `board.Vocab("quest")` returns `"Task"` for the software domain and `"Study"` for research.
+   The underlying data model is identical.
+
+2. **Skill taxonomy** — The set of valid skill tags for that board, the labels shown in the
+   UI, and the descriptions injected into agent prompts all come from the domain's `Skills`
+   list. A quest that requires `code_generation` on a software board routes to agents with
+   that skill; the same tag is meaningless on a D&D board.
+
+3. **Prompt content** — The `DomainCatalog` provides the actual text injected into every
+   agent's system prompt: who they are, what they're allowed to do at each trust tier, how
+   they should approach each required skill, and how the LLM-as-judge should evaluate their
+   output. Swapping a domain catalog changes agent behavior without touching any code.
+
+Everything else — the quest lifecycle, XP calculations, boss battle scoring, boid rules,
+DAG execution — is domain-agnostic.
+
 This document describes how domains work, what the three built-in domains provide, and how
 to add a custom domain.
 
 ## Contents
 
+- [Why Domains Matter](#why-domains-matter)
 - [What a Domain Is](#what-a-domain-is)
 - [DomainConfig vs DomainCatalog](#domainconfig-vs-domaincatalog)
 - [Built-in Domains](#built-in-domains)
@@ -140,6 +162,15 @@ Models agents as members of a software engineering team. Uses career-track vocab
 | XP             | Points        |
 | Level          | Seniority     |
 
+**Role names:**
+
+| Role      | Software term |
+|-----------|---------------|
+| Lead      | Tech Lead     |
+| Executor  | Developer     |
+| Reviewer  | Reviewer      |
+| Scout     | Researcher    |
+
 **Tier names:**
 
 | Tier        | Display name |
@@ -152,16 +183,16 @@ Models agents as members of a software engineering team. Uses career-track vocab
 
 **Skills:**
 
-| Tag                    | Name                 | Description                        |
-|------------------------|----------------------|------------------------------------|
-| `code_generation`      | Coding               | Write and generate code            |
-| `code_review`          | Code Review          | Review code quality                |
-| `data_transformation`  | Data Transformation  | Transform and process data         |
-| `planning`             | Planning             | Technical planning and estimation  |
-| `analysis`             | Analysis             | Analyze systems and requirements   |
+| Tag                    | Name                 | Description                          |
+|------------------------|----------------------|--------------------------------------|
+| `code_generation`      | Coding               | Write and generate code              |
+| `code_review`          | Code Review          | Review code quality                  |
+| `data_transformation`  | Data Transformation  | Transform and process data           |
+| `planning`             | Planning             | Technical planning and estimation    |
+| `analysis`             | Analysis             | Analyze systems and requirements     |
 | `research`             | Research             | Technical research and investigation |
-| `summarization`        | Documentation        | Write technical docs and summaries |
-| `training`             | Mentoring            | Train and mentor other developers  |
+| `summarization`        | Documentation        | Write technical docs and summaries   |
+| `training`             | Mentoring            | Train and mentor other developers    |
 
 All skill tags in the software domain use the core `SkillTag` constants from `domain/types.go`.
 A quest that requires `SkillCodeGen` routes to agents with that skill and injects the coding
@@ -193,53 +224,14 @@ the full pipeline.
 
 **Domain ID**: `dnd`
 
-Models agents as adventurers in a classic fantasy setting. This domain intentionally uses
-skill tags that are *not* in the core `SkillTag` constants — different domains can define
-entirely different skill sets using arbitrary string tags.
+Models agents as adventurers in a classic fantasy setting. Tier names: Novice, Adventurer,
+Veteran, Hero, Legend. Boss battle judge: "You are an ancient sage evaluating an
+adventurer's quest performance."
 
-**Vocabulary mapping:**
-
-| Framework term | D&D term     |
-|----------------|--------------|
-| Agent          | Adventurer   |
-| Quest          | Quest        |
-| Party          | Party        |
-| Guild          | Guild        |
-| Boss Battle    | Boss Battle  |
-| XP             | XP           |
-| Level          | Level        |
-
-**Tier names:**
-
-| Tier        | Display name |
-|-------------|--------------|
-| Apprentice  | Novice       |
-| Journeyman  | Adventurer   |
-| Expert      | Veteran      |
-| Master      | Hero         |
-| Grandmaster | Legend       |
-
-**Skills:**
-
-| Tag          | Name           | Description                       |
-|--------------|----------------|-----------------------------------|
-| `melee`      | Melee Combat   | Sword and axe fighting            |
-| `ranged`     | Ranged Combat  | Bows and thrown weapons           |
-| `arcana`     | Arcana         | Magical knowledge and spells      |
-| `healing`    | Healing        | Restore health and cure ailments  |
-| `stealth`    | Stealth        | Move unseen and unheard           |
-| `tactics`    | Tactics        | Battle strategy and leadership    |
-| `perception` | Perception     | Notice hidden details             |
-| `persuasion` | Persuasion     | Convince and negotiate            |
-
-None of these tags are defined in `domain/types.go`. They are domain-local strings. This
-is by design — a D&D quest that requires `"melee"` skill will not match agents from the
-software domain who have `code_generation` skill, even though both are valid skill tags
-within their respective domains.
-
-**Boss battle judge framing**:
-
-> You are an ancient sage evaluating an adventurer's quest performance.
+All skills are domain-local strings (`melee`, `ranged`, `arcana`, `healing`, `stealth`,
+`tactics`, `perception`, `persuasion`) — none overlap with the software or research
+domains. This is by design: a D&D quest that requires `"melee"` will not match a software
+agent who has `code_generation`.
 
 ---
 
@@ -247,89 +239,26 @@ within their respective domains.
 
 **Domain ID**: `research`
 
-Models agents as researchers conducting rigorous investigation. This domain mixes core
-skill tags with domain-specific ones, illustrating the hybrid approach.
+Models agents as researchers. Vocabulary: Researcher / Study / Research Group / Lab /
+Peer Review / Credits / Grade. Tier names: Research Assistant, Associate, Senior
+Researcher, Principal Investigator, Distinguished Fellow.
 
-**Vocabulary mapping:**
+Skills mix core constants (`analysis`, `research`, `summarization`, `planning`) with
+domain-local tags (`fact_check`, `statistics`, `visualization`, `interviewing`). When the
+board runs the research domain, a quest requiring `SkillAnalysis` injects the *research*
+catalog's analysis fragment — not the software one.
 
-| Framework term | Research term       |
-|----------------|---------------------|
-| Agent          | Researcher          |
-| Quest          | Study               |
-| Party          | Research Group      |
-| Guild          | Lab                 |
-| Boss Battle    | Peer Review         |
-| XP             | Credits             |
-| Level          | Grade               |
-
-**Tier names:**
-
-| Tier        | Display name             |
-|-------------|--------------------------|
-| Apprentice  | Research Assistant       |
-| Journeyman  | Associate                |
-| Expert      | Senior Researcher        |
-| Master      | Principal Investigator   |
-| Grandmaster | Distinguished Fellow     |
-
-**Skills:**
-
-| Tag             | Source       | Name              | Description                            |
-|-----------------|--------------|-------------------|----------------------------------------|
-| `analysis`      | core         | Analysis          | Analyze data and find patterns         |
-| `research`      | core         | Research          | Find and gather information            |
-| `summarization` | core         | Synthesis         | Combine sources into insights          |
-| `planning`      | core         | Study Design      | Plan research methodology              |
-| `fact_check`    | domain-local | Fact Checking     | Verify claims and sources              |
-| `statistics`    | domain-local | Statistics        | Statistical analysis and modeling      |
-| `visualization` | domain-local | Visualization     | Create charts and diagrams             |
-| `interviewing`  | domain-local | Interviewing      | Gather information from sources        |
-
-The four core skills (`analysis`, `research`, `summarization`, `planning`) use the same
-tags as the software domain. If a quest is defined with `SkillAnalysis` and the board is
-configured for the research domain, the research skill fragment is injected — not the
-software one — because the research catalog's `SkillFragments` map overrides the text.
-
-**Boss battle judge framing**:
-
-> You are a peer reviewer evaluating a researcher's study output for methodological rigor
-> and contribution.
+**Boss battle judge framing**: "You are a peer reviewer evaluating a researcher's study
+output for methodological rigor and contribution."
 
 ---
 
 ## Prompt Assembly
 
 When `questbridge` dispatches a quest to an agent, it calls `promptmanager.PromptAssembler`
-to build the system prompt. The assembler takes an `AssemblyContext` and produces an
-`AssembledPrompt` containing a system message, a user message, and the list of fragment IDs
-used (for observability).
-
-```go
-type AssemblyContext struct {
-    // Agent identity
-    AgentID       domain.AgentID
-    Tier          domain.TrustTier
-    Level         int
-    Skills        map[domain.SkillTag]domain.SkillProficiency
-    Guilds        []domain.GuildID
-    SystemPrompt  string  // per-agent override
-    PersonaPrompt string  // per-agent persona
-
-    // Quest details
-    QuestTitle       string
-    QuestDescription string
-    QuestInput       any
-    RequiredSkills   []domain.SkillTag
-    MaxDuration      string
-    MaxTokens        int
-
-    // Low-rated peer feedback warnings (optional)
-    PeerFeedback []PeerFeedbackSummary
-
-    // LLM provider ("anthropic", "openai", "ollama")
-    Provider string
-}
-```
+to build the system prompt. The assembler takes an `AssemblyContext` (agent tier, skills,
+guilds, quest details, peer feedback, provider) and produces an `AssembledPrompt` containing
+a system message, a user message, and the list of fragment IDs used (for observability).
 
 Assembly proceeds in a fixed order:
 
@@ -338,45 +267,27 @@ flowchart TD
     A[AssemblyContext] --> B[GetFragmentsForContext]
     B --> C{Filter by tier / skills / provider / guild}
     C --> D[Sort by category then priority]
-    D --> E[SystemBase\ncat 0]
-    E --> F[ProviderHints\ncat 100]
-    F --> G[TierGuardrails\ncat 200]
-    G --> H{PeerFeedback present?}
-    H -->|Yes| I[PeerFeedback warnings\ncat 250]
-    H -->|No| J[SkillContext\ncat 300]
-    I --> J
-    J --> K[GuildKnowledge\ncat 400]
-    K --> L[Persona\ncat 500]
-    L --> M[QuestContext\ncat 600]
-    M --> N[AssembledPrompt]
+    D --> E[SystemBase cat 0]
+    E --> F[ToolDirective cat 50]
+    F --> G[ProviderHints cat 100]
+    G --> H[TierGuardrails cat 200]
+    H --> I[PeerFeedback cat 250]
+    I --> J[FailureRecovery cat 275]
+    J --> K[SkillContext cat 300]
+    K --> L[ToolGuidance cat 325]
+    L --> M[GuildKnowledge cat 400]
+    M --> N[ReviewBrief cat 450]
+    N --> O[Persona cat 500]
+    O --> P[QuestContext cat 600]
+    P --> Q[AssembledPrompt]
 ```
 
 Agent-level overrides (`SystemPrompt`, `PersonaPrompt`) and the quest context block are
 appended after all registry fragments. They represent the "last word" in the prompt and
 are never stored in the registry.
 
-The complete assembly call:
-
-```go
-registry := promptmanager.NewPromptRegistry()
-registry.RegisterProviderStyles()
-registry.RegisterDomainCatalog(&domains.SoftwarePromptCatalog)
-
-assembler := promptmanager.NewPromptAssembler(registry)
-
-prompt := assembler.AssembleSystemPrompt(promptmanager.AssemblyContext{
-    AgentID:          agentID,
-    Tier:             domain.TierExpert,
-    Skills:           agent.Skills,
-    RequiredSkills:   quest.RequiredSkills,
-    QuestTitle:       quest.Title,
-    QuestDescription: quest.Description,
-    Provider:         "anthropic",
-})
-// prompt.SystemMessage → assembled system prompt
-// prompt.UserMessage   → quest input or description
-// prompt.FragmentsUsed → ["software.system-base", "software.tier-guardrails.expert", ...]
-```
+The assembled result exposes `SystemMessage`, `UserMessage`, and `FragmentsUsed` (the list
+of fragment IDs included, useful for observability in trajectories).
 
 ---
 
@@ -385,22 +296,31 @@ prompt := assembler.AssembleSystemPrompt(promptmanager.AssemblyContext{
 The ordering system uses integer constants. Lower values appear earlier in the assembled
 prompt.
 
-| Constant                | Value | Purpose                                                        |
-|-------------------------|-------|----------------------------------------------------------------|
-| `CategorySystemBase`    | 0     | Domain identity ("You are a developer in a software team.")    |
-| `CategoryProviderHints` | 100   | Provider-specific formatting hints (registered manually)       |
-| `CategoryTierGuardrails`| 200   | Behavioral bounds for the agent's trust tier                   |
-| `CategoryPeerFeedback`  | 250   | Low-rated peer review warnings (injected at runtime, not stored in registry) |
-| `CategorySkillContext`  | 300   | Task-specific instructions for each required skill             |
-| `CategoryGuildKnowledge`| 400   | Guild library fragments (registered per-guild)                 |
-| `CategoryPersona`       | 500   | Agent character or personality overrides                       |
-| `CategoryQuestContext`  | 600   | Quest title, description, time limit, token budget             |
+| Constant                  | Value | Purpose                                                             |
+|---------------------------|-------|---------------------------------------------------------------------|
+| `CategorySystemBase`      | 0     | Domain identity ("You are a developer in a software team.")         |
+| `CategoryToolDirective`   | 50    | Mandatory tool-call instructions (e.g., party lead must call `decompose_quest` first) |
+| `CategoryProviderHints`   | 100   | Provider-specific formatting hints (registered manually)            |
+| `CategoryTierGuardrails`  | 200   | Behavioral bounds for the agent's trust tier                        |
+| `CategoryPeerFeedback`    | 250   | Low-rated peer review warnings (injected at runtime from context)   |
+| `CategoryFailureRecovery` | 275   | Previous attempt failure context, salvaged output, anti-patterns    |
+| `CategorySkillContext`    | 300   | Task-specific instructions for each required skill                  |
+| `CategoryToolGuidance`    | 325   | Advisory guidance on when to use which tool                         |
+| `CategoryGuildKnowledge`  | 400   | Guild library fragments (registered per-guild)                      |
+| `CategoryReviewBrief`     | 450   | Compact summary of how the agent's work will be evaluated           |
+| `CategoryPersona`         | 500   | Agent character or personality overrides                            |
+| `CategoryQuestContext`    | 600   | Quest title, description, time limit, token budget                  |
 
 `RegisterDomainCatalog` assigns categories automatically:
 
 - `SystemBase` → `CategorySystemBase`, no gating
 - Each `TierGuardrails[tier]` → `CategoryTierGuardrails`, gated `MinTier=MaxTier=tier`
 - Each `SkillFragments[skill]` → `CategorySkillContext`, gated to `Skills=[skill]`
+
+`CategoryToolDirective` and `CategoryFailureRecovery` are used by built-in fragments
+registered via `RegisterBuiltinFragments` (called in `questbridge`). They are not part
+of the domain catalog — they carry runtime context (party role, failure history) that
+domain authors do not control.
 
 Custom fragments registered directly via `registry.Register(&PromptFragment{...})` can
 use any category and any gating combination.
@@ -447,108 +367,42 @@ table for OpenAI/Ollama.
 
 ## Adding a Custom Domain
 
-The steps below create a hypothetical `legal` domain.
+The four steps below apply to any new domain. Use `domains/software.go` as the concrete
+reference implementation.
 
 ### 1. Define the config and catalog
 
-Create `domains/legal.go`:
+Create `domains/legal.go` with two variables:
 
 ```go
-package domains
-
-import (
-    "github.com/c360studio/semdragons"
-    "github.com/c360studio/semdragons/domain"
-    "github.com/c360studio/semdragons/processor/promptmanager"
-)
-
-const DomainLegal domain.ID = "legal"
-
-var LegalDomain = semdragons.DomainConfig{
-    ID:          DomainLegal,
-    Name:        "Legal Practice",
-    Description: "Draft, review, and analyze legal documents",
-    Skills: []semdragons.DomainSkill{
-        {Tag: domain.SkillAnalysis,      Name: "Legal Analysis",   Description: "Analyze statutes and case law"},
-        {Tag: domain.SkillResearch,      Name: "Legal Research",   Description: "Research precedents and regulations"},
-        {Tag: domain.SkillSummarization, Name: "Brief Writing",    Description: "Summarize complex legal matters"},
-        {Tag: "contract_review",         Name: "Contract Review",  Description: "Review and redline contracts"},
-        {Tag: "deposition",              Name: "Deposition Prep",  Description: "Prepare witness examinations"},
+// DomainConfig — vocabulary, skill taxonomy, tier names
+var LegalDomain = domain.Config{
+    ID: "legal",
+    Skills: []domain.Skill{
+        {Tag: domain.SkillAnalysis, Name: "Legal Analysis", Description: "..."},
+        {Tag: "contract_review",    Name: "Contract Review", Description: "..."},
     },
-    Vocabulary: semdragons.DomainVocabulary{
-        Agent:      "Associate",
-        Quest:      "Matter",
-        Party:      "Practice Group",
-        Guild:      "Firm",
-        BossBattle: "Partner Review",
-        XP:         "Billable Credits",
-        Level:      "Year",
-        TierNames: map[semdragons.TrustTier]string{
-            semdragons.TierApprentice:  "1st Year",
-            semdragons.TierJourneyman:  "3rd Year",
-            semdragons.TierExpert:      "Senior Associate",
-            semdragons.TierMaster:      "Of Counsel",
-            semdragons.TierGrandmaster: "Partner",
-        },
-        RoleNames: map[semdragons.PartyRole]string{
-            semdragons.RoleLead:     "Lead Counsel",
-            semdragons.RoleExecutor: "Associate",
-            semdragons.RoleReviewer: "Supervising Partner",
-            semdragons.RoleScout:    "Paralegal",
+    Vocabulary: domain.Vocabulary{
+        Agent: "Associate", Quest: "Matter", BossBattle: "Partner Review",
+        TierNames: map[domain.TrustTier]string{
+            domain.TierApprentice: "1st Year", domain.TierGrandmaster: "Partner",
         },
     },
 }
 
+// DomainCatalog — prompt text for each tier, skill, and judge role
 var LegalPromptCatalog = promptmanager.DomainCatalog{
-    DomainID: DomainLegal,
-
-    SystemBase: "You are an associate at a law firm. Complete the assigned matter " +
-        "with precision and strict adherence to professional standards.",
-
-    TierGuardrails: map[semdragons.TrustTier]string{
-        semdragons.TierApprentice: "You are a 1st Year Associate:\n" +
-            "- You may ONLY research, summarize, and draft under supervision\n" +
-            "- You may NOT advise clients directly or sign filings\n" +
-            "- Always get partner sign-off before sending",
-        semdragons.TierExpert: "You are a Senior Associate:\n" +
-            "- You may advise clients on standard matters\n" +
-            "- You may negotiate routine contract terms\n" +
-            "- Flag unusual clauses to partners immediately",
-        semdragons.TierGrandmaster: "You are a Partner:\n" +
-            "- You may make final decisions on client strategy\n" +
-            "- You may represent the firm in court\n" +
-            "- Your signature binds the firm",
-    },
-
-    SkillFragments: map[semdragons.SkillTag]string{
-        domain.SkillAnalysis:      "Analyze applicable statutes, regulations, and precedent. Cite sources.",
-        domain.SkillResearch:      "Research using primary sources. Note jurisdiction. Flag conflicting authority.",
-        domain.SkillSummarization: "Write clearly. Use plain English where possible. State the bottom line first.",
-        "contract_review":         "Identify non-standard terms. Redline with explanations. Flag risk clauses.",
-        "deposition":              "Prepare open and closed questions. Anticipate objections. Note key admissions.",
-    },
-
-    JudgeSystemBase: "You are a senior partner reviewing an associate's work product for accuracy and risk.",
+    DomainID:        "legal",
+    SystemBase:      "You are an associate at a law firm...",
+    TierGuardrails:  map[domain.TrustTier]string{ /* one entry per tier */ },
+    SkillFragments:  map[domain.SkillTag]string{ /* one entry per skill tag */ },
+    JudgeSystemBase: "You are a senior partner reviewing an associate's work product.",
 }
 ```
 
-### 2. Register the domain ID
+### 2. Load the catalog at startup
 
-Add the constant to `domain/config.go` (or keep it in `domains/legal.go` if the domain is
-optional):
-
-```go
-const (
-    DomainSoftware ID = "software"
-    DomainDnD      ID = "dnd"
-    DomainResearch ID = "research"
-    DomainLegal    ID = "legal"   // add here only if it becomes a standard domain
-)
-```
-
-### 3. Load the catalog at startup
-
-In `cmd/semdragons/main.go` (or wherever your service initializes the prompt registry):
+In `cmd/semdragons/main.go`:
 
 ```go
 registry := promptmanager.NewPromptRegistry()
@@ -556,7 +410,7 @@ registry.RegisterProviderStyles()
 registry.RegisterDomainCatalog(&domains.LegalPromptCatalog)
 ```
 
-### 4. Configure the board
+### 3. Configure the board
 
 Set `BoardConfig.Domain` to point at `LegalDomain`:
 

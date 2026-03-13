@@ -1,5 +1,21 @@
 # Semdragons: Design Document
 
+## Contents
+
+- [The Elevator Pitch](#the-elevator-pitch)
+- [Concept Map](#concept-map)
+- [Architecture Layers](#architecture-layers)
+- [Agentic Execution Path](#agentic-execution-path)
+- [Trust Tiers in Detail](#trust-tiers-in-detail)
+- [Graph Gateway](#graph-gateway)
+- [Artifact Lifecycle](#artifact-lifecycle)
+- [Example Flow](#example-flow-analyze-q3-sales-data-and-send-summary-to-stakeholders)
+- [Death Mechanics](#death-mechanics)
+- [Design Decisions](#design-decisions)
+- [Agent Store System](#agent-store-system)
+
+---
+
 ## The Elevator Pitch
 
 Agentic workflow coordination modeled as a tabletop RPG, built on semstreams.
@@ -68,29 +84,145 @@ Coordination emerges from Boid-like flocking behavior over a structured quest bo
 
 ---
 
-## Trust Tiers in Detail
+## Agentic Execution Path
+
+The primary execution path for quest work runs through three components:
 
 ```
-Level 1-5   │ APPRENTICE   │ Read-only, summarize, classify, simple transforms
-            │              │ Tools: grep, read APIs, formatters
-            │              │ No external side effects
-            │              │
-Level 6-10  │ JOURNEYMAN   │ Can call tools, make API requests, write to staging
-            │              │ Tools: + HTTP clients, DB reads, file I/O
-            │              │ Side effects in sandboxed environments
-            │              │
-Level 11-15 │ EXPERT       │ Can modify production state, spend money, deploy
-            │              │ Tools: + prod DB writes, payment APIs, CI/CD triggers
-            │              │ Requires boss battle on every quest
-            │              │
-Level 16-18 │ MASTER       │ Can supervise agents, decompose quests, lead parties
-            │              │ All tools + agent management
-            │              │ Can create sub-quests, review other agents
-            │              │
-Level 19-20 │ GRANDMASTER  │ Can act as DM delegate, create quests, manage guilds
-            │              │ Full system access
-            │              │ Trusted to make unsupervised decisions
+Quest transitions to in_progress
+        │
+        ▼
+   questbridge
+   - Watches KV for in_progress transitions
+   - Assembles TaskMessage (prompt, tools, metadata)
+   - Publishes to AGENT JetStream stream
+   - Persists quest-to-loop mapping in QUEST_LOOPS KV
+        │
+        ▼
+  semstreams agentic-loop + agentic-model
+   - Runs the LLM turn loop
+   - Emits tool.execute.* messages for each tool call
+   - Emits loop completion/failure events
+        │
+        ▼
+   questtools
+   - Consumes tool.execute.* from AGENT stream
+   - Enforces tier/skill/sandbox gates via ToolRegistry
+   - Publishes tool.result.* responses back to AGENT stream
+        │
+        ▼
+   questbridge (completion handler)
+   - Receives loop done/failed event
+   - Transitions quest to completed or failed
+   - Emits quest.lifecycle.completed / quest.lifecycle.failed
 ```
+
+This design is reactive and event-driven throughout. `questbridge` and `questtools` are
+the semdragons integration layer over semstreams' generic agentic-loop. They translate
+quest entities and tool registrations into the message format the loop expects, then
+translate results back into quest state changes.
+
+**The `executor` component is opt-in / legacy.** It provides synchronous LLM execution
+without the agentic-loop and was the original implementation. It is not enabled in the
+default config. New deployments should use questbridge + questtools.
+
+### Context Assembly
+
+Before publishing the `TaskMessage`, `questbridge` assembles the agent's context window:
+
+1. **System prompt** — domain-specific fragments selected from the prompt catalog via
+   `promptmanager`. Fragments are selected by tier and skill tag.
+2. **Entity knowledge** — structured text about the agent's identity (level, XP, skills,
+   party membership), the quest (goal, requirements, scenarios), and any injected peer
+   review feedback. Appended after the system prompt.
+3. **Quest input** — the `quest.data.input` triple value, if set, gives the agent
+   material to work with.
+4. **Dependency output** — for quests in a chain, the completed dependency's
+   `quest.data.output` is injected as context.
+
+Context metadata (token count, fragment IDs, entity IDs) is stored on the quest entity
+under `quest.context.*` predicates and is visible in trajectory traces.
+
+---
+
+## Trust Tiers in Detail
+
+Trust tiers are derived from agent level. The mapping is defined in `domain.TierFromLevel`.
+
+```
+Level  1-5   │ APPRENTICE   │ Read-only, summarize, classify, simple transforms
+             │              │ Max quest difficulty: Trivial
+             │              │ No external side effects
+             │              │
+Level  6-10  │ JOURNEYMAN   │ Can call tools, make API requests, write to staging
+             │              │ Max quest difficulty: Moderate
+             │              │ Side effects in sandboxed environments
+             │              │
+Level 11-15  │ EXPERT       │ Can modify production state, spend money, deploy
+             │              │ Max quest difficulty: Hard
+             │              │ Requires boss battle on production-critical output
+             │              │
+Level 16-18  │ MASTER       │ Can lead parties, decompose quests, supervise agents
+             │              │ Max quest difficulty: Epic
+             │              │ Can create sub-quests and review other agents
+             │              │
+Level 19-20  │ GRANDMASTER  │ Can act as DM delegate, create quests, manage guilds
+             │              │ Max quest difficulty: Legendary
+             │              │ Trusted to make unsupervised decisions
+```
+
+Key permission boundaries from `domain.TierPermissionsFor`:
+
+| Tier         | Lead Party | Decompose Quest | Supervise | Act as DM |
+|--------------|-----------|-----------------|-----------|-----------|
+| Apprentice   | no        | no              | no        | no        |
+| Journeyman   | no        | no              | no        | no        |
+| Expert       | no        | no              | no        | no        |
+| Master       | yes       | yes             | yes       | no        |
+| Grandmaster  | yes       | yes             | yes       | yes       |
+
+---
+
+## Graph Gateway
+
+The `graph-gateway` component (semstreams v1.0.0-alpha.22+) exposes a GraphQL endpoint
+for querying entity state. It enables temporal queries, NLQ classification, similarity
+search, and relationship traversal — capabilities that go beyond what the KV watch
+pattern can provide cheaply.
+
+The gateway is not wired in the default config yet. When enabled, it is proxied through
+the SvelteKit BFF layer (`+page.server.ts` load functions) for dashboard pages that
+need historical or relational queries. The dashboard's `worldStore` covers the common
+case (current state of all entities); the gateway covers the rest.
+
+---
+
+## Artifact Lifecycle
+
+Agents execute inside a sandboxed directory managed by `questtools`. Any files written
+during tool execution are snapshotted on quest completion and stored in the artifact
+filestore under the path `quests/{quest_id}/`.
+
+The artifact lifecycle has four stages:
+
+1. **Sandbox** — agent writes files during execution via tool calls. The sandbox is a
+   temporary directory scoped to the quest's agentic loop.
+2. **Snapshot** — on quest completion, `questtools` or the agentic-loop completion
+   handler copies the sandbox contents into the filestore.
+3. **Filestore** — artifacts are stored under `quests/{quest_id}/` in the configured
+   storage backend (local filesystem or object store).
+4. **Browse** — the REST API and UI workspace page expose the artifacts for inspection.
+
+### Artifact API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/game/workspace` | List quests that have artifacts, with file counts |
+| `GET` | `/game/workspace/tree?quest={id}` | Nested file tree for a quest's artifacts |
+| `GET` | `/game/workspace/file?quest={id}&path={path}` | Serve a single artifact file |
+
+The workspace page in the dashboard at `/workspace` wraps these three endpoints. File
+paths are validated against path traversal (`..`) before serving.
 
 ---
 
@@ -119,7 +251,7 @@ quest := NewQuest("Analyze Q3 sales and email stakeholders").
     XP(500).
     BonusXP(200).
     MaxDuration(30 * time.Minute).
-    ReviewAs(ReviewStrict). // Dragon-level boss battle
+    ReviewAs(ReviewStrict).
     Build()
 
 board.PostQuest(ctx, quest)
@@ -127,12 +259,15 @@ board.PostQuest(ctx, quest)
 ```
 
 ### 2. Boids Engine Suggests Party
+
 The Boids engine identifies idle agents with matching skills:
-- **DataDragon** (Level 14, Expert, Guild: Data Wranglers) - high affinity for data quests
-- **SummaryScribe** (Level 12, Expert, Guild: Analysts) - strong analysis + writing
-- **MailHawk** (Level 8, Journeyman, Skills: customer_communications) - can send emails
+
+- **DataDragon** (Level 14, Expert, Guild: Data Wranglers) — high affinity for data quests
+- **SummaryScribe** (Level 12, Expert, Guild: Analysts) — strong analysis + writing
+- **MailHawk** (Level 8, Journeyman, Skills: customer_communications) — can send emails
 
 ### 3. DM Forms Party with Mentor Strategy
+
 ```go
 party := dm.FormParty(ctx, quest.ID, PartyStrategyBalanced)
 // DataDragon becomes lead (highest level, can decompose)
@@ -149,16 +284,16 @@ DAG proposal — four nodes with explicit dependency edges:
 Sub-quest 1: "Extract Q3 sales data"           (Moderate, data_transformation) — no deps
 Sub-quest 2: "Analyze trends and anomalies"    (Hard, analysis)                — depends on 1
 Sub-quest 3: "Write executive summary"         (Moderate, summarization)       — depends on 2
-Sub-quest 4: "Email summary to VP distribution list" (Easy, customer_comms)   — depends on 3
+Sub-quest 4: "Email summary to VP list"        (Easy, customer_comms)          — depends on 3
 ```
 
-`questdagexec` validates the DAG (cycle check, member assignments, max 20 nodes) and
-persists it as `quest.dag.*` predicates on the parent quest entity in the graph.
+`questdagexec` validates the DAG (cycle check, max 20 nodes) and persists it as
+`quest.dag.*` predicates on the parent quest entity in the graph.
 
 ### 5. Sub-Quests Execute
 
 `questdagexec` watches KV transitions. Nodes 2-4 start `pending`; node 1 is immediately
-`ready`. `questdagexec` calls `ClaimQuestForParty` to route node 1 to DataDragon —
+`ready`. `questdagexec` calls `ClaimAndStartForParty` to route node 1 to DataDragon —
 agents do not claim party sub-quests via the public board.
 
 When node 1 completes, node 2 becomes `ready` and is routed to SummaryScribe. Each
@@ -167,7 +302,7 @@ the summary output from node 3 is available.
 
 Each sub-quest has its own mini boss battle (ReviewAuto or ReviewStandard). After the
 boss battle, the node transitions to `pending_review` and DataDragon receives a
-`review_sub_quest` tool call. Acceptance (average rating ≥ 3.0) moves the node to
+`review_sub_quest` tool call. Acceptance (average rating >= 3.0) moves the node to
 `completed`; rejection injects corrective feedback into the member's retry prompt.
 
 ### 6. Party Lead Rolls Up Results
@@ -177,13 +312,20 @@ Once all four nodes reach `completed`, `questdagexec` sends DataDragon a
 synthesises the final package and returns it as the rollup payload. `questdagexec`
 submits this as the parent quest output and disbands the party.
 
-### 7. Boss Battle (Dragon Level)
+### 7. Boss Battle (Strict Level)
+
 Multi-judge review panel:
-- **Automated judge**: Checks data accuracy, email formatting, recipient list
-- **LLM judge**: Evaluates summary quality, insight depth, tone appropriateness
-- **LLM judge 2**: Cross-checks analysis against raw data for hallucinations
+
+- **Automated judge** — checks data accuracy, email formatting, recipient list
+- **LLM judge** — evaluates summary quality, insight depth, tone appropriateness
+- **LLM judge 2** — cross-checks analysis against raw data for hallucinations
+
+Criteria and results are persisted as indexed triples on the battle entity
+(`battle.criteria.{i}.name`, `battle.result.{i}.score`, etc.) for full observability
+and trajectory replay.
 
 ### 8. XP Distribution
+
 ```
 DataDragon:    500 base + 180 quality + 50 speed + 75 guild = 805 XP (LEVEL UP → 15!)
 SummaryScribe: 350 base + 140 quality + 0 speed + 52 guild  = 542 XP
@@ -191,17 +333,18 @@ MailHawk:       50 base +  40 quality + 20 speed + 0 guild   = 110 XP
 ```
 
 ### 9. Events Stream (via semstreams)
+
 ```
-quest.posted     → {quest_id: "q-123", difficulty: "epic"}
-party.formed     → {party_id: "p-456", lead: "DataDragon", members: [...]}
-quest.claimed    → {quest_id: "q-123-sub-1", agent: "DataDragon"}
-quest.started    → ...
-quest.completed  → {quest_id: "q-123-sub-1", quality: 0.92}
-battle.started   → {battle_id: "b-789", level: "strict", judges: 3}
-battle.victory   → {battle_id: "b-789", quality: 0.89}
-agent.level_up   → {agent: "DataDragon", old: 14, new: 15, tier: "expert"}
-quest.completed  → {quest_id: "q-123", quality: 0.89}
-party.disbanded  → {party_id: "p-456"}
+quest.lifecycle.posted     → {quest_id: "q-123", difficulty: "epic"}
+party.formation.formed     → {party_id: "p-456", lead: "DataDragon", members: [...]}
+quest.lifecycle.claimed    → {quest_id: "q-123-sub-1", agent: "DataDragon"}
+quest.lifecycle.started    → ...
+quest.lifecycle.completed  → {quest_id: "q-123-sub-1", quality: 0.92}
+battle.review.started      → {battle_id: "b-789", level: "strict", judges: 3}
+battle.review.victory      → {battle_id: "b-789", quality: 0.89}
+agent.progression.levelup  → {agent: "DataDragon", old: 14, new: 15, tier: "expert"}
+quest.lifecycle.completed  → {quest_id: "q-123", quality: 0.89}
+party.formation.disbanded  → {party_id: "p-456"}
 ```
 
 ---
@@ -223,29 +366,29 @@ party.disbanded  → {party_id: "p-456"}
 
 The following questions arose during design and are now settled:
 
-- **Guild formation**: Both auto-suggest and DM-created. The `guildformation` processor performs
-  automatic clustering based on demonstrated skills and co-performance. The DM can also form guilds
-  manually via the API.
+- **Guild formation**: Both auto-suggest and DM-created. The `guildformation` processor
+  performs automatic clustering based on demonstrated skills and co-performance. The DM
+  can also form guilds manually via the API.
 
-- **Inter-guild quests**: The party system handles cross-guild collaboration. Parties can draw
-  members from multiple guilds; no separate inter-guild mechanism is needed.
+- **Inter-guild quests**: The party system handles cross-guild collaboration. Parties can
+  draw members from multiple guilds; no separate inter-guild mechanism is needed.
 
 - **Agent memory**: Guild library for persistent cross-quest knowledge; party context for
   quest-scoped memory. Agents are persistent KV entities and retain state across sessions.
 
-- **Boids vs explicit assignment**: Boids is the default. DM modes (`full_auto`, `supervised`,
-  `manual`) control how much the DM overrides suggestions. In `supervised` and `manual` modes the
-  DM can intercept any boid suggestion before it becomes a claim.
+- **Boids vs explicit assignment**: Boids is the default. DM modes (`full_auto`,
+  `supervised`, `manual`) control how much the DM overrides suggestions. In `supervised`
+  and `manual` modes the DM can intercept any boid suggestion before it becomes a claim.
 
-- **Multi-session learning**: Yes. Agents are persistent entities stored in NATS KV; sessions are
-  execution contexts, not agent lifetimes. Levels and XP survive restarts.
+- **Multi-session learning**: Yes. Agents are persistent entities stored in NATS KV;
+  sessions are execution contexts, not agent lifetimes. Levels and XP survive restarts.
 
-- **Quest chains**: Supported via `depends_on` with dependency validation. The parent quest remains
-  open across sessions until all dependencies resolve.
+- **Quest chains**: Supported via `depends_on` with dependency validation. The parent
+  quest remains open across sessions until all dependencies resolve.
 
-- **Competitive dynamics**: The Boids engine handles competition implicitly via attraction scores.
-  Guild reputation further differentiates agents on shared quest pools, enabling A/B-style
-  competitive dynamics without explicit PvP mechanics.
+- **Competitive dynamics**: The Boids engine handles competition implicitly via attraction
+  scores. Guild reputation further differentiates agents on shared quest pools, enabling
+  A/B-style competitive dynamics without explicit PvP mechanics.
 
 For implementation details see [Getting Started](01-GETTING-STARTED.md).
 
@@ -256,11 +399,12 @@ For implementation details see [Getting Started](01-GETTING-STARTED.md).
 An in-game store where agents spend XP to purchase tool access and consumables.
 
 ### Design Principles
-- **XP is currency** - Spend to buy OR save to level up (strategic trade-off)
-- **Trust tier gates availability** - Higher tier agents see more items
-- **Permanent + rental options** - Core tools owned, expensive tools rented
-- **Consumables for recovery** - Help agents bounce back from failures
-- **Event-driven** - All transactions flow through semstreams
+
+- **XP is currency** — Spend to buy OR save to level up (strategic trade-off)
+- **Trust tier gates availability** — Higher tier agents see more items
+- **Permanent + rental options** — Core tools owned, expensive tools rented
+- **Consumables for recovery** — Help agents bounce back from failures
+- **Event-driven** — All transactions flow through semstreams
 
 ### Item Types
 
@@ -273,37 +417,17 @@ An in-game store where agents spend XP to purchase tool access and consumables.
 
 | ID | Name | XP Cost | Effect |
 |----|------|---------|--------|
-| retry_token | Retry Token | 50 | Retry failed quest without penalty |
-| cooldown_skip | Cooldown Skip | 75 | Clear cooldown immediately |
-| xp_boost | XP Boost | 100 | 2x XP on next quest |
-| quality_shield | Quality Shield | 150 | Ignore one failed review criterion |
-| insight_scroll | Insight Scroll | 50 | See quest difficulty hints before claiming |
-
-### Key Interfaces
-
-```go
-type Store interface {
-    ListItems(ctx, agentID) ([]StoreItem, error)
-    Purchase(ctx, agentID, itemID) (*OwnedItem, error)
-    GetInventory(ctx, agentID) (*AgentInventory, error)
-    UseConsumable(ctx, agentID, consumableID) error
-    GetActiveEffects(ctx, agentID) ([]ConsumableEffect, error)
-}
-```
+| `retry_token` | Retry Token | 50 | Retry failed quest without penalty |
+| `cooldown_skip` | Cooldown Skip | 75 | Clear cooldown immediately |
+| `xp_boost` | XP Boost | 100 | 2x XP on next quest |
+| `quality_shield` | Quality Shield | 150 | Ignore one failed review criterion |
+| `insight_scroll` | Insight Scroll | 50 | See quest difficulty hints before claiming |
 
 ### Event Predicates
 
 ```
-store.item.purchased   // Agent bought something
-store.item.used        // Rental use consumed
-store.consumable.used  // Consumable activated
-agent.inventory.updated // Inventory changed
+store.item.purchased     // Agent bought something
+store.item.used          // Rental use consumed
+store.consumable.used    // Consumable activated
+agent.inventory.updated  // Inventory changed
 ```
-
-### Implementation Phases
-
-1. **Backend Types & Store Service** - Types, default implementation, XP spending
-2. **API Layer** - HTTP endpoints for store and inventory
-3. **UI Store Page** - /store route with item grid and purchase flow
-4. **Consumable Effects** - Wire into quest claim/complete
-5. **Polish** - Guild discounts, purchase history, recommendations

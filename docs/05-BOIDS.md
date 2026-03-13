@@ -4,14 +4,28 @@ There is no central scheduler. Agents flock toward quests using attraction score
 from six rules inspired by Craig Reynolds' boid flocking algorithm. The highest-scoring
 agent-quest pairs become claim suggestions.
 
+## Contents
+
+- [Overview](#overview)
+- [The Six Rules](#the-six-rules)
+- [Guild and Reputation Integration](#guild-and-reputation-integration)
+- [Guild Attraction Rules](#guild-attraction-rules)
+- [Peer Review Feedback](#peer-review-feedback)
+- [Suggestion Modes](#suggestion-modes)
+- [Configuration](#configuration)
+- [Tuning Guide](#tuning-guide)
+- [Further Reading](#further-reading)
+
+---
+
 ## Overview
 
 Every `update_interval_ms` (default 1000ms), the `boidengine` processor:
 
-1. Loads all idle agents and posted quests from KV
-2. Computes attraction scores for every agent-quest pair
-3. Produces suggestions via greedy assignment or ranked top-N
-4. Publishes suggestions so agents (or the autonomy loop) can act on them
+1. Loads all idle agents and posted quests from KV.
+2. Computes attraction scores for every agent-quest pair.
+3. Produces suggestions via greedy assignment or ranked top-N.
+4. Publishes suggestions so agents (or the autonomy loop) can act on them.
 
 The engine considers six weighted rules. Each rule contributes a score (positive = pull,
 negative = push). The total score determines how strongly an agent is attracted to a quest.
@@ -149,16 +163,38 @@ A guildmaster (rank bonus 1.25) in a guild with 0.8 reputation:
 guild_match = (1.0 + 1.25) * (1.0 + 0.8 * 0.5) = 2.25 * 1.4 = 3.15
 ```
 
+## Guild Attraction Rules
+
+The `guildformation` processor uses a separate social-construct model to determine which
+agents are likely to form or join the same guild. Three signals feed into guild attraction:
+
+**Shared wins**: How many quests have agents A and B completed together in the same party?
+Tracked by `sharedWinsCache` (bootstrapped from completed quests and peer reviews at
+startup). Agents with more shared wins have stronger guild affinity toward each other.
+
+**Skill diversity**: Guilds benefit from complementary skills, not clones. The attraction
+formula rewards pairs where one agent's skills cover gaps in the other's, encouraging
+cross-functional guild membership.
+
+**Pairwise trust**: Derived from mutual peer review ratings. A running average of all
+ratings exchanged between two agents (in either direction) produces a normalized 0-1
+pairwise trust score. High pairwise trust increases guild-formation attraction.
+
+These three signals are combined to produce a per-pair attraction score used during the
+periodic guild clustering pass. Unlike boid scores (which match agents to quests),
+guild attraction scores match agents to agents — the clustering algorithm groups
+high-attraction pairs into candidate guilds.
+
 ## Peer Review Feedback
 
 The boid engine uses `Agent.Stats.PeerReviewAvg` (1-5 scale) to adjust affinity scores.
 This creates a virtuous cycle:
 
-1. Agent does good work on quests
-2. Peers rate them highly
-3. Higher peer review average boosts affinity
-4. Agent gets stronger suggestions for matching quests
-5. More matching quests leads to better performance
+1. Agent does good work on quests.
+2. Peers rate them highly.
+3. Higher peer review average boosts affinity.
+4. Agent gets stronger suggestions for matching quests.
+5. More matching quests leads to better performance.
 
 Conversely, poorly-rated agents get weaker suggestions, steering them toward less
 demanding quests where they can rebuild reputation.
@@ -169,9 +205,9 @@ demanding quests where they can rebuild reputation.
 
 Takes the sorted attraction list and greedily assigns one quest per agent:
 
-1. Take the highest-scoring agent-quest pair
-2. Remove both agent and quest from the pool
-3. Repeat until no pairs remain
+1. Take the highest-scoring agent-quest pair.
+2. Remove both agent and quest from the pool.
+3. Repeat until no pairs remain.
 
 Each suggestion includes a confidence score based on the margin between the best and
 second-best quest for that agent.
@@ -185,8 +221,9 @@ greedy mode, quests are **not** removed from the pool — multiple agents may re
 same quest as a suggestion.
 
 Confidence is computed as:
-- Top suggestion: margin between 1st and 2nd best score
-- Lower suggestions: ratio to top score, halved
+
+- Top suggestion: margin between 1st and 2nd best score.
+- Lower suggestions: ratio to top score, halved.
 
 KV write serialization handles conflicts naturally at claim time (first writer wins).
 
