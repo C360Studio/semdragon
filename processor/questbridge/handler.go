@@ -1770,15 +1770,28 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		}
 	}
 
-	// Inject structural checklist from domain catalog so agents self-check before submitting.
+	// Inject structural checklist and review criteria from domain catalog.
 	// Filtered by quest tier and skills — agents only see requirements relevant to their work.
 	var checklist []promptmanager.ChecklistItem
+	var reviewLevel domain.ReviewLevel
+	var reviewCriteria []domain.ReviewCriterion
 	if c.config.DomainCatalog != nil && c.config.DomainCatalog.ReviewConfig != nil {
+		rc := c.config.DomainCatalog.ReviewConfig
 		checklist = promptmanager.FilterChecklist(
-			c.config.DomainCatalog.ReviewConfig.StructuralChecklist,
+			rc.StructuralChecklist,
 			quest.MinTier,
 			quest.RequiredSkills,
 		)
+		reviewLevel = quest.Constraints.ReviewLevel
+		// Per-level criteria override, then domain defaults.
+		if rc.CriteriaByLevel != nil {
+			if criteria, ok := rc.CriteriaByLevel[reviewLevel]; ok && len(criteria) > 0 {
+				reviewCriteria = criteria
+			}
+		}
+		if len(reviewCriteria) == 0 {
+			reviewCriteria = rc.DefaultCriteria
+		}
 	}
 
 	assemblyCtx := promptmanager.AssemblyContext{
@@ -1804,6 +1817,8 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		ClarificationSource:  c.clarificationSource(quest),
 		DependencyOutputs:    c.loadDependencyOutputs(ctx, quest),
 		StructuralChecklist:  checklist,
+		ReviewLevel:          reviewLevel,
+		ReviewCriteria:       reviewCriteria,
 		QuestGoal:            quest.Goal,
 		QuestRequirements:    quest.Requirements,
 		QuestScenarios:       quest.Scenarios,

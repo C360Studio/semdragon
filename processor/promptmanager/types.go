@@ -39,6 +39,11 @@ const (
 	CategorySkillContext FragmentCategory = 300
 	// CategoryGuildKnowledge contains guild library knowledge fragments.
 	CategoryGuildKnowledge FragmentCategory = 400
+	// CategoryReviewBrief contains a compact summary of how the agent's work
+	// will be evaluated — review level, scoring criteria, and peer review
+	// dimensions. Placed after guild knowledge so agents see it before
+	// starting work, but kept intentionally short to minimize context cost.
+	CategoryReviewBrief FragmentCategory = 450
 	// CategoryPersona contains agent character/personality overrides.
 	CategoryPersona FragmentCategory = 500
 	// CategoryQuestContext contains quest title, description, and constraints.
@@ -158,6 +163,11 @@ type AssemblyContext struct {
 	FailureAnalysis string                  `json:"failure_analysis,omitempty"`
 	RecoveryPath    string                  `json:"recovery_path,omitempty"`
 	AntiPatterns    []string                `json:"anti_patterns,omitempty"`
+
+	// Review awareness — tells the agent how their work will be evaluated.
+	// Populated from the domain's ReviewConfig at dispatch time.
+	ReviewLevel    domain.ReviewLevel      `json:"review_level,omitempty"`
+	ReviewCriteria []domain.ReviewCriterion `json:"review_criteria,omitempty"`
 
 	// Iteration budget — tells the agent how many tool-use rounds it has.
 	// Set from questbridge/executor config so agents plan work accordingly.

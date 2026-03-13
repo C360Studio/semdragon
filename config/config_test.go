@@ -277,12 +277,17 @@ const minContextWindow = 32000
 
 // TestModelOverlays_ContextWindowsSane guards against copy-paste errors where
 // max_tokens is set to a small output-token value instead of the model context window.
+// Embedding-only endpoints are skipped — they don't have a generative context window.
 func TestModelOverlays_ContextWindowsSane(t *testing.T) {
 	configs := loadModelOverlays(t)
 
 	for cfgName, cfg := range configs {
 		t.Run(cfgName, func(t *testing.T) {
+			embeddingOnly := embeddingOnlyEndpoints(cfg)
 			for endpointName, ep := range cfg.ModelRegistry.Endpoints {
+				if embeddingOnly[endpointName] {
+					continue
+				}
 				if ep.MaxTokens < minContextWindow {
 					t.Errorf("endpoint %q: max_tokens=%d is below minimum %d — "+
 						"this should be the model context window, not output token limit",
@@ -291,6 +296,30 @@ func TestModelOverlays_ContextWindowsSane(t *testing.T) {
 			}
 		})
 	}
+}
+
+// embeddingOnlyEndpoints returns endpoint names that appear only in
+// embedding capabilities. These endpoints don't have a generative context
+// window so the min-context-window check does not apply.
+func embeddingOnlyEndpoints(cfg testConfig) map[string]bool {
+	// Count how many capabilities reference each endpoint.
+	capCount := map[string]int{}       // endpoint → total capability references
+	embeddingCount := map[string]int{} // endpoint → embedding capability references
+	for capName, cap := range cfg.ModelRegistry.Capabilities {
+		for _, ep := range cap.Preferred {
+			capCount[ep]++
+			if capName == "embedding" {
+				embeddingCount[ep]++
+			}
+		}
+	}
+	result := map[string]bool{}
+	for ep, total := range capCount {
+		if total > 0 && embeddingCount[ep] == total {
+			result[ep] = true
+		}
+	}
+	return result
 }
 
 // knownProviders is the set of provider identifiers the runtime understands.

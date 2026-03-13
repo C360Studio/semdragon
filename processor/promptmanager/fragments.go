@@ -3,6 +3,8 @@ package promptmanager
 import (
 	"fmt"
 	"strings"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 // =============================================================================
@@ -33,6 +35,7 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerSubQuestExecutorDirective(r)
 	registerSoloAgentScenarioDirective(r)
 	registerSoloAgentWorkOutputDirective(r)
+	registerReviewBrief(r)
 }
 
 // partyLeadDirectiveBase is the mandatory tool-call instruction for party leads
@@ -265,5 +268,66 @@ func registerSoloAgentWorkOutputDirective(r *PromptRegistry) {
 		ContentFunc: buildSoloAgentWorkOutputDirective,
 		Priority:    15, // After scenario directive (10)
 		Condition:   isSoloAgent,
+	})
+}
+
+// =============================================================================
+// REVIEW BRIEF - Compact review awareness for agents
+// =============================================================================
+
+// reviewLevelLabel returns a human-readable label for a review level.
+func reviewLevelLabel(level domain.ReviewLevel) string {
+	switch level {
+	case domain.ReviewAuto:
+		return "Auto (automated checks only)"
+	case domain.ReviewStandard:
+		return "Standard (LLM judge)"
+	case domain.ReviewStrict:
+		return "Strict (multi-judge panel)"
+	case domain.ReviewHuman:
+		return "Strict + Human (requires human approval)"
+	default:
+		return "Standard"
+	}
+}
+
+// buildReviewBrief produces a compact review awareness summary (~3-5 lines).
+// Agents see: review level, scoring criteria, and peer review dimensions.
+// The structural checklist is already injected separately — not duplicated here.
+func buildReviewBrief(ctx AssemblyContext) string {
+	if len(ctx.ReviewCriteria) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Review level: %s\n", reviewLevelLabel(ctx.ReviewLevel)))
+
+	// Compact criteria line: "correctness (40%, ≥70%), completeness (30%, ≥60%), quality (30%, ≥50%)"
+	b.WriteString("Scoring: ")
+	for i, c := range ctx.ReviewCriteria {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(fmt.Sprintf("%s (%d%%, ≥%d%%)", c.Name, int(c.Weight*100), int(c.Threshold*100)))
+	}
+	b.WriteByte('\n')
+
+	b.WriteString("Peer ratings (1-5): task quality, communication, autonomy. Below 3.0 avg triggers corrective action on future tasks.")
+	return b.String()
+}
+
+// hasReviewCriteria gates the review brief fragment — only included when
+// review criteria have been populated in the assembly context.
+func hasReviewCriteria(ctx AssemblyContext) bool {
+	return len(ctx.ReviewCriteria) > 0
+}
+
+func registerReviewBrief(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:          "builtin.review-brief",
+		Category:    CategoryReviewBrief,
+		Priority:    0,
+		Condition:   hasReviewCriteria,
+		ContentFunc: buildReviewBrief,
 	})
 }

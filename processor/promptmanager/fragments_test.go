@@ -43,14 +43,15 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	reg := NewPromptRegistry()
 	RegisterBuiltinFragments(reg)
 
-	// Expect exactly 5 built-in fragments:
+	// Expect exactly 6 built-in fragments:
 	//   - party lead tool directive
 	//   - party lead provider hint
 	//   - sub-quest executor directive
 	//   - solo agent scenario directive
 	//   - solo agent work output directive
-	if got := reg.FragmentCount(); got != 5 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 5", got)
+	//   - review brief
+	if got := reg.FragmentCount(); got != 6 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 6", got)
 	}
 }
 
@@ -617,5 +618,94 @@ func TestQuestContext_NoLongerContainsPartyLeadInstruction(t *testing.T) {
 	}
 	if directiveIdx > questIdx {
 		t.Error("PARTY LEAD directive is appearing inside quest context (after quest title) — it should precede it")
+	}
+}
+
+// =============================================================================
+// REVIEW BRIEF TESTS
+// =============================================================================
+
+func TestReviewBrief_IncludedWhenCriteriaSet(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:     domain.TierJourneyman,
+		Provider: "anthropic",
+		ReviewLevel: domain.ReviewStandard,
+		ReviewCriteria: []domain.ReviewCriterion{
+			{Name: "correctness", Weight: 0.4, Threshold: 0.7, Description: "Code produces correct results"},
+			{Name: "completeness", Weight: 0.3, Threshold: 0.6, Description: "All requirements addressed"},
+			{Name: "quality", Weight: 0.3, Threshold: 0.5, Description: "Code quality"},
+		},
+		QuestTitle: "Implement auth",
+	})
+
+	if !strings.Contains(result.SystemMessage, "Standard (LLM judge)") {
+		t.Error("expected review level label in prompt")
+	}
+	if !strings.Contains(result.SystemMessage, "correctness (40%") {
+		t.Error("expected criteria summary in prompt")
+	}
+	if !strings.Contains(result.SystemMessage, "Peer ratings") {
+		t.Error("expected peer ratings notice in prompt")
+	}
+}
+
+func TestReviewBrief_ExcludedWhenNoCriteria(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:       domain.TierJourneyman,
+		Provider:   "anthropic",
+		QuestTitle: "Simple task",
+	})
+
+	if strings.Contains(result.SystemMessage, "Review level:") {
+		t.Error("review brief should not appear when no criteria are set")
+	}
+}
+
+func TestReviewBrief_StrictLevel(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:     domain.TierExpert,
+		Provider: "openai",
+		ReviewLevel: domain.ReviewStrict,
+		ReviewCriteria: []domain.ReviewCriterion{
+			{Name: "correctness", Weight: 0.4, Threshold: 0.8},
+		},
+		QuestTitle: "Critical feature",
+	})
+
+	if !strings.Contains(result.SystemMessage, "Strict (multi-judge panel)") {
+		t.Error("expected Strict review level label")
+	}
+}
+
+func TestReviewBrief_AppearsBeforeQuestContext(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:     domain.TierJourneyman,
+		Provider: "openai",
+		ReviewLevel: domain.ReviewStandard,
+		ReviewCriteria: []domain.ReviewCriterion{
+			{Name: "correctness", Weight: 0.5, Threshold: 0.7},
+		},
+		QuestTitle:       "Build feature",
+		QuestDescription: "Do the work",
+	})
+
+	reviewIdx := strings.Index(result.SystemMessage, "Review level:")
+	questIdx := strings.Index(result.SystemMessage, "Build feature")
+	if reviewIdx < 0 {
+		t.Fatal("review brief not found in prompt")
+	}
+	if questIdx < 0 {
+		t.Fatal("quest context not found in prompt")
+	}
+	if reviewIdx > questIdx {
+		t.Error("review brief should appear before quest context")
 	}
 }
