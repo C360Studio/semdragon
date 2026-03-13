@@ -102,6 +102,9 @@ const selectedAgent = $derived(selectedAgentId ? agents.get(selectedAgentId) : n
 const selectedQuest = $derived(selectedQuestId ? quests.get(selectedQuestId) : null);
 const selectedBattle = $derived(selectedBattleId ? battles.get(selectedBattleId) : null);
 
+// Top-level quests (excludes sub-quests of party DAGs)
+const topLevelQuestList = $derived(questList.filter((q) => !q.parent_quest));
+
 // Quest filtering
 const openQuests = $derived(questList.filter((q) => q.status === 'posted'));
 const activeQuests = $derived(
@@ -442,6 +445,7 @@ export function createWorldStore() {
 		get selectedBattle() { return state.selectedBattleId ? state.battles.get(state.selectedBattleId) ?? null : null; },
 		get agentList() { return Array.from(state.agents.values()).sort((a, b) => b.level - a.level); },
 		get questList() { return Array.from(state.quests.values()); },
+		get topLevelQuestList() { return Array.from(state.quests.values()).filter((q) => !q.parent_quest); },
 		get partyList() { return Array.from(state.parties.values()); },
 		get guildList() { return Array.from(state.guilds.values()); },
 		get battleList() { return Array.from(state.battles.values()); },
@@ -612,6 +616,7 @@ export const worldStore = {
 	// Derived lists
 	get agentList() { return agentList; },
 	get questList() { return questList; },
+	get topLevelQuestList() { return topLevelQuestList; },
 	get partyList() { return partyList; },
 	get guildList() { return guildList; },
 	get battleList() { return battleList; },

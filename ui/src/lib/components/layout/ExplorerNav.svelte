@@ -76,7 +76,7 @@
 		<a href="/quests" class="nav-item" class:active={isActive('/quests')} data-testid="nav-quests">
 			<span class="nav-icon">Q</span>
 			<span class="nav-label">Quest Board</span>
-			<span class="nav-count" data-testid="nav-count-quests">{worldStore.questList.length}</span>
+			<span class="nav-count" data-testid="nav-count-quests">{worldStore.topLevelQuestList.length}</span>
 		</a>
 		<a href="/agents" class="nav-item" class:active={isActive('/agents')} data-testid="nav-agents">
 			<span class="nav-icon">A</span>

@@ -118,7 +118,7 @@
 			<header class="board-header">
 				<div class="board-title-row">
 					<h1>Quest Board</h1>
-					<span class="quest-count">{filteredQuestCount} / {worldStore.questList.length} quests</span>
+					<span class="quest-count">{filteredQuestCount} / {worldStore.topLevelQuestList.length} quests</span>
 				</div>
 				<div class="status-filters" data-testid="quest-status-filters">
 					{#each allColumns as col}
