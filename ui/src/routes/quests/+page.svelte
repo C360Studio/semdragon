@@ -14,7 +14,26 @@
 	let leftPanelWidth = $state(280);
 	let rightPanelWidth = $state(320);
 
-	// Group quests by status
+	// Build parent→children index for party quest grouping
+	const subQuestsByParent = $derived.by(() => {
+		const index = new Map<string, Quest[]>();
+		for (const quest of worldStore.questList) {
+			if (quest.parent_quest) {
+				const parentId = String(quest.parent_quest);
+				const children = index.get(parentId) ?? [];
+				children.push(quest);
+				index.set(parentId, children);
+			}
+		}
+		return index;
+	});
+
+	// Set of quest IDs that are sub-quests (so we can skip them in top-level rendering)
+	const subQuestIds = $derived(
+		new Set(worldStore.questList.filter((q) => q.parent_quest).map((q) => q.id))
+	);
+
+	// Group quests by status (top-level only — sub-quests rendered under their parent)
 	const questsByStatus = $derived.by(() => {
 		const groups: Record<QuestStatus, Quest[]> = {
 			posted: [],
@@ -28,7 +47,9 @@
 		};
 
 		for (const quest of worldStore.questList) {
-			groups[quest.status].push(quest);
+			if (!subQuestIds.has(quest.id)) {
+				groups[quest.status].push(quest);
+			}
 		}
 
 		return groups;
@@ -143,30 +164,89 @@
 						</header>
 						<div class="column-content">
 							{#each questsByStatus[column.status] as quest}
-								<button
-									class="quest-card"
-									class:selected={worldStore.selectedQuestId === quest.id}
-									aria-label="{quest.title}, {QuestDifficultyNames[quest.difficulty]} difficulty, {quest.base_xp} XP"
-									aria-pressed={worldStore.selectedQuestId === quest.id}
-									onclick={() => selectQuest(quest)}
-									data-testid="quest-card"
-								>
-									<h4 class="quest-title" data-testid="quest-title">{quest.title}</h4>
-									<div class="quest-meta">
-										<span
-											class="difficulty-badge"
-											data-difficulty={quest.difficulty}
+								{@const children = subQuestsByParent.get(String(quest.id)) ?? []}
+								{#if children.length > 0}
+									<div class="quest-group">
+										<button
+											class="quest-card parent-card"
+											class:selected={worldStore.selectedQuestId === quest.id}
+											aria-label="{quest.title}, party quest with {children.length} sub-quests"
+											aria-pressed={worldStore.selectedQuestId === quest.id}
+											onclick={() => selectQuest(quest)}
+											data-testid="quest-card"
 										>
-											{QuestDifficultyNames[quest.difficulty]}
-										</span>
-										<span class="xp-badge">{quest.base_xp} XP</span>
-									</div>
-									{#if quest.claimed_by}
-										<div class="quest-assignee">
-											Claimed by: {worldStore.agentName(quest.claimed_by)}
+											<div class="quest-title-row">
+												<h4 class="quest-title" data-testid="quest-title">{quest.title}</h4>
+												<span class="party-badge">{children.length} sub-quests</span>
+											</div>
+											<div class="quest-meta">
+												<span
+													class="difficulty-badge"
+													data-difficulty={quest.difficulty}
+												>
+													{QuestDifficultyNames[quest.difficulty]}
+												</span>
+												<span class="xp-badge">{quest.base_xp} XP</span>
+											</div>
+											{#if quest.claimed_by}
+												<div class="quest-assignee">
+													Lead: {worldStore.agentName(quest.claimed_by)}
+												</div>
+											{/if}
+										</button>
+										<div class="sub-quest-list">
+											{#each children as child}
+												<button
+													class="quest-card sub-quest-card"
+													class:selected={worldStore.selectedQuestId === child.id}
+													aria-label="{child.title}, sub-quest, {QuestDifficultyNames[child.difficulty]} difficulty"
+													aria-pressed={worldStore.selectedQuestId === child.id}
+													onclick={() => selectQuest(child)}
+													data-testid="quest-card"
+												>
+													<h4 class="quest-title" data-testid="quest-title">{child.title}</h4>
+													<div class="quest-meta">
+														<span class="status-pip" data-status={child.status}></span>
+														<span class="difficulty-badge" data-difficulty={child.difficulty}>
+															{QuestDifficultyNames[child.difficulty]}
+														</span>
+														<span class="xp-badge">{child.base_xp} XP</span>
+													</div>
+													{#if child.claimed_by}
+														<div class="quest-assignee">
+															{worldStore.agentName(child.claimed_by)}
+														</div>
+													{/if}
+												</button>
+											{/each}
 										</div>
-									{/if}
-								</button>
+									</div>
+								{:else}
+									<button
+										class="quest-card"
+										class:selected={worldStore.selectedQuestId === quest.id}
+										aria-label="{quest.title}, {QuestDifficultyNames[quest.difficulty]} difficulty, {quest.base_xp} XP"
+										aria-pressed={worldStore.selectedQuestId === quest.id}
+										onclick={() => selectQuest(quest)}
+										data-testid="quest-card"
+									>
+										<h4 class="quest-title" data-testid="quest-title">{quest.title}</h4>
+										<div class="quest-meta">
+											<span
+												class="difficulty-badge"
+												data-difficulty={quest.difficulty}
+											>
+												{QuestDifficultyNames[quest.difficulty]}
+											</span>
+											<span class="xp-badge">{quest.base_xp} XP</span>
+										</div>
+										{#if quest.claimed_by}
+											<div class="quest-assignee">
+												Claimed by: {worldStore.agentName(quest.claimed_by)}
+											</div>
+										{/if}
+									</button>
+								{/if}
 							{:else}
 								<div class="empty-column">No quests</div>
 							{/each}
@@ -210,6 +290,14 @@
 							{#if quest.party_required}
 								<dt>Party Required</dt>
 								<dd>Yes (min {quest.min_party_size})</dd>
+							{/if}
+							{#if quest.parent_quest}
+								<dt>Parent Quest</dt>
+								<dd><a href="/quests/{quest.parent_quest}">{worldStore.questTitle(quest.parent_quest)}</a></dd>
+							{/if}
+							{#if (subQuestsByParent.get(String(quest.id)) ?? []).length > 0}
+								<dt>Sub-Quests</dt>
+								<dd>{(subQuestsByParent.get(String(quest.id)) ?? []).length} tasks</dd>
 							{/if}
 							<dt>Attempts</dt>
 							<dd>{quest.attempts} / {quest.max_attempts}</dd>
@@ -443,6 +531,77 @@
 		color: var(--ui-text-tertiary);
 		margin-top: var(--spacing-xs);
 	}
+
+	/* Party quest grouping */
+	.quest-group {
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		overflow: hidden;
+	}
+
+	.quest-title-row {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.quest-title-row .quest-title {
+		flex: 1;
+		margin: 0;
+	}
+
+	.party-badge {
+		font-size: 0.625rem;
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		background: var(--ui-interactive-primary);
+		color: var(--ui-text-on-primary);
+		white-space: nowrap;
+	}
+
+	.parent-card {
+		border: none;
+		border-radius: 0;
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.sub-quest-list {
+		display: flex;
+		flex-direction: column;
+		background: var(--ui-surface-secondary);
+	}
+
+	.sub-quest-card {
+		border: none;
+		border-radius: 0;
+		border-bottom: 1px solid var(--ui-border-subtle);
+		padding: var(--spacing-sm) var(--spacing-md);
+		padding-left: calc(var(--spacing-md) + 8px);
+		font-size: 0.8125rem;
+	}
+
+	.sub-quest-card:last-child {
+		border-bottom: none;
+	}
+
+	.sub-quest-card .quest-title {
+		font-size: 0.8125rem;
+	}
+
+	.status-pip {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.status-pip[data-status='posted'] { background: var(--quest-posted); }
+	.status-pip[data-status='claimed'] { background: var(--quest-claimed); }
+	.status-pip[data-status='in_progress'] { background: var(--quest-in-progress); }
+	.status-pip[data-status='in_review'] { background: var(--quest-in-review); }
+	.status-pip[data-status='completed'] { background: var(--quest-completed); }
+	.status-pip[data-status='failed'] { background: var(--quest-failed); }
 
 	.empty-column {
 		text-align: center;

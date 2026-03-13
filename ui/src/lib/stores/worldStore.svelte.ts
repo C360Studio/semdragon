@@ -701,5 +701,8 @@ export const worldStore = {
 	// Helpers
 	agentName(agentId: AgentID | string): string {
 		return agents.get(agentId as AgentID)?.name ?? String(agentId).split('.').pop() ?? String(agentId);
+	},
+	questTitle(questId: QuestID | string): string {
+		return quests.get(questId as QuestID)?.title ?? String(questId).split('.').pop() ?? String(questId);
 	}
 };
