@@ -10,6 +10,7 @@
 	import { untrack } from 'svelte';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
+	import CopyButton from '$components/CopyButton.svelte';
 	import { getWorkspaceTree, getWorkspaceFile, ApiError } from '$services/api';
 	import type { WorkspaceEntry } from '$services/api';
 
@@ -248,10 +249,13 @@
 							</div>
 						{:else if fileContent !== null && selectedEntry}
 							<header class="preview-header">
-								<span class="preview-path">{selectedEntry.path}</span>
+								<span class="preview-path">{selectedEntry.path}<CopyButton text={selectedEntry.path} variant="inline" label="Copy file path" /></span>
 								<span class="preview-meta">{formatSize(selectedEntry.size)} | {formatDate(selectedEntry.modified)}</span>
 							</header>
-							<pre class="preview-content"><code>{fileContent}</code></pre>
+							<div class="copyable">
+								<CopyButton text={fileContent} label="Copy file content" />
+								<pre class="preview-content"><code>{fileContent}</code></pre>
+							</div>
 						{/if}
 					</div>
 				</div>
@@ -425,6 +429,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.copyable {
+		position: relative;
 	}
 
 	.preview-meta {

@@ -13,6 +13,7 @@
 	import type { GraphEntity } from '$lib/api/graph-types';
 	import { getEntityLabel, getEntityTypeLabel, parseEntityId } from '$lib/api/graph-types';
 	import { getEntityColor, getPredicateColor, getConfidenceOpacity } from '$lib/utils/entity-colors';
+	import CopyButton from '$components/CopyButton.svelte';
 
 	interface GraphDetailProps {
 		entity: GraphEntity | null;
@@ -57,6 +58,7 @@
 				<h3 class="entity-label" title={entity.id}>{label}</h3>
 				<span class="entity-type">{typeLabel}</span>
 			</div>
+			<CopyButton text={entity.id} variant="inline" label="Copy entity ID" />
 		</div>
 
 		<!-- ID Breakdown -->

@@ -40,7 +40,7 @@ tasks:
         ignore_error: true
 
   tier1:
-    desc: Run Tier 1 tests only (parallel, fast, autonomy off)
+    desc: Run Tier 1 tests only (serial, UI + API state, no agentic loop)
     cmds:
       - task: install
       - task: clean

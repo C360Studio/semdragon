@@ -14,6 +14,7 @@
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
+	import CopyButton from '$components/CopyButton.svelte';
 
 	const trajectoryId = $derived(page.params.id ?? '');
 	const quest = $derived(worldStore.questList.find((q) => q.loop_id === trajectoryId));
@@ -157,7 +158,7 @@
 
 			<div class="trajectory-header">
 				<h1 data-testid="trajectory-heading">Trajectory Timeline</h1>
-				<span class="trajectory-id" data-testid="trajectory-id">{trajectoryId}</span>
+				<span class="trajectory-id" data-testid="trajectory-id">{trajectoryId}<CopyButton text={trajectoryId} variant="inline" label="Copy trajectory ID" /></span>
 			</div>
 
 			{#if quest}
@@ -345,13 +346,19 @@
 																			class="reasoning-label"
 																			>Reasoning</summary
 																		>
-																		<pre
-																			class="detail-content">{msg.reasoning_content}</pre>
+																		<div class="copyable">
+																			<CopyButton text={msg.reasoning_content} />
+																			<pre
+																				class="detail-content">{msg.reasoning_content}</pre>
+																		</div>
 																	</details>
 																{/if}
 																{#if msg.content}
-																	<pre
-																		class="detail-content">{msg.content}</pre>
+																	<div class="copyable">
+																		<CopyButton text={msg.content} />
+																		<pre
+																			class="detail-content">{msg.content}</pre>
+																	</div>
 																{/if}
 																{#if msg.tool_calls?.length}
 																	<div class="msg-tool-calls">
@@ -363,8 +370,11 @@
 																					>{tc.name}</code
 																				>
 																				{#if tc.arguments}
-																					<pre
-																						class="detail-content">{JSON.stringify(tc.arguments, null, 2)}</pre>
+																					<div class="copyable">
+																						<CopyButton text={JSON.stringify(tc.arguments, null, 2)} />
+																						<pre
+																							class="detail-content">{JSON.stringify(tc.arguments, null, 2)}</pre>
+																					</div>
 																				{/if}
 																			</div>
 																		{/each}
@@ -383,17 +393,23 @@
 												{#if step.prompt}
 													<div class="detail-section">
 														<span class="detail-label">Prompt</span>
-														<pre
-															class="detail-content"
-															data-testid="event-prompt">{step.prompt}</pre>
+														<div class="copyable">
+															<CopyButton text={step.prompt} />
+															<pre
+																class="detail-content"
+																data-testid="event-prompt">{step.prompt}</pre>
+														</div>
 													</div>
 												{/if}
 												{#if step.response}
 													<div class="detail-section">
 														<span class="detail-label">Response</span>
-														<pre
-															class="detail-content"
-															data-testid="event-response">{step.response}</pre>
+														<div class="copyable">
+															<CopyButton text={step.response} />
+															<pre
+																class="detail-content"
+																data-testid="event-response">{step.response}</pre>
+														</div>
 													</div>
 												{/if}
 											{/if}
@@ -412,8 +428,11 @@
 																>
 															</div>
 															{#if tc.arguments}
-																<pre
-																	class="detail-content">{JSON.stringify(tc.arguments, null, 2)}</pre>
+																<div class="copyable">
+																	<CopyButton text={JSON.stringify(tc.arguments, null, 2)} />
+																	<pre
+																		class="detail-content">{JSON.stringify(tc.arguments, null, 2)}</pre>
+																</div>
 															{/if}
 														</div>
 													{/each}
@@ -431,17 +450,23 @@
 											{#if step.tool_arguments}
 												<div class="detail-section">
 													<span class="detail-label">Arguments</span>
-													<pre
-														class="detail-content"
-														data-testid="event-tool-args">{JSON.stringify(step.tool_arguments, null, 2)}</pre>
+													<div class="copyable">
+														<CopyButton text={JSON.stringify(step.tool_arguments, null, 2)} />
+														<pre
+															class="detail-content"
+															data-testid="event-tool-args">{JSON.stringify(step.tool_arguments, null, 2)}</pre>
+													</div>
 												</div>
 											{/if}
 											{#if step.tool_result}
 												<div class="detail-section">
 													<span class="detail-label">Result</span>
-													<pre
-														class="detail-content"
-														data-testid="event-tool-result">{step.tool_result}</pre>
+													<div class="copyable">
+														<CopyButton text={step.tool_result} />
+														<pre
+															class="detail-content"
+															data-testid="event-tool-result">{step.tool_result}</pre>
+													</div>
 												</div>
 											{/if}
 											{#if step.request_id}
@@ -513,6 +538,13 @@
 		font-family: monospace;
 		font-size: 0.875rem;
 		color: var(--ui-text-tertiary);
+		display: inline-flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+	}
+
+	.copyable {
+		position: relative;
 	}
 
 	.quest-context {

@@ -5,6 +5,7 @@
 
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
+	import CopyButton from '$components/CopyButton.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
 
 	// Panel state
@@ -62,7 +63,7 @@
 				{#each trajectoryIds as trajectoryId}
 					{@const source = trajectorySourceMap.get(trajectoryId)}
 					<a href="/trajectories/{trajectoryId}" class="trajectory-item" data-testid="trajectory-item">
-						<span class="trajectory-id" data-testid="trajectory-item-id">{trajectoryId.slice(0, 12)}&hellip;</span>
+						<span class="trajectory-id" data-testid="trajectory-item-id">{trajectoryId.slice(0, 12)}&hellip;<CopyButton text={trajectoryId} variant="inline" label="Copy trajectory ID" /></span>
 						{#if source}
 							<span class="trajectory-type-badge" data-type={source.type}>{source.type}</span>
 							<span class="trajectory-quest" data-testid="trajectory-item-quest">{source.title}</span>
@@ -144,6 +145,9 @@
 		font-size: 0.875rem;
 		color: var(--ui-text-tertiary);
 		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
 	}
 
 	.trajectory-type-badge {

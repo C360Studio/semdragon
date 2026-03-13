@@ -60,6 +60,11 @@ type Config struct {
 	// graph knowledge into agent prompts.
 	SemsourceURL string `json:"semsource_url,omitempty"`
 
+	// GraphQLURL is the graph-gateway GraphQL endpoint for the graph manifest client.
+	// When set, questbridge injects a summary of graph contents into entity knowledge
+	// so agents know what's queryable via graph_search.
+	GraphQLURL string `json:"graphql_url,omitempty"`
+
 	// Domain selects which DomainCatalog to inject (e.g. "software", "dnd", "research").
 	Domain string `json:"domain,omitempty"`
 

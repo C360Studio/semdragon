@@ -18,10 +18,11 @@ import (
 // It queries related entities (party, guild, parent quest) and formats them as
 // structured text that agents can understand when starting a quest.
 type entityKnowledgeBuilder struct {
-	graph          *semdragons.GraphClient
-	budgetToken    int
-	logger         *slog.Logger
-	manifestClient *semsource.ManifestClient
+	graph               *semdragons.GraphClient
+	budgetToken         int
+	logger              *slog.Logger
+	manifestClient      *semsource.ManifestClient
+	graphManifestClient *semsource.GraphManifestClient
 }
 
 // entityKnowledge is the result of building entity context.
@@ -65,6 +66,13 @@ func (b *entityKnowledgeBuilder) build(ctx context.Context, quest *domain.Quest,
 	// Source manifest — what's available in the knowledge graph (best-effort, non-blocking)
 	if b.manifestClient != nil {
 		if s := b.manifestClient.FormatForPrompt(ctx); s != "" {
+			sections = append(sections, s)
+		}
+	}
+
+	// Graph manifest — what entity types are indexed in graph-gateway
+	if b.graphManifestClient != nil {
+		if s := b.graphManifestClient.FormatForPrompt(ctx); s != "" {
 			sections = append(sections, s)
 		}
 	}

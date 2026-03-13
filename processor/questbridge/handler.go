@@ -207,10 +207,11 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	var knowledgeEntityIDs []string
 	if c.config.EntityContextBudget > 0 {
 		ekb := &entityKnowledgeBuilder{
-			graph:          c.graph,
-			budgetToken:    c.config.EntityContextBudget,
-			logger:         c.logger,
-			manifestClient: c.manifestClient,
+			graph:               c.graph,
+			budgetToken:         c.config.EntityContextBudget,
+			logger:              c.logger,
+			manifestClient:      c.manifestClient,
+			graphManifestClient: c.graphManifestClient,
 		}
 		ek := ekb.build(ctx, quest, agent)
 		entityKnowledgeContent = ek.content

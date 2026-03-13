@@ -95,6 +95,10 @@ type Component struct {
 	// Optional: nil means manifest section is omitted from entity knowledge.
 	manifestClient *semsource.ManifestClient
 
+	// Graph manifest client for injecting graph-gateway contents summary.
+	// Optional: nil means graph contents section is omitted from entity knowledge.
+	graphManifestClient *semsource.GraphManifestClient
+
 	// Board pause integration
 	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
 	resumeSub    *natsclient.Subscription  // Subscription to board.control.resumed
@@ -306,6 +310,12 @@ func (c *Component) Start(ctx context.Context) error {
 	if c.config.SemsourceURL != "" {
 		c.manifestClient = semsource.NewManifestClient(c.config.SemsourceURL, c.logger)
 		c.logger.Info("semsource manifest client initialized", "semsource_url", c.config.SemsourceURL)
+	}
+
+	// Self-initialize graph manifest client when graphql_url is configured.
+	if c.config.GraphQLURL != "" {
+		c.graphManifestClient = semsource.NewGraphManifestClient(c.config.GraphQLURL, c.logger)
+		c.logger.Info("graph manifest client initialized", "graphql_url", c.config.GraphQLURL)
 	}
 
 	// Create prompt assembler when a domain catalog is provided.

@@ -425,7 +425,8 @@
         "sandbox_dir": "/workspace",
         "sandbox_url": "http://sandbox:8090",
         "dm_mode": "full_auto",
-        "max_clarification_rounds": 3
+        "max_clarification_rounds": 3,
+        "graphql_url": "http://localhost:8080/graph-gateway/graphql"
       }
     },
     "questtools": {
@@ -442,7 +443,7 @@
         "enable_builtins": true,
         "sandbox_dir": "/workspace",
         "sandbox_url": "http://sandbox:8090",
-        "graphql_url": "http://localhost:8082/graphql",
+        "graphql_url": "http://localhost:8080/graph-gateway/graphql",
         "search": {
           "provider": "brave",
           "api_key_env": "BRAVE_SEARCH_API_KEY"

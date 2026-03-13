@@ -22,7 +22,7 @@ export default defineConfig({
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 1,
-	workers: process.env.CI ? 1 : undefined,
+	workers: 1,
 	reporter: [['html'], ['list']],
 
 	use: {
@@ -38,29 +38,33 @@ export default defineConfig({
 		// Excludes all integration specs and scenarios.
 		{
 			name: 'chromium',
-			testIgnore: /-integration|workspace-artifacts|web-search|quest-pipeline-e2e|scenarios\//,
+			testIgnore: /-integration|quest-pipeline-e2e|scenarios\//,
 			use: { ...devices['Desktop Chrome'] }
 		},
 		{
 			name: 'firefox',
-			testIgnore: /-integration|workspace-artifacts|web-search|quest-pipeline-e2e|scenarios\//,
+			testIgnore: /-integration|quest-pipeline-e2e|scenarios\//,
 			use: { ...devices['Desktop Firefox'] }
 		},
 		{
 			name: 'webkit',
-			testIgnore: /-integration|workspace-artifacts|web-search|quest-pipeline-e2e|scenarios\//,
+			testIgnore: /-integration|quest-pipeline-e2e|scenarios\//,
 			use: { ...devices['Desktop Safari'] }
 		},
-		// Tier 1: API-driven integration + UI component checks (parallel, fast)
+		// Tier 1: API-driven integration + UI component checks (serial, 1 worker).
+		// These tests mutate shared backend state (quests, agentic loops, battles)
+		// so they must run sequentially to avoid cross-test contamination.
 		{
 			name: 'tier1',
 			testIgnore: /scenarios\//,
+			fullyParallel: false,
 			use: { ...devices['Desktop Chrome'] }
 		},
 		// Tier 2: Full user journeys through DM chat UI (serial, 1 worker)
 		{
 			name: 'tier2-scenarios',
 			testMatch: /scenarios\//,
+			fullyParallel: false,
 			use: { ...devices['Desktop Chrome'] }
 		}
 	],
