@@ -36,6 +36,7 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerSoloAgentScenarioDirective(r)
 	registerSoloAgentWorkOutputDirective(r)
 	registerReviewBrief(r)
+	registerToolSelectionGuidance(r)
 }
 
 // partyLeadDirectiveBase is the tool-call instruction for party leads when no
@@ -322,5 +323,72 @@ func registerReviewBrief(r *PromptRegistry) {
 		Priority:    0,
 		Condition:   hasReviewCriteria,
 		ContentFunc: buildReviewBrief,
+	})
+}
+
+// =============================================================================
+// TOOL SELECTION GUIDANCE - Contextual tool usage heuristics
+// =============================================================================
+
+// toolGuidanceEntries maps tool names to their one-line usage guidance.
+// Only tools present in AvailableToolNames are included in the output.
+var toolGuidanceEntries = map[string]string{
+	"graph_query":  "Game state (quests, agents, guilds, parties, battles). Fast.",
+	"graph_search": "Knowledge graph (code, docs, repos). Use for project-specific lookups. Prefer over web_search for anything about this codebase.",
+	"web_search":   "External info not in the graph (third-party APIs, libraries, general knowledge).",
+	"read_file":    "Read files from the sandbox filesystem.",
+	"write_file":   "Write files to the sandbox filesystem.",
+	"patch_file":   "Apply targeted edits to existing files in the sandbox.",
+}
+
+// toolGuidanceOrder controls the display order of tool guidance entries.
+var toolGuidanceOrder = []string{
+	"graph_query", "graph_search", "web_search",
+	"read_file", "write_file", "patch_file",
+}
+
+// hasMultipleTools gates the tool guidance fragment — only included when the
+// agent has more than one tool available, since single-tool agents (e.g. party
+// leads with just decompose_quest) don't need selection guidance.
+func hasMultipleTools(ctx AssemblyContext) bool {
+	return len(ctx.AvailableToolNames) > 1
+}
+
+// buildToolSelectionGuidance generates contextual tool usage guidance based on
+// which tools are actually available to the agent.
+func buildToolSelectionGuidance(ctx AssemblyContext) string {
+	available := make(map[string]bool, len(ctx.AvailableToolNames))
+	for _, name := range ctx.AvailableToolNames {
+		available[name] = true
+	}
+
+	var b strings.Builder
+	b.WriteString("TOOL SELECTION:")
+	wrote := false
+	for _, name := range toolGuidanceOrder {
+		if !available[name] {
+			continue
+		}
+		desc, ok := toolGuidanceEntries[name]
+		if !ok {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("\n- %s: %s", name, desc))
+		wrote = true
+	}
+
+	if !wrote {
+		return ""
+	}
+	return b.String()
+}
+
+func registerToolSelectionGuidance(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:          "builtin.tool-selection-guidance",
+		Category:    CategoryToolGuidance,
+		Priority:    0,
+		Condition:   hasMultipleTools,
+		ContentFunc: buildToolSelectionGuidance,
 	})
 }

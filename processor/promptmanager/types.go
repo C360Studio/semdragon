@@ -37,6 +37,9 @@ const (
 	CategoryFailureRecovery FragmentCategory = 275
 	// CategorySkillContext contains instructions for quest-required skills.
 	CategorySkillContext FragmentCategory = 300
+	// CategoryToolGuidance contains advisory guidance on when to use which tool.
+	// Placed after skill context so agents understand their capabilities first.
+	CategoryToolGuidance FragmentCategory = 325
 	// CategoryGuildKnowledge contains guild library knowledge fragments.
 	CategoryGuildKnowledge FragmentCategory = 400
 	// CategoryReviewBrief contains a compact summary of how the agent's work
@@ -168,6 +171,10 @@ type AssemblyContext struct {
 	// Populated from the domain's ReviewConfig at dispatch time.
 	ReviewLevel    domain.ReviewLevel      `json:"review_level,omitempty"`
 	ReviewCriteria []domain.ReviewCriterion `json:"review_criteria,omitempty"`
+
+	// AvailableToolNames lists the tool names available to this agent for this quest.
+	// Used by the tool selection guidance fragment to generate contextual guidance.
+	AvailableToolNames []string `json:"available_tool_names,omitempty"`
 
 	// Iteration budget — tells the agent how many tool-use rounds it has.
 	// Set from questbridge/executor config so agents plan work accordingly.

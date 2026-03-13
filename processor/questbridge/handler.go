@@ -194,8 +194,13 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 		return
 	}
 
+	// Get tool definitions filtered for this quest and agent.
+	// Resolved early so tool names can be threaded into prompt assembly.
+	tools := c.toolsForQuest(quest, agent)
+	toolNames := extractToolNames(tools)
+
 	// Build system prompt using assembler or legacy path.
-	assembled := c.buildSystemPrompt(ctx, agent, quest)
+	assembled := c.buildSystemPrompt(ctx, agent, quest, toolNames)
 
 	// Build entity knowledge — structured context about agent, quest, party, guild.
 	var entityKnowledgeContent string
@@ -226,9 +231,6 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	if role == "" {
 		role = agentic.RoleGeneral
 	}
-
-	// Get tool definitions filtered for this quest and agent.
-	tools := c.toolsForQuest(quest, agent)
 
 	// Build the user prompt from quest input.
 	userPrompt := buildUserPrompt(quest)
@@ -1744,14 +1746,14 @@ func (c *Component) parseDAGFromParent(parent *domain.Quest) (*questdagexec.Ques
 // buildSystemPrompt builds the system prompt using the assembler when available,
 // falling back to the legacy string concatenation path. Returns the full
 // AssembledPrompt so callers can access FragmentsUsed for context metadata.
-func (c *Component) buildSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) promptmanager.AssembledPrompt {
+func (c *Component) buildSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest, toolNames []string) promptmanager.AssembledPrompt {
 	if c.promptAssembler != nil {
-		return c.buildAssembledSystemPrompt(ctx, agent, quest)
+		return c.buildAssembledSystemPrompt(ctx, agent, quest, toolNames)
 	}
 	return promptmanager.AssembledPrompt{SystemMessage: buildLegacySystemPrompt(agent, quest)}
 }
 
-func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) promptmanager.AssembledPrompt {
+func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest, toolNames []string) promptmanager.AssembledPrompt {
 	var personaPrompt string
 	if agent.Persona != nil {
 		personaPrompt = agent.Persona.SystemPrompt
@@ -1824,6 +1826,7 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		QuestRequirements:    quest.Requirements,
 		QuestScenarios:       quest.Scenarios,
 		DecomposabilityClass: quest.DecomposabilityClass,
+		AvailableToolNames:   toolNames,
 		MaxIterations:        c.config.MaxIterations,
 		FailureHistory:       convertFailureHistory(quest.FailureHistory),
 		SalvagedOutput:       domain.AsString(quest.SalvagedOutput),
@@ -2057,6 +2060,15 @@ func toolNameAllowed(allowed []string, name string) bool {
 }
 
 // agentSkillNames returns a list of skill tag strings for the agent.
+// extractToolNames returns the names of the given tool definitions.
+func extractToolNames(tools []agentic.ToolDefinition) []string {
+	names := make([]string, len(tools))
+	for i, t := range tools {
+		names[i] = t.Name
+	}
+	return names
+}
+
 func agentSkillNames(agent *agentprogression.Agent) []string {
 	names := make([]string, 0, len(agent.SkillProficiencies))
 	for skill := range agent.SkillProficiencies {

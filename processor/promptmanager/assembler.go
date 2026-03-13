@@ -274,6 +274,8 @@ func categoryLabel(cat FragmentCategory) string {
 		return "Failure Recovery"
 	case CategorySkillContext:
 		return "Skills"
+	case CategoryToolGuidance:
+		return "Tool Guidance"
 	case CategoryGuildKnowledge:
 		return "Guild Knowledge"
 	case CategoryReviewBrief:

@@ -123,7 +123,7 @@ func (mc *ManifestClient) FormatForPrompt(ctx context.Context) string {
 	var sb strings.Builder
 	sb.WriteString("--- Available Knowledge Sources ---\n")
 	sb.WriteString("The following sources have been indexed into the knowledge graph. ")
-	sb.WriteString("You can query the graph for information from these sources instead of searching the web.\n\n")
+	sb.WriteString("Use graph_search (query_type: \"search\") to find information from these sources.\n\n")
 
 	for _, src := range manifest.Sources {
 		sb.WriteString(fmt.Sprintf("- %s", src.Name))

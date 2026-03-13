@@ -43,15 +43,16 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	reg := NewPromptRegistry()
 	RegisterBuiltinFragments(reg)
 
-	// Expect exactly 6 built-in fragments:
+	// Expect exactly 7 built-in fragments:
 	//   - party lead tool directive
 	//   - party lead provider hint
 	//   - sub-quest executor directive
 	//   - solo agent scenario directive
 	//   - solo agent work output directive
 	//   - review brief
-	if got := reg.FragmentCount(); got != 6 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 6", got)
+	//   - tool selection guidance
+	if got := reg.FragmentCount(); got != 7 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 7", got)
 	}
 }
 
@@ -707,5 +708,118 @@ func TestReviewBrief_AppearsBeforeQuestContext(t *testing.T) {
 	}
 	if reviewIdx > questIdx {
 		t.Error("review brief should appear before quest context")
+	}
+}
+
+// =============================================================================
+// TOOL SELECTION GUIDANCE TESTS
+// =============================================================================
+
+func TestToolGuidance_IncludedWithMultipleTools(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:               domain.TierJourneyman,
+		Provider:           "openai",
+		QuestTitle:         "Research task",
+		AvailableToolNames: []string{"graph_query", "web_search", "read_file"},
+	})
+
+	if !strings.Contains(result.SystemMessage, "TOOL SELECTION") {
+		t.Error("expected TOOL SELECTION heading in prompt")
+	}
+	if !strings.Contains(result.SystemMessage, "graph_query") {
+		t.Error("expected graph_query guidance in prompt")
+	}
+	if !strings.Contains(result.SystemMessage, "web_search") {
+		t.Error("expected web_search guidance in prompt")
+	}
+
+	found := false
+	for _, id := range result.FragmentsUsed {
+		if id == "builtin.tool-selection-guidance" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'builtin.tool-selection-guidance' in FragmentsUsed")
+	}
+}
+
+func TestToolGuidance_ExcludedWithSingleTool(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:               domain.TierMaster,
+		Provider:           "openai",
+		PartyRequired:      true,
+		IsPartyLead:        true,
+		QuestTitle:         "Decompose quest",
+		AvailableToolNames: []string{"decompose_quest"},
+	})
+
+	if strings.Contains(result.SystemMessage, "TOOL SELECTION") {
+		t.Error("tool guidance should not appear when agent has only one tool")
+	}
+}
+
+func TestToolGuidance_ExcludedWithNoTools(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:       domain.TierJourneyman,
+		Provider:   "openai",
+		QuestTitle: "Simple task",
+	})
+
+	if strings.Contains(result.SystemMessage, "TOOL SELECTION") {
+		t.Error("tool guidance should not appear when no tools listed")
+	}
+}
+
+func TestToolGuidance_AdaptsToAvailableTools(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	// Without graph_search — that line should be absent.
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:               domain.TierJourneyman,
+		Provider:           "openai",
+		QuestTitle:         "Work task",
+		AvailableToolNames: []string{"graph_query", "web_search"},
+	})
+
+	if !strings.Contains(result.SystemMessage, "graph_query") {
+		t.Error("expected graph_query guidance")
+	}
+	if strings.Contains(result.SystemMessage, "graph_search") {
+		t.Error("graph_search guidance should not appear when tool is not available")
+	}
+	if !strings.Contains(result.SystemMessage, "web_search") {
+		t.Error("expected web_search guidance")
+	}
+}
+
+func TestToolGuidance_AppearsBeforeGuildKnowledge(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:               domain.TierJourneyman,
+		Provider:           "openai",
+		QuestTitle:         "Build feature",
+		QuestDescription:   "Do the work",
+		AvailableToolNames: []string{"graph_query", "web_search", "read_file"},
+	})
+
+	toolIdx := strings.Index(result.SystemMessage, "TOOL SELECTION")
+	questIdx := strings.Index(result.SystemMessage, "Build feature")
+	if toolIdx < 0 {
+		t.Fatal("tool guidance not found in prompt")
+	}
+	if questIdx < 0 {
+		t.Fatal("quest context not found in prompt")
+	}
+	if toolIdx > questIdx {
+		t.Error("tool guidance should appear before quest context")
 	}
 }
