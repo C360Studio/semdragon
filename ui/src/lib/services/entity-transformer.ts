@@ -85,6 +85,34 @@ function asStringArray(v: unknown): string[] | undefined {
 	return v.filter((item): item is string => typeof item === 'string');
 }
 
+/**
+ * Collect indexed triples like "prefix.N.field" into an ordered array.
+ * The apply callback populates fields on each item by index.
+ */
+function collectIndexed<T extends Record<string, unknown>>(
+	triples: Triple[],
+	prefix: string,
+	apply: (parts: string[], obj: unknown, item: T) => void
+): T[] {
+	const byIndex = new Map<number, T>();
+	for (const t of triples) {
+		if (!t.predicate.startsWith(prefix)) continue;
+		const parts = t.predicate.split('.');
+		if (parts.length !== 4) continue;
+		const idx = parseInt(parts[2], 10);
+		if (isNaN(idx)) continue;
+		if (!byIndex.has(idx)) byIndex.set(idx, {} as T);
+		apply(parts, t.object, byIndex.get(idx)!);
+	}
+	if (byIndex.size === 0) return [];
+	const maxIdx = Math.max(...byIndex.keys());
+	const result: T[] = [];
+	for (let i = 0; i <= maxIdx; i++) {
+		if (byIndex.has(i)) result.push(byIndex.get(i)!);
+	}
+	return result;
+}
+
 // =============================================================================
 // PUBLIC API
 // =============================================================================
@@ -235,8 +263,10 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 		claimed_at: str(m.get('quest.lifecycle.claimed_at')) || undefined,
 		started_at: str(m.get('quest.lifecycle.started_at')) || undefined,
 		completed_at: str(m.get('quest.lifecycle.completed_at')) || undefined,
-		parent_quest: undefined,
+		parent_quest: m.has('quest.parent.quest') ? questId(str(m.get('quest.parent.quest'))) : undefined,
 		sub_quests: [],
+		decomposed_by: m.has('quest.decomposed_by') ? agentId(str(m.get('quest.decomposed_by'))) : undefined,
+		party_id: m.has('quest.assignment.party') ? partyId(str(m.get('quest.assignment.party'))) : undefined,
 		posted_at: str(m.get('quest.lifecycle.posted_at')),
 		attempts: num(m.get('quest.attempts.current')),
 		max_attempts: num(m.get('quest.attempts.max'), 3),
@@ -293,13 +323,57 @@ function transformGuild(key: string, entity: GraphEntity): Guild {
 }
 
 // =============================================================================
-// BATTLE TRANSFORMER (minimal — battles not yet in SSE seed data)
+// BATTLE TRANSFORMER
 // =============================================================================
 
 function transformBattle(key: string, entity: GraphEntity): BossBattle {
 	const m = tripleMap(entity.triples);
 
 	const loopIdRaw = str(m.get('battle.execution.loop_id'));
+	const completedAt = str(m.get('battle.lifecycle.completed_at'));
+
+	// Extract indexed criteria: battle.criteria.N.{name,description,weight,threshold}
+	const criteria = collectIndexed<BossBattle['criteria'][0]>(entity.triples, 'battle.criteria.', (parts, obj, item) => {
+		switch (parts[3]) {
+			case 'name': item.name = str(obj); break;
+			case 'description': item.description = str(obj); break;
+			case 'weight': item.weight = num(obj); break;
+			case 'threshold': item.threshold = num(obj); break;
+		}
+	});
+
+	// Extract indexed results: battle.result.N.{criterion_name,judge_id,score,passed,reasoning}
+	const results = collectIndexed<NonNullable<BossBattle['results']>[0]>(entity.triples, 'battle.result.', (parts, obj, item) => {
+		switch (parts[3]) {
+			case 'criterion_name': item.criterion_name = str(obj); break;
+			case 'judge_id': item.judge_id = str(obj); break;
+			case 'score': item.score = num(obj); break;
+			case 'passed': item.passed = obj === true || obj === 'true'; break;
+			case 'reasoning': item.reasoning = str(obj); break;
+		}
+	});
+
+	// Extract indexed judges: battle.judge.N.{id,type}
+	const judges = collectIndexed<BossBattle['judges'][0]>(entity.triples, 'battle.judge.', (parts, obj, item) => {
+		switch (parts[3]) {
+			case 'id': item.id = str(obj); break;
+			case 'type': item.type = str(obj); break;
+		}
+	});
+
+	// Extract verdict if any verdict predicates exist
+	let verdict: BossBattle['verdict'] = undefined;
+	if (m.has('battle.verdict.passed')) {
+		const passed = m.get('battle.verdict.passed');
+		verdict = {
+			passed: passed === true || passed === 'true',
+			quality_score: num(m.get('battle.verdict.quality_score')),
+			xp_awarded: num(m.get('battle.verdict.xp_awarded')),
+			xp_penalty: num(m.get('battle.verdict.xp_penalty')),
+			level_change: num(m.get('battle.verdict.level_change')),
+			feedback: str(m.get('battle.verdict.feedback'))
+		};
+	}
 
 	return {
 		id: battleId(key),
@@ -307,10 +381,12 @@ function transformBattle(key: string, entity: GraphEntity): BossBattle {
 		agent_id: agentId(str(m.get('battle.assignment.agent'))),
 		level: num(m.get('battle.review.level')) as ReviewLevel,
 		status: str(m.get('battle.status.state'), 'active') as BossBattle['status'],
-		criteria: [],
-		results: [],
-		judges: [],
+		criteria,
+		results: results.length > 0 ? results : undefined,
+		judges,
+		verdict,
 		started_at: str(m.get('battle.lifecycle.started_at')),
+		completed_at: completedAt || undefined,
 		loop_id: loopIdRaw || undefined
 	};
 }

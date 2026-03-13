@@ -72,11 +72,20 @@ func (b *BossBattle) Triples() []message.Triple {
 		})
 	}
 
-	// Criteria count
+	// Criteria count + indexed details
 	triples = append(triples, message.Triple{
 		Subject: entityID, Predicate: "battle.criteria.count", Object: len(b.Criteria),
 		Source: source, Timestamp: now, Confidence: 1.0,
 	})
+	for i, c := range b.Criteria {
+		prefix := fmt.Sprintf("battle.criteria.%d", i)
+		triples = append(triples,
+			message.Triple{Subject: entityID, Predicate: prefix + ".name", Object: c.Name, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".description", Object: c.Description, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".weight", Object: c.Weight, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".threshold", Object: c.Threshold, Source: source, Timestamp: now, Confidence: 1.0},
+		)
+	}
 
 	// Judge information
 	for i, judge := range b.Judges {
@@ -97,6 +106,7 @@ func (b *BossBattle) Triples() []message.Triple {
 			message.Triple{Subject: entityID, Predicate: "battle.verdict.quality_score", Object: b.Verdict.QualityScore, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "battle.verdict.xp_awarded", Object: b.Verdict.XPAwarded, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "battle.verdict.xp_penalty", Object: b.Verdict.XPPenalty, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "battle.verdict.level_change", Object: b.Verdict.LevelChange, Source: source, Timestamp: now, Confidence: 1.0},
 		)
 
 		if b.Verdict.Feedback != "" {
@@ -115,7 +125,7 @@ func (b *BossBattle) Triples() []message.Triple {
 		})
 	}
 
-	// Results summary
+	// Results summary + indexed details
 	if len(b.Results) > 0 {
 		passedCount := 0
 		for _, r := range b.Results {
@@ -127,6 +137,16 @@ func (b *BossBattle) Triples() []message.Triple {
 			message.Triple{Subject: entityID, Predicate: "battle.results.count", Object: len(b.Results), Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "battle.results.passed", Object: passedCount, Source: source, Timestamp: now, Confidence: 1.0},
 		)
+		for i, r := range b.Results {
+			prefix := fmt.Sprintf("battle.result.%d", i)
+			triples = append(triples,
+				message.Triple{Subject: entityID, Predicate: prefix + ".criterion_name", Object: r.CriterionName, Source: source, Timestamp: now, Confidence: 1.0},
+				message.Triple{Subject: entityID, Predicate: prefix + ".judge_id", Object: r.JudgeID, Source: source, Timestamp: now, Confidence: 1.0},
+				message.Triple{Subject: entityID, Predicate: prefix + ".score", Object: r.Score, Source: source, Timestamp: now, Confidence: 1.0},
+				message.Triple{Subject: entityID, Predicate: prefix + ".passed", Object: r.Passed, Source: source, Timestamp: now, Confidence: 1.0},
+				message.Triple{Subject: entityID, Predicate: prefix + ".reasoning", Object: r.Reasoning, Source: source, Timestamp: now, Confidence: 1.0},
+			)
+		}
 	}
 
 	return triples
@@ -146,8 +166,10 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 		ID: domain.BattleID(entity.ID),
 	}
 
-	// Indexed judge predicates: battle.judge.N.id and battle.judge.N.type
+	// Indexed maps for reconstruction
 	judgeByIndex := make(map[int]*domain.Judge)
+	criteriaByIndex := make(map[int]*domain.ReviewCriterion)
+	resultByIndex := make(map[int]*domain.ReviewResult)
 
 	for _, triple := range entity.Triples {
 		switch triple.Predicate {
@@ -191,6 +213,11 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 				b.Verdict = &domain.BattleVerdict{}
 			}
 			b.Verdict.XPPenalty = domain.AsInt64(triple.Object)
+		case "battle.verdict.level_change":
+			if b.Verdict == nil {
+				b.Verdict = &domain.BattleVerdict{}
+			}
+			b.Verdict.LevelChange = domain.AsInt(triple.Object)
 		case "battle.verdict.feedback":
 			if b.Verdict == nil {
 				b.Verdict = &domain.BattleVerdict{}
@@ -201,15 +228,21 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 			b.LoopID = domain.AsString(triple.Object)
 
 		default:
-			// Indexed judge predicates: battle.judge.N.id / battle.judge.N.type
+			// Indexed predicates: battle.judge.N.*, battle.criteria.N.*, battle.result.N.*
 			if strings.HasPrefix(triple.Predicate, "battle.judge.") {
 				parseIndexedJudge(triple.Predicate, triple.Object, judgeByIndex)
+			} else if strings.HasPrefix(triple.Predicate, "battle.criteria.") {
+				parseIndexedCriterion(triple.Predicate, triple.Object, criteriaByIndex)
+			} else if strings.HasPrefix(triple.Predicate, "battle.result.") {
+				parseIndexedResult(triple.Predicate, triple.Object, resultByIndex)
 			}
 		}
 	}
 
-	// Reconstruct judges in index order
+	// Reconstruct indexed collections in order
 	b.Judges = collectJudges(judgeByIndex)
+	b.Criteria = collectCriteria(criteriaByIndex)
+	b.Results = collectResults(resultByIndex)
 
 	return b
 }
@@ -244,6 +277,100 @@ func parseIndexedJudge(predicate string, object any, judges map[int]*domain.Judg
 	case "type":
 		judges[idx].Type = domain.JudgeType(domain.AsString(object))
 	}
+}
+
+// parseIndexedCriterion extracts criterion fields from predicates like
+// "battle.criteria.0.name" or "battle.criteria.1.threshold".
+func parseIndexedCriterion(predicate string, object any, criteria map[int]*domain.ReviewCriterion) {
+	parts := strings.Split(predicate, ".")
+	if len(parts) != 4 {
+		return
+	}
+	idx, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return
+	}
+	if criteria[idx] == nil {
+		criteria[idx] = &domain.ReviewCriterion{}
+	}
+	switch parts[3] {
+	case "name":
+		criteria[idx].Name = domain.AsString(object)
+	case "description":
+		criteria[idx].Description = domain.AsString(object)
+	case "weight":
+		criteria[idx].Weight = domain.AsFloat64(object)
+	case "threshold":
+		criteria[idx].Threshold = domain.AsFloat64(object)
+	}
+}
+
+// parseIndexedResult extracts result fields from predicates like
+// "battle.result.0.score" or "battle.result.1.passed".
+func parseIndexedResult(predicate string, object any, results map[int]*domain.ReviewResult) {
+	parts := strings.Split(predicate, ".")
+	if len(parts) != 4 {
+		return
+	}
+	idx, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return
+	}
+	if results[idx] == nil {
+		results[idx] = &domain.ReviewResult{}
+	}
+	switch parts[3] {
+	case "criterion_name":
+		results[idx].CriterionName = domain.AsString(object)
+	case "judge_id":
+		results[idx].JudgeID = domain.AsString(object)
+	case "score":
+		results[idx].Score = domain.AsFloat64(object)
+	case "passed":
+		results[idx].Passed = domain.AsBool(object)
+	case "reasoning":
+		results[idx].Reasoning = domain.AsString(object)
+	}
+}
+
+// collectCriteria converts the indexed criterion map to a sorted slice.
+func collectCriteria(m map[int]*domain.ReviewCriterion) []domain.ReviewCriterion {
+	if len(m) == 0 {
+		return nil
+	}
+	maxIdx := 0
+	for idx := range m {
+		if idx > maxIdx {
+			maxIdx = idx
+		}
+	}
+	result := make([]domain.ReviewCriterion, 0, len(m))
+	for i := 0; i <= maxIdx; i++ {
+		if c, ok := m[i]; ok {
+			result = append(result, *c)
+		}
+	}
+	return result
+}
+
+// collectResults converts the indexed result map to a sorted slice.
+func collectResults(m map[int]*domain.ReviewResult) []domain.ReviewResult {
+	if len(m) == 0 {
+		return nil
+	}
+	maxIdx := 0
+	for idx := range m {
+		if idx > maxIdx {
+			maxIdx = idx
+		}
+	}
+	result := make([]domain.ReviewResult, 0, len(m))
+	for i := 0; i <= maxIdx; i++ {
+		if r, ok := m[i]; ok {
+			result = append(result, *r)
+		}
+	}
+	return result
 }
 
 // collectJudges converts the indexed judge map to a sorted slice.
