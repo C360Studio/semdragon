@@ -5,6 +5,7 @@
 /semdragons
 /mockllm
 /openapi-gen
+/sandbox
 *.exe
 *.exe~
 *.dll
