@@ -86,7 +86,7 @@
 		<a href="/battles" class="nav-item" class:active={isActive('/battles')} data-testid="nav-battles">
 			<span class="nav-icon">B</span>
 			<span class="nav-label">Boss Battles</span>
-			<span class="nav-count" data-testid="nav-count-battles">{worldStore.activeBattles.length}</span>
+			<span class="nav-count" data-testid="nav-count-battles">{worldStore.battleList.length}</span>
 		</a>
 		<a href="/parties" class="nav-item" class:active={isActive('/parties')} data-testid="nav-parties">
 			<span class="nav-icon">P</span>
