@@ -50,7 +50,8 @@
     "agentic-loop": {
       "config": {
         "context": {
-          "summarization_model": "mockllm"
+          "compact_threshold": 1.0,
+          "tool_result_max_age": 10
         }
       }
     },

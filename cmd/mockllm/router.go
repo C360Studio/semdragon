@@ -7,8 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sync/atomic"
 	"time"
 )
+
+// callCounter generates unique tool call IDs across responses.
+var callCounter atomic.Int64
 
 // ---- OpenAI-compatible request types ----------------------------------------
 
@@ -106,15 +110,43 @@ func handleChatCompletions(logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
+		// Log message summary for debugging agentic loop interactions.
+		msgSummary := make([]string, len(req.Messages))
+		for i, m := range req.Messages {
+			tc := ""
+			if len(m.ToolCalls) > 0 {
+				names := make([]string, len(m.ToolCalls))
+				for j, c := range m.ToolCalls {
+					names[j] = c.Function.Name
+				}
+				tc = fmt.Sprintf(" tool_calls=%v", names)
+			}
+			tcID := ""
+			if m.ToolCallID != "" {
+				tcID = fmt.Sprintf(" tool_call_id=%s", m.ToolCallID)
+			}
+			content := ""
+			if s, ok := m.Content.(string); ok && len(s) > 80 {
+				content = fmt.Sprintf(" content=%.80s...", s)
+			} else if s, ok := m.Content.(string); ok && s != "" {
+				content = fmt.Sprintf(" content=%s", s)
+			}
+			msgSummary[i] = fmt.Sprintf("[%d]%s%s%s%s", i, m.Role, tc, tcID, content)
+		}
+
+		toolNames := make([]string, len(req.Tools))
+		for i, t := range req.Tools {
+			toolNames[i] = t.Function.Name
+		}
+
 		logger.Info("chat completion request",
-			"method", r.Method,
-			"path", r.URL.Path,
 			"model", req.Model,
 			"messages", len(req.Messages),
-			"tools", len(req.Tools),
+			"tools", toolNames,
+			"msg_detail", msgSummary,
 		)
 
-		resp := route(req)
+		resp := route(req, logger)
 		resp.ID = fmt.Sprintf("mock-%d", time.Now().UnixNano())
 		resp.Object = "chat.completion"
 		resp.Created = time.Now().Unix()
@@ -128,7 +160,7 @@ func handleChatCompletions(logger *slog.Logger) http.HandlerFunc {
 }
 
 // route decides which canned response to send based on the request shape.
-func route(req chatRequest) chatResponse {
+func route(req chatRequest, logger *slog.Logger) chatResponse {
 	// Agentic loop path: tools are present.
 	// First turn — no tool results yet — return a tool call so the loop
 	// exercises at least one round-trip before completing.
@@ -136,26 +168,58 @@ func route(req chatRequest) chatResponse {
 	// so the loop finishes cleanly.
 	if len(req.Tools) > 0 {
 		if hasToolResults(req.Messages) {
-			return routeWithToolResults(req)
+			resp := routeWithToolResults(req)
+			logResponse(logger, "routeWithToolResults", resp)
+			return resp
 		}
-		return routeToolCall(req.Tools, req.Messages)
+		resp := routeToolCall(req.Tools, req.Messages)
+		logResponse(logger, "routeToolCall", resp)
+		return resp
 	}
 
 	// DM chat path: check system prompt first for triage requests,
 	// then pattern-match on the last user message.
 	sysPrompt := systemMessage(req.Messages)
 	if reTriage.MatchString(sysPrompt) {
+		logger.Info("route", "path", "dm-triage")
 		return completionResponse(triageResponse)
 	}
 
 	lastUser := lastUserMessage(req.Messages)
 	if reChain.MatchString(lastUser) {
+		logger.Info("route", "path", "dm-chain")
 		return completionResponse(questChainResponse)
 	}
 	if reQuestBrief.MatchString(lastUser) {
+		logger.Info("route", "path", "dm-quest-brief")
 		return completionResponse(questBriefResponse)
 	}
+	logger.Info("route", "path", "dm-conversational")
 	return completionResponse(conversationalResponse)
+}
+
+// logResponse logs the response path and key details (tool call name or completion).
+func logResponse(logger *slog.Logger, path string, resp chatResponse) {
+	if len(resp.Choices) == 0 {
+		logger.Info("route", "path", path, "choices", 0)
+		return
+	}
+	c := resp.Choices[0]
+	if len(c.Message.ToolCalls) > 0 {
+		names := make([]string, len(c.Message.ToolCalls))
+		for i, tc := range c.Message.ToolCalls {
+			names[i] = fmt.Sprintf("%s(id=%s)", tc.Function.Name, tc.ID)
+		}
+		logger.Info("route", "path", path, "finish", c.FinishReason, "tool_calls", names)
+	} else {
+		preview := ""
+		if c.Message.Content != nil && len(*c.Message.Content) > 80 {
+			preview = (*c.Message.Content)[:80] + "..."
+		} else if c.Message.Content != nil {
+			preview = *c.Message.Content
+		}
+		logger.Info("route", "path", path, "finish", c.FinishReason, "content_preview", preview)
+	}
 }
 
 // routeToolCall picks the right tool call based on which tools are available.
@@ -227,6 +291,7 @@ func routeWithToolResults(req chatRequest) chatResponse {
 // namedToolCallResponse returns a tool_calls response for a specific tool.
 func namedToolCallResponse(name, arguments string) chatResponse {
 	nilContent := (*string)(nil)
+	callID := fmt.Sprintf("call_mock_%d", callCounter.Add(1))
 	return chatResponse{
 		Choices: []choice{
 			{
@@ -236,7 +301,7 @@ func namedToolCallResponse(name, arguments string) chatResponse {
 					Content: nilContent,
 					ToolCalls: []toolCall{
 						{
-							ID:   "call_mock_1",
+							ID:   callID,
 							Type: "function",
 							Function: toolFuncCall{
 								Name:      name,
