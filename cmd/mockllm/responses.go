@@ -157,3 +157,74 @@ const dmReadFileCompletion = `I have reviewed the file contents. The file contai
 
 // dmGenericToolCompletion is the DM's fallback response after any other tool results.
 const dmGenericToolCompletion = `I have gathered the requested information using the available tools. Based on what I found, here is my analysis of the current situation.`
+
+// researchQuestBriefResponse is returned when the user's message looks like a
+// quest creation request AND contains research keywords. The title includes
+// "Research" so that when the agent executes the quest, the system prompt
+// matches reResearch and the mock routes to graph_search.
+const researchQuestBriefResponse = `Here is a research quest based on your request.
+
+` + "```" + `json:quest_brief
+{
+  "title": "Mock Quest: Research Input Validation",
+  "goal": "Research and investigate best practices for input validation in web applications.",
+  "difficulty": 2,
+  "skills": ["research", "analysis"],
+  "requirements": [
+    "Research summary produced",
+    "Best practices documented with sources"
+  ],
+  "scenarios": [
+    {
+      "name": "Literature review",
+      "description": "Search for and review existing documentation on input validation techniques",
+      "depends_on": []
+    },
+    {
+      "name": "Best practices synthesis",
+      "description": "Synthesize findings into actionable recommendations",
+      "depends_on": ["Literature review"]
+    }
+  ]
+}
+` + "```" + `
+
+This research quest will have an agent investigate input validation best practices
+using the available knowledge graph and web search tools.`
+
+// partyQuestBriefResponse is returned when the user's message contains
+// parallel/sub-task keywords indicating a party quest. The hints include
+// party_required so the frontend passes it through to the backend.
+const partyQuestBriefResponse = `Here is a party quest that will be decomposed into parallel sub-tasks.
+
+` + "```" + `json:quest_brief
+{
+  "title": "Mock Quest: Build Utility Library",
+  "goal": "Build a utility library with two independent functions, each with unit tests.",
+  "difficulty": 2,
+  "skills": ["code_generation"],
+  "requirements": [
+    "Both functions implemented",
+    "Unit tests pass for each function"
+  ],
+  "scenarios": [
+    {
+      "name": "Temperature conversion",
+      "description": "Write a celsius_to_fahrenheit function with unit tests",
+      "skills": ["code_generation"]
+    },
+    {
+      "name": "Distance conversion",
+      "description": "Write a kilometers_to_miles function with unit tests",
+      "skills": ["code_generation"]
+    }
+  ],
+  "hints": {
+    "party_required": true,
+    "min_party_size": 3
+  }
+}
+` + "```" + `
+
+This quest requires a party of at least 3 agents. The two sub-tasks are independent
+and will be executed in parallel by different party members, coordinated by a lead.`

@@ -23,15 +23,17 @@ import {
  *
  * Test order:
  *   1. Solo quest     — post via DM chat, watch autonomy claim and complete it
- *   2. Research quest — post via API, verify graph_search tool call in trajectory
- *   3. Party quest    — post epic quest via API, watch DAG execute and roll up
+ *   2. Research quest — post via DM chat, verify graph_search tool call in trajectory
+ *   3. Party quest    — post party quest via DM chat, watch DAG execute and roll up
  *   4. Aftermath      — verify downstream effects: XP, battles, guilds, trajectories
  *
  * Design principles:
+ *   - Act like a human — all quest creation goes through DM chat UI
  *   - Work WITH autonomy — never pause the board, never manually claim quests
  *   - Use the seeded roster — never recruit agents inside these tests
  *   - Minimal assertions — verify pipeline movement, not intermediate state
  *   - Serial execution — tests share state intentionally; order matters
+ *   - API reads are fine for verification (trajectories, quest lists)
  *
  * @scenario @tier2
  */
@@ -94,44 +96,66 @@ test.describe.serial('Quest Pipeline', () => {
 	// Test 2: Research Quest — graph_search
 	// ===========================================================================
 
-	test('research quest: graph_search tool used in trajectory', async ({ lifecycleApi }) => {
+	test('research quest: post via DM chat, verify graph_search in trajectory', async ({
+		page,
+		lifecycleApi
+	}) => {
 		test.setTimeout(isMockLLM() ? 120_000 : 300_000);
 
-		// Post a research quest — prompt must match reResearch pattern (research|investigate).
-		const quest = await test.step('post research quest via API', async () => {
-			return lifecycleApi.createQuest(
-				'Research and investigate best practices for input validation in web applications'
+		// Post a research quest via DM chat. The prompt must match both reQuestBrief
+		// ("create.*quest") and reResearch ("research|investigate") so the mock LLM
+		// returns a research-themed quest brief.
+		await test.step('navigate to dashboard', async () => {
+			await page.goto('/');
+			await waitForHydration(page);
+		});
+
+		await test.step('post research quest via DM chat', async () => {
+			await postQuestViaDMChat(
+				page,
+				'Create a quest to research and investigate best practices for input validation in web applications',
+				{ timeout: isMockLLM() ? 30_000 : 60_000 }
 			);
 		});
 
-		const questInstance = extractInstance(quest.id);
+		// Navigate to board and wait for the quest to complete.
+		await test.step('verify quest appears on board', async () => {
+			await page.goto('/quests');
+			await page.waitForLoadState('domcontentloaded');
 
-		// Wait for completion.
-		const finalQuest = await test.step('wait for quest completion', async () => {
-			return retry(
-				async () => {
-					const q = await lifecycleApi.getQuest(questInstance);
-					if (!['completed', 'failed'].includes(q.status)) {
-						throw new Error(`Research quest still ${q.status}`);
-					}
-					return q;
-				},
-				{
-					timeout: isMockLLM() ? 90_000 : 240_000,
-					interval: 3000,
-					message: 'Research quest did not reach terminal state'
-				}
-			);
+			await expect
+				.poll(
+					async () => page.locator('[data-testid="quest-card"]').count(),
+					{ timeout: 30_000, message: 'No quest cards on board after posting research quest' }
+				)
+				.toBeGreaterThan(0);
 		});
 
-		// Verify trajectory has graph_search tool call.
+		await test.step('wait for research quest to complete', async () => {
+			await waitForAnyQuestInColumn(page, 'completed', {
+				timeout: isMockLLM() ? 90_000 : 240_000,
+				// At least 2 completed quests (solo + research)
+				minCount: 2
+			});
+		});
+
+		// Verify trajectory has graph_search tool call via API.
 		await test.step('verify graph_search in trajectory', async () => {
-			if (!finalQuest.loop_id) {
-				console.warn('[Research] No loop_id on completed quest — skipping trajectory check');
+			// Find the research quest by matching the title from the mock brief.
+			const quests = await lifecycleApi.listQuests();
+			const researchQuest = quests.find(
+				(q) =>
+					q.status === 'completed' &&
+					q.loop_id &&
+					/research|validation/i.test(q.title ?? '')
+			);
+
+			if (!researchQuest?.loop_id) {
+				console.warn('[Research] No completed research quest with loop_id — skipping trajectory check');
 				return;
 			}
 
-			const trajectory = await lifecycleApi.getTrajectory(finalQuest.loop_id);
+			const trajectory = await lifecycleApi.getTrajectory(researchQuest.loop_id);
 			const toolCalls = trajectory.steps.filter((s) => s.step_type === 'tool_call');
 			const toolNames = toolCalls.map((s) => s.tool_name);
 			console.log(`[Research] Trajectory tool calls: ${toolNames.join(', ')}`);
@@ -163,28 +187,30 @@ test.describe.serial('Quest Pipeline', () => {
 	// Test 3: Party Quest
 	// ===========================================================================
 
-	test('party quest: post epic quest, watch DAG execute', async ({ page, lifecycleApi }) => {
+	test('party quest: post via DM chat, watch DAG execute', async ({ page, lifecycleApi }) => {
 		test.setTimeout(isMockLLM() ? 180_000 : 600_000);
 
-		// Post via the lifecycle API since DM chat does not surface party hints.
+		// Post a party quest via DM chat. The prompt must match both reQuestBrief
+		// ("build") and rePartyQuest ("parallel|sub-task|independent") so the mock
+		// LLM returns a quest brief with hints.party_required = true.
 		// The seeded roster already has Master-tier agents (lv16-17) available as
 		// party leads and Journeyman agents (lv7-9) available as members.
-		const parentQuest = await test.step('post party-required epic quest via API', async () => {
-			const quest = await lifecycleApi.createQuestWithParty(
-				'Build a utility library with two independent functions. ' +
-					'Sub-task 1: Write a Python function celsius_to_fahrenheit(c) with unit tests. ' +
-					'Sub-task 2: Write a Python function kilometers_to_miles(km) with unit tests. ' +
-					'Each sub-task is independent and can be completed in parallel.',
-				3
-			);
-			expect(quest.id).toBeTruthy();
-			return quest;
+		await test.step('navigate to dashboard', async () => {
+			await page.goto('/');
+			await waitForHydration(page);
 		});
 
-		const parentInstance = extractInstance(parentQuest.id);
+		await test.step('post party quest via DM chat', async () => {
+			await postQuestViaDMChat(
+				page,
+				'Build a utility library with two independent functions that can be completed in parallel. ' +
+					'Sub-task 1: Write a celsius_to_fahrenheit function with unit tests. ' +
+					'Sub-task 2: Write a kilometers_to_miles function with unit tests.',
+				{ timeout: isMockLLM() ? 30_000 : 60_000 }
+			);
+		});
 
-		// Verify the quest card is visible on the board before we start waiting
-		// for longer pipeline stages.
+		// Verify the quest card is visible on the board.
 		await test.step('verify quest appears on board', async () => {
 			await page.goto('/quests');
 			await page.waitForLoadState('domcontentloaded');
@@ -203,19 +229,27 @@ test.describe.serial('Quest Pipeline', () => {
 		//   → questdagexec drives sub-quest assignment and execution
 		//   → lead reviews each node via review_sub_quest
 		//   → parent quest rolls up to completed/failed/escalated
-		await test.step('wait for parent quest to reach terminal state', async () => {
+		await test.step('wait for party quest to reach terminal state', async () => {
 			await retry(
 				async () => {
-					const q = await lifecycleApi.getQuest(parentInstance);
-					if (!['completed', 'failed', 'escalated'].includes(q.status)) {
-						throw new Error(`Parent quest still ${q.status}`);
+					const allQuests = await lifecycleApi.listQuests();
+					// Match by title from the mock brief ("Mock Quest: Build Utility Library").
+					const target = allQuests.find(
+						(q) => /utility|library/i.test(q.title ?? '')
+					);
+
+					if (!target) {
+						throw new Error('Party quest not found yet');
 					}
-					return q;
+					if (!['completed', 'failed', 'escalated'].includes(target.status)) {
+						throw new Error(`Party quest still ${target.status}`);
+					}
+					return target;
 				},
 				{
 					timeout: isMockLLM() ? 150_000 : 540_000,
 					interval: 3000,
-					message: 'Parent quest did not reach a terminal state'
+					message: 'Party quest did not reach a terminal state'
 				}
 			);
 		});

@@ -94,6 +94,10 @@ var (
 	// Matches DM queries about game state that should trigger graph_query.
 	// "look up" is intentionally in reResearch only to avoid overlap.
 	reQuery = regexp.MustCompile(`(?i)board|status|what.*quest|how many|current.*state|query|tell me about`)
+	// Matches party-style quest prompts with parallel/sub-task indicators.
+	rePartyQuest = regexp.MustCompile(`(?i)parallel|sub-task|independent.*function|independent.*task|party`)
+	// Matches party lead system prompts (agent acting as party lead).
+	rePartyLead = regexp.MustCompile(`(?i)PARTY LEAD`)
 )
 
 // handleChatCompletions returns an http.HandlerFunc that logs and routes
@@ -163,12 +167,14 @@ func handleChatCompletions(logger *slog.Logger) http.HandlerFunc {
 }
 
 // isDMToolRequest returns true when the request carries tools but none of them
-// is submit_work_product. Agents always include submit_work_product (registered
-// in executor.RegisterBuiltins); the DM allowlist (service/api/dm_tools.go)
-// never does, making this a reliable discriminator.
+// is agent-specific. Regular agents include submit_work_product; party leads
+// get decompose_quest/review_sub_quest instead (submit_work_product is withheld
+// during decomposition to force delegation). The DM allowlist
+// (service/api/dm_tools.go) never includes any of these.
 func isDMToolRequest(tools []toolDef) bool {
 	for _, t := range tools {
-		if t.Function.Name == "submit_work_product" {
+		switch t.Function.Name {
+		case "submit_work_product", "decompose_quest", "review_sub_quest", "answer_clarification":
 			return false // agent request
 		}
 	}
@@ -189,6 +195,13 @@ func routeDMToolCall(tools []toolDef, msgs []requestMsg) chatResponse {
 	lastUser := lastUserMessage(msgs)
 
 	// Quest design: no tools needed, respond with quest brief/chain directly.
+	// Check combined patterns first: research+quest and party+quest.
+	if reQuestBrief.MatchString(lastUser) && reResearch.MatchString(lastUser) {
+		return completionResponse(researchQuestBriefResponse)
+	}
+	if reQuestBrief.MatchString(lastUser) && rePartyQuest.MatchString(lastUser) {
+		return completionResponse(partyQuestBriefResponse)
+	}
 	if reChain.MatchString(lastUser) {
 		return completionResponse(questChainResponse)
 	}
@@ -277,6 +290,14 @@ func route(req chatRequest, logger *slog.Logger) chatResponse {
 	}
 
 	lastUser := lastUserMessage(req.Messages)
+	if reQuestBrief.MatchString(lastUser) && reResearch.MatchString(lastUser) {
+		logger.Info("route", "path", "dm-research-quest-brief")
+		return completionResponse(researchQuestBriefResponse)
+	}
+	if reQuestBrief.MatchString(lastUser) && rePartyQuest.MatchString(lastUser) {
+		logger.Info("route", "path", "dm-party-quest-brief")
+		return completionResponse(partyQuestBriefResponse)
+	}
 	if reChain.MatchString(lastUser) {
 		logger.Info("route", "path", "dm-chain")
 		return completionResponse(questChainResponse)
@@ -322,8 +343,10 @@ func routeToolCall(tools []toolDef, msgs []requestMsg) chatResponse {
 		toolNames[t.Function.Name] = true
 	}
 
-	// Party quest decomposition: call decompose_quest if available.
-	if toolNames["decompose_quest"] {
+	// Party quest decomposition: call decompose_quest only when the prompt
+	// indicates a party lead context. High-tier agents always have decompose_quest
+	// in their tool list, but should only call it when acting as party lead.
+	if toolNames["decompose_quest"] && isPartyLeadPrompt(msgs) {
 		return namedToolCallResponse("decompose_quest", dagDecompositionArgs)
 	}
 
@@ -519,6 +542,14 @@ func extractSubQuestID(msgs []requestMsg) string {
 		}
 	}
 	return "__UNKNOWN_SUB_QUEST_ID__"
+}
+
+// isPartyLeadPrompt checks whether the system prompt contains the party lead
+// directive, indicating this agent is acting as a party lead and should call
+// decompose_quest rather than working the quest directly.
+func isPartyLeadPrompt(msgs []requestMsg) bool {
+	sys := systemMessage(msgs)
+	return rePartyLead.MatchString(sys)
 }
 
 // isResearchPrompt checks whether the last user message or system prompt

@@ -348,11 +348,11 @@ func (s *Service) writeAvailableOptions(b *strings.Builder) {
 
 	b.WriteString("**Review levels**: 0=Auto, 1=Standard, 2=Strict, 3=Human\n\n")
 
-	b.WriteString("**Solo vs Party**: The system decides based on scenario dependencies.\n")
-	b.WriteString("You do NOT need to set party_required — just declare depends_on honestly.\n")
-	b.WriteString("- Independent scenarios → party (agents work in parallel)\n")
-	b.WriteString("- Sequential chain → solo (one high-capability agent)\n")
-	b.WriteString("- Use `hints.party_required` only to manually override the system's decision.\n\n")
+	b.WriteString("**Solo vs Party**: Set `hints.party_required` based on scenario dependencies:\n")
+	b.WriteString("- 2+ independent scenarios (no depends_on) → set `party_required: true`\n")
+	b.WriteString("- Sequential scenarios (linear depends_on chain) → omit or set false\n")
+	b.WriteString("- Mixed dependencies → set `party_required: true`\n")
+	b.WriteString("- 0-1 scenarios → omit (solo quest)\n\n")
 }
 
 // writeWorldState appends the current world state summary including agent roster.

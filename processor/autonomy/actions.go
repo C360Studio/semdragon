@@ -130,6 +130,14 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 			continue
 		}
 
+		// Skip party-required quests — these must be claimed through
+		// partycoord which forms a party and assigns via ClaimAndStartForParty.
+		if quest.PartyRequired {
+			c.logger.Debug("quest requires a party, skipping",
+				"quest_id", suggestion.QuestID)
+			continue
+		}
+
 		// Pre-flight validation
 		if err := agentprogression.ValidateAgentCanClaim(agent, quest); err != nil {
 			c.logger.Debug("agent cannot claim quest, trying next",
