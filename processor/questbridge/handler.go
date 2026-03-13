@@ -654,7 +654,7 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	// Snapshot workspace files to the artifact store before transitioning status.
 	// Best-effort: snapshot failure is logged but does not block quest completion.
 	// Placed after the DAG check so DAG decompositions are not delayed by snapshot I/O.
-	c.snapshotWorkspace(string(questID))
+	snapshotCount := c.snapshotWorkspace(string(questID))
 
 	quest.LoopID = mapping.LoopID
 
@@ -690,6 +690,13 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	}
 
 	quest.Output = output
+
+	// Write the quest output as a synthetic artifact if no workspace files were
+	// snapshotted. This ensures every completed quest has at least one artifact
+	// visible in the workspace browser.
+	if snapshotCount == 0 && !isClarification {
+		c.ensureOutputArtifact(string(questID), output)
+	}
 
 	// Route clarification requests to the party lead or DM.
 	if isClarification {
@@ -1443,9 +1450,9 @@ const maxSnapshotFileSize = 10 * 1024 * 1024
 //
 // Uses a detached context with a deadline so that graceful shutdown does not
 // orphan the workspace mid-snapshot.
-func (c *Component) snapshotWorkspace(questID string) {
+func (c *Component) snapshotWorkspace(questID string) int {
 	if c.sandboxClient == nil {
-		return
+		return 0
 	}
 
 	// Use a bounded context independent of the parent so shutdown does not
@@ -1460,13 +1467,13 @@ func (c *Component) snapshotWorkspace(questID string) {
 		c.logger.Warn("failed to list workspace files for snapshot",
 			"quest_id", questID, "error", err)
 		c.cleanupWorkspace(questID)
-		return
+		return 0
 	}
 
 	if len(files) == 0 {
 		c.logger.Debug("no workspace files to snapshot", "quest_id", questID)
 		c.cleanupWorkspace(questID)
-		return
+		return 0
 	}
 
 	// Copy files to the artifact store when available.
@@ -1502,12 +1509,37 @@ func (c *Component) snapshotWorkspace(questID string) {
 		}
 		c.logger.Info("workspace snapshot complete",
 			"quest_id", questID, "files", snapshotted, "total", len(files))
-	} else {
-		c.logger.Warn("sandbox workspace has files but no artifact store configured",
-			"quest_id", questID, "files", len(files))
+		c.cleanupWorkspace(questID)
+		return snapshotted
 	}
 
+	c.logger.Warn("sandbox workspace has files but no artifact store configured",
+		"quest_id", questID, "files", len(files))
 	c.cleanupWorkspace(questID)
+	return 0
+}
+
+// ensureOutputArtifact writes the quest's output text as a work_product.md
+// artifact when no workspace files were snapshotted. This guarantees every
+// completed quest has at least one artifact visible in the workspace browser.
+func (c *Component) ensureOutputArtifact(questID string, output string) {
+	if output == "" {
+		return
+	}
+	store := c.getArtifactStore()
+	if store == nil {
+		return
+	}
+	instanceID := domain.ExtractInstance(questID)
+	key := fmt.Sprintf("quests/%s/work_product.md", instanceID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := store.Put(ctx, key, []byte(output)); err != nil {
+		c.logger.Warn("failed to write output artifact",
+			"quest_id", questID, "error", err)
+	}
 }
 
 // cleanupWorkspace deletes the sandbox workspace for the given quest.
