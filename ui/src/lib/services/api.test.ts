@@ -472,21 +472,21 @@ describe('API Service', () => {
 	});
 
 	describe('workspace endpoints', () => {
-		it('fetches workspace tree from /game/workspace', async () => {
+		it('fetches workspace tree for a quest', async () => {
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
 				json: async () => [
-					{ name: 'src', path: 'src', is_dir: true, size: 0, modified: '2024-01-01T00:00:00Z' },
-					{ name: 'README.md', path: 'README.md', is_dir: false, size: 512, modified: '2024-01-01T00:00:00Z' }
+					{ name: 'src', path: 'src', is_dir: true, size: 0 },
+					{ name: 'README.md', path: 'README.md', is_dir: false, size: 512 }
 				]
 			});
 
-			const result = await getWorkspaceTree();
+			const result = await getWorkspaceTree('abc123');
 
 			expect(result).toHaveLength(2);
 			expect(result[0].name).toBe('src');
 			expect(mockFetch).toHaveBeenCalledWith(
-				'http://test-api.local/game/workspace',
+				'http://test-api.local/game/workspace/tree?quest=abc123',
 				expect.any(Object)
 			);
 		});
@@ -498,20 +498,20 @@ describe('API Service', () => {
 				text: async () => 'Service Unavailable'
 			});
 
-			await expect(getWorkspaceTree()).rejects.toThrow('API Error 503: Service Unavailable');
+			await expect(getWorkspaceTree('abc123')).rejects.toThrow('API Error 503: Service Unavailable');
 		});
 
-		it('fetches file content with encoded path', async () => {
+		it('fetches file content with quest and encoded path', async () => {
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
 				text: async () => 'package main\n'
 			});
 
-			const result = await getWorkspaceFile('src/main.go');
+			const result = await getWorkspaceFile('abc123', 'src/main.go');
 
 			expect(result).toBe('package main\n');
 			expect(mockFetch).toHaveBeenCalledWith(
-				'http://test-api.local/game/workspace/file?path=src%2Fmain.go'
+				'http://test-api.local/game/workspace/file?quest=abc123&path=src%2Fmain.go'
 			);
 		});
 
@@ -522,7 +522,7 @@ describe('API Service', () => {
 				text: async () => 'binary file'
 			});
 
-			const err = await getWorkspaceFile('image.png').catch((e) => e);
+			const err = await getWorkspaceFile('abc123', 'image.png').catch((e) => e);
 
 			expect(err).toBeInstanceOf(ApiError);
 			expect(err.status).toBe(415);
@@ -536,7 +536,7 @@ describe('API Service', () => {
 				text: async () => 'file too large'
 			});
 
-			const err = await getWorkspaceFile('huge.log').catch((e) => e);
+			const err = await getWorkspaceFile('abc123', 'huge.log').catch((e) => e);
 
 			expect(err).toBeInstanceOf(ApiError);
 			expect(err.status).toBe(413);

@@ -96,11 +96,9 @@ type ComponentInfoView struct {
 	LastError    string `json:"last_error,omitempty" description:"Most recent error message"`
 }
 
-// WorkspaceInfoView describes workspace directory status.
+// WorkspaceInfoView describes artifact storage status.
 type WorkspaceInfoView struct {
-	Dir      string `json:"dir" description:"Workspace directory path"`
-	Exists   bool   `json:"exists" description:"Whether the directory exists"`
-	Writable bool   `json:"writable" description:"Whether the directory is writable"`
+	Available bool `json:"available" description:"Whether the artifact store is available"`
 }
 
 // TokenBudgetView describes token budget config.
@@ -265,28 +263,12 @@ func (s *Service) handleSettingsHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Workspace directory
-	wsDir := s.config.WorkspaceDir
-	if wsDir == "" {
-		checks = append(checks, HealthCheck{Name: "workspace", Status: "warning", Message: "No workspace directory configured"})
-		hasWarning = true
-	} else if info, err := os.Stat(wsDir); err != nil {
-		checks = append(checks, HealthCheck{Name: "workspace", Status: "error", Message: fmt.Sprintf("%s does not exist", wsDir)})
-		hasError = true
-	} else if !info.IsDir() {
-		checks = append(checks, HealthCheck{Name: "workspace", Status: "error", Message: fmt.Sprintf("%s is not a directory", wsDir)})
-		hasError = true
+	// 3. Artifact store
+	if s.getArtifactStore() != nil {
+		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "ok", Message: "Artifact storage available"})
 	} else {
-		// Check writable
-		tmpFile, tmpErr := os.CreateTemp(wsDir, ".settings-health-check-*")
-		if tmpErr != nil {
-			checks = append(checks, HealthCheck{Name: "workspace", Status: "warning", Message: fmt.Sprintf("%s exists but is not writable", wsDir)})
-			hasWarning = true
-		} else {
-			_ = tmpFile.Close()
-			_ = os.Remove(tmpFile.Name())
-			checks = append(checks, HealthCheck{Name: "workspace", Status: "ok", Message: fmt.Sprintf("%s exists and is writable", wsDir)})
-		}
+		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "warning", Message: "Artifact storage not available — quest artifacts won't be persisted"})
+		hasWarning = true
 	}
 
 	// 4. AGENT stream
@@ -416,19 +398,9 @@ func (s *Service) assembleSettingsResponse() SettingsResponse {
 	// Components
 	resp.Components = s.assembleComponentList()
 
-	// Workspace
-	wsDir := s.config.WorkspaceDir
-	resp.Workspace = WorkspaceInfoView{Dir: wsDir}
-	if wsDir != "" {
-		if info, err := os.Stat(wsDir); err == nil && info.IsDir() {
-			resp.Workspace.Exists = true
-			tmpFile, tmpErr := os.CreateTemp(wsDir, ".settings-check-*")
-			if tmpErr == nil {
-				resp.Workspace.Writable = true
-				_ = tmpFile.Close()
-				_ = os.Remove(tmpFile.Name())
-			}
-		}
+	// Workspace (artifact store)
+	resp.Workspace = WorkspaceInfoView{
+		Available: s.getArtifactStore() != nil,
 	}
 
 	// Token budget
@@ -786,30 +758,16 @@ func (s *Service) buildChecklist(ctx context.Context) []ChecklistItem {
 		}(),
 	})
 
-	// Workspace
-	wsOk := false
-	wsDir := s.config.WorkspaceDir
-	if wsDir != "" {
-		if info, err := os.Stat(wsDir); err == nil && info.IsDir() {
-			tmpFile, tmpErr := os.CreateTemp(wsDir, ".checklist-*")
-			if tmpErr == nil {
-				wsOk = true
-				_ = tmpFile.Close()
-				_ = os.Remove(tmpFile.Name())
-			}
-		}
-	}
+	// Artifact store
+	artifactOk := s.getArtifactStore() != nil
 	items = append(items, ChecklistItem{
-		Label: "Workspace directory exists and is writable",
-		Met:   wsOk,
+		Label: "Artifact storage available",
+		Met:   artifactOk,
 		HelpText: func() string {
-			if wsOk {
+			if artifactOk {
 				return ""
 			}
-			if wsDir == "" {
-				return "Set workspace_dir in config/semdragons.json services.game.config. For local dev: mkdir -p .workspace"
-			}
-			return fmt.Sprintf("Create directory %s or update workspace_dir in config", wsDir)
+			return "Enable the filestore component in config/semdragons.json to persist quest artifacts"
 		}(),
 	})
 

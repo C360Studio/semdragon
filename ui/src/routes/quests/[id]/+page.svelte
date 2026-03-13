@@ -6,13 +6,34 @@
 	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
-	import { QuestDifficultyNames, TrustTierNames, questId } from '$types';
+	import { QuestDifficultyNames, TrustTierNames, questId, extractInstance } from '$types';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import ActivityFeed from '$components/ActivityFeed.svelte';
+	import { listQuestArtifacts } from '$services/api';
+
+	let artifactCount = $state<number | null>(null);
+
+	// Fetch artifact count for completed/failed quests
+	$effect(() => {
+		const q = quest;
+		if (q && (q.status === 'completed' || q.status === 'failed' || q.status === 'in_review')) {
+			const instanceId = extractInstance(q.id);
+			listQuestArtifacts(instanceId).then((result) => {
+				artifactCount = result.count;
+			}).catch(() => {
+				artifactCount = null;
+			});
+		}
+	});
 
 	const id = $derived(questId(page.params.id ?? ''));
 	const quest = $derived(worldStore.quests.get(id));
+
+	// Sub-quests of this quest (for party quest parents)
+	const subQuests = $derived(
+		worldStore.questList.filter((q) => q.parent_quest && String(q.parent_quest) === String(id))
+	);
 
 	$effect(() => {
 		if (quest) {
@@ -132,11 +153,48 @@
 						</section>
 					{/if}
 
+				{#if quest.parent_quest}
+					<section class="detail-card">
+						<h2>Parent Quest</h2>
+						<a href="/quests/{quest.parent_quest}" class="parent-quest-link">
+							{worldStore.questTitle(quest.parent_quest)}
+						</a>
+					</section>
+				{/if}
+
+				{#if subQuests.length > 0}
+					<section class="detail-card full-width">
+						<h2>Sub-Quests ({subQuests.length})</h2>
+						<div class="sub-quest-grid">
+							{#each subQuests as sub}
+								<a href="/quests/{sub.id}" class="sub-quest-item">
+									<span class="sub-status-pip" data-status={sub.status}></span>
+									<span class="sub-quest-title">{sub.title}</span>
+									<span class="sub-quest-status">{sub.status}</span>
+									{#if sub.claimed_by}
+										<span class="sub-quest-agent">{worldStore.agentName(sub.claimed_by)}</span>
+									{/if}
+								</a>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
 					{#if quest.loop_id}
 						<section class="detail-card full-width">
 							<h2>Trajectory</h2>
 							<a href="/trajectories/{quest.loop_id}" class="trajectory-link">
 								View full trajectory timeline
+							</a>
+						</section>
+					{/if}
+
+					{#if artifactCount !== null && artifactCount > 0}
+						<section class="detail-card full-width">
+							<h2>Artifacts</h2>
+							<p class="artifact-summary">{artifactCount} files produced</p>
+							<a href="/workspace?quest={extractInstance(quest.id)}" class="trajectory-link">
+								Browse in workspace
 							</a>
 						</section>
 					{/if}
@@ -328,6 +386,71 @@
 	.trajectory-link:hover {
 		background: var(--ui-interactive-primary-hover);
 		text-decoration: none;
+	}
+
+	.artifact-summary {
+		color: var(--ui-text-secondary);
+		font-size: 0.875rem;
+		margin: 0 0 var(--spacing-sm);
+	}
+
+	/* Parent/sub-quest relationships */
+	.parent-quest-link {
+		display: inline-block;
+		color: var(--ui-interactive-primary);
+		font-size: 0.875rem;
+	}
+
+	.sub-quest-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.sub-quest-item {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-sm) var(--spacing-md);
+		border-radius: var(--radius-sm);
+		background: var(--ui-surface-primary);
+		text-decoration: none;
+		color: var(--ui-text-primary);
+		font-size: 0.8125rem;
+		transition: background 150ms ease;
+	}
+
+	.sub-quest-item:hover {
+		background: var(--ui-surface-tertiary);
+		text-decoration: none;
+	}
+
+	.sub-status-pip {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.sub-status-pip[data-status='posted'] { background: var(--quest-posted); }
+	.sub-status-pip[data-status='claimed'] { background: var(--quest-claimed); }
+	.sub-status-pip[data-status='in_progress'] { background: var(--quest-in-progress); }
+	.sub-status-pip[data-status='in_review'] { background: var(--quest-in-review); }
+	.sub-status-pip[data-status='completed'] { background: var(--quest-completed); }
+	.sub-status-pip[data-status='failed'] { background: var(--quest-failed); }
+
+	.sub-quest-title {
+		flex: 1;
+	}
+
+	.sub-quest-status {
+		font-size: 0.75rem;
+		color: var(--ui-text-tertiary);
+	}
+
+	.sub-quest-agent {
+		font-size: 0.75rem;
+		color: var(--ui-text-secondary);
 	}
 
 	.not-found {

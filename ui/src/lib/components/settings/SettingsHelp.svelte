@@ -28,7 +28,7 @@
 		},
 		workspace: {
 			title: 'Workspace',
-			body: 'The workspace directory is where agents read and write files during quest execution. It must exist and be writable. In Docker, it is mounted automatically at /workspace. For local dev, create .workspace in the project root.'
+			body: 'The workspace page browses quest artifacts persisted after quest completion. Artifacts are stored by the filestore component. Agents work in isolated sandbox containers during execution; files are snapshotted to the artifact store when quests complete.'
 		},
 		budget: {
 			title: 'Token Budget',

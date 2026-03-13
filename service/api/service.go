@@ -18,6 +18,7 @@ import (
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boardcontrol"
 	"github.com/c360studio/semdragons/processor/dmworldstate"
+	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/tokenbudget"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/service"
@@ -31,9 +32,8 @@ type Config struct {
 	Board        string                    `json:"board"`                   // Board name (default: "board1")
 	Org          string                    `json:"org"`                     // Org namespace (default from platform)
 	Platform     string                    `json:"platform"`               // Platform ID (default from platform)
-	MaxEntities  int                       `json:"max_entities"`           // Max entities per query (default: 1000)
-	WorkspaceDir string                    `json:"workspace_dir,omitempty"` // Host directory for agent workspace artifacts
-	TokenBudget  *tokenbudget.BudgetConfig `json:"token_budget,omitempty"` // Token budget config
+	MaxEntities int                       `json:"max_entities"`           // Max entities per query (default: 1000)
+	TokenBudget *tokenbudget.BudgetConfig `json:"token_budget,omitempty"` // Token budget config
 }
 
 // maxChatSessions caps the number of in-memory DM chat session traces.
@@ -56,6 +56,11 @@ type Service struct {
 	boardConfig     *domain.BoardConfig      // board identity for bucket name, entity IDs
 	config          Config
 	logger          *slog.Logger
+
+	// dmTools is the DM-specific tool registry, initialized during Start.
+	// Nil when tools could not be configured (missing deps); handlers degrade
+	// gracefully by falling back to the plain callLLM path.
+	dmTools *executor.ToolRegistry
 
 	// DM session persistence — persists chat turns to NATS KV for server restart recovery.
 	dmSessions *dmSessionStore
@@ -241,6 +246,10 @@ func (s *Service) Start(ctx context.Context) error {
 	// point they may not exist yet. Use lazy wiring: try now, but the
 	// components also accept the ledger when they first Initialize.
 	s.wireTokenLedgerToComponents()
+
+	// Initialize DM tool registry. Best-effort: a failure here does not block
+	// service start. Handlers fall back to plain callLLM when dmTools is nil.
+	s.initDMTools()
 
 	if err := s.BaseService.Start(ctx); err != nil {
 		return err
@@ -428,9 +437,10 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	// Model registry
 	mux.HandleFunc("GET "+prefix+"models", cors(s.handleGetModels))
 
-	// Workspace file browser (read-only, auth required — exposes host filesystem)
-	mux.HandleFunc("GET "+prefix+"workspace", cors(requireAuth(apiKey, s.handleWorkspaceTree)))
-	mux.HandleFunc("GET "+prefix+"workspace/file", cors(requireAuth(apiKey, s.handleWorkspaceFile)))
+	// Workspace — artifact browser (read-only, backed by filestore)
+	mux.HandleFunc("GET "+prefix+"workspace", cors(s.handleWorkspaceQuests))
+	mux.HandleFunc("GET "+prefix+"workspace/tree", cors(s.handleWorkspaceTree))
+	mux.HandleFunc("GET "+prefix+"workspace/file", cors(s.handleWorkspaceFile))
 
 	// SSE — real-time entity updates
 	mux.HandleFunc("GET "+prefix+"events", cors(s.handleEvents))

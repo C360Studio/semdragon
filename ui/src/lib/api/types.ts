@@ -31,6 +31,12 @@ export const guildId = (id: string): GuildID => id as GuildID;
 export const battleId = (id: string): BattleID => id as BattleID;
 export const peerReviewId = (id: string): PeerReviewID => id as PeerReviewID;
 
+/** Extract the instance segment (last dot-separated part) from a 6-part entity ID. */
+export function extractInstance(id: string): string {
+	const idx = id.lastIndexOf('.');
+	return idx >= 0 ? id.substring(idx + 1) : id;
+}
+
 // =============================================================================
 // RAW GENERATED TYPES — Before branded ID overrides
 // =============================================================================
@@ -724,9 +730,7 @@ export interface ComponentInfo {
 }
 
 export interface WorkspaceInfo {
-	dir: string;
-	exists: boolean;
-	writable?: boolean;
+	available: boolean;
 }
 
 export interface TokenBudgetConfig {

@@ -146,49 +146,7 @@ func TestHandleGetSettings_NATSStatusReflected(t *testing.T) {
 	}
 }
 
-func TestHandleGetSettings_WorkspacePopulated(t *testing.T) {
-	dir := t.TempDir()
-	cfg := Config{WorkspaceDir: dir}
-	s := newSettingsService(&mockGraph{}, nil, nil, cfg)
-
-	req := httptest.NewRequest("GET", "/api/game/settings", nil)
-	rr := httptest.NewRecorder()
-	s.handleGetSettings(rr, req)
-
-	var resp SettingsResponse
-	decodeJSON(t, rr.Body.Bytes(), &resp)
-
-	if resp.Workspace.Dir != dir {
-		t.Errorf("Workspace.Dir: got %q, want %q", resp.Workspace.Dir, dir)
-	}
-	if !resp.Workspace.Exists {
-		t.Error("expected Workspace.Exists=true for an existing temp dir")
-	}
-	if !resp.Workspace.Writable {
-		t.Error("expected Workspace.Writable=true for a writable temp dir")
-	}
-}
-
-func TestHandleGetSettings_WorkspaceMissing(t *testing.T) {
-	cfg := Config{WorkspaceDir: "/tmp/semdragons-nonexistent-dir-xyz-9999"}
-	s := newSettingsService(&mockGraph{}, nil, nil, cfg)
-
-	req := httptest.NewRequest("GET", "/api/game/settings", nil)
-	rr := httptest.NewRecorder()
-	s.handleGetSettings(rr, req)
-
-	var resp SettingsResponse
-	decodeJSON(t, rr.Body.Bytes(), &resp)
-
-	if resp.Workspace.Exists {
-		t.Error("expected Workspace.Exists=false for a non-existent dir")
-	}
-	if resp.Workspace.Writable {
-		t.Error("expected Workspace.Writable=false for a non-existent dir")
-	}
-}
-
-func TestHandleGetSettings_WorkspaceEmpty(t *testing.T) {
+func TestHandleGetSettings_ArtifactStoreUnavailable(t *testing.T) {
 	s := newSettingsService(&mockGraph{}, nil, nil, Config{})
 
 	req := httptest.NewRequest("GET", "/api/game/settings", nil)
@@ -198,11 +156,8 @@ func TestHandleGetSettings_WorkspaceEmpty(t *testing.T) {
 	var resp SettingsResponse
 	decodeJSON(t, rr.Body.Bytes(), &resp)
 
-	if resp.Workspace.Dir != "" {
-		t.Errorf("expected empty Workspace.Dir when not configured, got %q", resp.Workspace.Dir)
-	}
-	if resp.Workspace.Exists {
-		t.Error("expected Workspace.Exists=false when WorkspaceDir is empty")
+	if resp.Workspace.Available {
+		t.Error("expected Workspace.Available=false when no filestore component is configured")
 	}
 }
 
@@ -582,45 +537,25 @@ func TestBuildChecklist_APIKeyNotSet(t *testing.T) {
 	}
 }
 
-func TestBuildChecklist_WorkspaceWritable(t *testing.T) {
-	dir := t.TempDir()
-	s := newSettingsService(&mockGraph{}, nil, nil, Config{WorkspaceDir: dir})
+func TestBuildChecklist_ArtifactStoreUnavailable(t *testing.T) {
+	s := newSettingsService(&mockGraph{}, nil, nil, Config{})
 	checklist := s.buildChecklist(context.Background())
 
-	var wsItem *ChecklistItem
+	var item *ChecklistItem
 	for i := range checklist {
-		if checklist[i].Label == "Workspace directory exists and is writable" {
-			wsItem = &checklist[i]
+		if checklist[i].Label == "Artifact storage available" {
+			item = &checklist[i]
 			break
 		}
 	}
-	if wsItem == nil {
-		t.Fatal("expected workspace checklist item")
+	if item == nil {
+		t.Fatal("expected artifact storage checklist item")
 	}
-	if !wsItem.Met {
-		t.Errorf("expected workspace item Met=true for writable temp dir %q", dir)
+	if item.Met {
+		t.Error("expected artifact storage Met=false when no filestore component is configured")
 	}
-}
-
-func TestBuildChecklist_WorkspaceMissing(t *testing.T) {
-	s := newSettingsService(&mockGraph{}, nil, nil, Config{WorkspaceDir: "/tmp/semdragons-checklist-missing-xyz"})
-	checklist := s.buildChecklist(context.Background())
-
-	var wsItem *ChecklistItem
-	for i := range checklist {
-		if checklist[i].Label == "Workspace directory exists and is writable" {
-			wsItem = &checklist[i]
-			break
-		}
-	}
-	if wsItem == nil {
-		t.Fatal("expected workspace checklist item")
-	}
-	if wsItem.Met {
-		t.Error("expected workspace item Met=false for missing dir")
-	}
-	if wsItem.HelpText == "" {
-		t.Error("expected HelpText when workspace is not configured/missing")
+	if item.HelpText == "" {
+		t.Error("expected HelpText when artifact storage is unavailable")
 	}
 }
 
@@ -728,7 +663,7 @@ func TestBuildChecklist_AllItems(t *testing.T) {
 		"NATS connected",
 		"LLM endpoint configured",
 		"API key set for LLM provider",
-		"Workspace directory exists and is writable",
+		"Artifact storage available",
 		"At least one agent recruited",
 		"At least one quest posted",
 	}

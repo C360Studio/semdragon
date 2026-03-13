@@ -1,18 +1,28 @@
 <script lang="ts">
 	/**
-	 * Workspace Page - Read-only file browser for agent workspace artifacts
+	 * Workspace Page - Browse quest artifacts from the artifact store
 	 *
-	 * Two-panel layout:
-	 * - Left: ExplorerNav + file tree
-	 * - Center: File preview with metadata
+	 * Two views:
+	 * 1. Quest selector — shows quests that have artifacts
+	 * 2. File browser — tree + preview for a selected quest's artifacts
+	 *
+	 * URL param ?quest={id} auto-selects a quest.
 	 */
 
 	import { untrack } from 'svelte';
+	import { page } from '$app/state';
+	import { worldStore } from '$stores/worldStore.svelte';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import CopyButton from '$components/CopyButton.svelte';
-	import { getWorkspaceTree, getWorkspaceFile, ApiError } from '$services/api';
-	import type { WorkspaceEntry } from '$services/api';
+	import {
+		getWorkspaceQuests,
+		getWorkspaceTree,
+		getWorkspaceFile,
+		getArtifactsDownloadUrl,
+		ApiError
+	} from '$services/api';
+	import type { WorkspaceEntry, WorkspaceQuest } from '$services/api';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -20,11 +30,18 @@
 	let leftPanelWidth = $state(280);
 	let rightPanelWidth = $state(320);
 
-	// Workspace state
+	// Quest list state
+	let quests = $state<WorkspaceQuest[]>([]);
+	let questsLoading = $state(true);
+	let questsError = $state<string | null>(null);
+
+	// Selected quest
+	let selectedQuestId = $state<string | null>(null);
+
+	// File tree state
 	let tree = $state<WorkspaceEntry[]>([]);
-	let loading = $state(true);
+	let treeLoading = $state(false);
 	let treeError = $state<string | null>(null);
-	let notConfigured = $state(false);
 
 	// File preview state
 	let selectedPath = $state<string | null>(null);
@@ -36,28 +53,61 @@
 	// Track expanded directories
 	let expanded = $state(new Set<string>());
 
-	// Load workspace tree on mount — untrack prevents reactive re-runs if loadTree
-	// reads reactive state internally; this is a one-shot mount-time call.
+	// Load quest list on mount
 	$effect(() => {
-		untrack(() => loadTree());
+		untrack(() => loadQuests());
 	});
 
-	async function loadTree() {
-		loading = true;
-		treeError = null;
-		notConfigured = false;
+	// Auto-select quest from URL param
+	$effect(() => {
+		const questParam = page.url.searchParams.get('quest');
+		if (questParam && !selectedQuestId) {
+			selectQuest(questParam);
+		}
+	});
+
+	async function loadQuests() {
+		questsLoading = true;
+		questsError = null;
 
 		try {
-			tree = await getWorkspaceTree();
+			quests = await getWorkspaceQuests();
 		} catch (err) {
-			if (err instanceof ApiError && err.status === 404) {
-				notConfigured = true;
+			if (err instanceof ApiError && err.status === 503) {
+				questsError = 'Artifact storage not available';
 			} else {
-				treeError = err instanceof Error ? err.message : 'Failed to load workspace';
+				questsError = err instanceof Error ? err.message : 'Failed to load workspace';
 			}
 		} finally {
-			loading = false;
+			questsLoading = false;
 		}
+	}
+
+	async function selectQuest(questId: string) {
+		selectedQuestId = questId;
+		selectedPath = null;
+		selectedEntry = null;
+		fileContent = null;
+		fileError = null;
+		expanded = new Set();
+		treeLoading = true;
+		treeError = null;
+
+		try {
+			tree = await getWorkspaceTree(questId);
+		} catch (err) {
+			treeError = err instanceof Error ? err.message : 'Failed to load artifacts';
+		} finally {
+			treeLoading = false;
+		}
+	}
+
+	function backToQuests() {
+		selectedQuestId = null;
+		tree = [];
+		selectedPath = null;
+		selectedEntry = null;
+		fileContent = null;
 	}
 
 	async function selectFile(entry: WorkspaceEntry) {
@@ -66,6 +116,8 @@
 			return;
 		}
 
+		if (!selectedQuestId) return;
+
 		selectedPath = entry.path;
 		selectedEntry = entry;
 		fileContent = null;
@@ -73,7 +125,7 @@
 		fileLoading = true;
 
 		try {
-			fileContent = await getWorkspaceFile(entry.path);
+			fileContent = await getWorkspaceFile(selectedQuestId, entry.path);
 		} catch (err) {
 			if (err instanceof ApiError && err.status === 415) {
 				fileError = 'Binary file — preview not available';
@@ -116,15 +168,6 @@
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleString();
-	}
-
-	function fileExtension(name: string): string {
-		const dot = name.lastIndexOf('.');
-		return dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
-	}
-
 	function fileIcon(entry: WorkspaceEntry): string {
 		if (entry.is_dir) return expanded.has(entry.path) ? 'v' : '>';
 		const ext = fileExtension(entry.name);
@@ -134,7 +177,11 @@
 		return '.';
 	}
 
-	// Count total files in tree recursively
+	function fileExtension(name: string): string {
+		const dot = name.lastIndexOf('.');
+		return dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
+	}
+
 	function countFiles(entries: WorkspaceEntry[]): number {
 		let count = 0;
 		for (const e of entries) {
@@ -148,6 +195,26 @@
 	}
 
 	const totalFiles = $derived(countFiles(tree));
+
+	// Resolve quest title/agent from worldStore for richer display
+	function questTitle(q: WorkspaceQuest): string {
+		if (q.title) return q.title;
+		const quest = worldStore.quests.get(q.quest_id as any);
+		return quest?.title ?? q.quest_id;
+	}
+
+	function questAgent(q: WorkspaceQuest): string {
+		if (q.agent) {
+			return worldStore.agentName(q.agent as any) || q.agent;
+		}
+		return '';
+	}
+
+	const selectedQuestTitle = $derived(() => {
+		if (!selectedQuestId) return '';
+		const q = quests.find((q) => q.quest_id === selectedQuestId);
+		return q ? questTitle(q) : selectedQuestId;
+	});
 </script>
 
 <svelte:head>
@@ -170,95 +237,153 @@
 
 	{#snippet centerPanel()}
 		<div class="workspace-main">
-			<header class="workspace-header">
-				<h1>Workspace</h1>
-				{#if !loading && !notConfigured && !treeError}
-					<span class="file-count">{totalFiles} files</span>
-				{/if}
-				<button class="refresh-btn" onclick={loadTree} aria-label="Refresh workspace" disabled={loading}>
-					R
-				</button>
-			</header>
+			{#if !selectedQuestId}
+				<!-- Quest selector view -->
+				<header class="workspace-header">
+					<h1>Workspace</h1>
+					{#if !questsLoading && !questsError}
+						<span class="file-count">{quests.length} quests</span>
+					{/if}
+					<button class="refresh-btn" onclick={loadQuests} aria-label="Refresh" disabled={questsLoading}>
+						R
+					</button>
+				</header>
 
-			{#if loading}
-				<div class="loading-state">
-					<p>Loading workspace...</p>
-				</div>
-			{:else if notConfigured}
-				<div class="empty-state" data-testid="workspace-not-configured">
-					<div class="empty-icon">W</div>
-					<h2>No Workspace Configured</h2>
-					<p>Set <code>workspace_dir</code> in your game service config to enable the file browser.</p>
-				</div>
-			{:else if treeError}
-				<div class="error-state" role="alert">
-					<p>{treeError}</p>
-					<button class="retry-btn" onclick={loadTree}>Retry</button>
-				</div>
-			{:else}
-				<div class="workspace-content">
-					<div class="file-tree" role="tree" aria-label="Workspace file tree" data-testid="workspace-tree">
-						{#if tree.length === 0}
-							<div class="empty-state">
-								<p>No workspace files yet. Agents will produce artifacts here when completing quests.</p>
-							</div>
-						{:else}
-							{#snippet renderTree(entries: WorkspaceEntry[], depth: number)}
-								{#each entries as entry (entry.path)}
-									<button
-										class="tree-item"
-										role="treeitem"
-										aria-level={depth + 1}
-										aria-label="{entry.is_dir ? 'Directory' : 'File'}: {entry.name}"
-										aria-expanded={entry.is_dir ? expanded.has(entry.path) : undefined}
-										aria-selected={selectedPath === entry.path}
-										class:selected={selectedPath === entry.path}
-										class:directory={entry.is_dir}
-										style="padding-left: {12 + depth * 16}px"
-										onclick={() => selectFile(entry)}
-										onkeydown={(e) => handleTreeKeyDown(e, entry)}
-										data-testid="tree-item-{entry.path}"
-									>
-										<span class="tree-icon">{fileIcon(entry)}</span>
-										<span class="tree-name">{entry.name}</span>
-										{#if !entry.is_dir}
-											<span class="tree-size">{formatSize(entry.size)}</span>
-										{/if}
-									</button>
-									{#if entry.is_dir && expanded.has(entry.path) && entry.children}
-										{@render renderTree(entry.children, depth + 1)}
+				{#if questsLoading}
+					<div class="loading-state">
+						<p>Loading workspace...</p>
+					</div>
+				{:else if questsError}
+					<div class="error-state" role="alert">
+						<p>{questsError}</p>
+						<button class="retry-btn" onclick={loadQuests}>Retry</button>
+					</div>
+				{:else if quests.length === 0}
+					<div class="empty-state" data-testid="workspace-empty">
+						<div class="empty-icon">W</div>
+						<h2>No Artifacts Yet</h2>
+						<p>Completed quests will have their workspace artifacts snapshotted here for browsing.</p>
+					</div>
+				{:else}
+					<div class="quest-list" data-testid="workspace-quest-list">
+						{#each quests as q (q.quest_id)}
+							<button
+								class="quest-card"
+								onclick={() => selectQuest(q.quest_id)}
+								data-testid="workspace-quest-{q.quest_id}"
+							>
+								<div class="quest-card-header">
+									<span class="quest-card-title">{questTitle(q)}</span>
+									{#if q.status}
+										<span class="status-badge" data-status={q.status}>{q.status}</span>
 									{/if}
-								{/each}
-							{/snippet}
-							{@render renderTree(tree, 0)}
-						{/if}
+								</div>
+								<div class="quest-card-meta">
+									{#if questAgent(q)}
+										<span>{questAgent(q)}</span>
+									{/if}
+									<span>{q.file_count} files</span>
+								</div>
+							</button>
+						{/each}
 					</div>
+				{/if}
+			{:else}
+				<!-- File browser view -->
+				<header class="workspace-header">
+					<button class="back-btn" onclick={backToQuests} aria-label="Back to quest list">
+						&larr;
+					</button>
+					<h1>{selectedQuestTitle()}</h1>
+					{#if !treeLoading && !treeError}
+						<span class="file-count">{totalFiles} files</span>
+					{/if}
+					<a
+						class="download-btn"
+						href={getArtifactsDownloadUrl(selectedQuestId)}
+						download
+						aria-label="Download all artifacts as ZIP"
+					>
+						ZIP
+					</a>
+					<button class="refresh-btn" onclick={() => selectQuest(selectedQuestId!)} aria-label="Refresh" disabled={treeLoading}>
+						R
+					</button>
+				</header>
 
-					<div class="file-preview" data-testid="workspace-preview">
-						{#if !selectedPath}
-							<div class="preview-empty">
-								<p>Select a file to preview</p>
-							</div>
-						{:else if fileLoading}
-							<div class="preview-loading">
-								<p>Loading...</p>
-							</div>
-						{:else if fileError}
-							<div class="preview-error" role="alert">
-								<p>{fileError}</p>
-							</div>
-						{:else if fileContent !== null && selectedEntry}
-							<header class="preview-header">
-								<span class="preview-path">{selectedEntry.path}<CopyButton text={selectedEntry.path} variant="inline" label="Copy file path" /></span>
-								<span class="preview-meta">{formatSize(selectedEntry.size)} | {formatDate(selectedEntry.modified)}</span>
-							</header>
-							<div class="copyable">
-								<CopyButton text={fileContent} label="Copy file content" />
-								<pre class="preview-content"><code>{fileContent}</code></pre>
-							</div>
-						{/if}
+				{#if treeLoading}
+					<div class="loading-state">
+						<p>Loading artifacts...</p>
 					</div>
-				</div>
+				{:else if treeError}
+					<div class="error-state" role="alert">
+						<p>{treeError}</p>
+						<button class="retry-btn" onclick={() => selectQuest(selectedQuestId!)}>Retry</button>
+					</div>
+				{:else}
+					<div class="workspace-content">
+						<div class="file-tree" role="tree" aria-label="Artifact file tree" data-testid="workspace-tree">
+							{#if tree.length === 0}
+								<div class="empty-state">
+									<p>No artifacts found for this quest.</p>
+								</div>
+							{:else}
+								{#snippet renderTree(entries: WorkspaceEntry[], depth: number)}
+									{#each entries as entry (entry.path)}
+										<button
+											class="tree-item"
+											role="treeitem"
+											aria-level={depth + 1}
+											aria-label="{entry.is_dir ? 'Directory' : 'File'}: {entry.name}"
+											aria-expanded={entry.is_dir ? expanded.has(entry.path) : undefined}
+											aria-selected={selectedPath === entry.path}
+											class:selected={selectedPath === entry.path}
+											class:directory={entry.is_dir}
+											style="padding-left: {12 + depth * 16}px"
+											onclick={() => selectFile(entry)}
+											onkeydown={(e) => handleTreeKeyDown(e, entry)}
+											data-testid="tree-item-{entry.path}"
+										>
+											<span class="tree-icon">{fileIcon(entry)}</span>
+											<span class="tree-name">{entry.name}</span>
+											{#if !entry.is_dir && entry.size}
+												<span class="tree-size">{formatSize(entry.size)}</span>
+											{/if}
+										</button>
+										{#if entry.is_dir && expanded.has(entry.path) && entry.children}
+											{@render renderTree(entry.children, depth + 1)}
+										{/if}
+									{/each}
+								{/snippet}
+								{@render renderTree(tree, 0)}
+							{/if}
+						</div>
+
+						<div class="file-preview" data-testid="workspace-preview">
+							{#if !selectedPath}
+								<div class="preview-empty">
+									<p>Select a file to preview</p>
+								</div>
+							{:else if fileLoading}
+								<div class="preview-loading">
+									<p>Loading...</p>
+								</div>
+							{:else if fileError}
+								<div class="preview-error" role="alert">
+									<p>{fileError}</p>
+								</div>
+							{:else if fileContent !== null && selectedEntry}
+								<header class="preview-header">
+									<span class="preview-path">{selectedEntry.path}<CopyButton text={selectedEntry.path} variant="inline" label="Copy file path" /></span>
+								</header>
+								<div class="copyable">
+									<CopyButton text={fileContent} label="Copy file content" />
+									<pre class="preview-content"><code>{fileContent}</code></pre>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
 			{/if}
 		</div>
 	{/snippet}
@@ -287,6 +412,10 @@
 	.workspace-header h1 {
 		margin: 0;
 		font-size: 1.25rem;
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.file-count {
@@ -295,10 +424,10 @@
 		background: var(--ui-surface-tertiary);
 		padding: 2px 8px;
 		border-radius: var(--radius-full);
+		flex-shrink: 0;
 	}
 
-	.refresh-btn {
-		margin-left: auto;
+	.back-btn {
 		width: 28px;
 		height: 28px;
 		display: flex;
@@ -308,19 +437,119 @@
 		border-radius: var(--radius-sm);
 		background: var(--ui-surface-secondary);
 		color: var(--ui-text-secondary);
-		font-size: 0.75rem;
+		font-size: 0.875rem;
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+
+	.back-btn:hover {
+		border-color: var(--ui-border-interactive);
+	}
+
+	.refresh-btn,
+	.download-btn {
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-sm);
+		background: var(--ui-surface-secondary);
+		color: var(--ui-text-secondary);
+		font-size: 0.625rem;
 		font-weight: 600;
 		cursor: pointer;
 		transition: border-color 150ms ease;
+		text-decoration: none;
+		flex-shrink: 0;
 	}
 
-	.refresh-btn:hover:not(:disabled) {
+	.refresh-btn:hover:not(:disabled),
+	.download-btn:hover {
 		border-color: var(--ui-border-interactive);
 	}
 
 	.refresh-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	/* Quest list */
+	.quest-list {
+		flex: 1;
+		overflow-y: auto;
+		padding: var(--spacing-md);
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+	}
+
+	.quest-card {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+		padding: var(--spacing-md);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		background: var(--ui-surface-secondary);
+		text-align: left;
+		cursor: pointer;
+		transition: border-color 150ms ease;
+		width: 100%;
+		font-family: inherit;
+		color: var(--ui-text-primary);
+	}
+
+	.quest-card:hover {
+		border-color: var(--ui-border-interactive);
+	}
+
+	.quest-card-header {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.quest-card-title {
+		flex: 1;
+		font-weight: 600;
+		font-size: 0.875rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.quest-card-meta {
+		display: flex;
+		gap: var(--spacing-md);
+		font-size: 0.75rem;
+		color: var(--ui-text-tertiary);
+	}
+
+	.status-badge {
+		padding: 2px 8px;
+		border-radius: var(--radius-full);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		flex-shrink: 0;
+	}
+
+	.status-badge[data-status='completed'] {
+		background: var(--quest-completed-container);
+		color: var(--quest-completed);
+	}
+	.status-badge[data-status='failed'] {
+		background: var(--quest-failed-container);
+		color: var(--quest-failed);
+	}
+	.status-badge[data-status='in_review'] {
+		background: var(--quest-in-review-container);
+		color: var(--quest-in-review);
+	}
+	.status-badge[data-status='in_progress'] {
+		background: var(--quest-in-progress-container);
+		color: var(--quest-in-progress);
 	}
 
 	/* Content area: tree on left, preview on right */
@@ -438,13 +667,6 @@
 		position: relative;
 	}
 
-	.preview-meta {
-		font-size: 0.6875rem;
-		color: var(--ui-text-tertiary);
-		white-space: nowrap;
-		flex-shrink: 0;
-	}
-
 	.preview-content {
 		flex: 1;
 		overflow: auto;
@@ -508,13 +730,6 @@
 		font-size: 0.875rem;
 		max-width: 400px;
 		line-height: 1.5;
-	}
-
-	.empty-state code {
-		padding: 2px 6px;
-		background: var(--ui-surface-tertiary);
-		border-radius: var(--radius-sm);
-		font-size: 0.8125rem;
 	}
 
 	.retry-btn {

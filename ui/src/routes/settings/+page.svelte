@@ -524,28 +524,18 @@
 						</div>
 					</SettingsSection>
 
-					<!-- Workspace -->
+					<!-- Workspace (Artifact Store) -->
 					<SettingsSection
 						title="Workspace"
-						badge={settings.workspace.exists ? 'OK' : 'Missing'}
-						badgeVariant={settings.workspace.exists ? 'success' : 'error'}
+						badge={settings.workspace.available ? 'OK' : 'Unavailable'}
+						badgeVariant={settings.workspace.available ? 'success' : 'warning'}
 						onfocus={() => (activeSection = 'workspace')}
 					>
 						<div class="kv-grid">
 							<div class="kv-pair">
-								<span class="kv-key">Directory</span>
-								<span class="kv-value mono">{settings.workspace.dir || '(not configured)'}</span>
+								<span class="kv-key">Artifact Store</span>
+								<span class="kv-value">{settings.workspace.available ? 'Available' : 'Not configured'}</span>
 							</div>
-							<div class="kv-pair">
-								<span class="kv-key">Exists</span>
-								<span class="kv-value">{settings.workspace.exists ? 'Yes' : 'No'}</span>
-							</div>
-							{#if settings.workspace.writable !== undefined}
-								<div class="kv-pair">
-									<span class="kv-key">Writable</span>
-									<span class="kv-value">{settings.workspace.writable ? 'Yes' : 'No'}</span>
-								</div>
-							{/if}
 						</div>
 					</SettingsSection>
 
