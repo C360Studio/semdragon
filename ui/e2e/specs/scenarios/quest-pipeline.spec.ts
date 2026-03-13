@@ -22,9 +22,10 @@ import {
  * progression all run without intervention.
  *
  * Test order:
- *   1. Solo quest  — post via DM chat, watch autonomy claim and complete it
- *   2. Party quest — post epic quest via API, watch DAG execute and roll up
- *   3. Aftermath   — verify downstream effects: XP, battles, guilds, trajectories
+ *   1. Solo quest     — post via DM chat, watch autonomy claim and complete it
+ *   2. Research quest — post via API, verify graph_search tool call in trajectory
+ *   3. Party quest    — post epic quest via API, watch DAG execute and roll up
+ *   4. Aftermath      — verify downstream effects: XP, battles, guilds, trajectories
  *
  * Design principles:
  *   - Work WITH autonomy — never pause the board, never manually claim quests
@@ -90,7 +91,70 @@ test.describe.serial('Quest Pipeline', () => {
 	});
 
 	// ===========================================================================
-	// Test 2: Party Quest
+	// Test 2: Research Quest — graph_search
+	// ===========================================================================
+
+	test('research quest: graph_search tool used in trajectory', async ({ lifecycleApi }) => {
+		test.setTimeout(isMockLLM() ? 120_000 : 300_000);
+
+		// Post a research quest — prompt must match reResearch pattern (research|investigate).
+		const quest = await test.step('post research quest via API', async () => {
+			return lifecycleApi.createQuest(
+				'Research and investigate best practices for input validation in web applications'
+			);
+		});
+
+		const questInstance = extractInstance(quest.id);
+
+		// Wait for completion.
+		const finalQuest = await test.step('wait for quest completion', async () => {
+			return retry(
+				async () => {
+					const q = await lifecycleApi.getQuest(questInstance);
+					if (!['completed', 'failed'].includes(q.status)) {
+						throw new Error(`Research quest still ${q.status}`);
+					}
+					return q;
+				},
+				{
+					timeout: isMockLLM() ? 90_000 : 240_000,
+					interval: 3000,
+					message: 'Research quest did not reach terminal state'
+				}
+			);
+		});
+
+		// Verify trajectory has graph_search tool call.
+		await test.step('verify graph_search in trajectory', async () => {
+			if (!finalQuest.loop_id) {
+				console.warn('[Research] No loop_id on completed quest — skipping trajectory check');
+				return;
+			}
+
+			const trajectory = await lifecycleApi.getTrajectory(finalQuest.loop_id);
+			const toolCalls = trajectory.steps.filter((s) => s.step_type === 'tool_call');
+			const toolNames = toolCalls.map((s) => s.tool_name);
+			console.log(`[Research] Trajectory tool calls: ${toolNames.join(', ')}`);
+
+			const graphSearchCalls = toolCalls.filter((s) => s.tool_name === 'graph_search');
+			expect(
+				graphSearchCalls.length,
+				'agentic loop should have called graph_search for research quest'
+			).toBeGreaterThan(0);
+
+			// Check that graph manifest section was injected into the prompt.
+			const modelCalls = trajectory.steps.filter(
+				(s) => s.step_type === 'model_call' && s.prompt
+			);
+			if (modelCalls.length > 0) {
+				const hasGraphContents = modelCalls[0].prompt?.includes('Graph Contents');
+				console.log(`[Research] Graph manifest in prompt: ${hasGraphContents}`);
+			}
+		});
+	});
+
+	// ===========================================================================
+	// Test 3: Party Quest
 	// ===========================================================================
 
 	test('party quest: post epic quest, watch DAG execute', async ({ page, lifecycleApi }) => {
@@ -152,7 +216,7 @@ test.describe.serial('Quest Pipeline', () => {
 	});
 
 	// ===========================================================================
-	// Test 3: Aftermath
+	// Test 4: Aftermath
 	// ===========================================================================
 
 	test('verify aftermath: agents have XP, battles exist, guilds formed', async ({
@@ -343,6 +407,32 @@ test.describe.serial('Quest Pipeline', () => {
 					{ timeout: 15_000, message: 'No trajectory entries found' }
 				)
 				.toBeGreaterThan(0);
+		});
+
+		// Trajectory tool calls: verify completed quests have tool_call steps.
+		await test.step('trajectory shows tool calls from agentic loop', async () => {
+			const quests = await lifecycleApi.listQuests();
+			const completedWithLoop = quests.find(
+				(q) => q.status === 'completed' && q.loop_id
+			);
+			if (!completedWithLoop?.loop_id) {
+				console.warn(
+					'[Aftermath] No completed quest with loop_id — skipping trajectory check'
+				);
+				return;
+			}
+
+			const trajectory = await lifecycleApi.getTrajectory(completedWithLoop.loop_id);
+			expect(trajectory.steps.length).toBeGreaterThanOrEqual(1);
+
+			const toolCalls = trajectory.steps.filter((s) => s.step_type === 'tool_call');
+			expect(
+				toolCalls.length,
+				'agentic loop should have at least one tool_call'
+			).toBeGreaterThan(0);
+
+			const toolNames = toolCalls.map((s) => s.tool_name);
+			console.log(`[Aftermath] Trajectory tool calls: ${toolNames.join(', ')}`);
 		});
 	});
 });

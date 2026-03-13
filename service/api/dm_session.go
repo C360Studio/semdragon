@@ -42,6 +42,7 @@ type DMChatTurn struct {
 	Timestamp   time.Time `json:"timestamp"`
 	TraceID     string    `json:"trace_id,omitempty"`
 	SpanID      string    `json:"span_id,omitempty"`
+	ToolsUsed   []string  `json:"tools_used,omitempty"`
 }
 
 // dmSessionStore wraps NATS KV for DM chat session persistence.

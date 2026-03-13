@@ -135,6 +135,7 @@ type DMChatResponse struct {
 	Mode       string                  `json:"mode" description:"Active chat mode"`
 	QuestBrief *domain.QuestBrief      `json:"quest_brief,omitempty" description:"Extracted quest brief if detected"`
 	QuestChain *domain.QuestChainBrief `json:"quest_chain,omitempty" description:"Extracted quest chain if detected"`
+	ToolsUsed  []string                `json:"tools_used,omitempty" description:"Tool names used during this turn"`
 	SessionID  string                  `json:"session_id" description:"Session ID for multi-turn"`
 	TraceInfo  TraceInfoResponse       `json:"trace_info" description:"Observability trace context"`
 }

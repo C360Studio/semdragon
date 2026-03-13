@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/processor/agentstore"
+	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/retry"
 	"github.com/nats-io/nats.go/jetstream"
@@ -1300,48 +1302,147 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Call LLM
-	llmResult, err := callLLM(ctx, endpoint, systemPrompt, messages)
-	if err != nil {
-		// Client disconnects (page navigation, browser close) cancel the request
-		// context. Log at Warn level since these are not server-side failures.
-		if ctx.Err() != nil {
-			s.logger.Warn("DM chat LLM call canceled (client disconnected)", "error", err,
-				"endpoint", endpointName, "trace_id", turnSpan.TraceID, "span_id", turnSpan.SpanID)
-		} else {
-			s.logger.Error("DM chat LLM call failed", "error", err, "endpoint", endpointName,
-				"trace_id", turnSpan.TraceID, "span_id", turnSpan.SpanID)
+	// --- Tool-enabled path: use agenticmodel.Client for multi-turn tool loop ---
+	var llmResponse string
+	var toolsUsed []string
+	var totalPromptTokens, totalCompletionTokens int
+
+	if s.dmTools != nil {
+		// Extend write deadline for tool loop (multiple LLM round-trips).
+		if err := rc.SetWriteDeadline(time.Now().Add(dmToolLoopTimeout)); err != nil {
+			s.logger.Warn("Failed to extend write deadline for DM tool loop", "error", err)
 		}
-		s.writeError(w, "LLM request failed", http.StatusBadGateway)
-		return
+
+		llmClient, clientErr := s.newDMClient(endpoint)
+		if clientErr != nil {
+			s.logger.Error("Failed to create DM LLM client", "error", clientErr)
+			s.writeError(w, "LLM client initialization failed", http.StatusBadGateway)
+			return
+		}
+
+		toolDefs := s.dmToolDefs()
+		agenticMessages := dmConvertMessages(systemPrompt, messages)
+
+		for iteration := range maxDMToolIterations {
+			// Check context cancellation (client disconnect).
+			if ctx.Err() != nil {
+				s.logger.Warn("DM tool loop canceled (client disconnected)",
+					"iteration", iteration, "endpoint", endpointName)
+				s.writeError(w, "request canceled", http.StatusBadGateway)
+				return
+			}
+
+			// Token budget check before each iteration.
+			if s.tokenLedger != nil {
+				if err := s.tokenLedger.Check(); err != nil {
+					s.logger.Warn("DM tool loop stopped by token budget", "iteration", iteration)
+					break
+				}
+			}
+
+			agenticReq := agentic.AgentRequest{
+				RequestID: fmt.Sprintf("dm-%s-%d", sessionID, iteration),
+				Role:      agentic.RoleGeneral,
+				Model:     endpoint.Model,
+				Messages:  agenticMessages,
+				Tools:     toolDefs,
+				ToolChoice: &agentic.ToolChoice{Mode: "auto"},
+			}
+
+			resp, llmErr := llmClient.ChatCompletion(ctx, agenticReq)
+			if llmErr != nil {
+				if ctx.Err() != nil {
+					s.logger.Warn("DM tool loop LLM call canceled", "error", llmErr, "iteration", iteration)
+				} else {
+					s.logger.Error("DM tool loop LLM call failed", "error", llmErr, "iteration", iteration)
+				}
+				s.writeError(w, "LLM request failed", http.StatusBadGateway)
+				return
+			}
+
+			totalPromptTokens += resp.TokenUsage.PromptTokens
+			totalCompletionTokens += resp.TokenUsage.CompletionTokens
+
+			if resp.Status != agentic.StatusToolCall || len(resp.Message.ToolCalls) == 0 {
+				// LLM responded with text — we're done.
+				llmResponse = resp.Message.Content
+				break
+			}
+
+			// Append assistant message with tool calls to conversation.
+			agenticMessages = append(agenticMessages, resp.Message)
+
+			// Execute each tool call and append results.
+			for _, tc := range resp.Message.ToolCalls {
+				toolsUsed = append(toolsUsed, tc.Name)
+				result, toolErr := s.executeDMTool(ctx, tc)
+				if toolErr != nil {
+					result = fmt.Sprintf("Tool error: %s", toolErr.Error())
+				}
+
+				agenticMessages = append(agenticMessages, agentic.ChatMessage{
+					Role:       "tool",
+					Content:    result,
+					ToolCallID: tc.ID,
+					Name:       tc.Name,
+				})
+			}
+
+			// Nudge the LLM to wrap up near the iteration limit.
+			if iteration == maxDMToolIterations-2 {
+				agenticMessages = append(agenticMessages, agentic.ChatMessage{
+					Role:    "user",
+					Content: "You have 1 tool call remaining. Please provide your final answer now.",
+				})
+			}
+		}
+
+		// If we exhausted iterations without a final text response, use the last content.
+		if llmResponse == "" {
+			llmResponse = "(DM tool loop completed without a final response)"
+		}
+	} else {
+		// --- Legacy path: single callLLM without tools ---
+		llmResult, err := callLLM(ctx, endpoint, systemPrompt, messages)
+		if err != nil {
+			if ctx.Err() != nil {
+				s.logger.Warn("DM chat LLM call canceled (client disconnected)", "error", err,
+					"endpoint", endpointName, "trace_id", turnSpan.TraceID, "span_id", turnSpan.SpanID)
+			} else {
+				s.logger.Error("DM chat LLM call failed", "error", err, "endpoint", endpointName,
+					"trace_id", turnSpan.TraceID, "span_id", turnSpan.SpanID)
+			}
+			s.writeError(w, "LLM request failed", http.StatusBadGateway)
+			return
+		}
+		llmResponse = llmResult.Content
+		totalPromptTokens = llmResult.PromptTokens
+		totalCompletionTokens = llmResult.CompletionTokens
 	}
 
-	// Record token usage from primary call.
+	// Record token usage.
 	if s.tokenLedger != nil {
-		s.tokenLedger.Record(ctx, llmResult.PromptTokens, llmResult.CompletionTokens, "dm_chat", endpointName)
+		source := "dm_chat"
+		if len(toolsUsed) > 0 {
+			source = "dm_chat_tool"
+		}
+		s.tokenLedger.Record(ctx, totalPromptTokens, totalCompletionTokens, source, endpointName)
 	}
 
-	llmResponse := llmResult.Content
-
-	resp := struct {
-		Message    string                  `json:"message"`
-		Mode       string                  `json:"mode"`
-		QuestBrief *domain.QuestBrief      `json:"quest_brief,omitempty"`
-		QuestChain *domain.QuestChainBrief `json:"quest_chain,omitempty"`
-		SessionID  string                  `json:"session_id"`
-		TraceInfo  semdragons.TraceInfo    `json:"trace_info"`
-	}{
+	traceInfo := semdragons.TraceInfoFromTraceContext(turnSpan)
+	chatResp := DMChatResponse{
 		Message:   llmResponse,
 		Mode:      string(chatMode),
+		ToolsUsed: toolsUsed,
 		SessionID: sessionID,
-		TraceInfo: semdragons.TraceInfoFromTraceContext(turnSpan),
+		TraceInfo: TraceInfoResponse(traceInfo),
 	}
 
 	// Extract quest briefs/chains when mode is quest, with retry on failure
 	if chatMode == domain.ChatModeQuest {
 		brief, chain := extractQuestOutput(llmResponse)
-		resp.QuestBrief = brief
-		resp.QuestChain = chain
+		chatResp.QuestBrief = brief
+		chatResp.QuestChain = chain
 
 		// Retry once if quest mode produced no structured output.
 		// Append the LLM's response + a nudge message to the conversation
@@ -1373,19 +1474,17 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 
 				brief, chain = extractQuestOutput(retryResult.Content)
 				if brief != nil || chain != nil {
-					// Combine responses so the user sees the full conversation
-					resp.Message = llmResponse + "\n\n" + retryResult.Content
-					resp.QuestBrief = brief
-					resp.QuestChain = chain
-					llmResponse = resp.Message
+					chatResp.Message = llmResponse + "\n\n" + retryResult.Content
+					chatResp.QuestBrief = brief
+					chatResp.QuestChain = chain
+					llmResponse = chatResp.Message
 					break
 				}
 
 				s.logger.Warn("Quest retry still produced no structured output",
 					"attempt", attempt+1, "endpoint", endpointName)
-				// Update for next iteration
 				llmResponse = llmResponse + "\n\n" + retryResult.Content
-				resp.Message = llmResponse
+				chatResp.Message = llmResponse
 			}
 		}
 	}
@@ -1398,13 +1497,14 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 			Timestamp:   time.Now(),
 			TraceID:     turnSpan.TraceID,
 			SpanID:      turnSpan.SpanID,
+			ToolsUsed:   toolsUsed,
 		}
 		if kvErr := s.dmSessions.appendTurn(ctx, sessionID, turn); kvErr != nil {
 			s.logger.Warn("Failed to persist DM chat turn", "session_id", sessionID, "error", kvErr)
 		}
 	}
 
-	s.writeJSON(w, resp)
+	s.writeJSON(w, chatResp)
 }
 
 // getOrCreateChatTrace returns a session ID and a child span for this turn.

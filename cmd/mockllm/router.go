@@ -91,6 +91,9 @@ var (
 	reSubQuestID = regexp.MustCompile(`sub-quest\s+"([^"]+)"`)
 	// Matches research-oriented quest prompts that should trigger web_search.
 	reResearch = regexp.MustCompile(`(?i)research|search the web|find information|look up|investigate`)
+	// Matches DM queries about game state that should trigger graph_query.
+	// "look up" is intentionally in reResearch only to avoid overlap.
+	reQuery = regexp.MustCompile(`(?i)board|status|what.*quest|how many|current.*state|query|tell me about`)
 )
 
 // handleChatCompletions returns an http.HandlerFunc that logs and routes
@@ -159,6 +162,81 @@ func handleChatCompletions(logger *slog.Logger) http.HandlerFunc {
 	}
 }
 
+// isDMToolRequest returns true when the request carries tools but none of them
+// is submit_work_product. Agents always include submit_work_product (registered
+// in executor.RegisterBuiltins); the DM allowlist (service/api/dm_tools.go)
+// never does, making this a reliable discriminator.
+func isDMToolRequest(tools []toolDef) bool {
+	for _, t := range tools {
+		if t.Function.Name == "submit_work_product" {
+			return false // agent request
+		}
+	}
+	// Tools are present but no agent-specific tool — it's a DM request.
+	return len(tools) > 0
+}
+
+// routeDMToolCall handles the first turn of a DM tool-calling request.
+// Quest design messages bypass tools and return a text completion directly.
+// Game-state queries use graph_query; research queries prefer graph_search then
+// web_search. Everything else falls back to a conversational text completion.
+func routeDMToolCall(tools []toolDef, msgs []requestMsg) chatResponse {
+	toolNames := make(map[string]bool, len(tools))
+	for _, t := range tools {
+		toolNames[t.Function.Name] = true
+	}
+
+	lastUser := lastUserMessage(msgs)
+
+	// Quest design: no tools needed, respond with quest brief/chain directly.
+	if reChain.MatchString(lastUser) {
+		return completionResponse(questChainResponse)
+	}
+	if reQuestBrief.MatchString(lastUser) {
+		return completionResponse(questBriefResponse)
+	}
+
+	// Query about game state: use graph_query.
+	if toolNames["graph_query"] && reQuery.MatchString(lastUser) {
+		return namedToolCallResponse("graph_query", dmGraphQueryArgs)
+	}
+
+	// Research: prefer graph_search then fall back to web_search.
+	if toolNames["graph_search"] && reResearch.MatchString(lastUser) {
+		return namedToolCallResponse("graph_search", graphSearchArgs)
+	}
+	if toolNames["web_search"] && reResearch.MatchString(lastUser) {
+		return namedToolCallResponse("web_search", webSearchArgs)
+	}
+
+	// Default: conversational response without tools.
+	return completionResponse(conversationalResponse)
+}
+
+// routeDMWithToolResults handles the second turn of a DM tool-calling request,
+// after tool results have been returned. The DM has no submit_work_product tool,
+// so this MUST return a text completion (finish_reason: "stop"), not a tool call.
+func routeDMWithToolResults(req chatRequest) chatResponse {
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		msg := req.Messages[i]
+		for _, tc := range msg.ToolCalls {
+			switch tc.Function.Name {
+			case "graph_query":
+				return completionResponse(dmGraphQueryCompletion)
+			case "web_search":
+				return completionResponse(dmWebSearchCompletion)
+			case "graph_search":
+				return completionResponse(dmGraphSearchCompletion)
+			case "read_file":
+				return completionResponse(dmReadFileCompletion)
+			default:
+				return completionResponse(dmGenericToolCompletion)
+			}
+		}
+	}
+	return completionResponse(dmGenericToolCompletion)
+}
+
 // route decides which canned response to send based on the request shape.
 func route(req chatRequest, logger *slog.Logger) chatResponse {
 	// Agentic loop path: tools are present.
@@ -167,6 +245,19 @@ func route(req chatRequest, logger *slog.Logger) chatResponse {
 	// Second turn — tool results already in messages — return a completion
 	// so the loop finishes cleanly.
 	if len(req.Tools) > 0 {
+		// DM tool loop: tools present but no agent-specific tools (submit_work_product).
+		// Must be checked BEFORE the agent path since both have tools.
+		if isDMToolRequest(req.Tools) {
+			if hasToolResults(req.Messages) {
+				resp := routeDMWithToolResults(req)
+				logResponse(logger, "dm-routeWithToolResults", resp)
+				return resp
+			}
+			resp := routeDMToolCall(req.Tools, req.Messages)
+			logResponse(logger, "dm-routeToolCall", resp)
+			return resp
+		}
+
 		if hasToolResults(req.Messages) {
 			resp := routeWithToolResults(req)
 			logResponse(logger, "routeWithToolResults", resp)
@@ -250,6 +341,12 @@ func routeToolCall(tools []toolDef, msgs []requestMsg) chatResponse {
 		return namedToolCallResponse("answer_clarification", args)
 	}
 
+	// Graph search: call graph_search if available and prompt matches research pattern.
+	// Takes priority over web_search because graph data is more relevant for project-specific queries.
+	if toolNames["graph_search"] && isResearchPrompt(msgs) {
+		return namedToolCallResponse("graph_search", graphSearchArgs)
+	}
+
 	// Research quest: call web_search if available and prompt matches research pattern.
 	if toolNames["web_search"] && isResearchPrompt(msgs) {
 		return namedToolCallResponse("web_search", webSearchArgs)
@@ -273,6 +370,9 @@ func routeWithToolResults(req chatRequest) chatResponse {
 				return completionResponse(dagDecompositionContent)
 			case "review_sub_quest":
 				return completionResponse(reviewAcceptCompletion)
+			case "graph_search":
+				// graph_search result received — submit a research summary via submit_work_product.
+				return namedToolCallResponse("submit_work_product", graphSearchSubmitArgs)
 			case "web_search":
 				// web_search result received — submit a research summary via submit_work_product.
 				return namedToolCallResponse("submit_work_product", webSearchSubmitArgs)

@@ -3169,6 +3169,8 @@ export interface components {
             } | null;
             /** @description Session ID for multi-turn */
             session_id: string;
+            /** @description Tool names used during this turn */
+            tools_used?: string[];
             /** @description Observability trace context */
             trace_info: {
                 /** @description Parent span ID */
@@ -3188,6 +3190,7 @@ export interface components {
                 span_id?: string;
                 /** Format: date-time */
                 timestamp: string;
+                tools_used?: string[];
                 trace_id?: string;
                 user_message: string;
             }[];
@@ -3199,6 +3202,7 @@ export interface components {
             span_id?: string;
             /** Format: date-time */
             timestamp: string;
+            tools_used?: string[];
             trace_id?: string;
             user_message: string;
         };

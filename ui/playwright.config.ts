@@ -22,7 +22,7 @@ export default defineConfig({
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 1,
-	workers: 1,
+	workers: process.env.CI ? 2 : 4,
 	reporter: [['html'], ['list']],
 
 	use: {
@@ -58,6 +58,7 @@ export default defineConfig({
 			name: 'tier1',
 			testIgnore: /scenarios\//,
 			fullyParallel: false,
+			workers: 1,
 			use: { ...devices['Desktop Chrome'] }
 		},
 		// Tier 2: Full user journeys through DM chat UI (serial, 1 worker)
@@ -65,6 +66,7 @@ export default defineConfig({
 			name: 'tier2-scenarios',
 			testMatch: /scenarios\//,
 			fullyParallel: false,
+			workers: 1,
 			use: { ...devices['Desktop Chrome'] }
 		}
 	],

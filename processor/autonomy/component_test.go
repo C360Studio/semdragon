@@ -5,6 +5,7 @@ package autonomy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -972,6 +973,24 @@ func TestAutonomousGuildJoining(t *testing.T) {
 
 	waitForTracker(t, comp, agentInstance, 3*time.Second)
 
+	// Publish a boid guild suggestion so the autonomy heartbeat triggers guild joining.
+	// The autonomy component subscribes to boid.guild.> and caches the suggestion on the tracker.
+	guildSuggestion := boidengine.GuildSuggestion{
+		AgentID:    domain.AgentID(agentID),
+		GuildID:    domain.GuildID(guild.ID),
+		Type:       "join",
+		Score:      0.85,
+		Confidence: 0.9,
+		Reason:     "test guild join",
+	}
+	suggestionData, err := json.Marshal(guildSuggestion)
+	if err != nil {
+		t.Fatalf("marshal guild suggestion: %v", err)
+	}
+	if err := client.Publish(ctx, fmt.Sprintf("boid.guild.%s", agentInstance), suggestionData); err != nil {
+		t.Fatalf("publish guild suggestion: %v", err)
+	}
+
 	// Wait for the agent to autonomously join the guild
 	deadline := time.After(5 * time.Second)
 	for {
@@ -1455,6 +1474,24 @@ func TestGuildIntentEmitted(t *testing.T) {
 
 	waitForTracker(t, comp, agentInstance, 3*time.Second)
 
+	// Publish a boid guild suggestion to trigger the guild intent flow.
+	// The autonomy component subscribes to boid.guild.> and caches the suggestion on the tracker.
+	guildSuggestion := boidengine.GuildSuggestion{
+		AgentID:    domain.AgentID(agentID),
+		GuildID:    domain.GuildID(guild.ID),
+		Type:       "join",
+		Score:      0.85,
+		Confidence: 0.9,
+		Reason:     "test guild intent",
+	}
+	suggestionData, err := json.Marshal(guildSuggestion)
+	if err != nil {
+		t.Fatalf("marshal guild suggestion: %v", err)
+	}
+	if err := client.Publish(ctx, fmt.Sprintf("boid.guild.%s", agentInstance), suggestionData); err != nil {
+		t.Fatalf("publish guild suggestion: %v", err)
+	}
+
 	// Wait for guild intent event
 	select {
 	case payload := <-intentCh:
@@ -1558,6 +1595,7 @@ func TestUseIntentEmitted(t *testing.T) {
 // =============================================================================
 
 // setupGuildComponent creates and starts a guildformation component for integration tests.
+// Ensures the board-specific KV bucket exists before Start (required for WatchEntityType).
 func setupGuildComponent(t *testing.T, client *natsclient.Client, board string) *guildformation.Component {
 	t.Helper()
 
@@ -1574,6 +1612,14 @@ func setupGuildComponent(t *testing.T, client *natsclient.Client, board string) 
 	if err := gc.Initialize(); err != nil {
 		t.Fatalf("guildformation Initialize failed: %v", err)
 	}
+
+	// Ensure board-specific KV bucket exists before Start
+	boardCfg := &domain.BoardConfig{Org: "test", Platform: "integration", Board: board}
+	graphClient := semdragons.NewGraphClient(client, boardCfg)
+	if err := graphClient.EnsureBucket(context.Background()); err != nil {
+		t.Fatalf("EnsureBucket for guildformation failed: %v", err)
+	}
+
 	if err := gc.Start(context.Background()); err != nil {
 		t.Fatalf("guildformation Start failed: %v", err)
 	}

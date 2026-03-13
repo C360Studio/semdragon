@@ -47,12 +47,20 @@ export interface QuestHintsBrief {
 	deadline?: string;
 }
 
+export interface QuestScenario {
+	name: string;
+	description: string;
+	skills?: string[];
+	depends_on?: string[];
+}
+
 export interface QuestBrief {
 	title: string;
 	description?: string;
 	difficulty?: QuestDifficulty;
 	skills?: SkillTag[];
 	acceptance?: string[];
+	scenarios?: QuestScenario[];
 	hints?: QuestHintsBrief;
 }
 
@@ -66,6 +74,7 @@ export interface QuestChainEntry {
 	difficulty?: QuestDifficulty;
 	skills?: SkillTag[];
 	acceptance?: string[];
+	scenarios?: QuestScenario[];
 	depends_on?: number[];
 	hints?: QuestHintsBrief;
 }

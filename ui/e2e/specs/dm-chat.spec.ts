@@ -72,6 +72,68 @@ function mockErrorResponse() {
 	};
 }
 
+function mockSoloQuestBriefResponse() {
+	return {
+		message: 'Here is a solo quest for you.',
+		mode: 'quest',
+		quest_brief: {
+			title: 'Analyze the Test Data',
+			description: 'Process input and generate report.',
+			difficulty: 2,
+			skills: ['analysis'],
+			acceptance: ['Report generated'],
+			scenarios: [
+				{ name: 'Load data', description: 'Load CSV files', skills: ['analysis'] },
+				{ name: 'Generate report', description: 'Compute stats', skills: ['analysis'], depends_on: ['Load data'] }
+			]
+		},
+		session_id: 'mock-session-solo',
+		trace_info: { trace_id: 'trace-solo', span_id: 'span-solo' }
+	};
+}
+
+function mockPartyQuestBriefResponse() {
+	return {
+		message: 'This quest needs a party.',
+		mode: 'quest',
+		quest_brief: {
+			title: 'Build the Data Pipeline',
+			description: 'A multi-component data pipeline.',
+			difficulty: 4,
+			skills: ['code_generation', 'analysis'],
+			acceptance: ['Pipeline operational', 'Tests passing'],
+			scenarios: [
+				{ name: 'Build ingester', description: 'Create data ingestion', skills: ['code_generation'] },
+				{ name: 'Build transformer', description: 'Create data transformation', skills: ['code_generation'] },
+				{ name: 'Build reporter', description: 'Create reporting dashboard', skills: ['analysis'] }
+			]
+		},
+		session_id: 'mock-session-party',
+		trace_info: { trace_id: 'trace-party', span_id: 'span-party' }
+	};
+}
+
+function mockPartyRequiredQuestBriefResponse() {
+	return {
+		message: 'Party required quest.',
+		mode: 'quest',
+		quest_brief: {
+			title: 'Coordinate Team Deployment',
+			description: 'Deploy across multiple environments.',
+			difficulty: 3,
+			skills: ['code_generation'],
+			acceptance: ['All environments deployed'],
+			scenarios: [
+				{ name: 'Deploy staging', description: 'Deploy to staging', skills: ['code_generation'] },
+				{ name: 'Deploy production', description: 'Deploy to prod', skills: ['code_generation'], depends_on: ['Deploy staging'] }
+			],
+			hints: { party_required: true, min_party_size: 3 }
+		},
+		session_id: 'mock-session-party-required',
+		trace_info: { trace_id: 'trace-pr', span_id: 'span-pr' }
+	};
+}
+
 // =============================================================================
 // CHAT INTERACTION HELPERS
 // =============================================================================
@@ -397,6 +459,97 @@ test.describe('DM Chat - Mock LLM', () => {
 		await expect(page.getByTestId('chat-loading')).not.toBeVisible({ timeout: 3000 });
 		await input.fill('New text');
 		await expect(sendBtn).toBeEnabled();
+	});
+
+	test('welcome message shows DM persona introduction', async ({ page }) => {
+		// The empty chat state should display the DM persona welcome message
+		const chatDesc = page.locator('.chat-description');
+		await expect(chatDesc).toContainText('Hello, human');
+		await expect(chatDesc).toContainText('Dungeon Master');
+		await expect(chatDesc).toContainText('/quest');
+		await expect(chatDesc).toContainText('/help');
+	});
+
+	test('solo quest brief shows solo labels', async ({ page }) => {
+		interceptChat(page, mockSoloQuestBriefResponse());
+
+		await openChat(page);
+		await sendMessage(page, '/quest Create a data analysis quest');
+
+		const preview = page.getByTestId('quest-preview');
+		await expect(preview).toBeVisible({ timeout: 5000 });
+		await expect(preview).toContainText('Solo Quest Brief');
+		await expect(page.getByTestId('post-quest-button')).toContainText('Post Solo Quest');
+		// Party badge should NOT be visible
+		await expect(page.getByTestId('party-badge')).not.toBeVisible();
+	});
+
+	test('party quest brief shows party labels', async ({ page }) => {
+		interceptChat(page, mockPartyQuestBriefResponse());
+
+		await openChat(page);
+		await sendMessage(page, '/quest Build a data pipeline');
+
+		const preview = page.getByTestId('quest-preview');
+		await expect(preview).toBeVisible({ timeout: 5000 });
+		await expect(preview).toContainText('Party Quest Brief');
+		await expect(page.getByTestId('post-quest-button')).toContainText('Post Party Quest');
+	});
+
+	test('party_required hint forces party classification', async ({ page }) => {
+		interceptChat(page, mockPartyRequiredQuestBriefResponse());
+
+		await openChat(page);
+		await sendMessage(page, '/quest Deploy across environments');
+
+		const preview = page.getByTestId('quest-preview');
+		await expect(preview).toBeVisible({ timeout: 5000 });
+		await expect(preview).toContainText('Party Quest Brief');
+		await expect(page.getByTestId('post-quest-button')).toContainText('Post Party Quest');
+		// Party badge should be visible with min_party_size
+		const partyBadge = page.getByTestId('party-badge');
+		await expect(partyBadge).toBeVisible();
+		await expect(partyBadge).toContainText('3+');
+	});
+
+	test('quest chain shows Post Quest Chain button', async ({ page }) => {
+		interceptChat(page, mockQuestChainResponse());
+
+		await openChat(page);
+		await sendMessage(page, '/quest Create a quest chain');
+
+		const chainPreview = page.getByTestId('quest-chain-preview');
+		await expect(chainPreview).toBeVisible({ timeout: 5000 });
+		await expect(page.getByTestId('post-chain-button')).toContainText('Post Quest Chain');
+	});
+
+	test('quest brief with no scenarios defaults to solo', async ({ page }) => {
+		// Use the existing mockQuestBriefResponse which has no depends_on
+		// but has 2 independent scenarios — this actually classifies as Party.
+		// Instead, use a brief with NO scenarios field at all.
+		const noScenariosResponse = {
+			message: 'Simple quest.',
+			mode: 'quest',
+			quest_brief: {
+				title: 'Quick Fix',
+				description: 'Fix a small bug.',
+				difficulty: 1,
+				skills: ['code_generation'],
+				acceptance: ['Bug fixed']
+				// No scenarios field at all
+			},
+			session_id: 'mock-session-no-scenarios',
+			trace_info: { trace_id: 'trace-ns', span_id: 'span-ns' }
+		};
+		interceptChat(page, noScenariosResponse);
+
+		await openChat(page);
+		await sendMessage(page, '/quest Fix a bug');
+
+		const preview = page.getByTestId('quest-preview');
+		await expect(preview).toBeVisible({ timeout: 5000 });
+		await expect(preview).toContainText('Solo Quest Brief');
+		await expect(page.getByTestId('post-quest-button')).toContainText('Post Solo Quest');
 	});
 });
 

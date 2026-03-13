@@ -174,7 +174,7 @@
 					/>
 				{:else}
 					<div class="empty-chat">
-						<p class="chat-description">Ask questions, create quests, or get help. Try /quest or /help.</p>
+						<p class="chat-description">Hello, human. I am your Dungeon Master for this session. I'm not a general chat tool, but I can help you explore the current game world and construct quests. Try /quest or /help.</p>
 						<div class="example-prompts">
 							{#each examplePrompts as example}
 								<button

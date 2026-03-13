@@ -6,7 +6,7 @@
 	 * quest_brief or quest_chain is attached to the message.
 	 */
 
-	import type { QuestBrief, QuestChainBrief } from '$lib/stores/chatStore.svelte';
+	import type { QuestBrief, QuestChainBrief, QuestScenario } from '$lib/stores/chatStore.svelte';
 
 	interface ChatMessageProps {
 		role: 'user' | 'dm';
@@ -42,6 +42,41 @@
 		4: 'Epic',
 		5: 'Legendary'
 	};
+
+	/**
+	 * Classify quest staffing from scenarios — mirrors domain.ClassifyDecomposability().
+	 * Returns true if the quest should be a party quest.
+	 */
+	function isPartyQuest(brief: QuestBrief): boolean {
+		// Manual override
+		if (brief.hints?.party_required) return true;
+
+		const scenarios = brief.scenarios;
+		// 0-1 scenarios → solo (trivial)
+		if (!scenarios || scenarios.length <= 1) return false;
+
+		// Count roots (scenarios with no dependencies)
+		const roots = scenarios.filter(
+			(s: QuestScenario) => !s.depends_on || s.depends_on.length === 0
+		);
+
+		// All scenarios are roots (no dependencies at all) → parallel → party
+		if (roots.length === scenarios.length) return true;
+
+		// Check if it's a linear chain (sequential → solo)
+		// A linear chain: exactly 1 root, and each non-root depends on exactly 1 other
+		if (roots.length === 1) {
+			const allSingleDep = scenarios.every(
+				(s: QuestScenario) => !s.depends_on || s.depends_on.length <= 1
+			);
+			if (allSingleDep) return false; // sequential → solo
+		}
+
+		// Mixed dependencies → party
+		return true;
+	}
+
+	let questIsParty = $derived(questBrief ? isPartyQuest(questBrief) : false);
 </script>
 
 <div class="chat-message" data-role={role} data-testid="chat-message">
@@ -54,7 +89,7 @@
 
 	{#if questBrief}
 		<div class="quest-preview" data-testid="quest-preview">
-			<div class="preview-header">Quest Brief</div>
+			<div class="preview-header">{questIsParty ? 'Party' : 'Solo'} Quest Brief</div>
 			<div class="preview-title">{questBrief.title}</div>
 			{#if questBrief.description}
 				<div class="preview-desc">{questBrief.description}</div>
@@ -91,7 +126,7 @@
 						onclick={() => onPostQuest?.(questBrief!)}
 						data-testid="post-quest-button"
 					>
-						Post Quest
+						{questIsParty ? 'Post Party Quest' : 'Post Solo Quest'}
 					</button>
 				{/if}
 				{#if onEditQuest}
@@ -141,7 +176,7 @@
 						onclick={() => onPostChain?.(questChain!)}
 						data-testid="post-chain-button"
 					>
-						Post Chain
+						Post Quest Chain
 					</button>
 				{/if}
 				{#if onEditChain}

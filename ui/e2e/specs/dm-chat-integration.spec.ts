@@ -364,6 +364,77 @@ test.describe('DM Chat Integration @integration', () => {
 			expect(msg).toContain('400');
 		}
 	});
+
+	// ---------------------------------------------------------------------------
+	// 7. DM Tool Loop
+	// ---------------------------------------------------------------------------
+
+	test('DM chat with query prompt returns tools_used', async ({ lifecycleApi }) => {
+		test.skip(!isMockLLM(), 'DM tool loop tests require deterministic mock LLM');
+		test.setTimeout(30_000);
+
+		// "What quests are on the board?" matches the reQuery pattern in mock LLM,
+		// triggering a graph_query tool call that the backend executes and returns.
+		const resp = await lifecycleApi.sendDMChat(
+			'What quests are currently on the board? Query the status.'
+		);
+
+		assertValidChatResponse(resp);
+		expect(resp.tools_used, 'tools_used should be present').toBeDefined();
+		expect(resp.tools_used!.length, 'at least one tool should be used').toBeGreaterThan(0);
+	});
+
+	test('DM conversational message has empty tools_used', async ({ lifecycleApi }) => {
+		test.skip(!isMockLLM(), 'DM tool loop tests require deterministic mock LLM');
+		test.setTimeout(15_000);
+
+		// A greeting does not match any tool-triggering pattern in the mock LLM,
+		// so it returns a text completion without calling any tools.
+		const resp = await lifecycleApi.sendDMChat('Hello, what can you help me with?');
+
+		assertValidChatResponse(resp);
+		// tools_used should be undefined/null/empty for non-tool conversations
+		expect(resp.tools_used ?? []).toHaveLength(0);
+	});
+
+	test('tools_used persisted in session turn history', async ({ lifecycleApi }) => {
+		test.skip(!isMockLLM(), 'DM tool loop tests require deterministic mock LLM');
+		test.setTimeout(30_000);
+
+		// Trigger a tool-using turn
+		const resp = await lifecycleApi.sendDMChat(
+			'What quests are currently on the board? Query the status.'
+		);
+		assertValidChatResponse(resp);
+		expect(resp.session_id).toBeTruthy();
+
+		// Retrieve the session and check the turn has tools_used
+		const session = await lifecycleApi.getDMSession(resp.session_id!);
+		expect(session, 'session should exist').toBeTruthy();
+		const lastTurn = session!.turns[session!.turns.length - 1];
+		expect(lastTurn.tools_used, 'turn should have tools_used').toBeDefined();
+		expect(lastTurn.tools_used!.length).toBeGreaterThan(0);
+	});
+
+	test('session continuity preserved across tool-using turns', async ({ lifecycleApi }) => {
+		test.skip(!isMockLLM(), 'DM tool loop tests require deterministic mock LLM');
+		test.setTimeout(45_000);
+
+		// Turn 1: trigger tool use
+		const first = await lifecycleApi.sendDMChat(
+			'What quests are currently on the board? Query the status.'
+		);
+		assertValidChatResponse(first);
+		expect(first.session_id).toBeTruthy();
+
+		// Turn 2: follow up in same session (conversational, no tools)
+		const second = await lifecycleApi.sendDMChat(
+			'Thanks for the update.',
+			first.session_id!
+		);
+		assertValidChatResponse(second);
+		expect(second.session_id).toBe(first.session_id);
+	});
 });
 
 // =============================================================================

@@ -93,6 +93,15 @@ func (c *Component) Meta() component.Metadata {
 // Entity-centric: watches ENTITY_STATES KV for agent level/XP changes that trigger clustering.
 func (c *Component) InputPorts() []component.Port {
 	return []component.Port{
+		{
+			Name:        "agent-state-watch",
+			Direction:   component.DirectionInput,
+			Required:    false,
+			Description: "Agent entity state changes from ENTITY_STATES KV bucket",
+			Config: &component.KVWatchPort{
+				Bucket: "", // ENTITY_STATES bucket, watched dynamically
+			},
+		},
 	}
 }
 
