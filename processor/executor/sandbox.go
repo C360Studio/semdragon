@@ -354,6 +354,54 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Skills:     httpRequestSpec.Skills,
 		MinTier:    httpRequestSpec.MinTier,
 	})
+
+	r.Register(RegisteredTool{
+		Definition: inspectEnvironmentSpec.Definition,
+		Handler: makeSandboxExecHandler(
+			client,
+			15*time.Second,
+			func(_ agentic.ToolCall) (string, error) { return inspectEnvironmentScript, nil },
+			nil,
+		),
+		Skills:  inspectEnvironmentSpec.Skills,
+		MinTier: inspectEnvironmentSpec.MinTier,
+	})
+
+	r.Register(RegisteredTool{
+		Definition: gitOperationSpec.Definition,
+		Handler: makeSandboxExecHandler(
+			client,
+			commandTimeout,
+			func(call agentic.ToolCall) (string, error) { return buildGitCommand(call) },
+			nil,
+		),
+		Skills:  gitOperationSpec.Skills,
+		MinTier: gitOperationSpec.MinTier,
+	})
+
+	r.Register(RegisteredTool{
+		Definition: buildProjectSpec.Definition,
+		Handler: makeSandboxExecHandler(
+			client,
+			buildTimeout,
+			func(call agentic.ToolCall) (string, error) { return buildProjectCommand(call) },
+			nil,
+		),
+		Skills:  buildProjectSpec.Skills,
+		MinTier: buildProjectSpec.MinTier,
+	})
+
+	r.Register(RegisteredTool{
+		Definition: manageDependenciesSpec.Definition,
+		Handler: makeSandboxExecHandler(
+			client,
+			buildTimeout,
+			func(call agentic.ToolCall) (string, error) { return buildManageDepsCommand(call) },
+			nil,
+		),
+		Skills:  manageDependenciesSpec.Skills,
+		MinTier: manageDependenciesSpec.MinTier,
+	})
 }
 
 // =============================================================================
@@ -903,6 +951,7 @@ func makeSandboxSearchTextHandler(client *SandboxClient) ToolHandler {
 // check) is performed by validationFn before the command is dispatched.
 func makeSandboxExecHandler(
 	client *SandboxClient,
+	timeout time.Duration,
 	commandFn func(call agentic.ToolCall) (string, error),
 	validationFn func(command string) error,
 ) ToolHandler {
@@ -932,7 +981,7 @@ func makeSandboxExecHandler(
 		req := sandboxExecReq{
 			QuestID:   questID,
 			Command:   command,
-			TimeoutMS: int(commandTimeout.Milliseconds()),
+			TimeoutMS: int(timeout.Milliseconds()),
 		}
 		var resp sandboxExecResp
 		if err := client.doJSON(ctx, http.MethodPost, "/exec", req, &resp); err != nil {
@@ -960,7 +1009,7 @@ func makeSandboxExecHandler(
 			return agentic.ToolResult{
 				CallID:  call.ID,
 				Content: result.String(),
-				Error:   fmt.Sprintf("command timed out after %s", commandTimeout),
+				Error:   fmt.Sprintf("command timed out after %s", timeout),
 			}
 		}
 
@@ -983,6 +1032,7 @@ func makeSandboxExecHandler(
 func makeSandboxRunTestsHandler(client *SandboxClient) ToolHandler {
 	return makeSandboxExecHandler(
 		client,
+		commandTimeout,
 		func(call agentic.ToolCall) (string, error) {
 			command, _ := call.Arguments["command"].(string)
 			if command == "" {
@@ -1007,6 +1057,7 @@ func makeSandboxRunTestsHandler(client *SandboxClient) ToolHandler {
 func makeSandboxLintCheckHandler(client *SandboxClient) ToolHandler {
 	return makeSandboxExecHandler(
 		client,
+		commandTimeout,
 		func(call agentic.ToolCall) (string, error) {
 			command, _ := call.Arguments["command"].(string)
 			if command == "" {
@@ -1031,6 +1082,7 @@ func makeSandboxLintCheckHandler(client *SandboxClient) ToolHandler {
 func makeSandboxRunCommandHandler(client *SandboxClient) ToolHandler {
 	return makeSandboxExecHandler(
 		client,
+		commandTimeout,
 		func(call agentic.ToolCall) (string, error) {
 			command, _ := call.Arguments["command"].(string)
 			if command == "" {

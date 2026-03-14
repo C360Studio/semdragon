@@ -41,6 +41,7 @@ func TestBuiltinToolTierAlignment(t *testing.T) {
 		{tool: "read_file_range", wantTier: domain.TierApprentice, reason: "read-only partial file access"},
 		{tool: "submit_work_product", wantTier: domain.TierApprentice, reason: "all tiers can submit work"},
 		{tool: "ask_clarification", wantTier: domain.TierApprentice, reason: "all tiers can ask questions"},
+		{tool: "inspect_environment", wantTier: domain.TierApprentice, reason: "read-only environment inspection"},
 
 		// Journeyman — targeted writes and network access require demonstrated trust.
 		{tool: "patch_file", wantTier: domain.TierJourneyman, reason: "targeted file edits require level 6+"},
@@ -49,10 +50,15 @@ func TestBuiltinToolTierAlignment(t *testing.T) {
 		{tool: "rename_file", wantTier: domain.TierJourneyman, reason: "filesystem writes require level 6+"},
 		{tool: "delete_file", wantTier: domain.TierJourneyman, reason: "destructive operations require level 6+"},
 
-		// Expert — production-grade writes and test execution require level 11+.
+		// Journeyman — allowlist-constrained execution, git, and build operations.
+		{tool: "run_tests", wantTier: domain.TierJourneyman, reason: "allowlist-constrained test execution"},
+		{tool: "lint_check", wantTier: domain.TierJourneyman, reason: "allowlist-constrained lint execution"},
+		{tool: "git_operation", wantTier: domain.TierJourneyman, reason: "structured git operations"},
+		{tool: "build_project", wantTier: domain.TierJourneyman, reason: "build system execution"},
+
+		// Expert — production-grade writes and dependency management require level 11+.
 		{tool: "write_file", wantTier: domain.TierExpert, reason: "full file write is a production capability"},
-		{tool: "run_tests", wantTier: domain.TierExpert, reason: "test execution is a production capability"},
-		{tool: "lint_check", wantTier: domain.TierExpert, reason: "lint execution is a production capability"},
+		{tool: "manage_dependencies", wantTier: domain.TierExpert, reason: "dependency changes affect builds"},
 
 		// Master — unrestricted shell and party-lead DAG operations require level 16+.
 		{tool: "run_command", wantTier: domain.TierMaster, reason: "unrestricted shell requires high trust"},
@@ -101,12 +107,15 @@ func TestBuiltinToolCount(t *testing.T) {
 	//   answer_clarification                           — 1 DAG clarification tool
 	//   glob_files, read_file_range                    — 2 read-only Apprentice tools
 	//   submit_work_product, ask_clarification         — 2 terminal tools (Apprentice)
-	//   create_directory, rename_file, delete_file     — 3 new Journeyman tools
-	//   lint_check                                     — 1 new Expert tool
+	//   create_directory, rename_file, delete_file     — 3 Journeyman tools
+	//   lint_check                                     — 1 Journeyman tool
+	//   inspect_environment                            — 1 Apprentice tool
+	//   git_operation, build_project                   — 2 Journeyman tools
+	//   manage_dependencies                            — 1 Expert tool
 	//
 	// web_search is excluded — registered conditionally via RegisterWebSearch.
 	// graph_query is excluded — requires a live EntityQueryFunc (RegisterGraphQuery).
-	const wantCount = 19
+	const wantCount = 23
 
 	reg := NewToolRegistry()
 	reg.RegisterBuiltins()
@@ -1855,5 +1864,287 @@ func assertNotContains(t *testing.T, s, substr string) {
 	t.Helper()
 	if strings.Contains(s, substr) {
 		t.Errorf("expected %q NOT to contain %q", s, substr)
+	}
+}
+
+// =============================================================================
+// GIT OPERATION VALIDATION
+// =============================================================================
+
+func TestBuildGitCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		args    map[string]any
+		want    string
+		wantErr string
+	}{
+		{
+			name:    "missing action",
+			args:    map[string]any{},
+			wantErr: "action argument is required",
+		},
+		{
+			name:    "blocked action push",
+			args:    map[string]any{"action": "push"},
+			wantErr: "not allowed",
+		},
+		{
+			name:    "blocked action rebase",
+			args:    map[string]any{"action": "rebase"},
+			wantErr: "not allowed",
+		},
+		{
+			name:    "blocked action reset",
+			args:    map[string]any{"action": "reset"},
+			wantErr: "not allowed",
+		},
+		{
+			name: "blocked --force flag",
+			args: map[string]any{"action": "checkout", "args": "--force main"},
+			wantErr: "--force",
+		},
+		{
+			name: "blocked --hard flag",
+			args: map[string]any{"action": "checkout", "args": "--hard"},
+			wantErr: "--hard",
+		},
+		{
+			name: "shell metacharacter in args",
+			args: map[string]any{"action": "log", "args": "--oneline; rm -rf /"},
+			wantErr: "shell metacharacters",
+		},
+		{
+			name: "clone missing url",
+			args: map[string]any{"action": "clone"},
+			wantErr: "url argument is required",
+		},
+		{
+			name: "clone invalid url scheme",
+			args: map[string]any{"action": "clone", "url": "ftp://example.com/repo"},
+			wantErr: "must start with https:// or git@",
+		},
+		{
+			name: "clone valid https url",
+			args: map[string]any{"action": "clone", "url": "https://github.com/org/repo"},
+			want: "git clone --depth 1 'https://github.com/org/repo'",
+		},
+		{
+			name: "clone valid git@ url",
+			args: map[string]any{"action": "clone", "url": "git@github.com:org/repo.git"},
+			want: "git clone --depth 1 'git@github.com:org/repo.git'",
+		},
+		{
+			name: "clone with target dir",
+			args: map[string]any{"action": "clone", "url": "https://github.com/org/repo", "args": "mydir"},
+			want: "git clone --depth 1 'https://github.com/org/repo' mydir",
+		},
+		{
+			name: "commit missing message",
+			args: map[string]any{"action": "commit"},
+			wantErr: "message argument is required",
+		},
+		{
+			name: "commit with message",
+			args: map[string]any{"action": "commit", "message": "feat: add parser"},
+			want: "git commit -m 'feat: add parser'",
+		},
+		{
+			name: "simple status",
+			args: map[string]any{"action": "status"},
+			want: "git status",
+		},
+		{
+			name: "log with args",
+			args: map[string]any{"action": "log", "args": "--oneline -10"},
+			want: "git log --oneline -10",
+		},
+		{
+			name: "add with file path",
+			args: map[string]any{"action": "add", "args": "src/main.go"},
+			want: "git add src/main.go",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			call := agentic.ToolCall{ID: "test", Name: "git_operation", Arguments: tc.args}
+			got, err := buildGitCommand(call)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error %q should contain %q", err.Error(), tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// BUILD PROJECT VALIDATION
+// =============================================================================
+
+func TestBuildProjectCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		args    map[string]any
+		wantErr string
+		wantSub string // substring that should appear in the command
+	}{
+		{
+			name:    "default build produces detection script",
+			args:    map[string]any{},
+			wantSub: "Detected: Gradle",
+		},
+		{
+			name:    "valid target clean",
+			args:    map[string]any{"target": "clean"},
+			wantSub: "gradle clean",
+		},
+		{
+			name:    "target with shell metachar rejected",
+			args:    map[string]any{"target": "clean; rm -rf /"},
+			wantErr: "alphanumeric",
+		},
+		{
+			name:    "target with spaces rejected",
+			args:    map[string]any{"target": "clean build"},
+			wantErr: "alphanumeric",
+		},
+		{
+			name:    "go-style target path allowed",
+			args:    map[string]any{"target": "./cmd/server"},
+			wantSub: "go build ./cmd/server",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			call := agentic.ToolCall{ID: "test", Name: "build_project", Arguments: tc.args}
+			got, err := buildProjectCommand(call)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error %q should contain %q", err.Error(), tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantSub != "" && !strings.Contains(got, tc.wantSub) {
+				t.Errorf("command %q should contain %q", got, tc.wantSub)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// MANAGE DEPENDENCIES VALIDATION
+// =============================================================================
+
+func TestBuildManageDepsCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		args    map[string]any
+		wantErr string
+		wantSub string
+	}{
+		{
+			name:    "missing action",
+			args:    map[string]any{},
+			wantErr: "action argument is required",
+		},
+		{
+			name:    "invalid action",
+			args:    map[string]any{"action": "upgrade"},
+			wantErr: "not supported",
+		},
+		{
+			name:    "add without packages",
+			args:    map[string]any{"action": "add"},
+			wantErr: "packages argument is required",
+		},
+		{
+			name:    "remove without packages",
+			args:    map[string]any{"action": "remove"},
+			wantErr: "packages argument is required",
+		},
+		{
+			name:    "invalid package name with shell chars",
+			args:    map[string]any{"action": "add", "packages": []any{"lodash; rm -rf /"}},
+			wantErr: "invalid package name",
+		},
+		{
+			name:    "valid install",
+			args:    map[string]any{"action": "install"},
+			wantSub: "go mod download",
+		},
+		{
+			name:    "valid add with packages",
+			args:    map[string]any{"action": "add", "packages": []any{"lodash", "@types/lodash"}},
+			wantSub: "npm install lodash @types/lodash",
+		},
+		{
+			name:    "valid tidy",
+			args:    map[string]any{"action": "tidy"},
+			wantSub: "go mod tidy",
+		},
+		{
+			name:    "valid list",
+			args:    map[string]any{"action": "list"},
+			wantSub: "go list -m all",
+		},
+		{
+			name:    "scoped npm package allowed",
+			args:    map[string]any{"action": "add", "packages": []any{"@angular/core"}},
+			wantSub: "@angular/core",
+		},
+		{
+			name:    "go module path allowed",
+			args:    map[string]any{"action": "add", "packages": []any{"github.com/pkg/errors"}},
+			wantSub: "github.com/pkg/errors",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			call := agentic.ToolCall{ID: "test", Name: "manage_dependencies", Arguments: tc.args}
+			got, err := buildManageDepsCommand(call)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error %q should contain %q", err.Error(), tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantSub != "" && !strings.Contains(got, tc.wantSub) {
+				t.Errorf("command %q should contain %q", got, tc.wantSub)
+			}
+		})
 	}
 }

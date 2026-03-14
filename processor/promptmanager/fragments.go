@@ -360,9 +360,14 @@ var toolGuidanceEntries = map[string]string{
 	"read_file":  "Read a file's full contents. Use glob_files or list_directory first if you don't know the exact path.",
 	"write_file": "Create or overwrite a file. Parent dirs must exist — use create_directory first.",
 	"patch_file": "Apply targeted find-and-replace edits to an existing file. Prefer over write_file for small changes.",
-	// Build and test tools
-	"run_tests":  "Run test commands (go test, npm test, pytest, gradle test, etc.). Use after writing code.",
-	"lint_check": "Run linters (go vet, eslint, pylint, etc.). Use after writing code to catch issues.",
+	// Environment and version control
+	"inspect_environment": "Discover installed tools and versions. Call once at quest start instead of multiple 'which' commands.",
+	"git_operation":       "Git version control (init, clone, status, diff, log, add, commit, branch, checkout, show). Blocks push/pull/reset.",
+	// Build and dependency tools
+	"build_project":       "Build the project using auto-detected build system (Go, Gradle, npm, Maven, Cargo, Make). Optional target param.",
+	"manage_dependencies": "Install, add, remove, or tidy dependencies via auto-detected package manager.",
+	"run_tests":           "Run test commands (go test, npm test, pytest, gradle test, etc.). Use after writing code.",
+	"lint_check":          "Run linters (go vet, eslint, pylint, etc.). Use after writing code to catch issues.",
 	// Network tools
 	"http_request": "Fetch URLs or call REST APIs. Always include https:// in the url parameter. Defaults to GET.",
 	// Shell tools
@@ -374,7 +379,10 @@ var toolGuidanceEntries = map[string]string{
 var toolGuidanceOrder = []string{
 	"graph_query", "graph_search", "web_search",
 	"list_directory", "glob_files", "search_text",
+	"inspect_environment",
 	"read_file", "write_file", "patch_file",
+	"git_operation",
+	"build_project", "manage_dependencies",
 	"run_tests", "lint_check",
 	"http_request",
 	"run_command", "create_directory",
