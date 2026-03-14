@@ -6,7 +6,7 @@
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
-	import { QuestDifficultyNames, type Quest, type QuestStatus, type BossBattle } from '$types';
+	import { QuestDifficultyNames, type Quest, type QuestStatus, type BossBattle, type BattleVerdict } from '$types';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -90,17 +90,26 @@
 		kanbanColumns.reduce((sum, col) => sum + questsByStatus[col.status].length, 0)
 	);
 
-	// Find the most recent battle for the selected quest
-	const selectedQuestBattle: BossBattle | undefined = $derived.by(() => {
+	// Resolve verdict for the selected quest — from battle entity or quest's own verdict
+	const selectedQuestVerdict: { verdict: BattleVerdict; battleId?: string } | undefined = $derived.by(() => {
 		const quest = worldStore.selectedQuest;
 		if (!quest) return undefined;
+
+		// First check for a battle entity
 		const qid = String(quest.id);
-		return worldStore.battleList
+		const battle = worldStore.battleList
 			.filter((b) => {
 				const bid = String(b.quest_id);
 				return bid === qid || bid.includes(qid) || qid.includes(bid);
 			})
 			.sort((a, b) => new Date(b.started_at ?? 0).getTime() - new Date(a.started_at ?? 0).getTime())[0];
+
+		if (battle?.verdict) return { verdict: battle.verdict, battleId: String(battle.id) };
+
+		// Fall back to quest's own verdict (set by auto-pass)
+		if (quest.verdict) return { verdict: quest.verdict };
+
+		return undefined;
 	});
 
 	function selectQuest(quest: Quest) {
@@ -324,22 +333,20 @@
 							{/if}
 						</dl>
 
-						{#if selectedQuestBattle}
-							{@const battle = selectedQuestBattle}
-							<div class="battle-card" data-status={battle.status}>
+						{#if selectedQuestVerdict}
+							{@const v = selectedQuestVerdict}
+							<div class="battle-card">
 								<h4>Boss Battle</h4>
-								{#if battle.verdict}
-									<span class="verdict-badge" data-passed={battle.verdict.passed}>
-										{battle.verdict.passed ? 'Victory' : 'Defeat'}
-									</span>
-									<span class="quality-score">{battle.verdict.quality_score.toFixed(1)} quality</span>
-									{#if battle.verdict.xp_awarded > 0}
-										<span class="xp-awarded">+{battle.verdict.xp_awarded} XP</span>
-									{/if}
-								{:else}
-									<span class="verdict-badge" data-passed="active">In Progress</span>
+								<span class="verdict-badge" data-passed={v.verdict.passed}>
+									{v.verdict.passed ? 'Victory' : 'Defeat'}
+								</span>
+								<span class="quality-score">{v.verdict.quality_score.toFixed(1)} quality</span>
+								{#if v.verdict.xp_awarded > 0}
+									<span class="xp-awarded">+{v.verdict.xp_awarded} XP</span>
 								{/if}
-								<a href="/battles?selected={battle.id}" class="battle-link">View battle</a>
+								{#if v.battleId}
+									<a href="/battles?selected={v.battleId}" class="battle-link">View battle</a>
+								{/if}
 							</div>
 						{/if}
 

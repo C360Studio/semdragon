@@ -177,12 +177,12 @@ test.describe('Quest Board - Detail Panel Structure', () => {
 		}
 	});
 
-	test('boss battle card shows for reviewed quests', async ({ questsPage, page }) => {
-		test.skip(!hasBackend(), 'Requires backend with battle data');
+	test('boss battle card shows for completed quests', async ({ questsPage, page }) => {
+		test.skip(!hasBackend(), 'Requires backend with quest data');
 
 		await questsPage.goto();
 
-		// Look for completed or failed quests which may have battles
+		// Look for completed quests which should have a verdict (from battle or auto-pass)
 		const completedColumn = questsPage.getColumn('completed');
 		const completedCards = completedColumn.locator('[data-testid="quest-card"]');
 		const count = await completedCards.count();
@@ -190,14 +190,12 @@ test.describe('Quest Board - Detail Panel Structure', () => {
 		if (count > 0) {
 			await completedCards.first().click();
 
-			// Battle card is optional — only shows when battle exists
+			// Battle card shows when quest has a verdict (battle entity or auto-pass)
 			const battleCard = questsPage.detailsPanel.locator('.battle-card');
 			const hasBattle = await battleCard.isVisible().catch(() => false);
 			if (hasBattle) {
-				// Verify battle card structure
 				await expect(battleCard.locator('h4')).toContainText('Boss Battle');
 				await expect(battleCard.locator('.verdict-badge')).toBeVisible();
-				await expect(battleCard.locator('.battle-link')).toBeVisible();
 			}
 		}
 	});

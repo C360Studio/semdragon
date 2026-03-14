@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
-	import { QuestDifficultyNames, TrustTierNames, questId, extractInstance, type BossBattle } from '$types';
+	import { QuestDifficultyNames, TrustTierNames, questId, extractInstance, type BattleVerdict } from '$types';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import ActivityFeed from '$components/ActivityFeed.svelte';
@@ -35,15 +35,22 @@
 		worldStore.questList.filter((q) => q.parent_quest && String(q.parent_quest) === String(id))
 	);
 
-	// Find the most recent battle for this quest
-	const questBattle: BossBattle | undefined = $derived.by(() => {
+	// Resolve verdict for this quest — from battle entity or quest's own verdict
+	const questVerdict: { verdict: BattleVerdict; battleId?: string } | undefined = $derived.by(() => {
+		const q = quest;
+		if (!q) return undefined;
+
 		const qid = String(id);
-		return worldStore.battleList
+		const battle = worldStore.battleList
 			.filter((b) => {
 				const bid = String(b.quest_id);
 				return bid === qid || bid.includes(qid) || qid.includes(bid);
 			})
 			.sort((a, b) => new Date(b.started_at ?? 0).getTime() - new Date(a.started_at ?? 0).getTime())[0];
+
+		if (battle?.verdict) return { verdict: battle.verdict, battleId: String(battle.id) };
+		if (q.verdict) return { verdict: q.verdict };
+		return undefined;
 	});
 
 	$effect(() => {
@@ -200,37 +207,33 @@
 						</section>
 					{/if}
 
-					{#if questBattle}
-						{@const battle = questBattle}
+					{#if questVerdict}
+						{@const v = questVerdict}
 						<section class="detail-card full-width">
 							<h2>Boss Battle</h2>
 							<div class="battle-summary">
-								<span class="verdict-badge" data-passed={battle.verdict ? battle.verdict.passed : 'active'}>
-									{#if battle.verdict}
-										{battle.verdict.passed ? 'Victory' : 'Defeat'}
-									{:else}
-										In Progress
-									{/if}
+								<span class="verdict-badge" data-passed={v.verdict.passed}>
+									{v.verdict.passed ? 'Victory' : 'Defeat'}
 								</span>
-								{#if battle.verdict}
-									<dl>
-										<dt>Quality</dt>
-										<dd>{battle.verdict.quality_score.toFixed(1)}</dd>
-										{#if battle.verdict.xp_awarded > 0}
-											<dt>XP Awarded</dt>
-											<dd class="xp-value">+{battle.verdict.xp_awarded}</dd>
-										{/if}
-										{#if battle.verdict.xp_penalty > 0}
-											<dt>XP Penalty</dt>
-											<dd class="xp-penalty">-{battle.verdict.xp_penalty}</dd>
-										{/if}
-										{#if battle.verdict.feedback}
-											<dt>Feedback</dt>
-											<dd class="battle-feedback">{battle.verdict.feedback}</dd>
-										{/if}
-									</dl>
+								<dl>
+									<dt>Quality</dt>
+									<dd>{v.verdict.quality_score.toFixed(1)}</dd>
+									{#if v.verdict.xp_awarded > 0}
+										<dt>XP Awarded</dt>
+										<dd class="xp-value">+{v.verdict.xp_awarded}</dd>
+									{/if}
+									{#if v.verdict.xp_penalty > 0}
+										<dt>XP Penalty</dt>
+										<dd class="xp-penalty">-{v.verdict.xp_penalty}</dd>
+									{/if}
+									{#if v.verdict.feedback}
+										<dt>Feedback</dt>
+										<dd class="battle-feedback">{v.verdict.feedback}</dd>
+									{/if}
+								</dl>
+								{#if v.battleId}
+									<a href="/battles?selected={v.battleId}" class="trajectory-link">View battle details</a>
 								{/if}
-								<a href="/battles?selected={battle.id}" class="trajectory-link">View battle details</a>
 							</div>
 						</section>
 					{/if}

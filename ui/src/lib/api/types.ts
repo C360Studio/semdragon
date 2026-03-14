@@ -74,6 +74,8 @@ export type Quest = Omit<
 	context_token_count?: number;
 	context_sources?: string[];
 	context_entities?: string[];
+	// Verdict — set by bossbattle (auto-pass or full evaluation).
+	verdict?: BattleVerdict | null;
 };
 
 export type Agent = Omit<RawAgent, 'id' | 'current_quest' | 'current_party' | 'guilds'> & {

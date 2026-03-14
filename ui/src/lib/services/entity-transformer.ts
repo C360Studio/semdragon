@@ -276,7 +276,17 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 			? num(m.get('quest.context.token_count'))
 			: undefined,
 		context_sources: asStringArray(m.get('quest.context.sources')),
-		context_entities: asStringArray(m.get('quest.context.entities'))
+		context_entities: asStringArray(m.get('quest.context.entities')),
+		verdict: m.has('quest.verdict.passed')
+			? {
+					passed: m.get('quest.verdict.passed') === true || m.get('quest.verdict.passed') === 'true',
+					quality_score: num(m.get('quest.verdict.score')),
+					xp_awarded: num(m.get('quest.verdict.xp_awarded')),
+					xp_penalty: 0,
+					level_change: 0,
+					feedback: str(m.get('quest.verdict.feedback'))
+				}
+			: undefined
 	};
 }
 
