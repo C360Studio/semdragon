@@ -149,6 +149,60 @@ test.describe('Quest Board - With Seeded Data', () => {
 	});
 });
 
+test.describe('Quest Board - Detail Panel Structure', () => {
+	test.beforeEach(async ({ questsPage }) => {
+		await questsPage.goto();
+	});
+
+	test('selected quest shows detail fields', async ({ questsPage }) => {
+		const cardCount = await questsPage.questCards.count();
+		if (cardCount > 0) {
+			await questsPage.selectQuest(0);
+			const panel = questsPage.detailsPanel;
+
+			// Should show core detail fields
+			await expect(panel.locator('dt:has-text("Status")')).toBeVisible();
+			await expect(panel.locator('dt:has-text("Difficulty")')).toBeVisible();
+			await expect(panel.locator('dt:has-text("Base XP")')).toBeVisible();
+		}
+	});
+
+	test('selected quest shows "View full quest" link', async ({ questsPage }) => {
+		const cardCount = await questsPage.questCards.count();
+		if (cardCount > 0) {
+			await questsPage.selectQuest(0);
+			const viewLink = questsPage.detailsPanel.locator('.view-full-link');
+			await expect(viewLink).toBeVisible();
+			await expect(viewLink).toContainText('View full quest');
+		}
+	});
+
+	test('boss battle card shows for reviewed quests', async ({ questsPage, page }) => {
+		test.skip(!hasBackend(), 'Requires backend with battle data');
+
+		await questsPage.goto();
+
+		// Look for completed or failed quests which may have battles
+		const completedColumn = questsPage.getColumn('completed');
+		const completedCards = completedColumn.locator('[data-testid="quest-card"]');
+		const count = await completedCards.count();
+
+		if (count > 0) {
+			await completedCards.first().click();
+
+			// Battle card is optional — only shows when battle exists
+			const battleCard = questsPage.detailsPanel.locator('.battle-card');
+			const hasBattle = await battleCard.isVisible().catch(() => false);
+			if (hasBattle) {
+				// Verify battle card structure
+				await expect(battleCard.locator('h4')).toContainText('Boss Battle');
+				await expect(battleCard.locator('.verdict-badge')).toBeVisible();
+				await expect(battleCard.locator('.battle-link')).toBeVisible();
+			}
+		}
+	});
+});
+
 test.describe('Quest Board - Accessibility', () => {
 	test('quest cards have aria labels', async ({ questsPage }) => {
 		await questsPage.goto();

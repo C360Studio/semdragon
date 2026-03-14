@@ -44,6 +44,14 @@ test.describe('Navigation', () => {
 		await dashboardPage.navStore.click();
 		await expect(page).toHaveURL(/.*\/store/);
 	});
+
+	test('can navigate from dashboard to workspace', async ({ dashboardPage, page }) => {
+		await dashboardPage.goto();
+
+		await page.locator('[data-testid="nav-workspace"]').click();
+		await expect(page).toHaveURL(/.*\/workspace/);
+		await expect(page.locator('h1')).toContainText('Workspace');
+	});
 });
 
 test.describe('Navigation - Cross-Page', () => {
@@ -99,6 +107,12 @@ test.describe('Navigation - Direct URLs', () => {
 	test('direct navigation to /trajectories works', async ({ page }) => {
 		await page.goto('/trajectories');
 		await expect(page).toHaveURL(/.*\/trajectories/);
+	});
+
+	test('direct navigation to /workspace works', async ({ page }) => {
+		await page.goto('/workspace');
+		await expect(page).toHaveURL(/.*\/workspace/);
+		await expect(page.locator('h1')).toContainText('Workspace');
 	});
 });
 

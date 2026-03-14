@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
-	import { QuestDifficultyNames, TrustTierNames, questId, extractInstance } from '$types';
+	import { QuestDifficultyNames, TrustTierNames, questId, extractInstance, type BossBattle } from '$types';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import ActivityFeed from '$components/ActivityFeed.svelte';
@@ -34,6 +34,17 @@
 	const subQuests = $derived(
 		worldStore.questList.filter((q) => q.parent_quest && String(q.parent_quest) === String(id))
 	);
+
+	// Find the most recent battle for this quest
+	const questBattle: BossBattle | undefined = $derived.by(() => {
+		const qid = String(id);
+		return worldStore.battleList
+			.filter((b) => {
+				const bid = String(b.quest_id);
+				return bid === qid || bid.includes(qid) || qid.includes(bid);
+			})
+			.sort((a, b) => new Date(b.started_at ?? 0).getTime() - new Date(a.started_at ?? 0).getTime())[0];
+	});
 
 	$effect(() => {
 		if (quest) {
@@ -186,6 +197,41 @@
 							<a href="/trajectories/{quest.loop_id}" class="trajectory-link">
 								View full trajectory timeline
 							</a>
+						</section>
+					{/if}
+
+					{#if questBattle}
+						{@const battle = questBattle}
+						<section class="detail-card full-width">
+							<h2>Boss Battle</h2>
+							<div class="battle-summary">
+								<span class="verdict-badge" data-passed={battle.verdict ? battle.verdict.passed : 'active'}>
+									{#if battle.verdict}
+										{battle.verdict.passed ? 'Victory' : 'Defeat'}
+									{:else}
+										In Progress
+									{/if}
+								</span>
+								{#if battle.verdict}
+									<dl>
+										<dt>Quality</dt>
+										<dd>{battle.verdict.quality_score.toFixed(1)}</dd>
+										{#if battle.verdict.xp_awarded > 0}
+											<dt>XP Awarded</dt>
+											<dd class="xp-value">+{battle.verdict.xp_awarded}</dd>
+										{/if}
+										{#if battle.verdict.xp_penalty > 0}
+											<dt>XP Penalty</dt>
+											<dd class="xp-penalty">-{battle.verdict.xp_penalty}</dd>
+										{/if}
+										{#if battle.verdict.feedback}
+											<dt>Feedback</dt>
+											<dd class="battle-feedback">{battle.verdict.feedback}</dd>
+										{/if}
+									</dl>
+								{/if}
+								<a href="/battles?selected={battle.id}" class="trajectory-link">View battle details</a>
+							</div>
 						</section>
 					{/if}
 
@@ -496,5 +542,52 @@
 	.empty-state {
 		color: var(--ui-text-tertiary);
 		font-size: 0.875rem;
+	}
+
+	/* Battle summary */
+	.battle-summary {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.battle-summary dl {
+		width: 100%;
+	}
+
+	.verdict-badge {
+		padding: 2px 8px;
+		border-radius: var(--radius-sm);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.verdict-badge[data-passed='true'] {
+		background: var(--quest-completed-container);
+		color: var(--quest-completed);
+	}
+
+	.verdict-badge[data-passed='false'] {
+		background: var(--quest-failed-container);
+		color: var(--quest-failed);
+	}
+
+	.verdict-badge[data-passed='active'] {
+		background: var(--quest-in-progress-container);
+		color: var(--quest-in-progress);
+	}
+
+	.xp-penalty {
+		color: var(--quest-failed);
+		font-weight: 600;
+	}
+
+	.battle-feedback {
+		grid-column: 1 / -1;
+		color: var(--ui-text-secondary);
+		font-size: 0.875rem;
+		line-height: 1.5;
+		margin-top: var(--spacing-xs);
 	}
 </style>

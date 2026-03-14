@@ -23,6 +23,7 @@
 		ApiError
 	} from '$services/api';
 	import type { WorkspaceEntry, WorkspaceQuest } from '$services/api';
+	import { extractInstance } from '$types';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -215,6 +216,65 @@
 		const q = quests.find((q) => q.quest_id === selectedQuestId);
 		return q ? questTitle(q) : selectedQuestId;
 	});
+
+	// Group workspace quests into parent→children tree using worldStore quest data
+	type QuestNode = { quest: WorkspaceQuest; children: WorkspaceQuest[] };
+
+	const questTree = $derived.by((): QuestNode[] => {
+		// Build a set of workspace quest instance IDs for fast lookup
+		const workspaceIds = new Set(quests.map((q) => q.quest_id));
+
+		// Identify parent quests and sub-quests
+		const parentNodes = new Map<string, QuestNode>();
+		const subQuests: WorkspaceQuest[] = [];
+
+		for (const wq of quests) {
+			// Try to find this quest in worldStore to check parent_quest
+			const storeQuest = findStoreQuest(wq.quest_id);
+			if (storeQuest?.parent_quest) {
+				subQuests.push(wq);
+			} else {
+				parentNodes.set(wq.quest_id, { quest: wq, children: [] });
+			}
+		}
+
+		// Attach sub-quests to their parents
+		for (const sq of subQuests) {
+			const storeQuest = findStoreQuest(sq.quest_id);
+			if (!storeQuest?.parent_quest) continue;
+			const parentInstanceId = extractInstance(storeQuest.parent_quest);
+			const parent = parentNodes.get(parentInstanceId);
+			if (parent) {
+				parent.children.push(sq);
+			} else {
+				// Parent has no artifacts — show sub-quest as top-level
+				parentNodes.set(sq.quest_id, { quest: sq, children: [] });
+			}
+		}
+
+		return Array.from(parentNodes.values());
+	});
+
+	function findStoreQuest(instanceId: string) {
+		// worldStore quests are keyed by full entity ID; match by instance suffix
+		for (const [, q] of worldStore.quests) {
+			if (extractInstance(q.id) === instanceId) return q;
+		}
+		return null;
+	}
+
+	// Track expanded parent quests in the quest selector
+	let expandedParents = $state(new Set<string>());
+
+	function toggleParent(questId: string) {
+		const next = new Set(expandedParents);
+		if (next.has(questId)) {
+			next.delete(questId);
+		} else {
+			next.add(questId);
+		}
+		expandedParents = next;
+	}
 </script>
 
 <svelte:head>
@@ -242,7 +302,7 @@
 				<header class="workspace-header">
 					<h1>Workspace</h1>
 					{#if !questsLoading && !questsError}
-						<span class="file-count">{quests.length} quests</span>
+						<span class="file-count">{questTree.length} quests</span>
 					{/if}
 					<button class="refresh-btn" onclick={loadQuests} aria-label="Refresh" disabled={questsLoading}>
 						&#x21bb;
@@ -266,25 +326,71 @@
 					</div>
 				{:else}
 					<div class="quest-list" data-testid="workspace-quest-list">
-						{#each quests as q (q.quest_id)}
-							<button
-								class="quest-card"
-								onclick={() => selectQuest(q.quest_id)}
-								data-testid="workspace-quest-{q.quest_id}"
-							>
-								<div class="quest-card-header">
-									<span class="quest-card-title">{questTitle(q)}</span>
-									{#if q.status}
-										<span class="status-badge" data-status={q.status}>{q.status}</span>
+						{#each questTree as node (node.quest.quest_id)}
+							<div class="quest-tree-node">
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div
+									class="quest-card"
+									class:has-children={node.children.length > 0}
+									onclick={() => selectQuest(node.quest.quest_id)}
+									data-testid="workspace-quest-{node.quest.quest_id}"
+								>
+									{#if node.children.length > 0}
+										<button
+											class="expand-toggle"
+											onclick={(e: MouseEvent) => { e.stopPropagation(); toggleParent(node.quest.quest_id); }}
+											aria-label={expandedParents.has(node.quest.quest_id) ? 'Collapse' : 'Expand'}
+											aria-expanded={expandedParents.has(node.quest.quest_id)}
+										>
+											{expandedParents.has(node.quest.quest_id) ? '\u25BE' : '\u25B8'}
+										</button>
 									{/if}
+									<div class="quest-card-body">
+										<div class="quest-card-header">
+											<span class="quest-card-title">{questTitle(node.quest)}</span>
+											{#if node.quest.status}
+												<span class="status-badge" data-status={node.quest.status}>{node.quest.status}</span>
+											{/if}
+										</div>
+										<div class="quest-card-meta">
+											{#if questAgent(node.quest)}
+												<span>{questAgent(node.quest)}</span>
+											{/if}
+											<span>{node.quest.file_count} files</span>
+											{#if node.children.length > 0}
+												<span>{node.children.length} sub-quests</span>
+											{/if}
+										</div>
+									</div>
 								</div>
-								<div class="quest-card-meta">
-									{#if questAgent(q)}
-										<span>{questAgent(q)}</span>
-									{/if}
-									<span>{q.file_count} files</span>
-								</div>
-							</button>
+								{#if node.children.length > 0 && expandedParents.has(node.quest.quest_id)}
+									<div class="sub-quest-list">
+										{#each node.children as sub (sub.quest_id)}
+											<button
+												class="quest-card sub-quest"
+												onclick={() => selectQuest(sub.quest_id)}
+												data-testid="workspace-quest-{sub.quest_id}"
+											>
+												<div class="quest-card-body">
+													<div class="quest-card-header">
+														<span class="quest-card-title">{questTitle(sub)}</span>
+														{#if sub.status}
+															<span class="status-badge" data-status={sub.status}>{sub.status}</span>
+														{/if}
+													</div>
+													<div class="quest-card-meta">
+														{#if questAgent(sub)}
+															<span>{questAgent(sub)}</span>
+														{/if}
+														<span>{sub.file_count} files</span>
+													</div>
+												</div>
+											</button>
+										{/each}
+									</div>
+								{/if}
+							</div>
 						{/each}
 					</div>
 				{/if}
@@ -485,10 +591,15 @@
 		gap: var(--spacing-sm);
 	}
 
-	.quest-card {
+	.quest-tree-node {
 		display: flex;
 		flex-direction: column;
-		gap: var(--spacing-xs);
+	}
+
+	.quest-card {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
 		padding: var(--spacing-md);
 		border: 1px solid var(--ui-border-subtle);
 		border-radius: var(--radius-md);
@@ -503,6 +614,52 @@
 
 	.quest-card:hover {
 		border-color: var(--ui-border-interactive);
+	}
+
+	.quest-card.sub-quest {
+		padding-left: calc(var(--spacing-md) + 20px);
+		border-radius: 0;
+		border-top: none;
+	}
+
+	.quest-card.sub-quest:last-child {
+		border-radius: 0 0 var(--radius-md) var(--radius-md);
+	}
+
+	.quest-card-body {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+		overflow: hidden;
+	}
+
+	.expand-toggle {
+		width: 20px;
+		height: 20px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: none;
+		color: var(--ui-text-tertiary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		flex-shrink: 0;
+		padding: 0;
+		border-radius: var(--radius-sm);
+	}
+
+	.expand-toggle:hover {
+		background: var(--ui-surface-tertiary);
+		color: var(--ui-text-primary);
+	}
+
+	.sub-quest-list {
+		display: flex;
+		flex-direction: column;
+		border-left: 2px solid var(--ui-border-subtle);
+		margin-left: var(--spacing-lg);
 	}
 
 	.quest-card-header {

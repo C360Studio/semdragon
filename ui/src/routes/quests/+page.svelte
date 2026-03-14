@@ -6,7 +6,7 @@
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
-	import { QuestDifficultyNames, type Quest, type QuestStatus } from '$types';
+	import { QuestDifficultyNames, type Quest, type QuestStatus, type BossBattle } from '$types';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -89,6 +89,19 @@
 	const filteredQuestCount = $derived(
 		kanbanColumns.reduce((sum, col) => sum + questsByStatus[col.status].length, 0)
 	);
+
+	// Find the most recent battle for the selected quest
+	const selectedQuestBattle: BossBattle | undefined = $derived.by(() => {
+		const quest = worldStore.selectedQuest;
+		if (!quest) return undefined;
+		const qid = String(quest.id);
+		return worldStore.battleList
+			.filter((b) => {
+				const bid = String(b.quest_id);
+				return bid === qid || bid.includes(qid) || qid.includes(bid);
+			})
+			.sort((a, b) => new Date(b.started_at ?? 0).getTime() - new Date(a.started_at ?? 0).getTime())[0];
+	});
 
 	function selectQuest(quest: Quest) {
 		worldStore.selectQuest(quest.id);
@@ -310,6 +323,25 @@
 								<dd><a href="/trajectories/{quest.loop_id}">View</a></dd>
 							{/if}
 						</dl>
+
+						{#if selectedQuestBattle}
+							{@const battle = selectedQuestBattle}
+							<div class="battle-card" data-status={battle.status}>
+								<h4>Boss Battle</h4>
+								{#if battle.verdict}
+									<span class="verdict-badge" data-passed={battle.verdict.passed}>
+										{battle.verdict.passed ? 'Victory' : 'Defeat'}
+									</span>
+									<span class="quality-score">{battle.verdict.quality_score.toFixed(1)} quality</span>
+									{#if battle.verdict.xp_awarded > 0}
+										<span class="xp-awarded">+{battle.verdict.xp_awarded} XP</span>
+									{/if}
+								{:else}
+									<span class="verdict-badge" data-passed="active">In Progress</span>
+								{/if}
+								<a href="/battles?selected={battle.id}" class="battle-link">View battle</a>
+							</div>
+						{/if}
 
 						<a href="/quests/{quest.id}" class="view-full-link">View full quest</a>
 					</section>
@@ -745,5 +777,67 @@
 		100% {
 			background-position: -200% 0;
 		}
+	}
+
+	/* Battle card in quest detail panel */
+	.battle-card {
+		margin-top: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--ui-surface-secondary);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--spacing-xs) var(--spacing-sm);
+	}
+
+	.battle-card h4 {
+		margin: 0;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ui-text-tertiary);
+		width: 100%;
+	}
+
+	.verdict-badge {
+		padding: 2px 8px;
+		border-radius: var(--radius-sm);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.verdict-badge[data-passed='true'] {
+		background: var(--quest-completed-container);
+		color: var(--quest-completed);
+	}
+
+	.verdict-badge[data-passed='false'] {
+		background: var(--quest-failed-container);
+		color: var(--quest-failed);
+	}
+
+	.verdict-badge[data-passed='active'] {
+		background: var(--quest-in-progress-container);
+		color: var(--quest-in-progress);
+	}
+
+	.quality-score {
+		font-size: 0.75rem;
+		color: var(--ui-text-secondary);
+	}
+
+	.xp-awarded {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--status-success);
+	}
+
+	.battle-link {
+		margin-left: auto;
+		font-size: 0.75rem;
+		color: var(--ui-interactive-primary);
 	}
 </style>
