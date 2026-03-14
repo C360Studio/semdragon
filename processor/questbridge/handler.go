@@ -2080,12 +2080,27 @@ func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.A
 	// and solves the quest directly instead of decomposing.
 	isPartyLead := quest.PartyRequired && agent.Tier >= domain.TierMaster
 
+	// Check if the graph has non-game knowledge sources. When the manifest
+	// is empty (only game predicates), omit graph_search from the tool list
+	// since it would only return game data that agents shouldn't query directly.
+	hasKnowledgeSources := false
+	if c.graphManifestClient != nil {
+		if m := c.graphManifestClient.Fetch(context.Background()); m != nil && len(m.PredicateFamilies) > 0 {
+			hasKnowledgeSources = true
+		}
+	}
+
 	all := reg.ListAll()
 	result := make([]agentic.ToolDefinition, 0, len(all))
 
 	for _, tool := range all {
 		// Party lead filter: only decompose_quest and review_sub_quest.
 		if isPartyLead && !isLeadTool(tool.Definition.Name) {
+			continue
+		}
+
+		// Omit graph_search when no knowledge sources are indexed.
+		if tool.Definition.Name == "graph_search" && !hasKnowledgeSources {
 			continue
 		}
 

@@ -15,13 +15,33 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// GraphManifest summarizes what the graph-gateway contains.
+// GraphManifest summarizes what the graph-gateway contains, excluding
+// game-world predicates that agents already receive via entity knowledge
+// injection.
 type GraphManifest struct {
-	// PredicateFamilies maps top-level predicate prefixes (e.g. "quest", "agent")
+	// PredicateFamilies maps top-level predicate prefixes (e.g. "source", "doc")
 	// to the total entity count across all predicates in that family.
+	// Game-world families (agent, quest, battle, etc.) are filtered out.
 	PredicateFamilies map[string]int
-	// TotalPredicates is the total number of distinct predicates.
+	// PredicateCategories maps two-level predicate prefixes (e.g. "source.content")
+	// to entity counts, providing more granular discovery hints for agents.
+	PredicateCategories map[string]int
+	// TotalPredicates is the number of distinct non-game predicates.
 	TotalPredicates int
+}
+
+// gamePredicateFamilies are predicate families that belong to the game world.
+// Agents already receive this context via entity knowledge injection. Exposing
+// raw graph predicates would be redundant and could enable cheating (e.g.,
+// looking up boss battle criteria or other agents' progression).
+var gamePredicateFamilies = map[string]bool{
+	"agent":  true,
+	"quest":  true,
+	"battle": true,
+	"party":  true,
+	"review": true,
+	"guild":  true,
+	"store":  true,
 }
 
 const (
@@ -99,7 +119,7 @@ func (c *GraphManifestClient) Fetch(ctx context.Context) *GraphManifest {
 }
 
 // FormatForPrompt fetches the manifest and formats it for LLM consumption.
-// Returns "" when unavailable or the graph is empty.
+// Returns "" when unavailable or only game-world predicates are present.
 func (c *GraphManifestClient) FormatForPrompt(ctx context.Context) string {
 	manifest := c.Fetch(ctx)
 	if manifest == nil || len(manifest.PredicateFamilies) == 0 {
@@ -117,18 +137,43 @@ func (c *GraphManifestClient) FormatForPrompt(ctx context.Context) string {
 
 	var sb strings.Builder
 	sb.WriteString("--- Graph Contents ---\n")
-	sb.WriteString(fmt.Sprintf("Entity types: %s\n", strings.Join(families, ", ")))
-	sb.WriteString(fmt.Sprintf("%d entities across %d predicate families (%d total predicates indexed).\n",
-		totalEntities, len(families), manifest.TotalPredicates))
-	sb.WriteString("Use graph_search to query.\n")
+	sb.WriteString(fmt.Sprintf("%d knowledge sources indexed (%d entities, %d predicates).\n\n",
+		len(families), totalEntities, manifest.TotalPredicates))
+
+	// Show each family with its two-level categories.
+	for _, fam := range families {
+		cats := categoriesForFamily(manifest.PredicateCategories, fam)
+		if len(cats) > 0 {
+			sb.WriteString(fmt.Sprintf("  %s (%d): %s\n", fam, manifest.PredicateFamilies[fam], strings.Join(cats, ", ")))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %s (%d)\n", fam, manifest.PredicateFamilies[fam]))
+		}
+	}
+
+	sb.WriteString("\nQuery with graph_search: use \"predicate\" for targeted lookups\n")
+	sb.WriteString("or \"prefix\" for entity ID patterns. Avoid broad \"search\" queries.\n")
 
 	return sb.String()
+}
+
+// categoriesForFamily returns the sorted category suffixes (second dot segment)
+// for a given family prefix.
+func categoriesForFamily(categories map[string]int, family string) []string {
+	prefix := family + "."
+	var cats []string
+	for cat := range categories {
+		if suffix, ok := strings.CutPrefix(cat, prefix); ok {
+			cats = append(cats, suffix)
+		}
+	}
+	sort.Strings(cats)
+	return cats
 }
 
 // predicateEntry represents a single predicate with its entity count from graph-gateway.
 type predicateEntry struct {
 	Predicate   string `json:"predicate"`
-	EntityCount int    `json:"entityCount"`
+	EntityCount int    `json:"entity_count"`
 }
 
 // predicatesResponse mirrors the GraphQL response shape for the predicates query.
@@ -194,18 +239,37 @@ func (c *GraphManifestClient) doFetch(ctx context.Context) *GraphManifest {
 		return nil
 	}
 
-	// Group predicates by top-level family (first dot-separated segment).
+	// Group predicates by top-level family and two-level category,
+	// filtering out game-world predicates.
 	families := make(map[string]int)
+	categories := make(map[string]int)
+	filteredPredicateCount := 0
+
 	for _, p := range gqlResp.Data.Predicates.Predicates {
 		family := p.Predicate
 		if idx := strings.IndexByte(p.Predicate, '.'); idx > 0 {
 			family = p.Predicate[:idx]
 		}
+
+		// Skip game-world predicates — agents get this via entity knowledge.
+		if gamePredicateFamilies[family] {
+			continue
+		}
+
 		families[family] += p.EntityCount
+		filteredPredicateCount++
+
+		// Two-level category: "source.content" from "source.content.language"
+		parts := strings.SplitN(p.Predicate, ".", 3)
+		if len(parts) >= 2 {
+			cat := parts[0] + "." + parts[1]
+			categories[cat] += p.EntityCount
+		}
 	}
 
 	return &GraphManifest{
-		PredicateFamilies: families,
-		TotalPredicates:   gqlResp.Data.Predicates.Total,
+		PredicateFamilies:   families,
+		PredicateCategories: categories,
+		TotalPredicates:     filteredPredicateCount,
 	}
 }
