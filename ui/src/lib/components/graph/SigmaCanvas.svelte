@@ -59,6 +59,35 @@
 			defaultEdgeType: 'arrow',
 			labelRenderedSizeThreshold: 8,
 			labelColor: { color: '#f4f4f4' },
+			defaultDrawNodeHover: (context, data, settings) => {
+				const size = data.size || 5;
+				const x = data.x;
+				const y = data.y;
+				const color = data.color || '#6b7280';
+
+				// Draw a colored ring around the node instead of Sigma's default white halo
+				context.beginPath();
+				context.arc(x, y, size + 3, 0, Math.PI * 2);
+				context.strokeStyle = color;
+				context.lineWidth = 2;
+				context.stroke();
+				context.closePath();
+
+				// Redraw the node circle
+				context.beginPath();
+				context.arc(x, y, size, 0, Math.PI * 2);
+				context.fillStyle = color;
+				context.fill();
+				context.closePath();
+
+				// Draw the label
+				if (data.label) {
+					const fontSize = settings.labelSize || 14;
+					context.font = `${fontSize}px ${settings.labelFont || 'sans-serif'}`;
+					context.fillStyle = '#f4f4f4';
+					context.fillText(data.label, x + size + 4, y + fontSize / 3);
+				}
+			},
 			nodeReducer: (node, data) => {
 				const res = { ...data };
 
