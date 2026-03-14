@@ -11,7 +11,7 @@ handles quest distribution without central scheduling.
 ## Quick Start
 
 **Prerequisites**: [Docker](https://docs.docker.com/get-docker/),
-[Go 1.23+](https://go.dev/dl/), [Node 20+](https://nodejs.org/),
+[Go 1.25+](https://go.dev/dl/), [Node 20+](https://nodejs.org/),
 [go-task](https://taskfile.dev/#/installation)
 
 ```bash
@@ -127,8 +127,11 @@ semdragons/
 │   ├── guildformation/     # Auto guild clustering from shared performance patterns
 │   ├── partycoord/         # Party lifecycle: form, assign, merge, disband
 │   ├── promptmanager/      # Fragment-based domain-aware prompt assembly (library, not standalone)
+│   ├── boardcontrol/       # Board state management (pause/resume)
+│   ├── tokenbudget/        # Token budget tracking for context windows
 │   ├── dmsession/          # DM session lifecycle
 │   ├── dmapproval/         # DM approval gate via NATS request/reply
+│   ├── dmpartyformation/   # DM-initiated party formation
 │   ├── dmworldstate/       # Aggregated world state snapshot for /api/game/world
 │   ├── executor/           # Synchronous LLM execution (superseded by questbridge for new work)
 │   └── seeding/            # Environment bootstrapping for dev/test
@@ -136,7 +139,7 @@ semdragons/
 ├── componentregistry/      # Single file that imports and wires all processors
 ├── config/
 │   ├── semdragons.json     # Default runtime config: streams, components, model_registry
-│   └── models.json         # Production model registry with multi-provider endpoints
+│   └── models/             # Per-provider model registry overlays (gemini.json, openai.json, etc.)
 ├── ui/                     # SvelteKit 5 dashboard
 │   ├── src/routes/         # Pages: agents, quests, battles, store, guilds, settings,
 │   │                       #        graph, trajectories, workspace, parties
@@ -200,8 +203,8 @@ BRAVE_SEARCH_API_KEY=your-key-here   # optional, enables web search tool
 
 3. Start with the matching task variant (`task docker:up:gemini`, etc.)
 
-Model routing, fallback chains, and per-tier model selection are all configured in
-`config/models.json`. See [Model Registry docs](docs/07-MODEL-REGISTRY.md) for full details.
+Model routing, fallback chains, and per-tier model selection are configured via overlay
+files in `config/models/` (e.g., `gemini.json`, `openai.json`). See [Model Registry docs](docs/07-MODEL-REGISTRY.md) for full details.
 
 ## API
 
@@ -239,8 +242,15 @@ Key endpoint groups under `/game/`:
 | [Domains](docs/06-DOMAINS.md) | Software, D&D, and research domain configs; skill taxonomies; prompt catalogs |
 | [Model Registry](docs/07-MODEL-REGISTRY.md) | LLM provider config, capability routing, fallback chains |
 | [DAG Lessons Learned](docs/08-DAG-LESSONS-LEARNED.md) | Hard-won implementation notes on party quest DAG execution |
-| [ADR: DM Chat Routing](docs/adr/001-dm-chat-routing.md) | Design decision: DM chat mode routing and orchestration |
-| [ADR: Party Quest DAG](docs/adr/002-party-quest-dag-execution.md) | Design decision: reactive DAG execution architecture |
-| [ADR: DAG Refactor](docs/adr/003-questdagexec-refactor.md) | Single-goroutine event loop replacing concurrent model |
+| [ADR-001: DM Chat Routing](docs/adr/001-dm-chat-routing.md) | DM chat mode routing and orchestration |
+| [ADR-002: Party Quest DAG](docs/adr/002-party-quest-dag-execution.md) | Reactive DAG execution architecture |
+| [ADR-003: DAG Refactor](docs/adr/003-questdagexec-refactor.md) | Single-goroutine event loop replacing concurrent model |
+| [ADR-004: Clarification Loop](docs/adr/004-party-clarification-loop.md) | Sub-quest clarification routing to party lead |
+| [ADR-005: Guild Founding Quorum](docs/adr/005-guild-founding-quorum.md) | Founder-driven guild formation with quorum gate |
+| [ADR-006: Guild Founding Quests](docs/adr/006-guild-founding-quests.md) | LLM-driven guild identity and recruitment |
+| [ADR-007: Scenario-Driven Specs](docs/adr/007-scenario-driven-quest-specs.md) | Scenario-driven quest specifications and decomposability |
+| [ADR-008: Sandbox Container](docs/adr/008-sandbox-container.md) | Isolated execution container for agent code |
+| [ADR-009: Provider Adapters](docs/adr/009-provider-adapters.md) | Provider adapter pattern for agentic-model |
+| [ADR-010: Tool Choice](docs/adr/010-tool-choice.md) | Tool choice enforcement via API |
 
 Module: `github.com/c360studio/semdragons`

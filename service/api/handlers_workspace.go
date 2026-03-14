@@ -30,12 +30,13 @@ type workspaceEntry struct {
 
 // workspaceQuestInfo describes a quest with artifacts.
 type workspaceQuestInfo struct {
-	QuestID   string `json:"quest_id"`
-	Title     string `json:"title,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Agent     string `json:"agent,omitempty"`
-	AgentName string `json:"agent_name,omitempty"`
-	FileCount int    `json:"file_count"`
+	QuestID     string `json:"quest_id"`
+	Title       string `json:"title,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Agent       string `json:"agent,omitempty"`
+	AgentName   string `json:"agent_name,omitempty"`
+	ParentQuest string `json:"parent_quest,omitempty"`
+	FileCount   int    `json:"file_count"`
 }
 
 // handleWorkspaceQuests returns a list of quests that have artifacts.
@@ -84,6 +85,9 @@ func (s *Service) handleWorkspaceQuests(w http.ResponseWriter, r *http.Request) 
 				info.Status = string(quest.Status)
 				if quest.ClaimedBy != nil {
 					info.Agent = string(*quest.ClaimedBy)
+				}
+				if quest.ParentQuest != nil {
+					info.ParentQuest = string(*quest.ParentQuest)
 				}
 			}
 		}

@@ -840,6 +840,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			// DM types
 			reflect.TypeOf(DMChatSession{}),
 			reflect.TypeOf(DMChatTurn{}),
+			reflect.TypeOf(TriageDecision{}),
 			reflect.TypeOf(domain.QuestBrief{}),
 			reflect.TypeOf(domain.QuestChainBrief{}),
 			reflect.TypeOf(domain.QuestChainEntry{}),

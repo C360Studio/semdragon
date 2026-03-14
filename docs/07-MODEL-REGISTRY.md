@@ -13,7 +13,7 @@ hands back connection config.
 - [Capabilities](#capabilities)
 - [Tier-Qualified Capabilities](#tier-qualified-capabilities)
 - [Default Config (semdragons.json)](#default-config-semdragonsjson)
-- [Production Config (models.json)](#production-config-modelsjson)
+- [Production Config (config/models/)](#production-config-configmodels)
 - [Provider Setup](#provider-setup)
 - [Context Compaction](#context-compaction)
 - [Brave Search Tool](#brave-search-tool)
@@ -303,13 +303,15 @@ The `defaults.capability` is the fallback capability key.
 
 ---
 
-## Production Config (models.json)
+## Production Config (config/models/)
 
-`config/models.json` is a standalone registry file for production deployments. Load it
-by passing `--model-config config/models.json` to the binary, or set the path in your
-deployment config.
+`config/models/` contains per-provider overlay files (`gemini.json`, `openai.json`,
+`anthropic.json`, `ollama.json`, `mock.json`, etc.). Load one by passing
+`--models config/models/gemini.json` (or `-m`) to the binary. The overlay is
+deep-merged on top of `semdragons.json`, so it only needs to set `model_registry`
+and any component tuning — not the full config.
 
-It defines four endpoints and multiple capability tiers:
+The `gemini.json` overlay, for example, defines four endpoints and multiple capability tiers:
 
 | Endpoint       | Provider  | Model                        | Tools |
 |----------------|-----------|------------------------------|-------|
@@ -318,7 +320,7 @@ It defines four endpoints and multiple capability tiers:
 | `ollama`       | Ollama    | llama3.2                     | no    |
 | `ollama-tools` | Ollama    | llama3.1                     | yes   |
 
-Capabilities in `models.json`:
+Capabilities in the production overlay:
 
 | Capability     | Preferred        | Fallback          | Notes                           |
 |----------------|------------------|-------------------|---------------------------------|

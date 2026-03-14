@@ -12,7 +12,7 @@ This guide gets you from zero to your first completed quest.
 | Tool | Minimum version | Check |
 |------|----------------|-------|
 | Docker + Docker Compose | Docker 24+ | `docker --version && docker compose version` |
-| Go | 1.23+ | `go version` |
+| Go | 1.25+ | `go version` |
 | Node.js | 20+ | `node --version` |
 | go-task | any | `task --version` |
 
@@ -228,9 +228,9 @@ npm install     # first time only
 npm run dev     # Vite dev server at http://localhost:5173
 ```
 
-Vite proxies `/game`, `/health`, and `/message-logger` to `http://localhost:8080` (the backend).
-Set the `BACKEND_URL` env var to override the proxy target. When running via Docker Compose,
-Caddy handles proxying instead of Vite.
+Vite proxies `/game`, `/health`, and `/graph-gateway` to `http://localhost:8081` (the backend's
+host-mapped port). Set the `BACKEND_URL` env var to override the proxy target. When running via
+Docker Compose, Caddy handles proxying instead of Vite.
 
 ## Configuration Overview
 

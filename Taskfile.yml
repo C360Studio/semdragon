@@ -31,9 +31,10 @@ tasks:
       - task: build:default
 
   check:
-    desc: Full check — fmt, tidy, lint, test
+    desc: Full check — fmt, tidy, lint, schemas, test
     cmds:
       - task: lint:fmt
       - task: lint:tidy
       - task: lint:default
+      - task: schema:check
       - task: test:all

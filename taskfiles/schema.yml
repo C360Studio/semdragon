@@ -23,3 +23,32 @@ tasks:
     cmds:
       - go run ./cmd/openapi-gen > /tmp/openapi-check.json
       - diff /tmp/openapi-check.json ui/static/openapi.json && echo "OpenAPI spec is up to date."
+
+  types:
+    desc: Generate TypeScript types from OpenAPI spec
+    dir: ui
+    cmds:
+      - npm run gen:api
+
+  types:check:
+    desc: Verify generated TypeScript types are fresh
+    dir: ui
+    cmds:
+      - cp src/lib/api/generated.d.ts /tmp/generated-check.d.ts
+      - npm run gen:api
+      - diff src/lib/api/generated.d.ts /tmp/generated-check.d.ts && echo "Generated types are up to date."
+      - cp /tmp/generated-check.d.ts src/lib/api/generated.d.ts
+
+  all:
+    desc: Regenerate all schemas and types
+    cmds:
+      - task: entity
+      - task: openapi
+      - task: types
+
+  check:
+    desc: Verify all schemas and generated types are fresh
+    cmds:
+      - task: entity:check
+      - task: openapi:check
+      - task: types:check
