@@ -88,7 +88,8 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 	c.logger.Debug("executing tool",
 		"tool", call.Name, "call_id", call.ID,
 		"loop_id", call.LoopID, "agent_id", agent.ID,
-		"quest_id", quest.ID, "tier", agent.Tier)
+		"quest_id", quest.ID, "tier", agent.Tier,
+		"arguments", call.Arguments)
 
 	// Execute the tool through the registry, which enforces tier and skill gates.
 	result := c.toolRegistry.Execute(ctx, call, quest, agent)

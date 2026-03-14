@@ -85,7 +85,7 @@ type toolSpec struct {
 var readFileSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "read_file",
-		Description: "Read the contents of a file from the filesystem",
+		Description: "Read the full contents of a file. Returns the file as text. Use glob_files or list_directory first if you don't know the exact path.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -103,7 +103,7 @@ var readFileSpec = toolSpec{
 var readFileRangeSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "read_file_range",
-		Description: "Read a specific line range from a file. Useful for navigating large files.",
+		Description: "Read a specific line range from a file. Use when a file is too large to read entirely, or to inspect a known section. Line numbers are 1-based. Returns up to 500 lines.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -129,7 +129,7 @@ var readFileRangeSpec = toolSpec{
 var writeFileSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "write_file",
-		Description: "Write content to a file on the filesystem",
+		Description: "Create or overwrite a file with the given content. Parent directories must exist — use create_directory first if needed. For small edits to existing files, prefer patch_file.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -179,7 +179,7 @@ var patchFileSpec = toolSpec{
 var deleteFileSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "delete_file",
-		Description: "Delete a single file within the sandbox. Does not delete directories.",
+		Description: "Delete a single file. Cannot delete directories. Use with caution — this is irreversible.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -198,7 +198,7 @@ var deleteFileSpec = toolSpec{
 var renameFileSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "rename_file",
-		Description: "Move or rename a file within the sandbox. Both source and destination must be within the sandbox.",
+		Description: "Move or rename a file. The destination directory must already exist. Use create_directory first if needed.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -221,7 +221,7 @@ var renameFileSpec = toolSpec{
 var createDirectorySpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "create_directory",
-		Description: "Create a directory (and any missing parents) within the sandbox.",
+		Description: "Create a directory and any missing parent directories. Use before write_file when the target directory doesn't exist yet.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -240,7 +240,7 @@ var createDirectorySpec = toolSpec{
 var listDirectorySpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "list_directory",
-		Description: "List the contents of a directory",
+		Description: "List files and subdirectories in a directory. Returns names with type indicators (/ for dirs). Use to explore project structure before reading specific files.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -258,7 +258,7 @@ var listDirectorySpec = toolSpec{
 var globFilesSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "glob_files",
-		Description: "Find files by glob pattern within the sandbox. Supports ** for recursive matching.",
+		Description: "Find files matching a glob pattern (e.g. '**/*.java', 'src/**/*.go', '*.json'). Returns matching file paths. Use to discover files before reading them.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -280,7 +280,7 @@ var globFilesSpec = toolSpec{
 var searchTextSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "search_text",
-		Description: "Search for text patterns in files",
+		Description: "Search for text or regex patterns across files. Returns matching lines with file paths and line numbers. Use file_glob to narrow by extension (e.g. '*.go'). Use context_lines to see surrounding code.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -314,7 +314,7 @@ var searchTextSpec = toolSpec{
 var runTestsSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "run_tests",
-		Description: "Run a test command in the workspace directory and return the output. Use for validating changes.",
+		Description: "Run a test command and return stdout/stderr. Only test runner commands are allowed (go test, npm test, pytest, cargo test, gradle test, mvn test, make test). Use after writing code to verify it works.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -333,7 +333,7 @@ var runTestsSpec = toolSpec{
 var lintCheckSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "lint_check",
-		Description: "Run a linter and return the output. Supports common linters across Go, JS/TS, Python, and Rust.",
+		Description: "Run a linter and return the output. Only linter commands are allowed (go vet, golangci-lint, eslint, pylint, flake8, clippy, checkstyle). Use after writing code to check for issues.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -352,7 +352,7 @@ var lintCheckSpec = toolSpec{
 var runCommandSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "run_command",
-		Description: "Run an arbitrary shell command in the workspace directory. Use responsibly — this has full shell access within the sandbox.",
+		Description: "Run a shell command in the workspace sandbox. Has full access to installed tools (go, node, java, gradle, maven, python, git, curl, etc.). Use for operations not covered by other tools. Prefer build_project for builds, run_tests for tests, and git_operation for version control.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -370,26 +370,26 @@ var runCommandSpec = toolSpec{
 var httpRequestSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "http_request",
-		Description: "Make an HTTP request to a URL. Supports GET and POST methods.",
+		Description: "Make an HTTP request to fetch data from a URL. Use for downloading files, calling REST APIs, or fetching web content. The response body is returned as text. For binary downloads, pipe through run_command instead.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"url": map[string]any{
 					"type":        "string",
-					"description": "The URL to request",
+					"description": "Full URL including https:// (e.g. 'https://api.github.com/repos/owner/repo')",
 				},
 				"method": map[string]any{
 					"type":        "string",
-					"description": "HTTP method (GET or POST). Defaults to GET.",
+					"description": "HTTP method. Defaults to GET.",
 					"enum":        []any{"GET", "POST"},
 				},
 				"body": map[string]any{
 					"type":        "string",
-					"description": "Request body (for POST requests)",
+					"description": "Request body as a string (for POST). Use JSON format for API calls.",
 				},
 				"content_type": map[string]any{
 					"type":        "string",
-					"description": "Content-Type header value (for POST requests). Defaults to application/json.",
+					"description": "Content-Type header (for POST). Defaults to application/json.",
 				},
 			},
 			"required": []any{"url"},

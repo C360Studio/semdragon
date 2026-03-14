@@ -348,18 +348,36 @@ func registerReviewBrief(r *PromptRegistry) {
 // toolGuidanceEntries maps tool names to their one-line usage guidance.
 // Only tools present in AvailableToolNames are included in the output.
 var toolGuidanceEntries = map[string]string{
+	// Knowledge tools
 	"graph_query":  "Game state (quests, agents, guilds, parties, battles). Fast.",
 	"graph_search": "Knowledge graph (code, docs, repos). Use for project-specific lookups. Prefer over web_search for anything about this codebase.",
 	"web_search":   "External info not in the graph (third-party APIs, libraries, general knowledge).",
-	"read_file":    "Read files from the sandbox filesystem.",
-	"write_file":   "Write files to the sandbox filesystem.",
-	"patch_file":   "Apply targeted edits to existing files in the sandbox.",
+	// Exploration tools — use these BEFORE reading/writing to find the right files
+	"list_directory": "See what files and folders exist at a path. Start here to understand project layout.",
+	"glob_files":     "Find files by pattern (e.g. '**/*.java', 'src/**/*.go'). Use to locate files before reading.",
+	"search_text":    "Search file contents for text or regex. Use file_glob param to filter by extension. Returns file:line matches.",
+	// File tools
+	"read_file":  "Read a file's full contents. Use glob_files or list_directory first if you don't know the exact path.",
+	"write_file": "Create or overwrite a file. Parent dirs must exist — use create_directory first.",
+	"patch_file": "Apply targeted find-and-replace edits to an existing file. Prefer over write_file for small changes.",
+	// Build and test tools
+	"run_tests":  "Run test commands (go test, npm test, pytest, gradle test, etc.). Use after writing code.",
+	"lint_check": "Run linters (go vet, eslint, pylint, etc.). Use after writing code to catch issues.",
+	// Network tools
+	"http_request": "Fetch URLs or call REST APIs. Always include https:// in the url parameter. Defaults to GET.",
+	// Shell tools
+	"run_command":      "General shell command. Use only when no specialized tool covers the operation.",
+	"create_directory": "Create directories (including parents). Use before write_file if the target dir doesn't exist.",
 }
 
 // toolGuidanceOrder controls the display order of tool guidance entries.
 var toolGuidanceOrder = []string{
 	"graph_query", "graph_search", "web_search",
+	"list_directory", "glob_files", "search_text",
 	"read_file", "write_file", "patch_file",
+	"run_tests", "lint_check",
+	"http_request",
+	"run_command", "create_directory",
 }
 
 // hasMultipleTools gates the tool guidance fragment — only included when the
