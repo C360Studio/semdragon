@@ -586,8 +586,8 @@ func TestGCOnSynthesisFailed(t *testing.T) {
 	c := newTestComponentWithRetries(qb, nil)
 
 	// Build a complete DAG (all nodes NodeCompleted) so extractExecutionIDFromSynthesisLoop
-	// finds it (it scans for the first complete DAG).
-	dag := makeFullDAGState("exec-sf1", "parent-sf1", "party-sf1", []QuestNode{
+	// finds it by matching the parent quest key in the loop ID.
+	dag := makeFullDAGState("exec-sf1", "parent.quest.sf1", "party-sf1", []QuestNode{
 		makeNode("n1", 0),
 		makeNode("n2", 0),
 	})
@@ -596,11 +596,11 @@ func TestGCOnSynthesisFailed(t *testing.T) {
 	dag.CompletedNodes = []string{"n1", "n2"}
 	c.dagCache[dag.ExecutionID] = dag
 
-	// Any synthesis loop ID will do — extractExecutionIDFromSynthesisLoop ignores
-	// the loop ID content and scans dagCache instead.
+	// Loop ID must embed the parent quest key (dots→dashes) so the extractor
+	// can match it to the correct DAG in dagCache.
 	evt := dagEvent{
 		Type:        dagEventSynthesisFailed,
-		LoopID:      "synthesis-whatever-nuid12345678901234",
+		LoopID:      "synthesis-parent-quest-sf1-nuid12345678901234",
 		ErrorReason: "model error",
 	}
 

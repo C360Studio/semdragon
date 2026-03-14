@@ -549,11 +549,36 @@ func (c *Component) onDAGTimedOut(ctx context.Context, evt dagEvent) {
 	c.pruneReviewRetries(dagState.ExecutionID)
 }
 
-// extractExecutionIDFromSynthesisLoop finds the DAG execution ID by scanning
-// dagCache for a DAG that is complete (all nodes in CompletedNodes). The
-// synthesis loop is dispatched only for complete DAGs.
-func (c *Component) extractExecutionIDFromSynthesisLoop(_ string) string {
-	// There should be exactly one complete DAG waiting for synthesis.
+// extractExecutionIDFromSynthesisLoop finds the DAG execution ID for a
+// synthesis loop by parsing the parent quest entity key from the loop ID
+// and matching it against dagCache entries.
+//
+// Loop ID format: "synthesis-{parentKey}-{nuid}" where parentKey is the
+// ParentQuestID with dots replaced by dashes (from dispatchLeadSynthesis).
+func (c *Component) extractExecutionIDFromSynthesisLoop(loopID string) string {
+	// Strip "synthesis-" prefix.
+	rest := strings.TrimPrefix(loopID, "synthesis-")
+	if rest == loopID {
+		return "" // not a synthesis loop
+	}
+
+	// The NUID suffix is the last segment after the final dash. The parent
+	// quest entity key (with dashes instead of dots) occupies everything
+	// before that. We need to match against dagCache entries by converting
+	// the dashed key back to dots and comparing with ParentQuestID.
+	//
+	// However, since entity keys contain dashes in the instance segment
+	// (e.g., "local-dev-game-board1-quest-0e7b8b28"), we can't simply
+	// split on "-". Instead, match each dagCache entry's ParentQuestID
+	// (dot→dash) as a prefix of rest.
+	for execID, ds := range c.dagCache {
+		parentKey := strings.ReplaceAll(ds.ParentQuestID, ".", "-")
+		if strings.HasPrefix(rest, parentKey+"-") {
+			return execID
+		}
+	}
+
+	// Fallback: return any complete DAG (preserves old behavior for edge cases).
 	for execID, ds := range c.dagCache {
 		if c.isDAGComplete(ds) {
 			return execID
