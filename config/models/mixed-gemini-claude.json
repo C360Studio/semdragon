@@ -101,7 +101,7 @@
     "agentic-model": {
       "config": {
         "timeout": "300s",
-        "retry": { "max_attempts": 2 }
+        "retry": { "max_attempts": 3 }
       }
     }
   }
