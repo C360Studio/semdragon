@@ -146,6 +146,8 @@
 	--quest-failed-container: #2d0709;
 	--quest-escalated: #ff7eb6; /* Magenta - Escalated */
 	--quest-escalated-container: #2a0a1e;
+	--quest-pending-triage: #ff832b; /* Orange - Needs triage */
+	--quest-pending-triage-container: #2d1500;
 
 	/* Agent Status */
 	--agent-idle: #42be65; /* Green - Available */
@@ -385,6 +387,8 @@
 	--quest-failed-container: #fff1f1;
 	--quest-escalated: #d02670;
 	--quest-escalated-container: #ffd6e8;
+	--quest-pending-triage: #d2620a;
+	--quest-pending-triage-container: #fff2e8;
 
 	--agent-idle: #24a148;
 	--agent-on-quest: #d2a106;

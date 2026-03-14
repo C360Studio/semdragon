@@ -14,6 +14,7 @@ import type {
 	BattleID,
 	WorldState,
 	QuestHints,
+	QuestChainBrief,
 	Intervention,
 	AgentConfig,
 	StoreItem,
@@ -189,21 +190,30 @@ export async function sendDMChat(
 	});
 }
 
-export async function postQuestChain(chain: {
-	quests: Array<{
-		title: string;
-		description?: string;
-		difficulty?: number;
-		skills?: string[];
-		acceptance?: string[];
-		depends_on?: number[];
-	}>;
-}): Promise<Quest[]> {
+export async function postQuestChain(chain: QuestChainBrief): Promise<Quest[]> {
 	return postJson<Quest[]>('/game/quests/chain', chain);
 }
 
 export async function intervene(questId: QuestID, intervention: Intervention): Promise<void> {
 	await postVoid(`/game/dm/intervene/${questId}`, intervention);
+}
+
+/** Answer an escalated quest's clarification question via /dm/intervene. */
+export async function answerEscalation(questId: QuestID, clarification: string): Promise<Quest> {
+	return postJson<Quest>(`/game/dm/intervene/${questId}`, { clarification, action: 'clarify' });
+}
+
+/** Apply a DM triage decision to a quest in pending_triage status. */
+export async function triageQuest(
+	questId: QuestID,
+	decision: {
+		path: 'salvage' | 'tpk' | 'escalate' | 'terminal';
+		analysis: string;
+		salvaged_output?: unknown;
+		anti_patterns?: string[];
+	}
+): Promise<Quest> {
+	return postJson<Quest>(`/game/dm/triage/${questId}`, decision);
 }
 
 // =============================================================================
@@ -318,6 +328,7 @@ export interface WorkspaceQuest {
 	status: string;
 	agent: string;
 	agent_name: string;
+	parent_quest?: string;
 	file_count: number;
 }
 
@@ -465,6 +476,8 @@ export const api = {
 	sendDMChat,
 	postQuestChain,
 	intervene,
+	answerEscalation,
+	triageQuest,
 	getStoreItems,
 	getStoreItem,
 	getInventory,

@@ -641,6 +641,8 @@
 	.status-pip[data-status='in_review'] { background: var(--quest-in-review); }
 	.status-pip[data-status='completed'] { background: var(--quest-completed); }
 	.status-pip[data-status='failed'] { background: var(--quest-failed); }
+	.status-pip[data-status='escalated'] { background: var(--quest-escalated); }
+	.status-pip[data-status='pending_triage'] { background: var(--quest-pending-triage); }
 
 	.empty-column {
 		text-align: center;
@@ -718,6 +720,16 @@
 	.status-badge[data-status='failed'] {
 		background: var(--quest-failed-container);
 		color: var(--quest-failed);
+	}
+
+	.status-badge[data-status='escalated'] {
+		background: var(--quest-escalated-container);
+		color: var(--quest-escalated);
+	}
+
+	.status-badge[data-status='pending_triage'] {
+		background: var(--quest-pending-triage-container);
+		color: var(--quest-pending-triage);
 	}
 
 	.view-full-link {

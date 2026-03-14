@@ -217,21 +217,16 @@
 		return q ? questTitle(q) : selectedQuestId;
 	});
 
-	// Group workspace quests into parent→children tree using worldStore quest data
+	// Group workspace quests into parent→children tree using parent_quest from API
 	type QuestNode = { quest: WorkspaceQuest; children: WorkspaceQuest[] };
 
 	const questTree = $derived.by((): QuestNode[] => {
-		// Build a set of workspace quest instance IDs for fast lookup
-		const workspaceIds = new Set(quests.map((q) => q.quest_id));
-
-		// Identify parent quests and sub-quests
+		// Identify parent quests and sub-quests using the API-provided parent_quest field
 		const parentNodes = new Map<string, QuestNode>();
 		const subQuests: WorkspaceQuest[] = [];
 
 		for (const wq of quests) {
-			// Try to find this quest in worldStore to check parent_quest
-			const storeQuest = findStoreQuest(wq.quest_id);
-			if (storeQuest?.parent_quest) {
+			if (wq.parent_quest) {
 				subQuests.push(wq);
 			} else {
 				parentNodes.set(wq.quest_id, { quest: wq, children: [] });
@@ -240,15 +235,30 @@
 
 		// Attach sub-quests to their parents
 		for (const sq of subQuests) {
-			const storeQuest = findStoreQuest(sq.quest_id);
-			if (!storeQuest?.parent_quest) continue;
-			const parentInstanceId = extractInstance(storeQuest.parent_quest);
-			const parent = parentNodes.get(parentInstanceId);
+			if (!sq.parent_quest) continue;
+			// parent_quest may be a full entity ID or instance ID — try both
+			const parentInstanceId = extractInstance(sq.parent_quest);
+			const parent = parentNodes.get(parentInstanceId) ?? parentNodes.get(sq.parent_quest);
 			if (parent) {
 				parent.children.push(sq);
 			} else {
-				// Parent has no artifacts — show sub-quest as top-level
-				parentNodes.set(sq.quest_id, { quest: sq, children: [] });
+				// Parent has no artifacts — create a virtual parent node,
+				// or fall back to worldStore for the parent's metadata
+				const storeParent = findStoreQuest(parentInstanceId);
+				if (storeParent) {
+					const virtualParent: WorkspaceQuest = {
+						quest_id: parentInstanceId,
+						title: storeParent.title ?? parentInstanceId,
+						status: storeParent.status ?? '',
+						agent: '',
+						agent_name: '',
+						file_count: 0
+					};
+					parentNodes.set(parentInstanceId, { quest: virtualParent, children: [sq] });
+				} else {
+					// No parent info at all — show sub-quest as top-level
+					parentNodes.set(sq.quest_id, { quest: sq, children: [] });
+				}
 			}
 		}
 
@@ -707,6 +717,16 @@
 	.status-badge[data-status='in_progress'] {
 		background: var(--quest-in-progress-container);
 		color: var(--quest-in-progress);
+	}
+
+	.status-badge[data-status='escalated'] {
+		background: var(--quest-escalated-container);
+		color: var(--quest-escalated);
+	}
+
+	.status-badge[data-status='pending_triage'] {
+		background: var(--quest-pending-triage-container);
+		color: var(--quest-pending-triage);
 	}
 
 	/* Content area: tree on left, preview on right */

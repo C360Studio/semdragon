@@ -15,6 +15,7 @@
 	import { tick } from 'svelte';
 	import { chatStore } from '$lib/stores/chatStore.svelte';
 	import type { QuestBrief, QuestChainBrief } from '$lib/stores/chatStore.svelte';
+	import { questId } from '$types';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import ChatMessageComponent from './ChatMessage.svelte';
 	import ContextChip from './ContextChip.svelte';
@@ -103,6 +104,14 @@
 	function handleDismissChain(msgIndex: number) {
 		chatStore.dismissQuestChain(msgIndex);
 	}
+
+	function handleRespondEscalation(id: string, answer: string) {
+		chatStore.respondToEscalation(questId(id), answer);
+	}
+
+	function handleSubmitTriage(id: string, decision: { path: 'salvage' | 'tpk' | 'escalate' | 'terminal'; analysis: string; anti_patterns?: string[] }) {
+		chatStore.submitTriage(questId(id), decision);
+	}
 </script>
 
 <div class="chat-panel" class:open={chatStore.open} data-testid="chat-panel">
@@ -141,6 +150,11 @@
 		{#if chatStore.messages.length > 0}
 			<span class="header-count">{chatStore.messages.length}</span>
 		{/if}
+		{#if !chatStore.open && chatStore.unresolvedAttentionCount > 0}
+			<span class="header-attention" data-testid="chat-attention-badge">
+				{chatStore.unresolvedAttentionCount} needs attention
+			</span>
+		{/if}
 		<span class="header-hint">{chatStore.open ? '' : 'Click to chat'}</span>
 		{#if chatStore.open && chatStore.messages.length > 0}
 			<button
@@ -165,12 +179,16 @@
 						content={msg.content}
 						questBrief={msg.questBrief}
 						questChain={msg.questChain}
+						attentionCard={msg.attentionCard}
 						onPostQuest={handlePostQuest}
 						onPostChain={handlePostChain}
 						onEditQuest={msg.questBrief ? handleEditQuest : undefined}
 						onEditChain={msg.questChain ? handleEditChain : undefined}
 						onDismissQuest={msg.questBrief ? () => handleDismissQuest(i) : undefined}
 						onDismissChain={msg.questChain ? () => handleDismissChain(i) : undefined}
+						onRespondEscalation={msg.attentionCard ? handleRespondEscalation : undefined}
+						onSubmitTriage={msg.attentionCard ? handleSubmitTriage : undefined}
+						loading={chatStore.loading}
 					/>
 				{:else}
 					<div class="empty-chat">
@@ -327,6 +345,27 @@
 		background: var(--ui-interactive-primary);
 		color: var(--ui-text-on-primary);
 		font-weight: 600;
+	}
+
+	.header-attention {
+		font-size: 0.625rem;
+		padding: 1px 6px;
+		border-radius: var(--radius-full);
+		background: var(--quest-escalated-container);
+		color: var(--quest-escalated);
+		font-weight: 600;
+		animation: attention-pulse 2s ease-in-out infinite;
+	}
+
+	@keyframes attention-pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.6; }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.header-attention {
+			animation: none;
+		}
 	}
 
 	/* Chat body */

@@ -413,6 +413,7 @@ export type GameEventType =
 	| 'quest.lifecycle.completed'
 	| 'quest.lifecycle.failed'
 	| 'quest.lifecycle.escalated'
+	| 'quest.lifecycle.pending_triage'
 	| 'quest.lifecycle.abandoned'
 	| 'agent.progression.xp'
 	| 'agent.progression.levelup'
@@ -603,40 +604,14 @@ export interface TraceInfo {
 
 export type ChatMode = 'converse' | 'quest';
 
-export interface ChatResponseHints {
-	party_required?: boolean;
-	min_party_size?: number;
-	require_human_review?: boolean;
-	review_level?: number;
-	prefer_guild?: string;
-	budget?: number;
-	deadline?: string;
-}
-
 export interface ChatResponse {
 	message: string;
 	mode: ChatMode;
-	quest_brief?: {
-		title: string;
-		description?: string;
-		difficulty?: number;
-		skills?: string[];
-		acceptance?: string[];
-		hints?: ChatResponseHints;
-	};
-	quest_chain?: {
-		quests: Array<{
-			title: string;
-			description?: string;
-			difficulty?: number;
-			skills?: string[];
-			acceptance?: string[];
-			depends_on?: number[];
-			hints?: ChatResponseHints;
-		}>;
-	};
+	quest_brief?: QuestBrief | null;
+	quest_chain?: QuestChainBrief | null;
 	session_id?: string;
 	trace_info?: TraceInfo;
+	tools_used?: string[];
 }
 
 export interface PurchaseRequest {

@@ -60,6 +60,7 @@ const CATEGORY_TO_EVENT_TYPE: Record<string, GameEventType> = {
 	'quest.completed': 'quest.lifecycle.completed',
 	'quest.failed': 'quest.lifecycle.failed',
 	'quest.escalated': 'quest.lifecycle.escalated',
+	'quest.pending_triage': 'quest.lifecycle.pending_triage',
 	'quest.abandoned': 'quest.lifecycle.abandoned',
 	'quest.in_review': 'quest.lifecycle.submitted',
 	'agent.progression.xp': 'agent.progression.xp',

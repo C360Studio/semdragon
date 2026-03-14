@@ -20,13 +20,14 @@
 		children: Snippet;
 	} = $props();
 
-	let expanded = $state(open);
+	let toggleCount = $state(0);
+	let expanded = $derived((toggleCount % 2 === 0) ? open : !open);
 </script>
 
 <section class="settings-section" data-testid="settings-section-{title.toLowerCase().replace(/\s+/g, '-')}">
 	<button
 		class="section-toggle"
-		onclick={() => (expanded = !expanded)}
+		onclick={() => (toggleCount++)}
 		onfocus={onfocus}
 		onmouseenter={onfocus}
 		aria-expanded={expanded}

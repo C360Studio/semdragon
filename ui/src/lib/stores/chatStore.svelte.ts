@@ -11,42 +11,19 @@
  *   (no prefix)    — sends in converse mode (natural language Q&A)
  */
 
-import type { Quest, QuestDifficulty, SkillTag, DMChatSession, ChatMode } from '$types';
+import type {
+	Quest, QuestID, QuestDifficulty, SkillTag, DMChatSession, ChatMode,
+	QuestBrief, QuestChainBrief, QuestChainEntry, QuestHints
+} from '$types';
 import { browser } from '$app/environment';
-import { sendDMChat, createQuest, postQuestChain, getDMSession, ApiError } from '$lib/services/api';
+import { sendDMChat, postQuestChain, getDMSession, answerEscalation, triageQuest, ApiError } from '$lib/services/api';
 import { worldStore } from '$lib/stores/worldStore.svelte';
 
-export type { ChatMode };
+export type { ChatMode, QuestBrief, QuestChainBrief, QuestChainEntry };
+export type QuestHintsBrief = QuestHints;
 import { pageContext } from '$lib/stores/pageContext.svelte';
 
-// =============================================================================
-// TYPES
-// =============================================================================
-
-export interface ChatMessage {
-	role: 'user' | 'dm';
-	content: string;
-	questBrief?: QuestBrief | null;
-	questChain?: QuestChainBrief | null;
-	timestamp: number;
-}
-
-export interface ChatContextItem {
-	type: 'agent' | 'quest' | 'battle' | 'guild' | 'party';
-	id: string;
-	label: string;
-}
-
-export interface QuestHintsBrief {
-	party_required?: boolean;
-	min_party_size?: number;
-	require_human_review?: boolean;
-	review_level?: number;
-	prefer_guild?: string;
-	budget?: number;
-	deadline?: string;
-}
-
+// QuestScenario — matches the generated schema from domain.QuestScenario.
 export interface QuestScenario {
 	name: string;
 	description: string;
@@ -54,29 +31,38 @@ export interface QuestScenario {
 	depends_on?: string[];
 }
 
-export interface QuestBrief {
-	title: string;
-	description?: string;
-	difficulty?: QuestDifficulty;
-	skills?: SkillTag[];
-	acceptance?: string[];
-	scenarios?: QuestScenario[];
-	hints?: QuestHintsBrief;
+// =============================================================================
+// TYPES
+// =============================================================================
+
+export interface AttentionCard {
+	type: 'escalation' | 'triage';
+	questId: QuestID;
+	questTitle: string;
+	agentName?: string;
+	question?: string;
+	failureReason?: string;
+	failureType?: string;
+	attempts?: number;
+	maxAttempts?: number;
+	resolved: boolean;
+	resolvedAnswer?: string;
+	resolvedPath?: string;
 }
 
-export interface QuestChainBrief {
-	quests: QuestChainEntry[];
+export interface ChatMessage {
+	role: 'user' | 'dm' | 'system';
+	content: string;
+	questBrief?: QuestBrief | null;
+	questChain?: QuestChainBrief | null;
+	attentionCard?: AttentionCard | null;
+	timestamp: number;
 }
 
-export interface QuestChainEntry {
-	title: string;
-	description?: string;
-	difficulty?: QuestDifficulty;
-	skills?: SkillTag[];
-	acceptance?: string[];
-	scenarios?: QuestScenario[];
-	depends_on?: number[];
-	hints?: QuestHintsBrief;
+export interface ChatContextItem {
+	type: 'agent' | 'quest' | 'battle' | 'guild' | 'party';
+	id: string;
+	label: string;
 }
 
 // =============================================================================
@@ -257,11 +243,13 @@ async function sendMessage(text: string) {
 	error = null;
 
 	try {
-		// Build history from prior messages (exclude quest brief/chain metadata)
-		const history = messages.slice(0, -1).map((m) => ({
-			role: m.role,
-			content: m.content
-		}));
+		// Build history from prior messages (exclude system messages and quest brief/chain metadata)
+		const history = messages.slice(0, -1)
+			.filter((m) => m.role !== 'system')
+			.map((m) => ({
+				role: m.role as 'user' | 'dm',
+				content: m.content
+			}));
 
 		// Merge pinned context + page context, dedup by type+id
 		const seen = new Set<string>();
@@ -314,25 +302,21 @@ async function sendMessage(text: string) {
 }
 
 async function postQuest(brief: QuestBrief): Promise<Quest | null> {
-	try {
-		const quest = await createQuest(brief.title, {
-			suggested_difficulty: brief.difficulty,
-			suggested_skills: brief.skills,
-			require_human_review: brief.hints?.require_human_review ?? false,
-			review_level: brief.hints?.review_level,
-			party_required: brief.hints?.party_required ?? false,
-			min_party_size: brief.hints?.min_party_size,
-			budget: brief.hints?.budget ?? 0,
-			prefer_guild: brief.hints?.prefer_guild,
-			deadline: brief.hints?.deadline
-		});
-		// Optimistic update — show quest immediately instead of waiting for SSE
-		worldStore.upsertQuest(quest);
-		return quest;
-	} catch (e) {
-		error = e instanceof Error ? e.message : 'Failed to post quest';
-		return null;
-	}
+	// Route through the chain endpoint — it handles all structured spec fields
+	// (goal, requirements, scenarios, hints). A single brief is a 1-entry chain.
+	const chain: QuestChainBrief = {
+		quests: [{
+			title: brief.title,
+			goal: brief.goal,
+			requirements: brief.requirements,
+			scenarios: brief.scenarios as QuestScenario[],
+			difficulty: brief.difficulty,
+			skills: brief.skills,
+			hints: brief.hints,
+		}]
+	};
+	const quests = await postChain(chain);
+	return quests?.[0] ?? null;
 }
 
 async function postChain(chain: QuestChainBrief): Promise<Quest[] | null> {
@@ -413,6 +397,106 @@ async function restoreFromServer(serverSessionId: string): Promise<boolean> {
 }
 
 // =============================================================================
+// ATTENTION CARDS
+// =============================================================================
+
+function buildAttentionMessage(card: AttentionCard): string {
+	if (card.type === 'escalation') {
+		const agent = card.agentName ? ` (${card.agentName})` : '';
+		return `**Quest needs clarification**: ${card.questTitle}${agent}\n\n${card.question ?? 'Agent has a question.'}`;
+	}
+	const attempt = card.attempts && card.maxAttempts ? ` (attempt ${card.attempts}/${card.maxAttempts})` : '';
+	return `**Quest needs triage**: ${card.questTitle}${attempt}\n\n${card.failureReason ?? 'Retries exhausted.'}`;
+}
+
+function injectAttentionCard(card: AttentionCard) {
+	// Dedup — don't inject if there's already an unresolved card for this quest+type
+	const existing = messages.find(
+		(m) => m.attentionCard && m.attentionCard.questId === card.questId && m.attentionCard.type === card.type && !m.attentionCard.resolved
+	);
+	if (existing) return;
+
+	const systemMsg: ChatMessage = {
+		role: 'system',
+		content: buildAttentionMessage(card),
+		attentionCard: card,
+		timestamp: Date.now()
+	};
+	messages = [...messages, systemMsg];
+	if (!open) open = true;
+	saveToLocalStorage();
+}
+
+function resolveAttentionCard(questId: QuestID) {
+	let changed = false;
+	for (let i = 0; i < messages.length; i++) {
+		const card = messages[i].attentionCard;
+		if (card && card.questId === questId && !card.resolved) {
+			messages[i] = { ...messages[i], attentionCard: { ...card, resolved: true } };
+			changed = true;
+		}
+	}
+	if (changed) {
+		messages = [...messages];
+		saveToLocalStorage();
+	}
+}
+
+async function respondToEscalation(questId: QuestID, answer: string): Promise<boolean> {
+	try {
+		loading = true;
+		error = null;
+		await answerEscalation(questId, answer);
+		// Mark card resolved and record the answer
+		for (let i = 0; i < messages.length; i++) {
+			const card = messages[i].attentionCard;
+			if (card && card.questId === questId && card.type === 'escalation' && !card.resolved) {
+				messages[i] = { ...messages[i], attentionCard: { ...card, resolved: true, resolvedAnswer: answer } };
+			}
+		}
+		messages = [...messages];
+		saveToLocalStorage();
+		return true;
+	} catch (e) {
+		error = e instanceof Error ? e.message : 'Failed to send clarification';
+		return false;
+	} finally {
+		loading = false;
+	}
+}
+
+async function submitTriage(
+	questId: QuestID,
+	decision: { path: 'salvage' | 'tpk' | 'escalate' | 'terminal'; analysis: string; salvaged_output?: unknown; anti_patterns?: string[] }
+): Promise<boolean> {
+	try {
+		loading = true;
+		error = null;
+		await triageQuest(questId, decision);
+		// Mark card resolved and record the path
+		for (let i = 0; i < messages.length; i++) {
+			const card = messages[i].attentionCard;
+			if (card && card.questId === questId && card.type === 'triage' && !card.resolved) {
+				messages[i] = { ...messages[i], attentionCard: { ...card, resolved: true, resolvedPath: decision.path } };
+			}
+		}
+		messages = [...messages];
+		saveToLocalStorage();
+		return true;
+	} catch (e) {
+		error = e instanceof Error ? e.message : 'Failed to submit triage decision';
+		return false;
+	} finally {
+		loading = false;
+	}
+}
+
+/** Count of unresolved attention cards in the chat. */
+const unresolvedAttentionCount = $derived(
+	messages.filter((m) => m.attentionCard && !m.attentionCard.resolved).length
+);
+
+// =============================================================================
 // EXPORT
 // =============================================================================
 
@@ -438,5 +522,10 @@ export const chatStore = {
 	clearMessages,
 	dismissQuestBrief,
 	dismissQuestChain,
-	restoreFromServer
+	restoreFromServer,
+	injectAttentionCard,
+	resolveAttentionCard,
+	respondToEscalation,
+	submitTriage,
+	get unresolvedAttentionCount() { return unresolvedAttentionCount; }
 };

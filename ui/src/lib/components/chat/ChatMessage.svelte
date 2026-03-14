@@ -6,19 +6,24 @@
 	 * quest_brief or quest_chain is attached to the message.
 	 */
 
-	import type { QuestBrief, QuestChainBrief, QuestScenario } from '$lib/stores/chatStore.svelte';
+	import type { QuestBrief, QuestChainBrief, QuestScenario, AttentionCard as AttentionCardType } from '$lib/stores/chatStore.svelte';
+	import AttentionCard from './AttentionCard.svelte';
 
 	interface ChatMessageProps {
-		role: 'user' | 'dm';
+		role: 'user' | 'dm' | 'system';
 		content: string;
 		questBrief?: QuestBrief | null;
 		questChain?: QuestChainBrief | null;
+		attentionCard?: AttentionCardType | null;
 		onPostQuest?: (brief: QuestBrief) => void;
 		onPostChain?: (chain: QuestChainBrief) => void;
 		onEditQuest?: (brief: QuestBrief) => void;
 		onEditChain?: (chain: QuestChainBrief) => void;
 		onDismissQuest?: () => void;
 		onDismissChain?: () => void;
+		onRespondEscalation?: (questId: string, answer: string) => void;
+		onSubmitTriage?: (questId: string, decision: { path: 'salvage' | 'tpk' | 'escalate' | 'terminal'; analysis: string; anti_patterns?: string[] }) => void;
+		loading?: boolean;
 	}
 
 	let {
@@ -26,12 +31,16 @@
 		content,
 		questBrief,
 		questChain,
+		attentionCard,
 		onPostQuest,
 		onPostChain,
 		onEditQuest,
 		onEditChain,
 		onDismissQuest,
-		onDismissChain
+		onDismissChain,
+		onRespondEscalation,
+		onSubmitTriage,
+		loading = false
 	}: ChatMessageProps = $props();
 
 	const QuestDifficultyNames: Record<number, string> = {
@@ -81,18 +90,22 @@
 
 <div class="chat-message" data-role={role} data-testid="chat-message">
 	<div class="message-header">
-		<span class="message-role">{role === 'dm' ? 'DM' : 'You'}</span>
+		<span class="message-role">{role === 'dm' ? 'DM' : role === 'system' ? 'System' : 'You'}</span>
 	</div>
 	<div class="message-content">
 		{content}
 	</div>
 
+	{#if attentionCard}
+		<AttentionCard card={attentionCard} {onRespondEscalation} {onSubmitTriage} {loading} />
+	{/if}
+
 	{#if questBrief}
 		<div class="quest-preview" data-testid="quest-preview">
 			<div class="preview-header">{questIsParty ? 'Party' : 'Solo'} Quest Brief</div>
 			<div class="preview-title">{questBrief.title}</div>
-			{#if questBrief.description}
-				<div class="preview-desc">{questBrief.description}</div>
+			{#if questBrief.goal}
+				<div class="preview-desc">{questBrief.goal}</div>
 			{/if}
 			<div class="preview-meta">
 				{#if questBrief.difficulty != null}
@@ -111,9 +124,9 @@
 					{/each}
 				{/if}
 			</div>
-			{#if questBrief.acceptance?.length}
+			{#if questBrief.requirements?.length}
 				<ul class="preview-acceptance">
-					{#each questBrief.acceptance as criterion}
+					{#each questBrief.requirements as criterion}
 						<li>{criterion}</li>
 					{/each}
 				</ul>
@@ -225,6 +238,13 @@
 		align-self: flex-start;
 	}
 
+	.chat-message[data-role='system'] {
+		background: var(--ui-surface-tertiary);
+		border: 1px solid var(--ui-border-subtle);
+		align-self: stretch;
+		max-width: 100%;
+	}
+
 	.message-header {
 		font-size: 0.625rem;
 		text-transform: uppercase;
@@ -290,8 +310,8 @@
 	}
 
 	.meta-tag.party {
-		background: var(--quest-in_progress-container, #fff3e0);
-		color: var(--quest-in_progress, #e65100);
+		background: var(--quest-in-progress-container);
+		color: var(--quest-in-progress);
 	}
 
 	.preview-acceptance {

@@ -9,6 +9,8 @@
 	import type { Snippet } from 'svelte';
 	import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
 	import GameStatusBar from '$lib/components/layout/GameStatusBar.svelte';
+	import ToastContainer from '$lib/components/notifications/ToastContainer.svelte';
+	import { notificationStore } from '$stores/notificationStore.svelte';
 
 	interface LayoutProps {
 		children: Snippet;
@@ -35,6 +37,18 @@
 				// Token stats unavailable — leave defaults.
 			});
 	}
+
+	// Watch for quest status transitions to fire toasts and chat attention cards
+	$effect(() => {
+		notificationStore.watchQuests(worldStore.questList, worldStore.synced);
+	});
+
+	// Auto-resolve attention cards when quest status changes away from escalated/pending_triage
+	$effect(() => {
+		if (worldStore.synced) {
+			notificationStore.reconcileAttentionCards(worldStore.questList);
+		}
+	});
 
 	onMount(() => {
 		if (browser) {
@@ -86,6 +100,7 @@
 		{@render children()}
 	</div>
 	<ChatPanel />
+	<ToastContainer />
 </div>
 
 <style>

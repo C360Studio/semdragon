@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { worldStore } from '$stores/worldStore.svelte';
+	import { notificationStore } from '$stores/notificationStore.svelte';
+	import { chatStore } from '$stores/chatStore.svelte';
 	import { api } from '$services/api';
 	import { formatTokenCount, formatCostUSD } from '$lib/utils/format';
 
@@ -76,6 +78,16 @@
 			</span>
 		{/if}
 	</div>
+	{#if notificationStore.needsAttentionCount > 0}
+		<button
+			class="attention-badge"
+			onclick={() => { chatStore.open = true; }}
+			title="{notificationStore.needsAttentionCount} quest(s) need attention"
+			data-testid="attention-badge"
+		>
+			{notificationStore.needsAttentionCount} needs attention
+		</button>
+	{/if}
 	<div class="status-right">
 		{#if tokensUsed > 0 || tokensLimit > 0}
 			<span
@@ -217,5 +229,33 @@
 	.toggle-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.attention-badge {
+		padding: 2px 8px;
+		border-radius: var(--radius-full);
+		font-size: 0.675rem;
+		font-weight: 600;
+		background: var(--quest-escalated-container);
+		color: var(--quest-escalated);
+		border: none;
+		cursor: pointer;
+		animation: attention-pulse 2s ease-in-out infinite;
+		transition: opacity 150ms ease;
+	}
+
+	.attention-badge:hover {
+		opacity: 0.8;
+	}
+
+	@keyframes attention-pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.6; }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.attention-badge {
+			animation: none;
+		}
 	}
 </style>
