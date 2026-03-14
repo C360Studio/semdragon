@@ -2293,8 +2293,9 @@ func graphSearchHandler(graphqlURL string) ToolHandler {
 	}
 }
 
-// buildGraphSearchQuery constructs a parameterized GraphQL request for the given query_type.
-// Uses GraphQL variables instead of string interpolation to prevent injection.
+// buildGraphSearchQuery constructs an inline GraphQL request for the given query_type.
+// Uses inline arguments for simplicity and compatibility across graph-gateway versions.
+// All string values are escaped via sanitizeGraphQLString to prevent injection.
 func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (graphQLRequest, error) {
 	switch queryType {
 	case "entity":
@@ -2303,8 +2304,7 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 			return graphQLRequest{}, fmt.Errorf("entity_id is required for entity queries")
 		}
 		return graphQLRequest{
-			Query:     `query($id: String!) { entity(id: $id) { id triples } }`,
-			Variables: map[string]any{"id": id},
+			Query: fmt.Sprintf(`{ entity(id: %q) { id triples } }`, sanitizeGraphQLString(id)),
 		}, nil
 
 	case "prefix":
@@ -2313,8 +2313,7 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 			return graphQLRequest{}, fmt.Errorf("prefix is required for prefix queries")
 		}
 		return graphQLRequest{
-			Query:     `query($prefix: String!, $limit: Int) { entitiesByPrefix(prefix: $prefix, limit: $limit) { id type } }`,
-			Variables: map[string]any{"prefix": prefix, "limit": limit},
+			Query: fmt.Sprintf(`{ entitiesByPrefix(prefix: %q, limit: %d) { id type } }`, sanitizeGraphQLString(prefix), limit),
 		}, nil
 
 	case "predicate":
@@ -2323,8 +2322,7 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 			return graphQLRequest{}, fmt.Errorf("predicate is required for predicate queries")
 		}
 		return graphQLRequest{
-			Query:     `query($predicate: String!, $limit: Int) { entitiesByPredicate(predicate: $predicate, limit: $limit) { id type } }`,
-			Variables: map[string]any{"predicate": predicate, "limit": limit},
+			Query: fmt.Sprintf(`{ entitiesByPredicate(predicate: %q, limit: %d) { id type } }`, sanitizeGraphQLString(predicate), limit),
 		}, nil
 
 	case "relationships":
@@ -2333,8 +2331,7 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 			return graphQLRequest{}, fmt.Errorf("entity_id is required for relationships queries")
 		}
 		return graphQLRequest{
-			Query:     `query($id: String!) { relationships(entityId: $id) { from to predicate } }`,
-			Variables: map[string]any{"id": id},
+			Query: fmt.Sprintf(`{ relationships(entityId: %q) { from to predicate } }`, sanitizeGraphQLString(id)),
 		}, nil
 
 	case "search":
@@ -2342,14 +2339,34 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 		if text == "" {
 			return graphQLRequest{}, fmt.Errorf("search_text is required for search queries")
 		}
+		// maxCommunities controls how many communities are searched — each can
+		// return many entities, so cap it lower than the general limit to keep
+		// response sizes manageable.
+		maxCommunities := min(limit, 5)
 		return graphQLRequest{
-			Query:     `query($query: String!, $maxCommunities: Int) { globalSearch(query: $query, maxCommunities: $maxCommunities) { entities { id type } count } }`,
-			Variables: map[string]any{"query": text, "maxCommunities": limit},
+			Query: fmt.Sprintf(`{ globalSearch(query: %q, maxCommunities: %d) { entities { id type } count } }`, sanitizeGraphQLString(text), maxCommunities),
 		}, nil
 
 	default:
 		return graphQLRequest{}, fmt.Errorf("invalid query_type: %q (must be one of entity, prefix, predicate, relationships, search)", queryType)
 	}
+}
+
+// sanitizeGraphQLString removes characters that could break out of a GraphQL
+// string literal. Entity IDs and search text are the only user-supplied strings
+// — they should contain only alphanumerics, dots, hyphens, underscores, and spaces.
+func sanitizeGraphQLString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '"' || r == '\\' || r == '\n' || r == '\r':
+			// Skip characters that could break GraphQL string boundaries
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // executeGraphQLQuery POSTs a GraphQL request to the endpoint and returns a formatted text summary.
@@ -2385,9 +2402,20 @@ func executeGraphQLQuery(ctx context.Context, client *http.Client, graphqlURL st
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, snippet)
 	}
 
+	if len(respBody) == 0 {
+		return "No results found. The graph may not have data for this query yet.", nil
+	}
+
+	// If the response was truncated by the size limit, we can't parse it as
+	// JSON. Return a descriptive content message rather than a hard error so
+	// the agent can continue with other tools.
+	if len(respBody) > maxHTTPResponseSize {
+		return "Graph query returned a very large response that was truncated. Try a more specific query (e.g., narrower prefix, specific entity_id, or add a limit).", nil
+	}
+
 	var gqlResp graphQLResponse
 	if err := json.Unmarshal(respBody, &gqlResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
+		return "", fmt.Errorf("failed to parse response (body length %d): %w", len(respBody), err)
 	}
 
 	if len(gqlResp.Errors) > 0 {

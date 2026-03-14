@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/c360studio/semdragons/domain"
@@ -303,13 +304,13 @@ func TestGraphSearchHandler(t *testing.T) {
 	t.Run("limit capping", func(t *testing.T) {
 		t.Parallel()
 
-		// The mock captures the decoded request so we can inspect the variables.
-		var capturedVars map[string]any
+		// The mock captures the decoded query so we can inspect the inline limit.
+		var capturedQuery string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, _ := io.ReadAll(r.Body)
 			var gqlReq graphQLRequest
 			_ = json.Unmarshal(body, &gqlReq)
-			capturedVars = gqlReq.Variables
+			capturedQuery = gqlReq.Query
 
 			resp := graphQLMockResponse{
 				Data: map[string]any{
@@ -337,21 +338,58 @@ func TestGraphSearchHandler(t *testing.T) {
 			t.Fatalf("unexpected error: %s", result.Error)
 		}
 
-		// Verify the capped limit was sent in the GraphQL variables.
-		if capturedVars == nil {
-			t.Fatal("mock server did not capture request variables")
+		// Verify the capped limit appears in the inline query (should be 100, not 999).
+		if capturedQuery == "" {
+			t.Fatal("mock server did not capture query")
 		}
-		limitVal, ok := capturedVars["limit"]
-		if !ok {
-			t.Fatal("limit variable not found in captured GraphQL request")
+		if !strings.Contains(capturedQuery, "limit: 100") {
+			t.Errorf("query should contain capped limit of 100, got: %s", capturedQuery)
 		}
-		// JSON numbers unmarshal as float64.
-		limitFloat, ok := limitVal.(float64)
-		if !ok {
-			t.Fatalf("limit variable is %T, want float64", limitVal)
+	})
+
+	t.Run("search maxCommunities capped at 5", func(t *testing.T) {
+		t.Parallel()
+
+		var capturedQuery string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			var gqlReq graphQLRequest
+			_ = json.Unmarshal(body, &gqlReq)
+			capturedQuery = gqlReq.Query
+
+			resp := graphQLMockResponse{
+				Data: map[string]any{
+					"globalSearch": map[string]any{
+						"entities": []any{},
+						"count":    0,
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		defer srv.Close()
+
+		reg := NewToolRegistry()
+		reg.RegisterGraphSearch(srv.URL)
+
+		agent, quest := agentAndQuest()
+		call := makeToolCall("graph_search", map[string]any{
+			"query_type":  "search",
+			"search_text": "test query",
+			"limit":       float64(50), // above the maxCommunities cap of 5
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+
+		if result.Error != "" {
+			t.Fatalf("unexpected error: %s", result.Error)
 		}
-		if int(limitFloat) > 100 {
-			t.Errorf("limit sent to server = %d, want <= 100", int(limitFloat))
+
+		if capturedQuery == "" {
+			t.Fatal("mock server did not capture query")
+		}
+		if !strings.Contains(capturedQuery, "maxCommunities: 5") {
+			t.Errorf("query should contain maxCommunities: 5, got: %s", capturedQuery)
 		}
 	})
 }
