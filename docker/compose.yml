@@ -47,6 +47,7 @@ services:
       start_period: 30s
 
   sandbox:
+    image: ghcr.io/c360studio/semdragon/sandbox:latest
     build:
       context: ..
       dockerfile: docker/sandbox.Dockerfile
