@@ -2047,12 +2047,12 @@ func TestMaxIterationsForDifficulty(t *testing.T) {
 		difficulty domain.QuestDifficulty
 		want       int
 	}{
-		{"trivial base 20", 20, domain.DifficultyTrivial, 10},
-		{"easy base 20", 20, domain.DifficultyEasy, 12},
-		{"moderate base 20", 20, domain.DifficultyModerate, 20},
-		{"hard base 20", 20, domain.DifficultyHard, 25},
-		{"epic base 20", 20, domain.DifficultyEpic, 30},
-		{"legendary base 20", 20, domain.DifficultyLegendary, 40},
+		{"trivial base 25", 25, domain.DifficultyTrivial, 12},
+		{"easy base 25", 25, domain.DifficultyEasy, 15},
+		{"moderate base 25", 25, domain.DifficultyModerate, 25},
+		{"hard base 25", 25, domain.DifficultyHard, 31},
+		{"epic base 25", 25, domain.DifficultyEpic, 37},
+		{"legendary base 25", 25, domain.DifficultyLegendary, 50},
 		{"minimum floor", 4, domain.DifficultyTrivial, 10},
 	}
 	for _, tt := range tests {

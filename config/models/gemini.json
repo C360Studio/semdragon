@@ -101,7 +101,6 @@
   "components": {
     "agentic-loop": {
       "config": {
-        "max_iterations": 15,
         "context": {
           "tool_result_max_age": 10,
           "summarization_model": "gemini-flash"
@@ -112,11 +111,6 @@
       "config": {
         "timeout": "300s",
         "retry": { "max_attempts": 2 }
-      }
-    },
-    "questbridge": {
-      "config": {
-        "max_iterations": 15
       }
     }
   }

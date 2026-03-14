@@ -67,6 +67,18 @@ export default defineConfig({
 		{
 			name: 'tier2-scenarios',
 			testMatch: /scenarios\//,
+			testIgnore: /scenarios\/epic/,
+			fullyParallel: false,
+			retries: 0,
+			workers: 1,
+			use: { ...devices['Desktop Chrome'] }
+		},
+		// Tier 3: Epic quest pipeline (serial, 1 worker, real LLM only).
+		// Long-running test exercising full party quest DAG pipeline with
+		// a complex real-world prompt. Opt-in via task e2e:epic:<provider>.
+		{
+			name: 'tier3-epic',
+			testMatch: /scenarios\/epic/,
 			fullyParallel: false,
 			retries: 0,
 			workers: 1,

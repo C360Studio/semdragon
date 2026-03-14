@@ -371,7 +371,7 @@
       "name": "agentic-loop",
       "enabled": true,
       "config": {
-        "max_iterations": 40,
+        "max_iterations": 50,
         "timeout": "300s",
         "stream_name": "AGENT",
         "loops_bucket": "AGENT_LOOPS",
@@ -417,7 +417,7 @@
         "domain": "software",
         "stream_name": "AGENT",
         "quest_loops_bucket": "QUEST_LOOPS",
-        "max_iterations": 20,
+        "max_iterations": 25,
         "enable_builtins": true,
         "default_role": "general",
         "sandbox_dir": "/workspace",

@@ -411,20 +411,8 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 		return fmt.Errorf("quest not available: %s", quest.Status)
 	}
 
-	// Dependency gate: all quests listed in DependsOn must be completed before
-	// this quest can be claimed. This enforces sequential chains for solo quests;
-	// party sub-quest DAGs are gated separately by the questdagexec processor.
-	// INVARIANT: QuestCompleted is terminal for dependency resolution — FailQuest
-	// only operates on in_progress/in_review, so a completed dep cannot regress.
-	for _, depID := range quest.DependsOn {
-		dep, depErr := c.getQuestByID(ctx, depID)
-		if depErr != nil {
-			c.errorsCount.Add(1)
-			return errs.Wrap(depErr, "QuestBoard", "ClaimQuest", "load dependency")
-		}
-		if dep.Status != domain.QuestCompleted {
-			return fmt.Errorf("quest has unmet dependencies: %s is %s", depID, dep.Status)
-		}
+	if err := c.checkDependenciesMet(ctx, quest); err != nil {
+		return err
 	}
 
 	// Party membership gate: if the quest belongs to a party, only members of
@@ -480,6 +468,22 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 	return nil
 }
 
+// checkDependenciesMet verifies all quests in DependsOn are completed.
+// Used by ClaimQuest, ClaimQuestForParty, and ClaimAndStartForParty to enforce
+// sequential ordering in quest chains.
+func (c *Component) checkDependenciesMet(ctx context.Context, quest *domain.Quest) error {
+	for _, depID := range quest.DependsOn {
+		dep, err := c.getQuestByID(ctx, depID)
+		if err != nil {
+			return errs.Wrap(err, "QuestBoard", "checkDependenciesMet", "load dependency")
+		}
+		if dep.Status != domain.QuestCompleted {
+			return fmt.Errorf("quest has unmet dependencies: %s is %s", depID, dep.Status)
+		}
+	}
+	return nil
+}
+
 // ClaimQuestForParty assigns a quest to a party.
 func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error {
 	if !c.running.Load() {
@@ -522,6 +526,10 @@ func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.Quest
 
 	if domain.TierFromLevel(agent.Level) < quest.MinTier {
 		return errors.New("party lead tier too low")
+	}
+
+	if err := c.checkDependenciesMet(ctx, quest); err != nil {
+		return err
 	}
 
 	// Update quest state
@@ -589,6 +597,10 @@ func (c *Component) ClaimAndStartForParty(ctx context.Context, questID domain.Qu
 
 	if domain.TierFromLevel(agent.Level) < quest.MinTier {
 		return errors.New("party lead tier too low")
+	}
+
+	if err := c.checkDependenciesMet(ctx, quest); err != nil {
+		return err
 	}
 
 	// Set quest state directly to in_progress — skip the claimed intermediate

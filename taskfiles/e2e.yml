@@ -111,6 +111,44 @@ tasks:
         ignore_error: true
       - task: maybe:down
 
+  # Epic Tier 3 — real LLM only, exercises full party quest DAG pipeline
+
+  epic:gemini:
+    desc: Run Epic Tier 3 tests with Gemini
+    cmds:
+      - task: install
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/gemini.json }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
+        ignore_error: true
+      - task: maybe:down
+
+  epic:anthropic:
+    desc: Run Epic Tier 3 tests with Anthropic Claude
+    cmds:
+      - task: install
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/anthropic.json }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
+        ignore_error: true
+      - task: maybe:down
+
+  epic:openai:
+    desc: Run Epic Tier 3 tests with OpenAI
+    cmds:
+      - task: install
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/openai.json }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
+        ignore_error: true
+      - task: maybe:down
+
   mock:
     desc: Start mock E2E stack (use with e2e:spec to run individual specs)
     cmds:

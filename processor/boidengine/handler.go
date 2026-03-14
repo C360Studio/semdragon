@@ -340,10 +340,28 @@ func (c *Component) computeAndPublish() {
 	c.questsMu.RLock()
 	quests := make([]domain.Quest, 0, len(c.quests))
 	for _, quest := range c.quests {
-		// Only include posted (available) quests
-		if quest.Status == domain.QuestPosted {
-			quests = append(quests, *quest)
+		// Only include posted (available) quests with all dependencies met
+		if quest.Status != domain.QuestPosted {
+			continue
 		}
+		if len(quest.DependsOn) > 0 {
+			blocked := false
+			for _, depID := range quest.DependsOn {
+				if dep, ok := c.quests[string(depID)]; ok {
+					if dep.Status != domain.QuestCompleted {
+						blocked = true
+						break
+					}
+				} else {
+					blocked = true
+					break
+				}
+			}
+			if blocked {
+				continue
+			}
+		}
+		quests = append(quests, *quest)
 	}
 	c.questsMu.RUnlock()
 
