@@ -54,8 +54,18 @@ type ClarificationAnswerer interface {
 // Also consumes loop completion/failure events to emit executor lifecycle events.
 // =============================================================================
 
+// Loop type constants for QuestLoopMapping.LoopType.
+const (
+	LoopTypeExecution = "execution" // Quest execution loop (questbridge)
+	LoopTypeReview    = "review"    // Lead review loop (questdagexec)
+	LoopTypeClarify   = "clarify"   // Lead clarification loop (questdagexec)
+)
+
 // QuestLoopMapping tracks the relationship between a quest and its agentic loop.
 // Persisted in the QUEST_LOOPS KV bucket for crash recovery.
+//
+// Execution loops are keyed by questID. Review and clarification loops are
+// keyed by loopID (since multiple loops share the same quest ID).
 type QuestLoopMapping struct {
 	LoopID     string           `json:"loop_id"`
 	QuestID    domain.QuestID   `json:"quest_id"`
@@ -63,6 +73,7 @@ type QuestLoopMapping struct {
 	SandboxDir string           `json:"sandbox_dir,omitempty"`
 	TrustTier  domain.TrustTier `json:"trust_tier"`
 	StartedAt  time.Time        `json:"started_at"`
+	LoopType   string           `json:"loop_type,omitempty"` // "execution", "review", "clarify"
 }
 
 // Component implements the QuestBridge processor as a semstreams component.

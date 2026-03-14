@@ -20,6 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/partycoord"
@@ -83,6 +85,10 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
+
+	// questLoopsBucket is the QUEST_LOOPS KV bucket for writing review/clarify
+	// loop mappings that questbridge uses to track loop completion.
+	questLoopsBucket jetstream.KeyValue
 
 	// events is the unified channel all producers write to. The event loop
 	// is the sole reader. Buffered to absorb bursts without blocking producers.
@@ -306,6 +312,28 @@ func (c *Component) Start(ctx context.Context) error {
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 	if err := c.graph.EnsureBucket(ctx); err != nil {
 		return fmt.Errorf("ensure board bucket: %w", err)
+	}
+
+	// Open QUEST_LOOPS bucket for writing review/clarify loop mappings.
+	// Retry once after a short sleep to handle startup ordering — questdagexec
+	// may start before questbridge creates the bucket.
+	if c.config.QuestLoopsBucket != "" {
+		js, err := c.deps.NATSClient.JetStream()
+		if err != nil {
+			return fmt.Errorf("get jetstream for quest loops bucket: %w", err)
+		}
+		bucket, err := js.KeyValue(ctx, c.config.QuestLoopsBucket)
+		if err != nil {
+			// Bucket may not exist yet — wait briefly and retry.
+			time.Sleep(500 * time.Millisecond)
+			bucket, err = js.KeyValue(ctx, c.config.QuestLoopsBucket)
+		}
+		if err != nil {
+			c.logger.Warn("QUEST_LOOPS bucket not available — review/clarify loop mappings will not be written",
+				"bucket", c.config.QuestLoopsBucket, "error", err)
+		} else {
+			c.questLoopsBucket = bucket
+		}
 	}
 
 	// Initialize in-memory state maps and the event channel.

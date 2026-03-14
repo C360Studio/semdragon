@@ -365,6 +365,10 @@ func (c *Component) dispatchLeadReview(ctx context.Context, dagState *DAGExecuti
 		return
 	}
 
+	// Write QUEST_LOOPS mapping keyed by loopID so questbridge can track
+	// this review loop's completion and record token usage.
+	c.writeLoopMapping(ctx, loopID, subQuestID, leadAgentID, "review")
+
 	c.logger.Info("dispatched lead review task",
 		"execution_id", dagState.ExecutionID,
 		"node_id", nodeID,
@@ -448,6 +452,10 @@ func (c *Component) dispatchLeadClarification(ctx context.Context, dagState *DAG
 		return
 	}
 
+	// Write QUEST_LOOPS mapping keyed by loopID so questbridge can track
+	// this clarification loop's completion and record token usage.
+	c.writeLoopMapping(ctx, loopID, subQuestID, leadAgentID, "clarify")
+
 	c.logger.Info("dispatched lead clarification task",
 		"execution_id", dagState.ExecutionID,
 		"node_id", nodeID,
@@ -455,6 +463,42 @@ func (c *Component) dispatchLeadClarification(ctx context.Context, dagState *DAG
 		"loop_id", loopID,
 		"lead_agent_id", leadAgentID,
 		"member_id", memberID)
+}
+
+// writeLoopMapping persists a quest-loop mapping in the QUEST_LOOPS KV bucket
+// keyed by loopID. This allows questbridge to find the mapping when the review
+// or clarify loop completes, record token usage, and emit observability events.
+//
+// The mapping JSON shape matches questbridge.QuestLoopMapping (we can't import
+// it directly due to import cycle constraints).
+func (c *Component) writeLoopMapping(ctx context.Context, loopID, questID, agentID, loopType string) {
+	if c.questLoopsBucket == nil {
+		return
+	}
+	mapping := struct {
+		LoopID    string  `json:"loop_id"`
+		QuestID   string  `json:"quest_id"`
+		AgentID   string  `json:"agent_id"`
+		TrustTier float64 `json:"trust_tier"`
+		StartedAt string  `json:"started_at"`
+		LoopType  string  `json:"loop_type"`
+	}{
+		LoopID:    loopID,
+		QuestID:   questID,
+		AgentID:   agentID,
+		TrustTier: float64(domain.TierMaster), // review/clarify loops are always lead (Master+)
+		StartedAt: time.Now().Format(time.RFC3339),
+		LoopType:  loopType,
+	}
+	data, err := json.Marshal(mapping)
+	if err != nil {
+		c.logger.Error("failed to marshal loop mapping", "loop_id", loopID, "error", err)
+		return
+	}
+	if _, err := c.questLoopsBucket.Put(ctx, loopID, data); err != nil {
+		c.logger.Warn("failed to write QUEST_LOOPS mapping for loop",
+			"loop_id", loopID, "quest_id", questID, "loop_type", loopType, "error", err)
+	}
 }
 
 // buildLeadClarificationPrompt constructs the system prompt for the lead's

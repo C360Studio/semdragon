@@ -380,7 +380,6 @@
           "enabled": true,
           "compact_threshold": 0.6,
           "tool_result_max_age": 3,
-          "headroom_tokens": 6400,
           "summarization_model": "ollama-coder"
         }
       }
@@ -468,7 +467,8 @@
       "config": {
         "org": "local",
         "platform": "dev",
-        "board": "board1"
+        "board": "board1",
+        "quest_loops_bucket": "QUEST_LOOPS"
       }
     },
     "autonomy": {

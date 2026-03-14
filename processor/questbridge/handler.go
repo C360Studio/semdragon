@@ -339,6 +339,7 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 		SandboxDir: c.config.SandboxDir,
 		TrustTier:  agent.Tier,
 		StartedAt:  time.Now(),
+		LoopType:   LoopTypeExecution,
 	}
 	mappingData, marshalErr := json.Marshal(mapping)
 	if marshalErr != nil {
@@ -496,7 +497,7 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 	}
 
 	questID := domain.QuestID(event.TaskID)
-	mapping := c.findMapping(ctx, string(questID))
+	mapping := c.findMapping(ctx, string(questID), event.LoopID)
 	if mapping == nil {
 		c.logger.Debug("no mapping found for completed loop",
 			"task_id", event.TaskID, "loop_id", event.LoopID)
@@ -509,8 +510,29 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 		c.tokenLedger.Record(ctx, event.TokensIn, event.TokensOut, "quest", endpointName)
 	}
 
-	// Transition quest to completed with the LLM output as result.
-	c.completeQuest(ctx, questID, mapping, event.Result)
+	// Determine cleanup key: execution loops are keyed by questID,
+	// review/clarify loops are keyed by loopID.
+	cleanupKey := string(questID)
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
+		cleanupKey = event.LoopID
+	}
+
+	// Only transition quest state for execution loops. Review and clarify
+	// loops are handled by questdagexec which watches KV state transitions
+	// written by the review/clarify tools.
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
+		c.logger.Info("DAG loop completed via agentic loop",
+			"quest_id", questID,
+			"loop_id", event.LoopID,
+			"loop_type", mapping.LoopType,
+			"iterations", event.Iterations)
+	} else {
+		c.completeQuest(ctx, questID, mapping, event.Result)
+		c.logger.Info("quest execution completed via agentic loop",
+			"quest_id", questID,
+			"loop_id", event.LoopID,
+			"iterations", event.Iterations)
+	}
 
 	now := time.Now()
 	if err := executor.SubjectExecutionCompleted.Publish(ctx, c.deps.NATSClient, executor.ExecutionCompletedPayload{
@@ -528,14 +550,9 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 		c.errorsCount.Add(1)
 	}
 
-	c.cleanupMapping(ctx, string(questID))
+	c.cleanupMapping(ctx, cleanupKey)
 	c.loopsCompleted.Add(1)
 	c.lastActivity.Store(time.Now())
-
-	c.logger.Info("quest execution completed via agentic loop",
-		"quest_id", questID,
-		"loop_id", event.LoopID,
-		"iterations", event.Iterations)
 }
 
 // handleLoopFailed emits an executor failure event for the failed loop.
@@ -556,7 +573,7 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 	}
 
 	questID := domain.QuestID(event.TaskID)
-	mapping := c.findMapping(ctx, string(questID))
+	mapping := c.findMapping(ctx, string(questID), event.LoopID)
 	if mapping == nil {
 		c.logger.Debug("no mapping found for failed loop",
 			"task_id", event.TaskID, "loop_id", event.LoopID)
@@ -569,8 +586,27 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 		c.tokenLedger.Record(ctx, event.TokensIn, event.TokensOut, "quest", endpointName)
 	}
 
-	// Transition quest to failed.
-	c.failQuest(ctx, questID, mapping, event.Error)
+	// Determine cleanup key: execution loops keyed by questID,
+	// review/clarify loops keyed by loopID.
+	cleanupKey := string(questID)
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
+		cleanupKey = event.LoopID
+	}
+
+	// Only transition quest state for execution loops.
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
+		c.logger.Warn("DAG loop failed via agentic loop",
+			"quest_id", questID,
+			"loop_id", event.LoopID,
+			"loop_type", mapping.LoopType,
+			"error", event.Error)
+	} else {
+		c.failQuest(ctx, questID, mapping, event.Error)
+		c.logger.Info("quest execution failed via agentic loop",
+			"quest_id", questID,
+			"loop_id", event.LoopID,
+			"error", event.Error)
+	}
 
 	now := time.Now()
 	if err := executor.SubjectExecutionFailed.Publish(ctx, c.deps.NATSClient, executor.ExecutionFailedPayload{
@@ -587,21 +623,16 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 		c.errorsCount.Add(1)
 	}
 
-	c.cleanupMapping(ctx, string(questID))
+	c.cleanupMapping(ctx, cleanupKey)
 	c.loopsFailed.Add(1)
 	c.lastActivity.Store(time.Now())
-
-	c.logger.Info("quest execution failed via agentic loop",
-		"quest_id", questID,
-		"loop_id", event.LoopID,
-		"error", event.Error)
 }
 
 // handleLoopCancelled handles a LoopCancelledEvent published on agent.complete.*
 // by semstreams alpha.41+. Transitions the quest to failed.
 func (c *Component) handleLoopCancelled(ctx context.Context, event *agentic.LoopCancelledEvent) {
 	questID := domain.QuestID(event.TaskID)
-	mapping := c.findMapping(ctx, string(questID))
+	mapping := c.findMapping(ctx, string(questID), event.LoopID)
 	if mapping == nil {
 		c.logger.Debug("no mapping found for cancelled loop",
 			"task_id", event.TaskID, "loop_id", event.LoopID)
@@ -613,7 +644,16 @@ func (c *Component) handleLoopCancelled(ctx context.Context, event *agentic.Loop
 		reason = "loop cancelled: " + event.CancelledBy
 	}
 
-	c.failQuest(ctx, questID, mapping, reason)
+	// Determine cleanup key.
+	cleanupKey := string(questID)
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
+		cleanupKey = event.LoopID
+	}
+
+	// Only transition quest state for execution loops.
+	if mapping.LoopType != LoopTypeReview && mapping.LoopType != LoopTypeClarify {
+		c.failQuest(ctx, questID, mapping, reason)
+	}
 
 	now := time.Now()
 	if err := executor.SubjectExecutionFailed.Publish(ctx, c.deps.NATSClient, executor.ExecutionFailedPayload{
@@ -629,13 +669,14 @@ func (c *Component) handleLoopCancelled(ctx context.Context, event *agentic.Loop
 		c.errorsCount.Add(1)
 	}
 
-	c.cleanupMapping(ctx, string(questID))
+	c.cleanupMapping(ctx, cleanupKey)
 	c.loopsFailed.Add(1)
 	c.lastActivity.Store(time.Now())
 
-	c.logger.Info("quest execution cancelled via agentic loop",
+	c.logger.Info("loop cancelled via agentic loop",
 		"quest_id", questID,
 		"loop_id", event.LoopID,
+		"loop_type", mapping.LoopType,
 		"cancelled_by", event.CancelledBy)
 }
 
@@ -1477,21 +1518,36 @@ func (c *Component) reconcileOrphanedQuests(ctx context.Context) {
 
 // findMapping looks up a quest-loop mapping first from the in-memory activeLoops
 // cache, then falls back to the QUEST_LOOPS KV bucket for crash-recovered state.
-func (c *Component) findMapping(ctx context.Context, questID string) *QuestLoopMapping {
+//
+// Execution loops are keyed by questID. Review/clarify loops (dispatched by
+// questdagexec) are keyed by loopID since multiple loops share the same quest ID.
+// When the questID lookup misses, loopID is tried as a fallback.
+func (c *Component) findMapping(ctx context.Context, questID, loopID string) *QuestLoopMapping {
+	// Try questID first (execution loops).
 	if v, ok := c.activeLoops.Load(questID); ok {
 		return v.(*QuestLoopMapping)
 	}
-
-	entry, err := c.questLoopsBucket.Get(ctx, questID)
-	if err != nil {
-		return nil
+	if entry, err := c.questLoopsBucket.Get(ctx, questID); err == nil {
+		var mapping QuestLoopMapping
+		if err := json.Unmarshal(entry.Value(), &mapping); err == nil {
+			return &mapping
+		}
 	}
 
-	var mapping QuestLoopMapping
-	if err := json.Unmarshal(entry.Value(), &mapping); err != nil {
-		return nil
+	// Try loopID (review/clarify loops keyed by loopID).
+	if loopID != "" {
+		if v, ok := c.activeLoops.Load(loopID); ok {
+			return v.(*QuestLoopMapping)
+		}
+		if entry, err := c.questLoopsBucket.Get(ctx, loopID); err == nil {
+			var mapping QuestLoopMapping
+			if err := json.Unmarshal(entry.Value(), &mapping); err == nil {
+				return &mapping
+			}
+		}
 	}
-	return &mapping
+
+	return nil
 }
 
 // cleanupMapping removes the quest-loop mapping from both the in-memory cache

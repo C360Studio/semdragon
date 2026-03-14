@@ -61,11 +61,14 @@ export default defineConfig({
 			workers: 1,
 			use: { ...devices['Desktop Chrome'] }
 		},
-		// Tier 2: Full user journeys through DM chat UI (serial, 1 worker)
+		// Tier 2: Full user journeys through DM chat UI (serial, 1 worker).
+		// No retries — these tests use real LLM tokens and retries create
+		// duplicate quests that waste tokens and pollute state.
 		{
 			name: 'tier2-scenarios',
 			testMatch: /scenarios\//,
 			fullyParallel: false,
+			retries: 0,
 			workers: 1,
 			use: { ...devices['Desktop Chrome'] }
 		}

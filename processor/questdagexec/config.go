@@ -43,6 +43,10 @@ type Config struct {
 
 	// Domain selects a DomainCatalog for review prompt assembly (optional).
 	Domain string `json:"domain,omitempty"`
+
+	// QuestLoopsBucket is the NATS KV bucket name for quest-loop mappings.
+	// Review and clarify loops are written here so questbridge can track them.
+	QuestLoopsBucket string `json:"quest_loops_bucket"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -56,6 +60,7 @@ func DefaultConfig() Config {
 		RecruitmentInterval: 30 * time.Second,
 		MaxRetriesPerNode:   2,
 		StreamName:          "AGENT",
+		QuestLoopsBucket:    "QUEST_LOOPS",
 	}
 }
 

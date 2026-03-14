@@ -136,17 +136,21 @@ func registerPartyLeadDirective(r *PromptRegistry) {
 
 // subQuestExecutorDirective guides party member agents working on sub-quests.
 // Without this, agents spin through tools without knowing how to signal completion.
+//
+// IMPORTANT: Rule 1 requires workspace exploration before submission. Without
+// this gate, small models (Gemini Flash) call submit_work_product immediately
+// on the first turn, producing low-quality output from context alone.
 const subQuestExecutorDirective = `You are executing a SUB-QUEST assigned to you by a party lead.
 
 COMPLETION RULES:
-1. Complete the task described in the quest objective.
-2. Use available tools (read_file, write_file, patch_file, etc.) as needed to understand the context.
-3. When you have finished, respond with [INTENT: work_product] followed by your complete deliverable.
-4. Your deliverable MUST contain the actual work output — code, analysis, or results — not a description of what you did.
-5. If the task requires code, include BOTH implementation AND tests directly in your deliverable. Your reviewer can only see what you include — they cannot access external files.
-6. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
-7. Do NOT explore endlessly. Complete the work in as few iterations as possible.
-8. If the task is simple enough to answer directly (e.g., write a function), respond immediately with [INTENT: work_product] and the result.`
+1. BEFORE submitting, you MUST use at least one workspace tool (read_file, list_directory, search_text, or glob_files) to understand the existing codebase. Submissions without workspace exploration will be rejected.
+2. Complete the task described in the quest objective.
+3. Use available tools (read_file, write_file, patch_file, etc.) to understand context and produce your work.
+4. When you have finished, respond with [INTENT: work_product] followed by your complete deliverable.
+5. Your deliverable MUST contain the actual work output — code, analysis, or results — not a description of what you did.
+6. If the task requires code, include BOTH implementation AND tests directly in your deliverable. Your reviewer can only see what you include — they cannot access external files.
+7. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
+8. Complete the work in as few iterations as possible — avoid unnecessary exploration.`
 
 // isSubQuestExecutor returns true for agents working on sub-quests within a
 // party DAG (party members executing DAG nodes, not the lead).
@@ -160,6 +164,16 @@ func registerSubQuestExecutorDirective(r *PromptRegistry) {
 		Category:  CategoryToolDirective,
 		Content:   subQuestExecutorDirective,
 		Priority:  0,
+		Condition: isSubQuestExecutor,
+	})
+	// Gemini Flash tends to skip tools and call submit_work_product immediately.
+	// This hint reinforces that workspace exploration is mandatory before submission.
+	r.Register(&PromptFragment{
+		ID:        "builtin.sub-quest-executor.provider-hint",
+		Category:  CategoryProviderHints,
+		Content:   "You MUST call read_file or list_directory before submitting work. Explore the workspace first. Do not submit on your first turn.",
+		Priority:  0,
+		Providers: []string{"gemini", "openai"},
 		Condition: isSubQuestExecutor,
 	})
 }
@@ -241,12 +255,13 @@ func buildSoloAgentWorkOutputDirective(ctx AssemblyContext) string {
 		b.WriteString(fmt.Sprintf("0. You have a budget of %d tool-use rounds. Plan your work to finish well within this budget. Do NOT explore open-endedly.\n", ctx.MaxIterations))
 	}
 
-	b.WriteString(`1. Use available tools (read_file, etc.) to understand the task, then produce your deliverable.
-2. Your deliverable MUST be the finished work output — code, implementation, analysis, or results.
-3. Do NOT submit a description of what you would do. Do NOT submit a plan. Submit the completed work itself.
-4. If the task requires code, include BOTH the implementation AND tests in your deliverable. Your reviewer can only evaluate what you include in the deliverable text — they cannot access external files.
-5. Format code deliverables with clear sections (e.g., "## Implementation" and "## Tests") so your reviewer can assess completeness.
-6. Complete the work in as few iterations as possible — avoid unnecessary exploration.`)
+	b.WriteString(`1. BEFORE submitting, you MUST use at least one workspace tool (read_file, list_directory, search_text, or glob_files) to understand the existing codebase. Submissions without workspace exploration will be rejected.
+2. Use available tools (read_file, write_file, patch_file, etc.) to understand context and produce your deliverable.
+3. Your deliverable MUST be the finished work output — code, implementation, analysis, or results.
+4. Do NOT submit a description of what you would do. Do NOT submit a plan. Submit the completed work itself.
+5. If the task requires code, include BOTH the implementation AND tests in your deliverable. Your reviewer can only evaluate what you include in the deliverable text — they cannot access external files.
+6. Format code deliverables with clear sections (e.g., "## Implementation" and "## Tests") so your reviewer can assess completeness.
+7. Complete the work in as few iterations as possible — avoid unnecessary exploration.`)
 	return b.String()
 }
 

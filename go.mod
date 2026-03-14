@@ -3,7 +3,7 @@ module github.com/c360studio/semdragons
 go 1.25.3
 
 require (
-	github.com/c360studio/semstreams v1.0.0-alpha.43
+	github.com/c360studio/semstreams v1.0.0-alpha.44
 	github.com/joho/godotenv v1.5.1
 	github.com/nats-io/nats.go v1.48.0
 	github.com/nats-io/nuid v1.0.1

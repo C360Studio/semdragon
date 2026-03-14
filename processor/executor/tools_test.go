@@ -58,6 +58,7 @@ func TestBuiltinToolTierAlignment(t *testing.T) {
 		{tool: "run_command", wantTier: domain.TierMaster, reason: "unrestricted shell requires high trust"},
 		{tool: "decompose_quest", wantTier: domain.TierMaster, reason: "only party leads (Master+) can decompose quests"},
 		{tool: "review_sub_quest", wantTier: domain.TierMaster, reason: "only party leads (Master+) can review sub-quests"},
+		{tool: "answer_clarification", wantTier: domain.TierMaster, reason: "only party leads (Master+) can answer clarifications"},
 	}
 
 	reg := NewToolRegistry()
@@ -97,6 +98,7 @@ func TestBuiltinToolCount(t *testing.T) {
 	//   http_request, run_tests, run_command           — 8 core tools
 	//   decompose_quest                                 — 1 DAG lead tool
 	//   review_sub_quest                               — 1 DAG review tool
+	//   answer_clarification                           — 1 DAG clarification tool
 	//   glob_files, read_file_range                    — 2 read-only Apprentice tools
 	//   submit_work_product, ask_clarification         — 2 terminal tools (Apprentice)
 	//   create_directory, rename_file, delete_file     — 3 new Journeyman tools
@@ -104,7 +106,7 @@ func TestBuiltinToolCount(t *testing.T) {
 	//
 	// web_search is excluded — registered conditionally via RegisterWebSearch.
 	// graph_query is excluded — requires a live EntityQueryFunc (RegisterGraphQuery).
-	const wantCount = 18
+	const wantCount = 19
 
 	reg := NewToolRegistry()
 	reg.RegisterBuiltins()

@@ -806,6 +806,24 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			MinTier: domain.TierMaster, // Level 16+ — only party leads (Master+) can review sub-quests
 		})
 	}
+
+	clarifyExec := questdagexec.NewClarificationExecutor()
+	for _, def := range clarifyExec.ListTools() {
+		r.Register(RegisteredTool{
+			Definition: def,
+			Handler: func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+				result, err := clarifyExec.Execute(ctx, call)
+				if err != nil {
+					return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("answer_clarification internal error: %v", err)}
+				}
+				// Stop the clarification agentic loop after the answer.
+				// The answer JSON in result.Content is the loop's final output.
+				result.StopLoop = true
+				return result
+			},
+			MinTier: domain.TierMaster, // Level 16+ — only party leads (Master+) can answer clarifications
+		})
+	}
 }
 
 // =============================================================================
