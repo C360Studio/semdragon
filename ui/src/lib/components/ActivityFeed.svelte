@@ -79,6 +79,15 @@
 		}
 		return '';
 	}
+
+	function eventHref(event: GameEvent): string | undefined {
+		if (event.quest_id) return `/quests/${event.quest_id}`;
+		if (event.battle_id) return `/battles/${event.battle_id}`;
+		if (event.agent_id) return `/agents/${event.agent_id}`;
+		if (event.party_id) return `/parties/${event.party_id}`;
+		if (event.guild_id) return `/guilds/${event.guild_id}`;
+		return undefined;
+	}
 </script>
 
 <section class="activity-feed">
@@ -86,15 +95,29 @@
 	<ul class="activity-list">
 		{#each events as event}
 			{@const detail = eventDetail(event)}
+			{@const href = eventHref(event)}
 			<li class="activity-item">
-				<span class="activity-icon" data-category={eventIcon(event.type)}>{eventIcon(event.type)}</span>
-				<div class="activity-body">
-					<span class="activity-label">{eventLabel(event.type)}</span>
-					{#if detail}
-						<span class="activity-detail">{detail}</span>
-					{/if}
-				</div>
-				<span class="activity-time">{formatTime(event.timestamp)}</span>
+				{#if href}
+					<a {href} class="activity-link">
+						<span class="activity-icon" data-category={eventIcon(event.type)}>{eventIcon(event.type)}</span>
+						<div class="activity-body">
+							<span class="activity-label">{eventLabel(event.type)}</span>
+							{#if detail}
+								<span class="activity-detail">{detail}</span>
+							{/if}
+						</div>
+						<span class="activity-time">{formatTime(event.timestamp)}</span>
+					</a>
+				{:else}
+					<span class="activity-icon" data-category={eventIcon(event.type)}>{eventIcon(event.type)}</span>
+					<div class="activity-body">
+						<span class="activity-label">{eventLabel(event.type)}</span>
+						{#if detail}
+							<span class="activity-detail">{detail}</span>
+						{/if}
+					</div>
+					<span class="activity-time">{formatTime(event.timestamp)}</span>
+				{/if}
 			</li>
 		{:else}
 			<li class="activity-empty">No recent activity</li>
@@ -130,11 +153,28 @@
 	}
 
 	.activity-item {
+		background: var(--ui-surface-secondary);
+	}
+
+	.activity-item:has(.activity-link):hover {
+		background: var(--ui-surface-tertiary);
+	}
+
+	.activity-link {
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-sm);
 		padding: var(--spacing-sm) var(--spacing-md);
-		background: var(--ui-surface-secondary);
+		color: inherit;
+		text-decoration: none;
+	}
+
+	/* Non-linked items keep the same layout */
+	.activity-item:not(:has(.activity-link)) {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-sm) var(--spacing-md);
 	}
 
 	.activity-icon {

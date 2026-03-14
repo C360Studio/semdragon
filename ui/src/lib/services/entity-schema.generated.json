@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-05T20:15:00Z",
+  "generated_at": "2026-03-14T13:55:26Z",
   "entities": {
     "agent": {
       "static": [
@@ -25,12 +25,11 @@
       ],
       "optional": [
         "agent.assignment.quest",
+        "agent.membership.guild",
         "agent.membership.party",
         "agent.status.cooldown_until"
       ],
-      "multi_value": [
-        "agent.membership.guild"
-      ]
+      "multi_value": []
     },
     "battle": {
       "static": [
@@ -49,6 +48,7 @@
         "battle.judge.1.type",
         "battle.lifecycle.completed_at",
         "battle.verdict.feedback",
+        "battle.verdict.level_change",
         "battle.verdict.passed",
         "battle.verdict.quality_score",
         "battle.verdict.xp_awarded",
@@ -117,6 +117,7 @@
         "quest.identity.description",
         "quest.identity.title",
         "quest.lifecycle.posted_at",
+        "quest.party.min_size",
         "quest.party.required",
         "quest.review.level",
         "quest.review.needs_review",
@@ -128,10 +129,10 @@
       "optional": [
         "quest.assignment.agent",
         "quest.assignment.party",
+        "quest.execution.loop_id",
         "quest.lifecycle.claimed_at",
         "quest.lifecycle.completed_at",
         "quest.lifecycle.started_at",
-        "quest.execution.loop_id",
         "quest.parent.quest",
         "quest.priority.guild"
       ],

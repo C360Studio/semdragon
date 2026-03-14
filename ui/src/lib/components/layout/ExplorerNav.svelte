@@ -62,6 +62,16 @@
 		if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
 		return new Date(timestamp).toLocaleDateString();
 	}
+
+	// Build a detail page link from event entity IDs
+	function eventHref(event: { quest_id?: string; battle_id?: string; agent_id?: string; party_id?: string; guild_id?: string }): string | undefined {
+		if (event.quest_id) return `/quests/${event.quest_id}`;
+		if (event.battle_id) return `/battles/${event.battle_id}`;
+		if (event.agent_id) return `/agents/${event.agent_id}`;
+		if (event.party_id) return `/parties/${event.party_id}`;
+		if (event.guild_id) return `/guilds/${event.guild_id}`;
+		return undefined;
+	}
 </script>
 
 <div class="explorer-panel">
@@ -138,10 +148,19 @@
 			</header>
 			<ul class="event-list">
 				{#each filteredEvents as event}
+					{@const href = eventHref(event)}
 					<li class="event-item" data-testid="event-item" data-category={eventIcon(event.type)}>
-						<span class="event-icon">{eventIcon(event.type)}</span>
-						<span class="event-type">{event.type.split('.').slice(-1)[0]}</span>
-						<span class="event-time">{formatTime(event.timestamp)}</span>
+						{#if href}
+							<a {href} class="event-link">
+								<span class="event-icon">{eventIcon(event.type)}</span>
+								<span class="event-type">{event.type.split('.').slice(-1)[0]}</span>
+								<span class="event-time">{formatTime(event.timestamp)}</span>
+							</a>
+						{:else}
+							<span class="event-icon">{eventIcon(event.type)}</span>
+							<span class="event-type">{event.type.split('.').slice(-1)[0]}</span>
+							<span class="event-time">{formatTime(event.timestamp)}</span>
+						{/if}
 					</li>
 				{:else}
 					<li class="event-empty">No recent events</li>
@@ -273,12 +292,29 @@
 	}
 
 	.event-item {
+		border-bottom: 1px solid var(--ui-border-subtle);
+		font-size: 0.75rem;
+	}
+
+	.event-link {
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-sm);
 		padding: var(--spacing-sm) var(--spacing-md);
-		border-bottom: 1px solid var(--ui-border-subtle);
-		font-size: 0.75rem;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.event-link:hover {
+		background: var(--ui-surface-tertiary);
+	}
+
+	/* Non-linked items keep the same layout */
+	.event-item:not(:has(.event-link)) {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-sm) var(--spacing-md);
 	}
 
 	.event-icon {

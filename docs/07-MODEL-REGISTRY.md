@@ -381,7 +381,6 @@ budgets from being exhausted during long agent runs. Configure it in the
       "enabled": true,
       "compact_threshold": 0.6,
       "tool_result_max_age": 3,
-      "headroom_tokens": 6400,
       "summarization_model": "ollama-coder"
     }
   }
@@ -393,8 +392,13 @@ budgets from being exhausted during long agent runs. Configure it in the
 | `enabled`              | false   | Enable automatic context compaction |
 | `compact_threshold`    | 0.6     | Compact when context reaches this fraction of `max_tokens` |
 | `tool_result_max_age`  | 3       | Drop tool results older than N turns |
-| `headroom_tokens`      | 6400    | Minimum free tokens to maintain after compaction |
+| `headroom_ratio`       | 0.05    | Fraction of model context to reserve (0.0-0.5). A 1M model gets ~51K headroom |
+| `headroom_tokens`      | 4000    | Minimum headroom floor — ratio-based headroom never goes below this |
 | `summarization_model`  | —       | Endpoint name used for summarization during compaction |
+
+Headroom is computed as `max(headroom_ratio * model_limit, headroom_tokens)`. This
+scales automatically with model size: a 128K model gets ~6,400 tokens, a 1M model
+gets ~51,200. Most configs should rely on the defaults.
 
 When the running context exceeds `compact_threshold * max_tokens`, the loop trims old
 tool results (those older than `tool_result_max_age` turns) and optionally summarizes

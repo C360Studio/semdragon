@@ -1577,6 +1577,54 @@
         }
       }
     },
+    "/game/quests/{id}/cancel": {
+      "post": {
+        "summary": "Cancel quest",
+        "description": "Cancels an in-progress quest by sending a cancel signal to the active agentic loop. The quest transitions to 'failed' and the agent is released. For DAG parent quests, all active sub-quest loops are also cancelled.",
+        "tags": [
+          "Quest Lifecycle"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Quest ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Cancellation reason (optional)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelQuestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Quest cancelled and agent released",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Quest not found"
+          },
+          "409": {
+            "description": "Quest not in 'in_progress' status"
+          }
+        }
+      }
+    },
     "/game/quests/{id}/claim": {
       "post": {
         "summary": "Claim quest",
@@ -3275,6 +3323,15 @@
           "judges",
           "started_at"
         ],
+        "type": "object"
+      },
+      "CancelQuestRequest": {
+        "properties": {
+          "reason": {
+            "description": "Reason for cancellation",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "CapabilityUpdate": {
@@ -8283,23 +8340,13 @@
           },
           "workspace": {
             "properties": {
-              "dir": {
-                "description": "Workspace directory path",
-                "type": "string"
-              },
-              "exists": {
-                "description": "Whether the directory exists",
-                "type": "boolean"
-              },
-              "writable": {
-                "description": "Whether the directory is writable",
+              "available": {
+                "description": "Whether the artifact store is available",
                 "type": "boolean"
               }
             },
             "required": [
-              "dir",
-              "exists",
-              "writable"
+              "available"
             ],
             "type": "object"
           }
@@ -8693,6 +8740,9 @@
                       "content": {
                         "type": "string"
                       },
+                      "is_error": {
+                        "type": "boolean"
+                      },
                       "name": {
                         "type": "string"
                       },
@@ -8849,6 +8899,9 @@
               "properties": {
                 "content": {
                   "type": "string"
+                },
+                "is_error": {
+                  "type": "boolean"
                 },
                 "name": {
                   "type": "string"
@@ -9372,23 +9425,13 @@
       },
       "WorkspaceInfoView": {
         "properties": {
-          "dir": {
-            "description": "Workspace directory path",
-            "type": "string"
-          },
-          "exists": {
-            "description": "Whether the directory exists",
-            "type": "boolean"
-          },
-          "writable": {
-            "description": "Whether the directory is writable",
+          "available": {
+            "description": "Whether the artifact store is available",
             "type": "boolean"
           }
         },
         "required": [
-          "dir",
-          "exists",
-          "writable"
+          "available"
         ],
         "type": "object"
       },
