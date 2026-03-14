@@ -150,16 +150,12 @@ func (r *PromptRegistry) fragmentMatches(f *PromptFragment, ctx AssemblyContext)
 		return false
 	}
 
-	// Skill gating: agent must have at least one of the fragment's required skills
+	// Skill gating: quest must require at least one of the fragment's skills.
+	// We match on quest required skills (not agent skills) so that prompt
+	// directives reflect what the quest needs, not what the agent happens to know.
 	if len(f.Skills) > 0 {
 		hasSkill := false
 		for _, requiredSkill := range f.Skills {
-			if ctx.Skills != nil {
-				if _, ok := ctx.Skills[requiredSkill]; ok {
-					hasSkill = true
-					break
-				}
-			}
 			if slices.Contains(ctx.RequiredSkills, requiredSkill) {
 				hasSkill = true
 				break

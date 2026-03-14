@@ -37,15 +37,10 @@ func ValidateAgentCanClaim(agent *Agent, quest *domain.Quest) error {
 	}
 
 	if len(quest.RequiredSkills) > 0 {
-		hasSkill := false
 		for _, required := range quest.RequiredSkills {
-			if agent.HasSkill(required) {
-				hasSkill = true
-				break
+			if !agent.HasSkill(required) {
+				return errors.New("agent lacks required skills")
 			}
-		}
-		if !hasSkill {
-			return errors.New("agent lacks required skills")
 		}
 	}
 

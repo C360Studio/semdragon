@@ -163,6 +163,46 @@ func TestValidateAgentCanClaim_Success(t *testing.T) {
 	}
 }
 
+func TestValidateAgentCanClaim_PartialSkillMatch(t *testing.T) {
+	agent := &Agent{
+		Status: domain.AgentIdle,
+		Level:  5,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillAnalysis: {Level: 1},
+		},
+	}
+	quest := &domain.Quest{
+		Status:         domain.QuestPosted,
+		RequiredSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillAnalysis},
+	}
+
+	err := ValidateAgentCanClaim(agent, quest)
+	if err == nil {
+		t.Error("expected error when agent only has some required skills")
+	}
+}
+
+func TestValidateAgentCanClaim_AllSkillsMatch(t *testing.T) {
+	agent := &Agent{
+		Status: domain.AgentIdle,
+		Level:  5,
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			domain.SkillCodeGen:  {Level: 2},
+			domain.SkillAnalysis: {Level: 1},
+		},
+	}
+	quest := &domain.Quest{
+		Status:         domain.QuestPosted,
+		MinTier:        domain.TierApprentice,
+		RequiredSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillAnalysis},
+	}
+
+	err := ValidateAgentCanClaim(agent, quest)
+	if err != nil {
+		t.Errorf("expected nil when agent has all required skills, got %v", err)
+	}
+}
+
 func TestValidateAgentCanClaim_NoRequiredSkills(t *testing.T) {
 	agent := &Agent{
 		Status: domain.AgentIdle,

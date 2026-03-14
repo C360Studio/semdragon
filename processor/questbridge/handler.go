@@ -369,7 +369,7 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 		AgentID:    agent.ID,
 		AgentName:  agent.Name,
 		LoopID:     loopID,
-		MaxTurns:   c.config.MaxIterations,
+		MaxTurns:   maxIterationsForDifficulty(c.config.MaxIterations, quest.Difficulty),
 		ToolCount:  len(tools),
 		Timestamp:  now,
 	}); err != nil {
@@ -776,10 +776,12 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		case "work_product":
 			// Extract deliverable as the actual quest output (strip JSON envelope).
 			output = content
-			// Safety net: some models (especially smaller ones) submit questions
-			// via submit_work_product instead of ask_clarification. Detect this
-			// and reroute to the clarification path so they aren't penalized.
-			if isOutputClarificationRequest(content) {
+			// Safety net: some models submit questions via submit_work_product
+			// instead of ask_clarification. Only check the structured intent tag
+			// here — NOT the "?" heuristic. The agent explicitly called the
+			// submit_work_product tool, so trust its intent. Research deliverables
+			// legitimately contain question marks (e.g. "What is XSS?").
+			if hasIntentClarification(content) {
 				isClarification = true
 				c.logger.Warn("agent submitted question via submit_work_product, rerouting to clarification",
 					"quest_id", questID, "agent_id", mapping.AgentID)
@@ -935,6 +937,23 @@ func parseToolOutput(output string) (outputType, content string, ok bool) {
 //     (injected by the prompt assembler's response format instruction).
 //  2. Heuristic fallback: majority of non-empty lines end with "?" — catches
 //     agents that ignore the format instruction.
+// hasIntentClarification checks only for a structured [INTENT: clarification]
+// tag in the output. Unlike isOutputClarificationRequest, it does NOT use the
+// "?" heuristic. Use this when the agent explicitly called submit_work_product
+// — trust the tool choice, only override if the intent tag says otherwise.
+func hasIntentClarification(output any) bool {
+	text, ok := output.(string)
+	if !ok {
+		return false
+	}
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) == 0 {
+		return false
+	}
+	intent := parseOutputIntent(trimmed)
+	return intent == "clarification"
+}
+
 func isOutputClarificationRequest(output any) bool {
 	text, ok := output.(string)
 	if !ok {
@@ -1985,7 +2004,7 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		QuestScenarios:       quest.Scenarios,
 		DecomposabilityClass: quest.DecomposabilityClass,
 		AvailableToolNames:   toolNames,
-		MaxIterations:        c.config.MaxIterations,
+		MaxIterations:        maxIterationsForDifficulty(c.config.MaxIterations, quest.Difficulty),
 		FailureHistory:       convertFailureHistory(quest.FailureHistory),
 		SalvagedOutput:       domain.AsString(quest.SalvagedOutput),
 		FailureAnalysis:      quest.FailureAnalysis,
@@ -2275,6 +2294,34 @@ func tripleString(triples []message.Triple, predicate string) string {
 		}
 	}
 	return ""
+}
+
+// maxIterationsForDifficulty scales the configured MaxIterations based on
+// quest difficulty. Simpler quests get fewer iterations to save tokens;
+// harder quests get more headroom for multi-step work.
+func maxIterationsForDifficulty(base int, difficulty domain.QuestDifficulty) int {
+	// Scale factors relative to the base config value (treated as the
+	// midpoint for DifficultyModerate):
+	//   Trivial: 50%   Easy: 60%   Moderate: 100%
+	//   Hard: 125%     Epic: 150%  Legendary: 200%
+	var scale float64
+	switch difficulty {
+	case domain.DifficultyTrivial:
+		scale = 0.50
+	case domain.DifficultyEasy:
+		scale = 0.60
+	case domain.DifficultyModerate:
+		scale = 1.00
+	case domain.DifficultyHard:
+		scale = 1.25
+	case domain.DifficultyEpic:
+		scale = 1.50
+	case domain.DifficultyLegendary:
+		scale = 2.00
+	default:
+		scale = 1.00
+	}
+	return max(10, int(float64(base)*scale))
 }
 
 // fragmentsToSources converts prompt fragment IDs to ContextSource structs

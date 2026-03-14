@@ -874,7 +874,12 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 		}
 	}
 
-	reposted := quest.Attempts < quest.MaxAttempts
+	// Party sub-quests: always set to QuestFailed so questdagexec's
+	// handleNodeFailed handles retry/reassignment via RepostForRetry
+	// (which preserves PartyID). Without this, the sub-quest loses its
+	// party association and becomes an orphaned solo quest on the board.
+	isPartySubQuest := quest.PartyID != nil
+	reposted := quest.Attempts < quest.MaxAttempts && !isPartySubQuest
 	predicate := "quest.failed"
 
 	switch {
@@ -887,7 +892,7 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 		quest.StartedAt = nil
 		quest.Output = nil
 
-	case c.config.Triage.Enabled && quest.Difficulty >= c.config.Triage.MinDifficultyForTriage:
+	case c.config.Triage.Enabled && quest.Difficulty >= c.config.Triage.MinDifficultyForTriage && !isPartySubQuest:
 		// Terminal boundary + triage enabled — hold for DM evaluation.
 		// Record this attempt in failure history before entering triage.
 		record := domain.FailureRecord{

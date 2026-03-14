@@ -2039,3 +2039,29 @@ func questIDPtr(s string) *domain.QuestID {
 	id := domain.QuestID(s)
 	return &id
 }
+
+func TestMaxIterationsForDifficulty(t *testing.T) {
+	tests := []struct {
+		name       string
+		base       int
+		difficulty domain.QuestDifficulty
+		want       int
+	}{
+		{"trivial base 20", 20, domain.DifficultyTrivial, 10},
+		{"easy base 20", 20, domain.DifficultyEasy, 12},
+		{"moderate base 20", 20, domain.DifficultyModerate, 20},
+		{"hard base 20", 20, domain.DifficultyHard, 25},
+		{"epic base 20", 20, domain.DifficultyEpic, 30},
+		{"legendary base 20", 20, domain.DifficultyLegendary, 40},
+		{"minimum floor", 4, domain.DifficultyTrivial, 10},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := maxIterationsForDifficulty(tt.base, tt.difficulty)
+			if got != tt.want {
+				t.Errorf("maxIterationsForDifficulty(%d, %d) = %d, want %d",
+					tt.base, tt.difficulty, got, tt.want)
+			}
+		})
+	}
+}

@@ -128,25 +128,29 @@ func TestGetFragmentsForContext_SkillGating(t *testing.T) {
 		wantIDs    []string
 	}{
 		{
-			name:      "agent with code_gen gets coding fragment",
-			skills:    map[domain.SkillTag]domain.SkillProficiency{domain.SkillCodeGen: {}},
-			wantCount: 1,
+			name:        "quest requiring code_gen gets coding fragment",
+			questSkills: []domain.SkillTag{domain.SkillCodeGen},
+			wantCount:   1,
 		},
 		{
-			name:      "agent with no matching skills gets none",
-			skills:    map[domain.SkillTag]domain.SkillProficiency{domain.SkillResearch: {}},
-			wantCount: 0,
+			name:        "quest with no matching skills gets none",
+			questSkills: []domain.SkillTag{domain.SkillResearch},
+			wantCount:   0,
 		},
 		{
-			name:      "agent with multiple matching skills gets multiple",
-			skills:    map[domain.SkillTag]domain.SkillProficiency{domain.SkillCodeGen: {}, domain.SkillAnalysis: {}},
-			wantCount: 2,
+			name:        "quest with multiple matching skills gets multiple",
+			questSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillAnalysis},
+			wantCount:   2,
 		},
 		{
-			name:        "quest required skills also match",
-			skills:      nil,
+			name:        "quest required skills match",
 			questSkills: []domain.SkillTag{domain.SkillCodeReview},
 			wantCount:   1,
+		},
+		{
+			name:      "agent skills alone do not match (only quest skills matter)",
+			skills:    map[domain.SkillTag]domain.SkillProficiency{domain.SkillCodeGen: {}},
+			wantCount: 0,
 		},
 	}
 

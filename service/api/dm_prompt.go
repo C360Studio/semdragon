@@ -312,9 +312,14 @@ Quests can include an optional "hints" object for advanced configuration:
 - "party_required": true/false — manual override (normally the system decides based on scenarios)
 - "min_party_size": 2-5 — minimum agents in the party (default 2)
 
-IMPORTANT: When choosing skills for scenarios and the quest, prefer skills that match
-agents currently available in the roster below. If no agents have the exact skill, pick
-the closest match. This ensures agents can actually claim and work on the quest.
+CRITICAL: Agents must have ALL required skills to claim a solo quest (AND logic).
+Before finalizing skills, check the agent roster below. If no single agent has every
+skill you are listing, you MUST either:
+1. Set "hints": {"party_required": true} so a party of agents can cover skills collectively
+2. Reduce the skill list to a core set that at least one agent covers
+The system will auto-upgrade uncoverable quests to party quests as a safety net, but you
+should proactively structure quests for the roster you have. Party quests benefit from
+parallel scenarios so agents can work concurrently.
 
 If the user's intent is unclear, ask ONE clarifying question — but still include your
 best-guess JSON block so the user can refine it. Prefer producing output over asking
@@ -348,10 +353,11 @@ func (s *Service) writeAvailableOptions(b *strings.Builder) {
 
 	b.WriteString("**Review levels**: 0=Auto, 1=Standard, 2=Strict, 3=Human\n\n")
 
-	b.WriteString("**Solo vs Party**: Set `hints.party_required` based on scenario dependencies:\n")
+	b.WriteString("**Solo vs Party**: Set `hints.party_required` based on scenario dependencies AND skill coverage:\n")
 	b.WriteString("- 2+ independent scenarios (no depends_on) → set `party_required: true`\n")
 	b.WriteString("- Sequential scenarios (linear depends_on chain) → omit or set false\n")
 	b.WriteString("- Mixed dependencies → set `party_required: true`\n")
+	b.WriteString("- Required skills exceed any single agent's capability → set `party_required: true`\n")
 	b.WriteString("- 0-1 scenarios → omit (solo quest)\n\n")
 }
 
@@ -375,6 +381,7 @@ func (s *Service) writeWorldState(ctx context.Context, b *strings.Builder) {
 	b.WriteString(fmt.Sprintf("- Parties: %d active\n\n", ws.Stats.ActiveParties))
 
 	writeAgentRoster(b, ws.Agents)
+	writeSkillCoverage(b, ws.Agents)
 	writeQuestList(b, ws.Quests)
 	writePartyList(b, ws.Parties)
 }
@@ -423,6 +430,64 @@ func writeAgentRoster(b *strings.Builder, agents []any) {
 	for _, s := range summaries {
 		b.WriteString(fmt.Sprintf("- **%s** — Level %d %s, %s, skills: %s\n",
 			s.name, s.level, s.tier, s.status, strings.Join(s.skills, ", ")))
+	}
+	b.WriteString("\n")
+}
+
+// writeSkillCoverage appends a compact summary of which skill combinations
+// are available for solo quests, so the DM can see at a glance whether a
+// proposed skill set is coverable by a single agent.
+func writeSkillCoverage(b *strings.Builder, agents []any) {
+	if len(agents) == 0 {
+		return
+	}
+
+	// Group agents by their sorted skill set.
+	type combo struct {
+		key    string   // sorted comma-joined skills
+		skills []string // for display
+		agents []string // agent names
+	}
+	comboMap := make(map[string]*combo)
+
+	for _, a := range agents {
+		agent, ok := a.(agentprogression.Agent)
+		if !ok || len(agent.SkillProficiencies) == 0 {
+			continue
+		}
+		skills := make([]string, 0, len(agent.SkillProficiencies))
+		for tag := range agent.SkillProficiencies {
+			skills = append(skills, string(tag))
+		}
+		sort.Strings(skills)
+		key := strings.Join(skills, ", ")
+
+		if c, ok := comboMap[key]; ok {
+			c.agents = append(c.agents, agent.Name)
+		} else {
+			comboMap[key] = &combo{
+				key:    key,
+				skills: skills,
+				agents: []string{agent.Name},
+			}
+		}
+	}
+
+	// Sort combos by number of skills descending (most capable first).
+	combos := make([]*combo, 0, len(comboMap))
+	for _, c := range comboMap {
+		combos = append(combos, c)
+	}
+	sort.Slice(combos, func(i, j int) bool {
+		if len(combos[i].skills) != len(combos[j].skills) {
+			return len(combos[i].skills) > len(combos[j].skills)
+		}
+		return combos[i].key < combos[j].key
+	})
+
+	b.WriteString("### Skill Coverage (solo-capable combos)\n\n")
+	for _, c := range combos {
+		b.WriteString(fmt.Sprintf("- %s: %s\n", c.key, strings.Join(c.agents, ", ")))
 	}
 	b.WriteString("\n")
 }

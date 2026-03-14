@@ -259,6 +259,8 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.upgradeToPartyIfNeeded(r.Context(), quest)
+
 	if err := s.graph.EmitEntity(r.Context(), quest, "quest.posted"); err != nil {
 		s.writeError(w, "failed to create quest", http.StatusInternalServerError)
 		s.logger.Error("Failed to create quest", "error", err)
@@ -366,6 +368,8 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		s.upgradeToPartyIfNeeded(ctx, &quest)
+
 		if err := s.graph.EmitEntity(ctx, &quest, "quest.posted"); err != nil {
 			s.writeError(w, "failed to create quest", http.StatusInternalServerError)
 			s.logger.Error("Failed to create chain quest", "title", entry.Title, "error", err)
@@ -397,6 +401,54 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(posted)
+}
+
+// upgradeToPartyIfNeeded checks the agent roster against the quest's required
+// skills. If no single agent can solo all skills (AND logic), upgrades the quest
+// to PartyRequired with MinPartySize from greedy set-cover analysis.
+// Best-effort: errors are logged, not propagated.
+func (s *Service) upgradeToPartyIfNeeded(ctx context.Context, quest *domain.Quest) {
+	if quest.PartyRequired || len(quest.RequiredSkills) == 0 {
+		return
+	}
+
+	entities, err := s.graph.ListAgentsByPrefix(ctx, s.config.MaxEntities)
+	if err != nil {
+		s.logger.Warn("skill coverage check skipped: failed to load agents", "error", err)
+		return
+	}
+
+	roster := make([]domain.AgentSkillSet, 0, len(entities))
+	for i := range entities {
+		agent := agentprogression.AgentFromEntityState(&entities[i])
+		if agent == nil {
+			continue
+		}
+		skills := make(map[domain.SkillTag]struct{}, len(agent.SkillProficiencies))
+		for tag := range agent.SkillProficiencies {
+			skills[tag] = struct{}{}
+		}
+		roster = append(roster, domain.AgentSkillSet{Skills: skills})
+	}
+
+	result := domain.ClassifySkillCoverage(quest.RequiredSkills, roster)
+	if result.CanSolo {
+		return
+	}
+
+	quest.PartyRequired = true
+	if result.MinAgents > 0 {
+		quest.MinPartySize = max(2, result.MinAgents)
+	} else {
+		quest.MinPartySize = 2
+	}
+
+	s.logger.Info("auto-upgraded quest to party: no agent covers all required skills",
+		"quest_title", quest.Title,
+		"required_skills", quest.RequiredSkills,
+		"min_agents", result.MinAgents,
+		"uncovered_skills", result.UncoveredSkills,
+	)
 }
 
 // =============================================================================
@@ -1862,8 +1914,8 @@ func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, quest)
 }
 
-// triageRequest is the request body for POST /dm/triage/{questId}.
-type triageRequest struct {
+// TriageDecision is the request body for POST /dm/triage/{questId}.
+type TriageDecision struct {
 	Path           string   `json:"path"`                      // salvage, tpk, escalate, terminal
 	Analysis       string   `json:"analysis"`                  // DM's failure analysis
 	SalvagedOutput any      `json:"salvaged_output,omitempty"` // Curated partial work (salvage path)
@@ -1879,7 +1931,7 @@ func (s *Service) handleDMTriage(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	var req triageRequest
+	var req TriageDecision
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBodySize)).Decode(&req); err != nil {
 		s.writeError(w, "invalid request body", http.StatusBadRequest)
 		return
