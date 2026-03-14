@@ -238,6 +238,7 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 
 	return {
 		id: questId(key),
+		name: str(m.get('quest.identity.name')),
 		title: str(m.get('quest.identity.title'), 'Untitled Quest'),
 		description: str(m.get('quest.identity.description')),
 		status: str(m.get('quest.status.state'), 'posted') as QuestStatus,

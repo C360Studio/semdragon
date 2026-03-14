@@ -215,6 +215,7 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 
 	quest := &domain.Quest{
 		ID:          domain.QuestID(questID),
+		Name:        truncateName(req.Objective, 25),
 		Title:       req.Objective,
 		Description: req.Objective,
 		Goal:        req.Objective,
@@ -301,8 +302,14 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 			difficulty = *entry.Difficulty
 		}
 
+		name := entry.Name
+		if name == "" {
+			name = truncateName(entry.Title, 25)
+		}
+
 		quest := domain.Quest{
 			ID:          domain.QuestID(questID),
+			Name:        name,
 			Title:       entry.Title,
 			Description: entry.Goal,
 			Status:      domain.QuestPosted,
@@ -2835,4 +2842,15 @@ func (s *Service) writeError(w http.ResponseWriter, message string, statusCode i
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+// truncateName shortens a string to max characters, preferring word boundaries.
+func truncateName(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	if i := strings.LastIndex(s[:max], " "); i > max/2 {
+		return s[:i] + "..."
+	}
+	return s[:max-1] + "..."
 }

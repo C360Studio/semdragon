@@ -64,6 +64,7 @@ export type Quest = Omit<
 	'id' | 'claimed_by' | 'party_id' | 'guild_priority' | 'parent_quest' | 'sub_quests' | 'decomposed_by'
 > & {
 	id: QuestID;
+	name?: string;
 	claimed_by?: AgentID | null;
 	party_id?: PartyID | null;
 	guild_priority?: GuildID | null;

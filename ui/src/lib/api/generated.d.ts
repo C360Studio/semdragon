@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/components/config/{name}": {
+    "/component-manager/config/{name}": {
         parameters: {
             query?: never;
             header?: never;
@@ -51,7 +51,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/components/flowgraph": {
+    "/component-manager/flowgraph": {
         parameters: {
             query?: never;
             header?: never;
@@ -88,7 +88,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/components/gaps": {
+    "/component-manager/gaps": {
         parameters: {
             query?: never;
             header?: never;
@@ -125,7 +125,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/components/health": {
+    "/component-manager/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -162,7 +162,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/components/list": {
+    "/component-manager/list": {
         parameters: {
             query?: never;
             header?: never;
@@ -199,7 +199,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/components/paths": {
+    "/component-manager/paths": {
         parameters: {
             query?: never;
             header?: never;
@@ -236,7 +236,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/components/status/{name}": {
+    "/component-manager/status/{name}": {
         parameters: {
             query?: never;
             header?: never;
@@ -283,7 +283,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/components/types": {
+    "/component-manager/types": {
         parameters: {
             query?: never;
             header?: never;
@@ -320,7 +320,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/components/types/{id}": {
+    "/component-manager/types/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -367,7 +367,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/components/validate": {
+    "/component-manager/validate": {
         parameters: {
             query?: never;
             header?: never;
@@ -389,6 +389,532 @@ export interface paths {
             responses: {
                 /** @description Flow connectivity analysis results */
                 200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-service/deployment/{id}/deploy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deploy flow
+         * @description Deploys a flow to the runtime
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Flow deployed */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Validation errors */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-service/deployment/{id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start flow
+         * @description Starts a deployed flow
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Flow started */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-service/deployment/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop flow
+         * @description Stops a running flow
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Flow stopped */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-service/flows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all flows
+         * @description Returns a list of all visual flows
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description List of flows */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Create a new flow
+         * @description Creates a new visual flow
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description Flow definition to create */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["Flow"];
+                };
+            };
+            responses: {
+                /** @description Flow created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Invalid request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-service/flows/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get flow by ID
+         * @description Returns a single flow by ID
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Flow ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Flow details */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Flow not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        /**
+         * Update flow
+         * @description Updates an existing flow
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description Updated flow definition */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["Flow"];
+                };
+            };
+            responses: {
+                /** @description Flow updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Flow not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Version conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        /**
+         * Delete flow
+         * @description Deletes a flow
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Flow deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Flow not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-service/flows/{id}/runtime/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get runtime health
+         * @description Returns health status and timing for flow components (status, uptime, last activity)
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Flow ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Runtime health status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RuntimeHealthResponse"];
+                    };
+                };
+                /** @description Flow not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-service/flows/{id}/runtime/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get runtime messages
+         * @description Returns filtered message logger entries for flow components (NATS message flow visibility)
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Maximum number of messages to return (default: 100, max: 1000) */
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    /** @description Flow ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Runtime message entries */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RuntimeMessagesResponse"];
+                    };
+                };
+                /** @description Flow not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-service/flows/{id}/runtime/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get runtime metrics
+         * @description Returns runtime metrics for flow components (throughput, errors, queue depth) with graceful degradation
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Flow ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Runtime metrics */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RuntimeMetricsResponse"];
+                    };
+                };
+                /** @description Flow not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-service/status/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * WebSocket status stream
+         * @description Real-time flow status updates via WebSocket.
+         *
+         *     ## Connection
+         *     Connect with: ws://host/flowbuilder/status/stream?flowId={flowId}
+         *
+         *     ## Message Types (Server → Client)
+         *     All messages are wrapped in StatusStreamEnvelope:
+         *     - **flow_status**: Flow state changes (deployed, running, stopped, failed)
+         *     - **component_health**: Component health updates (every 5s)
+         *     - **component_metrics**: Real-time metrics from MetricsForwarder
+         *     - **log_entry**: Log messages from LogForwarder
+         *
+         *     ## Filtering (Client → Server)
+         *     Send SubscribeCommand JSON to filter messages:
+         *     - message_types: Array of message types to receive
+         *     - log_level: Minimum log level (DEBUG < INFO < WARN < ERROR)
+         *     - sources: Array of component names to filter by
+         *
+         *     ## Example Subscribe Command
+         *     {"command":"subscribe","message_types":["flow_status","log_entry"],"log_level":"WARN"}
+         */
+        get: {
+            parameters: {
+                query: {
+                    /** @description Flow ID to subscribe to for status updates */
+                    flowId: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Switching to WebSocket protocol */
+                101: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Missing or invalid flowId parameter */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Flow not found */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -429,7 +955,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Agent"][];
+                    };
                 };
             };
         };
@@ -445,14 +973,21 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Agent recruitment parameters */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RecruitAgentRequest"];
+                };
+            };
             responses: {
                 /** @description Agent recruited */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Agent"];
+                    };
                 };
                 /** @description Invalid request or missing name */
                 400: {
@@ -504,7 +1039,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Agent"];
+                    };
                 };
                 /** @description Agent not found */
                 404: {
@@ -551,7 +1088,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["ActiveEffect"][];
+                    };
                 };
             };
         };
@@ -591,7 +1130,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["AgentInventory"];
+                    };
                 };
             };
         };
@@ -626,14 +1167,21 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Consumable to use */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UseConsumableRequest"];
+                };
+            };
             responses: {
                 /** @description Consumable used, effect applied */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["UseConsumableResponse"];
+                    };
                 };
                 /** @description Missing consumable_id or item not consumable */
                 400: {
@@ -739,7 +1287,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["PeerReview"][];
+                    };
                 };
             };
         };
@@ -776,7 +1326,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["BossBattle"][];
+                    };
                 };
             };
         };
@@ -816,7 +1368,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["BossBattle"];
+                    };
                 };
                 /** @description Battle not found */
                 404: {
@@ -862,7 +1416,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["BoardStatusResponse"];
+                    };
                 };
                 /** @description Board controller unavailable */
                 503: {
@@ -906,7 +1462,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["BoardStatusResponse"];
+                    };
                 };
                 /** @description Board controller unavailable */
                 503: {
@@ -948,7 +1506,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["BoardStatusResponse"];
+                    };
                 };
             };
         };
@@ -985,7 +1545,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["TokenStats"];
+                    };
                 };
             };
         };
@@ -1017,14 +1579,21 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description New hourly token limit */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetTokenBudgetRequest"];
+                };
+            };
             responses: {
                 /** @description Budget updated */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["TokenStats"];
+                    };
                 };
                 /** @description Invalid limit value */
                 400: {
@@ -1061,14 +1630,21 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Chat message and optional context */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DMChatRequest"];
+                };
+            };
             responses: {
                 /** @description DM response with optional actions taken */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DMChatResponse"];
+                    };
                 };
                 /** @description Missing message */
                 400: {
@@ -1167,7 +1743,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DMChatSession"];
+                    };
                 };
                 /** @description Invalid session ID format */
                 400: {
@@ -1187,6 +1765,73 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/dm/triage/{questId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * DM triage failed quest
+         * @description Apply a DM triage decision to a quest in pending_triage status. Body: {path: salvage|tpk|escalate|terminal, analysis: string, salvaged_output?: any, anti_patterns?: string[]}. Salvage preserves partial work and retries. TPK clears output, adds anti-pattern warnings, retries. Escalate marks for human attention. Terminal marks permanently failed.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Quest ID (must be in pending_triage status) */
+                    questId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TriageDecision"];
+                };
+            };
+            responses: {
+                /** @description Triage applied, returns updated quest */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
+                };
+                /** @description Invalid request (bad path, missing analysis) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Quest not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Quest not in pending_triage status */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -1255,7 +1900,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Guild"][];
+                    };
                 };
             };
         };
@@ -1295,7 +1942,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Guild"];
+                    };
                 };
                 /** @description Guild not found */
                 404: {
@@ -1386,7 +2035,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Party"][];
+                    };
                 };
             };
         };
@@ -1426,7 +2077,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Party"];
+                    };
                 };
                 /** @description Party not found */
                 404: {
@@ -1477,14 +2130,16 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"][];
+                    };
                 };
             };
         };
         put?: never;
         /**
          * Create quest
-         * @description Posts a new quest to the quest board.
+         * @description Posts a new quest to the quest board. Requires title and goal. Scenarios are optional but recommended — their dependency graph drives automatic party vs solo routing.
          */
         post: {
             parameters: {
@@ -1493,16 +2148,23 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Quest creation parameters */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateQuestRequest"];
+                };
+            };
             responses: {
                 /** @description Quest created */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
                 };
-                /** @description Invalid request body or missing objective */
+                /** @description Invalid request body, missing title or goal, or invalid scenario dependencies */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -1537,14 +2199,21 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Quest chain with interdependencies */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["QuestChainBrief"];
+                };
+            };
             responses: {
                 /** @description Array of created quests with resolved dependency IDs */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"][];
+                    };
                 };
                 /** @description Invalid request, dependency cycle, or out-of-bounds index */
                 400: {
@@ -1589,7 +2258,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
                 };
                 /** @description Quest not found */
                 404: {
@@ -1631,14 +2302,21 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Abandonment reason */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["AbandonQuestRequest"];
+                };
+            };
             responses: {
                 /** @description Quest returned to board, agent released */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
                 };
                 /** @description Quest not found */
                 404: {
@@ -1648,6 +2326,224 @@ export interface paths {
                     content?: never;
                 };
                 /** @description Quest not in 'claimed' or 'in_progress' status */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/quests/{id}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download quest artifacts
+         * @description Downloads all artifact files for a quest as a zip archive. Includes a manifest.json with quest metadata at the root of the archive.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Quest ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Zip archive of quest artifacts */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Quest or artifacts not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Artifact storage not available */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/quests/{id}/artifacts/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List quest artifact files
+         * @description Returns a JSON list of artifact file paths for a quest.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Quest ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description List of artifact files */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Artifact storage not available */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/quests/{id}/artifacts/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get single artifact file
+         * @description Serves a single artifact file by path within the quest's artifact storage.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Quest ID */
+                    id: string;
+                    /** @description File path within quest artifacts */
+                    path: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Artifact file content */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Artifact not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Artifact storage not available */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/quests/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel quest
+         * @description Cancels an in-progress quest by sending a cancel signal to the active agentic loop. The quest transitions to 'failed' and the agent is released. For DAG parent quests, all active sub-quest loops are also cancelled.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Quest ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description Cancellation reason (optional) */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["CancelQuestRequest"];
+                };
+            };
+            responses: {
+                /** @description Quest cancelled and agent released */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
+                };
+                /** @description Quest not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Quest not in 'in_progress' status */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -1685,14 +2581,21 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Agent claiming the quest */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ClaimQuestRequest"];
+                };
+            };
             responses: {
                 /** @description Quest claimed, status changed to 'claimed' */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
                 };
                 /** @description Missing agent_id */
                 400: {
@@ -1760,7 +2663,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
                 };
                 /** @description Quest not found */
                 404: {
@@ -1807,14 +2712,21 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Failure reason */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["FailQuestRequest"];
+                };
+            };
             responses: {
                 /** @description Quest failed or reposted, agent released */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
                 };
                 /** @description Quest not found */
                 404: {
@@ -1868,7 +2780,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
                 };
                 /** @description Quest not found */
                 404: {
@@ -1915,14 +2829,21 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Quest result output */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SubmitQuestRequest"];
+                };
+            };
             responses: {
                 /** @description Result submitted, status changed to 'in_review' or 'completed' */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Quest"];
+                    };
                 };
                 /** @description Missing output */
                 400: {
@@ -1983,7 +2904,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["PeerReview"][];
+                    };
                 };
             };
         };
@@ -1999,14 +2922,21 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Review creation parameters */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateReviewRequest"];
+                };
+            };
             responses: {
                 /** @description Peer review created with status 'pending' */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["PeerReview"];
+                    };
                 };
                 /** @description Missing required fields or leader_id == member_id for non-solo review */
                 400: {
@@ -2051,7 +2981,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["PeerReview"];
+                    };
                 };
                 /** @description Review not found */
                 404: {
@@ -2093,14 +3025,21 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Review ratings and optional explanation */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SubmitReviewRequest"];
+                };
+            };
             responses: {
                 /** @description Review submission accepted (blind-masked response) */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["PeerReview"];
+                    };
                 };
                 /** @description Missing fields, invalid ratings, or missing explanation for low ratings */
                 400: {
@@ -2125,6 +3064,119 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get settings
+         * @description Returns the current runtime configuration including platform identity, NATS status, LLM providers, capabilities, components, workspace, and token budget. API key values are never exposed.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Current settings */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SettingsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Update settings
+         * @description Mutates runtime-configurable settings (model registry, token budget). Auth required. Platform and NATS settings require a restart. Changes are persisted to disk and propagated via KV.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description Settings updates (partial) */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateSettingsRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated settings */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SettingsResponse"];
+                    };
+                };
+                /** @description Validation error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game/settings/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get settings health
+         * @description Runs live validation checks (NATS, LLM keys, workspace, streams, buckets) and returns an onboarding checklist showing prerequisite status.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Health checks and onboarding checklist */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HealthResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2159,7 +3211,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["StoreItem"][];
+                    };
                 };
                 /** @description Store component unavailable */
                 503: {
@@ -2198,14 +3252,21 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Purchase parameters */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PurchaseItemRequest"];
+                };
+            };
             responses: {
                 /** @description Purchase result with updated XP balance */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["PurchaseResponse"];
+                    };
                 };
                 /** @description Missing fields or insufficient XP */
                 400: {
@@ -2264,7 +3325,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["StoreItem"];
+                    };
                 };
                 /** @description Item not found */
                 404: {
@@ -2318,7 +3381,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Trajectory"];
+                    };
                 };
                 /** @description Invalid trajectory ID format */
                 400: {
@@ -2376,7 +3441,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["WorldStateResponse"];
+                    };
                 };
             };
         };
@@ -2418,7 +3485,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["MessageLogEntry"][];
+                    };
                 };
             };
         };
@@ -2773,8 +3842,10 @@ export interface components {
                 total_xp_earned: number;
                 total_xp_spent: number;
             };
-            status: string;
-            tier: number;
+            /** @enum {string} */
+            status: "idle" | "on_quest" | "in_battle" | "cooldown" | "retired" | "pending_review";
+            /** @enum {integer} */
+            tier: 0 | 1 | 2 | 3 | 4;
             total_spent: number;
             /** Format: date-time */
             updated_at: string;
@@ -2865,7 +3936,10 @@ export interface components {
                 id: string;
                 type: string;
             }[];
-            level: number;
+            /** @enum {integer} */
+            level: 0 | 1 | 2 | 3;
+            loop_id?: string;
+            name?: string;
             quest_id: string;
             results?: {
                 criterion_name: string;
@@ -2876,7 +3950,8 @@ export interface components {
             }[];
             /** Format: date-time */
             started_at: string;
-            status: string;
+            /** @enum {string} */
+            status: "active" | "victory" | "defeat" | "retreat";
             verdict?: {
                 feedback: string;
                 level_change: number;
@@ -2885,6 +3960,32 @@ export interface components {
                 xp_awarded: number;
                 xp_penalty: number;
             } | null;
+        };
+        CancelQuestRequest: {
+            /** @description Reason for cancellation */
+            reason?: string;
+        };
+        CapabilityUpdate: {
+            /** @description Capability description */
+            description?: string;
+            /** @description Fallback endpoint chain */
+            fallback?: string[];
+            /** @description Preferred endpoint chain */
+            preferred?: string[];
+            /** @description Set true to remove this capability */
+            remove?: boolean;
+            /** @description Require tool support */
+            requires_tools?: boolean;
+        };
+        CapabilityView: {
+            /** @description What this capability is for */
+            description: string;
+            /** @description Fallback endpoint chain */
+            fallback?: string[];
+            /** @description Preferred endpoint chain */
+            preferred: string[];
+            /** @description Whether endpoints must support tools */
+            requires_tools?: boolean;
         };
         CharacterSheet: {
             agent: {
@@ -3017,9 +4118,37 @@ export interface components {
                 total_xp: number;
             }[];
         };
+        ChecklistItem: {
+            /** @description Guidance when not met */
+            help_text?: string;
+            /** @description Prerequisite description */
+            label: string;
+            /** @description Whether the prerequisite is satisfied */
+            met: boolean;
+        };
         ClaimQuestRequest: {
             /** @description ID of the agent claiming the quest */
             agent_id: string;
+        };
+        ComponentInfoView: {
+            /** @description Whether the component is in the config */
+            enabled: boolean;
+            /** @description Total error count */
+            error_count?: number;
+            /** @description Whether the component reports healthy */
+            healthy: boolean;
+            /** @description Most recent error message */
+            last_error?: string;
+            /** @description Component instance name */
+            name: string;
+            /** @description Whether the component is instantiated */
+            running: boolean;
+            /** @description Health status string */
+            status?: string;
+            /** @description Component type (processor, input, output, storage) */
+            type: string;
+            /** @description Seconds since component started */
+            uptime_seconds?: number;
         };
         ConsumableEffect: {
             duration?: number;
@@ -3027,7 +4156,8 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            type: string;
+            /** @enum {string} */
+            type: "retry_token" | "cooldown_skip" | "xp_boost" | "quality_shield" | "insight_scroll";
         };
         CreateQuestHints: {
             /** @description Cost budget for the quest */
@@ -3089,14 +4219,20 @@ export interface components {
         DMChatContextRef: {
             /** @description Entity ID */
             id: string;
-            /** @description Entity type: agent, quest, battle, guild */
-            type: string;
+            /**
+             * @description Entity type: agent, quest, battle, guild
+             * @enum {string}
+             */
+            type: "agent" | "quest" | "battle" | "guild";
         };
         DMChatHistoryItem: {
             /** @description Message content */
             content: string;
-            /** @description Message role: user or dm */
-            role: string;
+            /**
+             * @description Message role: user or dm
+             * @enum {string}
+             */
+            role: "user" | "dm";
         };
         DMChatRequest: {
             /** @description Entity references for context */
@@ -3127,10 +4263,9 @@ export interface components {
             mode: string;
             /** @description Extracted quest brief if detected */
             quest_brief?: {
-                acceptance?: string[];
                 depends_on?: string[];
-                description?: string;
                 difficulty?: number | null;
+                goal: string;
                 hints?: {
                     budget: number;
                     deadline?: string;
@@ -3142,16 +4277,23 @@ export interface components {
                     suggested_difficulty?: number | null;
                     suggested_skills?: string[];
                 } | null;
+                name?: string;
+                requirements?: string[];
+                scenarios?: {
+                    depends_on?: string[];
+                    description: string;
+                    name: string;
+                    skills?: string[];
+                }[];
                 skills?: string[];
                 title: string;
             } | null;
             /** @description Extracted quest chain if detected */
             quest_chain?: {
                 quests: {
-                    acceptance?: string[];
                     depends_on?: number[];
-                    description?: string;
                     difficulty?: number | null;
+                    goal?: string;
                     hints?: {
                         budget: number;
                         deadline?: string;
@@ -3163,6 +4305,14 @@ export interface components {
                         suggested_difficulty?: number | null;
                         suggested_skills?: string[];
                     } | null;
+                    name?: string;
+                    requirements?: string[];
+                    scenarios?: {
+                        depends_on?: string[];
+                        description: string;
+                        name: string;
+                        skills?: string[];
+                    }[];
                     skills?: string[];
                     title: string;
                 }[];
@@ -3215,6 +4365,38 @@ export interface components {
             total_skills: number;
             weakest_skill?: string;
             xp_efficiency: number;
+        };
+        EndpointUpdate: {
+            /** @description API key env var name */
+            api_key_env?: string;
+            /** @description Actual key value — written to .env, never stored in config */
+            api_key_value?: string | null;
+            /** @description Input cost */
+            input_price_per_1m_tokens?: number;
+            /** @description Max context window */
+            max_tokens: number;
+            /** @description Model identifier */
+            model: string;
+            /** @description Provider-specific options */
+            options?: {
+                [key: string]: unknown;
+            };
+            /** @description Output cost */
+            output_price_per_1m_tokens?: number;
+            /** @description Provider type */
+            provider: string;
+            /** @description Reasoning effort */
+            reasoning_effort?: string;
+            /** @description Set true to remove this endpoint */
+            remove?: boolean;
+            /** @description SSE streaming */
+            stream?: boolean;
+            /** @description Tool calling support */
+            supports_tools: boolean;
+            /** @description Tool format */
+            tool_format?: string;
+            /** @description API endpoint URL */
+            url?: string;
         };
         EquippedItem: {
             category: string;
@@ -3272,12 +4454,6 @@ export interface components {
             state: string;
             timestamp: number;
         };
-        GraphQLRequest: {
-            query: string;
-            variables?: {
-                [key: string]: unknown;
-            };
-        };
         Guild: {
             applications?: {
                 applicant_id: string;
@@ -3321,7 +4497,8 @@ export interface components {
             quorum_size: number;
             reputation: number;
             shared_tools: string[];
-            status: string;
+            /** @enum {string} */
+            status: "active" | "inactive";
             success_rate: number;
         };
         GuildMember: {
@@ -3329,7 +4506,8 @@ export interface components {
             contribution: number;
             /** Format: date-time */
             joined_at: string;
-            rank: string;
+            /** @enum {string} */
+            rank: "initiate" | "member" | "veteran" | "officer" | "guildmaster";
         };
         GuildMembership: {
             contribution: number;
@@ -3338,12 +4516,43 @@ export interface components {
             joined_at: string;
             rank: string;
         };
+        HealthCheck: {
+            /** @description Human-readable status message */
+            message: string;
+            /** @description Check identifier */
+            name: string;
+            /** @description ok, warning, or error */
+            status: string;
+        };
+        HealthResponse: {
+            /** @description Onboarding prerequisite checklist */
+            checklist: {
+                /** @description Guidance when not met */
+                help_text?: string;
+                /** @description Prerequisite description */
+                label: string;
+                /** @description Whether the prerequisite is satisfied */
+                met: boolean;
+            }[];
+            /** @description Individual health checks */
+            checks: {
+                /** @description Human-readable status message */
+                message: string;
+                /** @description Check identifier */
+                name: string;
+                /** @description ok, warning, or error */
+                status: string;
+            }[];
+            /** @description Overall health: healthy, degraded, unhealthy */
+            overall: string;
+        };
         Judge: {
             config: {
                 [key: string]: unknown;
             };
             id: string;
-            type: string;
+            /** @enum {string} */
+            type: "automated" | "llm" | "human";
         };
         LogEntryPayload: {
             fields: {
@@ -3388,6 +4597,12 @@ export interface components {
                 value: number;
             }[];
         };
+        ModelDefaultsView: {
+            /** @description Default capability */
+            capability?: string;
+            /** @description Default endpoint name */
+            model: string;
+        };
         ModelEndpointSummary: {
             /** @description Maximum context window size */
             max_tokens: number;
@@ -3401,6 +4616,34 @@ export interface components {
             reasoning_effort?: string;
             /** @description Whether the endpoint supports tool calling */
             supports_tools: boolean;
+        };
+        ModelEndpointView: {
+            /** @description Environment variable name for API key */
+            api_key_env?: string;
+            /** @description Whether the API key env var has a value */
+            api_key_set: boolean;
+            /** @description Cost per 1M input tokens USD */
+            input_price_per_1m_tokens?: number;
+            /** @description Max context window */
+            max_tokens: number;
+            /** @description Model identifier */
+            model: string;
+            /** @description Endpoint name */
+            name: string;
+            /** @description Cost per 1M output tokens USD */
+            output_price_per_1m_tokens?: number;
+            /** @description Provider type (anthropic, openai, ollama, openrouter) */
+            provider: string;
+            /** @description Reasoning effort level */
+            reasoning_effort?: string;
+            /** @description SSE streaming enabled */
+            stream?: boolean;
+            /** @description Whether tools/function calling is supported */
+            supports_tools: boolean;
+            /** @description Tool format (anthropic or openai) */
+            tool_format?: string;
+            /** @description API endpoint URL */
+            url?: string;
         };
         ModelRegistrySummary: {
             /** @description All configured capability keys */
@@ -3421,6 +4664,116 @@ export interface components {
                 supports_tools: boolean;
             }[];
         };
+        ModelRegistryUpdate: {
+            /** @description Capability add/update/remove */
+            capabilities?: {
+                [key: string]: {
+                    /** @description Capability description */
+                    description?: string;
+                    /** @description Fallback endpoint chain */
+                    fallback?: string[];
+                    /** @description Preferred endpoint chain */
+                    preferred?: string[];
+                    /** @description Set true to remove this capability */
+                    remove?: boolean;
+                    /** @description Require tool support */
+                    requires_tools?: boolean;
+                } | null;
+            };
+            /** @description Default model changes */
+            defaults?: {
+                /** @description Default capability */
+                capability?: string;
+                /** @description Default endpoint name */
+                model: string;
+            } | null;
+            /** @description Endpoint add/update/remove */
+            endpoints?: {
+                [key: string]: {
+                    /** @description API key env var name */
+                    api_key_env?: string;
+                    /** @description Actual key value — written to .env, never stored in config */
+                    api_key_value?: string | null;
+                    /** @description Input cost */
+                    input_price_per_1m_tokens?: number;
+                    /** @description Max context window */
+                    max_tokens: number;
+                    /** @description Model identifier */
+                    model: string;
+                    /** @description Provider-specific options */
+                    options?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Output cost */
+                    output_price_per_1m_tokens?: number;
+                    /** @description Provider type */
+                    provider: string;
+                    /** @description Reasoning effort */
+                    reasoning_effort?: string;
+                    /** @description Set true to remove this endpoint */
+                    remove?: boolean;
+                    /** @description SSE streaming */
+                    stream?: boolean;
+                    /** @description Tool calling support */
+                    supports_tools: boolean;
+                    /** @description Tool format */
+                    tool_format?: string;
+                    /** @description API endpoint URL */
+                    url?: string;
+                } | null;
+            };
+        };
+        ModelRegistryView: {
+            /** @description Capability routing */
+            capabilities: {
+                [key: string]: {
+                    /** @description What this capability is for */
+                    description: string;
+                    /** @description Fallback endpoint chain */
+                    fallback?: string[];
+                    /** @description Preferred endpoint chain */
+                    preferred: string[];
+                    /** @description Whether endpoints must support tools */
+                    requires_tools?: boolean;
+                };
+            };
+            /** @description Default model settings */
+            defaults: {
+                /** @description Default capability */
+                capability?: string;
+                /** @description Default endpoint name */
+                model: string;
+            };
+            /** @description Configured LLM endpoints */
+            endpoints: {
+                /** @description Environment variable name for API key */
+                api_key_env?: string;
+                /** @description Whether the API key env var has a value */
+                api_key_set: boolean;
+                /** @description Cost per 1M input tokens USD */
+                input_price_per_1m_tokens?: number;
+                /** @description Max context window */
+                max_tokens: number;
+                /** @description Model identifier */
+                model: string;
+                /** @description Endpoint name */
+                name: string;
+                /** @description Cost per 1M output tokens USD */
+                output_price_per_1m_tokens?: number;
+                /** @description Provider type (anthropic, openai, ollama, openrouter) */
+                provider: string;
+                /** @description Reasoning effort level */
+                reasoning_effort?: string;
+                /** @description SSE streaming enabled */
+                stream?: boolean;
+                /** @description Whether tools/function calling is supported */
+                supports_tools: boolean;
+                /** @description Tool format (anthropic or openai) */
+                tool_format?: string;
+                /** @description API endpoint URL */
+                url?: string;
+            }[];
+        };
         ModelResolveResponse: {
             /** @description The requested capability key */
             capability: string;
@@ -3432,6 +4785,14 @@ export interface components {
             model?: string;
             /** @description Provider type (openai, ollama, anthropic, etc.) */
             provider?: string;
+        };
+        NATSInfo: {
+            /** @description Whether NATS is connected */
+            connected: boolean;
+            /** @description Round-trip time in milliseconds */
+            latency_ms?: number;
+            /** @description NATS server URL */
+            url: string;
         };
         OwnedItem: {
             item_id: string;
@@ -3465,8 +4826,10 @@ export interface components {
                 key: string;
                 value: unknown;
             }[];
-            status: string;
-            strategy: string;
+            /** @enum {string} */
+            status: "forming" | "active" | "disbanded";
+            /** @enum {string} */
+            strategy: "balanced" | "specialist" | "mentor" | "minimal";
             sub_quest_map: {
                 [key: string]: string;
             };
@@ -3478,7 +4841,8 @@ export interface components {
             agent_id: string;
             /** Format: date-time */
             joined_at: string;
-            role: string;
+            /** @enum {string} */
+            role: "lead" | "executor" | "reviewer" | "scout";
             skills: string[];
         };
         PeerReview: {
@@ -3519,7 +4883,16 @@ export interface components {
             } | null;
             party_id?: string | null;
             quest_id: string;
-            status: string;
+            /** @enum {string} */
+            status: "pending" | "partial" | "completed";
+        };
+        PlatformInfo: {
+            /** @description Quest board name */
+            board: string;
+            /** @description Organization namespace */
+            org: string;
+            /** @description Platform/deployment ID */
+            platform: string;
         };
         PurchaseItemRequest: {
             /** @description ID of the purchasing agent */
@@ -3544,6 +4917,7 @@ export interface components {
         Quest: {
             acceptance?: string[];
             allowed_tools?: string[];
+            anti_patterns?: string[];
             attempts: number;
             base_xp: number;
             bonus_xp: number;
@@ -3571,15 +4945,31 @@ export interface components {
             dag_node_retries?: unknown;
             dag_node_states?: unknown;
             deadline?: string | null;
+            decomposability_class?: string;
             decomposed_by?: string | null;
             depends_on?: string[];
             description: string;
-            difficulty: number;
+            /** @enum {integer} */
+            difficulty: 0 | 1 | 2 | 3 | 4 | 5;
             dm_clarifications?: unknown;
             duration?: number;
             escalated: boolean;
+            failure_analysis?: string;
+            failure_history?: {
+                agent_id?: string;
+                attempt: number;
+                failure_reason: string;
+                failure_type: string;
+                loop_id?: string;
+                output?: unknown;
+                /** Format: date-time */
+                timestamp: string;
+                triage_verdict?: string;
+            }[];
             failure_reason?: string;
-            failure_type?: string;
+            /** @enum {string} */
+            failure_type?: "quality" | "timeout" | "error" | "abandoned";
+            goal?: string;
             guild_priority?: string | null;
             guild_xp: number;
             id: string;
@@ -3587,17 +4977,29 @@ export interface components {
             loop_id?: string;
             max_attempts: number;
             min_party_size: number;
-            min_tier: number;
+            /** @enum {integer} */
+            min_tier: 0 | 1 | 2 | 3 | 4;
+            name?: string;
             output: unknown;
             parent_quest?: string | null;
             party_id?: string | null;
             party_required: boolean;
             /** Format: date-time */
             posted_at: string;
+            recovery_path?: string;
             required_skills: string[];
             required_tools: string[];
+            requirements?: string[];
+            salvaged_output?: unknown;
+            scenarios?: {
+                depends_on?: string[];
+                description: string;
+                name: string;
+                skills?: string[];
+            }[];
             started_at?: string | null;
-            status: string;
+            /** @enum {string} */
+            status: "posted" | "claimed" | "in_progress" | "in_review" | "completed" | "failed" | "escalated" | "cancelled";
             sub_quests?: string[];
             title: string;
             verdict?: {
@@ -3610,10 +5012,9 @@ export interface components {
             } | null;
         };
         QuestBrief: {
-            acceptance?: string[];
             depends_on?: string[];
-            description?: string;
             difficulty?: number | null;
+            goal: string;
             hints?: {
                 budget: number;
                 deadline?: string;
@@ -3625,15 +5026,22 @@ export interface components {
                 suggested_difficulty?: number | null;
                 suggested_skills?: string[];
             } | null;
+            name?: string;
+            requirements?: string[];
+            scenarios?: {
+                depends_on?: string[];
+                description: string;
+                name: string;
+                skills?: string[];
+            }[];
             skills?: string[];
             title: string;
         };
         QuestChainBrief: {
             quests: {
-                acceptance?: string[];
                 depends_on?: number[];
-                description?: string;
                 difficulty?: number | null;
+                goal?: string;
                 hints?: {
                     budget: number;
                     deadline?: string;
@@ -3645,15 +5053,22 @@ export interface components {
                     suggested_difficulty?: number | null;
                     suggested_skills?: string[];
                 } | null;
+                name?: string;
+                requirements?: string[];
+                scenarios?: {
+                    depends_on?: string[];
+                    description: string;
+                    name: string;
+                    skills?: string[];
+                }[];
                 skills?: string[];
                 title: string;
             }[];
         };
         QuestChainEntry: {
-            acceptance?: string[];
             depends_on?: number[];
-            description?: string;
             difficulty?: number | null;
+            goal?: string;
             hints?: {
                 budget: number;
                 deadline?: string;
@@ -3665,6 +5080,14 @@ export interface components {
                 suggested_difficulty?: number | null;
                 suggested_skills?: string[];
             } | null;
+            name?: string;
+            requirements?: string[];
+            scenarios?: {
+                depends_on?: string[];
+                description: string;
+                name: string;
+                skills?: string[];
+            }[];
             skills?: string[];
             title: string;
         };
@@ -3673,7 +5096,8 @@ export interface components {
             max_duration: number;
             max_tokens: number;
             require_review: boolean;
-            review_level: number;
+            /** @enum {integer} */
+            review_level: 0 | 1 | 2 | 3;
         };
         QuestHints: {
             budget: number;
@@ -3709,13 +5133,6 @@ export interface components {
             q2: number;
             q3: number;
         };
-        ReviewRequest: {
-            decision: string;
-            notes?: string;
-            override_predicate?: string;
-            reviewed_by?: string;
-            target_entity?: string;
-        };
         ReviewResult: {
             criterion_name: string;
             judge_id: string;
@@ -3724,7 +5141,8 @@ export interface components {
             score: number;
         };
         ReviewSubmission: {
-            direction: string;
+            /** @enum {string} */
+            direction: "leader_to_member" | "member_to_leader" | "dm_to_agent";
             explanation?: string;
             ratings: {
                 q1: number;
@@ -3797,6 +5215,123 @@ export interface components {
             /** @description New hourly token limit (0 = unlimited) */
             global_hourly_limit: number;
         };
+        SettingsResponse: {
+            components: {
+                /** @description Whether the component is in the config */
+                enabled: boolean;
+                /** @description Total error count */
+                error_count?: number;
+                /** @description Whether the component reports healthy */
+                healthy: boolean;
+                /** @description Most recent error message */
+                last_error?: string;
+                /** @description Component instance name */
+                name: string;
+                /** @description Whether the component is instantiated */
+                running: boolean;
+                /** @description Health status string */
+                status?: string;
+                /** @description Component type (processor, input, output, storage) */
+                type: string;
+                /** @description Seconds since component started */
+                uptime_seconds?: number;
+            }[];
+            models: {
+                /** @description Capability routing */
+                capabilities: {
+                    [key: string]: {
+                        /** @description What this capability is for */
+                        description: string;
+                        /** @description Fallback endpoint chain */
+                        fallback?: string[];
+                        /** @description Preferred endpoint chain */
+                        preferred: string[];
+                        /** @description Whether endpoints must support tools */
+                        requires_tools?: boolean;
+                    };
+                };
+                /** @description Default model settings */
+                defaults: {
+                    /** @description Default capability */
+                    capability?: string;
+                    /** @description Default endpoint name */
+                    model: string;
+                };
+                /** @description Configured LLM endpoints */
+                endpoints: {
+                    /** @description Environment variable name for API key */
+                    api_key_env?: string;
+                    /** @description Whether the API key env var has a value */
+                    api_key_set: boolean;
+                    /** @description Cost per 1M input tokens USD */
+                    input_price_per_1m_tokens?: number;
+                    /** @description Max context window */
+                    max_tokens: number;
+                    /** @description Model identifier */
+                    model: string;
+                    /** @description Endpoint name */
+                    name: string;
+                    /** @description Cost per 1M output tokens USD */
+                    output_price_per_1m_tokens?: number;
+                    /** @description Provider type (anthropic, openai, ollama, openrouter) */
+                    provider: string;
+                    /** @description Reasoning effort level */
+                    reasoning_effort?: string;
+                    /** @description SSE streaming enabled */
+                    stream?: boolean;
+                    /** @description Whether tools/function calling is supported */
+                    supports_tools: boolean;
+                    /** @description Tool format (anthropic or openai) */
+                    tool_format?: string;
+                    /** @description API endpoint URL */
+                    url?: string;
+                }[];
+            };
+            nats: {
+                /** @description Whether NATS is connected */
+                connected: boolean;
+                /** @description Round-trip time in milliseconds */
+                latency_ms?: number;
+                /** @description NATS server URL */
+                url: string;
+            };
+            platform: {
+                /** @description Quest board name */
+                board: string;
+                /** @description Organization namespace */
+                org: string;
+                /** @description Platform/deployment ID */
+                platform: string;
+            };
+            search_config: {
+                /** @description Whether an API key is configured */
+                api_key_set: boolean;
+                /** @description Custom API endpoint */
+                base_url?: string;
+                /** @description Search provider (e.g. brave) */
+                provider: string;
+            };
+            token_budget?: {
+                /** @description Hourly token limit (0 = unlimited) */
+                global_hourly_limit: number;
+            } | null;
+            websocket_input: {
+                /** @description Whether currently connected (only meaningful when enabled) */
+                connected: boolean;
+                /** @description Whether the websocket input is enabled */
+                enabled: boolean;
+                /** @description Component health status */
+                healthy: boolean;
+                /** @description Human-readable status */
+                status?: string;
+                /** @description WebSocket server URL */
+                url: string;
+            };
+            workspace: {
+                /** @description Whether the artifact store is available */
+                available: boolean;
+            };
+        };
         SkillBar: {
             is_max_level: boolean;
             level: number;
@@ -3807,16 +5342,6 @@ export interface components {
             skill: string;
             skill_name: string;
             total_xp: number;
-        };
-        StatsResponse: {
-            applied: number;
-            human_approved: number;
-            human_rejected: number;
-            human_review: number;
-            llm_approved: number;
-            llm_rejected: number;
-            pending_review: number;
-            total_detected: number;
         };
         StatusStreamEnvelope: {
             flow_id: string;
@@ -3839,55 +5364,16 @@ export interface components {
             guild_discount?: number;
             id: string;
             in_stock: boolean;
-            item_type: string;
+            /** @enum {string} */
+            item_type: "tool" | "consumable";
             min_level?: number;
             min_tier: number;
             name: string;
-            purchase_type: string;
+            /** @enum {string} */
+            purchase_type: "permanent" | "rental";
             rental_uses?: number;
             tool_id?: string;
             xp_cost: number;
-        };
-        StructuralAnomaly: {
-            confidence: number;
-            /** Format: date-time */
-            detected_at: string;
-            entity_a: string;
-            entity_a_context?: string;
-            entity_b?: string;
-            entity_b_context?: string;
-            evidence: {
-                actual_distance?: number;
-                chain_path?: string[];
-                community_id?: string;
-                core_level?: number;
-                current_core_level?: number;
-                distance_lower_bound?: number;
-                distance_upper_bound?: number;
-                expected_max_hops?: number;
-                expected_peer_count?: number;
-                lost_connections?: number;
-                peer_connectivity?: number;
-                peer_count?: number;
-                predicate?: string;
-                previous_core_level?: number;
-                similarity?: number;
-                structural_distance?: number;
-            };
-            id: string;
-            llm_reasoning?: string;
-            review_notes?: string;
-            reviewed_at?: string | null;
-            reviewed_by?: string;
-            status: string;
-            suggestion?: {
-                confidence: number;
-                from_entity: string;
-                predicate: string;
-                reasoning: string;
-                to_entity: string;
-            } | null;
-            type: string;
         };
         SubmitQuestRequest: {
             /** @description The quest result output */
@@ -3910,6 +5396,10 @@ export interface components {
             log_level?: string;
             message_types?: string[];
             sources?: string[];
+        };
+        TokenBudgetView: {
+            /** @description Hourly token limit (0 = unlimited) */
+            global_hourly_limit: number;
         };
         TokenStats: {
             breaker: string;
@@ -3950,6 +5440,7 @@ export interface components {
                 duration: number;
                 messages?: {
                     content?: string;
+                    is_error?: boolean;
                     name?: string;
                     reasoning_content?: string;
                     role: string;
@@ -4001,6 +5492,7 @@ export interface components {
             duration: number;
             messages?: {
                 content?: string;
+                is_error?: boolean;
                 name?: string;
                 reasoning_content?: string;
                 role: string;
@@ -4045,6 +5537,95 @@ export interface components {
             tool_name?: string;
             tool_result?: string;
         };
+        TriageDecision: {
+            analysis: string;
+            anti_patterns?: string[];
+            path: string;
+            salvaged_output?: unknown;
+        };
+        UpdateSettingsRequest: {
+            /** @description Model registry changes */
+            model_registry?: {
+                /** @description Capability add/update/remove */
+                capabilities?: {
+                    [key: string]: {
+                        /** @description Capability description */
+                        description?: string;
+                        /** @description Fallback endpoint chain */
+                        fallback?: string[];
+                        /** @description Preferred endpoint chain */
+                        preferred?: string[];
+                        /** @description Set true to remove this capability */
+                        remove?: boolean;
+                        /** @description Require tool support */
+                        requires_tools?: boolean;
+                    } | null;
+                };
+                /** @description Default model changes */
+                defaults?: {
+                    /** @description Default capability */
+                    capability?: string;
+                    /** @description Default endpoint name */
+                    model: string;
+                } | null;
+                /** @description Endpoint add/update/remove */
+                endpoints?: {
+                    [key: string]: {
+                        /** @description API key env var name */
+                        api_key_env?: string;
+                        /** @description Actual key value — written to .env, never stored in config */
+                        api_key_value?: string | null;
+                        /** @description Input cost */
+                        input_price_per_1m_tokens?: number;
+                        /** @description Max context window */
+                        max_tokens: number;
+                        /** @description Model identifier */
+                        model: string;
+                        /** @description Provider-specific options */
+                        options?: {
+                            [key: string]: unknown;
+                        };
+                        /** @description Output cost */
+                        output_price_per_1m_tokens?: number;
+                        /** @description Provider type */
+                        provider: string;
+                        /** @description Reasoning effort */
+                        reasoning_effort?: string;
+                        /** @description Set true to remove this endpoint */
+                        remove?: boolean;
+                        /** @description SSE streaming */
+                        stream?: boolean;
+                        /** @description Tool calling support */
+                        supports_tools: boolean;
+                        /** @description Tool format */
+                        tool_format?: string;
+                        /** @description API endpoint URL */
+                        url?: string;
+                    } | null;
+                };
+            } | null;
+            /** @description Web search configuration changes */
+            search_config?: {
+                /** @description API key for the provider */
+                api_key?: string | null;
+                /** @description Custom API endpoint */
+                base_url?: string | null;
+                /** @description Search provider type */
+                provider?: string | null;
+            } | null;
+            /** @description Token budget changes */
+            token_budget?: {
+                /** @description Hourly token limit (0 = unlimited) */
+                global_hourly_limit: number;
+            } | null;
+            /** @description WebSocket input changes */
+            websocket_input?: {
+                /** @description Enable or disable the websocket input */
+                enabled?: boolean | null;
+                /** @description WebSocket server URL to connect to */
+                url?: string | null;
+            } | null;
+        };
         UsageSnapshot: {
             completion_tokens: number;
             estimated_cost_usd: number;
@@ -4066,6 +5647,28 @@ export interface components {
             remaining?: number;
             /** @description Whether the consumable was used */
             success: boolean;
+        };
+        WebsocketInputUpdate: {
+            /** @description Enable or disable the websocket input */
+            enabled?: boolean | null;
+            /** @description WebSocket server URL to connect to */
+            url?: string | null;
+        };
+        WebsocketInputView: {
+            /** @description Whether currently connected (only meaningful when enabled) */
+            connected: boolean;
+            /** @description Whether the websocket input is enabled */
+            enabled: boolean;
+            /** @description Component health status */
+            healthy: boolean;
+            /** @description Human-readable status */
+            status?: string;
+            /** @description WebSocket server URL */
+            url: string;
+        };
+        WorkspaceInfoView: {
+            /** @description Whether the artifact store is available */
+            available: boolean;
         };
         WorldStateResponse: {
             /** @description List of agent entities */

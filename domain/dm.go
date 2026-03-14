@@ -550,6 +550,7 @@ func MaxParallelWidth(scenarios []QuestScenario) int {
 // Scenarios express named sub-goals and their dependency relationships within
 // the quest. Use ClassifyDecomposability to inspect the scenario graph shape.
 type QuestBrief struct {
+	Name         string           `json:"name,omitempty"`
 	Title        string           `json:"title"`
 	Goal         string           `json:"goal"`
 	Requirements []string         `json:"requirements,omitempty"`
@@ -571,6 +572,7 @@ type QuestChainBrief struct {
 // Goal replaces Description; Requirements replaces Acceptance; Scenarios
 // express named sub-goals within each chain entry.
 type QuestChainEntry struct {
+	Name         string           `json:"name,omitempty"`
 	Title        string           `json:"title"`
 	Goal         string           `json:"goal,omitempty"`
 	Requirements []string         `json:"requirements,omitempty"`

@@ -22,6 +22,7 @@ import (
 // BossBattle represents a quality gate review session.
 type BossBattle struct {
 	ID      domain.BattleID     `json:"id"`
+	Name    string              `json:"name,omitempty"`
 	QuestID domain.QuestID      `json:"quest_id"`
 	AgentID domain.AgentID      `json:"agent_id"`
 	Level   domain.ReviewLevel  `json:"level"`
@@ -52,6 +53,9 @@ func (b *BossBattle) Triples() []message.Triple {
 	entityID := b.EntityID()
 
 	triples := []message.Triple{
+		// Identity
+		{Subject: entityID, Predicate: "battle.identity.name", Object: b.Name, Source: source, Timestamp: now, Confidence: 1.0},
+
 		// Relationships — must match reconstruction predicates in BattleFromEntityState
 		{Subject: entityID, Predicate: "battle.assignment.quest", Object: string(b.QuestID), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "battle.assignment.agent", Object: string(b.AgentID), Source: source, Timestamp: now, Confidence: 1.0},
@@ -173,6 +177,10 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 
 	for _, triple := range entity.Triples {
 		switch triple.Predicate {
+		// Identity
+		case "battle.identity.name":
+			b.Name = domain.AsString(triple.Object)
+
 		// Relationships
 		case "battle.assignment.quest":
 			b.QuestID = domain.QuestID(domain.AsString(triple.Object))

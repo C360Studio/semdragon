@@ -13,6 +13,7 @@ import "time"
 // Quest represents a unit of work on the quest board.
 type Quest struct {
 	ID          QuestID         `json:"id"`
+	Name        string          `json:"name,omitempty"`
 	Title       string          `json:"title"`
 	Description string          `json:"description"`
 	Status      QuestStatus     `json:"status"`

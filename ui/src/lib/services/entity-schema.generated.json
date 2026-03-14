@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-14T13:55:26Z",
+  "generated_at": "2026-03-14T22:43:29Z",
   "entities": {
     "agent": {
       "static": [
@@ -36,6 +36,7 @@
         "battle.assignment.agent",
         "battle.assignment.quest",
         "battle.criteria.count",
+        "battle.identity.name",
         "battle.lifecycle.started_at",
         "battle.review.level",
         "battle.status.state"
@@ -115,6 +116,7 @@
         "quest.attempts.max",
         "quest.difficulty.level",
         "quest.identity.description",
+        "quest.identity.name",
         "quest.identity.title",
         "quest.lifecycle.posted_at",
         "quest.party.min_size",

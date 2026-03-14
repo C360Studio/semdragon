@@ -32,6 +32,7 @@ func (q *Quest) Triples() []message.Triple {
 
 	triples := []message.Triple{
 		// Identity
+		{Subject: entityID, Predicate: "quest.identity.name", Object: q.Name, Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "quest.identity.title", Object: q.Title, Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "quest.identity.description", Object: q.Description, Source: source, Timestamp: now, Confidence: 1.0},
 

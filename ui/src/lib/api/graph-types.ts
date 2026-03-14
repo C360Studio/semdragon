@@ -216,10 +216,33 @@ export function isEntityReference(object: unknown): object is string {
 }
 
 /**
- * Get display label for an entity — uses the instance part of the ID.
+ * Get display label for an entity — prefers human-readable names from triples,
+ * falls back to the instance part of the ID.
  */
 export function getEntityLabel(entity: GraphEntity): string {
-  return entity.idParts.instance || entity.id;
+  const fallback = entity.idParts.instance || entity.id;
+  const type = entity.idParts.type;
+
+  const val = (pred: string): string => {
+    const t = entity.properties.find((tr) => tr.predicate === pred);
+    if (!t || t.object == null) return '';
+    return String(t.object);
+  };
+
+  switch (type) {
+    case 'agent':
+      return val('agent.identity.display_name') || val('agent.identity.name') || fallback;
+    case 'quest':
+      return val('quest.identity.name') || val('quest.identity.title') || fallback;
+    case 'battle':
+      return val('battle.identity.name') || fallback;
+    case 'party':
+      return val('party.identity.name') || fallback;
+    case 'guild':
+      return val('guild.identity.name') || fallback;
+    default:
+      return fallback;
+  }
 }
 
 /**

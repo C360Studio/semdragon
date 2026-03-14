@@ -18,6 +18,45 @@ import { getEntityColor, getPredicateColor } from '$lib/utils/entity-colors';
 const DEFAULT_NODE_SIZE = 8;
 const MIN_NODE_SIZE = 5;
 const MAX_NODE_SIZE = 20;
+const MAX_LABEL_LENGTH = 30;
+
+/**
+ * Extract a human-readable label from entity triples.
+ * Falls back to the instance segment of the entity ID.
+ */
+function getNodeLabel(entity: GraphEntity): string {
+	const fallback = entity.idParts.instance || entity.id;
+	const type = entity.idParts.type;
+
+	// Build a quick predicate→value lookup from properties
+	const val = (pred: string): string => {
+		const t = entity.properties.find((tr) => tr.predicate === pred);
+		if (!t || t.object == null) return '';
+		return String(t.object);
+	};
+
+	switch (type) {
+		case 'agent':
+			return val('agent.identity.display_name') || val('agent.identity.name') || fallback;
+		case 'quest':
+			return val('quest.identity.name') || truncateLabel(val('quest.identity.title')) || fallback;
+		case 'battle':
+			return val('battle.identity.name') || fallback;
+		case 'party':
+			return val('party.identity.name') || fallback;
+		case 'guild':
+			return val('guild.identity.name') || fallback;
+		default:
+			return fallback;
+	}
+}
+
+function truncateLabel(s: string): string {
+	if (!s || s.length <= MAX_LABEL_LENGTH) return s;
+	const i = s.lastIndexOf(' ', MAX_LABEL_LENGTH);
+	if (i > MAX_LABEL_LENGTH / 2) return s.slice(0, i) + '\u2026';
+	return s.slice(0, MAX_LABEL_LENGTH - 1) + '\u2026';
+}
 
 /**
  * Calculate node size based on connection count.
@@ -52,7 +91,7 @@ export function syncStoreToGraph(
 	for (const entity of entities) {
 		const existing = positions.get(entity.id);
 		graph.addNode(entity.id, {
-			label: entity.idParts.instance || entity.id,
+			label: getNodeLabel(entity),
 			size: getNodeSize(entity),
 			color: getEntityColor(entity.idParts),
 			// "type" is reserved by Sigma as the WebGL program selector (only "circle"
@@ -93,7 +132,7 @@ export function addToGraph(
 		if (!graph.hasNode(entity.id)) {
 			const { x, y } = getInitialPosition(graph, entity);
 			graph.addNode(entity.id, {
-				label: entity.idParts.instance || entity.id,
+				label: getNodeLabel(entity),
 				size: getNodeSize(entity),
 				color: getEntityColor(entity.idParts),
 				entityType: entity.idParts.type,

@@ -33,6 +33,8 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 	for _, triple := range entity.Triples {
 		switch triple.Predicate {
 		// Identity
+		case "quest.identity.name":
+			q.Name = AsString(triple.Object)
 		case "quest.identity.title":
 			q.Title = AsString(triple.Object)
 		case "quest.identity.description":

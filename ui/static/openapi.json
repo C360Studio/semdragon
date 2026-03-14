@@ -3228,6 +3228,9 @@
           "loop_id": {
             "type": "string"
           },
+          "name": {
+            "type": "string"
+          },
           "quest_id": {
             "type": "string"
           },
@@ -4468,6 +4471,9 @@
                       }
                     ]
                   },
+                  "name": {
+                    "type": "string"
+                  },
                   "requirements": {
                     "items": {
                       "type": "string"
@@ -4626,6 +4632,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "name": {
+                          "type": "string"
                         },
                         "requirements": {
                           "items": {
@@ -6882,6 +6891,9 @@
             ],
             "type": "integer"
           },
+          "name": {
+            "type": "string"
+          },
           "output": {},
           "parent_quest": {
             "anyOf": [
@@ -7154,6 +7166,9 @@
               }
             ]
           },
+          "name": {
+            "type": "string"
+          },
           "requirements": {
             "items": {
               "type": "string"
@@ -7304,6 +7319,9 @@
                       "type": "null"
                     }
                   ]
+                },
+                "name": {
+                  "type": "string"
                 },
                 "requirements": {
                   "items": {
@@ -7459,6 +7477,9 @@
                 "type": "null"
               }
             ]
+          },
+          "name": {
+            "type": "string"
           },
           "requirements": {
             "items": {
@@ -9027,6 +9048,28 @@
           "timestamp",
           "step_type",
           "duration"
+        ],
+        "type": "object"
+      },
+      "TriageDecision": {
+        "properties": {
+          "analysis": {
+            "type": "string"
+          },
+          "anti_patterns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          },
+          "salvaged_output": {}
+        },
+        "required": [
+          "path",
+          "analysis"
         ],
         "type": "object"
       },

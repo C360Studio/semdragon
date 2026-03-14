@@ -238,6 +238,45 @@ describe('getEntityLabel', () => {
 		expect(getEntityLabel(entity)).toBe('fetch-data-q1');
 	});
 
+	it('returns agent display name from triples', () => {
+		const entity = makeEntity('c360.prod.game.board1.agent.abc123');
+		entity.properties = [
+			{ predicate: 'agent.identity.name', object: 'CodeForger', confidence: 1.0, source: 'test', timestamp: 0 },
+			{ predicate: 'agent.identity.display_name', object: 'The Code Forger', confidence: 1.0, source: 'test', timestamp: 0 }
+		];
+		expect(getEntityLabel(entity)).toBe('The Code Forger');
+	});
+
+	it('returns quest name from triples', () => {
+		const entity = makeEntity('c360.prod.game.board1.quest.xyz789');
+		entity.properties = [
+			{ predicate: 'quest.identity.name', object: 'Login Fix', confidence: 1.0, source: 'test', timestamp: 0 },
+			{ predicate: 'quest.identity.title', object: 'Fix the login bug in auth module', confidence: 1.0, source: 'test', timestamp: 0 }
+		];
+		expect(getEntityLabel(entity)).toBe('Login Fix');
+	});
+
+	it('falls back to quest title when name is empty', () => {
+		const entity = makeEntity('c360.prod.game.board1.quest.xyz789');
+		entity.properties = [
+			{ predicate: 'quest.identity.title', object: 'Fix the login bug', confidence: 1.0, source: 'test', timestamp: 0 }
+		];
+		expect(getEntityLabel(entity)).toBe('Fix the login bug');
+	});
+
+	it('returns battle name from triples', () => {
+		const entity = makeEntity('c360.prod.game.board1.battle.bat001');
+		entity.properties = [
+			{ predicate: 'battle.identity.name', object: 'Login Fix BB', confidence: 1.0, source: 'test', timestamp: 0 }
+		];
+		expect(getEntityLabel(entity)).toBe('Login Fix BB');
+	});
+
+	it('falls back to instance ID when no triples', () => {
+		const entity = makeEntity('c360.prod.game.board1.quest.fetch-data-q1');
+		expect(getEntityLabel(entity)).toBe('fetch-data-q1');
+	});
+
 	it('falls back to the full entity ID when instance is empty string', () => {
 		// parseEntityId on a malformed ID may produce 'unknown' for instance,
 		// but we can force the edge case by crafting idParts manually.

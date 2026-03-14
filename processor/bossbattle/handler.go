@@ -211,8 +211,15 @@ func (c *Component) buildBattle(id domain.BattleID, quest *domain.Quest) *BossBa
 		agentID = *quest.ClaimedBy
 	}
 
+	// Derive battle name from quest name
+	battleName := quest.Name + " BB"
+	if quest.Name == "" {
+		battleName = quest.Title + " BB"
+	}
+
 	return &BossBattle{
 		ID:        id,
+		Name:      battleName,
 		QuestID:   quest.ID,
 		AgentID:   agentID,
 		Level:     reviewLevel,
