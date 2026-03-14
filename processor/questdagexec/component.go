@@ -93,12 +93,18 @@ type Component struct {
 	dagCache      map[string]*DAGExecutionState // executionID → state
 	dagBySubQuest map[string]*DAGExecutionState // sub-quest entity key → state
 	questCache    map[string]string             // quest entity key → last known status
+	reviewRetries map[string]bool               // tracks one-time review retry per node
 
 	// completedDAGKeys tracks entity keys of parent quests whose DAG has completed
 	// (rollup triggered). Written by the event loop, read by produceQuestEvents
 	// to prune seenDAGParents and allow future DAGs on the same entity key.
 	// sync.Map because event loop writes and producer goroutine reads.
 	completedDAGKeys sync.Map // string → bool (entity key → true)
+
+	// dagStartTimes tracks when each DAG was first indexed (executionID → time.Time).
+	// Written by event loop (onDAGEntry), read by sweep goroutine (sweepStaleDags).
+	// sync.Map because event loop writes and sweep goroutine reads.
+	dagStartTimes sync.Map // string → time.Time (executionID → start time)
 
 	// Lifecycle.
 	running  atomic.Bool
@@ -308,17 +314,20 @@ func (c *Component) Start(ctx context.Context) error {
 	c.dagCache = make(map[string]*DAGExecutionState)
 	c.dagBySubQuest = make(map[string]*DAGExecutionState)
 	c.questCache = make(map[string]string)
+	c.reviewRetries = make(map[string]bool)
 
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
 
-	// Launch producers and event loop. produceQuestEvents handles both bootstrap
-	// and live events — DAG detection and sub-quest status transitions in one pass.
-	c.wg.Add(3)
+	// Launch producers, event loop, and sweep goroutine. produceQuestEvents
+	// handles both bootstrap and live events — DAG detection and sub-quest
+	// status transitions in one pass.
+	c.wg.Add(4)
 	go c.runEventLoop(ctx)
 	go c.produceQuestEvents(ctx, c.events)
 	go c.produceReviewEvents(ctx, c.events)
+	go c.sweepStaleDags(ctx)
 
 	c.logger.Info("questdagexec component started",
 		"org", c.config.Org,
@@ -327,6 +336,31 @@ func (c *Component) Start(ctx context.Context) error {
 		"stream", c.config.StreamName)
 
 	return nil
+}
+
+// CancelDAGForQuest sends a cancel event for the DAG associated with the given
+// parent quest entity key. The event is processed asynchronously by the event
+// loop, which cancels sub-quest loops, escalates the parent quest, and disbands
+// the party.
+//
+// The parentQuestEntityKey may be either the raw quest ID or the full entity key —
+// onDAGTimedOut handles both via the dagCache lookup.
+//
+// Safe to call from any goroutine; does not touch event-loop-owned maps directly.
+func (c *Component) CancelDAGForQuest(ctx context.Context, parentQuestEntityKey string) {
+	evt := dagEvent{
+		Type:        dagEventDAGTimedOut,
+		EntityKey:   parentQuestEntityKey,
+		ErrorReason: "cancelled via API",
+	}
+
+	select {
+	case c.events <- evt:
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		c.logger.Warn("CancelDAGForQuest: timed out sending cancel event",
+			"parent_quest_entity_key", parentQuestEntityKey)
+	}
 }
 
 // Stop gracefully shuts down the component.

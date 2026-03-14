@@ -372,6 +372,7 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("POST "+prefix+"quests/{id}/complete", cors(requireAuth(apiKey, s.handleCompleteQuest)))
 	mux.HandleFunc("POST "+prefix+"quests/{id}/fail", cors(requireAuth(apiKey, s.handleFailQuest)))
 	mux.HandleFunc("POST "+prefix+"quests/{id}/abandon", cors(requireAuth(apiKey, s.handleAbandonQuest)))
+	mux.HandleFunc("POST "+prefix+"quests/{id}/cancel", cors(requireAuth(apiKey, s.handleCancelQuest)))
 
 	// Quest artifacts
 	mux.HandleFunc("GET "+prefix+"quests/{id}/artifacts/list", cors(s.handleListQuestArtifacts))

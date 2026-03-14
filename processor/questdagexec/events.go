@@ -55,6 +55,22 @@ const (
 	// The lead has combined all sub-quest outputs into a final deliverable.
 	// The event loop calls triggerRollup with the synthesized result.
 	dagEventSynthesisCompleted
+
+	// dagEventReviewFailed is emitted when the AGENT stream delivers a
+	// LoopFailedEvent or LoopCancelledEvent for a review loop (LoopID prefixed with "review-").
+	dagEventReviewFailed
+
+	// dagEventSynthesisFailed is emitted when the AGENT stream delivers a
+	// LoopFailedEvent or LoopCancelledEvent for a synthesis loop (LoopID prefixed with "synthesis-").
+	dagEventSynthesisFailed
+
+	// dagEventClarificationFailed is emitted when the AGENT stream delivers a
+	// LoopFailedEvent or LoopCancelledEvent for a clarification loop (LoopID prefixed with "clarify-").
+	dagEventClarificationFailed
+
+	// dagEventDAGTimedOut is emitted by the sweep goroutine when a DAG exceeds
+	// its configured timeout. The event loop escalates the parent and cleans up.
+	dagEventDAGTimedOut
 )
 
 // dagEvent carries all data the event loop needs to process one DAG lifecycle
@@ -92,6 +108,9 @@ type dagEvent struct {
 	// Review completion fields.
 	LoopID string
 	Result string
+
+	// Error reason for failure events.
+	ErrorReason string
 }
 
 // =============================================================================
@@ -239,10 +258,10 @@ func (c *Component) produceReviewEvents(ctx context.Context, events chan<- dagEv
 
 	consumerName := fmt.Sprintf("questdagexec-review-%s-%s-%s", c.config.Org, c.config.Platform, c.config.Board)
 	consumer, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		FilterSubject: "agent.complete.*",
-		DeliverPolicy: jetstream.DeliverNewPolicy,
-		AckPolicy:     jetstream.AckExplicitPolicy,
-		Name:          consumerName,
+		FilterSubjects: []string{"agent.complete.*", "agent.failed.*"},
+		DeliverPolicy:  jetstream.DeliverNewPolicy,
+		AckPolicy:      jetstream.AckExplicitPolicy,
+		Name:           consumerName,
 	})
 	if err != nil {
 		c.logger.Error("review producer: failed to create consumer", "error", err)
@@ -295,12 +314,15 @@ func (c *Component) produceReviewEvents(ctx context.Context, events chan<- dagEv
 }
 
 // parseLeadLoopCompletion unmarshals a JetStream message and extracts the
-// lead loop completion fields. It classifies the event by LoopID prefix:
-//   - "review-"  → dagEventReviewCompleted (accept/reject verdict)
-//   - "clarify-" → dagEventClarificationAnswered (answer to member question)
+// lead loop event fields. It handles LoopCompletedEvent (success), LoopFailedEvent
+// (LLM timeout/error), and LoopCancelledEvent (user/admin cancel), classifying
+// each by LoopID prefix:
+//   - "review-"    → dagEventReviewCompleted / dagEventReviewFailed
+//   - "clarify-"   → dagEventClarificationAnswered / dagEventClarificationFailed
+//   - "synthesis-" → dagEventSynthesisCompleted / dagEventSynthesisFailed
 //
 // Returns the dagEvent and true on success, or zero value and false when the
-// message is not a lead loop completion or cannot be parsed.
+// message is not a lead loop event or cannot be parsed.
 //
 // Takes *Component only for the logger — must not access any state maps.
 // State maps are owned exclusively by the event loop goroutine.
@@ -311,43 +333,121 @@ func parseLeadLoopCompletion(c *Component, msg jetstream.Msg) (dagEvent, bool) {
 		return dagEvent{}, false
 	}
 
-	evt, ok := baseMsg.Payload().(*agentic.LoopCompletedEvent)
-	if !ok {
-		// Try re-marshaling if the payload registry returned a different concrete type.
-		payloadBytes, marshalErr := json.Marshal(baseMsg.Payload())
-		if marshalErr != nil {
-			return dagEvent{}, false
+	// Try LoopCompletedEvent first (success path).
+	if evt, ok := baseMsg.Payload().(*agentic.LoopCompletedEvent); ok {
+		de := classifyCompletedEvent(evt)
+		if de.LoopID != "" {
+			return de, true
 		}
-		var parsed agentic.LoopCompletedEvent
-		if unmarshalErr := json.Unmarshal(payloadBytes, &parsed); unmarshalErr != nil {
-			return dagEvent{}, false
-		}
-		evt = &parsed
+		return dagEvent{}, false
 	}
 
-	// Classify by LoopID prefix.
+	// Try LoopFailedEvent (timeout or LLM error).
+	if evt, ok := baseMsg.Payload().(*agentic.LoopFailedEvent); ok {
+		de := classifyFailedEvent(evt)
+		if de.LoopID != "" {
+			return de, true
+		}
+		return dagEvent{}, false
+	}
+
+	// Try LoopCancelledEvent (user/admin cancel signal).
+	if evt, ok := baseMsg.Payload().(*agentic.LoopCancelledEvent); ok {
+		de := classifyCancelledEvent(evt)
+		if de.LoopID != "" {
+			return de, true
+		}
+		return dagEvent{}, false
+	}
+
+	// Try re-marshaling if the payload registry returned a different concrete type.
+	payloadBytes, marshalErr := json.Marshal(baseMsg.Payload())
+	if marshalErr != nil {
+		return dagEvent{}, false
+	}
+
+	// Try completed.
+	var completed agentic.LoopCompletedEvent
+	if json.Unmarshal(payloadBytes, &completed) == nil && completed.LoopID != "" {
+		de := classifyCompletedEvent(&completed)
+		if de.LoopID != "" {
+			return de, true
+		}
+		return dagEvent{}, false
+	}
+
+	// Try failed.
+	var failed agentic.LoopFailedEvent
+	if json.Unmarshal(payloadBytes, &failed) == nil && failed.LoopID != "" {
+		de := classifyFailedEvent(&failed)
+		if de.LoopID != "" {
+			return de, true
+		}
+		return dagEvent{}, false
+	}
+
+	// Try cancelled.
+	var cancelled agentic.LoopCancelledEvent
+	if json.Unmarshal(payloadBytes, &cancelled) == nil && cancelled.LoopID != "" {
+		de := classifyCancelledEvent(&cancelled)
+		if de.LoopID != "" {
+			return de, true
+		}
+		return dagEvent{}, false
+	}
+
+	return dagEvent{}, false
+}
+
+// classifyCompletedEvent maps a LoopCompletedEvent to the appropriate dagEvent
+// type based on LoopID prefix. Returns zero value for non-lead loops.
+func classifyCompletedEvent(evt *agentic.LoopCompletedEvent) dagEvent {
 	if strings.HasPrefix(evt.LoopID, "review-") {
-		return dagEvent{
-			Type:   dagEventReviewCompleted,
-			LoopID: evt.LoopID,
-			Result: evt.Result,
-		}, true
+		return dagEvent{Type: dagEventReviewCompleted, LoopID: evt.LoopID, Result: evt.Result}
 	}
 	if strings.HasPrefix(evt.LoopID, "clarify-") {
-		return dagEvent{
-			Type:   dagEventClarificationAnswered,
-			LoopID: evt.LoopID,
-			Result: evt.Result,
-		}, true
+		return dagEvent{Type: dagEventClarificationAnswered, LoopID: evt.LoopID, Result: evt.Result}
 	}
 	if strings.HasPrefix(evt.LoopID, "synthesis-") {
-		return dagEvent{
-			Type:   dagEventSynthesisCompleted,
-			LoopID: evt.LoopID,
-			Result: evt.Result,
-		}, true
+		return dagEvent{Type: dagEventSynthesisCompleted, LoopID: evt.LoopID, Result: evt.Result}
 	}
+	return dagEvent{}
+}
 
-	// Not a lead loop — discard.
-	return dagEvent{}, false
+// classifyFailedEvent maps a LoopFailedEvent to the appropriate failure dagEvent
+// type based on LoopID prefix. Returns zero value for non-lead loops.
+func classifyFailedEvent(evt *agentic.LoopFailedEvent) dagEvent {
+	reason := evt.Error
+	if reason == "" {
+		reason = evt.Reason
+	}
+	if strings.HasPrefix(evt.LoopID, "review-") {
+		return dagEvent{Type: dagEventReviewFailed, LoopID: evt.LoopID, ErrorReason: reason}
+	}
+	if strings.HasPrefix(evt.LoopID, "clarify-") {
+		return dagEvent{Type: dagEventClarificationFailed, LoopID: evt.LoopID, ErrorReason: reason}
+	}
+	if strings.HasPrefix(evt.LoopID, "synthesis-") {
+		return dagEvent{Type: dagEventSynthesisFailed, LoopID: evt.LoopID, ErrorReason: reason}
+	}
+	return dagEvent{}
+}
+
+// classifyCancelledEvent maps a LoopCancelledEvent to the appropriate failure dagEvent
+// type based on LoopID prefix. Returns zero value for non-lead loops.
+func classifyCancelledEvent(evt *agentic.LoopCancelledEvent) dagEvent {
+	reason := "cancelled"
+	if evt.CancelledBy != "" {
+		reason = "cancelled: " + evt.CancelledBy
+	}
+	if strings.HasPrefix(evt.LoopID, "review-") {
+		return dagEvent{Type: dagEventReviewFailed, LoopID: evt.LoopID, ErrorReason: reason}
+	}
+	if strings.HasPrefix(evt.LoopID, "clarify-") {
+		return dagEvent{Type: dagEventClarificationFailed, LoopID: evt.LoopID, ErrorReason: reason}
+	}
+	if strings.HasPrefix(evt.LoopID, "synthesis-") {
+		return dagEvent{Type: dagEventSynthesisFailed, LoopID: evt.LoopID, ErrorReason: reason}
+	}
+	return dagEvent{}
 }

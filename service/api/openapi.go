@@ -207,6 +207,23 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 					},
 				},
 			},
+			"/quests/{id}/cancel": {
+				POST: &service.OperationSpec{
+					Summary:     "Cancel quest",
+					Description: "Cancels an in-progress quest by sending a cancel signal to the active agentic loop. The quest transitions to 'failed' and the agent is released. For DAG parent quests, all active sub-quest loops are also cancelled.",
+					Tags:        []string{"Quest Lifecycle"},
+					Parameters:  []service.ParameterSpec{questIDParam},
+					RequestBody: &service.RequestBodySpec{
+						Description: "Cancellation reason (optional)",
+						SchemaRef:   "#/components/schemas/CancelQuestRequest",
+					},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Quest cancelled and agent released", ContentType: "application/json", SchemaRef: "#/components/schemas/Quest"},
+						"404": {Description: "Quest not found"},
+						"409": {Description: "Quest not in 'in_progress' status"},
+					},
+				},
+			},
 
 			// ── Quest Artifacts ──────────────────────────────────
 			"/quests/{id}/artifacts": {
@@ -870,6 +887,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(SubmitQuestRequest{}),
 			reflect.TypeOf(FailQuestRequest{}),
 			reflect.TypeOf(AbandonQuestRequest{}),
+			reflect.TypeOf(CancelQuestRequest{}),
 			reflect.TypeOf(RecruitAgentRequest{}),
 			reflect.TypeOf(PurchaseItemRequest{}),
 			reflect.TypeOf(UseConsumableRequest{}),

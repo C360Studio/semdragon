@@ -3,6 +3,7 @@ package questdagexec
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -61,6 +62,14 @@ func (c *Component) handleEvent(ctx context.Context, evt dagEvent) {
 		c.onClarificationAnswered(ctx, evt)
 	case dagEventSynthesisCompleted:
 		c.onSynthesisCompleted(ctx, evt)
+	case dagEventReviewFailed:
+		c.onReviewFailed(ctx, evt)
+	case dagEventSynthesisFailed:
+		c.onSynthesisFailed(ctx, evt)
+	case dagEventClarificationFailed:
+		c.onClarificationFailed(ctx, evt)
+	case dagEventDAGTimedOut:
+		c.onDAGTimedOut(ctx, evt)
 	}
 }
 
@@ -107,6 +116,7 @@ func (c *Component) onDAGEntry(ctx context.Context, evt dagEvent) {
 		"bootstrapping", evt.Bootstrapping)
 
 	c.indexDAGState(dagState)
+	c.dagStartTimes.Store(dagState.ExecutionID, time.Now())
 
 	// During bootstrap, do not assign or persist — the state as written in the
 	// graph is the source of truth and any in-flight assignments are already
@@ -327,6 +337,216 @@ func (c *Component) onSynthesisCompleted(ctx context.Context, evt dagEvent) {
 	}
 
 	c.triggerRollupWithResult(ctx, dagState, evt.Result)
+}
+
+// =============================================================================
+// HANDLER: dagEventReviewFailed
+// =============================================================================
+
+// onReviewFailed handles a review loop failure from the AGENT stream.
+// It locates the DAG/node for the reviewed sub-quest and either retries the
+// review once (to account for transient LLM failures) or marks the node failed.
+func (c *Component) onReviewFailed(ctx context.Context, evt dagEvent) {
+	c.logger.Warn("event loop: review loop failed",
+		"loop_id", evt.LoopID, "reason", evt.ErrorReason)
+
+	subQuestID := c.extractSubQuestFromLoopID(evt.LoopID)
+	if subQuestID == "" {
+		c.logger.Warn("review failure: cannot extract sub-quest ID from loop ID",
+			"loop_id", evt.LoopID)
+		return
+	}
+
+	entityKey := c.subQuestEntityKey(subQuestID)
+	dagState := c.findDAGForSubQuest(entityKey)
+	if dagState == nil {
+		c.logger.Warn("review failure: sub-quest not part of any active DAG",
+			"loop_id", evt.LoopID, "sub_quest_id", subQuestID)
+		return
+	}
+
+	nodeID := c.findNodeForQuest(dagState, subQuestID)
+	if nodeID == "" {
+		nodeID = c.findNodeForQuest(dagState, entityKey)
+	}
+	if nodeID == "" {
+		c.logger.Warn("review failure: cannot find node for sub-quest in DAG",
+			"loop_id", evt.LoopID, "sub_quest_id", subQuestID)
+		return
+	}
+
+	// Check if we already retried this review (track via a simple counter on the event loop).
+	retryKey := "review-retry-" + nodeID + "-" + dagState.ExecutionID
+	if _, retried := c.reviewRetries[retryKey]; !retried {
+		c.reviewRetries[retryKey] = true
+		c.logger.Info("retrying failed review once",
+			"loop_id", evt.LoopID, "node_id", nodeID,
+			"execution_id", dagState.ExecutionID)
+
+		// Re-load entity and dispatch review again.
+		entity, err := c.graph.GetQuest(ctx, domain.QuestID(subQuestID))
+		if err != nil {
+			c.logger.Error("failed to load sub-quest for review retry",
+				"sub_quest_id", subQuestID, "error", err)
+			c.errorsCount.Add(1)
+			return
+		}
+		c.dispatchLeadReview(ctx, dagState, nodeID, entity)
+		return
+	}
+
+	// Second failure — treat as node failed.
+	c.logger.Warn("review failed twice — treating node as failed",
+		"loop_id", evt.LoopID, "node_id", nodeID,
+		"execution_id", dagState.ExecutionID)
+
+	c.handleNodeFailed(ctx, dagState, nodeID)
+
+	if err := c.persistDAGState(ctx, dagState); err != nil {
+		c.logger.Error("failed to persist DAG state after review failure",
+			"execution_id", dagState.ExecutionID, "error", err)
+		c.errorsCount.Add(1)
+	}
+}
+
+// =============================================================================
+// HANDLER: dagEventSynthesisFailed
+// =============================================================================
+
+// onSynthesisFailed handles a synthesis loop failure from the AGENT stream.
+// Since sub-quest outputs are already captured, we fall back to mechanical
+// rollup (concatenated outputs) rather than leaving the parent quest stuck.
+func (c *Component) onSynthesisFailed(ctx context.Context, evt dagEvent) {
+	c.logger.Warn("event loop: synthesis loop failed — falling back to mechanical rollup",
+		"loop_id", evt.LoopID, "reason", evt.ErrorReason)
+
+	executionID := c.extractExecutionIDFromSynthesisLoop(evt.LoopID)
+	if executionID == "" {
+		c.logger.Warn("synthesis failure: cannot find DAG for loop",
+			"loop_id", evt.LoopID)
+		return
+	}
+
+	dagState, ok := c.dagCache[executionID]
+	if !ok {
+		c.logger.Warn("synthesis failure: DAG not in cache",
+			"loop_id", evt.LoopID, "execution_id", executionID)
+		return
+	}
+
+	// Fall back to mechanical rollup — concatenated sub-quest outputs.
+	c.triggerRollup(ctx, dagState)
+}
+
+// =============================================================================
+// HANDLER: dagEventClarificationFailed
+// =============================================================================
+
+// onClarificationFailed handles a clarification loop failure from the AGENT stream.
+// We treat this as "no answer given" — reset the node to NodeAssigned so the
+// member agent can continue without the clarification.
+func (c *Component) onClarificationFailed(ctx context.Context, evt dagEvent) {
+	c.logger.Warn("event loop: clarification loop failed — continuing without answer",
+		"loop_id", evt.LoopID, "reason", evt.ErrorReason)
+
+	subQuestID := c.extractSubQuestFromLeadLoopID(evt.LoopID)
+	if subQuestID == "" {
+		c.logger.Warn("clarification failure: cannot extract sub-quest ID from loop ID",
+			"loop_id", evt.LoopID)
+		return
+	}
+
+	entityKey := c.subQuestEntityKey(subQuestID)
+	dagState := c.findDAGForSubQuest(entityKey)
+	if dagState == nil {
+		c.logger.Warn("clarification failure: sub-quest not part of any active DAG",
+			"loop_id", evt.LoopID, "sub_quest_id", subQuestID)
+		return
+	}
+
+	nodeID := c.findNodeForQuest(dagState, subQuestID)
+	if nodeID == "" {
+		nodeID = c.findNodeForQuest(dagState, entityKey)
+	}
+	if nodeID == "" {
+		c.logger.Warn("clarification failure: cannot find node for sub-quest in DAG",
+			"loop_id", evt.LoopID, "sub_quest_id", subQuestID)
+		return
+	}
+
+	// Reset node to assigned — the member continues without clarification.
+	dagState.NodeStates[nodeID] = NodeAssigned
+
+	if err := c.persistDAGState(ctx, dagState); err != nil {
+		c.logger.Error("failed to persist DAG state after clarification failure",
+			"execution_id", dagState.ExecutionID, "error", err)
+		c.errorsCount.Add(1)
+	}
+}
+
+// =============================================================================
+// HANDLER: dagEventDAGTimedOut
+// =============================================================================
+
+// onDAGTimedOut handles a DAG timeout event from the sweep goroutine.
+// It cancels all active sub-quest loops, fails incomplete sub-quests,
+// escalates the parent quest, and disbands the party.
+func (c *Component) onDAGTimedOut(ctx context.Context, evt dagEvent) {
+	dagState, ok := c.dagCache[evt.EntityKey]
+	if !ok {
+		// The event key may be the parent quest entity key rather than the
+		// execution ID (sent by CancelDAGForQuest via the API). Scan dagCache
+		// for a matching ParentQuestID.
+		for _, ds := range c.dagCache {
+			if ds.ParentQuestID == evt.EntityKey {
+				dagState = ds
+				ok = true
+				break
+			}
+		}
+	}
+	if !ok {
+		c.logger.Debug("DAG timeout: DAG not in cache (already completed?)",
+			"key", evt.EntityKey)
+		return
+	}
+
+	c.logger.Warn("DAG timed out — escalating parent and cleaning up",
+		"execution_id", dagState.ExecutionID,
+		"parent_quest_id", dagState.ParentQuestID,
+		"elapsed", evt.ErrorReason)
+
+	// Cancel active sub-quest loops and fail incomplete sub-quests.
+	c.cleanupDAGSubQuests(ctx, dagState)
+
+	// Escalate the parent quest.
+	var reason string
+	if strings.HasPrefix(evt.ErrorReason, "cancelled") {
+		reason = "DAG " + evt.ErrorReason
+	} else {
+		reason = fmt.Sprintf("DAG timed out after %s", evt.ErrorReason)
+	}
+	c.escalateParent(ctx, dagState, reason)
+
+	// Disband the party.
+	if pc := c.resolvePartyCoord(); pc != nil && dagState.PartyID != "" {
+		partyID := domain.PartyID(dagState.PartyID)
+		if err := pc.DisbandParty(ctx, partyID, "DAG timed out"); err != nil {
+			c.logger.Warn("failed to disband party after DAG timeout",
+				"party_id", dagState.PartyID, "error", err)
+		}
+	}
+
+	// Clean up caches.
+	c.dagStartTimes.Delete(dagState.ExecutionID)
+	c.completedDAGKeys.Store(dagState.ParentQuestID, true)
+	delete(c.dagCache, dagState.ExecutionID)
+	for key, ds := range c.dagBySubQuest {
+		if ds.ExecutionID == dagState.ExecutionID {
+			delete(c.dagBySubQuest, key)
+		}
+	}
+	c.pruneReviewRetries(dagState.ExecutionID)
 }
 
 // extractExecutionIDFromSynthesisLoop finds the DAG execution ID by scanning

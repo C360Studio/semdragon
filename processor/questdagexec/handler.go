@@ -836,6 +836,7 @@ func (c *Component) triggerRollupWithResult(ctx context.Context, dagState *DAGEx
 	}
 
 	c.completedDAGKeys.Store(dagState.ParentQuestID, true)
+	c.dagStartTimes.Delete(dagState.ExecutionID)
 
 	delete(c.dagCache, dagState.ExecutionID)
 	for key, ds := range c.dagBySubQuest {
@@ -843,6 +844,7 @@ func (c *Component) triggerRollupWithResult(ctx context.Context, dagState *DAGEx
 			delete(c.dagBySubQuest, key)
 		}
 	}
+	c.pruneReviewRetries(dagState.ExecutionID)
 
 	c.logger.Info("DAG rollup complete (synthesized)",
 		"execution_id", dagState.ExecutionID,
@@ -906,6 +908,7 @@ func (c *Component) triggerRollup(ctx context.Context, dagState *DAGExecutionSta
 	// Mark parent quest entity key as completed so produceQuestEvents can prune
 	// seenDAGParents and allow future DAGs on the same entity key.
 	c.completedDAGKeys.Store(dagState.ParentQuestID, true)
+	c.dagStartTimes.Delete(dagState.ExecutionID)
 
 	// Clean up in-memory caches for this DAG.
 	delete(c.dagCache, dagState.ExecutionID)
@@ -914,6 +917,7 @@ func (c *Component) triggerRollup(ctx context.Context, dagState *DAGExecutionSta
 			delete(c.dagBySubQuest, key)
 		}
 	}
+	c.pruneReviewRetries(dagState.ExecutionID)
 
 	c.logger.Info("DAG rollup complete",
 		"execution_id", dagState.ExecutionID,
@@ -1015,6 +1019,10 @@ func (c *Component) retryNodeAssignment(ctx context.Context, dagState *DAGExecut
 // escalateParent transitions the parent quest to escalated state via the
 // questboard. Called when a node fails permanently.
 func (c *Component) escalateParent(ctx context.Context, dagState *DAGExecutionState, reason string) {
+	// Clean up active sub-quest loops before escalating — prevents sibling
+	// sub-quests from running indefinitely after the parent is escalated.
+	c.cleanupDAGSubQuests(ctx, dagState)
+
 	qb := c.resolveQuestBoard()
 	if qb == nil {
 		c.logger.Warn("questBoardRef not available — cannot escalate parent quest",
@@ -1027,6 +1035,156 @@ func (c *Component) escalateParent(ctx context.Context, dagState *DAGExecutionSt
 		c.logger.Error("failed to escalate parent quest",
 			"parent_quest_id", dagState.ParentQuestID, "error", err)
 		c.errorsCount.Add(1)
+	}
+}
+
+// sendCancelSignal publishes a cancel UserSignal to the AGENT stream for the
+// given loop ID. The agentic-loop watches agent.signal.{loopID} and terminates
+// the loop when it receives a cancel signal.
+func (c *Component) sendCancelSignal(ctx context.Context, loopID string) {
+	if loopID == "" {
+		return
+	}
+
+	js, err := c.deps.NATSClient.JetStream()
+	if err != nil {
+		c.logger.Warn("sendCancelSignal: failed to get JetStream", "error", err)
+		return
+	}
+
+	signal := &agentic.UserSignal{
+		SignalID:    "cancel-" + nuid.Next(),
+		Type:        agentic.SignalCancel,
+		LoopID:      loopID,
+		UserID:      "questdagexec",
+		ChannelType: "system",
+		ChannelID:   "questdagexec",
+		Timestamp:   time.Now(),
+	}
+
+	baseMsg := message.NewBaseMessage(signal.Schema(), signal, "questdagexec")
+	data, marshalErr := json.Marshal(baseMsg)
+	if marshalErr != nil {
+		c.logger.Warn("sendCancelSignal: failed to marshal signal", "error", marshalErr)
+		return
+	}
+
+	subject := fmt.Sprintf("agent.signal.%s", loopID)
+	if _, pubErr := js.Publish(ctx, subject, data); pubErr != nil {
+		c.logger.Warn("sendCancelSignal: failed to publish cancel signal",
+			"loop_id", loopID, "error", pubErr)
+	} else {
+		c.logger.Info("sent cancel signal to loop", "loop_id", loopID)
+	}
+}
+
+// cleanupDAGSubQuests cancels active agentic loops for in-progress sub-quests
+// and fails all incomplete sub-quests. Called from onDAGTimedOut and escalateParent.
+func (c *Component) cleanupDAGSubQuests(ctx context.Context, dagState *DAGExecutionState) {
+	qb := c.resolveQuestBoard()
+
+	for nodeID, subQuestID := range dagState.NodeQuestIDs {
+		if subQuestID == "" {
+			continue
+		}
+
+		state := dagState.NodeStates[nodeID]
+		switch state {
+		case NodeInProgress, NodePendingReview, NodeAwaitingClarification:
+			// Active loop — send cancel signal. Look up the quest to find LoopID.
+			questEntity, err := c.graph.GetQuest(ctx, domain.QuestID(subQuestID))
+			if err == nil {
+				quest := domain.QuestFromEntityState(questEntity)
+				if quest != nil && quest.LoopID != "" {
+					c.sendCancelSignal(ctx, quest.LoopID)
+				}
+			}
+
+			// Fail the sub-quest.
+			if qb != nil {
+				if err := qb.FailQuest(ctx, domain.QuestID(subQuestID), "Parent DAG cancelled"); err != nil {
+					c.logger.Warn("cleanupDAGSubQuests: failed to fail sub-quest",
+						"sub_quest_id", subQuestID, "error", err)
+				}
+			}
+			dagState.NodeStates[nodeID] = NodeFailed
+
+		case NodePending, NodeReady, NodeAssigned:
+			// Not yet started — just fail it.
+			if qb != nil {
+				if err := qb.FailQuest(ctx, domain.QuestID(subQuestID), "Parent DAG cancelled"); err != nil {
+					c.logger.Warn("cleanupDAGSubQuests: failed to fail pending sub-quest",
+						"sub_quest_id", subQuestID, "error", err)
+				}
+			}
+			dagState.NodeStates[nodeID] = NodeFailed
+		}
+		// NodeCompleted, NodeFailed — already terminal, skip.
+	}
+}
+
+// sweepStaleDags periodically checks dagStartTimes for DAGs that have exceeded
+// the configured timeout. When found, it sends a dagEventDAGTimedOut event
+// to the event loop and removes the entry to avoid re-sending.
+//
+// Follows the sweepStaleEscalations pattern from questbridge/handler.go.
+func (c *Component) sweepStaleDags(ctx context.Context) {
+	defer c.wg.Done()
+
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.dagStartTimes.Range(func(key, value any) bool {
+				executionID := key.(string)
+				startTime := value.(time.Time)
+				elapsed := time.Since(startTime)
+
+				if elapsed <= c.config.DAGTimeout {
+					return true
+				}
+
+				c.logger.Warn("DAG exceeded timeout — sending timeout event",
+					"execution_id", executionID,
+					"elapsed", elapsed.String(),
+					"timeout", c.config.DAGTimeout.String())
+
+				// Send timeout event to the event loop.
+				evt := dagEvent{
+					Type:        dagEventDAGTimedOut,
+					EntityKey:   executionID, // repurposed to carry executionID
+					ErrorReason: elapsed.String(),
+				}
+
+				// Delete from map only after successful send to avoid losing
+				// the timeout if the component is shutting down.
+				select {
+				case c.events <- evt:
+					c.dagStartTimes.Delete(executionID)
+				case <-c.stopChan:
+				case <-ctx.Done():
+				}
+
+				return true
+			})
+		}
+	}
+}
+
+// pruneReviewRetries removes all reviewRetries entries for a completed DAG.
+// Called from cleanup paths (triggerRollup, triggerRollupWithResult, onDAGTimedOut)
+// to prevent unbounded growth of the reviewRetries map.
+func (c *Component) pruneReviewRetries(executionID string) {
+	for key := range c.reviewRetries {
+		if strings.Contains(key, executionID) {
+			delete(c.reviewRetries, key)
+		}
 	}
 }
 

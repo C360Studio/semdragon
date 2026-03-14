@@ -51,6 +51,11 @@ type AbandonQuestRequest struct {
 	Reason string `json:"reason,omitempty" description:"Reason for abandoning"`
 }
 
+// CancelQuestRequest is the request body for POST /quests/{id}/cancel.
+type CancelQuestRequest struct {
+	Reason string `json:"reason,omitempty" description:"Reason for cancellation"`
+}
+
 // RecruitAgentRequest is the request body for POST /agents.
 type RecruitAgentRequest struct {
 	Name        string   `json:"name" description:"Unique agent name"`

@@ -353,6 +353,10 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	}
 	c.activeLoops.Store(questID, &mapping)
 
+	// Store the loop ID on the quest entity so the cancel API can find the
+	// active loop while the quest is in_progress.
+	c.storeLoopIDOnQuest(ctx, domain.QuestID(questID), loopID)
+
 	c.tasksPublished.Add(1)
 	c.lastActivity.Store(time.Now())
 
@@ -480,6 +484,11 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 	}
 	event, ok := baseMsg.Payload().(*agentic.LoopCompletedEvent)
 	if !ok {
+		// alpha.41 publishes LoopCancelledEvent on agent.complete.* as well.
+		if cancelled, cOk := baseMsg.Payload().(*agentic.LoopCancelledEvent); cOk {
+			c.handleLoopCancelled(ctx, cancelled)
+			return
+		}
 		c.logger.Error("unexpected payload type in completion message",
 			"type", fmt.Sprintf("%T", baseMsg.Payload()))
 		c.errorsCount.Add(1)
@@ -586,6 +595,66 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 		"quest_id", questID,
 		"loop_id", event.LoopID,
 		"error", event.Error)
+}
+
+// handleLoopCancelled handles a LoopCancelledEvent published on agent.complete.*
+// by semstreams alpha.41+. Transitions the quest to failed.
+func (c *Component) handleLoopCancelled(ctx context.Context, event *agentic.LoopCancelledEvent) {
+	questID := domain.QuestID(event.TaskID)
+	mapping := c.findMapping(ctx, string(questID))
+	if mapping == nil {
+		c.logger.Debug("no mapping found for cancelled loop",
+			"task_id", event.TaskID, "loop_id", event.LoopID)
+		return
+	}
+
+	reason := "loop cancelled"
+	if event.CancelledBy != "" {
+		reason = "loop cancelled: " + event.CancelledBy
+	}
+
+	c.failQuest(ctx, questID, mapping, reason)
+
+	now := time.Now()
+	if err := executor.SubjectExecutionFailed.Publish(ctx, c.deps.NATSClient, executor.ExecutionFailedPayload{
+		QuestID:   questID,
+		AgentID:   mapping.AgentID,
+		LoopID:    event.LoopID,
+		Status:    executor.StatusFailed,
+		Error:     reason,
+		Duration:  now.Sub(mapping.StartedAt),
+		Timestamp: now,
+	}); err != nil {
+		c.logger.Warn("failed to emit execution failed event for cancelled loop", "error", err)
+		c.errorsCount.Add(1)
+	}
+
+	c.cleanupMapping(ctx, string(questID))
+	c.loopsFailed.Add(1)
+	c.lastActivity.Store(time.Now())
+
+	c.logger.Info("quest execution cancelled via agentic loop",
+		"quest_id", questID,
+		"loop_id", event.LoopID,
+		"cancelled_by", event.CancelledBy)
+}
+
+// storeLoopIDOnQuest persists the loop ID on the quest entity so that the
+// cancel API can find the active loop for an in-progress quest.
+func (c *Component) storeLoopIDOnQuest(ctx context.Context, questID domain.QuestID, loopID string) {
+	questEntity, err := c.graph.GetQuest(ctx, questID)
+	if err != nil {
+		c.logger.Warn("failed to load quest for loop ID storage", "quest_id", questID, "error", err)
+		return
+	}
+	quest := domain.QuestFromEntityState(questEntity)
+	if quest == nil {
+		return
+	}
+	quest.LoopID = loopID
+	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.loop.assigned"); err != nil {
+		c.logger.Warn("failed to store loop ID on quest", "quest_id", questID, "error", err)
+	}
 }
 
 // =============================================================================

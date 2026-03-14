@@ -392,6 +392,20 @@ func (c *Component) SetTokenLedger(l *tokenbudget.TokenLedger) {
 	c.tokenLedger = l
 }
 
+// FindActiveLoop returns the loop ID for an active quest execution.
+// Used by the cancel API to send cancel signals to running agentic loops.
+func (c *Component) FindActiveLoop(questEntityKey string) (loopID string, found bool) {
+	val, ok := c.activeLoops.Load(questEntityKey)
+	if !ok {
+		return "", false
+	}
+	mapping, mOk := val.(*QuestLoopMapping)
+	if !mOk || mapping == nil {
+		return "", false
+	}
+	return mapping.LoopID, true
+}
+
 // resolveQuestBoard resolves questboard's SubQuestPoster from the ComponentRegistry.
 // Returns nil when registry is unavailable or questboard doesn't implement the interface.
 func (c *Component) resolveQuestBoard() SubQuestPoster {

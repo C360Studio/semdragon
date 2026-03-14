@@ -14,6 +14,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semstreams/agentic"
+	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/retry"
 	"github.com/nats-io/nats.go/jetstream"
@@ -781,6 +782,161 @@ func (s *Service) handleAbandonQuest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, quest)
+}
+
+// handleCancelQuest cancels an in-progress quest by sending a cancel signal
+// to the active agentic loop and transitioning the quest to failed.
+func (s *Service) handleCancelQuest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !isValidPathID(id) {
+		s.writeError(w, "invalid quest ID", http.StatusBadRequest)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.Reason == "" {
+		req.Reason = "Cancelled by admin"
+	}
+
+	ctx := r.Context()
+	questEntity, err := s.graph.GetQuest(ctx, domain.QuestID(id))
+	if err != nil {
+		if isBucketNotFound(err) || isKeyNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		s.writeError(w, "failed to retrieve quest", http.StatusInternalServerError)
+		return
+	}
+	quest := domain.QuestFromEntityState(questEntity)
+	if quest == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if quest.Status != domain.QuestInProgress {
+		s.writeError(w, "quest must be in_progress to cancel (status: "+string(quest.Status)+")", http.StatusConflict)
+		return
+	}
+
+	// Send cancel signal to the active agentic loop if we can find it.
+	s.cancelActiveLoop(ctx, id)
+
+	// If this is a DAG parent quest, cancel all sub-quest loops via questdagexec.
+	s.cancelDAGSubQuests(ctx, id)
+
+	// Release agent.
+	if quest.ClaimedBy != nil {
+		s.releaseAgent(ctx, *quest.ClaimedBy)
+	}
+
+	// Transition quest to failed.
+	quest.Status = domain.QuestFailed
+	quest.FailureReason = req.Reason
+
+	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.cancelled"); err != nil {
+		s.writeError(w, "failed to cancel quest", http.StatusInternalServerError)
+		s.logger.Error("Failed to cancel quest", "error", err)
+		return
+	}
+
+	s.writeJSON(w, quest)
+}
+
+// cancelActiveLoop sends a cancel signal to the agentic loop running for a quest.
+func (s *Service) cancelActiveLoop(ctx context.Context, questID string) {
+	if s.componentDeps == nil || s.componentDeps.ComponentRegistry == nil {
+		return
+	}
+
+	comp := s.componentDeps.ComponentRegistry.Component("questbridge")
+	if comp == nil {
+		return
+	}
+
+	type activeLoopFinder interface {
+		FindActiveLoop(questEntityKey string) (string, bool)
+	}
+
+	finder, ok := comp.(activeLoopFinder)
+	if !ok {
+		return
+	}
+
+	// Try the raw ID first, then the full entity key.
+	loopID, found := finder.FindActiveLoop(questID)
+	if !found {
+		entityKey := s.boardConfig.QuestEntityID(questID)
+		loopID, found = finder.FindActiveLoop(entityKey)
+	}
+	if !found {
+		s.logger.Debug("no active loop found for quest", "quest_id", questID)
+		return
+	}
+
+	s.sendCancelSignal(ctx, loopID)
+}
+
+// sendCancelSignal publishes a cancel UserSignal to the AGENT stream.
+func (s *Service) sendCancelSignal(ctx context.Context, loopID string) {
+	js, err := s.nats.JetStream()
+	if err != nil {
+		s.logger.Warn("sendCancelSignal: failed to get JetStream", "error", err)
+		return
+	}
+
+	signal := &agentic.UserSignal{
+		SignalID:    "cancel-api-" + loopID,
+		Type:        agentic.SignalCancel,
+		LoopID:      loopID,
+		UserID:      "admin",
+		ChannelType: "api",
+		ChannelID:   "game-api",
+		Timestamp:   time.Now(),
+	}
+
+	baseMsg := message.NewBaseMessage(signal.Schema(), signal, "game-api")
+	data, marshalErr := json.Marshal(baseMsg)
+	if marshalErr != nil {
+		s.logger.Warn("sendCancelSignal: failed to marshal signal", "error", marshalErr)
+		return
+	}
+
+	subject := fmt.Sprintf("agent.signal.%s", loopID)
+	if _, pubErr := js.Publish(ctx, subject, data); pubErr != nil {
+		s.logger.Warn("sendCancelSignal: failed to publish cancel signal",
+			"loop_id", loopID, "error", pubErr)
+	} else {
+		s.logger.Info("sent cancel signal via API", "loop_id", loopID)
+	}
+}
+
+// cancelDAGSubQuests delegates DAG cleanup to the questdagexec component when
+// the quest being cancelled is a DAG parent. The questdagexec component handles
+// sub-quest loop cancellation, parent escalation, and party disbanding.
+func (s *Service) cancelDAGSubQuests(ctx context.Context, questID string) {
+	if s.componentDeps == nil || s.componentDeps.ComponentRegistry == nil {
+		return
+	}
+
+	comp := s.componentDeps.ComponentRegistry.Component("questdagexec")
+	if comp == nil {
+		return
+	}
+
+	type dagCanceller interface {
+		CancelDAGForQuest(ctx context.Context, parentQuestEntityKey string)
+	}
+
+	if canceller, ok := comp.(dagCanceller); ok {
+		// Use the full entity key since dagCache is keyed by entity key.
+		entityKey := s.boardConfig.QuestEntityID(questID)
+		canceller.CancelDAGForQuest(ctx, entityKey)
+	}
 }
 
 // releaseAgent sets an agent back to idle and clears their current quest.
