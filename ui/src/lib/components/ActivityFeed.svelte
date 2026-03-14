@@ -53,7 +53,8 @@
 		if (type.startsWith('quest.')) return 'Q';
 		if (type.startsWith('agent.')) return 'A';
 		if (type.startsWith('battle.')) return 'B';
-		if (type.startsWith('guild.') || type.startsWith('party.')) return 'G';
+		if (type.startsWith('party.')) return 'P';
+		if (type.startsWith('guild.')) return 'G';
 		if (type.startsWith('store.')) return 'S';
 		if (type.startsWith('dm.')) return 'D';
 		if (type.startsWith('review.')) return 'R';

@@ -47,7 +47,8 @@
 		if (type.startsWith('quest.')) return 'Q';
 		if (type.startsWith('agent.')) return 'A';
 		if (type.startsWith('battle.')) return 'B';
-		if (type.startsWith('guild.') || type.startsWith('party.')) return 'G';
+		if (type.startsWith('party.')) return 'P';
+		if (type.startsWith('guild.')) return 'G';
 		if (type.startsWith('store.')) return 'S';
 		if (type.startsWith('dm.')) return 'D';
 		return '*';
@@ -343,6 +344,11 @@
 	.event-item[data-category='B'] .event-icon {
 		background: var(--status-warning-container);
 		color: var(--status-warning);
+	}
+
+	.event-item[data-category='P'] .event-icon {
+		background: var(--tier-journeyman-container);
+		color: var(--tier-journeyman);
 	}
 
 	.event-item[data-category='G'] .event-icon {
