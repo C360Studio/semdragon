@@ -653,19 +653,31 @@ func selectPartyLead(agents []agentprogression.Agent) (*agentprogression.Agent, 
 
 // recruitMembers adds eligible idle agents to the party as executors.
 // Returns the number of members recruited (excluding the lead).
+//
+// The recruitment target is the larger of MinPartySize and the max parallel
+// width of the scenario dependency graph, so the party has enough members to
+// saturate concurrent sub-quest execution.
 func (c *Component) recruitMembers(ctx context.Context, partyID domain.PartyID, leadID domain.AgentID, agents []agentprogression.Agent, quest *domain.Quest) int {
 	recruited := 0
-	minSize := quest.MinPartySize
-	if minSize < 2 {
-		minSize = 2 // At least lead + 1 member
-	}
+	// Use the widest parallel frontier of the scenario graph as the
+	// recruitment target so the party can saturate DAG parallelism.
+	minSize := max(quest.MinPartySize, 2) // at least lead + 1 member
+	parallelWidth := domain.MaxParallelWidth(quest.Scenarios)
+	targetSize := max(minSize, parallelWidth)
+
+	c.logger.Debug("party recruitment target",
+		"quest_id", quest.ID,
+		"min_party_size", quest.MinPartySize,
+		"parallel_width", parallelWidth,
+		"target_size", targetSize,
+		"available_agents", len(agents)-1) // minus lead
 
 	for _, agent := range agents {
 		if agent.ID == leadID {
 			continue
 		}
 		// Already have enough members (lead counts as 1)
-		if recruited+1 >= minSize {
+		if recruited+1 >= targetSize {
 			break
 		}
 

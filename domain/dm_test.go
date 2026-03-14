@@ -392,6 +392,75 @@ func TestClassifyDecomposability(t *testing.T) {
 	}
 }
 
+func TestMaxParallelWidth(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		scenarios []QuestScenario
+		want      int
+	}{
+		{name: "nil", scenarios: nil, want: 0},
+		{name: "empty", scenarios: []QuestScenario{}, want: 0},
+		{name: "single", scenarios: []QuestScenario{{Name: "A"}}, want: 1},
+		{
+			name: "all parallel",
+			scenarios: []QuestScenario{
+				{Name: "A"}, {Name: "B"}, {Name: "C"},
+			},
+			want: 3,
+		},
+		{
+			name: "linear chain",
+			scenarios: []QuestScenario{
+				{Name: "A"},
+				{Name: "B", DependsOn: []string{"A"}},
+				{Name: "C", DependsOn: []string{"B"}},
+			},
+			want: 1,
+		},
+		{
+			name: "diamond",
+			scenarios: []QuestScenario{
+				{Name: "root"},
+				{Name: "left", DependsOn: []string{"root"}},
+				{Name: "right", DependsOn: []string{"root"}},
+				{Name: "join", DependsOn: []string{"left", "right"}},
+			},
+			want: 2,
+		},
+		{
+			name: "wide fan",
+			scenarios: []QuestScenario{
+				{Name: "root"},
+				{Name: "A", DependsOn: []string{"root"}},
+				{Name: "B", DependsOn: []string{"root"}},
+				{Name: "C", DependsOn: []string{"root"}},
+				{Name: "D", DependsOn: []string{"root"}},
+			},
+			want: 4,
+		},
+		{
+			name: "two independent chains",
+			scenarios: []QuestScenario{
+				{Name: "A"},
+				{Name: "B", DependsOn: []string{"A"}},
+				{Name: "C"},
+				{Name: "D", DependsOn: []string{"C"}},
+			},
+			want: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := MaxParallelWidth(tt.scenarios)
+			if got != tt.want {
+				t.Errorf("MaxParallelWidth() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateScenarioDependencies(t *testing.T) {
 	tests := []struct {
 		name      string

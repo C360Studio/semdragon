@@ -481,6 +481,64 @@ func isLinearChain(scenarios []QuestScenario) bool {
 	return true
 }
 
+// MaxParallelWidth computes the largest number of scenarios that can execute
+// concurrently — the widest level in a topological ordering of the dependency
+// graph. Use this to size party recruitment: a width of 3 means 3 agents can
+// work simultaneously, so recruiting fewer wastes parallelism.
+//
+// Returns 0 for nil/empty scenarios, 1 for a single scenario.
+// Assumes the graph is a valid DAG (call ValidateScenarioDependencies first).
+func MaxParallelWidth(scenarios []QuestScenario) int {
+	n := len(scenarios)
+	if n <= 1 {
+		return n
+	}
+
+	// Build name→index map and adjacency/in-degree.
+	idx := make(map[string]int, n)
+	for i, s := range scenarios {
+		idx[s.Name] = i
+	}
+
+	inDegree := make([]int, n)
+	adj := make([][]int, n)
+	for i, s := range scenarios {
+		for _, dep := range s.DependsOn {
+			if depIdx, ok := idx[dep]; ok {
+				adj[depIdx] = append(adj[depIdx], i)
+				inDegree[i]++
+			}
+		}
+	}
+
+	// BFS by topological level — track the widest frontier.
+	queue := make([]int, 0, n)
+	for i, d := range inDegree {
+		if d == 0 {
+			queue = append(queue, i)
+		}
+	}
+
+	maxWidth := 0
+	for len(queue) > 0 {
+		if len(queue) > maxWidth {
+			maxWidth = len(queue)
+		}
+		next := make([]int, 0, n)
+		for _, node := range queue {
+			for _, child := range adj[node] {
+				inDegree[child]--
+				if inDegree[child] == 0 {
+					next = append(next, child)
+				}
+			}
+		}
+		queue = next
+	}
+
+	return maxWidth
+}
+
 // =============================================================================
 // QUEST BRIEF - Structured quest creation input
 // =============================================================================
