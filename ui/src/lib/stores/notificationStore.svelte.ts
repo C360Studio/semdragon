@@ -39,9 +39,12 @@ const MAX_VISIBLE_TOASTS = 5;
 // =============================================================================
 
 let toasts = $state<Toast[]>([]);
-let previousStatuses = $state(new Map<QuestID, string>());
+// Internal tracking state — NOT reactive to avoid infinite $effect loops.
+// These are written inside watchQuests() which runs inside a layout $effect;
+// if they were $state, reading+writing them would re-trigger the effect.
+let previousStatuses = new Map<QuestID, string>();
 let seen = new Set<string>();
-let initialized = $state(false);
+let initialized = false;
 
 // =============================================================================
 // DERIVED

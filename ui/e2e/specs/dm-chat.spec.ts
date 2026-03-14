@@ -20,10 +20,10 @@ function mockQuestBriefResponse() {
 		mode: 'quest',
 		quest_brief: {
 			title: 'Slay the Test Dragon',
-			description: 'Defeat the dragon terrorizing the test realm.',
+			goal: 'Defeat the dragon terrorizing the test realm.',
 			difficulty: 3,
 			skills: ['combat', 'analysis'],
-			acceptance: ['Dragon HP reaches 0', 'No civilian casualties']
+			requirements: ['Dragon HP reaches 0', 'No civilian casualties']
 		},
 		session_id: 'mock-session-brief',
 		trace_info: { trace_id: 'trace-brief', span_id: 'span-brief' }
@@ -38,21 +38,21 @@ function mockQuestChainResponse() {
 			quests: [
 				{
 					title: 'Gather Intel',
-					description: 'Scout the dragon lair.',
+					goal: 'Scout the dragon lair.',
 					difficulty: 1,
 					skills: ['analysis'],
 					depends_on: []
 				},
 				{
 					title: 'Forge Weapon',
-					description: 'Create a dragonslayer sword.',
+					goal: 'Create a dragonslayer sword.',
 					difficulty: 2,
 					skills: ['crafting'],
 					depends_on: [0]
 				},
 				{
 					title: 'Slay the Dragon',
-					description: 'Attack the lair with the forged weapon.',
+					goal: 'Attack the lair with the forged weapon.',
 					difficulty: 4,
 					skills: ['combat'],
 					depends_on: [0, 1]
@@ -78,10 +78,10 @@ function mockSoloQuestBriefResponse() {
 		mode: 'quest',
 		quest_brief: {
 			title: 'Analyze the Test Data',
-			description: 'Process input and generate report.',
+			goal: 'Process input and generate report.',
 			difficulty: 2,
 			skills: ['analysis'],
-			acceptance: ['Report generated'],
+			requirements: ['Report generated'],
 			scenarios: [
 				{ name: 'Load data', description: 'Load CSV files', skills: ['analysis'] },
 				{ name: 'Generate report', description: 'Compute stats', skills: ['analysis'], depends_on: ['Load data'] }
@@ -98,10 +98,10 @@ function mockPartyQuestBriefResponse() {
 		mode: 'quest',
 		quest_brief: {
 			title: 'Build the Data Pipeline',
-			description: 'A multi-component data pipeline.',
+			goal: 'A multi-component data pipeline.',
 			difficulty: 4,
 			skills: ['code_generation', 'analysis'],
-			acceptance: ['Pipeline operational', 'Tests passing'],
+			requirements: ['Pipeline operational', 'Tests passing'],
 			scenarios: [
 				{ name: 'Build ingester', description: 'Create data ingestion', skills: ['code_generation'] },
 				{ name: 'Build transformer', description: 'Create data transformation', skills: ['code_generation'] },
@@ -119,10 +119,10 @@ function mockPartyRequiredQuestBriefResponse() {
 		mode: 'quest',
 		quest_brief: {
 			title: 'Coordinate Team Deployment',
-			description: 'Deploy across multiple environments.',
+			goal: 'Deploy across multiple environments.',
 			difficulty: 3,
 			skills: ['code_generation'],
-			acceptance: ['All environments deployed'],
+			requirements: ['All environments deployed'],
 			scenarios: [
 				{ name: 'Deploy staging', description: 'Deploy to staging', skills: ['code_generation'] },
 				{ name: 'Deploy production', description: 'Deploy to prod', skills: ['code_generation'], depends_on: ['Deploy staging'] }
@@ -273,26 +273,21 @@ test.describe('DM Chat - Mock LLM', () => {
 	test('quest brief preview and Post Quest action', async ({ page }) => {
 		interceptChat(page, mockQuestBriefResponse());
 
-		// Intercept the quest creation POST
-		let questPostBody: Record<string, unknown> | null = null;
-		await page.route('**/game/quests', async (route: Route) => {
-			// Only intercept POST, not other methods
+		// Single quest briefs are now posted via the chain endpoint (1-entry chain).
+		let chainPostBody: Record<string, unknown> | null = null;
+		await page.route('**/game/quests/chain', async (route: Route) => {
 			if (route.request().method() !== 'POST') {
 				return route.fallback();
 			}
-			// Don't intercept quest chain requests
-			if (route.request().url().includes('/quests/chain')) {
-				return route.fallback();
-			}
-			questPostBody = route.request().postDataJSON();
+			chainPostBody = route.request().postDataJSON();
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
-				body: JSON.stringify({
+				body: JSON.stringify([{
 					id: 'local.dev.game.board1.quest.mock123',
-					objective: 'Slay the Test Dragon',
+					title: 'Slay the Test Dragon',
 					status: 'posted'
-				})
+				}])
 			});
 		});
 
@@ -311,10 +306,14 @@ test.describe('DM Chat - Mock LLM', () => {
 		// Click "Post Quest"
 		await page.getByTestId('post-quest-button').click();
 
-		// Verify the quest creation request was sent
+		// Verify the chain request was sent with full structured spec
 		await expect(async () => {
-			expect(questPostBody).not.toBeNull();
-			expect((questPostBody as Record<string, unknown>).objective).toBe('Slay the Test Dragon');
+			expect(chainPostBody).not.toBeNull();
+			const quests = (chainPostBody as Record<string, unknown>).quests as Record<string, unknown>[];
+			expect(quests).toHaveLength(1);
+			expect(quests[0].title).toBe('Slay the Test Dragon');
+			expect(quests[0].goal).toBe('Defeat the dragon terrorizing the test realm.');
+			expect(quests[0].requirements).toEqual(['Dragon HP reaches 0', 'No civilian casualties']);
 		}).toPass({ timeout: 5000 });
 	});
 
@@ -532,10 +531,10 @@ test.describe('DM Chat - Mock LLM', () => {
 			mode: 'quest',
 			quest_brief: {
 				title: 'Quick Fix',
-				description: 'Fix a small bug.',
+				goal: 'Fix a small bug.',
 				difficulty: 1,
 				skills: ['code_generation'],
-				acceptance: ['Bug fixed']
+				requirements: ['Bug fixed']
 				// No scenarios field at all
 			},
 			session_id: 'mock-session-no-scenarios',

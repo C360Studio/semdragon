@@ -4,7 +4,7 @@ import { BasePage } from './base.page';
 /**
  * Quest status types matching the backend.
  */
-type QuestStatus = 'posted' | 'claimed' | 'in_progress' | 'in_review' | 'completed';
+type QuestStatus = 'posted' | 'in_progress' | 'in_review' | 'completed';
 
 /**
  * Page object for the Quest Board page.
@@ -166,7 +166,7 @@ export class QuestsPage extends BasePage {
 	 * Verify all kanban columns are visible.
 	 */
 	async verifyAllColumnsVisible(): Promise<void> {
-		const columns: QuestStatus[] = ['posted', 'claimed', 'in_progress', 'in_review', 'completed'];
+		const columns: QuestStatus[] = ['posted', 'in_progress', 'in_review', 'completed'];
 
 		for (const status of columns) {
 			await expect(this.getColumn(status)).toBeVisible();

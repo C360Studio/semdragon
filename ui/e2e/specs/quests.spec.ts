@@ -20,7 +20,7 @@ test.describe('Quest Board', () => {
 	});
 
 	test('kanban columns have headers with counts', async ({ questsPage }) => {
-		const statuses = ['posted', 'claimed', 'in_progress', 'in_review', 'completed'] as const;
+		const statuses = ['posted', 'in_progress', 'in_review', 'completed'] as const;
 
 		for (const status of statuses) {
 			await expect(questsPage.getColumnHeader(status)).toBeVisible();
