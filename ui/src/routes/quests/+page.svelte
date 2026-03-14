@@ -37,7 +37,7 @@
 	const questsByStatus = $derived.by(() => {
 		const groups: Record<QuestStatus, Quest[]> = {
 			posted: [],
-			claimed: [],
+			claimed: [], // transient — not shown as column but needed for type completeness
 			in_progress: [],
 			in_review: [],
 			completed: [],
@@ -57,7 +57,6 @@
 
 	const allColumns: { status: QuestStatus; label: string }[] = [
 		{ status: 'posted', label: 'Posted' },
-		{ status: 'claimed', label: 'Claimed' },
 		{ status: 'in_progress', label: 'In Progress' },
 		{ status: 'in_review', label: 'In Review' },
 		{ status: 'completed', label: 'Completed' },
@@ -67,7 +66,7 @@
 	];
 
 	const defaultStatuses: Set<QuestStatus> = new Set([
-		'posted', 'claimed', 'in_progress', 'in_review', 'completed'
+		'posted', 'in_progress', 'in_review', 'completed'
 	]);
 
 	let activeStatuses = $state<Set<QuestStatus>>(new Set(defaultStatuses));
