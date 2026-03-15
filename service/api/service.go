@@ -438,7 +438,7 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	// Model registry
 	mux.HandleFunc("GET "+prefix+"models", cors(s.handleGetModels))
 
-	// Workspace — artifact browser (read-only, backed by filestore)
+	// Workspace — artifact browser (read-only, backed by workspace repo)
 	mux.HandleFunc("GET "+prefix+"workspace", cors(s.handleWorkspaceQuests))
 	mux.HandleFunc("GET "+prefix+"workspace/tree", cors(s.handleWorkspaceTree))
 	mux.HandleFunc("GET "+prefix+"workspace/file", cors(s.handleWorkspaceFile))

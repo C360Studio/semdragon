@@ -157,7 +157,7 @@ func TestHandleGetSettings_ArtifactStoreUnavailable(t *testing.T) {
 	decodeJSON(t, rr.Body.Bytes(), &resp)
 
 	if resp.Workspace.Available {
-		t.Error("expected Workspace.Available=false when no filestore component is configured")
+		t.Error("expected Workspace.Available=false when no workspace repo component is configured")
 	}
 }
 
@@ -552,7 +552,7 @@ func TestBuildChecklist_ArtifactStoreUnavailable(t *testing.T) {
 		t.Fatal("expected artifact storage checklist item")
 	}
 	if item.Met {
-		t.Error("expected artifact storage Met=false when no filestore component is configured")
+		t.Error("expected artifact storage Met=false when no workspace repo component is configured")
 	}
 	if item.HelpText == "" {
 		t.Error("expected HelpText when artifact storage is unavailable")

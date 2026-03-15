@@ -11,7 +11,6 @@ import (
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/model"
 	agenticmodel "github.com/c360studio/semstreams/processor/agentic-model"
-	"github.com/c360studio/semstreams/storage"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semdragons/domain"
@@ -163,8 +162,7 @@ type DomainAwareEvaluator struct {
 	fallback      *DefaultBattleEvaluator
 	tokenLedger   *tokenbudget.TokenLedger
 	nats          trajectoryWriter // for best-effort trajectory persistence; may be nil
-	artifactStoreResolver   func() storage.Store                       // lazy resolver for workspace artifacts
-	workspaceRepoResolver   func() *workspacerepo.WorkspaceRepo        // lazy resolver for git worktree artifacts
+	workspaceRepoResolver   func() *workspacerepo.WorkspaceRepo // lazy resolver for git worktree artifacts
 }
 
 // NewDomainAwareEvaluator creates an evaluator with domain catalog and model registry.
@@ -238,16 +236,11 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 		checklist...,
 	)
 
-	// Format the quest output for the user message. When artifact storage
+	// Format the quest output for the user message. When the workspace repo
 	// is available, include workspace files alongside the text output.
-	// Prefer git worktrees over filestore.
 	userMessage := formatOutputForJudge(output)
 	if wsRepo := e.resolveWorkspaceRepo(); wsRepo != nil {
 		if artifacts := e.loadArtifactsFromRepo(quest.ID, wsRepo); artifacts != "" {
-			userMessage = userMessage + "\n\n" + artifacts
-		}
-	} else if store := e.resolveArtifactStore(); store != nil {
-		if artifacts := e.loadArtifacts(ctx, quest.ID, store); artifacts != "" {
 			userMessage = userMessage + "\n\n" + artifacts
 		}
 	}
@@ -579,46 +572,6 @@ const maxArtifactFileSize = 256 * 1024
 // in the judge prompt. Once exceeded, remaining files are listed without content.
 const maxArtifactTotalSize = 512 * 1024
 
-// loadArtifacts reads workspace artifacts from the filestore and formats
-// them for the LLM judge. Returns empty string when no artifacts are found.
-func (e *DomainAwareEvaluator) loadArtifacts(ctx context.Context, questID domain.QuestID, store storage.Store) string {
-	prefix := fmt.Sprintf("quests/%s/", string(questID))
-	keys, err := store.List(ctx, prefix)
-	if err != nil {
-		slog.Debug("failed to list artifacts for judge", "quest_id", questID, "error", err)
-		return ""
-	}
-	if len(keys) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-	sb.WriteString("## Workspace Files\n\n")
-	sb.WriteString(fmt.Sprintf("The agent produced %d file(s):\n\n", len(keys)))
-
-	totalSize := 0
-	for _, key := range keys {
-		relPath := strings.TrimPrefix(key, prefix)
-
-		data, readErr := store.Get(ctx, key)
-		if readErr != nil {
-			sb.WriteString(fmt.Sprintf("### %s\n(error reading file)\n\n", relPath))
-			continue
-		}
-
-		if len(data) > maxArtifactFileSize || totalSize+len(data) > maxArtifactTotalSize {
-			sb.WriteString(fmt.Sprintf("### %s\n(%d bytes — content omitted, too large)\n\n", relPath, len(data)))
-			continue
-		}
-
-		totalSize += len(data)
-		ext := inferLanguage(relPath)
-		sb.WriteString(fmt.Sprintf("### %s\n```%s\n%s\n```\n\n", relPath, ext, string(data)))
-	}
-
-	return sb.String()
-}
-
 // inferLanguage returns a code fence language hint from a file path extension.
 func inferLanguage(path string) string {
 	idx := strings.LastIndex(path, ".")
@@ -659,25 +612,10 @@ func inferLanguage(path string) string {
 	}
 }
 
-// SetArtifactStoreResolver sets the lazy resolver for the artifact store.
-// Called during Initialize — the resolver is invoked at evaluation time so
-// a restarted filestore component is always picked up.
-func (e *DomainAwareEvaluator) SetArtifactStoreResolver(resolver func() storage.Store) {
-	e.artifactStoreResolver = resolver
-}
-
 // SetWorkspaceRepoResolver sets the lazy resolver for the workspace repo.
-// When set, artifact loading prefers git worktrees over filestore.
+// When set, workspace files are included in the LLM judge's evaluation context.
 func (e *DomainAwareEvaluator) SetWorkspaceRepoResolver(resolver func() *workspacerepo.WorkspaceRepo) {
 	e.workspaceRepoResolver = resolver
-}
-
-// resolveArtifactStore invokes the resolver if set, returning nil otherwise.
-func (e *DomainAwareEvaluator) resolveArtifactStore() storage.Store {
-	if e.artifactStoreResolver == nil {
-		return nil
-	}
-	return e.artifactStoreResolver()
 }
 
 // resolveWorkspaceRepo invokes the resolver if set, returning nil otherwise.
@@ -689,7 +627,7 @@ func (e *DomainAwareEvaluator) resolveWorkspaceRepo() *workspacerepo.WorkspaceRe
 }
 
 // loadArtifactsFromRepo reads workspace artifacts from a git worktree and formats
-// them for the LLM judge. Same format as loadArtifacts for consistency.
+// them for the LLM judge.
 func (e *DomainAwareEvaluator) loadArtifactsFromRepo(questID domain.QuestID, repo *workspacerepo.WorkspaceRepo) string {
 	instanceID := domain.ExtractInstance(string(questID))
 	files, err := repo.ListQuestFiles(instanceID)

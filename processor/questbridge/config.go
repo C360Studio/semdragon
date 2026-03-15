@@ -23,8 +23,7 @@ type Config struct {
 	DefaultRole    string `json:"default_role"`
 
 	// SandboxURL is the HTTP base URL for the sandbox container.
-	// When set, questbridge creates per-quest workspaces before dispatch and
-	// snapshots workspace files to the filestore on completion.
+	// When set, questbridge creates per-quest workspaces before dispatch.
 	SandboxURL string `json:"sandbox_url,omitempty"`
 
 	// EscalationTimeoutMins is how long a quest can stay escalated (waiting

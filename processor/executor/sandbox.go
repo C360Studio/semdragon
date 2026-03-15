@@ -192,7 +192,6 @@ type sandboxSearchResp struct {
 }
 
 // ListWorkspaceFiles returns all files in the workspace for the given quest ID.
-// Used by questbridge to snapshot workspace contents to the filestore on completion.
 func (c *SandboxClient) ListWorkspaceFiles(ctx context.Context, questID string) ([]WorkspaceFileEntry, error) {
 	listURL := fmt.Sprintf("/workspace/%s", questID)
 	var resp sandboxListResp

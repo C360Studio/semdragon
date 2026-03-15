@@ -3,8 +3,6 @@ package bossbattle
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +10,6 @@ import (
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
-	"github.com/c360studio/semstreams/storage"
 )
 
 // =============================================================================
@@ -2142,110 +2139,6 @@ func TestDomainAwareEvaluator_MergeResults_MissingFallsBack(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// ARTIFACT LOADING TESTS
-// =============================================================================
-
-// mockStore implements storage.Store for testing.
-type mockStore struct {
-	files map[string][]byte
-}
-
-func (s *mockStore) Put(_ context.Context, key string, data []byte) error {
-	s.files[key] = append([]byte(nil), data...)
-	return nil
-}
-
-func (s *mockStore) Get(_ context.Context, key string) ([]byte, error) {
-	data, ok := s.files[key]
-	if !ok {
-		return nil, fmt.Errorf("not found: %s", key)
-	}
-	return data, nil
-}
-
-func (s *mockStore) List(_ context.Context, prefix string) ([]string, error) {
-	var keys []string
-	for k := range s.files {
-		if strings.HasPrefix(k, prefix) {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	return keys, nil
-}
-
-func (s *mockStore) Delete(_ context.Context, key string) error {
-	delete(s.files, key)
-	return nil
-}
-
-func TestLoadArtifacts_IncludesFileContents(t *testing.T) {
-	store := &mockStore{files: map[string][]byte{
-		"quests/test-quest/main.go":     []byte("package main\n"),
-		"quests/test-quest/README.md":   []byte("# Hello\n"),
-		"quests/other-quest/other.go":   []byte("wrong quest"),
-	}}
-
-	eval := &DomainAwareEvaluator{}
-	eval.SetArtifactStoreResolver(func() storage.Store { return store })
-
-	result := eval.loadArtifacts(context.Background(), "test-quest", store)
-
-	if !strings.Contains(result, "## Workspace Files") {
-		t.Error("expected workspace files header")
-	}
-	if !strings.Contains(result, "### main.go") {
-		t.Error("expected main.go file section")
-	}
-	if !strings.Contains(result, "```go") {
-		t.Error("expected go language hint for .go file")
-	}
-	if !strings.Contains(result, "package main") {
-		t.Error("expected main.go content")
-	}
-	if !strings.Contains(result, "### README.md") {
-		t.Error("expected README.md file section")
-	}
-	if strings.Contains(result, "other.go") {
-		t.Error("should not include files from other quests")
-	}
-}
-
-func TestLoadArtifacts_EmptyStore(t *testing.T) {
-	store := &mockStore{files: map[string][]byte{}}
-	eval := &DomainAwareEvaluator{}
-	eval.SetArtifactStoreResolver(func() storage.Store { return store })
-
-	result := eval.loadArtifacts(context.Background(), "test-quest", store)
-	if result != "" {
-		t.Errorf("expected empty string for no artifacts, got %q", result)
-	}
-}
-
-func TestLoadArtifacts_SkipsOversizedFiles(t *testing.T) {
-	bigContent := make([]byte, maxArtifactFileSize+1)
-	for i := range bigContent {
-		bigContent[i] = 'x'
-	}
-
-	store := &mockStore{files: map[string][]byte{
-		"quests/q1/small.go": []byte("package small\n"),
-		"quests/q1/huge.bin": bigContent,
-	}}
-
-	eval := &DomainAwareEvaluator{}
-	eval.SetArtifactStoreResolver(func() storage.Store { return store })
-
-	result := eval.loadArtifacts(context.Background(), "q1", store)
-
-	if !strings.Contains(result, "package small") {
-		t.Error("expected small file content")
-	}
-	if !strings.Contains(result, "content omitted") {
-		t.Error("expected oversized file to be listed but content omitted")
-	}
-}
 
 func TestInferLanguage(t *testing.T) {
 	cases := []struct {

@@ -20,7 +20,6 @@ import (
 	// semsource payload registration — triggers init() to register the entity payload type
 	_ "github.com/c360studio/semdragons/semsource"
 
-	"github.com/c360studio/semdragons/storage/filestore"
 	"github.com/c360studio/semdragons/storage/workspacerepo"
 
 	"github.com/c360studio/semdragons/processor/agentprogression"
@@ -76,11 +75,6 @@ func RegisterAll(registry *component.Registry) error {
 	}
 
 	// Register storage components.
-	// filestore.Register takes RegistryInterface (satisfied by *component.Registry)
-	if err := filestore.Register(registry); err != nil {
-		return err
-	}
-	// workspacerepo.Register takes RegistryInterface (satisfied by *component.Registry)
 	if err := workspacerepo.Register(registry); err != nil {
 		return err
 	}
@@ -141,9 +135,6 @@ func RegisterProcessors(registry *component.Registry) error {
 	}
 
 	// Register storage components.
-	if err := filestore.Register(registry); err != nil {
-		return err
-	}
 	if err := workspacerepo.Register(registry); err != nil {
 		return err
 	}
@@ -193,7 +184,6 @@ func ComponentNames() []string {
 		"agentic-loop",
 		"agentic-model",
 		// Semdragons storage
-		"filestore",
 		workspacerepo.ComponentName,
 		// Semdragons processors
 		questboard.ComponentName,
@@ -231,7 +221,6 @@ func ProcessorNames() []string {
 		"agentic-loop",
 		"agentic-model",
 		// Semdragons storage
-		"filestore",
 		workspacerepo.ComponentName,
 		// Semdragons processors
 		questboard.ComponentName,

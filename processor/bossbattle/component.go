@@ -14,7 +14,6 @@ import (
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/pkg/errs"
-	"github.com/c360studio/semstreams/storage"
 	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
@@ -295,9 +294,6 @@ func (c *Component) Initialize() error {
 		promptRegistry.RegisterProviderStyles()
 		c.assembler = promptmanager.NewPromptAssembler(promptRegistry)
 		eval := NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler, c.tokenLedger, c.deps.NATSClient)
-		eval.SetArtifactStoreResolver(func() storage.Store {
-			return domain.ResolveArtifactStore(c.deps.ComponentRegistry, c.logger)
-		})
 		eval.SetWorkspaceRepoResolver(func() *workspacerepo.WorkspaceRepo {
 			return domain.ResolveWorkspaceRepo(c.deps.ComponentRegistry, c.logger)
 		})

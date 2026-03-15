@@ -263,13 +263,11 @@ func (s *Service) handleSettingsHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Artifact store (workspace repo preferred, filestore fallback)
+	// 3. Workspace repo for artifact storage
 	if s.getWorkspaceRepo() != nil {
 		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "ok", Message: "Workspace repo (git worktrees) available"})
-	} else if s.getArtifactStore() != nil {
-		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "ok", Message: "Artifact storage available (filestore)"})
 	} else {
-		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "warning", Message: "Artifact storage not available — quest artifacts won't be persisted"})
+		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "warning", Message: "Workspace repo not available — quest artifacts won't be persisted"})
 		hasWarning = true
 	}
 
@@ -400,9 +398,9 @@ func (s *Service) assembleSettingsResponse() SettingsResponse {
 	// Components
 	resp.Components = s.assembleComponentList()
 
-	// Workspace (artifact store or workspace repo)
+	// Workspace (workspace repo)
 	resp.Workspace = WorkspaceInfoView{
-		Available: s.getWorkspaceRepo() != nil || s.getArtifactStore() != nil,
+		Available: s.getWorkspaceRepo() != nil,
 	}
 
 	// Token budget
@@ -760,8 +758,8 @@ func (s *Service) buildChecklist(ctx context.Context) []ChecklistItem {
 		}(),
 	})
 
-	// Artifact store (workspace repo or filestore)
-	artifactOk := s.getWorkspaceRepo() != nil || s.getArtifactStore() != nil
+	// Workspace repo for artifact storage
+	artifactOk := s.getWorkspaceRepo() != nil
 	items = append(items, ChecklistItem{
 		Label: "Artifact storage available",
 		Met:   artifactOk,
@@ -769,7 +767,7 @@ func (s *Service) buildChecklist(ctx context.Context) []ChecklistItem {
 			if artifactOk {
 				return ""
 			}
-			return "Enable the filestore component in config/semdragons.json to persist quest artifacts"
+			return "Enable the workspacerepo component in config/semdragons.json to persist quest artifacts"
 		}(),
 	})
 

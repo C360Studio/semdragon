@@ -337,15 +337,6 @@
         }
       }
     },
-    "filestore": {
-      "type": "storage",
-      "name": "filestore",
-      "enabled": true,
-      "config": {
-        "root_dir": "/tmp/artifacts",
-        "create_if_missing": true
-      }
-    },
     "questbridge": {
       "type": "processor",
       "name": "questbridge",

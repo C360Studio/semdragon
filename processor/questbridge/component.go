@@ -19,7 +19,6 @@ import (
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/natsclient"
-	"github.com/c360studio/semstreams/storage"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -99,13 +98,12 @@ type Component struct {
 
 	// Sandbox workspace lifecycle management.
 	// When sandboxClient is non-nil, questbridge creates per-quest workspaces
-	// before dispatch and snapshots files to the artifact store on completion.
-	// The artifact store is resolved lazily via ComponentRegistry at snapshot time.
+	// before dispatch and cleans them up on completion/failure.
 	sandboxClient *executor.SandboxClient
 
 	// Git-backed workspace repo for artifact management. When non-nil,
 	// questbridge creates per-quest worktrees instead of flat sandbox dirs,
-	// and finalizes (git commit) instead of snapshotting to filestore.
+	// and finalizes them (git commit) on completion.
 	// Resolved lazily via ComponentRegistry at Start time.
 	workspaceRepo *workspacerepo.WorkspaceRepo
 
@@ -500,16 +498,8 @@ type ToolRegistrySource interface {
 	ToolRegistry() *executor.ToolRegistry
 }
 
-// getArtifactStore resolves the filestore lazily from the ComponentRegistry.
-// Returns nil when the registry is unavailable or filestore is not running.
-// Called at snapshot time so a restarted filestore component is always current.
-func (c *Component) getArtifactStore() storage.Store {
-	return domain.ResolveArtifactStore(c.deps.ComponentRegistry, c.logger)
-}
-
 // getWorkspaceRepo returns the workspace repo if available.
-// When non-nil, worktree-based artifact management takes precedence over
-// filestore snapshot.
+// When non-nil, worktrees are used for per-quest artifact management.
 func (c *Component) getWorkspaceRepo() *workspacerepo.WorkspaceRepo {
 	return c.workspaceRepo
 }

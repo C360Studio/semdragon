@@ -4,35 +4,16 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/storage/workspacerepo"
-	"github.com/c360studio/semstreams/service"
-	"github.com/c360studio/semstreams/storage"
 )
 
 // =============================================================================
-// ARTIFACT STORAGE — lazy filestore resolution
+// ARTIFACT STORAGE
 // =============================================================================
-
-// getArtifactStore resolves the filestore component from the registry on every call.
-// Fresh resolution ensures a restarted filestore is always picked up.
-func (s *Service) getArtifactStore() storage.Store {
-	return resolveFilestore(s.componentDeps, s.logger)
-}
-
-// resolveFilestore attempts to retrieve the filestore component from the
-// component registry via the ArtifactStoreProvider interface.
-// Returns nil if unavailable.
-func resolveFilestore(deps *service.Dependencies, logger *slog.Logger) storage.Store {
-	if deps == nil || deps.ComponentRegistry == nil {
-		return nil
-	}
-	return domain.ResolveArtifactStore(deps.ComponentRegistry, logger)
-}
 
 // getWorkspaceRepo resolves the workspacerepo component from the registry.
 // Returns nil if unavailable.
@@ -59,44 +40,26 @@ func (s *Service) handleGetQuestArtifacts(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Collect file paths and a reader function based on available backend.
+	// Collect file paths and a reader function.
 	type fileReader func(path string) ([]byte, error)
 	var filePaths []string
 	var readFile fileReader
 
-	if wsRepo := s.getWorkspaceRepo(); wsRepo != nil {
-		files, err := wsRepo.ListQuestFiles(id)
-		if err != nil || len(files) == 0 {
-			s.writeError(w, "no artifacts found for quest", http.StatusNotFound)
-			return
-		}
-		for _, f := range files {
-			filePaths = append(filePaths, f.Path)
-		}
-		readFile = func(path string) ([]byte, error) {
-			return wsRepo.ReadFile(id, path)
-		}
-	} else if store := s.getArtifactStore(); store != nil {
-		prefix := "quests/" + id + "/"
-		keys, err := store.List(r.Context(), prefix)
-		if err != nil {
-			s.writeError(w, "failed to list artifacts", http.StatusInternalServerError)
-			s.logger.Error("artifact list failed", "quest_id", id, "error", err)
-			return
-		}
-		if len(keys) == 0 {
-			s.writeError(w, "no artifacts found for quest", http.StatusNotFound)
-			return
-		}
-		for _, key := range keys {
-			filePaths = append(filePaths, strings.TrimPrefix(key, prefix))
-		}
-		readFile = func(path string) ([]byte, error) {
-			return store.Get(r.Context(), "quests/"+id+"/"+path)
-		}
-	} else {
+	wsRepo := s.getWorkspaceRepo()
+	if wsRepo == nil {
 		s.writeError(w, "artifact storage not available", http.StatusServiceUnavailable)
 		return
+	}
+	files, err := wsRepo.ListQuestFiles(id)
+	if err != nil || len(files) == 0 {
+		s.writeError(w, "no artifacts found for quest", http.StatusNotFound)
+		return
+	}
+	for _, f := range files {
+		filePaths = append(filePaths, f.Path)
+	}
+	readFile = func(path string) ([]byte, error) {
+		return wsRepo.ReadFile(id, path)
 	}
 
 	// Get quest metadata from graph for the manifest.
@@ -156,18 +119,13 @@ func (s *Service) handleGetQuestArtifactFile(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var data []byte
-	var readErr error
-
-	if wsRepo := s.getWorkspaceRepo(); wsRepo != nil {
-		data, readErr = wsRepo.ReadFile(id, filePath)
-	} else if store := s.getArtifactStore(); store != nil {
-		key := "quests/" + id + "/" + filePath
-		data, readErr = store.Get(r.Context(), key)
-	} else {
+	wsRepo := s.getWorkspaceRepo()
+	if wsRepo == nil {
 		s.writeError(w, "artifact storage not available", http.StatusServiceUnavailable)
 		return
 	}
+
+	data, readErr := wsRepo.ReadFile(id, filePath)
 
 	if readErr != nil {
 		s.logger.Debug("artifact get failed", "quest_id", id, "path", filePath, "error", readErr)
@@ -191,30 +149,20 @@ func (s *Service) handleListQuestArtifacts(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var files []string
-
-	if wsRepo := s.getWorkspaceRepo(); wsRepo != nil {
-		entries, err := wsRepo.ListQuestFiles(id)
-		if err != nil {
-			s.writeError(w, "failed to list artifacts", http.StatusInternalServerError)
-			return
-		}
-		for _, e := range entries {
-			files = append(files, e.Path)
-		}
-	} else if store := s.getArtifactStore(); store != nil {
-		prefix := "quests/" + id + "/"
-		keys, err := store.List(r.Context(), prefix)
-		if err != nil {
-			s.writeError(w, "failed to list artifacts", http.StatusInternalServerError)
-			return
-		}
-		for _, key := range keys {
-			files = append(files, strings.TrimPrefix(key, prefix))
-		}
-	} else {
+	wsRepo := s.getWorkspaceRepo()
+	if wsRepo == nil {
 		s.writeError(w, "artifact storage not available", http.StatusServiceUnavailable)
 		return
+	}
+
+	var files []string
+	entries, err := wsRepo.ListQuestFiles(id)
+	if err != nil {
+		s.writeError(w, "failed to list artifacts", http.StatusInternalServerError)
+		return
+	}
+	for _, e := range entries {
+		files = append(files, e.Path)
 	}
 
 	if files == nil {

@@ -783,7 +783,6 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	}
 
 	// Finalize workspace before transitioning status.
-	// Prefer git worktree finalization; fall back to filestore snapshot.
 	// Best-effort: failure is logged but does not block quest completion.
 	snapshotCount := 0
 	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
@@ -797,8 +796,6 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 				snapshotCount = len(files)
 			}
 		}
-	} else {
-		snapshotCount = c.snapshotWorkspace(string(questID))
 	}
 
 	quest.LoopID = mapping.LoopID
@@ -1239,13 +1236,6 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 		return
 	}
 
-	// Clean up workspace on failure — no snapshot needed since the quest did not
-	// produce a successful work product. When using workspace repo, the worktree
-	// persists for retry/rework — only delete the flat sandbox workspace.
-	if c.getWorkspaceRepo() == nil {
-		c.cleanupWorkspace(string(questID))
-	}
-
 	// Delegate to questboard when available — this routes through the triage
 	// gate which may hold the quest for DM evaluation instead of terminal failure.
 	// Questboard handles agent release internally.
@@ -1621,135 +1611,26 @@ func (c *Component) cleanupMapping(ctx context.Context, questID string) {
 // WORKSPACE LIFECYCLE
 // =============================================================================
 
-// maxSnapshotFileSize is the maximum file size (10MB) that will be copied
-// during workspace snapshot. Larger files (e.g. compiled binaries) are skipped.
-const maxSnapshotFileSize = 10 * 1024 * 1024
-
-// snapshotWorkspace copies all files from the sandbox workspace to the artifact
-// store, then deletes the workspace. This preserves the agent's work products
-// for artifact download and boss battle review.
-// No-op when sandboxClient is nil.
-//
-// Uses a detached context with a deadline so that graceful shutdown does not
-// orphan the workspace mid-snapshot.
-func (c *Component) snapshotWorkspace(questID string) int {
-	if c.sandboxClient == nil {
-		return 0
-	}
-
-	// Use a bounded context independent of the parent so shutdown does not
-	// orphan a workspace mid-snapshot.
-	snapCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	// List all files in the workspace. The sandbox API returns a recursive
-	// flat listing of all files (not just top-level entries).
-	files, err := c.sandboxClient.ListWorkspaceFiles(snapCtx, questID)
-	if err != nil {
-		c.logger.Warn("failed to list workspace files for snapshot",
-			"quest_id", questID, "error", err)
-		c.cleanupWorkspace(questID)
-		return 0
-	}
-
-	if len(files) == 0 {
-		c.logger.Debug("no workspace files to snapshot", "quest_id", questID)
-		c.cleanupWorkspace(questID)
-		return 0
-	}
-
-	// Copy files to the artifact store when available.
-	artifactStore := c.getArtifactStore()
-	if artifactStore != nil {
-		snapshotted := 0
-		for _, f := range files {
-			if f.Size > maxSnapshotFileSize {
-				c.logger.Warn("skipping oversized file in snapshot",
-					"quest_id", questID, "path", f.Path, "size", f.Size)
-				continue
-			}
-
-			content, readErr := c.sandboxClient.ReadFile(snapCtx, questID, f.Path)
-			if readErr != nil {
-				c.logger.Warn("failed to read workspace file for snapshot",
-					"quest_id", questID, "path", f.Path, "error", readErr)
-				continue
-			}
-
-			// Use the instance portion of the quest ID as the storage key
-			// so the REST API (which receives short IDs from path params)
-			// can look up artifacts without needing to reconstruct the full
-			// entity ID.
-			instanceID := domain.ExtractInstance(questID)
-			storeKey := fmt.Sprintf("quests/%s/%s", instanceID, f.Path)
-			if putErr := artifactStore.Put(snapCtx, storeKey, content); putErr != nil {
-				c.logger.Warn("failed to write artifact to store",
-					"quest_id", questID, "key", storeKey, "error", putErr)
-				continue
-			}
-			snapshotted++
-		}
-		c.logger.Info("workspace snapshot complete",
-			"quest_id", questID, "files", snapshotted, "total", len(files))
-		c.cleanupWorkspace(questID)
-		return snapshotted
-	}
-
-	c.logger.Warn("sandbox workspace has files but no artifact store configured",
-		"quest_id", questID, "files", len(files))
-	c.cleanupWorkspace(questID)
-	return 0
-}
-
 // ensureOutputArtifact writes the quest's output text as a work_product.md
-// artifact when no workspace files were snapshotted. This guarantees every
+// artifact when no workspace files were committed. This guarantees every
 // completed quest has at least one artifact visible in the workspace browser.
-// Prefers writing into the git worktree when available; falls back to filestore.
+// No-op when workspace repo is not configured.
 func (c *Component) ensureOutputArtifact(questID string, output string) {
 	if output == "" {
 		return
 	}
-	// Prefer writing into the worktree (commit happens during finalize).
-	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
-		worktreePath := wsRepo.WorktreePath(questID)
-		wpPath := filepath.Join(worktreePath, "work_product.md")
-		if err := os.WriteFile(wpPath, []byte(output), 0o644); err != nil {
-			c.logger.Warn("failed to write output artifact to worktree",
-				"quest_id", questID, "error", err)
-		}
+	wsRepo := c.getWorkspaceRepo()
+	if wsRepo == nil {
 		return
 	}
-
-	store := c.getArtifactStore()
-	if store == nil {
-		return
-	}
-	key := fmt.Sprintf("quests/%s/work_product.md", domain.ExtractInstance(questID))
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := store.Put(ctx, key, []byte(output)); err != nil {
-		c.logger.Warn("failed to write output artifact",
+	worktreePath := wsRepo.WorktreePath(questID)
+	wpPath := filepath.Join(worktreePath, "work_product.md")
+	if err := os.WriteFile(wpPath, []byte(output), 0o644); err != nil {
+		c.logger.Warn("failed to write output artifact to worktree",
 			"quest_id", questID, "error", err)
 	}
 }
 
-// cleanupWorkspace deletes the sandbox workspace for the given quest.
-// No-op when sandboxClient is nil. When called from failQuest (where the
-// parent context may be valid), uses a bounded detached context to ensure
-// cleanup completes even during shutdown.
-func (c *Component) cleanupWorkspace(questID string) {
-	if c.sandboxClient == nil {
-		return
-	}
-	cleanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := c.sandboxClient.DeleteWorkspace(cleanCtx, questID); err != nil {
-		c.logger.Warn("failed to delete sandbox workspace",
-			"quest_id", questID, "error", err)
-	}
-}
 
 // =============================================================================
 // PROMPT BUILDING
