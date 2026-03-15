@@ -121,7 +121,9 @@ func (w *WorkspaceRepo) Init(ctx context.Context) error {
 
 	// Clone to a temp location first, then rename atomically. This avoids
 	// a crash window where repoDir has been removed but clone hasn't finished.
-	tmpBare, err := os.MkdirTemp(filepath.Dir(w.repoDir), "workspace-bare-*")
+	// Use the system temp dir — the parent of repoDir may not be writable
+	// (e.g., Docker volume mount owned by root when running as non-root user).
+	tmpBare, err := os.MkdirTemp("", "workspace-bare-*")
 	if err != nil {
 		return fmt.Errorf("create temp bare dir: %w", err)
 	}
