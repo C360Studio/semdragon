@@ -38,10 +38,15 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && npm install -g typescript vitest jest \
     && rm -rf /var/lib/apt/lists/*
 
-# Create sandbox user and workspace directory.
-RUN useradd -m -s /bin/bash -U sandbox \
+# Create sandbox user with shared workspace group (GID 1500).
+# Backend creates worktrees as 'app:workspace'; sandbox writes as 'sandbox:workspace'.
+RUN groupadd -g 1500 workspace \
+    && useradd -m -s /bin/bash -U sandbox \
+    && usermod -aG workspace sandbox \
     && mkdir -p /workspace /go/pkg/mod \
-    && chown -R sandbox:sandbox /workspace /go
+    && chown -R sandbox:workspace /workspace \
+    && chown -R sandbox:sandbox /go \
+    && chmod g+ws /workspace
 
 COPY --from=builder /sandbox /usr/local/bin/sandbox
 

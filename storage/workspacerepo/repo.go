@@ -215,6 +215,13 @@ func (w *WorkspaceRepo) CreateWorktree(ctx context.Context, questID string) erro
 		return fmt.Errorf("create worktree for quest %s: %w", questID, err)
 	}
 
+	// Make worktree group-writable so the sandbox container (which runs as a
+	// different user in the same shared group) can write files.
+	if err := os.Chmod(worktree, 0o775); err != nil {
+		w.logger.Warn("failed to chmod worktree — sandbox may not be able to write",
+			"quest_id", questID, "error", err)
+	}
+
 	w.logger.Info("worktree created", "quest_id", questID, "branch", branch, "path", worktree)
 	return nil
 }
