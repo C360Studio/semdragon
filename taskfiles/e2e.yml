@@ -210,7 +210,7 @@ tasks:
     cmds:
       - >-
         {{.COMPOSE}} {{if .PROFILE}}--profile {{.PROFILE}}{{end}}
-        build --no-cache
+        build {{if eq (env "NO_CACHE") "1"}}--no-cache{{end}}
       - >-
         SEED_E2E=true
         BACKEND_PORT={{.BACKEND_PORT}}
