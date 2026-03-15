@@ -126,30 +126,24 @@ func (w *WorkspaceRepo) Init(ctx context.Context) error {
 		return fmt.Errorf("git commit initial: %w", err)
 	}
 
-	// Clone to a temp location first, then rename atomically. This avoids
-	// a crash window where repoDir has been removed but clone hasn't finished.
-	// Use the system temp dir — the parent of repoDir may not be writable
-	// (e.g., Docker volume mount owned by root when running as non-root user).
-	tmpBare, err := os.MkdirTemp("", "workspace-bare-*")
-	if err != nil {
-		return fmt.Errorf("create temp bare dir: %w", err)
+	// Initialize the bare repo in-place. We can't use clone+rename because
+	// repoDir may be a Docker volume mount point (can't be removed/renamed).
+	// Instead, init bare directly in repoDir, add the temp repo as a remote,
+	// fetch main, then clean up.
+	if err := w.gitInDir(ctx, w.repoDir, "init", "--bare"); err != nil {
+		return fmt.Errorf("git init --bare in repo dir: %w", err)
 	}
-
-	cmd := exec.CommandContext(ctx, "git", "clone", "--bare", tmpInit, tmpBare)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if out, cloneErr := cmd.CombinedOutput(); cloneErr != nil {
-		os.RemoveAll(tmpBare)
-		return fmt.Errorf("git clone --bare: %s: %s", cloneErr, strings.TrimSpace(string(out)))
+	if err := w.gitInDir(ctx, w.repoDir, "remote", "add", "seed", tmpInit); err != nil {
+		return fmt.Errorf("add seed remote: %w", err)
 	}
-
-	// Atomic swap: remove empty target, rename temp into place.
-	if err := os.RemoveAll(w.repoDir); err != nil {
-		os.RemoveAll(tmpBare)
-		return fmt.Errorf("remove empty repo dir: %w", err)
+	if err := w.gitInDir(ctx, w.repoDir, "fetch", "seed", "main:main"); err != nil {
+		return fmt.Errorf("fetch main from seed: %w", err)
 	}
-	if err := os.Rename(tmpBare, w.repoDir); err != nil {
-		return fmt.Errorf("rename bare repo into place: %w", err)
+	if err := w.gitInDir(ctx, w.repoDir, "symbolic-ref", "HEAD", "refs/heads/main"); err != nil {
+		return fmt.Errorf("set HEAD to main: %w", err)
 	}
+	// Clean up the seed remote — it pointed at a temp dir that will be removed.
+	_ = w.gitInDir(ctx, w.repoDir, "remote", "remove", "seed")
 
 	w.logger.Info("workspace repo initialized", "repo_dir", w.repoDir)
 
