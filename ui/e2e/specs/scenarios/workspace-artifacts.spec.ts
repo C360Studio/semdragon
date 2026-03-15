@@ -147,27 +147,19 @@ test.describe.serial('Workspace Artifacts', () => {
 
 		const quest = await lifecycleApi.getQuest(artifactQuestInstanceId);
 
-		type QuestWithArtifacts = typeof quest & {
-			artifacts_commit?: string;
-			artifacts_merged?: string;
-			artifacts_indexed?: boolean;
-		};
-
-		const q = quest as QuestWithArtifacts;
-
-		if (q.artifacts_commit) {
-			expect(q.artifacts_commit).toMatch(/^[0-9a-f]{7,40}$/);
+		if (quest.artifacts_commit) {
+			expect(quest.artifacts_commit).toMatch(/^[0-9a-f]{7,40}$/);
 		}
 
-		if (q.artifacts_merged) {
-			expect(q.artifacts_merged).toMatch(/^[0-9a-f]{7,40}$/);
+		if (quest.artifacts_merged) {
+			expect(quest.artifacts_merged).toMatch(/^[0-9a-f]{7,40}$/);
 		}
 
 		console.log('[Workspace] Quest artifact tracking:', {
 			id: artifactQuestInstanceId,
-			artifacts_commit: q.artifacts_commit ?? '(not set)',
-			artifacts_merged: q.artifacts_merged ?? '(not set)',
-			artifacts_indexed: q.artifacts_indexed ?? false
+			artifacts_commit: quest.artifacts_commit ?? '(not set)',
+			artifacts_merged: quest.artifacts_merged ?? '(not set)',
+			artifacts_indexed: quest.artifacts_indexed ?? false
 		});
 	});
 });

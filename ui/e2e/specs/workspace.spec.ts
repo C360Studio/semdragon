@@ -201,14 +201,7 @@ test.describe('Workspace - Artifact API Integration', () => {
 
 		const quests = await lifecycleApi.listQuests();
 
-		// artifacts_commit is a newer field not yet in generated types — cast to access it
-		type QuestWithArtifacts = (typeof quests)[number] & {
-			artifacts_commit?: string;
-			artifacts_merged?: string;
-			artifacts_indexed?: boolean;
-		};
-
-		const withCommit = (quests as QuestWithArtifacts[]).find(
+		const withCommit = quests.find(
 			(q) => q.status === 'completed' && q.artifacts_commit
 		);
 
