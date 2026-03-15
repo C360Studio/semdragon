@@ -48,6 +48,25 @@ const (
 	PredicateQuestDecomposed = "quest.lifecycle.decomposed"
 )
 
+// --- Quest Artifact Predicates ---
+
+const (
+	// PredicateQuestArtifactsCommit - Git commit hash of finalized quest work.
+	PredicateQuestArtifactsCommit = "quest.artifacts.commit"
+
+	// PredicateQuestArtifactsMerged - Git merge commit hash after boss battle victory.
+	PredicateQuestArtifactsMerged = "quest.artifacts.merged"
+
+	// PredicateQuestArtifactsMergeConflict - True if merge to main had conflicts.
+	PredicateQuestArtifactsMergeConflict = "quest.artifacts.merge_conflict"
+
+	// PredicateQuestArtifactsIndexed - True when semsource has processed the merged artifacts.
+	PredicateQuestArtifactsIndexed = "quest.artifacts.indexed"
+
+	// PredicateQuestProduced - Relationship: quest entity → semsource entity it produced.
+	PredicateQuestProduced = "quest.relationship.produced"
+)
+
 // --- Boss Battle Predicates ---
 
 const (
@@ -377,6 +396,25 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicateQuestDecomposed,
 		vocabulary.WithDescription("Quest broken into sub-quests by party lead"),
+	)
+
+	// Quest artifact predicates
+	vocabulary.Register(PredicateQuestArtifactsCommit,
+		vocabulary.WithDescription("Git commit hash of finalized quest work"),
+	)
+	vocabulary.Register(PredicateQuestArtifactsMerged,
+		vocabulary.WithDescription("Git merge commit hash after boss battle victory"),
+	)
+	vocabulary.Register(PredicateQuestArtifactsMergeConflict,
+		vocabulary.WithDescription("True if merge to main had conflicts"),
+		vocabulary.WithDataType("bool"),
+	)
+	vocabulary.Register(PredicateQuestArtifactsIndexed,
+		vocabulary.WithDescription("True when semsource has processed the merged artifacts"),
+		vocabulary.WithDataType("bool"),
+	)
+	vocabulary.Register(PredicateQuestProduced,
+		vocabulary.WithDescription("Relationship: quest entity to semsource entity it produced"),
 	)
 
 	// Boss battle predicates

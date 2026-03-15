@@ -22,6 +22,7 @@ import (
 	"github.com/c360studio/semdragons/internal/util"
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/tokenbudget"
+	"github.com/c360studio/semdragons/storage/workspacerepo"
 )
 
 // =============================================================================
@@ -46,6 +47,10 @@ type Component struct {
 
 	// Token budget enforcement
 	tokenLedger *tokenbudget.TokenLedger
+
+	// Git-backed workspace repo for merge-to-main on victory.
+	// Resolved lazily via ComponentRegistry at Start time.
+	workspaceRepo *workspacerepo.WorkspaceRepo
 
 	// KV watcher for quest entity state changes (entity-centric architecture)
 	questWatch  jetstream.KeyWatcher
@@ -293,6 +298,9 @@ func (c *Component) Initialize() error {
 		eval.SetArtifactStoreResolver(func() storage.Store {
 			return domain.ResolveArtifactStore(c.deps.ComponentRegistry, c.logger)
 		})
+		eval.SetWorkspaceRepoResolver(func() *workspacerepo.WorkspaceRepo {
+			return domain.ResolveWorkspaceRepo(c.deps.ComponentRegistry, c.logger)
+		})
 		c.evaluator = eval
 	} else {
 		c.evaluator = NewDefaultBattleEvaluator()
@@ -315,6 +323,9 @@ func (c *Component) Start(ctx context.Context) error {
 	if err := c.createGraphClient(ctx); err != nil {
 		return err
 	}
+
+	// Resolve workspace repo (optional) for merge-to-main on victory.
+	c.workspaceRepo = domain.ResolveWorkspaceRepo(c.deps.ComponentRegistry, c.logger)
 
 	c.startTime = time.Now()
 	c.running.Store(true)

@@ -6,13 +6,15 @@ import (
 	"strings"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/storage/workspacerepo"
 )
 
 // =============================================================================
-// WORKSPACE — Artifact browser backed by the filestore component.
+// WORKSPACE — Artifact browser backed by workspace repo (git worktrees) or
+// the legacy filestore component.
 //
-// The workspace page shows quest artifacts that were snapshotted from the
-// sandbox after quest completion. Three endpoints:
+// Prefers git worktrees when workspace repo is available; falls back to
+// filestore snapshot.
 //
 //   GET /workspace           — list quests that have artifacts
 //   GET /workspace/tree      — file tree for a single quest's artifacts
@@ -43,32 +45,46 @@ type workspaceQuestInfo struct {
 //
 // GET /game/workspace
 func (s *Service) handleWorkspaceQuests(w http.ResponseWriter, r *http.Request) {
-	store := s.getArtifactStore()
-	if store == nil {
+	questFiles := make(map[string]int)
+
+	// Try workspace repo (git worktrees) first.
+	if wsRepo := s.getWorkspaceRepo(); wsRepo != nil {
+		ids, err := wsRepo.ListWorktreeIDs()
+		if err == nil {
+			for _, instanceID := range ids {
+				files, listErr := wsRepo.ListQuestFiles(instanceID)
+				if listErr == nil {
+					questFiles[instanceID] = len(files)
+				}
+			}
+		}
+	} else if store := s.getArtifactStore(); store != nil {
+		// Fall back to filestore.
+		keys, err := store.List(r.Context(), "quests/")
+		if err != nil {
+			s.writeError(w, "failed to list artifacts", http.StatusInternalServerError)
+			s.logger.Error("workspace: artifact list failed", "error", err)
+			return
+		}
+		for _, key := range keys {
+			rest := strings.TrimPrefix(key, "quests/")
+			parts := strings.SplitN(rest, "/", 2)
+			if len(parts) < 2 {
+				continue
+			}
+			questFiles[parts[0]]++
+		}
+	} else {
 		s.writeError(w, "artifact storage not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	// List all artifact keys to discover quest IDs.
-	keys, err := store.List(r.Context(), "quests/")
-	if err != nil {
-		s.writeError(w, "failed to list artifacts", http.StatusInternalServerError)
-		s.logger.Error("workspace: artifact list failed", "error", err)
-		return
-	}
+	result := s.enrichQuestInfos(r, questFiles)
+	s.writeJSON(w, result)
+}
 
-	// Group by quest ID (first path segment after "quests/").
-	questFiles := make(map[string]int)
-	for _, key := range keys {
-		rest := strings.TrimPrefix(key, "quests/")
-		parts := strings.SplitN(rest, "/", 2)
-		if len(parts) < 2 {
-			continue
-		}
-		questFiles[parts[0]]++
-	}
-
-	// Build response with quest metadata.
+// enrichQuestInfos builds workspaceQuestInfo list from a quest ID → file count map.
+func (s *Service) enrichQuestInfos(r *http.Request, questFiles map[string]int) []workspaceQuestInfo {
 	result := make([]workspaceQuestInfo, 0, len(questFiles))
 	for qid, count := range questFiles {
 		info := workspaceQuestInfo{
@@ -76,7 +92,6 @@ func (s *Service) handleWorkspaceQuests(w http.ResponseWriter, r *http.Request) 
 			FileCount: count,
 		}
 
-		// Enrich with quest metadata from graph.
 		entity, err := s.graph.GetQuest(r.Context(), domain.QuestID(qid))
 		if err == nil {
 			quest := domain.QuestFromEntityState(entity)
@@ -95,12 +110,10 @@ func (s *Service) handleWorkspaceQuests(w http.ResponseWriter, r *http.Request) 
 		result = append(result, info)
 	}
 
-	// Sort by quest ID for stable ordering.
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].QuestID < result[j].QuestID
 	})
-
-	s.writeJSON(w, result)
+	return result
 }
 
 // handleWorkspaceTree returns a nested file tree for a quest's artifacts.
@@ -113,6 +126,18 @@ func (s *Service) handleWorkspaceTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Try workspace repo first.
+	if wsRepo := s.getWorkspaceRepo(); wsRepo != nil {
+		tree, err := wsRepo.FileTree(questID)
+		if err != nil {
+			s.writeJSON(w, []*workspaceEntry{})
+			return
+		}
+		s.writeJSON(w, convertTreeEntries(tree))
+		return
+	}
+
+	// Fall back to filestore.
 	store := s.getArtifactStore()
 	if store == nil {
 		s.writeError(w, "artifact storage not available", http.StatusServiceUnavailable)
@@ -131,7 +156,6 @@ func (s *Service) handleWorkspaceTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build tree from flat paths.
 	tree := buildArtifactTree(keys, prefix)
 	s.writeJSON(w, tree)
 }
@@ -156,6 +180,20 @@ func (s *Service) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Try workspace repo first.
+	if wsRepo := s.getWorkspaceRepo(); wsRepo != nil {
+		data, err := wsRepo.ReadFile(questID, filePath)
+		if err != nil {
+			s.writeError(w, "artifact not found", http.StatusNotFound)
+			return
+		}
+		ct := detectContentType(filePath)
+		w.Header().Set("Content-Type", ct)
+		w.Write(data) //nolint:errcheck
+		return
+	}
+
+	// Fall back to filestore.
 	store := s.getArtifactStore()
 	if store == nil {
 		s.writeError(w, "artifact storage not available", http.StatusServiceUnavailable)
@@ -185,7 +223,6 @@ type dirNode struct {
 }
 
 // buildArtifactTree converts a flat list of storage keys into a nested tree.
-// prefix is stripped from each key before building the tree structure.
 func buildArtifactTree(keys []string, prefix string) []*workspaceEntry {
 	root := &dirNode{children: make(map[string]*dirNode)}
 
@@ -235,7 +272,6 @@ func collectTree(node *dirNode) []*workspaceEntry {
 		entries = append(entries, entry)
 	}
 
-	// Sort: directories first, then alphabetically.
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].IsDir != entries[j].IsDir {
 			return entries[i].IsDir
@@ -244,4 +280,22 @@ func collectTree(node *dirNode) []*workspaceEntry {
 	})
 
 	return entries
+}
+
+// convertTreeEntries converts workspacerepo.TreeEntry to workspaceEntry.
+func convertTreeEntries(entries []*workspacerepo.TreeEntry) []*workspaceEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	result := make([]*workspaceEntry, len(entries))
+	for i, e := range entries {
+		result[i] = &workspaceEntry{
+			Name:     e.Name,
+			Path:     e.Path,
+			IsDir:    e.IsDir,
+			Size:     e.Size,
+			Children: convertTreeEntries(e.Children),
+		}
+	}
+	return result
 }

@@ -263,9 +263,11 @@ func (s *Service) handleSettingsHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Artifact store
-	if s.getArtifactStore() != nil {
-		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "ok", Message: "Artifact storage available"})
+	// 3. Artifact store (workspace repo preferred, filestore fallback)
+	if s.getWorkspaceRepo() != nil {
+		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "ok", Message: "Workspace repo (git worktrees) available"})
+	} else if s.getArtifactStore() != nil {
+		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "ok", Message: "Artifact storage available (filestore)"})
 	} else {
 		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "warning", Message: "Artifact storage not available — quest artifacts won't be persisted"})
 		hasWarning = true
@@ -398,9 +400,9 @@ func (s *Service) assembleSettingsResponse() SettingsResponse {
 	// Components
 	resp.Components = s.assembleComponentList()
 
-	// Workspace (artifact store)
+	// Workspace (artifact store or workspace repo)
 	resp.Workspace = WorkspaceInfoView{
-		Available: s.getArtifactStore() != nil,
+		Available: s.getWorkspaceRepo() != nil || s.getArtifactStore() != nil,
 	}
 
 	// Token budget
@@ -758,8 +760,8 @@ func (s *Service) buildChecklist(ctx context.Context) []ChecklistItem {
 		}(),
 	})
 
-	// Artifact store
-	artifactOk := s.getArtifactStore() != nil
+	// Artifact store (workspace repo or filestore)
+	artifactOk := s.getWorkspaceRepo() != nil || s.getArtifactStore() != nil
 	items = append(items, ChecklistItem{
 		Label: "Artifact storage available",
 		Met:   artifactOk,

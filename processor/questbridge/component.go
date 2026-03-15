@@ -15,6 +15,7 @@ import (
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/tokenbudget"
 	"github.com/c360studio/semdragons/semsource"
+	"github.com/c360studio/semdragons/storage/workspacerepo"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/natsclient"
@@ -101,6 +102,12 @@ type Component struct {
 	// before dispatch and snapshots files to the artifact store on completion.
 	// The artifact store is resolved lazily via ComponentRegistry at snapshot time.
 	sandboxClient *executor.SandboxClient
+
+	// Git-backed workspace repo for artifact management. When non-nil,
+	// questbridge creates per-quest worktrees instead of flat sandbox dirs,
+	// and finalizes (git commit) instead of snapshotting to filestore.
+	// Resolved lazily via ComponentRegistry at Start time.
+	workspaceRepo *workspacerepo.WorkspaceRepo
 
 	// Semsource manifest client for injecting graph knowledge into agent prompts.
 	// Optional: nil means manifest section is omitted from entity knowledge.
@@ -316,6 +323,10 @@ func (c *Component) Start(ctx context.Context) error {
 		c.logger.Info("sandbox workspace lifecycle enabled", "sandbox_url", c.config.SandboxURL)
 	}
 
+	// Resolve workspace repo from component registry (optional).
+	// When available, worktrees replace flat sandbox workspaces.
+	c.workspaceRepo = domain.ResolveWorkspaceRepo(c.deps.ComponentRegistry, c.logger)
+
 	// Self-initialize semsource manifest client when semsource_url is configured.
 	// This replaces the old SetManifestClient setter injection path.
 	if c.config.SemsourceURL != "" {
@@ -494,6 +505,13 @@ type ToolRegistrySource interface {
 // Called at snapshot time so a restarted filestore component is always current.
 func (c *Component) getArtifactStore() storage.Store {
 	return domain.ResolveArtifactStore(c.deps.ComponentRegistry, c.logger)
+}
+
+// getWorkspaceRepo returns the workspace repo if available.
+// When non-nil, worktree-based artifact management takes precedence over
+// filestore snapshot.
+func (c *Component) getWorkspaceRepo() *workspacerepo.WorkspaceRepo {
+	return c.workspaceRepo
 }
 
 // SetPauseChecker injects the board pause checker. When paused, quest

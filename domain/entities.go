@@ -111,6 +111,13 @@ type Quest struct {
 	ContextTokenCount int      `json:"context_token_count,omitempty"`
 	ContextSources    []string `json:"context_sources,omitempty"`  // Fragment IDs used in assembly
 	ContextEntities   []string `json:"context_entities,omitempty"` // Entity IDs referenced in context
+
+	// Artifact tracking — git-backed workspace integration.
+	ArtifactsCommit       string `json:"artifacts_commit,omitempty"`        // Commit hash of finalized work
+	ArtifactsMerged       string `json:"artifacts_merged,omitempty"`        // Merge commit hash (after boss battle victory)
+	ArtifactsMergeConflict bool     `json:"artifacts_merge_conflict,omitempty"` // True if merge to main had conflicts
+	ArtifactsIndexed      bool     `json:"artifacts_indexed,omitempty"`        // True when semsource has processed
+	ProducedEntities      []string `json:"produced_entities,omitempty"`        // Semsource entity IDs produced by this quest
 }
 
 // ClarificationExchange records a single clarification Q&A round between

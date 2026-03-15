@@ -21,6 +21,7 @@ import (
 	_ "github.com/c360studio/semdragons/semsource"
 
 	"github.com/c360studio/semdragons/storage/filestore"
+	"github.com/c360studio/semdragons/storage/workspacerepo"
 
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
@@ -77,6 +78,10 @@ func RegisterAll(registry *component.Registry) error {
 	// Register storage components.
 	// filestore.Register takes RegistryInterface (satisfied by *component.Registry)
 	if err := filestore.Register(registry); err != nil {
+		return err
+	}
+	// workspacerepo.Register takes RegistryInterface (satisfied by *component.Registry)
+	if err := workspacerepo.Register(registry); err != nil {
 		return err
 	}
 
@@ -139,6 +144,9 @@ func RegisterProcessors(registry *component.Registry) error {
 	if err := filestore.Register(registry); err != nil {
 		return err
 	}
+	if err := workspacerepo.Register(registry); err != nil {
+		return err
+	}
 
 	// Register semdragons processors
 	processors := []func(*component.Registry) error{
@@ -186,6 +194,7 @@ func ComponentNames() []string {
 		"agentic-model",
 		// Semdragons storage
 		"filestore",
+		workspacerepo.ComponentName,
 		// Semdragons processors
 		questboard.ComponentName,
 		agentprogression.ComponentName,
@@ -223,6 +232,7 @@ func ProcessorNames() []string {
 		"agentic-model",
 		// Semdragons storage
 		"filestore",
+		workspacerepo.ComponentName,
 		// Semdragons processors
 		questboard.ComponentName,
 		agentprogression.ComponentName,

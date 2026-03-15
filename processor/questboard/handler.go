@@ -480,6 +480,11 @@ func (c *Component) checkDependenciesMet(ctx context.Context, quest *domain.Ques
 		if dep.Status != domain.QuestCompleted {
 			return fmt.Errorf("quest has unmet dependencies: %s is %s", depID, dep.Status)
 		}
+		// When artifact indexing is required, block until semsource has
+		// processed the predecessor's merged artifacts.
+		if c.config.RequireArtifactIndexing && !dep.ArtifactsIndexed {
+			return fmt.Errorf("dependency %s completed but artifacts not yet indexed", depID)
+		}
 	}
 	return nil
 }

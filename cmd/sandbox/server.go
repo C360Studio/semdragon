@@ -330,6 +330,15 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dir := filepath.Join(s.workspace, questID)
+
+	// Check if the directory already exists (e.g., bind-mounted git worktree).
+	// Only create it if it doesn't exist (backward compatibility without workspace repo).
+	if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		s.logger.Info("workspace already exists (worktree)", "quest_id", questID, "path", dir)
+		writeJSON(w, http.StatusOK, map[string]string{"status": "exists", "path": dir})
+		return
+	}
+
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create workspace: %v", err))
 		return

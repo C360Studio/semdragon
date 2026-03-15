@@ -23,6 +23,11 @@ type Config struct {
 	// automatically get PartyRequired=true. Nil means disabled (no auto-party).
 	AutoPartyAboveDifficulty *domain.QuestDifficulty `json:"auto_party_above_difficulty,omitempty" schema:"type:int,description:Auto-party difficulty threshold (nil=disabled)"`
 
+	// RequireArtifactIndexing blocks dependent quest claiming until
+	// semsource has processed the predecessor's merged artifacts.
+	// Defaults to false for backward compatibility.
+	RequireArtifactIndexing bool `json:"require_artifact_indexing" schema:"type:bool,description:Block dependents until artifacts are indexed"`
+
 	// Triage configures DM triage for failed quests at the terminal boundary.
 	Triage TriageConfig `json:"triage" schema:"type:object,description:DM triage configuration for failed quests"`
 }

@@ -497,6 +497,26 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				if ab.quest.StartedAt != nil {
 					ab.quest.Duration = verdictNow.Sub(*ab.quest.StartedAt)
 				}
+
+				// Quality gate: merge quest branch to main on victory.
+				// This triggers semsource processing of approved artifacts.
+				if c.workspaceRepo != nil {
+					instanceID := domain.ExtractInstance(string(ab.quest.ID))
+					mergeHash, mergeErr := c.workspaceRepo.MergeToMain(persistCtx, instanceID)
+					if mergeErr != nil {
+						c.logger.Warn("merge to main failed after battle victory",
+							"quest", ab.quest.ID, "error", mergeErr)
+						ab.quest.ArtifactsMergeConflict = true
+					} else {
+						ab.quest.ArtifactsMerged = mergeHash
+						c.logger.Info("quest branch merged to main",
+							"quest", ab.quest.ID, "merge_hash", mergeHash)
+						// ArtifactsIndexed is NOT set here — it will be set by
+						// the indexing watcher once semsource has processed the
+						// merged artifacts. Until then, dependent quests see
+						// ArtifactsIndexed=false and use summary/raw fallback.
+					}
+				}
 			} else if ab.quest.Attempts < ab.quest.MaxAttempts && ab.quest.MaxAttempts > 1 {
 				// Retry: repost for another attempt with feedback injected
 				ab.quest.Attempts++

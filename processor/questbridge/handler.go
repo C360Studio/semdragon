@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -257,11 +259,24 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	}
 	tokenCount := pkgcontext.EstimateTokens(contextContent)
 
-	// Create sandbox workspace before dispatching the task. The workspace
-	// provides an isolated filesystem for the agent's file operations.
-	// When sandbox is configured, workspace creation is required — without it
-	// every tool call would fail with "workspace not found".
-	if c.sandboxClient != nil {
+	// Create workspace for the agent's file operations.
+	// Prefer git-backed worktree when workspaceRepo is available; fall back
+	// to flat sandbox directory.
+	instanceID := domain.ExtractInstance(questID)
+	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
+		if wsErr := wsRepo.CreateWorktree(ctx, instanceID); wsErr != nil {
+			c.logger.Error("worktree creation failed, cannot dispatch quest",
+				"quest_id", questID, "error", wsErr)
+			c.errorsCount.Add(1)
+			return
+		}
+		// Configure git identity from agent metadata so commits are attributed.
+		agentName := domain.ExtractInstance(string(agent.ID))
+		if idErr := wsRepo.ConfigureIdentity(ctx, instanceID, agentName, agentName+"@semdragons"); idErr != nil {
+			c.logger.Warn("failed to configure git identity in worktree — commits will use default identity",
+				"quest_id", questID, "agent", agentName, "error", idErr)
+		}
+	} else if c.sandboxClient != nil {
 		if wsErr := c.sandboxClient.CreateWorkspace(ctx, questID); wsErr != nil {
 			c.logger.Error("sandbox workspace creation failed, cannot dispatch quest",
 				"quest_id", questID, "error", wsErr)
@@ -761,10 +776,26 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 			"quest_id", questID)
 	}
 
-	// Snapshot workspace files to the artifact store before transitioning status.
-	// Best-effort: snapshot failure is logged but does not block quest completion.
-	// Placed after the DAG check so DAG decompositions are not delayed by snapshot I/O.
-	snapshotCount := c.snapshotWorkspace(string(questID))
+	// Finalize workspace before transitioning status.
+	// Prefer git worktree finalization; fall back to filestore snapshot.
+	// Best-effort: failure is logged but does not block quest completion.
+	snapshotCount := 0
+	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
+		qInstanceID := domain.ExtractInstance(string(questID))
+		commitHash, finalErr := wsRepo.FinalizeWorktree(ctx, qInstanceID, string(mapping.AgentID))
+		if finalErr != nil {
+			c.logger.Warn("failed to finalize worktree",
+				"quest_id", questID, "error", finalErr)
+		} else if commitHash != "" {
+			quest.ArtifactsCommit = commitHash
+			// Count files in the worktree as "snapshotted".
+			if files, listErr := wsRepo.ListQuestFiles(qInstanceID); listErr == nil {
+				snapshotCount = len(files)
+			}
+		}
+	} else {
+		snapshotCount = c.snapshotWorkspace(string(questID))
+	}
 
 	quest.LoopID = mapping.LoopID
 
@@ -1205,8 +1236,11 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 	}
 
 	// Clean up workspace on failure — no snapshot needed since the quest did not
-	// produce a successful work product.
-	c.cleanupWorkspace(string(questID))
+	// produce a successful work product. When using workspace repo, the worktree
+	// persists for retry/rework — only delete the flat sandbox workspace.
+	if c.getWorkspaceRepo() == nil {
+		c.cleanupWorkspace(string(questID))
+	}
 
 	// Delegate to questboard when available — this routes through the triage
 	// gate which may hold the quest for DM evaluation instead of terminal failure.
@@ -1666,15 +1700,28 @@ func (c *Component) snapshotWorkspace(questID string) int {
 // ensureOutputArtifact writes the quest's output text as a work_product.md
 // artifact when no workspace files were snapshotted. This guarantees every
 // completed quest has at least one artifact visible in the workspace browser.
+// Prefers writing into the git worktree when available; falls back to filestore.
 func (c *Component) ensureOutputArtifact(questID string, output string) {
 	if output == "" {
 		return
 	}
+	instanceID := domain.ExtractInstance(questID)
+
+	// Prefer writing into the worktree (commit happens during finalize).
+	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
+		worktreePath := wsRepo.WorktreePath(instanceID)
+		wpPath := filepath.Join(worktreePath, "work_product.md")
+		if err := os.WriteFile(wpPath, []byte(output), 0o644); err != nil {
+			c.logger.Warn("failed to write output artifact to worktree",
+				"quest_id", questID, "error", err)
+		}
+		return
+	}
+
 	store := c.getArtifactStore()
 	if store == nil {
 		return
 	}
-	instanceID := domain.ExtractInstance(questID)
 	key := fmt.Sprintf("quests/%s/work_product.md", instanceID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -53,6 +53,7 @@ services:
       dockerfile: docker/sandbox.Dockerfile
     volumes:
       - sandbox-workspace:/workspace
+      - quest-worktrees:/workspace-worktrees
     restart: unless-stopped
     deploy:
       resources:
@@ -98,6 +99,9 @@ services:
       SEMDRAGONS_DEBUG: "${SEMDRAGONS_DEBUG:-false}"
       SEMDRAGONS_DEBUG_PORT: "6060"
       SANDBOX_URL: http://sandbox:8090
+    volumes:
+      - workspace-repo:/var/semdragons/workspace.git
+      - quest-worktrees:/var/semdragons/quest-worktrees
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -171,6 +175,8 @@ services:
       SEMSOURCE_GIT_TOKEN: "${SEMSOURCE_GIT_TOKEN:-}"
     volumes:
       - ./semsource-osh.json:/etc/semsource/semsource-osh.json:ro
+      - workspace-repo:/sources/workspace.git:ro
+      - quest-worktrees:/sources/quest-worktrees:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "semsource", "version"]
@@ -183,3 +189,5 @@ volumes:
   nats-semsource-data:
   sandbox-workspace:
   semembed-cache:
+  workspace-repo:
+  quest-worktrees:

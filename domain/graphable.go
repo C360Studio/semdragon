@@ -327,6 +327,38 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
+	// Artifact tracking (git workspace)
+	if q.ArtifactsCommit != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: PredicateQuestArtifactsCommit, Object: q.ArtifactsCommit,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.ArtifactsMerged != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: PredicateQuestArtifactsMerged, Object: q.ArtifactsMerged,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.ArtifactsMergeConflict {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: PredicateQuestArtifactsMergeConflict, Object: true,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.ArtifactsIndexed {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: PredicateQuestArtifactsIndexed, Object: true,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	for _, producedID := range q.ProducedEntities {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: PredicateQuestProduced, Object: producedID,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
 	// Quest spec (from brief)
 	if q.Goal != "" {
 		triples = append(triples, message.Triple{
