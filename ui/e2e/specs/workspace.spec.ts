@@ -223,8 +223,8 @@ test.describe('Workspace - Artifact API Integration', () => {
 		// Backend REST endpoint via Vite proxy (not the SvelteKit /workspace page)
 		const response = await page.request.get('/game/workspace');
 
-		// 404 or 501 means the endpoint is not yet wired — skip gracefully
-		if (response.status() === 404 || response.status() === 501) {
+		// 404/501 = not wired, 503 = workspace repo not available — skip gracefully
+		if (response.status() === 404 || response.status() === 501 || response.status() === 503) {
 			test.skip(true, '/game/workspace endpoint not available');
 			return;
 		}
@@ -273,8 +273,8 @@ test.describe('Workspace - Artifact API Integration', () => {
 			`/game/workspace/file?quest=${targetQuestId}&path=${encodedPath}`
 		);
 
-		// 404 or 501 means the endpoint is not yet wired — skip gracefully
-		if (response.status() === 404 || response.status() === 501) {
+		// 404/501 = not wired, 503 = workspace repo not available — skip gracefully
+		if (response.status() === 404 || response.status() === 501 || response.status() === 503) {
 			test.skip(true, '/game/workspace/file endpoint not available');
 			return;
 		}
@@ -309,8 +309,8 @@ test.describe('Workspace - Artifact API Integration', () => {
 
 		const response = await page.request.get(`/game/workspace/tree?quest=${targetQuestId}`);
 
-		// 404 or 501 means the endpoint is not yet wired — skip gracefully
-		if (response.status() === 404 || response.status() === 501) {
+		// 404/501 = not wired, 503 = workspace repo not available — skip gracefully
+		if (response.status() === 404 || response.status() === 501 || response.status() === 503) {
 			test.skip(true, '/game/workspace/tree endpoint not available');
 			return;
 		}

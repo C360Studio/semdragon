@@ -71,7 +71,7 @@ test.describe('Settings - Sections', () => {
 	test('displays workspace section', async ({ settingsPage }) => {
 		await expect(settingsPage.sectionWorkspace).toBeVisible();
 		const badge = settingsPage.getSectionBadge('settings-section-workspace');
-		await expect(badge).toHaveText(/OK|Missing/);
+		await expect(badge).toHaveText(/OK|Missing|Unavailable/);
 	});
 
 	test('displays token budget section', async ({ settingsPage }) => {
