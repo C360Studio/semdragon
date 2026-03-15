@@ -154,6 +154,13 @@ type AssemblyContext struct {
 	// predecessor steps produced.
 	DependencyOutputs []DependencyOutput `json:"dependency_outputs,omitempty"`
 
+	// DependencyContexts is the richer alternative to DependencyOutputs, used
+	// when EnableStructuredDeps is true in questbridge config. Each entry
+	// carries a ResolutionMode ("structured", "summary", "raw") that drives
+	// how the assembler formats it. When this slice is non-empty the assembler
+	// renders it in place of DependencyOutputs.
+	DependencyContexts []DependencyContext `json:"dependency_contexts,omitempty"`
+
 	// StructuralChecklist carries domain-specific pass/fail requirements that
 	// agents should self-check before submitting. These same items are enforced
 	// during boss battle review — any failure is automatic defeat.
@@ -197,6 +204,19 @@ type DependencyOutput struct {
 	NodeID    string `json:"node_id"`
 	Objective string `json:"objective"`
 	Output    string `json:"output"`
+}
+
+// DependencyContext provides structured context from a predecessor quest.
+// When semsource has indexed the predecessor's artifacts, the summary contains
+// compact identity-level info (function signatures, types, exports). The agent
+// can drill into details on-demand via graph_search using the EntityRefs.
+type DependencyContext struct {
+	NodeID         string   `json:"node_id"`
+	Objective      string   `json:"objective"`
+	Summary        string   `json:"summary"`
+	EntityRefs     []string `json:"entity_refs"`
+	RawOutput      string   `json:"raw_output"`
+	ResolutionMode string   `json:"resolution_mode"` // "structured", "summary", "raw"
 }
 
 // PeerFeedbackSummary describes a single peer-review question on which the agent

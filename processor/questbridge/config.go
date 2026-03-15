@@ -65,6 +65,16 @@ type Config struct {
 	// so agents know what's queryable via graph_search.
 	GraphQLURL string `json:"graphql_url,omitempty"`
 
+	// DependencyContextBudget is the maximum token budget per predecessor when
+	// building structured dependency context. Only applies when EnableStructuredDeps
+	// is true. 0 falls back to the default of 800 tokens.
+	DependencyContextBudget int `json:"dependency_context_budget,omitempty"`
+
+	// EnableStructuredDeps activates the three-tier dependency context cascade
+	// (structured → summary → raw) in place of the legacy raw-output injection.
+	// When false (default), loadDependencyOutputs is used for backward compat.
+	EnableStructuredDeps bool `json:"enable_structured_deps,omitempty"`
+
 	// Domain selects which DomainCatalog to inject (e.g. "software", "dnd", "research").
 	Domain string `json:"domain,omitempty"`
 
@@ -82,12 +92,13 @@ func DefaultConfig() Config {
 		StreamName:       "AGENT",
 		QuestLoopsBucket: "QUEST_LOOPS",
 		SandboxDir:       "",
-		EnableBuiltins:   true,
-		MaxIterations:          20,
-		DefaultRole:            "general",
-		EscalationTimeoutMins:  30,
-		MaxClarificationRounds: 3,
-		EntityContextBudget:    2000,
+		EnableBuiltins:          true,
+		MaxIterations:           20,
+		DefaultRole:             "general",
+		EscalationTimeoutMins:   30,
+		MaxClarificationRounds:  3,
+		EntityContextBudget:     2000,
+		DependencyContextBudget: 800,
 	}
 }
 

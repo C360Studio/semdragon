@@ -115,10 +115,34 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		usedIDs = append(usedIDs, "failure-recovery-context")
 	}
 
-	// Inject dependency outputs from completed predecessor DAG nodes.
-	// These appear before clarifications and agent overrides so the agent
-	// knows what predecessor steps produced.
-	if len(ctx.DependencyOutputs) > 0 {
+	// Inject dependency context from completed predecessor DAG nodes.
+	// DependencyContexts (structured-deps mode) takes precedence over the legacy
+	// DependencyOutputs slice — only one will be non-empty at a time.
+	if len(ctx.DependencyContexts) > 0 {
+		var deps strings.Builder
+		deps.WriteString("The following predecessor tasks have been completed. Use their outputs as context for your work:\n")
+		for _, dep := range ctx.DependencyContexts {
+			switch dep.ResolutionMode {
+			case "structured":
+				deps.WriteString(fmt.Sprintf("\n--- Predecessor: %s [%s] ---\n", dep.Objective, dep.NodeID))
+				deps.WriteString(dep.Summary)
+			case "summary":
+				deps.WriteString(fmt.Sprintf("\n--- Predecessor: %s [%s] ---\n", dep.Objective, dep.NodeID))
+				if dep.Summary != "" {
+					deps.WriteString(fmt.Sprintf("(Artifacts pending indexing)\n\"%s\"\n", dep.Summary))
+					deps.WriteString("→ Full details via graph_search once indexing completes\n")
+				}
+			default: // "raw" or unset
+				deps.WriteString(fmt.Sprintf("\n--- Predecessor: %s [%s] ---\n", dep.Objective, dep.NodeID))
+				if dep.RawOutput != "" {
+					deps.WriteString(dep.RawOutput + "\n")
+				}
+			}
+		}
+		sections = append(sections, formatSection("Dependency Outputs", deps.String(), style))
+		usedIDs = append(usedIDs, "dependency-contexts")
+	} else if len(ctx.DependencyOutputs) > 0 {
+		// Legacy path: raw output injection without structured-deps cascade.
 		var deps strings.Builder
 		deps.WriteString("The following predecessor tasks have been completed. Use their outputs as context for your work:\n")
 		for _, dep := range ctx.DependencyOutputs {

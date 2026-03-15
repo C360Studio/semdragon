@@ -21,6 +21,12 @@ type Config struct {
 	AutoStartOnSubmit  bool          `json:"auto_start_on_submit" schema:"type:bool,description:Auto-start battles on submission"`
 	RequireReviewLevel bool          `json:"require_review_level" schema:"type:bool,description:Only battle quests with review level set"`
 
+	// IndexingTimeout is how many seconds to wait for semsource to process merged
+	// artifacts before marking the quest indexed anyway (degraded mode).
+	// 0 means mark immediately without waiting — use this when semsource is not
+	// configured. Raise to 30-60 when semsource is running alongside the game.
+	IndexingTimeout int `json:"indexing_timeout" schema:"type:int,description:Seconds to wait for semsource indexing after merge (0=immediate),category:advanced,default:0"`
+
 	// Domain selects which DomainCatalog to inject (e.g. "software", "dnd", "research").
 	Domain string `json:"domain,omitempty"`
 

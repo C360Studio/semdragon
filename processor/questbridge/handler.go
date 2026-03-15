@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +26,10 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/nats-io/nuid"
 )
+
+// depGraphHTTPClient is a dedicated HTTP client for dependency context GraphQL
+// queries. Timeout is short — these calls must never block quest dispatch.
+var depGraphHTTPClient = &http.Client{Timeout: 600 * time.Millisecond}
 
 // =============================================================================
 // KV TWOFER BOOTSTRAP PROTOCOL
@@ -1854,6 +1860,25 @@ func (c *Component) clarificationSource(quest *domain.Quest) string {
 	return ""
 }
 
+// resolveDependencyOutputs returns DependencyOutput slices for backward-compat
+// rendering when structured deps are not enabled. When EnableStructuredDeps is
+// true this returns nil so DependencyContexts carries the context instead.
+func (c *Component) resolveDependencyOutputs(ctx context.Context, quest *domain.Quest) []promptmanager.DependencyOutput {
+	if c.config.EnableStructuredDeps {
+		return nil
+	}
+	return c.loadDependencyOutputs(ctx, quest)
+}
+
+// resolveDependencyContexts returns the structured dependency contexts when
+// EnableStructuredDeps is true. Returns nil otherwise to keep backward compat.
+func (c *Component) resolveDependencyContexts(ctx context.Context, quest *domain.Quest) []promptmanager.DependencyContext {
+	if !c.config.EnableStructuredDeps {
+		return nil
+	}
+	return c.loadDependencyContext(ctx, quest)
+}
+
 // loadDependencyOutputs loads completed predecessor node outputs for a sub-quest
 // that is part of a DAG. When a sub-quest has depends_on predecessors, their
 // outputs are loaded from the graph and returned as DependencyOutput structs
@@ -1967,6 +1992,272 @@ func (c *Component) parseDAGFromParent(parent *domain.Quest) (*questdagexec.Ques
 	return &dag, nodeQuestIDs
 }
 
+// loadDependencyContext loads predecessor DAG node context using the three-tier
+// resolution cascade. It is the structured-deps alternative to loadDependencyOutputs
+// and is only called when c.config.EnableStructuredDeps is true.
+//
+// Resolution tiers per predecessor:
+//  1. structured — ArtifactsIndexed==true: fetch entity identity from graph-gateway,
+//     format as compact file-grouped listing, add graph_search drill-down hint.
+//  2. summary — Output available but not indexed: truncated raw output with a note
+//     that full artifacts are queryable once indexing completes.
+//  3. raw — Fallback: raw output string, budget-capped.
+//
+// Failures at any tier fall through to the next. The method never blocks dispatch:
+// any graph-gateway call that errors returns nil and falls to a lower tier.
+func (c *Component) loadDependencyContext(ctx context.Context, quest *domain.Quest) []promptmanager.DependencyContext {
+	if quest.ParentQuest == nil || quest.DAGNodeID == "" {
+		return nil
+	}
+
+	// Load parent quest to get DAG definition and node-quest ID mapping.
+	parentEntity, err := c.graph.GetQuest(ctx, *quest.ParentQuest)
+	if err != nil {
+		c.logger.Debug("loadDependencyContext: failed to load parent quest",
+			"parent_quest", *quest.ParentQuest, "error", err)
+		return nil
+	}
+	parentQuest := domain.QuestFromEntityState(parentEntity)
+	if parentQuest == nil {
+		return nil
+	}
+
+	dagDef, nodeQuestIDs := c.parseDAGFromParent(parentQuest)
+	if dagDef == nil {
+		return nil
+	}
+
+	// Find this node's declared dependencies.
+	var thisNode *questdagexec.QuestNode
+	for i := range dagDef.Nodes {
+		if dagDef.Nodes[i].ID == quest.DAGNodeID {
+			thisNode = &dagDef.Nodes[i]
+			break
+		}
+	}
+	if thisNode == nil || len(thisNode.DependsOn) == 0 {
+		return nil
+	}
+
+	// Build node-objective index for display purposes.
+	nodesByID := make(map[string]*questdagexec.QuestNode, len(dagDef.Nodes))
+	for i := range dagDef.Nodes {
+		nodesByID[dagDef.Nodes[i].ID] = &dagDef.Nodes[i]
+	}
+
+	budget := c.config.DependencyContextBudget
+	if budget <= 0 {
+		budget = 800
+	}
+
+	var contexts []promptmanager.DependencyContext
+	for _, depNodeID := range thisNode.DependsOn {
+		depQuestID, ok := nodeQuestIDs[depNodeID]
+		if !ok {
+			continue
+		}
+		depEntity, loadErr := c.graph.GetQuest(ctx, domain.QuestID(depQuestID))
+		if loadErr != nil {
+			c.logger.Debug("loadDependencyContext: failed to load dep quest",
+				"dep_node_id", depNodeID, "dep_quest_id", depQuestID, "error", loadErr)
+			continue
+		}
+		depQuest := domain.QuestFromEntityState(depEntity)
+		if depQuest == nil {
+			continue
+		}
+
+		objective := depNodeID
+		if node, found := nodesByID[depNodeID]; found {
+			objective = node.Objective
+		}
+
+		dc := c.resolveDepContext(ctx, depQuest, depNodeID, objective, budget)
+		contexts = append(contexts, dc)
+	}
+
+	if len(contexts) > 0 {
+		c.logger.Debug("loadDependencyContext: resolved dependency contexts",
+			"quest_id", quest.ID, "node_id", quest.DAGNodeID, "dep_count", len(contexts))
+	}
+	return contexts
+}
+
+// resolveDepContext applies the three-tier resolution cascade for a single
+// predecessor quest. The result always has a valid ResolutionMode.
+func (c *Component) resolveDepContext(ctx context.Context, depQuest *domain.Quest, nodeID, objective string, budget int) promptmanager.DependencyContext {
+	base := promptmanager.DependencyContext{
+		NodeID:    nodeID,
+		Objective: objective,
+	}
+
+	// Tier 1: structured — artifacts have been indexed by semsource.
+	if depQuest.ArtifactsIndexed && len(depQuest.ProducedEntities) > 0 && c.config.GraphQLURL != "" {
+		if summary, entityRefs := c.fetchStructuredSummary(ctx, depQuest.ProducedEntities, budget); summary != "" {
+			base.Summary = summary
+			base.EntityRefs = entityRefs
+			base.ResolutionMode = "structured"
+			return base
+		}
+	}
+
+	// Tier 2: summary — output exists but not yet indexed (or GraphQL unavailable).
+	rawOutput := fmt.Sprintf("%v", depQuest.Output)
+	if depQuest.Output != nil && rawOutput != "" && rawOutput != "<nil>" {
+		summary := rawOutput
+		if pkgcontext.EstimateTokens(summary) > budget {
+			summary = pkgcontext.TruncateToBudget(summary, budget)
+		}
+		base.Summary = summary
+		// Cap RawOutput to prevent unbounded KV entry sizes if serialized.
+		base.RawOutput = pkgcontext.TruncateToBudget(rawOutput, budget*2)
+		base.ResolutionMode = "summary"
+		return base
+	}
+
+	// Tier 3: raw fallback — no output yet (e.g. the quest completed without output).
+	base.ResolutionMode = "raw"
+	return base
+}
+
+// entityTriplesResponse mirrors the GraphQL response shape for an entity triples query.
+type entityTriplesResponse struct {
+	Data struct {
+		Entity struct {
+			Triples []struct {
+				Predicate string `json:"predicate"`
+				Object    string `json:"object"`
+			} `json:"triples"`
+		} `json:"entity"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors,omitempty"`
+}
+
+// fetchStructuredSummary queries graph-gateway for the identity triples of the
+// given entity IDs and formats them as a compact file-grouped listing. Returns
+// ("", nil) on any error so callers fall through to the next resolution tier.
+// The call uses a hard 500 ms timeout — it must never delay quest dispatch.
+func (c *Component) fetchStructuredSummary(ctx context.Context, entityIDs []string, budget int) (string, []string) {
+	// Fetch each entity individually, up to a reasonable cap to avoid runaway
+	// requests on very large ProducedEntities slices.
+	const maxEntities = 20
+	if len(entityIDs) > maxEntities {
+		entityIDs = entityIDs[:maxEntities]
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	// Group results by "file path" heuristic: the entity ID's instance segment
+	// (last dot component) is used as the grouping key.
+	type fileGroup struct {
+		path    string
+		entries []string
+	}
+	groupMap := make(map[string]*fileGroup)
+	var groupOrder []string
+	var entityRefs []string
+
+	// Identity predicates we care about — filter noise from game-world predicates.
+	isIdentityPredicate := func(pred string) bool {
+		for _, prefix := range []string{
+			"source.identity", "source.content", "doc.identity", "doc.content",
+			"config.identity", "config.content",
+		} {
+			if strings.HasPrefix(pred, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, entityID := range entityIDs {
+		query := fmt.Sprintf(
+			`{"query":"{ entity(id: %q) { triples { predicate object } } }"}`,
+			entityID,
+		)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, c.config.GraphQLURL,
+			strings.NewReader(query))
+		if err != nil {
+			c.logger.Debug("fetchStructuredSummary: failed to build request", "entity_id", entityID, "error", err)
+			return "", nil
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+
+		resp, doErr := depGraphHTTPClient.Do(req)
+		if doErr != nil {
+			c.logger.Debug("fetchStructuredSummary: HTTP error", "entity_id", entityID, "error", doErr)
+			return "", nil
+		}
+
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+		resp.Body.Close()
+		if readErr != nil || resp.StatusCode != http.StatusOK {
+			c.logger.Debug("fetchStructuredSummary: bad response", "entity_id", entityID, "status", resp.StatusCode)
+			return "", nil
+		}
+
+		var gqlResp entityTriplesResponse
+		if json.Unmarshal(body, &gqlResp) != nil || len(gqlResp.Errors) > 0 {
+			c.logger.Debug("fetchStructuredSummary: GraphQL error or parse fail", "entity_id", entityID)
+			return "", nil
+		}
+
+		entityRefs = append(entityRefs, entityID)
+
+		// Derive a grouping key from the entity ID (last segment is the instance).
+		groupKey := entityID
+		if idx := strings.LastIndexByte(entityID, '.'); idx >= 0 {
+			groupKey = entityID[:idx] // strip instance, use type prefix as path
+		}
+
+		if _, seen := groupMap[groupKey]; !seen {
+			groupMap[groupKey] = &fileGroup{path: groupKey}
+			groupOrder = append(groupOrder, groupKey)
+		}
+
+		for _, triple := range gqlResp.Data.Entity.Triples {
+			if !isIdentityPredicate(triple.Predicate) {
+				continue
+			}
+			// Format as "<predicate-leaf>: <object>"
+			leaf := triple.Predicate
+			if idx := strings.LastIndexByte(triple.Predicate, '.'); idx >= 0 {
+				leaf = triple.Predicate[idx+1:]
+			}
+			groupMap[groupKey].entries = append(groupMap[groupKey].entries,
+				fmt.Sprintf("  %s: %s", leaf, triple.Object))
+		}
+	}
+
+	if len(groupOrder) == 0 {
+		return "", nil
+	}
+
+	// Format as compact file-grouped listing.
+	var sb strings.Builder
+	for _, key := range groupOrder {
+		g := groupMap[key]
+		sb.WriteString(g.path + ":\n")
+		for _, entry := range g.entries {
+			sb.WriteString(entry + "\n")
+		}
+	}
+	if len(entityRefs) > 0 {
+		sb.WriteString("\n→ Drill down: graph_search(query_type=\"entity\", entity_id=\"<entity-id>\")\n")
+		sb.WriteString("  Entity IDs: " + strings.Join(entityRefs, ", ") + "\n")
+	}
+
+	result := sb.String()
+	if pkgcontext.EstimateTokens(result) > budget {
+		result = pkgcontext.TruncateToBudget(result, budget)
+	}
+	return result, entityRefs
+}
+
 // buildSystemPrompt builds the system prompt using the assembler when available,
 // falling back to the legacy string concatenation path. Returns the full
 // AssembledPrompt so callers can access FragmentsUsed for context metadata.
@@ -2042,7 +2333,8 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		IsSubQuest:           quest.ParentQuest != nil,
 		ClarificationAnswers: c.loadClarificationAnswers(quest),
 		ClarificationSource:  c.clarificationSource(quest),
-		DependencyOutputs:    c.loadDependencyOutputs(ctx, quest),
+		DependencyOutputs:    c.resolveDependencyOutputs(ctx, quest),
+		DependencyContexts:   c.resolveDependencyContexts(ctx, quest),
 		StructuralChecklist:  checklist,
 		ReviewLevel:          reviewLevel,
 		ReviewCriteria:       reviewCriteria,

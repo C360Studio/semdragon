@@ -515,6 +515,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 						// the indexing watcher once semsource has processed the
 						// merged artifacts. Until then, dependent quests see
 						// ArtifactsIndexed=false and use summary/raw fallback.
+						go c.watchForIndexing(ab.quest.ID, mergeHash)
 					}
 				}
 			} else if ab.quest.Attempts < ab.quest.MaxAttempts && ab.quest.MaxAttempts > 1 {
