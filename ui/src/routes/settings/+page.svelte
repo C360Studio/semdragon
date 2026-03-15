@@ -524,21 +524,6 @@
 						</div>
 					</SettingsSection>
 
-					<!-- Workspace (Artifact Store) -->
-					<SettingsSection
-						title="Workspace"
-						badge={settings.workspace.available ? 'OK' : 'Unavailable'}
-						badgeVariant={settings.workspace.available ? 'success' : 'warning'}
-						onfocus={() => (activeSection = 'workspace')}
-					>
-						<div class="kv-grid">
-							<div class="kv-pair">
-								<span class="kv-key">Artifact Store</span>
-								<span class="kv-value">{settings.workspace.available ? 'Available' : 'Not configured'}</span>
-							</div>
-						</div>
-					</SettingsSection>
-
 					<!-- Token Budget -->
 					{#if settings.token_budget}
 						<SettingsSection

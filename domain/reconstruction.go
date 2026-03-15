@@ -203,13 +203,13 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 		case "quest.context.entities":
 			q.ContextEntities = AsStringSlice(triple.Object)
 
+		// Execution context
+		case PredicateQuestRepo:
+			q.Repo = AsString(triple.Object)
+
 		// Artifact tracking
-		case PredicateQuestArtifactsCommit:
-			q.ArtifactsCommit = AsString(triple.Object)
 		case PredicateQuestArtifactsMerged:
 			q.ArtifactsMerged = AsString(triple.Object)
-		case PredicateQuestArtifactsMergeConflict:
-			q.ArtifactsMergeConflict = AsBool(triple.Object)
 		case PredicateQuestArtifactsIndexed:
 			q.ArtifactsIndexed = AsBool(triple.Object)
 		case PredicateQuestProduced:

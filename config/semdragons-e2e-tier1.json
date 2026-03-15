@@ -337,17 +337,6 @@
         }
       }
     },
-    "workspacerepo": {
-      "type": "storage",
-      "name": "workspacerepo",
-      "enabled": true,
-      "config": {
-        "repo_dir": "/var/semdragons/workspace.git",
-        "worktrees_dir": "/var/semdragons/quest-worktrees",
-        "main_worktree_dir": "/var/semdragons/workspace-main",
-        "retention_days": 30
-      }
-    },
     "questbridge": {
       "type": "processor",
       "name": "questbridge",

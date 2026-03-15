@@ -10,11 +10,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${VERSION} -X main.Bu
 
 FROM alpine:3.21
 RUN apk --no-cache add ca-certificates wget git
-RUN addgroup -g 1500 workspace && addgroup -S app && adduser -S app -G app \
-    && addgroup app workspace \
-    && mkdir -p /var/semdragons/workspace.git /var/semdragons/quest-worktrees /var/semdragons/workspace-main \
-    && chown -R app:workspace /var/semdragons \
-    && chmod -R g+ws /var/semdragons
+RUN addgroup -S app && adduser -S app -G app
 COPY --from=builder /semdragons /semdragons
 COPY --from=builder /app/config/semdragons.json /etc/semdragons/semdragons.json
 COPY --from=builder /app/config/semdragons-e2e-tier1.json /etc/semdragons/semdragons-e2e-tier1.json

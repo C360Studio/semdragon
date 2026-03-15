@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -265,27 +263,13 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	}
 	tokenCount := pkgcontext.EstimateTokens(contextContent)
 
-	// Create workspace for the agent's file operations.
-	// When workspaceRepo is available, the worktree IS the sandbox workspace —
-	// the worktree directory name matches the questID so the sandbox container
-	// resolves it via filepath.Join(workspace, questID).
-	// Falls back to flat sandbox directory when workspaceRepo is not configured.
-	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
-		if wsErr := wsRepo.CreateWorktree(ctx, questID); wsErr != nil {
-			c.logger.Error("worktree creation failed, cannot dispatch quest",
-				"quest_id", questID, "error", wsErr)
-			c.errorsCount.Add(1)
-			return
-		}
-		agentName := domain.ExtractInstance(string(agent.ID))
-		if idErr := wsRepo.ConfigureIdentity(ctx, questID, agentName, agentName+"@semdragons"); idErr != nil {
-			c.logger.Warn("failed to configure git identity in worktree — commits will use default identity",
-				"quest_id", questID, "agent", agentName, "error", idErr)
-		}
-	} else if c.sandboxClient != nil {
-		if wsErr := c.sandboxClient.CreateWorkspace(ctx, questID); wsErr != nil {
+	// Create workspace for the agent's file operations via sandbox container.
+	// When the quest declares a target repo, the sandbox creates a git worktree
+	// from that repo's main branch. Otherwise a plain directory is created.
+	if c.sandboxClient != nil {
+		if wsErr := c.sandboxClient.CreateWorkspace(ctx, questID, quest.Repo); wsErr != nil {
 			c.logger.Error("sandbox workspace creation failed, cannot dispatch quest",
-				"quest_id", questID, "error", wsErr)
+				"quest_id", questID, "repo", quest.Repo, "error", wsErr)
 			c.errorsCount.Add(1)
 			return
 		}
@@ -782,22 +766,6 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 			"quest_id", questID)
 	}
 
-	// Finalize workspace before transitioning status.
-	// Best-effort: failure is logged but does not block quest completion.
-	snapshotCount := 0
-	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
-		commitHash, finalErr := wsRepo.FinalizeWorktree(ctx, string(questID), string(mapping.AgentID))
-		if finalErr != nil {
-			c.logger.Warn("failed to finalize worktree",
-				"quest_id", questID, "error", finalErr)
-		} else if commitHash != "" {
-			quest.ArtifactsCommit = commitHash
-			if files, listErr := wsRepo.ListQuestFiles(string(questID)); listErr == nil {
-				snapshotCount = len(files)
-			}
-		}
-	}
-
 	quest.LoopID = mapping.LoopID
 
 	// Try tool-based JSON output first (submit_work_product / ask_clarification).
@@ -834,13 +802,6 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	}
 
 	quest.Output = output
-
-	// Write the quest output as a synthetic artifact if no workspace files were
-	// snapshotted. This ensures every completed quest has at least one artifact
-	// visible in the workspace browser.
-	if snapshotCount == 0 && !isClarification {
-		c.ensureOutputArtifact(string(questID), output)
-	}
 
 	// Route clarification requests to the party lead or DM.
 	if isClarification {
@@ -1606,31 +1567,6 @@ func (c *Component) cleanupMapping(ctx context.Context, questID string) {
 			"quest_id", questID, "error", err)
 	}
 }
-
-// =============================================================================
-// WORKSPACE LIFECYCLE
-// =============================================================================
-
-// ensureOutputArtifact writes the quest's output text as a work_product.md
-// artifact when no workspace files were committed. This guarantees every
-// completed quest has at least one artifact visible in the workspace browser.
-// No-op when workspace repo is not configured.
-func (c *Component) ensureOutputArtifact(questID string, output string) {
-	if output == "" {
-		return
-	}
-	wsRepo := c.getWorkspaceRepo()
-	if wsRepo == nil {
-		return
-	}
-	worktreePath := wsRepo.WorktreePath(questID)
-	wpPath := filepath.Join(worktreePath, "work_product.md")
-	if err := os.WriteFile(wpPath, []byte(output), 0o644); err != nil {
-		c.logger.Warn("failed to write output artifact to worktree",
-			"quest_id", questID, "error", err)
-	}
-}
-
 
 // =============================================================================
 // PROMPT BUILDING

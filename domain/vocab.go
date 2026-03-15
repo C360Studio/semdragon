@@ -48,17 +48,18 @@ const (
 	PredicateQuestDecomposed = "quest.lifecycle.decomposed"
 )
 
+// --- Quest Context Predicates ---
+
+const (
+	// PredicateQuestRepo - Target repository for quest artifact storage.
+	PredicateQuestRepo = "quest.context.repo"
+)
+
 // --- Quest Artifact Predicates ---
 
 const (
-	// PredicateQuestArtifactsCommit - Git commit hash of finalized quest work.
-	PredicateQuestArtifactsCommit = "quest.artifacts.commit"
-
 	// PredicateQuestArtifactsMerged - Git merge commit hash after boss battle victory.
 	PredicateQuestArtifactsMerged = "quest.artifacts.merged"
-
-	// PredicateQuestArtifactsMergeConflict - True if merge to main had conflicts.
-	PredicateQuestArtifactsMergeConflict = "quest.artifacts.merge_conflict"
 
 	// PredicateQuestArtifactsIndexed - True when semsource has processed the merged artifacts.
 	PredicateQuestArtifactsIndexed = "quest.artifacts.indexed"
@@ -398,16 +399,15 @@ func RegisterVocabulary() {
 		vocabulary.WithDescription("Quest broken into sub-quests by party lead"),
 	)
 
-	// Quest artifact predicates
-	vocabulary.Register(PredicateQuestArtifactsCommit,
-		vocabulary.WithDescription("Git commit hash of finalized quest work"),
+	// Quest context predicates
+	vocabulary.Register(PredicateQuestRepo,
+		vocabulary.WithDescription("Target repository for quest artifact storage"),
+		vocabulary.WithDataType("string"),
 	)
+
+	// Quest artifact predicates
 	vocabulary.Register(PredicateQuestArtifactsMerged,
 		vocabulary.WithDescription("Git merge commit hash after boss battle victory"),
-	)
-	vocabulary.Register(PredicateQuestArtifactsMergeConflict,
-		vocabulary.WithDescription("True if merge to main had conflicts"),
-		vocabulary.WithDataType("bool"),
 	)
 	vocabulary.Register(PredicateQuestArtifactsIndexed,
 		vocabulary.WithDescription("True when semsource has processed the merged artifacts"),

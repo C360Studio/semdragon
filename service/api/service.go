@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -56,6 +57,11 @@ type Service struct {
 	boardConfig     *domain.BoardConfig      // board identity for bucket name, entity IDs
 	config          Config
 	logger          *slog.Logger
+
+	// sandboxClient is the HTTP client for the sandbox container's API.
+	// Initialized during Start from the SANDBOX_URL environment variable.
+	// Nil when sandbox is not configured; artifact handlers degrade gracefully.
+	sandboxClient *executor.SandboxClient
 
 	// dmTools is the DM-specific tool registry, initialized during Start.
 	// Nil when tools could not be configured (missing deps); handlers degrade
@@ -207,6 +213,12 @@ func (s *Service) Start(ctx context.Context) error {
 	s.SetHealthCheck(func() error {
 		return nil
 	})
+
+	// Initialize sandbox client for artifact proxying.
+	if sandboxURL := os.Getenv("SANDBOX_URL"); sandboxURL != "" {
+		s.sandboxClient = executor.NewSandboxClient(sandboxURL)
+		s.logger.Info("sandbox client initialized", "url", sandboxURL)
+	}
 
 	// Initialize board control (play/pause).
 	bucket, err := boardcontrol.EnsureBucket(ctx, s.nats)
@@ -439,9 +451,7 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.HandleFunc("GET "+prefix+"models", cors(s.handleGetModels))
 
 	// Workspace — artifact browser (read-only, backed by workspace repo)
-	mux.HandleFunc("GET "+prefix+"workspace", cors(s.handleWorkspaceQuests))
-	mux.HandleFunc("GET "+prefix+"workspace/tree", cors(s.handleWorkspaceTree))
-	mux.HandleFunc("GET "+prefix+"workspace/file", cors(s.handleWorkspaceFile))
+	// Workspace browser routes removed — workspace repo replaced by sandbox.
 
 	// SSE — real-time entity updates
 	mux.HandleFunc("GET "+prefix+"events", cors(s.handleEvents))

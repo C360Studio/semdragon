@@ -38,15 +38,11 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && npm install -g typescript vitest jest \
     && rm -rf /var/lib/apt/lists/*
 
-# Create sandbox user with shared workspace group (GID 1500).
-# Backend creates worktrees as 'app:workspace'; sandbox writes as 'sandbox:workspace'.
-RUN groupadd -g 1500 workspace \
-    && useradd -m -s /bin/bash -U sandbox \
-    && usermod -aG workspace sandbox \
-    && mkdir -p /workspace /go/pkg/mod \
-    && chown -R sandbox:workspace /workspace \
-    && chown -R sandbox:sandbox /go \
-    && chmod g+ws /workspace
+# Create sandbox user. Sandbox is the sole writer of /workspace and /repos.
+RUN useradd -m -s /bin/bash -U sandbox \
+    && mkdir -p /workspace /repos /go/pkg/mod \
+    && chown -R sandbox:sandbox /workspace /repos \
+    && chown -R sandbox:sandbox /go
 
 COPY --from=builder /sandbox /usr/local/bin/sandbox
 
@@ -55,4 +51,4 @@ WORKDIR /workspace
 EXPOSE 8090
 
 ENTRYPOINT ["sandbox"]
-CMD ["--addr", ":8090", "--workspace", "/workspace"]
+CMD ["--addr", ":8090", "--workspace", "/workspace", "--repos-dir", "/repos"]

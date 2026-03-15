@@ -240,11 +240,11 @@
 
 					{#if artifactCount !== null && artifactCount > 0}
 						<section class="detail-card full-width">
-							<h2>Artifacts</h2>
+							<div class="artifact-header">
+								<h2>Artifacts</h2>
+								<a href="/files?quest={extractInstance(quest.id)}" class="artifact-link">Browse files</a>
+							</div>
 							<p class="artifact-summary">{artifactCount} files produced</p>
-							<a href="/workspace?quest={extractInstance(quest.id)}" class="trajectory-link">
-								Browse in workspace
-							</a>
 						</section>
 					{/if}
 				</div>
@@ -435,6 +435,28 @@
 	.trajectory-link:hover {
 		background: var(--ui-interactive-primary-hover);
 		text-decoration: none;
+	}
+
+	.artifact-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--spacing-sm);
+		margin-bottom: var(--spacing-xs);
+	}
+
+	.artifact-header h2 {
+		margin: 0;
+	}
+
+	.artifact-link {
+		font-size: 0.8125rem;
+		color: var(--ui-interactive-primary);
+		text-decoration: none;
+	}
+
+	.artifact-link:hover {
+		text-decoration: underline;
 	}
 
 	.artifact-summary {

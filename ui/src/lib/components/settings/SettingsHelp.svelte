@@ -26,10 +26,6 @@
 			title: 'Components',
 			body: 'Processors are reactive components that watch NATS KV for entity state changes and respond. Each has its own health status, uptime, and error count. Disabled components are configured but not running.'
 		},
-		workspace: {
-			title: 'Workspace',
-			body: 'The workspace page browses quest artifacts persisted after quest completion. Artifacts are stored by the filestore component. Agents work in isolated sandbox containers during execution; files are snapshotted to the artifact store when quests complete.'
-		},
 		budget: {
 			title: 'Token Budget',
 			body: 'The global hourly limit controls how many tokens agents can consume per hour across all LLM calls. Set to 0 for unlimited. When the limit is reached, a circuit breaker trips and quests queue until the next hourly window.'

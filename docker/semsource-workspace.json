@@ -2,19 +2,15 @@
   "namespace": "workspace",
   "sources": [
     {
-      "type": "ast",
-      "path": "/sources/workspace-main",
-      "language": "auto",
+      "type": "repo",
+      "path": "/sources/semstreams",
+      "branch": "main",
       "watch": true
     },
     {
-      "type": "docs",
-      "paths": ["/sources/workspace-main"],
-      "watch": true
-    },
-    {
-      "type": "config",
-      "paths": ["/sources/workspace-main"],
+      "type": "repo",
+      "path": "/sources/semsource",
+      "branch": "main",
       "watch": true
     }
   ]

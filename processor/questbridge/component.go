@@ -15,7 +15,6 @@ import (
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/tokenbudget"
 	"github.com/c360studio/semdragons/semsource"
-	"github.com/c360studio/semdragons/storage/workspacerepo"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/natsclient"
@@ -100,12 +99,6 @@ type Component struct {
 	// When sandboxClient is non-nil, questbridge creates per-quest workspaces
 	// before dispatch and cleans them up on completion/failure.
 	sandboxClient *executor.SandboxClient
-
-	// Git-backed workspace repo for artifact management. When non-nil,
-	// questbridge creates per-quest worktrees instead of flat sandbox dirs,
-	// and finalizes them (git commit) on completion.
-	// Resolved lazily via ComponentRegistry at Start time.
-	workspaceRepo *workspacerepo.WorkspaceRepo
 
 	// Semsource manifest client for injecting graph knowledge into agent prompts.
 	// Optional: nil means manifest section is omitted from entity knowledge.
@@ -321,10 +314,6 @@ func (c *Component) Start(ctx context.Context) error {
 		c.logger.Info("sandbox workspace lifecycle enabled", "sandbox_url", c.config.SandboxURL)
 	}
 
-	// Resolve workspace repo from component registry (optional).
-	// When available, worktrees replace flat sandbox workspaces.
-	c.workspaceRepo = domain.ResolveWorkspaceRepo(c.deps.ComponentRegistry, c.logger)
-
 	// Self-initialize semsource manifest client when semsource_url is configured.
 	// This replaces the old SetManifestClient setter injection path.
 	if c.config.SemsourceURL != "" {
@@ -496,12 +485,6 @@ func (c *Component) SetClarificationAnswerer(ca ClarificationAnswerer) {
 // Using an interface avoids an import cycle and allows test mocking.
 type ToolRegistrySource interface {
 	ToolRegistry() *executor.ToolRegistry
-}
-
-// getWorkspaceRepo returns the workspace repo if available.
-// When non-nil, worktrees are used for per-quest artifact management.
-func (c *Component) getWorkspaceRepo() *workspacerepo.WorkspaceRepo {
-	return c.workspaceRepo
 }
 
 // SetPauseChecker injects the board pause checker. When paused, quest

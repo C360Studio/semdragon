@@ -52,8 +52,14 @@ func NewSandboxClient(baseURL string) *SandboxClient {
 }
 
 // CreateWorkspace creates an isolated workspace for the given quest ID.
-func (c *SandboxClient) CreateWorkspace(ctx context.Context, questID string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/workspace/"+questID, nil)
+// When repo is non-empty, the sandbox creates a git worktree from the named
+// repo's main branch. When repo is empty, a plain directory is created.
+func (c *SandboxClient) CreateWorkspace(ctx context.Context, questID string, repo ...string) error {
+	u := c.baseURL + "/workspace/" + questID
+	if len(repo) > 0 && repo[0] != "" {
+		u += "?repo=" + repo[0]
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, nil)
 	if err != nil {
 		return fmt.Errorf("create workspace request: %w", err)
 	}
@@ -67,6 +73,37 @@ func (c *SandboxClient) CreateWorkspace(ctx context.Context, questID string) err
 		return fmt.Errorf("create workspace returned %d: %s", resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+// MergeToMain merges the quest branch into the target repo's main branch.
+// Called by bossbattle after victory. Returns the merge commit hash and
+// the list of changed file paths.
+func (c *SandboxClient) MergeToMain(ctx context.Context, questID string) (commitHash string, filesChanged []string, err error) {
+	var result struct {
+		CommitHash   string   `json:"commit_hash"`
+		FilesChanged []string `json:"files_changed"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/workspace/"+questID+"/merge-to-main", nil, &result); err != nil {
+		return "", nil, fmt.Errorf("merge-to-main: %w", err)
+	}
+	return result.CommitHash, result.FilesChanged, nil
+}
+
+// GitCommitAll stages all changes and commits with the given message.
+// Returns the commit hash and number of files changed, or empty hash if
+// nothing to commit.
+func (c *SandboxClient) GitCommitAll(ctx context.Context, questID, message string) (commitHash string, filesChanged int, err error) {
+	body := struct {
+		Message string `json:"message"`
+	}{Message: message}
+	var result struct {
+		CommitHash   string `json:"commit_hash"`
+		FilesChanged int    `json:"files_changed"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/workspace/"+questID+"/git/commit-all", body, &result); err != nil {
+		return "", 0, fmt.Errorf("git commit-all: %w", err)
+	}
+	return result.CommitHash, result.FilesChanged, nil
 }
 
 // DeleteWorkspace removes the workspace for the given quest ID.

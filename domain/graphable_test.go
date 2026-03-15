@@ -150,32 +150,18 @@ func TestQuestRoundTrip_DMClarificationsNil(t *testing.T) {
 
 func TestQuestTriples_ArtifactPredicates(t *testing.T) {
 	tests := []struct {
-		name                    string
-		artifactsCommit         string
-		artifactsMerged         string
-		artifactsMergeConflict  bool
-		artifactsIndexed        bool
-		producedEntities        []string
-		wantCommit              bool
-		wantMerged              bool
-		wantMergeConflict       bool
-		wantIndexed             bool
-		wantProducedCount       int
+		name              string
+		artifactsMerged   string
+		artifactsIndexed  bool
+		producedEntities  []string
+		wantMerged        bool
+		wantIndexed       bool
+		wantProducedCount int
 	}{
-		{
-			name:            "commit hash set",
-			artifactsCommit: "abc123def456",
-			wantCommit:      true,
-		},
 		{
 			name:            "merged hash set",
 			artifactsMerged: "fed654cba321",
 			wantMerged:      true,
-		},
-		{
-			name:                   "merge conflict true",
-			artifactsMergeConflict: true,
-			wantMergeConflict:      true,
 		},
 		{
 			name:             "artifacts indexed true",
@@ -195,31 +181,21 @@ func TestQuestTriples_ArtifactPredicates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			q := &Quest{
-				ID:                     QuestID("test.dev.game.board1.quest.q1"),
-				Title:                  "Artifact Test Quest",
-				Status:                 QuestPosted,
-				PostedAt:               time.Now(),
-				ArtifactsCommit:        tt.artifactsCommit,
-				ArtifactsMerged:        tt.artifactsMerged,
-				ArtifactsMergeConflict: tt.artifactsMergeConflict,
-				ArtifactsIndexed:       tt.artifactsIndexed,
-				ProducedEntities:       tt.producedEntities,
+				ID:               QuestID("test.dev.game.board1.quest.q1"),
+				Title:            "Artifact Test Quest",
+				Status:           QuestPosted,
+				PostedAt:         time.Now(),
+				ArtifactsMerged:  tt.artifactsMerged,
+				ArtifactsIndexed: tt.artifactsIndexed,
+				ProducedEntities: tt.producedEntities,
 			}
 
 			triples := q.Triples()
 
-			var foundCommit, foundMerged, foundMergeConflict, foundIndexed bool
+			var foundMerged, foundIndexed bool
 			var producedCount int
 			for _, triple := range triples {
 				switch triple.Predicate {
-				case PredicateQuestArtifactsCommit:
-					foundCommit = true
-					got, ok := triple.Object.(string)
-					if !ok {
-						t.Errorf("%s: expected string, got %T", PredicateQuestArtifactsCommit, triple.Object)
-					} else if got != tt.artifactsCommit {
-						t.Errorf("%s = %q, want %q", PredicateQuestArtifactsCommit, got, tt.artifactsCommit)
-					}
 				case PredicateQuestArtifactsMerged:
 					foundMerged = true
 					got, ok := triple.Object.(string)
@@ -227,14 +203,6 @@ func TestQuestTriples_ArtifactPredicates(t *testing.T) {
 						t.Errorf("%s: expected string, got %T", PredicateQuestArtifactsMerged, triple.Object)
 					} else if got != tt.artifactsMerged {
 						t.Errorf("%s = %q, want %q", PredicateQuestArtifactsMerged, got, tt.artifactsMerged)
-					}
-				case PredicateQuestArtifactsMergeConflict:
-					foundMergeConflict = true
-					got, ok := triple.Object.(bool)
-					if !ok {
-						t.Errorf("%s: expected bool, got %T", PredicateQuestArtifactsMergeConflict, triple.Object)
-					} else if got != true {
-						t.Errorf("%s = %v, want true", PredicateQuestArtifactsMergeConflict, got)
 					}
 				case PredicateQuestArtifactsIndexed:
 					foundIndexed = true
@@ -249,20 +217,62 @@ func TestQuestTriples_ArtifactPredicates(t *testing.T) {
 				}
 			}
 
-			if foundCommit != tt.wantCommit {
-				t.Errorf("%s emitted = %v, want %v", PredicateQuestArtifactsCommit, foundCommit, tt.wantCommit)
-			}
 			if foundMerged != tt.wantMerged {
 				t.Errorf("%s emitted = %v, want %v", PredicateQuestArtifactsMerged, foundMerged, tt.wantMerged)
-			}
-			if foundMergeConflict != tt.wantMergeConflict {
-				t.Errorf("%s emitted = %v, want %v", PredicateQuestArtifactsMergeConflict, foundMergeConflict, tt.wantMergeConflict)
 			}
 			if foundIndexed != tt.wantIndexed {
 				t.Errorf("%s emitted = %v, want %v", PredicateQuestArtifactsIndexed, foundIndexed, tt.wantIndexed)
 			}
 			if producedCount != tt.wantProducedCount {
 				t.Errorf("%s triple count = %d, want %d", PredicateQuestProduced, producedCount, tt.wantProducedCount)
+			}
+		})
+	}
+}
+
+func TestQuestTriples_RepoField(t *testing.T) {
+	tests := []struct {
+		name     string
+		repo     string
+		wantRepo bool
+	}{
+		{
+			name:     "repo set",
+			repo:     "my-project-repo",
+			wantRepo: true,
+		},
+		{
+			name: "repo empty — no triple emitted",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := &Quest{
+				ID:       QuestID("test.dev.game.board1.quest.q1"),
+				Title:    "Repo Test Quest",
+				Status:   QuestPosted,
+				PostedAt: time.Now(),
+				Repo:     tt.repo,
+			}
+
+			triples := q.Triples()
+
+			var foundRepo bool
+			for _, triple := range triples {
+				if triple.Predicate == PredicateQuestRepo {
+					foundRepo = true
+					got, ok := triple.Object.(string)
+					if !ok {
+						t.Errorf("%s: expected string, got %T", PredicateQuestRepo, triple.Object)
+					} else if got != tt.repo {
+						t.Errorf("%s = %q, want %q", PredicateQuestRepo, got, tt.repo)
+					}
+				}
+			}
+
+			if foundRepo != tt.wantRepo {
+				t.Errorf("%s emitted = %v, want %v", PredicateQuestRepo, foundRepo, tt.wantRepo)
 			}
 		})
 	}

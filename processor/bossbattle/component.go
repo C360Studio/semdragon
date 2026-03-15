@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,9 +20,9 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/util"
+	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/tokenbudget"
-	"github.com/c360studio/semdragons/storage/workspacerepo"
 )
 
 // =============================================================================
@@ -44,12 +45,11 @@ type Component struct {
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
 
+	// Sandbox client for merge-to-main and artifact access.
+	sandboxClient *executor.SandboxClient
+
 	// Token budget enforcement
 	tokenLedger *tokenbudget.TokenLedger
-
-	// Git-backed workspace repo for merge-to-main on victory.
-	// Resolved lazily via ComponentRegistry at Start time.
-	workspaceRepo *workspacerepo.WorkspaceRepo
 
 	// KV watcher for quest entity state changes (entity-centric architecture)
 	questWatch  jetstream.KeyWatcher
@@ -294,9 +294,6 @@ func (c *Component) Initialize() error {
 		promptRegistry.RegisterProviderStyles()
 		c.assembler = promptmanager.NewPromptAssembler(promptRegistry)
 		eval := NewDomainAwareEvaluator(c.catalog, c.registry, c.assembler, c.tokenLedger, c.deps.NATSClient)
-		eval.SetWorkspaceRepoResolver(func() *workspacerepo.WorkspaceRepo {
-			return domain.ResolveWorkspaceRepo(c.deps.ComponentRegistry, c.logger)
-		})
 		c.evaluator = eval
 	} else {
 		c.evaluator = NewDefaultBattleEvaluator()
@@ -320,8 +317,11 @@ func (c *Component) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Resolve workspace repo (optional) for merge-to-main on victory.
-	c.workspaceRepo = domain.ResolveWorkspaceRepo(c.deps.ComponentRegistry, c.logger)
+	// Initialize sandbox client for merge-to-main on battle victory.
+	if sandboxURL := os.Getenv("SANDBOX_URL"); sandboxURL != "" {
+		c.sandboxClient = executor.NewSandboxClient(sandboxURL)
+		c.logger.Info("sandbox client initialized for merge-to-main", "url", sandboxURL)
+	}
 
 	c.startTime = time.Now()
 	c.running.Store(true)

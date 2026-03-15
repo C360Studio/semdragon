@@ -2140,30 +2140,3 @@ func TestDomainAwareEvaluator_MergeResults_MissingFallsBack(t *testing.T) {
 }
 
 
-func TestInferLanguage(t *testing.T) {
-	cases := []struct {
-		path string
-		want string
-	}{
-		{"main.go", "go"},
-		{"app.ts", "typescript"},
-		{"index.js", "javascript"},
-		{"script.py", "python"},
-		{"lib.rs", "rust"},
-		{"config.json", "json"},
-		{"deploy.yaml", "yaml"},
-		{"README.md", "markdown"},
-		{"run.sh", "bash"},
-		{"query.sql", "sql"},
-		{"page.svelte", "svelte"},
-		{"Makefile", ""},
-		{"noext", ""},
-	}
-
-	for _, tc := range cases {
-		got := inferLanguage(tc.path)
-		if got != tc.want {
-			t.Errorf("inferLanguage(%q) = %q, want %q", tc.path, got, tc.want)
-		}
-	}
-}

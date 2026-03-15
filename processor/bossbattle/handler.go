@@ -498,26 +498,23 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 					ab.quest.Duration = verdictNow.Sub(*ab.quest.StartedAt)
 				}
 
-				// Quality gate: merge quest branch to main on victory.
-				// This triggers semsource processing of approved artifacts.
-				if c.workspaceRepo != nil {
-					instanceID := domain.ExtractInstance(string(ab.quest.ID))
-					mergeHash, mergeErr := c.workspaceRepo.MergeToMain(persistCtx, instanceID)
-					if mergeErr != nil {
-						c.logger.Warn("merge to main failed after battle victory",
-							"quest", ab.quest.ID, "error", mergeErr)
-						ab.quest.ArtifactsMergeConflict = true
-					} else {
-						ab.quest.ArtifactsMerged = mergeHash
-						c.logger.Info("quest branch merged to main",
-							"quest", ab.quest.ID, "merge_hash", mergeHash)
-						// ArtifactsIndexed is NOT set here — it will be set by
-						// the indexing watcher once semsource has processed the
-						// merged artifacts. Until then, dependent quests see
-						// ArtifactsIndexed=false and use summary/raw fallback.
-						go c.watchForIndexing(ab.quest.ID, mergeHash)
+				// Merge quest branch to main via sandbox, then mark indexed.
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+					if c.sandboxClient != nil {
+						mergeHash, _, mergeErr := c.sandboxClient.MergeToMain(ctx, string(ab.quest.ID))
+						if mergeErr != nil {
+							c.logger.Warn("merge-to-main failed after battle victory",
+								"quest", ab.quest.ID, "error", mergeErr)
+						} else if mergeHash != "" {
+							ab.quest.ArtifactsMerged = mergeHash
+							c.logger.Info("quest branch merged to main",
+								"quest", ab.quest.ID, "merge_hash", mergeHash)
+						}
 					}
-				}
+					c.setIndexed(ctx, ab.quest.ID, nil)
+				}()
 			} else if ab.quest.Attempts < ab.quest.MaxAttempts && ab.quest.MaxAttempts > 1 {
 				// Retry: repost for another attempt with feedback injected
 				ab.quest.Attempts++
@@ -754,4 +751,54 @@ func battleFromEntityState(entity *graph.EntityState) *BossBattle {
 		}
 	}
 	return battle
+}
+
+// setIndexed re-fetches the quest from KV, appends producedIDs, sets
+// ArtifactsIndexed=true, and writes via CAS. Retries up to 3 times on
+// revision conflict before giving up (rare: no other processor writes
+// a completed quest's indexing fields).
+func (c *Component) setIndexed(ctx context.Context, questID domain.QuestID, producedIDs []string) {
+	const maxRetries = 3
+
+	for attempt := range maxRetries {
+		entityState, revision, err := c.graph.GetQuestWithRevision(ctx, questID)
+		if err != nil {
+			c.logger.Error("indexing: failed to re-fetch quest for indexed write",
+				"quest", questID, "attempt", attempt+1, "error", err)
+			return
+		}
+
+		current := domain.QuestFromEntityState(entityState)
+		if current == nil {
+			c.logger.Error("indexing: failed to reconstruct quest from entity state",
+				"quest", questID)
+			return
+		}
+
+		// Merge produced entities — avoid duplicates in case of a retry.
+		existing := make(map[string]struct{}, len(current.ProducedEntities))
+		for _, id := range current.ProducedEntities {
+			existing[id] = struct{}{}
+		}
+		for _, id := range producedIDs {
+			if _, ok := existing[id]; !ok {
+				current.ProducedEntities = append(current.ProducedEntities, id)
+			}
+		}
+		current.ArtifactsIndexed = true
+
+		if err := c.graph.EmitEntityCAS(ctx, current, domain.PredicateQuestArtifactsIndexed, revision); err != nil {
+			c.logger.Warn("indexing: CAS conflict on indexed write — retrying",
+				"quest", questID, "attempt", attempt+1, "error", err)
+			continue
+		}
+
+		c.logger.Info("quest artifacts indexed",
+			"quest", questID,
+			"produced_entities", len(current.ProducedEntities))
+		return
+	}
+
+	c.logger.Error("indexing: gave up writing ArtifactsIndexed after retries",
+		"quest", questID, "max_retries", maxRetries)
 }

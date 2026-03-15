@@ -121,9 +121,9 @@
 			<span class="nav-icon">S</span>
 			<span class="nav-label">Store</span>
 		</a>
-		<a href="/workspace" class="nav-item" class:active={isActive('/workspace')} data-testid="nav-workspace">
-			<span class="nav-icon">W</span>
-			<span class="nav-label">Workspace</span>
+		<a href="/files" class="nav-item" class:active={isActive('/files')} data-testid="nav-files">
+			<span class="nav-icon">F</span>
+			<span class="nav-label">Files</span>
 		</a>
 		<a href="/settings" class="nav-item" class:active={isActive('/settings')} data-testid="nav-settings">
 			<span class="nav-icon">*</span>

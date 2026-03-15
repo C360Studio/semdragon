@@ -762,14 +762,12 @@ func TestQuestRoundTrip_FailureRecoveryEmpty(t *testing.T) {
 func TestQuestRoundTrip_ArtifactFields(t *testing.T) {
 	t.Run("all artifact fields populated", func(t *testing.T) {
 		original := &Quest{
-			ID:                     QuestID("test.dev.game.board1.quest.art1"),
-			Title:                  "Artifact Round Trip",
-			Status:                 QuestCompleted,
-			PostedAt:               time.Now().Truncate(time.Second),
-			ArtifactsCommit:        "abc123def456789",
-			ArtifactsMerged:        "fed987cba654321",
-			ArtifactsMergeConflict: true,
-			ArtifactsIndexed:       true,
+			ID:               QuestID("test.dev.game.board1.quest.art1"),
+			Title:            "Artifact Round Trip",
+			Status:           QuestCompleted,
+			PostedAt:         time.Now().Truncate(time.Second),
+			ArtifactsMerged:  "fed987cba654321",
+			ArtifactsIndexed: true,
 			ProducedEntities: []string{
 				"c360.prod.src.repo1.file.main.go",
 				"c360.prod.src.repo1.func.handleQuest",
@@ -783,14 +781,8 @@ func TestQuestRoundTrip_ArtifactFields(t *testing.T) {
 
 		r := QuestFromEntityState(entity)
 
-		if r.ArtifactsCommit != original.ArtifactsCommit {
-			t.Errorf("ArtifactsCommit = %q, want %q", r.ArtifactsCommit, original.ArtifactsCommit)
-		}
 		if r.ArtifactsMerged != original.ArtifactsMerged {
 			t.Errorf("ArtifactsMerged = %q, want %q", r.ArtifactsMerged, original.ArtifactsMerged)
-		}
-		if !r.ArtifactsMergeConflict {
-			t.Errorf("ArtifactsMergeConflict = false, want true")
 		}
 		if !r.ArtifactsIndexed {
 			t.Errorf("ArtifactsIndexed = false, want true")
@@ -820,7 +812,7 @@ func TestQuestRoundTrip_ArtifactFields(t *testing.T) {
 			Title:            "Multi Produced Quest",
 			Status:           QuestCompleted,
 			PostedAt:         time.Now().Truncate(time.Second),
-			ArtifactsCommit:  "deadbeef01234567",
+			ArtifactsMerged:  "fed987cba654321",
 			ProducedEntities: ids,
 		}
 
@@ -857,14 +849,8 @@ func TestQuestRoundTrip_ArtifactFields(t *testing.T) {
 
 		r := QuestFromEntityState(entity)
 
-		if r.ArtifactsCommit != "" {
-			t.Errorf("ArtifactsCommit = %q, want empty", r.ArtifactsCommit)
-		}
 		if r.ArtifactsMerged != "" {
 			t.Errorf("ArtifactsMerged = %q, want empty", r.ArtifactsMerged)
-		}
-		if r.ArtifactsMergeConflict {
-			t.Errorf("ArtifactsMergeConflict = true, want false")
 		}
 		if r.ArtifactsIndexed {
 			t.Errorf("ArtifactsIndexed = true, want false")
@@ -875,15 +861,64 @@ func TestQuestRoundTrip_ArtifactFields(t *testing.T) {
 
 		// Verify none of the artifact predicates appear in the emitted triples.
 		artifactPredicates := map[string]bool{
-			PredicateQuestArtifactsCommit:        true,
-			PredicateQuestArtifactsMerged:         true,
-			PredicateQuestArtifactsMergeConflict:  true,
-			PredicateQuestArtifactsIndexed:        true,
-			PredicateQuestProduced:                true,
+			PredicateQuestArtifactsMerged:  true,
+			PredicateQuestArtifactsIndexed: true,
+			PredicateQuestProduced:         true,
 		}
 		for _, triple := range entity.Triples {
 			if artifactPredicates[triple.Predicate] {
 				t.Errorf("unexpected artifact triple emitted: predicate %q", triple.Predicate)
+			}
+		}
+	})
+}
+
+// TestQuestRoundTrip_RepoField verifies that the Repo field survives a full
+// Triples() → QuestFromEntityState() round-trip.
+func TestQuestRoundTrip_RepoField(t *testing.T) {
+	t.Run("repo set", func(t *testing.T) {
+		original := &Quest{
+			ID:       QuestID("test.dev.game.board1.quest.repo1"),
+			Title:    "Repo Round Trip",
+			Status:   QuestPosted,
+			PostedAt: time.Now().Truncate(time.Second),
+			Repo:     "my-project-repo",
+		}
+
+		entity := &graph.EntityState{
+			ID:      string(original.ID),
+			Triples: original.Triples(),
+		}
+
+		r := QuestFromEntityState(entity)
+
+		if r.Repo != original.Repo {
+			t.Errorf("Repo = %q, want %q", r.Repo, original.Repo)
+		}
+	})
+
+	t.Run("repo empty — no phantom data", func(t *testing.T) {
+		original := &Quest{
+			ID:       QuestID("test.dev.game.board1.quest.repo2"),
+			Title:    "No Repo Quest",
+			Status:   QuestPosted,
+			PostedAt: time.Now().Truncate(time.Second),
+		}
+
+		entity := &graph.EntityState{
+			ID:      string(original.ID),
+			Triples: original.Triples(),
+		}
+
+		r := QuestFromEntityState(entity)
+
+		if r.Repo != "" {
+			t.Errorf("Repo = %q, want empty", r.Repo)
+		}
+
+		for _, triple := range entity.Triples {
+			if triple.Predicate == PredicateQuestRepo {
+				t.Errorf("unexpected repo triple emitted: predicate %q", triple.Predicate)
 			}
 		}
 	})

@@ -316,44 +316,8 @@ export async function setTokenBudget(limit: number): Promise<TokenStats> {
 }
 
 // =============================================================================
-// WORKSPACE (artifact browser)
+// ARTIFACTS
 // =============================================================================
-
-export interface WorkspaceEntry {
-	name: string;
-	path: string;
-	is_dir: boolean;
-	size: number;
-	children?: WorkspaceEntry[];
-}
-
-export interface WorkspaceQuest {
-	quest_id: string;
-	title: string;
-	status: string;
-	agent: string;
-	agent_name: string;
-	parent_quest?: string;
-	file_count: number;
-}
-
-export async function getWorkspaceQuests(): Promise<WorkspaceQuest[]> {
-	return fetchJson<WorkspaceQuest[]>('/game/workspace');
-}
-
-export async function getWorkspaceTree(questId: string): Promise<WorkspaceEntry[]> {
-	return fetchJson<WorkspaceEntry[]>(`/game/workspace/tree?quest=${encodeURIComponent(questId)}`);
-}
-
-export async function getWorkspaceFile(questId: string, path: string): Promise<string> {
-	const url = `${apiUrl}/game/workspace/file?quest=${encodeURIComponent(questId)}&path=${encodeURIComponent(path)}`;
-	const res = await fetch(url);
-	if (!res.ok) {
-		const errorText = await res.text();
-		throw new ApiError(res.status, `API Error ${res.status}: ${errorText}`);
-	}
-	return res.text();
-}
 
 export function getArtifactsDownloadUrl(questId: string): string {
 	return `${apiUrl}/game/quests/${encodeURIComponent(questId)}/artifacts`;
@@ -367,6 +331,16 @@ export interface ArtifactListResponse {
 
 export async function listQuestArtifacts(questId: string): Promise<ArtifactListResponse> {
 	return fetchJson<ArtifactListResponse>(`/game/quests/${encodeURIComponent(questId)}/artifacts/list`);
+}
+
+export async function getArtifactFile(questId: string, path: string): Promise<string> {
+	const url = `${apiUrl}/game/quests/${encodeURIComponent(questId)}/artifacts/${encodeURIComponent(path)}`;
+	const res = await fetch(url);
+	if (!res.ok) {
+		const errorText = await res.text();
+		throw new ApiError(res.status, `API Error ${res.status}: ${errorText}`);
+	}
+	return res.text();
 }
 
 // =============================================================================
@@ -500,8 +474,6 @@ export const api = {
 	resumeBoard,
 	getTokenStats,
 	setTokenBudget,
-	getWorkspaceTree,
-	getWorkspaceFile,
 	getModelRegistry,
 	resolveCapability,
 	getSettings,

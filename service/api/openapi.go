@@ -872,7 +872,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(CapabilityView{}),
 			reflect.TypeOf(ModelDefaultsView{}),
 			reflect.TypeOf(ComponentInfoView{}),
-			reflect.TypeOf(WorkspaceInfoView{}),
+			reflect.TypeOf(SandboxInfoView{}),
 			reflect.TypeOf(TokenBudgetView{}),
 			reflect.TypeOf(HealthResponse{}),
 			reflect.TypeOf(HealthCheck{}),

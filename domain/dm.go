@@ -559,6 +559,7 @@ type QuestBrief struct {
 	Skills       []SkillTag       `json:"skills,omitempty"`
 	Hints        *QuestHints      `json:"hints,omitempty"`
 	DependsOn    []QuestID        `json:"depends_on,omitempty"`
+	Repo         string           `json:"repo,omitempty"` // Target repository name
 }
 
 // QuestChainBrief defines multiple interdependent quests submitted as one batch.
@@ -581,6 +582,7 @@ type QuestChainEntry struct {
 	Skills       []SkillTag       `json:"skills,omitempty"`
 	DependsOn    []int            `json:"depends_on,omitempty"`
 	Hints        *QuestHints      `json:"hints,omitempty"`
+	Repo         string           `json:"repo,omitempty"` // Target repository name
 }
 
 // maxChainSize is the maximum number of quests in a single chain submission.

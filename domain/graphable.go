@@ -327,22 +327,18 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
-	// Artifact tracking (git workspace)
-	if q.ArtifactsCommit != "" {
+	// Execution context
+	if q.Repo != "" {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: PredicateQuestArtifactsCommit, Object: q.ArtifactsCommit,
+			Subject: entityID, Predicate: PredicateQuestRepo, Object: q.Repo,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
+
+	// Artifact tracking (git workspace)
 	if q.ArtifactsMerged != "" {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: PredicateQuestArtifactsMerged, Object: q.ArtifactsMerged,
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-	if q.ArtifactsMergeConflict {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: PredicateQuestArtifactsMergeConflict, Object: true,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}

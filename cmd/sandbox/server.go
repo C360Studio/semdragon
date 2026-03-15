@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,17 +10,34 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
+
+// repoMutex holds a per-repo mutex used to serialise worktree and merge
+// operations that modify the shared .git directory.
+type repoMutex struct {
+	mu sync.Mutex
+}
 
 // Server handles sandbox HTTP API requests.
 type Server struct {
 	workspace      string
+	reposDir       string
 	defaultTimeout time.Duration
 	maxTimeout     time.Duration
 	maxOutputBytes int
 	maxFileSize    int64
 	logger         *slog.Logger
+
+	// questRepos maps quest ID → repo name for worktree-backed workspaces.
+	// Protected by mu.
+	mu         sync.Mutex
+	questRepos map[string]string
+
+	// repoMutexes holds a per-repo mutex to serialise git worktree and merge
+	// operations. Protected by mu (acquired briefly only to read/insert).
+	repoMutexes map[string]*repoMutex
 }
 
 // =============================================================================
@@ -112,6 +130,14 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /workspace/{questID}", s.handleCreateWorkspace)
 	mux.HandleFunc("DELETE /workspace/{questID}", s.handleDeleteWorkspace)
 	mux.HandleFunc("GET /workspace/{questID}", s.handleListWorkspaceFiles)
+
+	// Git / repo endpoints.
+	mux.HandleFunc("GET /repos", s.handleListRepos)
+	mux.HandleFunc("GET /workspace/{questID}/git/log", s.handleGitLog)
+	mux.HandleFunc("GET /workspace/{questID}/git/diff", s.handleGitDiff)
+	mux.HandleFunc("GET /workspace/{questID}/git/status", s.handleGitStatus)
+	mux.HandleFunc("POST /workspace/{questID}/git/commit-all", s.handleGitCommitAll)
+	mux.HandleFunc("POST /workspace/{questID}/merge-to-main", s.handleMergeToMain)
 }
 
 // =============================================================================
@@ -303,14 +329,15 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build grep command. Use grep -rn for recursive search with line numbers.
+	// Shell-quote user-supplied pattern and glob to prevent injection.
 	args := []string{"grep", "-rn"}
 	if req.ContextLines > 0 {
 		args = append(args, fmt.Sprintf("-C%d", req.ContextLines))
 	}
 	if req.FileGlob != "" {
-		args = append(args, "--include="+req.FileGlob)
+		args = append(args, "--include="+shellQuote(req.FileGlob))
 	}
-	args = append(args, "--", req.Pattern, absPath)
+	args = append(args, "--", shellQuote(req.Pattern), shellQuote(absPath))
 
 	cmd := strings.Join(args, " ")
 	result := execCommand(r.Context(), filepath.Join(s.workspace, req.QuestID), cmd, 10*time.Second, s.maxOutputBytes)
@@ -330,9 +357,72 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dir := filepath.Join(s.workspace, questID)
+	repo := r.URL.Query().Get("repo")
+
+	if repo != "" {
+		// Repo-backed workspace: create a git worktree on a new quest branch.
+		if !isValidRepoName(repo) {
+			writeError(w, http.StatusBadRequest, "invalid repo name")
+			return
+		}
+		repoPath := filepath.Join(s.reposDir, repo)
+		if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("repo %q not found or not a git repository", repo))
+			return
+		}
+
+		branch := questBranch(questID)
+
+		rm := s.getRepoMutex(repo)
+		rm.mu.Lock()
+		defer rm.mu.Unlock()
+
+		// Create the quest branch from main.
+		res := execCommand(r.Context(), repoPath,
+			fmt.Sprintf("git branch %s main", branch),
+			15*time.Second, s.maxOutputBytes)
+		if res.ExitCode != 0 {
+			writeError(w, http.StatusInternalServerError,
+				fmt.Sprintf("create branch %q: %s", branch, res.Stderr))
+			return
+		}
+
+		// Add a worktree at the workspace path.
+		res = execCommand(r.Context(), repoPath,
+			fmt.Sprintf("git worktree add %s %s", dir, branch),
+			15*time.Second, s.maxOutputBytes)
+		if res.ExitCode != 0 {
+			// Clean up the branch we just created.
+			execCommand(r.Context(), repoPath, //nolint:errcheck // best-effort cleanup
+				fmt.Sprintf("git branch -D %s", branch),
+				10*time.Second, s.maxOutputBytes)
+			writeError(w, http.StatusInternalServerError,
+				fmt.Sprintf("git worktree add: %s", res.Stderr))
+			return
+		}
+
+		// Configure git identity in the worktree so commits work without user config.
+		configCmd := `git config user.email "sandbox@semdragons" && git config user.name "Sandbox"`
+		execCommand(r.Context(), dir, configCmd, 10*time.Second, s.maxOutputBytes) //nolint:errcheck // best-effort
+
+		// Record quest → repo mapping.
+		s.mu.Lock()
+		s.questRepos[questID] = repo
+		s.mu.Unlock()
+
+		s.logger.Info("repo-backed workspace created",
+			"quest_id", questID, "repo", repo, "branch", branch, "path", dir)
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": "created",
+			"repo":   repo,
+			"branch": branch,
+		})
+		return
+	}
+
+	// Plain workspace (backward-compatible path).
 
 	// Check if the directory already exists (e.g., bind-mounted git worktree).
-	// Only create it if it doesn't exist (backward compatibility without workspace repo).
 	if info, err := os.Stat(dir); err == nil && info.IsDir() {
 		s.logger.Info("workspace already exists (worktree)", "quest_id", questID, "path", dir)
 		writeJSON(w, http.StatusOK, map[string]string{"status": "exists", "path": dir})
@@ -343,6 +433,9 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create workspace: %v", err))
 		return
 	}
+
+	// Initialise a bare git repo so agents can commit work in plain workspaces too.
+	execCommand(r.Context(), dir, "git init", 10*time.Second, s.maxOutputBytes) //nolint:errcheck // best-effort
 
 	s.logger.Info("workspace created", "quest_id", questID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "created", "path": dir})
@@ -359,14 +452,58 @@ func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir := filepath.Join(s.workspace, questID)
-	if err := os.RemoveAll(dir); err != nil {
+	if err := s.removeWorkspace(r.Context(), questID); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("delete workspace: %v", err))
 		return
 	}
 
 	s.logger.Info("workspace deleted", "quest_id", questID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// removeWorkspace tears down a quest workspace. If the quest is backed by a
+// repo worktree, it removes the worktree and deletes the quest branch; otherwise
+// it removes the directory.
+func (s *Server) removeWorkspace(ctx context.Context, questID string) error {
+	s.mu.Lock()
+	repo, hasRepo := s.questRepos[questID]
+	if hasRepo {
+		delete(s.questRepos, questID)
+	}
+	s.mu.Unlock()
+
+	dir := filepath.Join(s.workspace, questID)
+	branch := questBranch(questID)
+
+	if hasRepo {
+		repoPath := filepath.Join(s.reposDir, repo)
+		rm := s.getRepoMutex(repo)
+		rm.mu.Lock()
+		defer rm.mu.Unlock()
+
+		// Remove worktree entry from .git/worktrees.
+		res := execCommand(ctx, repoPath,
+			fmt.Sprintf("git worktree remove --force %s", dir),
+			15*time.Second, s.maxOutputBytes)
+		if res.ExitCode != 0 {
+			// Fall back to plain removal if worktree remove failed (e.g., already gone).
+			s.logger.Warn("git worktree remove failed — falling back to os.RemoveAll",
+				"quest_id", questID, "stderr", res.Stderr)
+			os.RemoveAll(dir) //nolint:errcheck // best-effort
+		}
+
+		// Delete the quest branch from the repo.
+		res = execCommand(ctx, repoPath,
+			fmt.Sprintf("git branch -D %s", branch),
+			10*time.Second, s.maxOutputBytes)
+		if res.ExitCode != 0 {
+			s.logger.Warn("git branch -D failed",
+				"quest_id", questID, "branch", branch, "stderr", res.Stderr)
+		}
+		return nil
+	}
+
+	return os.RemoveAll(dir)
 }
 
 // handleListWorkspaceFiles returns all files in a quest workspace (recursive).
@@ -388,6 +525,11 @@ func (s *Server) handleListWorkspaceFiles(w http.ResponseWriter, r *http.Request
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil // skip errors
+		}
+		// Skip .git directory contents — worktrees contain git metadata
+		// that should not be exposed as quest artifacts.
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
 		}
 		rel, relErr := filepath.Rel(dir, path)
 		if relErr != nil || rel == "." {
@@ -452,6 +594,44 @@ func isValidQuestID(id string) bool {
 		}
 	}
 	return true
+}
+
+// isValidRepoName checks that a repo name is a simple directory name with no
+// path separators or special characters.
+func isValidRepoName(name string) bool {
+	if name == "" || len(name) > 128 {
+		return false
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+			return false
+		}
+	}
+	// Disallow names that could be traversal attempts.
+	return name != "." && name != ".." && !strings.Contains(name, "..")
+}
+
+// questBranch derives the git branch name for a quest. The full entity ID uses
+// dots as separators; we use only the last segment as the branch suffix so that
+// branch names stay short and valid.
+// e.g. "c360.prod.game.board1.quest.abc123" → "quest/abc123"
+func questBranch(questID string) string {
+	parts := strings.Split(questID, ".")
+	last := parts[len(parts)-1]
+	return "quest/" + last
+}
+
+// getRepoMutex returns the per-repo mutex for repo, creating it if necessary.
+// The outer s.mu is held only briefly to look up / insert the entry.
+func (s *Server) getRepoMutex(repo string) *repoMutex {
+	s.mu.Lock()
+	rm, ok := s.repoMutexes[repo]
+	if !ok {
+		rm = &repoMutex{}
+		s.repoMutexes[repo] = rm
+	}
+	s.mu.Unlock()
+	return rm
 }
 
 // =============================================================================

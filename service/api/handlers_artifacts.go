@@ -8,24 +8,10 @@ import (
 	"strings"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/storage/workspacerepo"
 )
 
 // =============================================================================
-// ARTIFACT STORAGE
-// =============================================================================
-
-// getWorkspaceRepo resolves the workspacerepo component from the registry.
-// Returns nil if unavailable.
-func (s *Service) getWorkspaceRepo() *workspacerepo.WorkspaceRepo {
-	if s.componentDeps == nil || s.componentDeps.ComponentRegistry == nil {
-		return nil
-	}
-	return domain.ResolveWorkspaceRepo(s.componentDeps.ComponentRegistry, s.logger)
-}
-
-// =============================================================================
-// HANDLERS
+// ARTIFACT STORAGE — proxied through sandbox HTTP API
 // =============================================================================
 
 // handleGetQuestArtifacts serves all files for a quest as a zip archive.
@@ -40,26 +26,15 @@ func (s *Service) handleGetQuestArtifacts(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Collect file paths and a reader function.
-	type fileReader func(path string) ([]byte, error)
-	var filePaths []string
-	var readFile fileReader
-
-	wsRepo := s.getWorkspaceRepo()
-	if wsRepo == nil {
-		s.writeError(w, "artifact storage not available", http.StatusServiceUnavailable)
+	if s.sandboxClient == nil {
+		s.writeError(w, "sandbox not configured", http.StatusServiceUnavailable)
 		return
 	}
-	files, err := wsRepo.ListQuestFiles(id)
+
+	files, err := s.sandboxClient.ListWorkspaceFiles(r.Context(), id)
 	if err != nil || len(files) == 0 {
 		s.writeError(w, "no artifacts found for quest", http.StatusNotFound)
 		return
-	}
-	for _, f := range files {
-		filePaths = append(filePaths, f.Path)
-	}
-	readFile = func(path string) ([]byte, error) {
-		return wsRepo.ReadFile(id, path)
 	}
 
 	// Get quest metadata from graph for the manifest.
@@ -78,10 +53,9 @@ func (s *Service) handleGetQuestArtifacts(w http.ResponseWriter, r *http.Request
 	defer zw.Close() //nolint:errcheck
 
 	if quest != nil {
-		// Build manifest with file paths as keys (for backward compat).
-		keys := make([]string, len(filePaths))
-		for i, p := range filePaths {
-			keys[i] = "quests/" + id + "/" + p
+		keys := make([]string, len(files))
+		for i, f := range files {
+			keys[i] = "quests/" + id + "/" + f.Path
 		}
 		manifest := buildArtifactManifest(quest, keys)
 		if fw, manifestErr := zw.Create("manifest.json"); manifestErr == nil {
@@ -89,15 +63,15 @@ func (s *Service) handleGetQuestArtifacts(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	for _, relPath := range filePaths {
-		data, readErr := readFile(relPath)
+	for _, f := range files {
+		data, readErr := s.sandboxClient.ReadFile(r.Context(), id, f.Path)
 		if readErr != nil {
-			s.logger.Error("skipping artifact in zip", "path", relPath, "error", readErr)
+			s.logger.Error("skipping artifact in zip", "path", f.Path, "error", readErr)
 			continue
 		}
-		fw, createErr := zw.Create(relPath)
+		fw, createErr := zw.Create(f.Path)
 		if createErr != nil {
-			s.logger.Error("zip create failed", "path", relPath, "error", createErr)
+			s.logger.Error("zip create failed", "path", f.Path, "error", createErr)
 			continue
 		}
 		fw.Write(data) //nolint:errcheck
@@ -119,14 +93,12 @@ func (s *Service) handleGetQuestArtifactFile(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	wsRepo := s.getWorkspaceRepo()
-	if wsRepo == nil {
-		s.writeError(w, "artifact storage not available", http.StatusServiceUnavailable)
+	if s.sandboxClient == nil {
+		s.writeError(w, "sandbox not configured", http.StatusServiceUnavailable)
 		return
 	}
 
-	data, readErr := wsRepo.ReadFile(id, filePath)
-
+	data, readErr := s.sandboxClient.ReadFile(r.Context(), id, filePath)
 	if readErr != nil {
 		s.logger.Debug("artifact get failed", "quest_id", id, "path", filePath, "error", readErr)
 		s.writeError(w, "artifact not found", http.StatusNotFound)
@@ -149,22 +121,21 @@ func (s *Service) handleListQuestArtifacts(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	wsRepo := s.getWorkspaceRepo()
-	if wsRepo == nil {
-		s.writeError(w, "artifact storage not available", http.StatusServiceUnavailable)
+	if s.sandboxClient == nil {
+		s.writeError(w, "sandbox not configured", http.StatusServiceUnavailable)
 		return
 	}
 
-	var files []string
-	entries, err := wsRepo.ListQuestFiles(id)
+	entries, err := s.sandboxClient.ListWorkspaceFiles(r.Context(), id)
 	if err != nil {
 		s.writeError(w, "failed to list artifacts", http.StatusInternalServerError)
 		return
 	}
+
+	var files []string
 	for _, e := range entries {
 		files = append(files, e.Path)
 	}
-
 	if files == nil {
 		files = []string{}
 	}

@@ -25,7 +25,7 @@ type SettingsResponse struct {
 	NATS           NATSInfo             `json:"nats"`
 	Models         ModelRegistryView    `json:"models"`
 	Components     []ComponentInfoView  `json:"components"`
-	Workspace      WorkspaceInfoView    `json:"workspace"`
+	Workspace      SandboxInfoView    `json:"workspace"`
 	TokenBudget    *TokenBudgetView     `json:"token_budget,omitempty"`
 	WebsocketInput WebsocketInputView   `json:"websocket_input"`
 	SearchConfig   SearchConfigView     `json:"search_config"`
@@ -96,9 +96,9 @@ type ComponentInfoView struct {
 	LastError    string `json:"last_error,omitempty" description:"Most recent error message"`
 }
 
-// WorkspaceInfoView describes artifact storage status.
-type WorkspaceInfoView struct {
-	Available bool `json:"available" description:"Whether the artifact store is available"`
+// SandboxInfoView describes sandbox availability.
+type SandboxInfoView struct {
+	Available bool `json:"available" description:"Whether the sandbox is available for artifact storage"`
 }
 
 // TokenBudgetView describes token budget config.
@@ -263,11 +263,11 @@ func (s *Service) handleSettingsHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Workspace repo for artifact storage
-	if s.getWorkspaceRepo() != nil {
-		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "ok", Message: "Workspace repo (git worktrees) available"})
+	// 3. Sandbox for artifact storage
+	if s.sandboxClient != nil {
+		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "ok", Message: "Sandbox available for artifact storage"})
 	} else {
-		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "warning", Message: "Workspace repo not available — quest artifacts won't be persisted"})
+		checks = append(checks, HealthCheck{Name: "artifact_store", Status: "warning", Message: "Sandbox not configured — quest artifacts won't be accessible via API"})
 		hasWarning = true
 	}
 
@@ -398,9 +398,9 @@ func (s *Service) assembleSettingsResponse() SettingsResponse {
 	// Components
 	resp.Components = s.assembleComponentList()
 
-	// Workspace (workspace repo)
-	resp.Workspace = WorkspaceInfoView{
-		Available: s.getWorkspaceRepo() != nil,
+	// Sandbox for artifact storage
+	resp.Workspace = SandboxInfoView{
+		Available: s.sandboxClient != nil,
 	}
 
 	// Token budget
@@ -758,8 +758,8 @@ func (s *Service) buildChecklist(ctx context.Context) []ChecklistItem {
 		}(),
 	})
 
-	// Workspace repo for artifact storage
-	artifactOk := s.getWorkspaceRepo() != nil
+	// Sandbox for artifact storage
+	artifactOk := s.sandboxClient != nil
 	items = append(items, ChecklistItem{
 		Label: "Artifact storage available",
 		Met:   artifactOk,
@@ -767,7 +767,7 @@ func (s *Service) buildChecklist(ctx context.Context) []ChecklistItem {
 			if artifactOk {
 				return ""
 			}
-			return "Enable the workspacerepo component in config/semdragons.json to persist quest artifacts"
+			return "Set SANDBOX_URL environment variable to enable artifact storage via sandbox"
 		}(),
 	})
 

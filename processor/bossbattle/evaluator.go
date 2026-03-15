@@ -16,7 +16,6 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/tokenbudget"
-	"github.com/c360studio/semdragons/storage/workspacerepo"
 )
 
 // =============================================================================
@@ -156,13 +155,12 @@ type trajectoryWriter interface {
 // a judge prompt using the domain's JudgeSystemBase and calls the LLM.
 // Falls back to heuristic evaluation when no LLM is available or on failure.
 type DomainAwareEvaluator struct {
-	catalog       *promptmanager.DomainCatalog
-	registry      model.RegistryReader
-	assembler     *promptmanager.PromptAssembler
-	fallback      *DefaultBattleEvaluator
-	tokenLedger   *tokenbudget.TokenLedger
-	nats          trajectoryWriter // for best-effort trajectory persistence; may be nil
-	workspaceRepoResolver   func() *workspacerepo.WorkspaceRepo // lazy resolver for git worktree artifacts
+	catalog     *promptmanager.DomainCatalog
+	registry    model.RegistryReader
+	assembler   *promptmanager.PromptAssembler
+	fallback    *DefaultBattleEvaluator
+	tokenLedger *tokenbudget.TokenLedger
+	nats        trajectoryWriter // for best-effort trajectory persistence; may be nil
 }
 
 // NewDomainAwareEvaluator creates an evaluator with domain catalog and model registry.
@@ -236,14 +234,8 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 		checklist...,
 	)
 
-	// Format the quest output for the user message. When the workspace repo
-	// is available, include workspace files alongside the text output.
+	// Format the quest output for the user message.
 	userMessage := formatOutputForJudge(output)
-	if wsRepo := e.resolveWorkspaceRepo(); wsRepo != nil {
-		if artifacts := e.loadArtifactsFromRepo(quest.ID, wsRepo); artifacts != "" {
-			userMessage = userMessage + "\n\n" + artifacts
-		}
-	}
 
 	// Call the LLM
 	judgeResult, err := e.callLLMJudge(ctx, endpoint, assembled.SystemMessage, userMessage, battle)
@@ -562,102 +554,6 @@ func formatOutputForJudge(output any) string {
 		}
 		return fmt.Sprintf("## Quest Output\n\n```json\n%s\n```", string(data))
 	}
-}
-
-// maxArtifactFileSize is the maximum individual file size (256KB) to include
-// in the judge prompt. Larger files are listed but content is omitted.
-const maxArtifactFileSize = 256 * 1024
-
-// maxArtifactTotalSize is the total budget (512KB) for all artifact content
-// in the judge prompt. Once exceeded, remaining files are listed without content.
-const maxArtifactTotalSize = 512 * 1024
-
-// inferLanguage returns a code fence language hint from a file path extension.
-func inferLanguage(path string) string {
-	idx := strings.LastIndex(path, ".")
-	if idx < 0 {
-		return ""
-	}
-	switch strings.ToLower(path[idx:]) {
-	case ".go":
-		return "go"
-	case ".ts":
-		return "typescript"
-	case ".js":
-		return "javascript"
-	case ".py":
-		return "python"
-	case ".rs":
-		return "rust"
-	case ".json":
-		return "json"
-	case ".yaml", ".yml":
-		return "yaml"
-	case ".md":
-		return "markdown"
-	case ".sh", ".bash":
-		return "bash"
-	case ".sql":
-		return "sql"
-	case ".html":
-		return "html"
-	case ".css":
-		return "css"
-	case ".svelte":
-		return "svelte"
-	case ".toml":
-		return "toml"
-	default:
-		return ""
-	}
-}
-
-// SetWorkspaceRepoResolver sets the lazy resolver for the workspace repo.
-// When set, workspace files are included in the LLM judge's evaluation context.
-func (e *DomainAwareEvaluator) SetWorkspaceRepoResolver(resolver func() *workspacerepo.WorkspaceRepo) {
-	e.workspaceRepoResolver = resolver
-}
-
-// resolveWorkspaceRepo invokes the resolver if set, returning nil otherwise.
-func (e *DomainAwareEvaluator) resolveWorkspaceRepo() *workspacerepo.WorkspaceRepo {
-	if e.workspaceRepoResolver == nil {
-		return nil
-	}
-	return e.workspaceRepoResolver()
-}
-
-// loadArtifactsFromRepo reads workspace artifacts from a git worktree and formats
-// them for the LLM judge.
-func (e *DomainAwareEvaluator) loadArtifactsFromRepo(questID domain.QuestID, repo *workspacerepo.WorkspaceRepo) string {
-	instanceID := domain.ExtractInstance(string(questID))
-	files, err := repo.ListQuestFiles(instanceID)
-	if err != nil || len(files) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-	sb.WriteString("## Workspace Files\n\n")
-	sb.WriteString(fmt.Sprintf("The agent produced %d file(s):\n\n", len(files)))
-
-	totalSize := 0
-	for _, f := range files {
-		data, readErr := repo.ReadFile(instanceID, f.Path)
-		if readErr != nil {
-			sb.WriteString(fmt.Sprintf("### %s\n(error reading file)\n\n", f.Path))
-			continue
-		}
-
-		if len(data) > maxArtifactFileSize || totalSize+len(data) > maxArtifactTotalSize {
-			sb.WriteString(fmt.Sprintf("### %s\n(%d bytes — content omitted, too large)\n\n", f.Path, len(data)))
-			continue
-		}
-
-		totalSize += len(data)
-		ext := inferLanguage(f.Path)
-		sb.WriteString(fmt.Sprintf("### %s\n```%s\n%s\n```\n\n", f.Path, ext, string(data)))
-	}
-
-	return sb.String()
 }
 
 // clampScore ensures a score is within [0.0, 1.0].
