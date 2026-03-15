@@ -20,6 +20,16 @@
         "stream": true,
         "reasoning_effort": "low"
       },
+      "gemini-flash-high": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-flash",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "high"
+      },
       "gemini-pro": {
         "provider": "openai",
         "url": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -29,6 +39,16 @@
         "supports_tools": true,
         "stream": true,
         "reasoning_effort": "medium"
+      },
+      "gemini-pro-high": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-pro",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "high"
       },
       "semembed": {
         "provider": "openai",
@@ -47,7 +67,7 @@
         "requires_tools": true
       },
       "agent-work.journeyman": {
-        "preferred": ["gemini-flash"],
+        "preferred": ["gemini-flash-high", "gemini-flash"],
         "requires_tools": true
       },
       "agent-work.expert": {
@@ -66,10 +86,10 @@
         "preferred": ["gemini-pro", "gemini-flash"]
       },
       "dm-chat": {
-        "preferred": ["gemini-flash"]
+        "preferred": ["gemini-pro-high", "gemini-pro", "gemini-flash"]
       },
       "quest-design": {
-        "preferred": ["gemini-flash"]
+        "preferred": ["gemini-pro-high", "gemini-pro", "gemini-flash"]
       },
       "embedding": {
         "description": "Vector embeddings for graph semantic search",
