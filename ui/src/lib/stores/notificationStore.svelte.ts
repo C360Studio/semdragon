@@ -97,13 +97,6 @@ function clearToasts() {
 // TRANSITION DETECTION
 // =============================================================================
 
-function extractQuestion(quest: Quest): string | undefined {
-	// The agent's clarification question is typically in the output or failure_reason
-	if (quest.failure_reason) return quest.failure_reason;
-	if (typeof quest.output === 'string' && quest.output.length > 0) return quest.output;
-	return undefined;
-}
-
 function handleTransition(quest: Quest, newStatus: AttentionStatus) {
 	const key = `${quest.id}-${newStatus}`;
 	if (seen.has(key)) return;
@@ -113,13 +106,13 @@ function handleTransition(quest: Quest, newStatus: AttentionStatus) {
 	const agentName = quest.claimed_by ? worldStore.agentName(quest.claimed_by) : undefined;
 
 	if (newStatus === 'escalated') {
-		const question = extractQuestion(quest);
+		const failureContext = quest.failure_reason ?? quest.failure_analysis ?? 'Quest exceeded retry limit';
 		const toast: Toast = {
 			id: crypto.randomUUID(),
 			type: 'escalation',
 			questId: quest.id,
 			questTitle: title,
-			message: question ?? 'Agent needs clarification',
+			message: failureContext,
 			timestamp: Date.now()
 		};
 		addToast(toast);
@@ -129,8 +122,8 @@ function handleTransition(quest: Quest, newStatus: AttentionStatus) {
 			questId: quest.id,
 			questTitle: title,
 			agentName,
-			question,
 			failureReason: quest.failure_reason ?? undefined,
+			failureAnalysis: quest.failure_analysis ?? undefined,
 			failureType: quest.failure_type ?? undefined,
 			attempts: quest.attempts,
 			maxAttempts: quest.max_attempts,

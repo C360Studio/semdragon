@@ -203,6 +203,11 @@ export async function answerEscalation(questId: QuestID, clarification: string):
 	return postJson<Quest>(`/game/dm/intervene/${questId}`, { clarification, action: 'clarify' });
 }
 
+/** Repost an escalated quest, optionally with DM guidance. */
+export async function repostEscalation(questId: QuestID, guidance?: string): Promise<Quest> {
+	return postJson<Quest>(`/game/dm/intervene/${questId}`, { clarification: guidance ?? '', action: 'repost' });
+}
+
 /** Apply a DM triage decision to a quest in pending_triage status. */
 export async function triageQuest(
 	questId: QuestID,
@@ -477,6 +482,7 @@ export const api = {
 	postQuestChain,
 	intervene,
 	answerEscalation,
+	repostEscalation,
 	triageQuest,
 	getStoreItems,
 	getStoreItem,

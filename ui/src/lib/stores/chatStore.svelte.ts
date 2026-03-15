@@ -16,7 +16,7 @@ import type {
 	QuestBrief, QuestChainBrief, QuestChainEntry, QuestHints
 } from '$types';
 import { browser } from '$app/environment';
-import { sendDMChat, postQuestChain, getDMSession, answerEscalation, triageQuest, ApiError } from '$lib/services/api';
+import { sendDMChat, postQuestChain, getDMSession, repostEscalation, triageQuest, ApiError } from '$lib/services/api';
 import { worldStore } from '$lib/stores/worldStore.svelte';
 
 export type { ChatMode, QuestBrief, QuestChainBrief, QuestChainEntry };
@@ -42,6 +42,7 @@ export interface AttentionCard {
 	agentName?: string;
 	question?: string;
 	failureReason?: string;
+	failureAnalysis?: string;
 	failureType?: string;
 	attempts?: number;
 	maxAttempts?: number;
@@ -403,7 +404,8 @@ async function restoreFromServer(serverSessionId: string): Promise<boolean> {
 function buildAttentionMessage(card: AttentionCard): string {
 	if (card.type === 'escalation') {
 		const agent = card.agentName ? ` (${card.agentName})` : '';
-		return `**Quest needs clarification**: ${card.questTitle}${agent}\n\n${card.question ?? 'Agent has a question.'}`;
+		const context = card.failureReason ?? card.failureAnalysis ?? 'Quest exceeded retry limit.';
+		return `**Quest escalated**: ${card.questTitle}${agent}\n\n${context}`;
 	}
 	const attempt = card.attempts && card.maxAttempts ? ` (attempt ${card.attempts}/${card.maxAttempts})` : '';
 	return `**Quest needs triage**: ${card.questTitle}${attempt}\n\n${card.failureReason ?? 'Retries exhausted.'}`;
@@ -446,19 +448,21 @@ async function respondToEscalation(questId: QuestID, answer: string): Promise<bo
 	try {
 		loading = true;
 		error = null;
-		await answerEscalation(questId, answer);
-		// Mark card resolved and record the answer
+		// Empty answer = plain repost; non-empty = repost with DM guidance
+		await repostEscalation(questId, answer || undefined);
+		// Mark card resolved and record the action
+		const resolvedLabel = answer ? `Reposted with guidance: ${answer}` : 'Reposted';
 		for (let i = 0; i < messages.length; i++) {
 			const card = messages[i].attentionCard;
 			if (card && card.questId === questId && card.type === 'escalation' && !card.resolved) {
-				messages[i] = { ...messages[i], attentionCard: { ...card, resolved: true, resolvedAnswer: answer } };
+				messages[i] = { ...messages[i], attentionCard: { ...card, resolved: true, resolvedAnswer: resolvedLabel } };
 			}
 		}
 		messages = [...messages];
 		saveToLocalStorage();
 		return true;
 	} catch (e) {
-		error = e instanceof Error ? e.message : 'Failed to send clarification';
+		error = e instanceof Error ? e.message : 'Failed to repost quest';
 		return false;
 	} finally {
 		loading = false;

@@ -1824,7 +1824,7 @@ func extractTaggedJSON(text, tag string) string {
 // interventionRequest is the JSON body for the DM intervention endpoint.
 type interventionRequest struct {
 	Clarification string `json:"clarification"`
-	Action        string `json:"action"` // "clarify" (default)
+	Action        string `json:"action"` // "repost" (default) or "clarify"
 }
 
 func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
@@ -1843,17 +1843,21 @@ func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Clarification == "" {
-		s.writeError(w, "clarification is required", http.StatusBadRequest)
-		return
-	}
-
-	// Default action is clarify — resume the same agent with updated description.
+	// Default action is repost — resume the quest with the same agent.
+	// "clarify" requires clarification text; "repost" allows optional guidance.
 	if req.Action == "" {
-		req.Action = "clarify"
+		req.Action = "repost"
 	}
-	if req.Action != "clarify" {
-		s.writeError(w, "unsupported action (only 'clarify' is supported)", http.StatusBadRequest)
+	switch req.Action {
+	case "repost":
+		// Clarification is optional — if provided, injected as DM guidance.
+	case "clarify":
+		if req.Clarification == "" {
+			s.writeError(w, "clarification is required for clarify action", http.StatusBadRequest)
+			return
+		}
+	default:
+		s.writeError(w, "unsupported action (repost, clarify)", http.StatusBadRequest)
 		return
 	}
 
@@ -1886,20 +1890,21 @@ func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 		question = quest.FailureReason
 	}
 
-	// Deserialize existing clarification exchanges (may be nil on first round).
-	var exchanges []domain.ClarificationExchange
-	if quest.DMClarifications != nil {
-		raw, _ := json.Marshal(quest.DMClarifications)
-		json.Unmarshal(raw, &exchanges) //nolint:errcheck // best-effort; nil slice is fine
+	// Only record a clarification exchange when the DM provided guidance text.
+	// Plain reposts (no clarification) skip this to keep the exchange log clean.
+	if req.Clarification != "" {
+		var exchanges []domain.ClarificationExchange
+		if quest.DMClarifications != nil {
+			raw, _ := json.Marshal(quest.DMClarifications)
+			json.Unmarshal(raw, &exchanges) //nolint:errcheck // best-effort; nil slice is fine
+		}
+		exchanges = append(exchanges, domain.ClarificationExchange{
+			Question: question,
+			Answer:   req.Clarification,
+			AskedAt:  time.Now(),
+		})
+		quest.DMClarifications = exchanges
 	}
-
-	// Append the new exchange.
-	exchanges = append(exchanges, domain.ClarificationExchange{
-		Question: question,
-		Answer:   req.Clarification,
-		AskedAt:  time.Now(),
-	})
-	quest.DMClarifications = exchanges
 
 	// Return quest to in_progress with the same agent — this is a communication
 	// loop, not a retry. The agent keeps the quest and questbridge re-dispatches

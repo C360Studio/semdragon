@@ -4,7 +4,7 @@
 	 *
 	 * Rendered inside ChatMessage when a system message has an attentionCard.
 	 * Two variants:
-	 *   - escalation: text input for DM's clarification answer
+	 *   - escalation: failure context + repost/guidance/abandon buttons
 	 *   - triage: buttons for salvage/tpk/terminal with analysis input
 	 */
 
@@ -19,13 +19,27 @@
 
 	let { card, onRespondEscalation, onSubmitTriage, loading = false }: AttentionCardProps = $props();
 
-	let escalationAnswer = $state('');
+	let guidanceText = $state('');
+	let showGuidanceInput = $state(false);
 	let triageAnalysis = $state('');
 	let selectedPath = $state<'salvage' | 'tpk' | 'terminal' | null>(null);
 
-	function handleEscalationSubmit() {
-		if (!escalationAnswer.trim() || !onRespondEscalation) return;
-		onRespondEscalation(card.questId, escalationAnswer.trim());
+	function handleRepost() {
+		if (!onRespondEscalation) return;
+		onRespondEscalation(card.questId, '');
+	}
+
+	function handleRepostWithGuidance() {
+		if (!guidanceText.trim() || !onRespondEscalation) return;
+		onRespondEscalation(card.questId, guidanceText.trim());
+	}
+
+	function handleAbandon() {
+		if (!onSubmitTriage) return;
+		onSubmitTriage(card.questId, {
+			path: 'terminal',
+			analysis: 'DM abandoned escalated quest'
+		});
 	}
 
 	function handleTriageSubmit() {
@@ -39,52 +53,89 @@
 	function handleKeyDown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
-			if (card.type === 'escalation') handleEscalationSubmit();
+			if (card.type === 'escalation' && showGuidanceInput) handleRepostWithGuidance();
 		}
 	}
 
 	const attemptLabel = $derived(
 		card.attempts && card.maxAttempts ? `Attempt ${card.attempts}/${card.maxAttempts}` : null
 	);
+
+	const escalationReason = $derived(
+		card.failureReason ?? card.failureAnalysis ?? 'Quest exceeded retry limit.'
+	);
 </script>
 
 <div class="attention-card" data-type={card.type} data-resolved={card.resolved} data-testid="attention-card-{card.type}">
 	{#if card.type === 'escalation'}
-		<div class="card-header escalation">Quest Needs Clarification</div>
+		<div class="card-header escalation">Quest Escalated</div>
 
 		{#if card.agentName}
 			<div class="card-agent">Agent: {card.agentName}</div>
 		{/if}
 
-		{#if card.question}
-			<div class="card-question">{card.question}</div>
+		{#if attemptLabel}
+			<div class="card-meta">{attemptLabel}</div>
 		{/if}
+
+		{#if card.failureType}
+			<div class="card-meta">Failure: {card.failureType}</div>
+		{/if}
+
+		<div class="card-reason">{escalationReason}</div>
 
 		{#if card.resolved}
 			<div class="card-resolved">
-				<span class="resolved-label">Answered:</span>
-				<span class="resolved-value">{card.resolvedAnswer ?? 'Clarification sent'}</span>
+				<span class="resolved-label">Action:</span>
+				<span class="resolved-value">{card.resolvedAnswer ?? 'Resolved'}</span>
 			</div>
 		{:else}
-			<div class="card-input-group">
-				<input
-					type="text"
-					class="card-input"
-					placeholder="Type your answer..."
-					bind:value={escalationAnswer}
-					onkeydown={handleKeyDown}
-					disabled={loading}
-					data-testid="escalation-input"
-				/>
+			<div class="escalation-actions">
 				<button
-					class="card-submit"
-					onclick={handleEscalationSubmit}
-					disabled={!escalationAnswer.trim() || loading}
-					data-testid="escalation-submit"
-				>
-					{loading ? '...' : 'Send Answer'}
-				</button>
+					class="action-btn repost"
+					onclick={handleRepost}
+					disabled={loading}
+					title="Repost quest as-is for another attempt"
+					data-testid="escalation-repost"
+				>{loading ? '...' : 'Repost'}</button>
+				<button
+					class="action-btn guidance"
+					class:selected={showGuidanceInput}
+					onclick={() => showGuidanceInput = !showGuidanceInput}
+					disabled={loading}
+					title="Repost with additional guidance for the agent"
+					data-testid="escalation-guidance-toggle"
+				>Repost with Guidance</button>
+				<button
+					class="action-btn abandon"
+					onclick={handleAbandon}
+					disabled={loading}
+					title="Permanently fail this quest"
+					data-testid="escalation-abandon"
+				>Abandon</button>
 			</div>
+
+			{#if showGuidanceInput}
+				<div class="card-input-group">
+					<input
+						type="text"
+						class="card-input"
+						placeholder="Add guidance for the agent..."
+						bind:value={guidanceText}
+						onkeydown={handleKeyDown}
+						disabled={loading}
+						data-testid="escalation-guidance-input"
+					/>
+					<button
+						class="card-submit"
+						onclick={handleRepostWithGuidance}
+						disabled={!guidanceText.trim() || loading}
+						data-testid="escalation-guidance-submit"
+					>
+						{loading ? '...' : 'Send'}
+					</button>
+				</div>
+			{/if}
 		{/if}
 	{:else if card.type === 'triage'}
 		<div class="card-header triage">Quest Needs Triage</div>
@@ -212,7 +263,6 @@
 		color: var(--ui-text-tertiary);
 	}
 
-	.card-question,
 	.card-reason {
 		font-size: 0.8125rem;
 		line-height: 1.4;
@@ -240,6 +290,74 @@
 	.resolved-value {
 		color: var(--ui-text-secondary);
 		margin-left: 4px;
+	}
+
+	.escalation-actions,
+	.triage-buttons {
+		display: flex;
+		gap: var(--spacing-xs);
+		margin-top: var(--spacing-xs);
+	}
+
+	.action-btn,
+	.triage-btn {
+		padding: 4px var(--spacing-sm);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--ui-text-secondary);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.action-btn:hover:not(:disabled),
+	.triage-btn:hover:not(:disabled) {
+		border-color: var(--ui-border-interactive);
+		color: var(--ui-text-primary);
+	}
+
+	.action-btn:disabled,
+	.triage-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.action-btn.repost:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--quest-posted, #1976d2) 15%, transparent);
+		border-color: var(--quest-posted, #1976d2);
+	}
+
+	.action-btn.guidance.selected {
+		background: var(--quest-posted, #1976d2);
+		border-color: var(--quest-posted, #1976d2);
+		color: var(--ui-text-on-primary);
+	}
+
+	.action-btn.abandon:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--quest-failed) 15%, transparent);
+		border-color: var(--quest-failed);
+		color: var(--quest-failed);
+	}
+
+	.triage-btn.selected {
+		color: var(--ui-text-on-primary);
+	}
+
+	.triage-btn.salvage.selected {
+		background: var(--quest-posted, #1976d2);
+		border-color: var(--quest-posted, #1976d2);
+	}
+
+	.triage-btn.tpk.selected {
+		background: var(--status-warning, #ff832b);
+		border-color: var(--status-warning, #ff832b);
+	}
+
+	.triage-btn.terminal.selected {
+		background: var(--quest-failed);
+		border-color: var(--quest-failed);
 	}
 
 	.card-input-group {
@@ -282,53 +400,6 @@
 	}
 
 	.card-submit:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.triage-buttons {
-		display: flex;
-		gap: var(--spacing-xs);
-		margin-top: var(--spacing-xs);
-	}
-
-	.triage-btn {
-		padding: 4px var(--spacing-sm);
-		border: 1px solid var(--ui-border-subtle);
-		border-radius: var(--radius-sm);
-		background: transparent;
-		color: var(--ui-text-secondary);
-		font-size: 0.6875rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 150ms ease;
-	}
-
-	.triage-btn:hover:not(:disabled) {
-		border-color: var(--ui-border-interactive);
-		color: var(--ui-text-primary);
-	}
-
-	.triage-btn.selected {
-		color: var(--ui-text-on-primary);
-	}
-
-	.triage-btn.salvage.selected {
-		background: var(--quest-posted, #1976d2);
-		border-color: var(--quest-posted, #1976d2);
-	}
-
-	.triage-btn.tpk.selected {
-		background: var(--status-warning, #ff832b);
-		border-color: var(--status-warning, #ff832b);
-	}
-
-	.triage-btn.terminal.selected {
-		background: var(--quest-failed);
-		border-color: var(--quest-failed);
-	}
-
-	.triage-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
