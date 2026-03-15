@@ -266,19 +266,19 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	tokenCount := pkgcontext.EstimateTokens(contextContent)
 
 	// Create workspace for the agent's file operations.
-	// Prefer git-backed worktree when workspaceRepo is available; fall back
-	// to flat sandbox directory.
-	instanceID := domain.ExtractInstance(questID)
+	// When workspaceRepo is available, the worktree IS the sandbox workspace —
+	// the worktree directory name matches the questID so the sandbox container
+	// resolves it via filepath.Join(workspace, questID).
+	// Falls back to flat sandbox directory when workspaceRepo is not configured.
 	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
-		if wsErr := wsRepo.CreateWorktree(ctx, instanceID); wsErr != nil {
+		if wsErr := wsRepo.CreateWorktree(ctx, questID); wsErr != nil {
 			c.logger.Error("worktree creation failed, cannot dispatch quest",
 				"quest_id", questID, "error", wsErr)
 			c.errorsCount.Add(1)
 			return
 		}
-		// Configure git identity from agent metadata so commits are attributed.
 		agentName := domain.ExtractInstance(string(agent.ID))
-		if idErr := wsRepo.ConfigureIdentity(ctx, instanceID, agentName, agentName+"@semdragons"); idErr != nil {
+		if idErr := wsRepo.ConfigureIdentity(ctx, questID, agentName, agentName+"@semdragons"); idErr != nil {
 			c.logger.Warn("failed to configure git identity in worktree — commits will use default identity",
 				"quest_id", questID, "agent", agentName, "error", idErr)
 		}
@@ -787,15 +787,13 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	// Best-effort: failure is logged but does not block quest completion.
 	snapshotCount := 0
 	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
-		qInstanceID := domain.ExtractInstance(string(questID))
-		commitHash, finalErr := wsRepo.FinalizeWorktree(ctx, qInstanceID, string(mapping.AgentID))
+		commitHash, finalErr := wsRepo.FinalizeWorktree(ctx, string(questID), string(mapping.AgentID))
 		if finalErr != nil {
 			c.logger.Warn("failed to finalize worktree",
 				"quest_id", questID, "error", finalErr)
 		} else if commitHash != "" {
 			quest.ArtifactsCommit = commitHash
-			// Count files in the worktree as "snapshotted".
-			if files, listErr := wsRepo.ListQuestFiles(qInstanceID); listErr == nil {
+			if files, listErr := wsRepo.ListQuestFiles(string(questID)); listErr == nil {
 				snapshotCount = len(files)
 			}
 		}
@@ -1711,11 +1709,9 @@ func (c *Component) ensureOutputArtifact(questID string, output string) {
 	if output == "" {
 		return
 	}
-	instanceID := domain.ExtractInstance(questID)
-
 	// Prefer writing into the worktree (commit happens during finalize).
 	if wsRepo := c.getWorkspaceRepo(); wsRepo != nil {
-		worktreePath := wsRepo.WorktreePath(instanceID)
+		worktreePath := wsRepo.WorktreePath(questID)
 		wpPath := filepath.Join(worktreePath, "work_product.md")
 		if err := os.WriteFile(wpPath, []byte(output), 0o644); err != nil {
 			c.logger.Warn("failed to write output artifact to worktree",
@@ -1728,7 +1724,7 @@ func (c *Component) ensureOutputArtifact(questID string, output string) {
 	if store == nil {
 		return
 	}
-	key := fmt.Sprintf("quests/%s/work_product.md", instanceID)
+	key := fmt.Sprintf("quests/%s/work_product.md", domain.ExtractInstance(questID))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

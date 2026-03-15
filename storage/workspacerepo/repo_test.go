@@ -372,16 +372,18 @@ func TestWorktreeExists(t *testing.T) {
 	}
 }
 
-func TestValidateInstanceID(t *testing.T) {
+func TestValidateQuestID(t *testing.T) {
 	valid := []string{
 		"abc123",
 		"quest-abc-def",
 		"MyQuest1",
 		"a",
+		"local.dev.game.board1.quest.abc123", // full entity ID with dots
+		"c360.prod.game.board1.quest.xyz",
 	}
 	for _, id := range valid {
-		if err := validateInstanceID(id); err != nil {
-			t.Errorf("validateInstanceID(%q) = %v, want nil", id, err)
+		if err := validateQuestID(id); err != nil {
+			t.Errorf("validateQuestID(%q) = %v, want nil", id, err)
 		}
 	}
 
@@ -392,14 +394,13 @@ func TestValidateInstanceID(t *testing.T) {
 		{"", "empty string"},
 		{"../etc", "path traversal"},
 		{"-flag", "leading dash"},
-		{"has.dots", "entity delimiter"},
 		{"has/slash", "forward slash"},
 		{`has\backslash`, "backslash"},
 		{"has space", "space"},
 	}
 	for _, tc := range invalid {
-		if err := validateInstanceID(tc.id); err == nil {
-			t.Errorf("validateInstanceID(%q) = nil, want error (%s)", tc.id, tc.desc)
+		if err := validateQuestID(tc.id); err == nil {
+			t.Errorf("validateQuestID(%q) = nil, want error (%s)", tc.id, tc.desc)
 		}
 	}
 }

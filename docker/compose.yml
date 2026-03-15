@@ -52,8 +52,7 @@ services:
       context: ..
       dockerfile: docker/sandbox.Dockerfile
     volumes:
-      - sandbox-workspace:/workspace
-      - quest-worktrees:/workspace-worktrees
+      - quest-worktrees:/workspace
     restart: unless-stopped
     deploy:
       resources:
@@ -190,7 +189,6 @@ services:
 volumes:
   nats-data:
   nats-semsource-data:
-  sandbox-workspace:
   semembed-cache:
   workspace-repo:
   quest-worktrees:

@@ -18,10 +18,10 @@ import (
 // or large merge should not hang the caller indefinitely.
 const gitCommandTimeout = 30 * time.Second
 
-// instanceIDPattern matches valid quest instance IDs: alphanumeric plus hyphens.
-// Rejects path separators, dots (which are entity ID delimiters), shell
-// metacharacters, and leading dashes (which git interprets as flags).
-var instanceIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+// questIDPattern matches valid quest IDs: alphanumeric, dots, hyphens, underscores.
+// Accepts both full entity IDs (local.dev.game.board1.quest.abc123) and instance IDs (abc123).
+// Rejects path separators, shell metacharacters, and leading dashes.
+var questIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
 // FileEntry represents a file in a quest worktree.
 type FileEntry struct {
@@ -187,22 +187,23 @@ func (w *WorkspaceRepo) MainWorktreeDir() string {
 }
 
 // CreateWorktree creates a new git worktree and branch for a quest.
-// The branch is named quest/{questInstanceID} and the worktree is placed
-// at worktreesDir/quest-{questInstanceID}.
+// The branch is named quest/{instance} and the worktree directory is the
+// full questID (e.g., "local.dev.game.board1.quest.abc123") under worktreesDir.
+// This matches the sandbox container's workspace naming convention.
 //
 // Serialized via mu because git worktree add modifies shared state in the
 // bare repo (.git/worktrees/ directory).
-func (w *WorkspaceRepo) CreateWorktree(ctx context.Context, questInstanceID string) error {
-	if err := validateInstanceID(questInstanceID); err != nil {
+func (w *WorkspaceRepo) CreateWorktree(ctx context.Context, questID string) error {
+	if err := validateQuestID(questID); err != nil {
 		return err
 	}
 
-	branch := w.branchName(questInstanceID)
-	worktree := w.worktreePath(questInstanceID)
+	branch := w.branchName(questID)
+	worktree := w.worktreePath(questID)
 
 	// Check if worktree already exists (idempotent).
 	if _, err := os.Stat(filepath.Join(worktree, ".git")); err == nil {
-		w.logger.Debug("worktree already exists", "quest_id", questInstanceID)
+		w.logger.Debug("worktree already exists", "quest_id", questID)
 		return nil
 	}
 
@@ -211,19 +212,19 @@ func (w *WorkspaceRepo) CreateWorktree(ctx context.Context, questInstanceID stri
 
 	// Create worktree with a new branch from main.
 	if err := w.gitBare(ctx, "worktree", "add", "-b", branch, worktree, "main"); err != nil {
-		return fmt.Errorf("create worktree for quest %s: %w", questInstanceID, err)
+		return fmt.Errorf("create worktree for quest %s: %w", questID, err)
 	}
 
-	w.logger.Info("worktree created", "quest_id", questInstanceID, "branch", branch, "path", worktree)
+	w.logger.Info("worktree created", "quest_id", questID, "branch", branch, "path", worktree)
 	return nil
 }
 
 // ConfigureIdentity sets the git user.name and user.email in a quest worktree.
-func (w *WorkspaceRepo) ConfigureIdentity(ctx context.Context, questInstanceID, name, email string) error {
-	if err := validateInstanceID(questInstanceID); err != nil {
+func (w *WorkspaceRepo) ConfigureIdentity(ctx context.Context, questID, name, email string) error {
+	if err := validateQuestID(questID); err != nil {
 		return err
 	}
-	worktree := w.worktreePath(questInstanceID)
+	worktree := w.worktreePath(questID)
 	if err := w.gitInDir(ctx, worktree, "config", "user.name", name); err != nil {
 		return fmt.Errorf("set user.name: %w", err)
 	}
@@ -236,11 +237,11 @@ func (w *WorkspaceRepo) ConfigureIdentity(ctx context.Context, questInstanceID, 
 // FinalizeWorktree stages any uncommitted files and creates a commit with
 // quest/agent metadata. Returns the commit hash. If there are no changes
 // to commit, returns the current HEAD hash.
-func (w *WorkspaceRepo) FinalizeWorktree(ctx context.Context, questInstanceID, agentID string) (string, error) {
-	if err := validateInstanceID(questInstanceID); err != nil {
+func (w *WorkspaceRepo) FinalizeWorktree(ctx context.Context, questID, agentID string) (string, error) {
+	if err := validateQuestID(questID); err != nil {
 		return "", err
 	}
-	worktree := w.worktreePath(questInstanceID)
+	worktree := w.worktreePath(questID)
 
 	// Stage all changes.
 	if err := w.gitInDir(ctx, worktree, "add", "-A"); err != nil {
@@ -254,7 +255,7 @@ func (w *WorkspaceRepo) FinalizeWorktree(ctx context.Context, questInstanceID, a
 	}
 
 	if strings.TrimSpace(statusOut) != "" {
-		msg := fmt.Sprintf("quest %s finalized by agent %s", questInstanceID, agentID)
+		msg := fmt.Sprintf("quest %s finalized by agent %s", questID, agentID)
 		if err := w.gitInDir(ctx, worktree, "commit", "-m", msg,
 			"--author", fmt.Sprintf("%s <agent@semdragons>", agentID)); err != nil {
 			return "", fmt.Errorf("git commit: %w", err)
@@ -271,15 +272,15 @@ func (w *WorkspaceRepo) FinalizeWorktree(ctx context.Context, questInstanceID, a
 // MergeToMain merges the quest branch into main. This is the quality gate:
 // only boss-battle-approved work enters main (and thus the semsource graph).
 // Returns the merge commit hash. On merge conflict, returns an error.
-func (w *WorkspaceRepo) MergeToMain(ctx context.Context, questInstanceID string) (string, error) {
-	if err := validateInstanceID(questInstanceID); err != nil {
+func (w *WorkspaceRepo) MergeToMain(ctx context.Context, questID string) (string, error) {
+	if err := validateQuestID(questID); err != nil {
 		return "", err
 	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	branch := w.branchName(questInstanceID)
+	branch := w.branchName(questID)
 
 	tmpDir, err := os.MkdirTemp("", "workspace-merge-*")
 	if err != nil {
@@ -302,7 +303,7 @@ func (w *WorkspaceRepo) MergeToMain(ctx context.Context, questInstanceID string)
 	}
 
 	if err := w.gitInDir(ctx, tmpDir, "merge", branch, "-m",
-		fmt.Sprintf("merge quest/%s: approved via boss battle", questInstanceID)); err != nil {
+		fmt.Sprintf("merge quest/%s: approved via boss battle", questID)); err != nil {
 		return "", fmt.Errorf("merge %s into main: %w", branch, err)
 	}
 
@@ -313,7 +314,7 @@ func (w *WorkspaceRepo) MergeToMain(ctx context.Context, questInstanceID string)
 
 	mergeHash := strings.TrimSpace(hash)
 	w.logger.Info("quest branch merged to main",
-		"quest_id", questInstanceID, "branch", branch, "merge_hash", mergeHash)
+		"quest_id", questID, "branch", branch, "merge_hash", mergeHash)
 
 	// Update the persistent main worktree so semsource sees the new files.
 	if w.mainWorktreeDir != "" {
@@ -348,20 +349,20 @@ func (w *WorkspaceRepo) MergedFiles(ctx context.Context, mergeHash string) ([]st
 }
 
 // RemoveWorktree removes the worktree and deletes the branch.
-func (w *WorkspaceRepo) RemoveWorktree(ctx context.Context, questInstanceID string) error {
-	if err := validateInstanceID(questInstanceID); err != nil {
+func (w *WorkspaceRepo) RemoveWorktree(ctx context.Context, questID string) error {
+	if err := validateQuestID(questID); err != nil {
 		return err
 	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	worktree := w.worktreePath(questInstanceID)
-	branch := w.branchName(questInstanceID)
+	worktree := w.worktreePath(questID)
+	branch := w.branchName(questID)
 
 	if err := w.gitBare(ctx, "worktree", "remove", "--force", worktree); err != nil {
 		if _, statErr := os.Stat(worktree); os.IsNotExist(statErr) {
-			w.logger.Debug("worktree already removed", "quest_id", questInstanceID)
+			w.logger.Debug("worktree already removed", "quest_id", questID)
 		} else {
 			return fmt.Errorf("remove worktree: %w", err)
 		}
@@ -373,20 +374,20 @@ func (w *WorkspaceRepo) RemoveWorktree(ctx context.Context, questInstanceID stri
 			"branch", branch, "error", err)
 	}
 
-	w.logger.Info("worktree removed", "quest_id", questInstanceID)
+	w.logger.Info("worktree removed", "quest_id", questID)
 	return nil
 }
 
 // ListQuestFiles returns a flat list of all tracked files in the quest worktree.
 // Uses git ls-files to only return committed/staged files, not untracked debris.
-func (w *WorkspaceRepo) ListQuestFiles(questInstanceID string) ([]FileEntry, error) {
-	if err := validateInstanceID(questInstanceID); err != nil {
+func (w *WorkspaceRepo) ListQuestFiles(questID string) ([]FileEntry, error) {
+	if err := validateQuestID(questID); err != nil {
 		return nil, err
 	}
-	worktree := w.worktreePath(questInstanceID)
+	worktree := w.worktreePath(questID)
 
 	if _, err := os.Stat(worktree); os.IsNotExist(err) {
-		return nil, fmt.Errorf("worktree does not exist: %s", questInstanceID)
+		return nil, fmt.Errorf("worktree does not exist: %s", questID)
 	}
 
 	// Use git ls-files to list only tracked files. This is more accurate than
@@ -423,7 +424,8 @@ func (w *WorkspaceRepo) ListQuestFiles(questInstanceID string) ([]FileEntry, err
 	return files, nil
 }
 
-// ListWorktreeIDs returns the instance IDs of all quest worktrees currently on disk.
+// ListWorktreeIDs returns the quest IDs (directory names) of all quest worktrees on disk.
+// Skips the persistent main worktree if it exists in the same directory.
 func (w *WorkspaceRepo) ListWorktreeIDs() ([]string, error) {
 	entries, err := os.ReadDir(w.worktreesDir)
 	if err != nil {
@@ -432,21 +434,26 @@ func (w *WorkspaceRepo) ListWorktreeIDs() ([]string, error) {
 
 	var ids []string
 	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "quest-") {
+		if !entry.IsDir() {
 			continue
 		}
-		ids = append(ids, strings.TrimPrefix(entry.Name(), "quest-"))
+		name := entry.Name()
+		// Skip the main worktree if it's in the same directory.
+		if w.mainWorktreeDir != "" && filepath.Join(w.worktreesDir, name) == w.mainWorktreeDir {
+			continue
+		}
+		ids = append(ids, name)
 	}
 	return ids, nil
 }
 
 // ReadFile reads a file from a quest worktree.
-func (w *WorkspaceRepo) ReadFile(questInstanceID, path string) ([]byte, error) {
-	if err := validateInstanceID(questInstanceID); err != nil {
+func (w *WorkspaceRepo) ReadFile(questID, path string) ([]byte, error) {
+	if err := validateQuestID(questID); err != nil {
 		return nil, err
 	}
 
-	worktree := w.worktreePath(questInstanceID)
+	worktree := w.worktreePath(questID)
 	fullPath := filepath.Join(worktree, filepath.FromSlash(path))
 
 	// Resolve both the worktree root and the requested file to their real
@@ -473,8 +480,8 @@ func (w *WorkspaceRepo) ReadFile(questInstanceID, path string) ([]byte, error) {
 }
 
 // FileTree returns a nested tree structure of files in the quest worktree.
-func (w *WorkspaceRepo) FileTree(questInstanceID string) ([]*TreeEntry, error) {
-	files, err := w.ListQuestFiles(questInstanceID)
+func (w *WorkspaceRepo) FileTree(questID string) ([]*TreeEntry, error) {
+	files, err := w.ListQuestFiles(questID)
 	if err != nil {
 		return nil, err
 	}
@@ -518,18 +525,18 @@ func (w *WorkspaceRepo) FileTree(questInstanceID string) ([]*TreeEntry, error) {
 }
 
 // WorktreeExists checks if a worktree directory exists for the given quest.
-func (w *WorkspaceRepo) WorktreeExists(questInstanceID string) bool {
-	if validateInstanceID(questInstanceID) != nil {
+func (w *WorkspaceRepo) WorktreeExists(questID string) bool {
+	if validateQuestID(questID) != nil {
 		return false
 	}
-	worktree := w.worktreePath(questInstanceID)
+	worktree := w.worktreePath(questID)
 	_, err := os.Stat(filepath.Join(worktree, ".git"))
 	return err == nil
 }
 
 // WorktreePath returns the filesystem path for a quest's worktree.
-func (w *WorkspaceRepo) WorktreePath(questInstanceID string) string {
-	return w.worktreePath(questInstanceID)
+func (w *WorkspaceRepo) WorktreePath(questID string) string {
+	return w.worktreePath(questID)
 }
 
 // PruneCompleted removes worktrees for quests in terminal states older than
@@ -567,23 +574,28 @@ func (w *WorkspaceRepo) PruneCompleted(ctx context.Context, retentionDays int, q
 	return nil
 }
 
-// validateInstanceID rejects instance IDs that could cause path traversal,
+// validateQuestID rejects quest IDs that could cause path traversal,
 // git flag injection, or filesystem escapes.
-func validateInstanceID(id string) error {
-	if !instanceIDPattern.MatchString(id) {
-		return fmt.Errorf("invalid quest instance ID: %q", id)
+func validateQuestID(id string) error {
+	if !questIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid quest ID: %q", id)
 	}
 	return nil
 }
 
 // branchName returns the git branch name for a quest.
-func (w *WorkspaceRepo) branchName(questInstanceID string) string {
-	return "quest/" + questInstanceID
+// Uses the last dot-separated segment (instance ID) for cleaner branch names.
+func (w *WorkspaceRepo) branchName(questID string) string {
+	parts := strings.Split(questID, ".")
+	instance := parts[len(parts)-1]
+	return "quest/" + instance
 }
 
 // worktreePath returns the filesystem path for a quest worktree.
-func (w *WorkspaceRepo) worktreePath(questInstanceID string) string {
-	return filepath.Join(w.worktreesDir, "quest-"+questInstanceID)
+// Uses the full quest ID as the directory name so the sandbox container can
+// resolve it directly via filepath.Join(workspace, questID).
+func (w *WorkspaceRepo) worktreePath(questID string) string {
+	return filepath.Join(w.worktreesDir, questID)
 }
 
 // gitBare runs a git command in the bare repository with a bounded timeout.
