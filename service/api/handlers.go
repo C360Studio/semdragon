@@ -2849,13 +2849,13 @@ func (s *Service) writeError(w http.ResponseWriter, message string, statusCode i
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
-// truncateName shortens a string to max characters, preferring word boundaries.
-func truncateName(s string, max int) string {
-	if len(s) <= max {
+// truncateName shortens a string to maxLen characters, preferring word boundaries.
+func truncateName(s string, maxLen int) string {
+	if len(s) <= maxLen {
 		return s
 	}
-	if i := strings.LastIndex(s[:max], " "); i > max/2 {
+	if i := strings.LastIndex(s[:maxLen], " "); i > maxLen/2 {
 		return s[:i] + "..."
 	}
-	return s[:max-1] + "..."
+	return s[:maxLen-1] + "..."
 }

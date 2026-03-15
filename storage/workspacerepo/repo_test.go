@@ -16,8 +16,16 @@ func newTestRepo(t *testing.T) *WorkspaceRepo {
 	worktreesDir := filepath.Join(t.TempDir(), "quest-worktrees")
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	repo := New(repoDir, worktreesDir, logger)
-	if err := repo.Init(context.Background()); err != nil {
+	ctx := context.Background()
+	if err := repo.Init(ctx); err != nil {
 		t.Fatalf("Init: %v", err)
+	}
+	// Configure git identity for CI runners that have no global git config.
+	if _, err := repo.gitOutput(ctx, repoDir, "config", "user.email", "test@semdragons.dev"); err != nil {
+		t.Fatalf("git config user.email: %v", err)
+	}
+	if _, err := repo.gitOutput(ctx, repoDir, "config", "user.name", "Test Runner"); err != nil {
+		t.Fatalf("git config user.name: %v", err)
 	}
 	return repo
 }
