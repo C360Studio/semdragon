@@ -6652,6 +6652,18 @@
             },
             "type": "array"
           },
+          "artifacts_commit": {
+            "type": "string"
+          },
+          "artifacts_indexed": {
+            "type": "boolean"
+          },
+          "artifacts_merge_conflict": {
+            "type": "boolean"
+          },
+          "artifacts_merged": {
+            "type": "string"
+          },
           "attempts": {
             "type": "integer"
           },
@@ -6921,6 +6933,12 @@
           "posted_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "produced_entities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "recovery_path": {
             "type": "string"

@@ -4918,6 +4918,10 @@ export interface components {
             acceptance?: string[];
             allowed_tools?: string[];
             anti_patterns?: string[];
+            artifacts_commit?: string;
+            artifacts_indexed?: boolean;
+            artifacts_merge_conflict?: boolean;
+            artifacts_merged?: string;
             attempts: number;
             base_xp: number;
             bonus_xp: number;
@@ -4986,6 +4990,7 @@ export interface components {
             party_required: boolean;
             /** Format: date-time */
             posted_at: string;
+            produced_entities?: string[];
             recovery_path?: string;
             required_skills: string[];
             required_tools: string[];
