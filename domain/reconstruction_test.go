@@ -756,6 +756,139 @@ func TestQuestRoundTrip_FailureRecoveryEmpty(t *testing.T) {
 	}
 }
 
+// TestQuestRoundTrip_ArtifactFields verifies that all artifact tracking fields
+// survive a full Triples() → QuestFromEntityState() round-trip with complete
+// fidelity, including multiple ProducedEntities entries.
+func TestQuestRoundTrip_ArtifactFields(t *testing.T) {
+	t.Run("all artifact fields populated", func(t *testing.T) {
+		original := &Quest{
+			ID:                     QuestID("test.dev.game.board1.quest.art1"),
+			Title:                  "Artifact Round Trip",
+			Status:                 QuestCompleted,
+			PostedAt:               time.Now().Truncate(time.Second),
+			ArtifactsCommit:        "abc123def456789",
+			ArtifactsMerged:        "fed987cba654321",
+			ArtifactsMergeConflict: true,
+			ArtifactsIndexed:       true,
+			ProducedEntities: []string{
+				"c360.prod.src.repo1.file.main.go",
+				"c360.prod.src.repo1.func.handleQuest",
+			},
+		}
+
+		entity := &graph.EntityState{
+			ID:      string(original.ID),
+			Triples: original.Triples(),
+		}
+
+		r := QuestFromEntityState(entity)
+
+		if r.ArtifactsCommit != original.ArtifactsCommit {
+			t.Errorf("ArtifactsCommit = %q, want %q", r.ArtifactsCommit, original.ArtifactsCommit)
+		}
+		if r.ArtifactsMerged != original.ArtifactsMerged {
+			t.Errorf("ArtifactsMerged = %q, want %q", r.ArtifactsMerged, original.ArtifactsMerged)
+		}
+		if !r.ArtifactsMergeConflict {
+			t.Errorf("ArtifactsMergeConflict = false, want true")
+		}
+		if !r.ArtifactsIndexed {
+			t.Errorf("ArtifactsIndexed = false, want true")
+		}
+		if len(r.ProducedEntities) != 2 {
+			t.Fatalf("ProducedEntities len = %d, want 2", len(r.ProducedEntities))
+		}
+		// ProducedEntities are appended in triple order; order is deterministic
+		// because graphable.go iterates the slice directly.
+		if r.ProducedEntities[0] != original.ProducedEntities[0] {
+			t.Errorf("ProducedEntities[0] = %q, want %q", r.ProducedEntities[0], original.ProducedEntities[0])
+		}
+		if r.ProducedEntities[1] != original.ProducedEntities[1] {
+			t.Errorf("ProducedEntities[1] = %q, want %q", r.ProducedEntities[1], original.ProducedEntities[1])
+		}
+	})
+
+	t.Run("produced entities with multiple IDs all preserved", func(t *testing.T) {
+		ids := []string{
+			"c360.prod.src.repo1.file.alpha.go",
+			"c360.prod.src.repo1.file.beta.go",
+			"c360.prod.src.repo1.file.gamma.go",
+		}
+
+		original := &Quest{
+			ID:               QuestID("test.dev.game.board1.quest.art2"),
+			Title:            "Multi Produced Quest",
+			Status:           QuestCompleted,
+			PostedAt:         time.Now().Truncate(time.Second),
+			ArtifactsCommit:  "deadbeef01234567",
+			ProducedEntities: ids,
+		}
+
+		entity := &graph.EntityState{
+			ID:      string(original.ID),
+			Triples: original.Triples(),
+		}
+
+		r := QuestFromEntityState(entity)
+
+		if len(r.ProducedEntities) != len(ids) {
+			t.Fatalf("ProducedEntities len = %d, want %d", len(r.ProducedEntities), len(ids))
+		}
+		for i, want := range ids {
+			if r.ProducedEntities[i] != want {
+				t.Errorf("ProducedEntities[%d] = %q, want %q", i, r.ProducedEntities[i], want)
+			}
+		}
+	})
+
+	t.Run("empty artifact fields produce no phantom data", func(t *testing.T) {
+		original := &Quest{
+			ID:          QuestID("test.dev.game.board1.quest.art3"),
+			Title:       "No Artifact Quest",
+			Status:      QuestPosted,
+			PostedAt:    time.Now().Truncate(time.Second),
+			MaxAttempts: 3,
+		}
+
+		entity := &graph.EntityState{
+			ID:      string(original.ID),
+			Triples: original.Triples(),
+		}
+
+		r := QuestFromEntityState(entity)
+
+		if r.ArtifactsCommit != "" {
+			t.Errorf("ArtifactsCommit = %q, want empty", r.ArtifactsCommit)
+		}
+		if r.ArtifactsMerged != "" {
+			t.Errorf("ArtifactsMerged = %q, want empty", r.ArtifactsMerged)
+		}
+		if r.ArtifactsMergeConflict {
+			t.Errorf("ArtifactsMergeConflict = true, want false")
+		}
+		if r.ArtifactsIndexed {
+			t.Errorf("ArtifactsIndexed = true, want false")
+		}
+		if len(r.ProducedEntities) != 0 {
+			t.Errorf("ProducedEntities = %v, want empty", r.ProducedEntities)
+		}
+
+		// Verify none of the artifact predicates appear in the emitted triples.
+		artifactPredicates := map[string]bool{
+			PredicateQuestArtifactsCommit:        true,
+			PredicateQuestArtifactsMerged:         true,
+			PredicateQuestArtifactsMergeConflict:  true,
+			PredicateQuestArtifactsIndexed:        true,
+			PredicateQuestProduced:                true,
+		}
+		for _, triple := range entity.Triples {
+			if artifactPredicates[triple.Predicate] {
+				t.Errorf("unexpected artifact triple emitted: predicate %q", triple.Predicate)
+			}
+		}
+	})
+}
+
 // TestQuestRoundTrip_FailureHistoryPostKVRoundTrip simulates what NATS KV
 // returns after a JSON round-trip: the failure history arrives as []any of
 // map[string]any with string values for numeric and time fields. This

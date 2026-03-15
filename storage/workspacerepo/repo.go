@@ -396,21 +396,23 @@ func (w *WorkspaceRepo) ReadFile(questInstanceID, path string) ([]byte, error) {
 	worktree := w.worktreePath(questInstanceID)
 	fullPath := filepath.Join(worktree, filepath.FromSlash(path))
 
-	// Resolve to absolute and verify the result is still under the worktree root.
-	// This catches path traversal via "..", symlinks, and absolute path injection.
-	absPath, err := filepath.Abs(fullPath)
-	if err != nil {
-		return nil, fmt.Errorf("resolve path: %w", err)
-	}
-	absWorktree, err := filepath.Abs(worktree)
+	// Resolve both the worktree root and the requested file to their real
+	// on-disk paths (following all symlinks). Then verify the file is still
+	// inside the worktree. This catches: ".." traversal, absolute path
+	// injection, and symlinks pointing outside the worktree.
+	realWorktree, err := filepath.EvalSymlinks(worktree)
 	if err != nil {
 		return nil, fmt.Errorf("resolve worktree: %w", err)
 	}
-	if !strings.HasPrefix(absPath, absWorktree+string(filepath.Separator)) {
+	realPath, err := filepath.EvalSymlinks(fullPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve path %s: %w", path, err)
+	}
+	if !strings.HasPrefix(realPath, realWorktree+string(filepath.Separator)) {
 		return nil, fmt.Errorf("path traversal not allowed: %s", path)
 	}
 
-	data, err := os.ReadFile(absPath)
+	data, err := os.ReadFile(realPath)
 	if err != nil {
 		return nil, fmt.Errorf("read file %s: %w", path, err)
 	}

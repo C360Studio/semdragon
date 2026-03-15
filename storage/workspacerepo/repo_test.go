@@ -372,3 +372,184 @@ func TestWorktreeExists(t *testing.T) {
 	}
 }
 
+func TestValidateInstanceID(t *testing.T) {
+	valid := []string{
+		"abc123",
+		"quest-abc-def",
+		"MyQuest1",
+		"a",
+	}
+	for _, id := range valid {
+		if err := validateInstanceID(id); err != nil {
+			t.Errorf("validateInstanceID(%q) = %v, want nil", id, err)
+		}
+	}
+
+	invalid := []struct {
+		id   string
+		desc string
+	}{
+		{"", "empty string"},
+		{"../etc", "path traversal"},
+		{"-flag", "leading dash"},
+		{"has.dots", "entity delimiter"},
+		{"has/slash", "forward slash"},
+		{`has\backslash`, "backslash"},
+		{"has space", "space"},
+	}
+	for _, tc := range invalid {
+		if err := validateInstanceID(tc.id); err == nil {
+			t.Errorf("validateInstanceID(%q) = nil, want error (%s)", tc.id, tc.desc)
+		}
+	}
+}
+
+func TestMergedFiles(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	if err := repo.CreateWorktree(ctx, "mf1"); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	worktree := repo.worktreePath("mf1")
+	if err := os.WriteFile(filepath.Join(worktree, "alpha.go"), []byte("package main"), 0o644); err != nil {
+		t.Fatalf("write alpha.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "beta.go"), []byte("package main"), 0o644); err != nil {
+		t.Fatalf("write beta.go: %v", err)
+	}
+
+	if _, err := repo.FinalizeWorktree(ctx, "mf1", "agent-mf"); err != nil {
+		t.Fatalf("FinalizeWorktree: %v", err)
+	}
+
+	mergeHash, err := repo.MergeToMain(ctx, "mf1")
+	if err != nil {
+		t.Fatalf("MergeToMain: %v", err)
+	}
+
+	files, err := repo.MergedFiles(ctx, mergeHash)
+	if err != nil {
+		t.Fatalf("MergedFiles: %v", err)
+	}
+
+	// Build a set for order-independent comparison.
+	got := make(map[string]bool, len(files))
+	for _, f := range files {
+		got[f] = true
+	}
+	for _, want := range []string{"alpha.go", "beta.go"} {
+		if !got[want] {
+			t.Errorf("MergedFiles missing %q; got %v", want, files)
+		}
+	}
+}
+
+func TestListWorktreeIDs(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	ids := []string{"lw-one", "lw-two", "lw-three"}
+	for _, id := range ids {
+		if err := repo.CreateWorktree(ctx, id); err != nil {
+			t.Fatalf("CreateWorktree(%s): %v", id, err)
+		}
+	}
+
+	listed, err := repo.ListWorktreeIDs()
+	if err != nil {
+		t.Fatalf("ListWorktreeIDs: %v", err)
+	}
+	if len(listed) != 3 {
+		t.Fatalf("expected 3 worktree IDs, got %d: %v", len(listed), listed)
+	}
+	listedSet := make(map[string]bool, len(listed))
+	for _, id := range listed {
+		listedSet[id] = true
+	}
+	for _, id := range ids {
+		if !listedSet[id] {
+			t.Errorf("ListWorktreeIDs missing %q; got %v", id, listed)
+		}
+	}
+
+	// Remove one; verify count drops to 2.
+	if err := repo.RemoveWorktree(ctx, "lw-two"); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
+	}
+	listed2, err := repo.ListWorktreeIDs()
+	if err != nil {
+		t.Fatalf("ListWorktreeIDs after remove: %v", err)
+	}
+	if len(listed2) != 2 {
+		t.Fatalf("expected 2 worktree IDs after removal, got %d: %v", len(listed2), listed2)
+	}
+	if listedSet2 := func() map[string]bool {
+		m := make(map[string]bool, len(listed2))
+		for _, id := range listed2 {
+			m[id] = true
+		}
+		return m
+	}(); listedSet2["lw-two"] {
+		t.Error("lw-two still listed after removal")
+	}
+}
+
+func TestReadFile_AbsolutePathRejected(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	if err := repo.CreateWorktree(ctx, "abs1"); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	_, err := repo.ReadFile("abs1", "/etc/passwd")
+	if err == nil {
+		t.Fatal("expected error when reading absolute path /etc/passwd, got nil")
+	}
+}
+
+func TestCreateWorktree_InvalidID(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	invalid := []string{"../escape", "-flag"}
+	for _, id := range invalid {
+		if err := repo.CreateWorktree(ctx, id); err == nil {
+			t.Errorf("CreateWorktree(%q) = nil, want error", id)
+		}
+	}
+}
+
+func TestReadFile_SymlinkEscape(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	if err := repo.CreateWorktree(ctx, "sym1"); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	// Create a file outside the worktree that the symlink will point to.
+	secretDir := t.TempDir()
+	secretFile := filepath.Join(secretDir, "secret.txt")
+	if err := os.WriteFile(secretFile, []byte("secret-data"), 0o644); err != nil {
+		t.Fatalf("write secret file: %v", err)
+	}
+
+	// Place a symlink inside the worktree pointing at the secret file.
+	worktree := repo.worktreePath("sym1")
+	linkPath := filepath.Join(worktree, "escape.txt")
+	if err := os.Symlink(secretFile, linkPath); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	// ReadFile must reject the symlink because its resolved target lies outside
+	// the worktree root. The implementation uses filepath.EvalSymlinks before the
+	// prefix check so the real on-disk path is what gets validated.
+	_, err := repo.ReadFile("sym1", "escape.txt")
+	if err == nil {
+		t.Fatal("expected error: ReadFile should reject symlink pointing outside worktree")
+	}
+}
+
