@@ -30,17 +30,26 @@ fallback when workspace repo is not configured.
 ├────────────────────┬────────────────────────────────────────┤
 │  QUEST WORKTREES   │           MAIN WORKTREE                │
 │  /quest-worktrees/ │       /workspace-main/                 │
-│  quest-{id}/       │   (persistent checkout of main)        │
+│  {entity-id}/      │   (persistent checkout of main)        │
 │                    │                                        │
-│  Agent writes here │   Updated after each approved merge.   │
-│  via sandbox tools │   Semsource watches this directory.    │
+│  Agent reads/      │   Updated after each approved merge.   │
+│  writes here.      │   Semsource watches this directory.    │
+│  Sandbox IS here.  │                                        │
 └────────────────────┴────────────────────────────────────────┘
-         ▲ RW (sandbox mounts at /workspace)        ▲ RO (semsource)
+         ▲ RW (sandbox /workspace, backend /var/semdragons/quest-worktrees)
+                                                  ▲ RO (semsource)
 ```
 
-The sandbox container mounts `quest-worktrees/` at `/workspace/` via a shared Docker
-volume. From the agent's perspective, `/workspace/quest-{id}/` is a normal directory —
-it happens to be a git worktree pointing at branch `quest/{id}` in the bare repo.
+The `quest-worktrees` volume is shared between the backend and the sandbox container.
+The backend mounts it at `/var/semdragons/quest-worktrees/` and creates worktrees there.
+The sandbox mounts the same volume at `/workspace/`. The worktree directory **is** the
+sandbox workspace — there is no separate flat workspace directory.
+
+From the agent's perspective, `/workspace/{entity-id}/` is a normal directory. It
+happens to be a git worktree pointing at branch `quest/{id}` in the bare repo. Worktree
+directories are named by the full six-part entity ID (e.g.,
+`local.dev.game.board1.quest.abc123`), which is what the sandbox container expects via
+`filepath.Join(workspace, questID)`.
 
 Semsource is fully decoupled from quest mechanics. It watches the main worktree as a
 plain directory. Attribution edges (`quest.relationship.produced`) live on the semdragons
@@ -48,17 +57,22 @@ side, linking quest entities to the semsource graph entities they produced.
 
 ## Lifecycle Flow
 
-1. **Quest starts** — backend runs:
+1. **Quest starts** — questbridge runs:
 
    ```bash
-   git worktree add /var/semdragons/quest-worktrees/quest-{id} -b quest/{id}
+   git worktree add /var/semdragons/quest-worktrees/{entity-id} -b quest/{id}
    ```
 
-2. **Sandbox sees it** — the `quest-worktrees/` volume is already mounted at `/workspace/`
-   in the sandbox container. No restart required; the new directory appears immediately.
+   The directory name is the full entity ID (e.g., `local.dev.game.board1.quest.abc123`).
+   No separate `CreateWorkspace` HTTP call to the sandbox is needed — the shared volume
+   makes the directory immediately visible.
 
-3. **Agent works** — writes files, builds, and tests via sandbox tools. The worktree is a
-   real git repo. Agents may commit freely within the branch.
+2. **Sandbox sees it** — the `quest-worktrees/` volume is already mounted at `/workspace/`
+   in the sandbox container. The new directory appears at `/workspace/{entity-id}/`
+   without any sandbox restart or notification.
+
+3. **Agent works** — reads and writes files, builds, and runs tests via sandbox tools.
+   The worktree is a real git repo. Agents may commit freely within the branch.
 
 4. **Quest submitted** — `questbridge` finalizes the worktree:
 
@@ -101,9 +115,13 @@ side, linking quest entities to the semsource graph entities they produced.
 
 | Volume | Backend | Sandbox | Semsource |
 |--------|---------|---------|-----------|
-| `workspace-repo` (bare git) | RW | — | RO |
-| `quest-worktrees` (per-quest dirs) | RW | RW (`/workspace`) | RO |
+| `workspace-repo` (bare git) | RW at `/var/semdragons/workspace.git` | — | — |
+| `quest-worktrees` (per-quest worktrees) | RW at `/var/semdragons/quest-worktrees` | RW at `/workspace` | RO |
 | `workspace-main` (main checkout) | RW | — | RO |
+
+The `quest-worktrees` volume is the single shared workspace. The backend creates and
+manages worktrees in it; the sandbox reads and writes within those directories. There is
+no separate `sandbox-workspace` volume.
 
 The sandbox has no access to the bare repo or the main worktree. It can only see the
 per-quest directories under `/workspace/`. This limits blast radius if an agent's code
@@ -183,8 +201,17 @@ or run at a different cadence without touching semdragons code.
 output never enters the knowledge graph. This prevents hallucinated or low-quality code
 from polluting the graph that future agents query for context.
 
+**Single volume, not two.** The old architecture had a separate `sandbox-workspace`
+volume for flat sandbox directories alongside `quest-worktrees` for git worktrees. Now
+there is only `quest-worktrees`, mounted as `/workspace` in the sandbox. The worktree
+directory is the sandbox workspace — no `CreateWorkspace` call is required.
+
+**Full entity ID as directory name.** Worktree directories use the full six-part entity
+ID (e.g., `local.dev.game.board1.quest.abc123`) so that `filepath.Join(workspace, questID)`
+in the sandbox resolves correctly without any path translation.
+
 **Sandbox stays unchanged.** The sandbox container is the same isolated execution
-environment it has always been. The only difference is that `/workspace/quest-{id}/`
+environment it has always been. The only difference is that `/workspace/{entity-id}/`
 is now a git worktree instead of a plain directory. Agents need not be aware of git.
 
 **Backward compatible.** When `workspace_repo` is absent from the config, the system
