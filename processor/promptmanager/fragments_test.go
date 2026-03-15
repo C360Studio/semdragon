@@ -43,17 +43,18 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	reg := NewPromptRegistry()
 	RegisterBuiltinFragments(reg)
 
-	// Expect exactly 8 built-in fragments:
+	// Expect exactly 9 built-in fragments:
 	//   - party lead tool directive
 	//   - party lead provider hint
 	//   - sub-quest executor directive
 	//   - sub-quest executor provider hint (Gemini/OpenAI workspace exploration)
 	//   - solo agent scenario directive
 	//   - solo agent work output directive
+	//   - research output directive
 	//   - review brief
 	//   - tool selection guidance
-	if got := reg.FragmentCount(); got != 8 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 8", got)
+	if got := reg.FragmentCount(); got != 9 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 9", got)
 	}
 }
 
@@ -798,6 +799,94 @@ func TestToolGuidance_AdaptsToAvailableTools(t *testing.T) {
 	}
 	if !strings.Contains(result.SystemMessage, "web_search") {
 		t.Error("expected web_search guidance")
+	}
+}
+
+// =============================================================================
+// RESEARCH OUTPUT DIRECTIVE TESTS
+// =============================================================================
+
+func TestResearchOutputDirective_IncludedForResearchQuest(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:           domain.TierJourneyman,
+		Provider:       "openai",
+		QuestTitle:     "Investigate auth patterns",
+		RequiredSkills: []domain.SkillTag{domain.SkillResearch},
+	})
+
+	if !strings.Contains(result.SystemMessage, "RESEARCH OUTPUT FORMAT") {
+		t.Error("expected RESEARCH OUTPUT FORMAT directive for research quest")
+	}
+	if !strings.Contains(result.SystemMessage, "write_file") {
+		t.Error("expected write_file instruction in research output directive")
+	}
+	if !strings.Contains(result.SystemMessage, "git branch") {
+		t.Error("expected git branch mention in research output directive")
+	}
+}
+
+func TestResearchOutputDirective_IncludedForAnalysisQuest(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:           domain.TierJourneyman,
+		Provider:       "openai",
+		QuestTitle:     "Analyze performance metrics",
+		RequiredSkills: []domain.SkillTag{domain.SkillAnalysis},
+	})
+
+	if !strings.Contains(result.SystemMessage, "RESEARCH OUTPUT FORMAT") {
+		t.Error("expected RESEARCH OUTPUT FORMAT directive for analysis quest")
+	}
+}
+
+func TestResearchOutputDirective_ExcludedForCodeQuest(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:           domain.TierJourneyman,
+		Provider:       "openai",
+		QuestTitle:     "Implement feature",
+		RequiredSkills: []domain.SkillTag{domain.SkillCodeGen},
+	})
+
+	if strings.Contains(result.SystemMessage, "RESEARCH OUTPUT FORMAT") {
+		t.Error("research output directive should not appear for code-only quests")
+	}
+}
+
+func TestResearchOutputDirective_IncludedForSubQuestResearch(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:           domain.TierJourneyman,
+		Provider:       "gemini",
+		IsSubQuest:     true,
+		QuestTitle:     "Research sub-task",
+		RequiredSkills: []domain.SkillTag{domain.SkillResearch},
+	})
+
+	if !strings.Contains(result.SystemMessage, "RESEARCH OUTPUT FORMAT") {
+		t.Error("expected RESEARCH OUTPUT FORMAT for sub-quest with research skill")
+	}
+	if !strings.Contains(result.SystemMessage, "SUB-QUEST") {
+		t.Error("sub-quest directive should also be present")
+	}
+}
+
+func TestResearchOutputDirective_ExcludedWhenNoSkills(t *testing.T) {
+	assembler, _ := newTestAssemblerWithBuiltins()
+
+	result := assembler.AssembleSystemPrompt(AssemblyContext{
+		Tier:       domain.TierJourneyman,
+		Provider:   "openai",
+		QuestTitle: "Generic task",
+	})
+
+	if strings.Contains(result.SystemMessage, "RESEARCH OUTPUT FORMAT") {
+		t.Error("research output directive should not appear when no skills specified")
 	}
 }
 

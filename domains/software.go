@@ -85,8 +85,8 @@ var SoftwarePromptCatalog = promptmanager.DomainCatalog{
 	SkillFragments: map[domain.SkillTag]string{
 		domain.SkillCodeGen:       "This task requires coding. Write clean, tested, production-quality code. Follow existing patterns.",
 		domain.SkillCodeReview:    "This task requires code review. Focus on correctness, security, performance. Give actionable feedback.",
-		domain.SkillAnalysis:      "This task requires analysis. Use quantitative evidence, clear methodology, structured conclusions.",
-		domain.SkillResearch:      "This task requires research. Verify sources, provide comprehensive coverage, cite references.",
+		domain.SkillAnalysis:      "This task requires analysis. Use quantitative evidence, clear methodology, structured conclusions. Document your analysis in a structured markdown report.",
+		domain.SkillResearch:      "This task requires research. Verify sources, provide comprehensive coverage, cite references. Write findings as a structured markdown report.",
 		domain.SkillSummarization: "This task requires documentation. Extract key points, maintain accuracy, appropriate detail level.",
 		domain.SkillPlanning:      "This task requires planning. Decompose into steps, identify dependencies, estimate effort.",
 		domain.SkillDataTransform: "This task requires data transformation. Validate schemas, handle errors, ensure idempotency.",
@@ -118,6 +118,7 @@ var SoftwarePromptCatalog = promptmanager.DomainCatalog{
 			{Name: "no-hardcoded-secrets", Requirement: "No hardcoded API keys, passwords, or secrets in source code.", RequiredSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform}},
 			{Name: "error-handling", Requirement: "All errors must be handled or explicitly propagated. No silently swallowed errors.", RequiredSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform}},
 			{Name: "no-debug-artifacts", Requirement: "No debug prints, TODO hacks, or commented-out code left in the submission.", RequiredSkills: []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform}},
+			{Name: "research-structured-output", Requirement: "Research/analysis output must be a structured markdown file with clear sections. Raw text blobs are not acceptable.", RequiredSkills: []domain.SkillTag{domain.SkillResearch, domain.SkillAnalysis}},
 		},
 	},
 }

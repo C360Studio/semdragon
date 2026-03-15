@@ -85,8 +85,8 @@ var ResearchPromptCatalog = promptmanager.DomainCatalog{
 	},
 
 	SkillFragments: map[domain.SkillTag]string{
-		domain.SkillAnalysis:      "This study requires analysis. Apply rigorous analytical methods, document assumptions, validate results.",
-		domain.SkillResearch:      "This study requires research. Systematic literature review, source verification, comprehensive coverage.",
+		domain.SkillAnalysis:      "This study requires analysis. Apply rigorous analytical methods, document assumptions, validate results. Document your analysis in a structured markdown report.",
+		domain.SkillResearch:      "This study requires research. Systematic literature review, source verification, comprehensive coverage. Write findings as a structured markdown report.",
 		domain.SkillSummarization: "This study requires synthesis. Combine multiple sources, identify patterns, produce coherent narrative.",
 		domain.SkillPlanning:      "This study requires study design. Define hypotheses, select methods, plan data collection.",
 		"fact_check":              "This study requires fact checking. Cross-reference claims, verify sources, flag inconsistencies.",
@@ -108,6 +108,18 @@ var ResearchPromptCatalog = promptmanager.DomainCatalog{
 		DefaultJudges: []domain.Judge{
 			{ID: "judge-auto", Type: domain.JudgeAutomated},
 			{ID: "judge-llm", Type: domain.JudgeLLM},
+		},
+		StructuralChecklist: []promptmanager.ChecklistItem{
+			{
+				Name:           "structured-report",
+				Requirement:    "Output must be a structured markdown file with sections: Summary, Findings, Sources (at minimum).",
+				RequiredSkills: []domain.SkillTag{domain.SkillResearch, domain.SkillAnalysis},
+			},
+			{
+				Name:           "sources-cited",
+				Requirement:    "All claims must cite sources with URLs or references.",
+				RequiredSkills: []domain.SkillTag{domain.SkillResearch},
+			},
 		},
 	},
 }

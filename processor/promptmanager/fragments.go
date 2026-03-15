@@ -25,6 +25,8 @@ import (
 //     as a structured work plan for solo (non-party, non-sub-quest) agents.
 //   - Solo agent work output directive (CategoryToolDirective) — reinforces that all
 //     solo agents must submit finished work, not descriptions or plans.
+//   - Research output directive (CategoryToolDirective) — skill-gated to research/analysis
+//     quests, instructs agents to write structured markdown files via write_file.
 //   - Gemini/OpenAI tool enforcement hint (CategoryProviderHints) — reinforces
 //     immediate tool-call behaviour for providers that may otherwise respond with text.
 //
@@ -35,6 +37,7 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerSubQuestExecutorDirective(r)
 	registerSoloAgentScenarioDirective(r)
 	registerSoloAgentWorkOutputDirective(r)
+	registerResearchOutputDirective(r)
 	registerReviewBrief(r)
 	registerToolSelectionGuidance(r)
 }
@@ -277,6 +280,32 @@ func registerSoloAgentWorkOutputDirective(r *PromptRegistry) {
 		ContentFunc: buildSoloAgentWorkOutputDirective,
 		Priority:    15, // After scenario directive (10)
 		Condition:   isSoloAgent,
+	})
+}
+
+// =============================================================================
+// RESEARCH OUTPUT DIRECTIVE - Structured markdown for research/analysis quests
+// =============================================================================
+
+// researchOutputDirective instructs research and analysis agents to write
+// structured markdown files instead of dumping raw text into submit_work_product.
+// Skill-gated to SkillResearch and SkillAnalysis — fires for any quest requiring
+// either skill, whether solo, sub-quest, or party member.
+const researchOutputDirective = `RESEARCH OUTPUT FORMAT:
+1. Write your findings as a structured markdown file using write_file (e.g., "research_findings.md").
+2. Structure with clear sections: ## Summary, ## Findings, ## Sources (at minimum).
+3. Cite sources with URLs or references. Include code examples in fenced blocks where relevant.
+4. After writing the file, call submit_work_product with a brief summary only (3-5 sentences).
+   Your workspace is a git branch — files you write are committed automatically on completion.
+   Do NOT paste the full report into the deliverable field.`
+
+func registerResearchOutputDirective(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:       "builtin.research-output.tool-directive",
+		Category: CategoryToolDirective,
+		Content:  researchOutputDirective,
+		Priority: 20, // After solo work output (15)
+		Skills:   []domain.SkillTag{domain.SkillResearch, domain.SkillAnalysis},
 	})
 }
 
