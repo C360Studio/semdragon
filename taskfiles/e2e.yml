@@ -64,13 +64,14 @@ tasks:
       - task: maybe:down
 
   gemini:
-    desc: Run Tier 2 scenario tests with Gemini
+    desc: Run Tier 2 scenario tests with Gemini + semsource
     cmds:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/gemini.json }
+        vars: { MODELS: /etc/semdragons/models/gemini.json, PROFILE: semsource, SEMSOURCE_CONFIG: semsource-workspace.json }
       - task: wait
+      - task: enable:semsource
       - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
@@ -114,13 +115,14 @@ tasks:
   # Epic Tier 3 — real LLM only, exercises full party quest DAG pipeline
 
   epic:gemini:
-    desc: Run Epic Tier 3 tests with Gemini
+    desc: Run Epic Tier 3 tests with Gemini + semsource (OSH knowledge graph)
     cmds:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/gemini.json }
+        vars: { MODELS: /etc/semdragons/models/gemini.json, PROFILE: semsource, SEMSOURCE_CONFIG: semsource-osh.json }
       - task: wait
+      - task: enable:semsource
       - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
       - task: maybe:down
@@ -214,6 +216,7 @@ tasks:
         BACKEND_PORT={{.BACKEND_PORT}}
         SEMDRAGONS_MODELS={{.MODELS}}
         {{if .CONFIG}}SEMDRAGONS_CONFIG={{.CONFIG}}{{end}}
+        {{if .SEMSOURCE_CONFIG}}SEMSOURCE_CONFIG={{.SEMSOURCE_CONFIG}}{{end}}
         {{if ne (env "DEBUG") ""}}SEMDRAGONS_LOG_LEVEL=debug{{end}}
         {{.COMPOSE}} {{if .PROFILE}}--profile {{.PROFILE}}{{end}}
         up -d --wait
@@ -221,18 +224,32 @@ tasks:
   stack:down:
     internal: true
     cmds:
-      - "{{.COMPOSE}} --profile mock down -v --remove-orphans"
+      - "{{.COMPOSE}} --profile mock --profile semsource down -v --remove-orphans"
 
   clean:
     internal: true
     cmds:
-      - cmd: "{{.COMPOSE}} --profile mock down -v --remove-orphans 2>/dev/null"
+      - cmd: "{{.COMPOSE}} --profile mock --profile semsource down -v --remove-orphans 2>/dev/null"
         ignore_error: true
 
   maybe:down:
     internal: true
     cmds:
-      - cmd: '{{if eq (env "DEBUG") ""}}{{.COMPOSE}} --profile mock down -v --remove-orphans{{else}}echo "DEBUG set — stack left running"{{end}}'
+      - cmd: '{{if eq (env "DEBUG") ""}}{{.COMPOSE}} --profile mock --profile semsource down -v --remove-orphans{{else}}echo "DEBUG set — stack left running"{{end}}'
+
+  enable:semsource:
+    desc: Enable websocket_input to stream semsource entities into the graph
+    internal: true
+    cmds:
+      - |
+        echo "Enabling websocket_input for semsource entity streaming..."
+        curl -sf -X POST http://localhost:{{.BACKEND_PORT}}/game/settings \
+          -H "Content-Type: application/json" \
+          -d '{"websocket_input":{"enabled":true}}' > /dev/null 2>&1 \
+          && echo "websocket_input enabled" \
+          || echo "Warning: could not enable websocket_input (settings API may not support it)"
+        # Give semsource a moment to connect and start streaming
+        sleep 3
 
   wait:
     internal: true
