@@ -124,13 +124,12 @@ func TestWorktreeCreatedOnQuestStart(t *testing.T) {
 	}
 
 	// Verify the worktree was created.
-	instanceID := domain.ExtractInstance(string(questID))
-	if !wsRepo.WorktreeExists(instanceID) {
-		t.Errorf("worktree not created for quest instance %s", instanceID)
+	if !wsRepo.WorktreeExists(string(questID)) {
+		t.Errorf("worktree not created for quest %s", questID)
 	}
 
 	// Verify the worktree has the correct branch.
-	worktreePath := wsRepo.WorktreePath(instanceID)
+	worktreePath := wsRepo.WorktreePath(string(questID))
 	if _, err := os.Stat(filepath.Join(worktreePath, ".git")); err != nil {
 		t.Errorf("worktree .git marker missing: %v", err)
 	}
@@ -176,8 +175,7 @@ func TestWorktreeFinalizedOnCompletion(t *testing.T) {
 	}
 
 	// Simulate agent writing a file into the worktree.
-	instanceID := domain.ExtractInstance(string(questID))
-	worktreePath := wsRepo.WorktreePath(instanceID)
+	worktreePath := wsRepo.WorktreePath(string(questID))
 	if err := os.WriteFile(filepath.Join(worktreePath, "result.go"), []byte("package result\n"), 0o644); err != nil {
 		t.Fatalf("write file to worktree: %v", err)
 	}
@@ -261,8 +259,7 @@ func TestWorktreePersistsOnFailure(t *testing.T) {
 		t.Fatal("Timed out waiting for TaskMessage")
 	}
 
-	instanceID := domain.ExtractInstance(string(questID))
-	if !wsRepo.WorktreeExists(instanceID) {
+	if !wsRepo.WorktreeExists(string(questID)) {
 		t.Fatal("worktree should exist before failure event")
 	}
 
@@ -283,7 +280,7 @@ func TestWorktreePersistsOnFailure(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Worktree should STILL exist (persists for retry).
-	if !wsRepo.WorktreeExists(instanceID) {
+	if !wsRepo.WorktreeExists(string(questID)) {
 		t.Error("worktree was deleted on failure — should persist for retry/rework")
 	}
 }
@@ -336,8 +333,7 @@ func TestConcurrentQuestWorktreeIsolation(t *testing.T) {
 
 	// Verify all 3 worktrees exist and are distinct.
 	for _, qa := range qas {
-		instanceID := domain.ExtractInstance(string(qa.questID))
-		if !wsRepo.WorktreeExists(instanceID) {
+		if !wsRepo.WorktreeExists(string(qa.questID)) {
 			t.Errorf("worktree missing for quest %s", qa.questID)
 		}
 	}
