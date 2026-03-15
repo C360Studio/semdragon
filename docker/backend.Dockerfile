@@ -9,7 +9,7 @@ ARG VERSION=0.1.0
 RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o /semdragons ./cmd/semdragons
 
 FROM alpine:3.21
-RUN apk --no-cache add ca-certificates wget
+RUN apk --no-cache add ca-certificates wget git
 RUN addgroup -S app && adduser -S app -G app
 COPY --from=builder /semdragons /semdragons
 COPY --from=builder /app/config/semdragons.json /etc/semdragons/semdragons.json
