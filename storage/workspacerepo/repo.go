@@ -384,9 +384,8 @@ func (w *WorkspaceRepo) ListQuestFiles(questID string) ([]FileEntry, error) {
 	if err := validateQuestID(questID); err != nil {
 		return nil, err
 	}
-	worktree := w.worktreePath(questID)
-
-	if _, err := os.Stat(worktree); os.IsNotExist(err) {
+	worktree := w.resolveWorktreePath(questID)
+	if worktree == "" {
 		return nil, fmt.Errorf("worktree does not exist: %s", questID)
 	}
 
@@ -453,7 +452,10 @@ func (w *WorkspaceRepo) ReadFile(questID, path string) ([]byte, error) {
 		return nil, err
 	}
 
-	worktree := w.worktreePath(questID)
+	worktree := w.resolveWorktreePath(questID)
+	if worktree == "" {
+		return nil, fmt.Errorf("worktree does not exist: %s", questID)
+	}
 	fullPath := filepath.Join(worktree, filepath.FromSlash(path))
 
 	// Resolve both the worktree root and the requested file to their real
@@ -529,7 +531,10 @@ func (w *WorkspaceRepo) WorktreeExists(questID string) bool {
 	if validateQuestID(questID) != nil {
 		return false
 	}
-	worktree := w.worktreePath(questID)
+	worktree := w.resolveWorktreePath(questID)
+	if worktree == "" {
+		return false
+	}
 	_, err := os.Stat(filepath.Join(worktree, ".git"))
 	return err == nil
 }
@@ -596,6 +601,30 @@ func (w *WorkspaceRepo) branchName(questID string) string {
 // resolve it directly via filepath.Join(workspace, questID).
 func (w *WorkspaceRepo) worktreePath(questID string) string {
 	return filepath.Join(w.worktreesDir, questID)
+}
+
+// resolveWorktreePath finds the worktree directory for a quest ID. Tries the
+// ID as-is first (full entity ID), then scans for a directory ending with the
+// ID as a suffix (instance ID lookup). Returns empty string if not found.
+func (w *WorkspaceRepo) resolveWorktreePath(questID string) string {
+	// Try exact match first (full entity ID).
+	direct := filepath.Join(w.worktreesDir, questID)
+	if _, err := os.Stat(direct); err == nil {
+		return direct
+	}
+
+	// Scan for suffix match (instance ID → full entity ID directory).
+	entries, err := os.ReadDir(w.worktreesDir)
+	if err != nil {
+		return ""
+	}
+	suffix := "." + questID
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasSuffix(entry.Name(), suffix) {
+			return filepath.Join(w.worktreesDir, entry.Name())
+		}
+	}
+	return ""
 }
 
 // gitBare runs a git command in the bare repository with a bounded timeout.
