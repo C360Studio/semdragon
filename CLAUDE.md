@@ -304,6 +304,7 @@ Documentation in `/docs/`:
 - `05-BOIDS.md` — Emergent quest-claiming, six rules, guild/reputation integration, tuning guide
 - `06-DOMAINS.md` — Domain system, prompt catalogs, skill taxonomies
 - `07-MODEL-REGISTRY.md` — LLM provider configuration, capabilities, fallback chains
+- `08-WORKSPACE-REPO.md` — Git-backed artifact storage, worktree lifecycle, quality gate via merge, semsource integration
 - `adr/001-dm-chat-routing.md` — DM chat mode routing and orchestration design
 - API docs served live at `/docs` (Swagger UI) and `/openapi.json` — defined in `service/api/openapi.go`
 

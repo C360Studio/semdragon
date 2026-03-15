@@ -1,0 +1,21 @@
+{
+  "namespace": "workspace",
+  "sources": [
+    {
+      "type": "ast",
+      "path": "/sources/workspace-main",
+      "language": "auto",
+      "watch": true
+    },
+    {
+      "type": "docs",
+      "paths": ["/sources/workspace-main"],
+      "watch": true
+    },
+    {
+      "type": "config",
+      "paths": ["/sources/workspace-main"],
+      "watch": true
+    }
+  ]
+}

@@ -413,6 +413,7 @@
       "config": {
         "repo_dir": "/var/semdragons/workspace.git",
         "worktrees_dir": "/var/semdragons/quest-worktrees",
+        "main_worktree_dir": "/var/semdragons/workspace-main",
         "retention_days": 30
       }
     },

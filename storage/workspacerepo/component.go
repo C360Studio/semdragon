@@ -43,6 +43,9 @@ func NewComponent(rawConfig json.RawMessage, deps component.Dependencies) (compo
 
 	logger := deps.GetLogger()
 	repo := New(cfg.RepoDir, cfg.WorktreesDir, logger)
+	if cfg.MainWorktreeDir != "" {
+		repo.SetMainWorktreeDir(cfg.MainWorktreeDir)
+	}
 
 	return &Component{
 		name:     "workspacerepo",

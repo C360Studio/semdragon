@@ -242,6 +242,7 @@ Key endpoint groups under `/game/`:
 | [Domains](docs/06-DOMAINS.md) | Software, D&D, and research domain configs; skill taxonomies; prompt catalogs |
 | [Model Registry](docs/07-MODEL-REGISTRY.md) | LLM provider config, capability routing, fallback chains |
 | [DAG Lessons Learned](docs/08-DAG-LESSONS-LEARNED.md) | Hard-won implementation notes on party quest DAG execution |
+| [Workspace Repo](docs/08-WORKSPACE-REPO.md) | Git-backed artifact storage: worktree lifecycle, quality gate via merge, semsource integration |
 | [ADR-001: DM Chat Routing](docs/adr/001-dm-chat-routing.md) | DM chat mode routing and orchestration |
 | [ADR-002: Party Quest DAG](docs/adr/002-party-quest-dag-execution.md) | Reactive DAG execution architecture |
 | [ADR-003: DAG Refactor](docs/adr/003-questdagexec-refactor.md) | Single-goroutine event loop replacing concurrent model |

@@ -42,9 +42,10 @@ type TreeEntry struct {
 // Each quest gets its own branch and worktree directory, enabling parallel
 // agents to commit independently with zero contention.
 type WorkspaceRepo struct {
-	repoDir      string
-	worktreesDir string
-	logger       *slog.Logger
+	repoDir         string
+	worktreesDir    string
+	mainWorktreeDir string // persistent main branch checkout for semsource
+	logger          *slog.Logger
 
 	// mu serializes repo-level git operations (init, merge, worktree add/remove).
 	// git uses filesystem-level locking internally, but concurrent worktree add
@@ -59,6 +60,12 @@ func New(repoDir, worktreesDir string, logger *slog.Logger) *WorkspaceRepo {
 		worktreesDir: worktreesDir,
 		logger:       logger,
 	}
+}
+
+// SetMainWorktreeDir configures the persistent main branch worktree path.
+// When set, Init creates it and MergeToMain keeps it current.
+func (w *WorkspaceRepo) SetMainWorktreeDir(dir string) {
+	w.mainWorktreeDir = dir
 }
 
 // WorktreesDir returns the base directory where per-quest worktrees are created.
@@ -145,7 +152,44 @@ func (w *WorkspaceRepo) Init(ctx context.Context) error {
 	}
 
 	w.logger.Info("workspace repo initialized", "repo_dir", w.repoDir)
+
+	// Create persistent main worktree if configured.
+	if err := w.ensureMainWorktree(ctx); err != nil {
+		return fmt.Errorf("ensure main worktree: %w", err)
+	}
+
 	return nil
+}
+
+// ensureMainWorktree creates or verifies the persistent main branch worktree.
+// Semsource watches this directory for AST/doc/config indexing.
+// No-op if mainWorktreeDir is not configured.
+func (w *WorkspaceRepo) ensureMainWorktree(ctx context.Context) error {
+	if w.mainWorktreeDir == "" {
+		return nil
+	}
+
+	// Already exists — nothing to do.
+	if _, err := os.Stat(filepath.Join(w.mainWorktreeDir, ".git")); err == nil {
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(w.mainWorktreeDir), 0o755); err != nil {
+		return fmt.Errorf("create parent dir: %w", err)
+	}
+
+	if err := w.gitBare(ctx, "worktree", "add", w.mainWorktreeDir, "main"); err != nil {
+		return fmt.Errorf("create main worktree: %w", err)
+	}
+
+	w.logger.Info("persistent main worktree created", "path", w.mainWorktreeDir)
+	return nil
+}
+
+// MainWorktreeDir returns the path to the persistent main branch checkout.
+// Empty string if not configured.
+func (w *WorkspaceRepo) MainWorktreeDir() string {
+	return w.mainWorktreeDir
 }
 
 // CreateWorktree creates a new git worktree and branch for a quest.
@@ -273,9 +317,22 @@ func (w *WorkspaceRepo) MergeToMain(ctx context.Context, questInstanceID string)
 		return "", fmt.Errorf("get merge hash: %w", err)
 	}
 
+	mergeHash := strings.TrimSpace(hash)
 	w.logger.Info("quest branch merged to main",
-		"quest_id", questInstanceID, "branch", branch, "merge_hash", strings.TrimSpace(hash))
-	return strings.TrimSpace(hash), nil
+		"quest_id", questInstanceID, "branch", branch, "merge_hash", mergeHash)
+
+	// Update the persistent main worktree so semsource sees the new files.
+	if w.mainWorktreeDir != "" {
+		if pullErr := w.gitInDir(ctx, w.mainWorktreeDir, "checkout", "main"); pullErr != nil {
+			w.logger.Warn("failed to update main worktree after merge",
+				"path", w.mainWorktreeDir, "error", pullErr)
+		} else if pullErr := w.gitInDir(ctx, w.mainWorktreeDir, "reset", "--hard", "main"); pullErr != nil {
+			w.logger.Warn("failed to reset main worktree after merge",
+				"path", w.mainWorktreeDir, "error", pullErr)
+		}
+	}
+
+	return mergeHash, nil
 }
 
 // MergedFiles returns the list of file paths changed by a merge commit.

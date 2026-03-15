@@ -102,6 +102,7 @@ services:
     volumes:
       - workspace-repo:/var/semdragons/workspace.git
       - quest-worktrees:/var/semdragons/quest-worktrees
+      - workspace-main:/var/semdragons/workspace-main
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -175,8 +176,10 @@ services:
       SEMSOURCE_GIT_TOKEN: "${SEMSOURCE_GIT_TOKEN:-}"
     volumes:
       - ./semsource-osh.json:/etc/semsource/semsource-osh.json:ro
+      - ./semsource-workspace.json:/etc/semsource/semsource-workspace.json:ro
       - workspace-repo:/sources/workspace.git:ro
       - quest-worktrees:/sources/quest-worktrees:ro
+      - workspace-main:/sources/workspace-main:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "semsource", "version"]
@@ -191,3 +194,4 @@ volumes:
   semembed-cache:
   workspace-repo:
   quest-worktrees:
+  workspace-main:

@@ -13,6 +13,11 @@ type Config struct {
 	// WorktreesDir is the directory under which per-quest worktrees are created.
 	WorktreesDir string `json:"worktrees_dir" schema:"type:string,description:Directory for per-quest git worktrees,category:basic,required:true"`
 
+	// MainWorktreeDir is the path where a persistent checkout of the main branch
+	// is maintained. Updated after each MergeToMain. Semsource watches this
+	// directory (RO) for AST/doc/config indexing.
+	MainWorktreeDir string `json:"main_worktree_dir" schema:"type:string,description:Persistent main branch checkout for semsource watching,category:advanced"`
+
 	// RetentionDays controls how long completed quest worktrees are kept
 	// before pruning. Zero disables automatic pruning.
 	RetentionDays int `json:"retention_days" schema:"type:int,description:Days to retain completed quest worktrees (0=no pruning),category:advanced,default:30"`
@@ -32,8 +37,9 @@ func (c *Config) Validate() error {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		RepoDir:       "/var/semdragons/workspace.git",
-		WorktreesDir:  "/var/semdragons/quest-worktrees",
-		RetentionDays: 30,
+		RepoDir:         "/var/semdragons/workspace.git",
+		WorktreesDir:    "/var/semdragons/quest-worktrees",
+		MainWorktreeDir: "/var/semdragons/workspace-main",
+		RetentionDays:   30,
 	}
 }
