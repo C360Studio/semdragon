@@ -25,7 +25,6 @@ export class SettingsPage extends BasePage {
 	readonly sectionComponents: Locator;
 	readonly sectionWebSearch: Locator;
 	readonly sectionWebsocketInput: Locator;
-	readonly sectionWorkspace: Locator;
 	readonly sectionTokenBudget: Locator;
 
 	// Token budget controls
@@ -74,7 +73,6 @@ export class SettingsPage extends BasePage {
 		this.sectionWebsocketInput = page.locator(
 			'[data-testid="settings-section-websocket-input"]'
 		);
-		this.sectionWorkspace = page.locator('[data-testid="settings-section-workspace"]');
 		this.sectionTokenBudget = page.locator('[data-testid="settings-section-token-budget"]');
 
 		// Token budget controls

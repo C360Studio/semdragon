@@ -68,12 +68,6 @@ test.describe('Settings - Sections', () => {
 		await expect(badge).toHaveText(/Connected|Disconnected|Disabled/);
 	});
 
-	test('displays workspace section', async ({ settingsPage }) => {
-		await expect(settingsPage.sectionWorkspace).toBeVisible();
-		const badge = settingsPage.getSectionBadge('settings-section-workspace');
-		await expect(badge).toHaveText(/OK|Missing|Unavailable/);
-	});
-
 	test('displays token budget section', async ({ settingsPage }) => {
 		await expect(settingsPage.sectionTokenBudget).toBeVisible();
 		// Should show either "Unlimited" or a number

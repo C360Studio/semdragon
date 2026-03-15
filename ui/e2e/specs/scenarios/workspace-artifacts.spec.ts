@@ -8,9 +8,9 @@ import {
 } from '../../fixtures/test-base';
 
 /**
- * Workspace Artifacts — Tier 2 Scenario Suite
+ * Files Artifacts — Tier 2 Scenario Suite
  *
- * Verifies the workspace repo artifact pipeline by examining quests that
+ * Verifies the artifact file browser by examining quests that
  * quest-pipeline.spec.ts has already completed. Does NOT post its own quests.
  *
  * Runs AFTER quest-pipeline in the serial tier2-scenarios project. By the time
@@ -19,14 +19,13 @@ import {
  *
  * Test order:
  *   1. Find a completed quest with artifacts via API
- *   2. Verify workspace browser shows the quest
- *   3. Verify file tree and preview pane load
- *   4. Verify quest entity has artifact tracking predicates
+ *   2. Verify file tree and preview pane load at /files?quest={id}
+ *   3. Verify quest entity has artifact tracking predicates
  *
  * @scenario @tier2
  */
 
-test.describe.serial('Workspace Artifacts', () => {
+test.describe.serial('Files Artifacts', () => {
 	test.beforeEach(() => {
 		test.skip(
 			!hasBackend() || !hasLLM(),
@@ -35,7 +34,7 @@ test.describe.serial('Workspace Artifacts', () => {
 	});
 
 	// Tracks the first completed quest that has artifact files.
-	// Set by Test 1; consumed by Tests 2-4.
+	// Set by Test 1; consumed by Tests 2-3.
 	let artifactQuestId: string | null = null;
 	let artifactQuestInstanceId: string | null = null;
 
@@ -74,18 +73,18 @@ test.describe.serial('Workspace Artifacts', () => {
 			}
 		}
 
-		// No artifacts found — expected when workspace repo writes work_product.md
-		// but filestore snapshot path is also active. Not a failure.
+		// No artifacts found — expected when sandbox is not configured or
+		// quests completed without writing files. Not a failure.
 		console.warn(
-			'[Workspace] No completed quests have artifact files — workspace repo may not be configured'
+			'[Files] No completed quests have artifact files — sandbox may not be configured'
 		);
 	});
 
 	// ===========================================================================
-	// Test 2: Verify workspace browser shows quest
+	// Test 2: Verify file tree and content at /files?quest={id}
 	// ===========================================================================
 
-	test('workspace browser lists quest with artifacts', async ({ page }) => {
+	test('files page shows file tree and preview pane for quest with artifacts', async ({ page }) => {
 		test.setTimeout(30_000);
 
 		if (!artifactQuestInstanceId) {
@@ -93,33 +92,7 @@ test.describe.serial('Workspace Artifacts', () => {
 			return;
 		}
 
-		await page.goto('/workspace');
-		await waitForHydration(page);
-
-		await expect(async () => {
-			const loading = await page.locator('text=Loading workspace').isVisible();
-			expect(loading).toBe(false);
-		}).toPass({ timeout: 5_000 });
-
-		const specificCard = page.locator(
-			`[data-testid="workspace-quest-${artifactQuestInstanceId}"]`
-		);
-		await expect(specificCard).toBeVisible({ timeout: 10_000 });
-	});
-
-	// ===========================================================================
-	// Test 3: Verify file tree and content
-	// ===========================================================================
-
-	test('workspace file tree shows files and content is readable', async ({ page }) => {
-		test.setTimeout(30_000);
-
-		if (!artifactQuestInstanceId) {
-			test.skip(true, 'No quest with artifacts found');
-			return;
-		}
-
-		await page.goto(`/workspace?quest=${artifactQuestInstanceId}`);
+		await page.goto(`/files?quest=${artifactQuestInstanceId}`);
 		await waitForHydration(page);
 
 		await expect(async () => {
@@ -127,14 +100,14 @@ test.describe.serial('Workspace Artifacts', () => {
 			expect(loading).toBe(false);
 		}).toPass({ timeout: 5_000 });
 
-		const tree = page.locator('[data-testid="workspace-tree"]');
-		const preview = page.locator('[data-testid="workspace-preview"]');
+		const tree = page.locator('[data-testid="files-tree"]');
+		const preview = page.locator('[data-testid="files-preview"]');
 		await expect(tree).toBeVisible({ timeout: 5_000 });
 		await expect(preview).toBeVisible({ timeout: 5_000 });
 	});
 
 	// ===========================================================================
-	// Test 4: Verify artifact tracking predicates on quest entity
+	// Test 3: Verify artifact tracking predicates on quest entity
 	// ===========================================================================
 
 	test('quest entity has artifact tracking fields', async ({ lifecycleApi }) => {
@@ -147,17 +120,12 @@ test.describe.serial('Workspace Artifacts', () => {
 
 		const quest = await lifecycleApi.getQuest(artifactQuestInstanceId);
 
-		if (quest.artifacts_commit) {
-			expect(quest.artifacts_commit).toMatch(/^[0-9a-f]{7,40}$/);
-		}
-
 		if (quest.artifacts_merged) {
 			expect(quest.artifacts_merged).toMatch(/^[0-9a-f]{7,40}$/);
 		}
 
-		console.log('[Workspace] Quest artifact tracking:', {
+		console.log('[Files] Quest artifact tracking:', {
 			id: artifactQuestInstanceId,
-			artifacts_commit: quest.artifacts_commit ?? '(not set)',
 			artifacts_merged: quest.artifacts_merged ?? '(not set)',
 			artifacts_indexed: quest.artifacts_indexed ?? false
 		});
