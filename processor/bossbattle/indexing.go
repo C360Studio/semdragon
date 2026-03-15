@@ -94,10 +94,9 @@ func (c *Component) watchForIndexing(questID domain.QuestID, mergeHash string) {
 				// Keep polling.
 			}
 		}
-	} else {
-		// No merged file list available (workspace repo absent or empty merge).
-		// Nothing to correlate — fall through to setIndexed immediately.
 	}
+	// If no merged file list available (workspace repo absent or empty merge),
+	// skip correlation and fall through to setIndexed immediately.
 
 	c.setIndexed(ctx, questID, producedIDs)
 }
