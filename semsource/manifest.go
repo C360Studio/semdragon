@@ -112,6 +112,23 @@ func (mc *ManifestClient) Refresh(ctx context.Context) {
 	}
 }
 
+// HasActiveSource returns true if the manifest contains at least one source with
+// "active" status, indicating that semsource has finished indexing at least one
+// knowledge source. Used by questbridge to soft-gate dispatch until graph data
+// is available for entity knowledge injection.
+func (mc *ManifestClient) HasActiveSource(ctx context.Context) bool {
+	manifest := mc.Fetch(ctx)
+	if manifest == nil {
+		return false
+	}
+	for _, src := range manifest.Sources {
+		if src.Status == "active" {
+			return true
+		}
+	}
+	return false
+}
+
 // FormatForPrompt fetches the manifest (using cache when fresh) and formats it
 // for LLM consumption. Returns "" if the manifest is unavailable or empty.
 func (mc *ManifestClient) FormatForPrompt(ctx context.Context) string {

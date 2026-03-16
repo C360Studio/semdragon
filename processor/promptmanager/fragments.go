@@ -50,11 +50,17 @@ const partyLeadDirectiveBase = `You are a PARTY LEAD coordinating a team of agen
 
 YOUR WORKFLOW:
 1. DECOMPOSE: Use the decompose_quest tool to break the quest into independent sub-quests.
-   - Each sub-quest must be a self-contained unit of work with a clear objective.
+   Each sub-quest is a SPECIFICATION — give agents exactly what they need, nothing more.
+   - One concern per sub-quest: research OR implement OR test. Never all three.
+   - Write objectives as acceptance criteria: "GIVEN X, WHEN Y, THEN Z" — testable and unambiguous.
+   - Include only the context that sub-quest needs (relevant files, APIs, schemas). Do NOT dump
+     the entire quest background into every node.
+   - Research nodes: direct agents to use graph_search for indexed project data. Do NOT design
+     nodes that require scraping raw source files — the knowledge graph has that data.
    - Do NOT include a "combine" or "synthesize" step — that is YOUR responsibility.
-   - Sub-quests should produce independent outputs (code, analysis, etc.).
+   - Sub-quests should produce independent, verifiable outputs (code, analysis, spec).
 2. REVIEW: You will review each completed sub-quest via review_sub_quest.
-   - Accept work that meets the objective; reject with specific feedback if it does not.
+   - Accept work that meets the acceptance criteria; reject with specific feedback if it does not.
 3. SYNTHESIS: After all sub-quests are accepted, YOU synthesize the final deliverable.
    - Combine the sub-quest outputs into a single coherent result.
    - Respond with [INTENT: work_product] followed by the combined deliverable.
@@ -154,7 +160,8 @@ COMPLETION RULES:
 5. Your deliverable MUST contain the actual work output — code, analysis, or results — not a description of what you did.
 6. If the task requires code, include BOTH implementation AND tests directly in your deliverable. Your reviewer can only see what you include — they cannot access external files.
 7. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
-8. Complete the work in as few iterations as possible — avoid unnecessary exploration.`
+8. Complete the work in as few iterations as possible — avoid unnecessary exploration.
+9. For project-specific lookups (code structure, API patterns, docs), use graph_search FIRST. Only use http_request for external resources not in the knowledge graph.`
 
 // isSubQuestExecutor returns true for agents working on sub-quests within a
 // party DAG (party members executing DAG nodes, not the lead).
@@ -403,7 +410,7 @@ func registerReviewBrief(r *PromptRegistry) {
 var toolGuidanceEntries = map[string]string{
 	// Knowledge tools
 	"graph_query":  "Game state (quests, agents, guilds, parties, battles). Fast.",
-	"graph_search": "Knowledge graph (code, docs, repos). Use for project-specific lookups. Prefer over web_search for anything about this codebase.",
+	"graph_search": "Knowledge graph (code, docs, repos). ALWAYS try this FIRST for project-specific lookups — faster and cheaper than http_request or web_search.",
 	"web_search":   "External info not in the graph (third-party APIs, libraries, general knowledge).",
 	// Exploration tools — use these BEFORE reading/writing to find the right files
 	"list_directory": "See what files and folders exist at a path. Start here to understand project layout.",
@@ -422,7 +429,7 @@ var toolGuidanceEntries = map[string]string{
 	"run_tests":           "Run test commands (go test, npm test, pytest, gradle test, etc.). Use after writing code.",
 	"lint_check":          "Run linters (go vet, eslint, pylint, etc.). Use after writing code to catch issues.",
 	// Network tools
-	"http_request": "Fetch URLs or call REST APIs. Always include https:// in the url parameter. Defaults to GET.",
+	"http_request": "Fetch URLs or call REST APIs. Best for testing APIs you are building or fetching specific files. For broad research, prefer graph_search (project data) or web_search (external docs). Always include https:// in the url parameter.",
 	// Shell tools
 	"run_command":      "General shell command. Use only when no specialized tool covers the operation.",
 	"create_directory": "Create directories (including parents). Use before write_file if the target dir doesn't exist.",

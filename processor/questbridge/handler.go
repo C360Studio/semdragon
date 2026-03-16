@@ -157,6 +157,12 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 		}
 	}
 
+	// Soft-gate: when semsource is configured, wait briefly for at least one
+	// knowledge source to finish indexing. This ensures graph manifest data is
+	// available for entity knowledge injection into agent prompts. Proceeds
+	// after timeout — knowledge context is nice-to-have, not blocking.
+	c.waitForKnowledgeSources(ctx, entityState.ID)
+
 	// Use quest.identity.id triple when present; fall back to entity state ID.
 	questID := tripleString(entityState.Triples, "quest.identity.id")
 	if questID == "" {
@@ -2257,6 +2263,62 @@ func buildUserPrompt(quest *domain.Quest) string {
 //  2. agent-work.{tier}.{skill}
 //  3. agent-work.{tier}
 //  4. agent-work
+// waitForKnowledgeSources polls the semsource manifest until at least one source
+// is active or the configured timeout expires. This soft gate ensures agents get
+// graph knowledge context (source manifest + graph manifest) in their prompts.
+// Uses knowledgeReady atomic to ensure at most one quest blocks the watcher;
+// subsequent quests skip immediately once readiness is established (or timed out).
+// No-op when semsource is not configured or timeout is 0.
+func (c *Component) waitForKnowledgeSources(ctx context.Context, entityID string) {
+	if c.manifestClient == nil || c.config.KnowledgeReadyTimeout <= 0 {
+		return
+	}
+
+	// Fast path: readiness already established (or timed out) by a prior quest.
+	if c.knowledgeReady.Load() {
+		return
+	}
+
+	// Check current state before entering the poll loop.
+	if c.manifestClient.HasActiveSource(ctx) {
+		c.knowledgeReady.Store(true)
+		return
+	}
+
+	c.logger.Info("waiting for semsource knowledge sources to become active",
+		"entity_id", entityID,
+		"timeout_seconds", c.config.KnowledgeReadyTimeout)
+
+	timeout := time.Duration(c.config.KnowledgeReadyTimeout) * time.Second
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			c.knowledgeReady.Store(true) // Don't block future quests
+			return
+		case <-c.stopChan:
+			c.knowledgeReady.Store(true) // Don't block future quests
+			return
+		case <-deadline:
+			c.logger.Warn("semsource readiness timeout — proceeding without knowledge context",
+				"entity_id", entityID)
+			c.knowledgeReady.Store(true) // Don't re-block on next quest
+			return
+		case <-ticker.C:
+			c.manifestClient.Refresh(ctx)
+			if c.manifestClient.HasActiveSource(ctx) {
+				c.logger.Info("semsource knowledge source active, proceeding",
+					"entity_id", entityID)
+				c.knowledgeReady.Store(true)
+				return
+			}
+		}
+	}
+}
+
 func (c *Component) resolveCapability(agent *agentprogression.Agent, quest *domain.Quest) string {
 	if c.registry == nil {
 		return "agent-work"

@@ -64,9 +64,11 @@ func (b *entityKnowledgeBuilder) build(ctx context.Context, quest *domain.Quest,
 	}
 
 	// Source manifest — what's available in the knowledge graph (best-effort, non-blocking)
+	hasGraphKnowledge := false
 	if b.manifestClient != nil {
 		if s := b.manifestClient.FormatForPrompt(ctx); s != "" {
 			sections = append(sections, s)
+			hasGraphKnowledge = true
 		}
 	}
 
@@ -74,7 +76,17 @@ func (b *entityKnowledgeBuilder) build(ctx context.Context, quest *domain.Quest,
 	if b.graphManifestClient != nil {
 		if s := b.graphManifestClient.FormatForPrompt(ctx); s != "" {
 			sections = append(sections, s)
+			hasGraphKnowledge = true
 		}
+	}
+
+	// Fallback: when no manifest data was available but a knowledge graph exists
+	// (semsource configured), inject a hint so agents try graph_search anyway.
+	// Data may have finished indexing between dispatch and the agent's first tool call.
+	if !hasGraphKnowledge && (b.manifestClient != nil || b.graphManifestClient != nil) {
+		sections = append(sections, "--- Knowledge Graph ---\n"+
+			"A knowledge graph is being populated with project data. "+
+			"Try graph_search before using http_request for project-related lookups.")
 	}
 
 	if len(sections) == 0 {

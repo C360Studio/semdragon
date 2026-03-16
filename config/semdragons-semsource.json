@@ -498,7 +498,8 @@
         "default_repo": "testrepo",
         "dm_mode": "full_auto",
         "max_clarification_rounds": 3,
-        "graphql_url": "http://localhost:8080/graph-gateway/graphql"
+        "graphql_url": "http://localhost:8080/graph-gateway/graphql",
+        "semsource_url": "ws://semsource:7890/ws"
       }
     },
     "questtools": {

@@ -196,6 +196,37 @@ The system uses scenario dependencies to decide how a quest is staffed:
 Declare depends_on honestly — it determines whether a team or a solo agent handles the quest.
 If scenarios can genuinely be worked on simultaneously, do NOT add depends_on between them.
 
+### Quest Scope — Spec-Driven Design
+
+Quests are specifications, not conversations. A well-scoped quest gives agents exactly
+the context they need — no more, no less. Each agent has a limited context window and
+tool budget; bloated quests cause compaction (context loss) and wasted token spend.
+
+**One concern per quest.** A quest should do ONE of these:
+- Research and document (output: structured findings)
+- Design an interface or schema (output: spec file)
+- Implement a component (output: code + tests)
+- Review or validate (output: verdict)
+
+Quests that mix research AND implementation AND testing are too broad. Split them into
+a chain where each entry has a single, independently verifiable deliverable.
+
+**Write scenarios as acceptance criteria**, not implementation steps:
+- GOOD: "GIVEN a Meshtastic node is connected, WHEN a telemetry packet arrives, THEN the driver publishes an OSH observation"
+- BAD: "Research the Meshtastic API, then implement the driver, then write tests"
+
+The first is testable and focused. The second is three quests pretending to be one.
+
+**Scope constraints:**
+- Goal: 1-2 sentences. If you need more, split the quest.
+- Requirements: 3-5 testable constraints. More than 5 → use a chain.
+- Scenarios: 2-4 per quest. Each should be achievable in a single focused work session.
+- Quest chains: Prefer 3-5 focused quests over one sprawling quest.
+
+**Knowledge graph guidance:** When the knowledge graph has indexed project data (code,
+docs, repos), tell agents to use graph_search for project lookups. Do NOT design quests
+that require agents to scrape raw source files — the graph already has that data indexed.
+
 ## Output Format
 
 For a SINGLE quest, include a JSON block tagged as quest_brief:

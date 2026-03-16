@@ -127,10 +127,11 @@ type Component struct {
 	escalatedAt sync.Map
 
 	// Internal state
-	running  atomic.Bool
-	mu       sync.RWMutex
-	stopChan chan struct{}
-	wg       sync.WaitGroup
+	running        atomic.Bool
+	knowledgeReady atomic.Bool // set after first successful knowledge source check or timeout
+	mu             sync.RWMutex
+	stopChan       chan struct{}
+	wg             sync.WaitGroup
 
 	// Metrics
 	tasksPublished atomic.Uint64
