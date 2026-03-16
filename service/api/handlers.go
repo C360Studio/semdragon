@@ -225,6 +225,10 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 		BaseXP:      100,
 		MaxAttempts:          3,
 		DecomposabilityClass: domain.DecomposableTrivial,
+		Constraints: domain.QuestConstraints{
+			RequireReview: true,
+			ReviewLevel:   domain.ReviewAuto,
+		},
 	}
 
 	if req.Hints != nil {
@@ -245,11 +249,10 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 			quest.GuildPriority = &gid
 		}
 		if req.Hints.RequireHumanReview {
-			quest.Constraints.RequireReview = true
+			// Human review elevates to ReviewStandard (LLM-as-judge with human confirmation)
+			quest.Constraints.ReviewLevel = domain.ReviewStandard
 			if req.Hints.ReviewLevel != nil {
 				quest.Constraints.ReviewLevel = domain.ReviewLevel(*req.Hints.ReviewLevel)
-			} else {
-				quest.Constraints.ReviewLevel = domain.ReviewStandard
 			}
 		}
 		if req.Hints.PartyRequired {
@@ -341,9 +344,13 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 		}
 		quest.DecomposabilityClass = domain.ClassifyDecomposability(brief)
 
+		// All quests require boss battle review. ReviewAuto is the default;
+		// human review hint elevates to ReviewStandard (LLM judge + human confirmation).
+		quest.Constraints.RequireReview = true
+		quest.Constraints.ReviewLevel = domain.ReviewAuto
+
 		if entry.Hints != nil {
 			if entry.Hints.RequireHumanReview {
-				quest.Constraints.RequireReview = true
 				quest.Constraints.ReviewLevel = domain.ReviewStandard
 			}
 			if entry.Hints.ReviewLevel != nil {

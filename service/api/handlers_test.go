@@ -1114,15 +1114,18 @@ func TestHandleCreateQuest_ReviewHints(t *testing.T) {
 			},
 		},
 		{
-			name: "no review hint leaves defaults",
+			name: "no review hint defaults to auto review",
 			body: map[string]any{
 				"objective": "Normal quest",
 			},
 			checkBody: func(t *testing.T, body []byte) {
 				var q domain.Quest
 				decodeJSON(t, body, &q)
-				if q.Constraints.RequireReview {
-					t.Error("expected RequireReview to be false")
+				if !q.Constraints.RequireReview {
+					t.Error("expected RequireReview to be true (all quests require review)")
+				}
+				if q.Constraints.ReviewLevel != domain.ReviewAuto {
+					t.Errorf("ReviewLevel: got %d, want %d (ReviewAuto)", q.Constraints.ReviewLevel, domain.ReviewAuto)
 				}
 			},
 		},
