@@ -130,9 +130,10 @@ const DEFAULT_GAME_PREFIX = '';
 
 /**
  * Default maximum nodes to load in a single query.
- * Keeps the initial graph render responsive.
+ * Keeps the initial graph render responsive while showing a meaningful
+ * sample. Users can search/expand to discover more entities.
  */
-const DEFAULT_NODE_LIMIT = 200;
+const DEFAULT_NODE_LIMIT = 500;
 
 // =============================================================================
 // Store Factory
