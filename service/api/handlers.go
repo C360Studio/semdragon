@@ -196,6 +196,7 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 			Deadline            string   `json:"deadline,omitempty"`
 			PartyRequired       bool     `json:"party_required"`
 			MinPartySize        *int     `json:"min_party_size,omitempty"`
+			Repo                string   `json:"repo,omitempty"`
 		} `json:"hints,omitempty"`
 	}
 
@@ -257,6 +258,9 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 			if req.Hints.MinPartySize != nil && *req.Hints.MinPartySize >= 2 && *req.Hints.MinPartySize <= 5 {
 				quest.MinPartySize = *req.Hints.MinPartySize
 			}
+		}
+		if req.Hints.Repo != "" {
+			quest.Repo = req.Hints.Repo
 		}
 	}
 
