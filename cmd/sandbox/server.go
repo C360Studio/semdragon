@@ -377,6 +377,26 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		rm.mu.Lock()
 		defer rm.mu.Unlock()
 
+		// If this quest was retried, the branch and worktree already exist
+		// from a previous attempt. Reuse them — the partial work is valuable
+		// context for the next agent.
+		if _, statErr := os.Stat(dir); statErr == nil {
+			s.logger.Info("reusing existing worktree from previous attempt",
+				"quest_id", questID, "repo", repo, "branch", branch, "path", dir)
+
+			// Re-record the mapping (may have been cleaned up between attempts).
+			s.mu.Lock()
+			s.questRepos[questID] = repo
+			s.mu.Unlock()
+
+			writeJSON(w, http.StatusOK, map[string]string{
+				"status": "reused",
+				"repo":   repo,
+				"branch": branch,
+			})
+			return
+		}
+
 		// Create the quest branch from main.
 		res := execCommand(r.Context(), repoPath,
 			fmt.Sprintf("git branch %s main", branch),
