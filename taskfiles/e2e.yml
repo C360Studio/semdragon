@@ -111,6 +111,18 @@ tasks:
         ignore_error: true
       - task: maybe:down
 
+  hybrid:
+    desc: Run Tier 2 scenario tests with Gemini+Claude hybrid + semsource
+    cmds:
+      - task: install
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/mixed-gemini-claude.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-local.json }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=hybrid BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+        ignore_error: true
+      - task: maybe:down
+
   # Epic Tier 3 — real LLM only, exercises full party quest DAG pipeline
 
   epic:gemini:
@@ -146,6 +158,18 @@ tasks:
         vars: { MODELS: /etc/semdragons/models/openai.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-osh.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
+        ignore_error: true
+      - task: maybe:down
+
+  epic:hybrid:
+    desc: Run Epic Tier 3 tests with Gemini+Claude hybrid + semsource (OSH knowledge graph)
+    cmds:
+      - task: install
+      - task: clean
+      - task: stack:up
+        vars: { MODELS: /etc/semdragons/models/mixed-gemini-claude.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-osh.json }
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=hybrid BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
       - task: maybe:down
 
