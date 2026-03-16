@@ -102,6 +102,14 @@
       "embedding": {
         "description": "Vector embeddings for graph semantic search",
         "preferred": ["semembed"]
+      },
+      "community_summary": {
+        "description": "LLM community summaries for graph clustering",
+        "preferred": ["ollama-coder"]
+      },
+      "query_classification": {
+        "description": "NLQ classification for graph queries",
+        "preferred": ["ollama-coder"]
       }
     },
     "defaults": {
