@@ -453,8 +453,8 @@
       "name": "agentic-loop",
       "enabled": true,
       "config": {
-        "max_iterations": 50,
-        "timeout": "600s",
+        "max_iterations": 100,
+        "timeout": "900s",
         "stream_name": "AGENT",
         "loops_bucket": "AGENT_LOOPS",
         "trajectories_bucket": "AGENT_TRAJECTORIES",
