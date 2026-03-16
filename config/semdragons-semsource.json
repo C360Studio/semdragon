@@ -312,7 +312,12 @@
         },
         "embedder_type": "http",
         "batch_size": 50,
-        "cache_ttl": "1h"
+        "cache_ttl": "1h",
+        "text_suffixes": [
+          ".comment", ".path", ".package",
+          ".content", ".summary", ".description",
+          ".title", ".name", ".keywords"
+        ]
       }
     },
     "graph-clustering": {
