@@ -174,6 +174,10 @@ type AssemblyContext struct {
 	RecoveryPath    string                  `json:"recovery_path,omitempty"`
 	AntiPatterns    []string                `json:"anti_patterns,omitempty"`
 
+	// Workspace context — when true, the workspace contains files from a
+	// previous attempt. The agent should inspect existing work before starting.
+	WorkspaceHasPriorWork bool `json:"workspace_has_prior_work,omitempty"`
+
 	// Review awareness — tells the agent how their work will be evaluated.
 	// Populated from the domain's ReviewConfig at dispatch time.
 	ReviewLevel    domain.ReviewLevel      `json:"review_level,omitempty"`

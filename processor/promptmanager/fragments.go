@@ -40,6 +40,7 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerResearchOutputDirective(r)
 	registerReviewBrief(r)
 	registerToolSelectionGuidance(r)
+	registerWorkspacePriorWorkDirective(r)
 }
 
 // partyLeadDirectiveBase is the tool-call instruction for party leads when no
@@ -306,6 +307,29 @@ func registerResearchOutputDirective(r *PromptRegistry) {
 		Content:  researchOutputDirective,
 		Priority: 20, // After solo work output (15)
 		Skills:   []domain.SkillTag{domain.SkillResearch, domain.SkillAnalysis},
+	})
+}
+
+// =============================================================================
+// WORKSPACE PRIOR WORK - Tells retry agents to inspect existing files
+// =============================================================================
+
+const workspacePriorWorkDirective = `WORKSPACE PRIOR WORK:
+Your workspace contains files from a previous attempt at this quest.
+1. Start by running list_directory on "." to see what already exists.
+2. Review existing files before writing new ones — the previous agent may have made progress.
+3. Build on existing work rather than starting from scratch where possible.
+4. If the prior work is unusable, you may overwrite it, but explain why in your deliverable.`
+
+func registerWorkspacePriorWorkDirective(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:       "builtin.workspace-prior-work.tool-directive",
+		Category: CategoryToolDirective,
+		Content:  workspacePriorWorkDirective,
+		Priority: 5, // Before scenario directive (10) — agent should check workspace first
+		Condition: func(ctx AssemblyContext) bool {
+			return ctx.WorkspaceHasPriorWork
+		},
 	})
 }
 
