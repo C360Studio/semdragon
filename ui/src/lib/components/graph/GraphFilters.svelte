@@ -12,16 +12,17 @@
 	 * changes via callback props to keep it stateless and testable.
 	 */
 
-	import type { GameEntityType } from '$lib/api/graph-types';
 	import { ENTITY_TYPE_COLORS } from '$lib/utils/entity-colors';
 
 	interface GraphFiltersProps {
 		/** Set of currently visible entity types from graphStore.visibleTypes */
-		visibleTypes: Set<GameEntityType>;
+		visibleTypes: Set<string>;
+		/** Entity types present in the current data set */
+		presentTypes: string[];
 		/** Current search string from graphStore.filters.search */
 		search: string;
 		/** Callback when user toggles a type checkbox */
-		onToggleType: (type: GameEntityType) => void;
+		onToggleType: (type: string) => void;
 		/** Callback when user changes the search text */
 		onSearchChange: (search: string) => void;
 		/** Callback to show all types */
@@ -32,14 +33,13 @@
 
 	let {
 		visibleTypes,
+		presentTypes,
 		search,
 		onToggleType,
 		onSearchChange,
 		onShowAll,
 		onHideAll
 	}: GraphFiltersProps = $props();
-
-	const GAME_TYPES: GameEntityType[] = ['quest', 'agent', 'party', 'guild', 'battle', 'peer_review'];
 
 	function handleSearchInput(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
@@ -56,7 +56,7 @@
 <div class="graph-filters" data-testid="graph-filters">
 	<!-- Entity type toggles -->
 	<div class="type-list" role="group" aria-label="Entity type filters">
-		{#each GAME_TYPES as type (type)}
+		{#each presentTypes as type (type)}
 			{@const checked = visibleTypes.has(type)}
 			{@const color = ENTITY_TYPE_COLORS[type] ?? ENTITY_TYPE_COLORS.unknown}
 			<label

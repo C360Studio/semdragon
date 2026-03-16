@@ -1,11 +1,12 @@
 /**
- * Entity Color Mapping for Game Graph Visualization
+ * Entity Color Mapping for Graph Visualization
  *
- * Maps semdragons game entity types to distinct colors for the graph visualization.
+ * Maps entity types to distinct colors for the graph visualization.
  * Entity IDs have format: org.platform.domain.system.type.instance
  * Color is assigned based on the entity type (5th part of the 6-part ID).
  *
- * Game entity types: quest, agent, party, guild, battle, peer_review
+ * Includes both game entity types (quest, agent, party, guild, battle)
+ * and semsource knowledge graph types (file, function, class, etc.).
  */
 
 import type { EntityIdParts } from '$lib/api/graph-types';
@@ -15,17 +16,37 @@ import type { EntityIdParts } from '$lib/api/graph-types';
 // =============================================================================
 
 /**
- * Color mapping for semdragons game entity types.
- * Each type gets a distinct, recognizable color for the graph visualization.
+ * Color mapping for entity types in the graph visualization.
+ * Includes both game entity types and semsource knowledge graph types.
  */
 export const ENTITY_TYPE_COLORS: Record<string, string> = {
+	// Game entity types
 	quest: '#a855f7', // Purple — quest work items
 	agent: '#22d3ee', // Cyan — the adventurers
 	party: '#22c55e', // Green — temporary groups
 	guild: '#eab308', // Gold — specialized collectives
 	battle: '#ef4444', // Red — boss battle reviews
 	peer_review: '#f97316', // Orange — peer evaluations
-	// Fallback for unknown or non-game entity types
+	storeitem: '#fb923c', // Orange-light — store catalog items
+	execution: '#a78bfa', // Violet-light — execution records
+	endpoint: '#38bdf8', // Sky — API endpoints
+
+	// Semsource / knowledge graph entity types
+	file: '#3b82f6', // Blue — source files
+	doc: '#f59e0b', // Amber — documents (semsource doc entities)
+	document: '#f59e0b', // Amber — documentation
+	function: '#14b8a6', // Teal — functions/methods
+	class: '#6366f1', // Indigo — classes/interfaces
+	module: '#8b5cf6', // Violet — modules/packages
+	package: '#0ea5e9', // Sky — packages
+	config: '#64748b', // Slate — configuration files
+	interface: '#818cf8', // Indigo-light — interfaces
+	method: '#2dd4bf', // Teal-light — methods
+	field: '#94a3b8', // Slate-light — fields
+	group: '#78716c', // Stone — hierarchy groups
+	container: '#a8a29e', // Stone-light — hierarchy containers
+
+	// Fallback for unknown entity types
 	unknown: '#6b7280' // Gray
 };
 
@@ -58,6 +79,14 @@ export const PREDICATE_COLORS: Record<string, string> = {
 	// Data / state
 	data: '#64748b', // Slate
 	state: '#64748b',
+
+	// Semsource / knowledge graph predicates
+	content: '#3b82f6', // Blue — source content
+	ast: '#14b8a6', // Teal — AST structure
+	metadata: '#f59e0b', // Amber — metadata
+	identity: '#94a3b8', // Slate-light — identity info
+	section: '#f59e0b', // Amber — doc sections
+	import: '#8b5cf6', // Violet — imports/dependencies
 
 	// Generic fallback
 	default: '#6b7280' // Gray

@@ -22,11 +22,9 @@ import {
 	type GraphEntity,
 	type GraphRelationship,
 	type GraphFilters,
-	type GameEntityType,
 	DEFAULT_GRAPH_FILTERS,
 	parseEntityId,
 	createRelationshipId,
-	getGameEntityType,
 	type TripleProperty
 } from '$lib/api/graph-types';
 
@@ -155,15 +153,8 @@ function createGraphStore() {
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
-	// Entity type visibility toggles — all types visible by default
-	let visibleTypes = new SvelteSet<GameEntityType>([
-		'quest',
-		'agent',
-		'party',
-		'guild',
-		'battle',
-		'peer_review'
-	]);
+	// Entity type visibility toggles — starts empty, auto-populated on data load
+	let visibleTypes = new SvelteSet<string>();
 
 	// ---------------------------------------------------------------------------
 	// Derived state
@@ -187,11 +178,9 @@ function createGraphStore() {
 		// Entity type filter (explicit types[] in filters take precedence over visibleTypes toggle)
 		if (filters.types.length > 0) {
 			result = result.filter((e) => filters.types.includes(e.idParts.type));
-		} else {
+		} else if (visibleTypes.size > 0) {
 			// Use the visibility toggle set when no explicit type filter is active
-			result = result.filter((e) =>
-				visibleTypes.has(getGameEntityType(e) as GameEntityType)
-			);
+			result = result.filter((e) => visibleTypes.has(e.idParts.type));
 		}
 
 		// Time range filter
@@ -400,10 +389,10 @@ function createGraphStore() {
 		// =========================================================================
 
 		/**
-		 * Toggle a game entity type on/off in the graph visualization.
+		 * Toggle an entity type on/off in the graph visualization.
 		 * This operates independently of the filters.types array.
 		 */
-		toggleEntityType(type: GameEntityType) {
+		toggleEntityType(type: string) {
 			if (visibleTypes.has(type)) {
 				visibleTypes.delete(type);
 			} else {
@@ -411,10 +400,9 @@ function createGraphStore() {
 			}
 		},
 
-		/** Show all entity types. */
+		/** Show all present entity types. */
 		showAllTypes() {
-			const all: GameEntityType[] = ['quest', 'agent', 'party', 'guild', 'battle', 'peer_review'];
-			for (const t of all) visibleTypes.add(t);
+			for (const t of presentEntityTypes) visibleTypes.add(t);
 		},
 
 		/** Hide all entity types (blank canvas). */
@@ -446,6 +434,10 @@ function createGraphStore() {
 				const newEntities = result.entities.map(buildGraphEntity);
 				this.clearEntities();
 				this.upsertEntities(newEntities);
+				// Auto-populate visibleTypes from loaded data so all types are shown
+				for (const e of newEntities) {
+					visibleTypes.add(e.idParts.type);
+				}
 			} catch (err) {
 				error = err instanceof Error ? err.message : 'Failed to load graph entities';
 			} finally {
@@ -468,6 +460,8 @@ function createGraphStore() {
 				const result = await api.getEntityNeighbors(entityId);
 				const newEntities = result.entities.map(buildGraphEntity);
 				this.upsertEntities(newEntities);
+				// Auto-add new entity types to visibleTypes
+				for (const e of newEntities) visibleTypes.add(e.idParts.type);
 				expandedEntityIds.add(entityId);
 			} catch (err) {
 				if (err instanceof DOMException && err.name === 'AbortError') return;

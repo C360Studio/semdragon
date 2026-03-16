@@ -8,7 +8,6 @@
 	 */
 
 	import type { GraphEntity, GraphRelationship } from '$lib/api/graph-types';
-	import { getGameEntityType } from '$lib/api/graph-types';
 	import { ENTITY_TYPE_COLORS } from '$lib/utils/entity-colors';
 
 	interface GraphMetricsProps {
@@ -18,22 +17,16 @@
 
 	let { entities, relationships }: GraphMetricsProps = $props();
 
-	/** Count entities grouped by game type. */
+	/** Count entities grouped by entity type (from 5th part of ID). */
 	const typeCounts = $derived.by(() => {
 		const counts = new Map<string, number>();
 		for (const entity of entities) {
-			const t = getGameEntityType(entity);
+			const t = entity.idParts.type || 'unknown';
 			counts.set(t, (counts.get(t) ?? 0) + 1);
 		}
-		// Return sorted by count descending, unknowns last
 		return Array.from(counts.entries())
-			.filter(([type]) => type !== 'unknown')
 			.sort(([, a], [, b]) => b - a);
 	});
-
-	const unknownCount = $derived(
-		entities.filter((e) => getGameEntityType(e) === 'unknown').length
-	);
 
 	/**
 	 * Graph density = edges / (n * (n-1)) for a directed graph.
@@ -65,18 +58,6 @@
 			<span class="chip-count">{count}</span>
 		</span>
 	{/each}
-
-	{#if unknownCount > 0}
-		<span
-			class="type-chip type-chip-unknown"
-			title="{unknownCount} unknown entities"
-			data-testid="metrics-type-unknown"
-		>
-			<span class="chip-dot" aria-hidden="true"></span>
-			<span class="chip-type">other</span>
-			<span class="chip-count">{unknownCount}</span>
-		</span>
-	{/if}
 
 	<span class="metrics-sep" aria-hidden="true">|</span>
 

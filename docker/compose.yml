@@ -160,7 +160,7 @@ services:
     command:
       - run
       - --config
-      - /etc/semsource/${SEMSOURCE_CONFIG:-semsource-osh.json}
+      - /etc/semsource/${SEMSOURCE_CONFIG:-semsource-local.json}
       - --log-level
       - ${SEMSOURCE_LOG_LEVEL:-info}
     depends_on:
@@ -173,6 +173,7 @@ services:
     volumes:
       - ./semsource-osh.json:/etc/semsource/semsource-osh.json:ro
       - ./semsource-workspace.json:/etc/semsource/semsource-workspace.json:ro
+      - ./semsource-local.json:/etc/semsource/semsource-local.json:ro
       - ${REPOS_DIR:-./repos}:/sources:ro
     restart: unless-stopped
     healthcheck:

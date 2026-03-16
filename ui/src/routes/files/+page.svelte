@@ -2,9 +2,12 @@
 	/**
 	 * Files - Read-only artifact file browser for quest outputs
 	 *
-	 * Takes a ?quest={id} URL param. Shows a file tree and preview pane
-	 * for the flat artifact list returned by listQuestArtifacts. No worldStore
-	 * dependency — purely API-driven.
+	 * Two modes:
+	 * 1. No ?quest param → quest picker showing quests that have had work done
+	 * 2. ?quest={id} → file tree + preview for that quest's artifacts
+	 *
+	 * Quest picker uses worldStore (reactive to SSE). File listing and content
+	 * use the artifact API (on-demand fetch through sandbox).
 	 */
 
 	import { page } from '$app/state';
@@ -13,6 +16,8 @@
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import CopyButton from '$components/CopyButton.svelte';
 	import { listQuestArtifacts, getArtifactFile, getArtifactsDownloadUrl } from '$services/api';
+	import { worldStore } from '$stores/worldStore.svelte';
+	import { extractInstance } from '$types';
 
 	// ---------------------------------------------------------------------------
 	// Types
@@ -52,6 +57,57 @@
 
 	// Expanded dir paths
 	let expandedDirs = $state(new Set<string>());
+
+	// ---------------------------------------------------------------------------
+	// Quest picker (when no ?quest param)
+	// ---------------------------------------------------------------------------
+
+	interface QuestPickerItem {
+		instanceId: string;
+		questId: string;
+		title: string;
+		status: string;
+		agentName: string;
+		children: QuestPickerItem[];
+	}
+
+	const workStatuses = ['completed', 'failed', 'in_review', 'in_progress', 'escalated'];
+
+	// Group quests: top-level parents with sub-quests nested underneath
+	const workQuests = $derived.by(() => {
+		const all = worldStore.questList.filter((q) => workStatuses.includes(q.status));
+		const toItem = (q: typeof all[0]): QuestPickerItem => ({
+			instanceId: extractInstance(q.id),
+			questId: q.id,
+			title: q.title ?? extractInstance(q.id),
+			status: q.status,
+			agentName: q.claimed_by ? worldStore.agentName(q.claimed_by) : '',
+			children: []
+		});
+
+		// Index sub-quests by parent
+		const childMap = new Map<string, QuestPickerItem[]>();
+		const subQuestIds = new Set<string>();
+		for (const q of all) {
+			if (q.parent_quest) {
+				subQuestIds.add(q.id);
+				const parentId = String(q.parent_quest);
+				const siblings = childMap.get(parentId) ?? [];
+				siblings.push(toItem(q));
+				childMap.set(parentId, siblings);
+			}
+		}
+
+		// Build top-level list with children attached
+		const result: QuestPickerItem[] = [];
+		for (const q of all) {
+			if (subQuestIds.has(q.id)) continue;
+			const item = toItem(q);
+			item.children = childMap.get(q.id) ?? [];
+			result.push(item);
+		}
+		return result;
+	});
 
 	// ---------------------------------------------------------------------------
 	// Tree builder from flat paths
@@ -238,15 +294,50 @@
 					{/if}
 				</div>
 				{#if questId}
-					<p class="quest-id-label">Quest: <code>{questId}</code></p>
+					<p class="quest-id-label">
+						<a href="/files" class="back-link">&larr; All quests</a>
+						<span>Quest: <code>{questId}</code></span>
+					</p>
 				{/if}
 			</header>
 
 			{#if !questId}
-				<div class="empty-state no-quest" data-testid="files-empty">
-					<p>Select a quest to browse its files.</p>
-					<p>Navigate to a completed quest and click <strong>Browse files</strong>.</p>
-				</div>
+				{#if workQuests.length > 0}
+					<div class="quest-picker" data-testid="files-quest-list">
+						{#each workQuests as q (q.instanceId)}
+							<div class="quest-group" class:has-children={q.children.length > 0}>
+								<a href="/files?quest={q.instanceId}" class="quest-pick-card">
+									<div class="pick-header">
+										<span class="pick-title">{q.title}</span>
+										<span class="status-badge" data-status={q.status}>{q.status}</span>
+									</div>
+									{#if q.agentName}
+										<div class="pick-meta"><span>{q.agentName}</span></div>
+									{/if}
+								</a>
+								{#if q.children.length > 0}
+									<div class="sub-quests">
+										{#each q.children as sub (sub.instanceId)}
+											<a href="/files?quest={sub.instanceId}" class="quest-pick-card sub-quest">
+												<div class="pick-header">
+													<span class="pick-title">{sub.title}</span>
+													<span class="status-badge" data-status={sub.status}>{sub.status}</span>
+												</div>
+												{#if sub.agentName}
+													<div class="pick-meta"><span>{sub.agentName}</span></div>
+												{/if}
+											</a>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<div class="empty-state" data-testid="files-empty">
+						<p>No quests with work yet.</p>
+					</div>
+				{/if}
 
 			{:else if loadingTree}
 				<div class="loading-state">
@@ -407,9 +498,25 @@
 		color: var(--ui-text-tertiary);
 	}
 
+	.quest-id-label {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
 	.quest-id-label code {
 		font-family: var(--font-mono, monospace);
 		font-size: 0.8rem;
+	}
+
+	.back-link {
+		font-size: 0.8125rem;
+		color: var(--ui-text-secondary);
+		text-decoration: none;
+	}
+
+	.back-link:hover {
+		color: var(--ui-text-primary);
 	}
 
 	/* State views */
@@ -429,6 +536,98 @@
 
 	.error-state {
 		color: var(--status-error);
+	}
+
+	/* Quest picker */
+	.quest-picker {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-lg);
+		overflow-y: auto;
+		flex: 1;
+	}
+
+	.quest-pick-card {
+		display: block;
+		padding: var(--spacing-sm) var(--spacing-md);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		text-decoration: none;
+		color: var(--ui-text-primary);
+		transition: background 100ms ease, border-color 100ms ease;
+	}
+
+	.quest-pick-card:hover {
+		background: var(--ui-surface-tertiary);
+		border-color: var(--ui-border-default);
+		text-decoration: none;
+	}
+
+	.pick-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--spacing-sm);
+	}
+
+	.pick-title {
+		font-size: 0.875rem;
+		font-weight: 500;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.status-badge {
+		font-size: 0.6875rem;
+		padding: 1px 6px;
+		border-radius: var(--radius-sm);
+		background: var(--ui-surface-tertiary);
+		color: var(--ui-text-secondary);
+		white-space: nowrap;
+		text-transform: lowercase;
+	}
+
+	.status-badge[data-status='completed'] { color: var(--status-success); }
+	.status-badge[data-status='failed'] { color: var(--status-error); }
+	.status-badge[data-status='in_progress'] { color: var(--status-active); }
+	.status-badge[data-status='escalated'] { color: var(--status-warning); }
+
+	.pick-meta {
+		font-size: 0.8125rem;
+		color: var(--ui-text-tertiary);
+		margin-top: 2px;
+	}
+
+	.quest-group.has-children {
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: var(--radius-md);
+		overflow: hidden;
+	}
+
+	.quest-group.has-children > .quest-pick-card {
+		border: none;
+		border-radius: 0;
+	}
+
+	.sub-quests {
+		border-top: 1px solid var(--ui-border-subtle);
+		padding-left: var(--spacing-md);
+	}
+
+	.sub-quests .quest-pick-card {
+		border: none;
+		border-radius: 0;
+		border-top: 1px solid var(--ui-border-subtle);
+	}
+
+	.sub-quests .quest-pick-card:first-child {
+		border-top: none;
+	}
+
+	.sub-quest .pick-title {
+		font-size: 0.8125rem;
 	}
 
 	/* Browser layout */

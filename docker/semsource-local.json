@@ -1,0 +1,11 @@
+{
+  "namespace": "local",
+  "sources": [
+    {
+      "type": "repo",
+      "path": "/sources/testrepo",
+      "branch": "main",
+      "watch": true
+    }
+  ]
+}

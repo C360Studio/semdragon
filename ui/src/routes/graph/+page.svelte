@@ -25,7 +25,6 @@
 	import { graphApi } from '$lib/services/graphApi';
 	import { transformPathSearchResult, transformGlobalSearchResult } from '$lib/services/graphTransform';
 	import type { GraphStoreAdapter } from '$lib/stores/graphStore.svelte';
-	import type { GameEntityType } from '$lib/api/graph-types';
 
 	// ---------------------------------------------------------------------------
 	// Panel state — matches the pattern used in trajectories/quests pages
@@ -105,7 +104,7 @@
 		await graphStore.loadInitialGraph(graphApiAdapter);
 	}
 
-	function handleToggleType(type: GameEntityType) {
+	function handleToggleType(type: string) {
 		graphStore.toggleEntityType(type);
 	}
 
@@ -145,6 +144,7 @@
 			<div class="graph-toolbar">
 				<GraphFilters
 					visibleTypes={graphStore.visibleTypes}
+					presentTypes={graphStore.presentEntityTypes}
 					search={graphStore.filters.search}
 					onToggleType={handleToggleType}
 					onSearchChange={handleSearchChange}

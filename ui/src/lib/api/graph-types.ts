@@ -241,7 +241,17 @@ export function getEntityLabel(entity: GraphEntity): string {
     case 'guild':
       return val('guild.identity.name') || fallback;
     default:
-      return fallback;
+      // Semsource / generic entities: try common identity predicates
+      return (
+        val(`${type}.identity.name`) ||
+        val(`${type}.identity.display_name`) ||
+        val('source.identity.name') ||
+        val('source.doc.summary') ||
+        val('source.doc.file_path') ||
+        val('source.metadata.path') ||
+        val('doc.identity.title') ||
+        fallback
+      );
   }
 }
 

@@ -46,8 +46,18 @@ function getNodeLabel(entity: GraphEntity): string {
 			return val('party.identity.name') || fallback;
 		case 'guild':
 			return val('guild.identity.name') || fallback;
-		default:
-			return fallback;
+		default: {
+			// Semsource / generic entities: try common identity and metadata predicates
+			const name =
+				val(`${type}.identity.name`) ||
+				val(`${type}.identity.display_name`) ||
+				val('source.identity.name') ||
+				val('source.doc.summary') ||
+				val('source.doc.file_path') ||
+				val('source.metadata.path') ||
+				val('doc.identity.title');
+			return name ? truncateLabel(name) : fallback;
+		}
 	}
 }
 
