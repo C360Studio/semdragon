@@ -35,30 +35,38 @@ function getNodeLabel(entity: GraphEntity): string {
 		return String(t.object);
 	};
 
+	let label: string;
 	switch (type) {
 		case 'agent':
-			return val('agent.identity.display_name') || val('agent.identity.name') || fallback;
+			label = val('agent.identity.display_name') || val('agent.identity.name') || fallback;
+			break;
 		case 'quest':
-			return val('quest.identity.name') || truncateLabel(val('quest.identity.title')) || fallback;
+			label = val('quest.identity.name') || val('quest.identity.title') || fallback;
+			break;
 		case 'battle':
-			return val('battle.identity.name') || fallback;
+			label = val('battle.identity.name') || fallback;
+			break;
 		case 'party':
-			return val('party.identity.name') || fallback;
+			label = val('party.identity.name') || fallback;
+			break;
 		case 'guild':
-			return val('guild.identity.name') || fallback;
+			label = val('guild.identity.name') || fallback;
+			break;
 		default: {
 			// Semsource / generic entities: try common identity and metadata predicates
-			const name =
+			label =
 				val(`${type}.identity.name`) ||
 				val(`${type}.identity.display_name`) ||
 				val('source.identity.name') ||
 				val('source.doc.summary') ||
 				val('source.doc.file_path') ||
 				val('source.metadata.path') ||
-				val('doc.identity.title');
-			return name ? truncateLabel(name) : fallback;
+				val('doc.identity.title') ||
+				fallback;
+			break;
 		}
 	}
+	return truncateLabel(label);
 }
 
 function truncateLabel(s: string): string {

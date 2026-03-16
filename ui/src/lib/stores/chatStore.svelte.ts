@@ -15,6 +15,7 @@ import type {
 	Quest, QuestID, QuestDifficulty, SkillTag, DMChatSession, ChatMode,
 	QuestBrief, QuestChainBrief, QuestChainEntry, QuestHints
 } from '$types';
+import { extractInstance } from '$types';
 import { browser } from '$app/environment';
 import { sendDMChat, postQuestChain, getDMSession, repostEscalation, triageQuest, ApiError } from '$lib/services/api';
 import { worldStore } from '$lib/stores/worldStore.svelte';
@@ -450,7 +451,8 @@ async function respondToEscalation(questId: QuestID, answer: string): Promise<bo
 		loading = true;
 		error = null;
 		// Empty answer = plain repost; non-empty = repost with DM guidance
-		await repostEscalation(questId, answer || undefined);
+		// API expects instance ID (no dots), not full entity ID
+		await repostEscalation(extractInstance(questId) as QuestID, answer || undefined);
 		// Mark card resolved and record the action
 		const resolvedLabel = answer ? `Reposted with guidance: ${answer}` : 'Reposted';
 		for (let i = 0; i < messages.length; i++) {
@@ -477,7 +479,8 @@ async function submitTriage(
 	try {
 		loading = true;
 		error = null;
-		await triageQuest(questId, decision);
+		// API expects instance ID (no dots), not full entity ID
+		await triageQuest(extractInstance(questId) as QuestID, decision);
 		// Mark card resolved and record the path
 		for (let i = 0; i < messages.length; i++) {
 			const card = messages[i].attentionCard;

@@ -31,7 +31,9 @@ func (s *Service) handleGetQuestArtifacts(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	files, err := s.sandboxClient.ListWorkspaceFiles(r.Context(), id)
+	workspaceID := s.resolveQuestWorkspaceID(id)
+
+	files, err := s.sandboxClient.ListWorkspaceFiles(r.Context(), workspaceID)
 	if err != nil || len(files) == 0 {
 		s.writeError(w, "no artifacts found for quest", http.StatusNotFound)
 		return
@@ -64,7 +66,7 @@ func (s *Service) handleGetQuestArtifacts(w http.ResponseWriter, r *http.Request
 	}
 
 	for _, f := range files {
-		data, readErr := s.sandboxClient.ReadFile(r.Context(), id, f.Path)
+		data, readErr := s.sandboxClient.ReadFile(r.Context(), workspaceID, f.Path)
 		if readErr != nil {
 			s.logger.Error("skipping artifact in zip", "path", f.Path, "error", readErr)
 			continue
@@ -98,7 +100,8 @@ func (s *Service) handleGetQuestArtifactFile(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	data, readErr := s.sandboxClient.ReadFile(r.Context(), id, filePath)
+	workspaceID := s.resolveQuestWorkspaceID(id)
+	data, readErr := s.sandboxClient.ReadFile(r.Context(), workspaceID, filePath)
 	if readErr != nil {
 		s.logger.Debug("artifact get failed", "quest_id", id, "path", filePath, "error", readErr)
 		s.writeError(w, "artifact not found", http.StatusNotFound)
@@ -126,7 +129,8 @@ func (s *Service) handleListQuestArtifacts(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	entries, err := s.sandboxClient.ListWorkspaceFiles(r.Context(), id)
+	workspaceID := s.resolveQuestWorkspaceID(id)
+	entries, err := s.sandboxClient.ListWorkspaceFiles(r.Context(), workspaceID)
 	if err != nil {
 		// Workspace may not exist (quest completed without sandbox, or already cleaned up).
 		s.writeJSON(w, map[string]any{
@@ -150,6 +154,19 @@ func (s *Service) handleListQuestArtifacts(w http.ResponseWriter, r *http.Reques
 		"files":    files,
 		"count":    len(files),
 	})
+}
+
+// =============================================================================
+// QUEST ID RESOLUTION
+// =============================================================================
+
+// resolveQuestWorkspaceID maps a URL path ID (instance segment) to the full
+// entity ID used as the sandbox workspace directory name. The sandbox creates
+// workspaces keyed by the full 6-part entity ID (e.g. c360.dev.game.board1.quest.abc123)
+// but the REST API accepts the short instance ID (e.g. abc123).
+func (s *Service) resolveQuestWorkspaceID(id string) string {
+	instance := domain.ExtractInstance(id)
+	return s.graph.Config().QuestEntityID(instance)
 }
 
 // =============================================================================

@@ -447,6 +447,7 @@
 		gap: var(--spacing-md);
 		padding: var(--spacing-md);
 		overflow-x: auto;
+		min-height: 0;
 	}
 
 	.kanban-column {
@@ -455,7 +456,7 @@
 		flex-direction: column;
 		background: var(--ui-surface-secondary);
 		border-radius: var(--radius-lg);
-		overflow: hidden;
+		min-height: 0;
 	}
 
 	.column-header {
