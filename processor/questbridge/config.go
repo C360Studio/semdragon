@@ -74,6 +74,11 @@ type Config struct {
 	// When false (default), loadDependencyOutputs is used for backward compat.
 	EnableStructuredDeps bool `json:"enable_structured_deps,omitempty"`
 
+	// DefaultRepo is the repo name used when a quest has no explicit repo set.
+	// Single-repo MVP: set this and all quests target it automatically.
+	// When empty, quests without an explicit repo get a plain workspace (no worktree).
+	DefaultRepo string `json:"default_repo,omitempty"`
+
 	// Domain selects which DomainCatalog to inject (e.g. "software", "dnd", "research").
 	Domain string `json:"domain,omitempty"`
 

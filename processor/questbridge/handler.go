@@ -265,11 +265,16 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 
 	// Create workspace for the agent's file operations via sandbox container.
 	// When the quest declares a target repo, the sandbox creates a git worktree
-	// from that repo's main branch. Otherwise a plain directory is created.
+	// from that repo's main branch. Falls back to config.DefaultRepo for the
+	// single-repo MVP. Plain directory created when no repo is configured.
+	repo := quest.Repo
+	if repo == "" {
+		repo = c.config.DefaultRepo
+	}
 	if c.sandboxClient != nil {
-		if wsErr := c.sandboxClient.CreateWorkspace(ctx, questID, quest.Repo); wsErr != nil {
+		if wsErr := c.sandboxClient.CreateWorkspace(ctx, questID, repo); wsErr != nil {
 			c.logger.Error("sandbox workspace creation failed, cannot dispatch quest",
-				"quest_id", questID, "repo", quest.Repo, "error", wsErr)
+				"quest_id", questID, "repo", repo, "error", wsErr)
 			c.errorsCount.Add(1)
 			return
 		}

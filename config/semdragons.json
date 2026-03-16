@@ -413,6 +413,7 @@
         "default_role": "general",
         "sandbox_dir": "/workspace",
         "sandbox_url": "http://sandbox:8090",
+        "default_repo": "testrepo",
         "dm_mode": "full_auto",
         "max_clarification_rounds": 3,
         "graphql_url": "http://localhost:8080/graph-gateway/graphql"
