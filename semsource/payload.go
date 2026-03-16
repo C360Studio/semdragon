@@ -39,6 +39,20 @@ func init() {
 	}); err != nil {
 		panic(fmt.Sprintf("semsource: failed to register entity payload: %v", err))
 	}
+
+	// Register semsource status heartbeat so message-logger can parse it.
+	// The payload is informational only — no component consumes it.
+	if err := component.RegisterPayload(&component.PayloadRegistration{
+		Domain:      "semsource",
+		Category:    "status",
+		Version:     "v1",
+		Description: "Semsource instance status heartbeat",
+		Factory: func() any {
+			return &StatusPayload{}
+		},
+	}); err != nil {
+		panic(fmt.Sprintf("semsource: failed to register status payload: %v", err))
+	}
 }
 
 // EntityPayload carries a graph entity received from semsource.
@@ -89,3 +103,18 @@ func (p *EntityPayload) UnmarshalJSON(data []byte) error {
 	type Alias EntityPayload
 	return json.Unmarshal(data, (*Alias)(p))
 }
+
+// StatusPayload is the semsource heartbeat message. Registered so the
+// message-logger can parse it without "unregistered payload type" warnings.
+type StatusPayload struct {
+	Status    string `json:"status"`
+	Sources   int    `json:"sources"`
+	Entities  int    `json:"entities"`
+	Uptime    string `json:"uptime,omitempty"`
+}
+
+func (p *StatusPayload) Schema() message.Type {
+	return message.Type{Domain: "semsource", Category: "status", Version: "v1"}
+}
+
+func (p *StatusPayload) Validate() error { return nil }
