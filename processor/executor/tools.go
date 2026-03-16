@@ -146,7 +146,7 @@ var writeFileSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierExpert, // Level 11+ can write files (production capability)
+	MinTier: domain.TierApprentice, // All tiers — sandbox is the workspace, writing files is fundamental
 }
 
 var patchFileSpec = toolSpec{
@@ -234,7 +234,7 @@ var createDirectorySpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierJourneyman, // Level 6+ — filesystem writes require trust
+	MinTier: domain.TierApprentice, // All tiers — needed alongside write_file in sandbox workspace
 }
 
 var listDirectorySpec = toolSpec{

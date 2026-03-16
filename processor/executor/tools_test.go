@@ -43,21 +43,20 @@ func TestBuiltinToolTierAlignment(t *testing.T) {
 		{tool: "ask_clarification", wantTier: domain.TierApprentice, reason: "all tiers can ask questions"},
 		{tool: "inspect_environment", wantTier: domain.TierApprentice, reason: "read-only environment inspection"},
 
-		// Journeyman — targeted writes and network access require demonstrated trust.
+		{tool: "write_file", wantTier: domain.TierApprentice, reason: "sandbox workspace — all tiers write files"},
+		{tool: "create_directory", wantTier: domain.TierApprentice, reason: "sandbox workspace — needed alongside write_file"},
+
+		// Journeyman — targeted writes, network access, and execution require demonstrated trust.
 		{tool: "patch_file", wantTier: domain.TierJourneyman, reason: "targeted file edits require level 6+"},
 		{tool: "http_request", wantTier: domain.TierJourneyman, reason: "network access requires level 6+"},
-		{tool: "create_directory", wantTier: domain.TierJourneyman, reason: "filesystem writes require level 6+"},
 		{tool: "rename_file", wantTier: domain.TierJourneyman, reason: "filesystem writes require level 6+"},
 		{tool: "delete_file", wantTier: domain.TierJourneyman, reason: "destructive operations require level 6+"},
-
-		// Journeyman — allowlist-constrained execution, git, and build operations.
 		{tool: "run_tests", wantTier: domain.TierJourneyman, reason: "allowlist-constrained test execution"},
 		{tool: "lint_check", wantTier: domain.TierJourneyman, reason: "allowlist-constrained lint execution"},
 		{tool: "git_operation", wantTier: domain.TierJourneyman, reason: "structured git operations"},
 		{tool: "build_project", wantTier: domain.TierJourneyman, reason: "build system execution"},
 
-		// Expert — production-grade writes and dependency management require level 11+.
-		{tool: "write_file", wantTier: domain.TierExpert, reason: "full file write is a production capability"},
+		// Expert — dependency management requires level 11+.
 		{tool: "manage_dependencies", wantTier: domain.TierExpert, reason: "dependency changes affect builds"},
 
 		// Master — unrestricted shell and party-lead DAG operations require level 16+.
@@ -100,18 +99,17 @@ func TestBuiltinToolCount(t *testing.T) {
 	t.Parallel()
 
 	// RegisterBuiltins registers:
-	//   read_file, write_file, list_directory, search_text, patch_file,
-	//   http_request, run_tests, run_command           — 8 core tools
-	//   decompose_quest                                 — 1 DAG lead tool
-	//   review_sub_quest                               — 1 DAG review tool
-	//   answer_clarification                           — 1 DAG clarification tool
-	//   glob_files, read_file_range                    — 2 read-only Apprentice tools
+	//   read_file, read_file_range, list_directory, search_text,
+	//   glob_files, inspect_environment                — 6 read-only Apprentice tools
+	//   write_file, create_directory                   — 2 write Apprentice tools (sandbox workspace)
 	//   submit_work_product, ask_clarification         — 2 terminal tools (Apprentice)
-	//   create_directory, rename_file, delete_file     — 3 Journeyman tools
-	//   lint_check                                     — 1 Journeyman tool
-	//   inspect_environment                            — 1 Apprentice tool
+	//   patch_file, rename_file, delete_file           — 3 Journeyman tools
+	//   http_request, run_tests, lint_check            — 3 Journeyman tools
 	//   git_operation, build_project                   — 2 Journeyman tools
+	//   run_command                                    — 1 Master tool
 	//   manage_dependencies                            — 1 Expert tool
+	//   decompose_quest, review_sub_quest,
+	//   answer_clarification                           — 3 DAG tools (Master)
 	//
 	// web_search is excluded — registered conditionally via RegisterWebSearch.
 	// graph_query is excluded — requires a live EntityQueryFunc (RegisterGraphQuery).
