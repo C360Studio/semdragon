@@ -2270,7 +2270,10 @@ func buildUserPrompt(quest *domain.Quest) string {
 // subsequent quests skip immediately once readiness is established (or timed out).
 // No-op when semsource is not configured or timeout is 0.
 func (c *Component) waitForKnowledgeSources(ctx context.Context, entityID string) {
-	if c.manifestClient == nil || c.config.KnowledgeReadyTimeout <= 0 {
+	// Gate on graph manifest (via graph-gateway GraphQL) rather than semsource REST,
+	// because the graph manifest reflects what's actually queryable via graph_search.
+	// We wait for the "source" predicate family — that signals code/doc content is indexed.
+	if c.graphManifestClient == nil || c.config.KnowledgeReadyTimeout <= 0 {
 		return
 	}
 
@@ -2280,12 +2283,12 @@ func (c *Component) waitForKnowledgeSources(ctx context.Context, entityID string
 	}
 
 	// Check current state before entering the poll loop.
-	if c.manifestClient.HasActiveSource(ctx) {
+	if c.graphManifestClient.HasSourceContent(ctx) {
 		c.knowledgeReady.Store(true)
 		return
 	}
 
-	c.logger.Info("waiting for semsource knowledge sources to become active",
+	c.logger.Info("waiting for knowledge graph source content to be indexed",
 		"entity_id", entityID,
 		"timeout_seconds", c.config.KnowledgeReadyTimeout)
 
@@ -2303,14 +2306,14 @@ func (c *Component) waitForKnowledgeSources(ctx context.Context, entityID string
 			c.knowledgeReady.Store(true) // Don't block future quests
 			return
 		case <-deadline:
-			c.logger.Warn("semsource readiness timeout — proceeding without knowledge context",
+			c.logger.Warn("knowledge graph readiness timeout — proceeding without source content",
 				"entity_id", entityID)
 			c.knowledgeReady.Store(true) // Don't re-block on next quest
 			return
 		case <-ticker.C:
-			c.manifestClient.Refresh(ctx)
-			if c.manifestClient.HasActiveSource(ctx) {
-				c.logger.Info("semsource knowledge source active, proceeding",
+			c.graphManifestClient.Refresh(ctx)
+			if c.graphManifestClient.HasSourceContent(ctx) {
+				c.logger.Info("knowledge graph source content indexed, proceeding",
 					"entity_id", entityID)
 				c.knowledgeReady.Store(true)
 				return

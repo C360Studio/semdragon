@@ -410,7 +410,7 @@ func registerReviewBrief(r *PromptRegistry) {
 var toolGuidanceEntries = map[string]string{
 	// Knowledge tools
 	"graph_query":  "Game state (quests, agents, guilds, parties, battles). Fast.",
-	"graph_search": "Knowledge graph (code, docs, repos). ALWAYS try this FIRST for project-specific lookups — faster and cheaper than http_request or web_search.",
+	"graph_search": "Knowledge graph (code, docs, repos). ALWAYS try this FIRST for project-specific lookups — faster and cheaper than http_request or web_search. Use query_type 'nlq' to ask natural language questions about the codebase.",
 	"web_search":   "External info not in the graph (third-party APIs, libraries, general knowledge).",
 	// Exploration tools — use these BEFORE reading/writing to find the right files
 	"list_directory": "See what files and folders exist at a path. Start here to understand project layout.",

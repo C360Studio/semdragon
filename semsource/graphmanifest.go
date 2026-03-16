@@ -118,6 +118,28 @@ func (c *GraphManifestClient) Fetch(ctx context.Context) *GraphManifest {
 	return stale
 }
 
+// HasSourceContent returns true if the graph contains indexed source content
+// (code, docs, repos) — indicated by the "source" predicate family being present.
+// Used by questbridge to soft-gate dispatch until knowledge graph data is queryable.
+func (c *GraphManifestClient) HasSourceContent(ctx context.Context) bool {
+	manifest := c.Fetch(ctx)
+	if manifest == nil {
+		return false
+	}
+	_, ok := manifest.PredicateFamilies["source"]
+	return ok
+}
+
+// Refresh forces a cache refresh so the next Fetch returns fresh data.
+func (c *GraphManifestClient) Refresh(ctx context.Context) {
+	if fetched := c.doFetch(ctx); fetched != nil {
+		c.mu.Lock()
+		c.cached = fetched
+		c.cachedAt = time.Now()
+		c.mu.Unlock()
+	}
+}
+
 // FormatForPrompt fetches the manifest and formats it for LLM consumption.
 // Returns "" when unavailable or only game-world predicates are present.
 func (c *GraphManifestClient) FormatForPrompt(ctx context.Context) string {

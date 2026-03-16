@@ -2415,14 +2415,14 @@ func (r *ToolRegistry) RegisterGraphSearch(graphqlURL string) {
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
 			Name:        "graph_search",
-			Description: "Search the knowledge graph via GraphQL. Supports entity lookup, relationship traversal, predicate queries, and full-text search across all entities including source documentation and code.",
+			Description: "Search the knowledge graph via GraphQL. Supports entity lookup, relationship traversal, predicate queries, full-text search, and natural language queries across all entities including source documentation and code.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"query_type": map[string]any{
 						"type":        "string",
-						"description": "Type of graph query to execute",
-						"enum":        []any{"entity", "prefix", "predicate", "relationships", "search"},
+						"description": "Type of graph query to execute. Use 'nlq' for natural language questions about the codebase (e.g. 'what interfaces does an OSH sensor driver implement?'). Use 'search' for keyword matching. Use 'prefix' or 'predicate' for structured lookups.",
+						"enum":        []any{"entity", "prefix", "predicate", "relationships", "search", "nlq"},
 					},
 					"entity_id": map[string]any{
 						"type":        "string",
@@ -2563,8 +2563,20 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 			Query: fmt.Sprintf(`{ globalSearch(query: %q, maxCommunities: %d) { entities { id type } count } }`, sanitizeGraphQLString(text), maxCommunities),
 		}, nil
 
+	case "nlq":
+		text, _ := args["search_text"].(string)
+		if text == "" {
+			return graphQLRequest{}, fmt.Errorf("search_text is required for nlq queries (your natural language question)")
+		}
+		// NLQ uses globalSearch with community summaries for richer context.
+		// Returns entities, summaries, and classification metadata.
+		maxCommunities := min(limit, 5)
+		return graphQLRequest{
+			Query: fmt.Sprintf(`{ globalSearch(query: %q, level: 1, maxCommunities: %d) { entities { id type triples { predicate object } } communities { title summary } count classification { queryType confidence } } }`, sanitizeGraphQLString(text), maxCommunities),
+		}, nil
+
 	default:
-		return graphQLRequest{}, fmt.Errorf("invalid query_type: %q (must be one of entity, prefix, predicate, relationships, search)", queryType)
+		return graphQLRequest{}, fmt.Errorf("invalid query_type: %q (must be one of entity, prefix, predicate, relationships, search, nlq)", queryType)
 	}
 }
 

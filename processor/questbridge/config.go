@@ -82,10 +82,10 @@ type Config struct {
 	// Domain selects which DomainCatalog to inject (e.g. "software", "dnd", "research").
 	Domain string `json:"domain,omitempty"`
 
-	// KnowledgeReadyTimeout is the maximum seconds to wait for semsource to have
-	// at least one active knowledge source before dispatching a quest. This soft
-	// gate ensures agents get graph knowledge context in their prompts.
-	// 0 disables the gate. Default: 60.
+	// KnowledgeReadyTimeout is the maximum seconds to wait for the knowledge graph
+	// to have indexed source content (code, docs) before dispatching a quest.
+	// Checks for the "source" predicate family in the graph manifest via GraphQL.
+	// 0 disables the gate. Default: 300 (5 minutes).
 	KnowledgeReadyTimeout int `json:"knowledge_ready_timeout,omitempty"`
 
 	// DomainCatalog enables domain-aware prompt assembly when set.
@@ -109,7 +109,7 @@ func DefaultConfig() Config {
 		MaxClarificationRounds:  3,
 		EntityContextBudget:       2000,
 		DependencyContextBudget:   800,
-		KnowledgeReadyTimeout:     60,
+		KnowledgeReadyTimeout:     300,
 	}
 }
 
