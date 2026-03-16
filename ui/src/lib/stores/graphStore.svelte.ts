@@ -122,18 +122,17 @@ export interface GraphStoreAdapter {
 // =============================================================================
 
 /**
- * Default entity ID prefix filter.
- * Empty string loads all entities — the visibleTypes filter handles
- * narrowing to game entity types (quest, agent, party, guild, battle).
+ * Default entity ID prefix filter for initial load.
+ * Empty string loads across all domains (game + semsource).
  */
 const DEFAULT_GAME_PREFIX = '';
 
 /**
  * Default maximum nodes to load in a single query.
- * Keeps the initial graph render responsive while showing a meaningful
- * sample. Users can search/expand to discover more entities.
+ * Keep low to avoid timeouts when semsource has indexed large repos (10K+ entities).
+ * Users discover more via search and expand.
  */
-const DEFAULT_NODE_LIMIT = 500;
+const DEFAULT_NODE_LIMIT = 100;
 
 // =============================================================================
 // Store Factory
