@@ -142,7 +142,7 @@
     "websocket_input": {
       "type": "input",
       "name": "websocket_input",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "mode": "client",
         "client": {
