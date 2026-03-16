@@ -128,7 +128,12 @@ func (s *Service) handleListQuestArtifacts(w http.ResponseWriter, r *http.Reques
 
 	entries, err := s.sandboxClient.ListWorkspaceFiles(r.Context(), id)
 	if err != nil {
-		s.writeError(w, "failed to list artifacts", http.StatusInternalServerError)
+		// Workspace may not exist (quest completed without sandbox, or already cleaned up).
+		s.writeJSON(w, map[string]any{
+			"quest_id": id,
+			"files":    []string{},
+			"count":    0,
+		})
 		return
 	}
 
