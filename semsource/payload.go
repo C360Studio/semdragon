@@ -113,8 +113,10 @@ type StatusPayload struct {
 	Uptime    string `json:"uptime,omitempty"`
 }
 
+// Schema returns the message type for semsource status heartbeats.
 func (p *StatusPayload) Schema() message.Type {
 	return message.Type{Domain: "semsource", Category: "status", Version: "v1"}
 }
 
+// Validate checks the payload for correctness.
 func (p *StatusPayload) Validate() error { return nil }

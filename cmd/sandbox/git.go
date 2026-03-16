@@ -65,7 +65,7 @@ type GitStatusResponse struct {
 // =============================================================================
 
 // handleListRepos returns the names of all git repos found under s.reposDir.
-func (s *Server) handleListRepos(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListRepos(w http.ResponseWriter, _ *http.Request) {
 	entries, err := os.ReadDir(s.reposDir)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("read repos dir: %v", err))
