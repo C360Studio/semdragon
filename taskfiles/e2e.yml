@@ -69,44 +69,43 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/gemini.json, PROFILE: semsource, SEMSOURCE_CONFIG: semsource-workspace.json }
+        vars: { MODELS: /etc/semdragons/models/gemini.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-local.json }
       - task: wait
-      - task: enable:semsource
       - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
   anthropic:
-    desc: Run Tier 2 scenario tests with Anthropic Claude
+    desc: Run Tier 2 scenario tests with Anthropic Claude + semsource
     cmds:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/anthropic.json }
+        vars: { MODELS: /etc/semdragons/models/anthropic.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-local.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
   openai:
-    desc: Run Tier 2 scenario tests with OpenAI
+    desc: Run Tier 2 scenario tests with OpenAI + semsource
     cmds:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/openai.json }
+        vars: { MODELS: /etc/semdragons/models/openai.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-local.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
   ollama:
-    desc: Run Tier 2 scenario tests with local Ollama
+    desc: Run Tier 2 scenario tests with local Ollama + semsource
     cmds:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/ollama.json }
+        vars: { MODELS: /etc/semdragons/models/ollama.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-local.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=ollama BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
@@ -120,32 +119,31 @@ tasks:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/gemini.json, PROFILE: semsource, SEMSOURCE_CONFIG: semsource-osh.json }
+        vars: { MODELS: /etc/semdragons/models/gemini.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-osh.json }
       - task: wait
-      - task: enable:semsource
       - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
       - task: maybe:down
 
   epic:anthropic:
-    desc: Run Epic Tier 3 tests with Anthropic Claude
+    desc: Run Epic Tier 3 tests with Anthropic Claude + semsource (OSH knowledge graph)
     cmds:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/anthropic.json }
+        vars: { MODELS: /etc/semdragons/models/anthropic.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-osh.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
       - task: maybe:down
 
   epic:openai:
-    desc: Run Epic Tier 3 tests with OpenAI
+    desc: Run Epic Tier 3 tests with OpenAI + semsource (OSH knowledge graph)
     cmds:
       - task: install
       - task: clean
       - task: stack:up
-        vars: { MODELS: /etc/semdragons/models/openai.json }
+        vars: { MODELS: /etc/semdragons/models/openai.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-osh.json }
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
@@ -266,20 +264,6 @@ tasks:
     internal: true
     cmds:
       - cmd: '{{if eq (env "DEBUG") ""}}{{.COMPOSE}} --profile mock --profile semsource down -v --remove-orphans{{else}}echo "DEBUG set — stack left running"{{end}}'
-
-  enable:semsource:
-    desc: Enable websocket_input to stream semsource entities into the graph
-    internal: true
-    cmds:
-      - |
-        echo "Enabling websocket_input for semsource entity streaming..."
-        curl -sf -X POST http://localhost:{{.BACKEND_PORT}}/game/settings \
-          -H "Content-Type: application/json" \
-          -d '{"websocket_input":{"enabled":true}}' > /dev/null 2>&1 \
-          && echo "websocket_input enabled" \
-          || echo "Warning: could not enable websocket_input (settings API may not support it)"
-        # Give semsource a moment to connect and start streaming
-        sleep 3
 
   wait:
     internal: true

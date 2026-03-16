@@ -6,7 +6,9 @@
     "environment": "development"
   },
   "nats": {
-    "urls": ["nats://localhost:4222"]
+    "urls": [
+      "nats://localhost:4222"
+    ]
   },
   "services": {
     "service-manager": {
@@ -35,8 +37,14 @@
         "token_budget": {
           "global_hourly_limit": 1000000,
           "endpoint_pricing": {
-            "ollama-coder": { "input_per_1m_tokens": 0, "output_per_1m_tokens": 0 },
-            "ollama-qwen3": { "input_per_1m_tokens": 0, "output_per_1m_tokens": 0 }
+            "ollama-coder": {
+              "input_per_1m_tokens": 0,
+              "output_per_1m_tokens": 0
+            },
+            "ollama-qwen3": {
+              "input_per_1m_tokens": 0,
+              "output_per_1m_tokens": 0
+            }
           }
         }
       }
@@ -73,35 +81,53 @@
     "capabilities": {
       "agent-work": {
         "description": "Code generation and tool-calling quest execution",
-        "preferred": ["ollama-coder"],
+        "preferred": [
+          "ollama-coder"
+        ],
         "requires_tools": true
       },
       "quest-execution-sequential": {
-        "description": "Sequential quest execution — benefits from stronger reasoning models",
-        "preferred": ["ollama-coder"],
+        "description": "Sequential quest execution \u2014 benefits from stronger reasoning models",
+        "preferred": [
+          "ollama-coder"
+        ],
         "requires_tools": true
       },
       "boss-battle": {
         "description": "Quest output evaluation by LLM judge",
-        "preferred": ["ollama-qwen3"],
-        "fallback": ["ollama-coder"],
+        "preferred": [
+          "ollama-qwen3"
+        ],
+        "fallback": [
+          "ollama-coder"
+        ],
         "requires_tools": false
       },
       "quest-design": {
         "description": "DM quest parameter decisions",
-        "preferred": ["ollama-qwen3"],
-        "fallback": ["ollama-coder"],
+        "preferred": [
+          "ollama-qwen3"
+        ],
+        "fallback": [
+          "ollama-coder"
+        ],
         "requires_tools": false
       },
       "dm-chat": {
         "description": "DM conversational assistance",
-        "preferred": ["ollama-qwen3"],
-        "fallback": ["ollama-coder"],
+        "preferred": [
+          "ollama-qwen3"
+        ],
+        "fallback": [
+          "ollama-coder"
+        ],
         "requires_tools": false
       },
       "embedding": {
         "description": "Vector embeddings for graph semantic search",
-        "preferred": ["semembed"]
+        "preferred": [
+          "semembed"
+        ]
       }
     },
     "defaults": {
@@ -142,7 +168,7 @@
     "websocket_input": {
       "type": "input",
       "name": "websocket_input",
-      "enabled": false,
+      "enabled": true,
       "config": {
         "mode": "client",
         "client": {
@@ -155,12 +181,14 @@
           }
         },
         "ports": {
-          "outputs": [{
-            "name": "ws_data",
-            "subject": "graph.ingest.entity",
-            "type": "jetstream",
-            "stream_name": "GRAPH"
-          }]
+          "outputs": [
+            {
+              "name": "ws_data",
+              "subject": "graph.ingest.entity",
+              "type": "jetstream",
+              "stream_name": "GRAPH"
+            }
+          ]
         }
       }
     },
@@ -170,17 +198,21 @@
       "enabled": true,
       "config": {
         "ports": {
-          "inputs": [{
-            "name": "entities_in",
-            "subject": "graph.ingest.entity",
-            "type": "jetstream",
-            "stream_name": "GRAPH"
-          }],
-          "outputs": [{
-            "name": "entity_states",
-            "subject": "ENTITY_STATES",
-            "type": "kv-write"
-          }]
+          "inputs": [
+            {
+              "name": "entities_in",
+              "subject": "graph.ingest.entity",
+              "type": "jetstream",
+              "stream_name": "GRAPH"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "entity_states",
+              "subject": "ENTITY_STATES",
+              "type": "kv-write"
+            }
+          ]
         },
         "enable_hierarchy": true
       }
@@ -191,16 +223,34 @@
       "enabled": true,
       "config": {
         "ports": {
-          "inputs": [{
-            "name": "entity_watch",
-            "subject": "ENTITY_STATES",
-            "type": "kv-watch"
-          }],
+          "inputs": [
+            {
+              "name": "entity_watch",
+              "subject": "ENTITY_STATES",
+              "type": "kv-watch"
+            }
+          ],
           "outputs": [
-            {"name": "outgoing_index", "subject": "OUTGOING_INDEX", "type": "kv"},
-            {"name": "incoming_index", "subject": "INCOMING_INDEX", "type": "kv"},
-            {"name": "alias_index", "subject": "ALIAS_INDEX", "type": "kv"},
-            {"name": "predicate_index", "subject": "PREDICATE_INDEX", "type": "kv"}
+            {
+              "name": "outgoing_index",
+              "subject": "OUTGOING_INDEX",
+              "type": "kv"
+            },
+            {
+              "name": "incoming_index",
+              "subject": "INCOMING_INDEX",
+              "type": "kv"
+            },
+            {
+              "name": "alias_index",
+              "subject": "ALIAS_INDEX",
+              "type": "kv"
+            },
+            {
+              "name": "predicate_index",
+              "subject": "PREDICATE_INDEX",
+              "type": "kv"
+            }
           ]
         },
         "workers": 2,
@@ -213,11 +263,13 @@
       "enabled": true,
       "config": {
         "ports": {
-          "inputs": [{
-            "name": "query_requests",
-            "subject": "graph.query.>",
-            "type": "nats-request"
-          }],
+          "inputs": [
+            {
+              "name": "query_requests",
+              "subject": "graph.query.>",
+              "type": "nats-request"
+            }
+          ],
           "outputs": []
         },
         "request_timeout": "5s",
@@ -231,16 +283,20 @@
       "enabled": true,
       "config": {
         "ports": {
-          "inputs": [{
-            "name": "entity_watch",
-            "subject": "ENTITY_STATES",
-            "type": "kv-watch"
-          }],
-          "outputs": [{
-            "name": "embeddings",
-            "subject": "EMBEDDINGS_CACHE",
-            "type": "kv"
-          }]
+          "inputs": [
+            {
+              "name": "entity_watch",
+              "subject": "ENTITY_STATES",
+              "type": "kv-watch"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "embeddings",
+              "subject": "EMBEDDINGS_CACHE",
+              "type": "kv"
+            }
+          ]
         },
         "embedder_type": "http",
         "batch_size": 50,
@@ -253,16 +309,20 @@
       "enabled": true,
       "config": {
         "ports": {
-          "inputs": [{
-            "name": "entity_watch",
-            "subject": "ENTITY_STATES",
-            "type": "kv-watch"
-          }],
-          "outputs": [{
-            "name": "communities",
-            "subject": "COMMUNITY_INDEX",
-            "type": "kv"
-          }]
+          "inputs": [
+            {
+              "name": "entity_watch",
+              "subject": "ENTITY_STATES",
+              "type": "kv-watch"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "communities",
+              "subject": "COMMUNITY_INDEX",
+              "type": "kv"
+            }
+          ]
         },
         "detection_interval": "30s",
         "batch_size": 100,
@@ -281,15 +341,25 @@
       "enabled": true,
       "config": {
         "ports": {
-          "inputs": [{
-            "name": "http",
-            "type": "http",
-            "subject": ":8082",
-            "description": "HTTP server for GraphQL and MCP"
-          }],
+          "inputs": [
+            {
+              "name": "http",
+              "type": "http",
+              "subject": ":8082",
+              "description": "HTTP server for GraphQL and MCP"
+            }
+          ],
           "outputs": [
-            {"name": "queries",   "type": "nats-request", "subject": "graph.query.*"},
-            {"name": "mutations", "type": "nats-request", "subject": "graph.mutation.*"}
+            {
+              "name": "queries",
+              "type": "nats-request",
+              "subject": "graph.query.*"
+            },
+            {
+              "name": "mutations",
+              "type": "nats-request",
+              "subject": "graph.mutation.*"
+            }
           ]
         },
         "graphql_path": "/graphql",
