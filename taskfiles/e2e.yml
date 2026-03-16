@@ -208,6 +208,7 @@ tasks:
   stack:up:
     internal: true
     cmds:
+      - task: seed:repos
       - >-
         {{.COMPOSE}} {{if .PROFILE}}--profile {{.PROFILE}}{{end}}
         build {{if eq (env "NO_CACHE") "1"}}--no-cache{{end}}
@@ -220,6 +221,35 @@ tasks:
         {{if ne (env "DEBUG") ""}}SEMDRAGONS_LOG_LEVEL=debug{{end}}
         {{.COMPOSE}} {{if .PROFILE}}--profile {{.PROFILE}}{{end}}
         up -d --wait
+
+  seed:repos:
+    desc: Create test repo for E2E sandbox integration
+    internal: true
+    cmds:
+      - |
+        REPO_DIR=docker/repos/testrepo
+        if [ -d "$REPO_DIR/.git" ]; then
+          echo "Test repo already exists at $REPO_DIR"
+          exit 0
+        fi
+        mkdir -p "$REPO_DIR"
+        cd "$REPO_DIR"
+        git init -b main
+        git config user.name "e2e-seed"
+        git config user.email "e2e@semdragons"
+        echo "# Test Repo" > README.md
+        echo "E2E test repository for sandbox git integration." >> README.md
+        mkdir -p src
+        cat > src/main.py << 'PYEOF'
+        def hello():
+            return "Hello from testrepo"
+
+        if __name__ == "__main__":
+            print(hello())
+        PYEOF
+        git add .
+        git commit -m "initial commit: README + src/main.py"
+        echo "Test repo seeded at $REPO_DIR"
 
   stack:down:
     internal: true

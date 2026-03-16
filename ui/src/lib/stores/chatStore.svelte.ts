@@ -314,6 +314,7 @@ async function postQuest(brief: QuestBrief): Promise<Quest | null> {
 			difficulty: brief.difficulty,
 			skills: brief.skills,
 			hints: brief.hints,
+			repo: brief.repo,
 		}]
 	};
 	const quests = await postChain(chain);

@@ -326,6 +326,7 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 		}
 
 		quest.RequiredSkills = append(quest.RequiredSkills, entry.Skills...)
+		quest.Repo = entry.Repo
 
 		// Populate structured spec fields from brief.
 		quest.Goal = entry.Goal

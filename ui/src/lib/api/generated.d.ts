@@ -5032,6 +5032,7 @@ export interface components {
                 suggested_skills?: string[];
             } | null;
             name?: string;
+            repo?: string;
             requirements?: string[];
             scenarios?: {
                 depends_on?: string[];
@@ -5086,6 +5087,7 @@ export interface components {
                 suggested_skills?: string[];
             } | null;
             name?: string;
+            repo?: string;
             requirements?: string[];
             scenarios?: {
                 depends_on?: string[];

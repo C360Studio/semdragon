@@ -46,3 +46,6 @@ test-results/
 
 # Default agent workspace (user-mounted directory)
 .workspace/
+
+# E2E test repos (seeded by task e2e:seed:repos)
+docker/repos/
