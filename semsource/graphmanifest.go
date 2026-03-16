@@ -119,15 +119,18 @@ func (c *GraphManifestClient) Fetch(ctx context.Context) *GraphManifest {
 }
 
 // HasSourceContent returns true if the graph contains indexed source content
-// (code, docs, repos) — indicated by the "source" predicate family being present.
-// Used by questbridge to soft-gate dispatch until knowledge graph data is queryable.
+// (code, docs, repos) — indicated by non-game predicate families being present.
+// Semsource produces "code", "dc", "hierarchy", "core" families depending on
+// the source type. Any non-game family signals that knowledge data is queryable.
+// Used by questbridge to soft-gate dispatch until knowledge graph data is available.
 func (c *GraphManifestClient) HasSourceContent(ctx context.Context) bool {
 	manifest := c.Fetch(ctx)
-	if manifest == nil {
+	if manifest == nil || len(manifest.PredicateFamilies) == 0 {
 		return false
 	}
-	_, ok := manifest.PredicateFamilies["source"]
-	return ok
+	// PredicateFamilies already has game-world families filtered out,
+	// so any entry means non-game knowledge content exists.
+	return true
 }
 
 // Refresh forces a cache refresh so the next Fetch returns fresh data.
