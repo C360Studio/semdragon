@@ -2308,11 +2308,6 @@ func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.A
 		return nil
 	}
 
-	// Party lead on a party-required quest: restrict to decomposition/review
-	// tools only. Without this, the LLM sees execution tools (file write, etc.)
-	// and solves the quest directly instead of decomposing.
-	isPartyLead := quest.PartyRequired && agent.Tier >= domain.TierMaster
-
 	// Check if the graph has non-game knowledge sources. When the manifest
 	// is empty (only game predicates), omit graph_search from the tool list
 	// since it would only return game data that agents shouldn't query directly.
@@ -2323,12 +2318,17 @@ func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.A
 		}
 	}
 
+	allowedCats := categoriesForQuest(quest, agent)
+
 	all := reg.ListAll()
 	result := make([]agentic.ToolDefinition, 0, len(all))
 
 	for _, tool := range all {
-		// Party lead filter: only decompose_quest and review_sub_quest.
-		if isPartyLead && !isLeadTool(tool.Definition.Name) {
+		// Category filter: exclude tools whose category isn't needed for
+		// this quest. Empty category = always included (backward compat).
+		// For party leads, categoriesForQuest returns only core + party_lead,
+		// which replaces the former isLeadTool name-based filter.
+		if tool.Category != "" && !allowedCats[tool.Category] {
 			continue
 		}
 
@@ -2357,11 +2357,51 @@ func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.A
 	return result
 }
 
-// isLeadTool returns true for tools that a party lead should have during
-// the decomposition phase. Execution tools are withheld to force the LLM
-// to decompose rather than solve directly.
-func isLeadTool(name string) bool {
-	return name == "decompose_quest" || name == "review_sub_quest"
+// categoriesForQuest returns the set of tool categories a quest needs based
+// on quest characteristics and agent role. This reduces input tokens per API
+// call by excluding irrelevant tool definitions.
+func categoriesForQuest(quest *domain.Quest, agent *agentprogression.Agent) map[executor.ToolCategory]bool {
+	// Party lead: only decomposition and core tools.
+	if quest.PartyRequired && agent.Tier >= domain.TierMaster {
+		return map[executor.ToolCategory]bool{
+			executor.ToolCategoryCore:      true,
+			executor.ToolCategoryPartyLead: true,
+		}
+	}
+
+	// Default: everything except party_lead tools for non-lead agents.
+	cats := map[executor.ToolCategory]bool{
+		executor.ToolCategoryCore:      true,
+		executor.ToolCategoryWrite:     true,
+		executor.ToolCategoryBuild:     true,
+		executor.ToolCategoryNetwork:   true,
+		executor.ToolCategoryInspect:   true,
+		executor.ToolCategoryKnowledge: true,
+	}
+
+	// Research-only quests (no CodeGen skill required) don't need
+	// write/build/inspect tools — saves ~8 tool definitions.
+	if !questRequiresCodeGen(quest) {
+		delete(cats, executor.ToolCategoryWrite)
+		delete(cats, executor.ToolCategoryBuild)
+		delete(cats, executor.ToolCategoryInspect)
+	}
+
+	return cats
+}
+
+// questRequiresCodeGen returns true if the quest needs code generation tools.
+// Quests with no required skills default to true (assume implementation).
+func questRequiresCodeGen(quest *domain.Quest) bool {
+	if len(quest.RequiredSkills) == 0 {
+		return true // Default: assume implementation quest
+	}
+	for _, s := range quest.RequiredSkills {
+		if s == domain.SkillCodeGen {
+			return true
+		}
+	}
+	return false
 }
 
 // toolChoiceForQuest determines the API-level tool choice constraint for a quest.

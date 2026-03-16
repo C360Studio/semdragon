@@ -12,6 +12,7 @@ import (
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/message"
@@ -1642,6 +1643,157 @@ func TestMaxIterationsForDifficulty(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("maxIterationsForDifficulty(%d, %d) = %d, want %d",
 					tt.base, tt.difficulty, got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// TOOL CATEGORY FILTERING TESTS
+// =============================================================================
+
+func TestCategoriesForQuest(t *testing.T) {
+	masterAgent := &agentprogression.Agent{Tier: domain.TierMaster}
+	journeymanAgent := &agentprogression.Agent{Tier: domain.TierJourneyman}
+
+	tests := []struct {
+		name        string
+		quest       *domain.Quest
+		agent       *agentprogression.Agent
+		wantCats    []executor.ToolCategory
+		notWantCats []executor.ToolCategory
+	}{
+		{
+			name:  "party lead gets only core and party_lead",
+			quest: &domain.Quest{PartyRequired: true},
+			agent: masterAgent,
+			wantCats: []executor.ToolCategory{
+				executor.ToolCategoryCore,
+				executor.ToolCategoryPartyLead,
+			},
+			notWantCats: []executor.ToolCategory{
+				executor.ToolCategoryWrite,
+				executor.ToolCategoryBuild,
+				executor.ToolCategoryNetwork,
+				executor.ToolCategoryInspect,
+				executor.ToolCategoryKnowledge,
+			},
+		},
+		{
+			name:  "solo implementation quest gets all except party_lead",
+			quest: &domain.Quest{RequiredSkills: []domain.SkillTag{domain.SkillCodeGen}},
+			agent: journeymanAgent,
+			wantCats: []executor.ToolCategory{
+				executor.ToolCategoryCore,
+				executor.ToolCategoryWrite,
+				executor.ToolCategoryBuild,
+				executor.ToolCategoryNetwork,
+				executor.ToolCategoryInspect,
+				executor.ToolCategoryKnowledge,
+			},
+			notWantCats: []executor.ToolCategory{
+				executor.ToolCategoryPartyLead,
+			},
+		},
+		{
+			name:  "research quest excludes write/build/inspect",
+			quest: &domain.Quest{RequiredSkills: []domain.SkillTag{domain.SkillResearch}},
+			agent: journeymanAgent,
+			wantCats: []executor.ToolCategory{
+				executor.ToolCategoryCore,
+				executor.ToolCategoryNetwork,
+				executor.ToolCategoryKnowledge,
+			},
+			notWantCats: []executor.ToolCategory{
+				executor.ToolCategoryWrite,
+				executor.ToolCategoryBuild,
+				executor.ToolCategoryInspect,
+				executor.ToolCategoryPartyLead,
+			},
+		},
+		{
+			name:  "no required skills defaults to full implementation set",
+			quest: &domain.Quest{},
+			agent: journeymanAgent,
+			wantCats: []executor.ToolCategory{
+				executor.ToolCategoryCore,
+				executor.ToolCategoryWrite,
+				executor.ToolCategoryBuild,
+			},
+			notWantCats: []executor.ToolCategory{
+				executor.ToolCategoryPartyLead,
+			},
+		},
+		{
+			name:  "mixed skills with CodeGen gets full set",
+			quest: &domain.Quest{RequiredSkills: []domain.SkillTag{domain.SkillResearch, domain.SkillCodeGen}},
+			agent: journeymanAgent,
+			wantCats: []executor.ToolCategory{
+				executor.ToolCategoryCore,
+				executor.ToolCategoryWrite,
+				executor.ToolCategoryBuild,
+			},
+			notWantCats: []executor.ToolCategory{
+				executor.ToolCategoryPartyLead,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cats := categoriesForQuest(tt.quest, tt.agent)
+			for _, want := range tt.wantCats {
+				if !cats[want] {
+					t.Errorf("expected category %q to be allowed", want)
+				}
+			}
+			for _, notWant := range tt.notWantCats {
+				if cats[notWant] {
+					t.Errorf("expected category %q to NOT be allowed", notWant)
+				}
+			}
+		})
+	}
+}
+
+func TestQuestRequiresCodeGen(t *testing.T) {
+	tests := []struct {
+		name  string
+		quest *domain.Quest
+		want  bool
+	}{
+		{
+			name:  "no skills defaults to true",
+			quest: &domain.Quest{},
+			want:  true,
+		},
+		{
+			name:  "CodeGen skill present",
+			quest: &domain.Quest{RequiredSkills: []domain.SkillTag{domain.SkillCodeGen}},
+			want:  true,
+		},
+		{
+			name:  "only research skill",
+			quest: &domain.Quest{RequiredSkills: []domain.SkillTag{domain.SkillResearch}},
+			want:  false,
+		},
+		{
+			name:  "mixed skills including CodeGen",
+			quest: &domain.Quest{RequiredSkills: []domain.SkillTag{domain.SkillResearch, domain.SkillCodeGen}},
+			want:  true,
+		},
+		{
+			name:  "CodeReview only",
+			quest: &domain.Quest{RequiredSkills: []domain.SkillTag{domain.SkillCodeReview}},
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := questRequiresCodeGen(tt.quest)
+			if got != tt.want {
+				t.Errorf("questRequiresCodeGen() = %v, want %v", got, tt.want)
 			}
 		})
 	}

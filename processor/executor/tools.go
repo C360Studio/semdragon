@@ -61,12 +61,34 @@ const (
 // The handler receives the tool call arguments and quest/agent context.
 type ToolHandler func(ctx context.Context, call agentic.ToolCall, quest *domain.Quest, agent *agentprogression.Agent) agentic.ToolResult
 
+// ToolCategory groups tools by purpose so questbridge can send only the
+// categories a quest actually needs. This reduces input tokens per API call.
+type ToolCategory string
+
+const (
+	// ToolCategoryCore groups always-included tools: read, list, glob, search, submit, clarify.
+	ToolCategoryCore ToolCategory = "core"
+	// ToolCategoryWrite groups file mutation tools: write, patch, delete, rename, mkdir.
+	ToolCategoryWrite ToolCategory = "write"
+	// ToolCategoryBuild groups dev workflow tools: test, lint, build, git, deps.
+	ToolCategoryBuild ToolCategory = "build"
+	// ToolCategoryNetwork groups external access tools: http_request, web_search.
+	ToolCategoryNetwork ToolCategory = "network"
+	// ToolCategoryInspect groups environment tools: inspect_environment, run_command.
+	ToolCategoryInspect ToolCategory = "inspect"
+	// ToolCategoryKnowledge groups graph tools: graph_query, graph_search.
+	ToolCategoryKnowledge ToolCategory = "knowledge"
+	// ToolCategoryPartyLead groups DAG tools: decompose, review, answer_clarification.
+	ToolCategoryPartyLead ToolCategory = "party_lead"
+)
+
 // RegisteredTool wraps a tool definition with its handler and access controls.
 type RegisteredTool struct {
 	Definition agentic.ToolDefinition // Name, description, parameters
 	Handler    ToolHandler            // Execution function
 	Skills     []domain.SkillTag      // Required skills to use this tool
 	MinTier    domain.TrustTier       // Minimum trust tier to use
+	Category   ToolCategory           // Tool category for quest-based filtering
 }
 
 // toolSpec holds the shared metadata for a tool registration.
@@ -76,6 +98,7 @@ type toolSpec struct {
 	Definition agentic.ToolDefinition
 	MinTier    domain.TrustTier
 	Skills     []domain.SkillTag
+	Category   ToolCategory
 }
 
 // Shared tool specs — single source of truth for definition, tier, and skills.
@@ -97,7 +120,8 @@ var readFileSpec = toolSpec{
 			"required": []any{"path"},
 		},
 	},
-	MinTier: domain.TierApprentice, // Read-only — all tiers can read files
+	MinTier:  domain.TierApprentice, // Read-only — all tiers can read files
+	Category: ToolCategoryCore,
 }
 
 var readFileRangeSpec = toolSpec{
@@ -123,7 +147,8 @@ var readFileRangeSpec = toolSpec{
 			"required": []any{"path", "start_line"},
 		},
 	},
-	MinTier: domain.TierApprentice, // Read-only — all tiers can read file ranges
+	MinTier:  domain.TierApprentice, // Read-only — all tiers can read file ranges
+	Category: ToolCategoryCore,
 }
 
 var writeFileSpec = toolSpec{
@@ -146,7 +171,8 @@ var writeFileSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierApprentice, // All tiers — sandbox is the workspace, writing files is fundamental
+	MinTier:  domain.TierApprentice, // All tiers — sandbox is the workspace, writing files is fundamental
+	Category: ToolCategoryWrite,
 }
 
 var patchFileSpec = toolSpec{
@@ -173,7 +199,8 @@ var patchFileSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierJourneyman, // Level 6+ — targeted edits require some trust
+	MinTier:  domain.TierJourneyman, // Level 6+ — targeted edits require some trust
+	Category: ToolCategoryWrite,
 }
 
 var deleteFileSpec = toolSpec{
@@ -192,7 +219,8 @@ var deleteFileSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierJourneyman, // Level 6+ — destructive operations require trust
+	MinTier:  domain.TierJourneyman, // Level 6+ — destructive operations require trust
+	Category: ToolCategoryWrite,
 }
 
 var renameFileSpec = toolSpec{
@@ -215,7 +243,8 @@ var renameFileSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierJourneyman, // Level 6+ — filesystem writes require trust
+	MinTier:  domain.TierJourneyman, // Level 6+ — filesystem writes require trust
+	Category: ToolCategoryWrite,
 }
 
 var createDirectorySpec = toolSpec{
@@ -234,7 +263,8 @@ var createDirectorySpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierApprentice, // All tiers — needed alongside write_file in sandbox workspace
+	MinTier:  domain.TierApprentice, // All tiers — needed alongside write_file in sandbox workspace
+	Category: ToolCategoryWrite,
 }
 
 var listDirectorySpec = toolSpec{
@@ -252,7 +282,8 @@ var listDirectorySpec = toolSpec{
 			"required": []any{"path"},
 		},
 	},
-	MinTier: domain.TierApprentice, // Read-only — all tiers can list directories
+	MinTier:  domain.TierApprentice, // Read-only — all tiers can list directories
+	Category: ToolCategoryCore,
 }
 
 var globFilesSpec = toolSpec{
@@ -274,7 +305,8 @@ var globFilesSpec = toolSpec{
 			"required": []any{"pattern"},
 		},
 	},
-	MinTier: domain.TierApprentice, // Read-only — all tiers can search for files
+	MinTier:  domain.TierApprentice, // Read-only — all tiers can search for files
+	Category: ToolCategoryCore,
 }
 
 var searchTextSpec = toolSpec{
@@ -308,7 +340,8 @@ var searchTextSpec = toolSpec{
 			"required": []any{"pattern", "path"},
 		},
 	},
-	MinTier: domain.TierApprentice, // Read-only — all tiers can search files
+	MinTier:  domain.TierApprentice, // Read-only — all tiers can search files
+	Category: ToolCategoryCore,
 }
 
 var runTestsSpec = toolSpec{
@@ -327,7 +360,8 @@ var runTestsSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
-	MinTier: domain.TierJourneyman, // Level 6+ — allowlist constrains to known test runners
+	MinTier:  domain.TierJourneyman, // Level 6+ — allowlist constrains to known test runners
+	Category: ToolCategoryBuild,
 }
 
 var lintCheckSpec = toolSpec{
@@ -346,7 +380,8 @@ var lintCheckSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeReview},
-	MinTier: domain.TierJourneyman, // Level 6+ — allowlist constrains to known linters
+	MinTier:  domain.TierJourneyman, // Level 6+ — allowlist constrains to known linters
+	Category: ToolCategoryBuild,
 }
 
 var runCommandSpec = toolSpec{
@@ -364,7 +399,8 @@ var runCommandSpec = toolSpec{
 			"required": []any{"command"},
 		},
 	},
-	MinTier: domain.TierMaster, // Level 16+ — unrestricted shell requires high trust
+	MinTier:  domain.TierMaster, // Level 16+ — unrestricted shell requires high trust
+	Category: ToolCategoryInspect,
 }
 
 var httpRequestSpec = toolSpec{
@@ -395,7 +431,8 @@ var httpRequestSpec = toolSpec{
 			"required": []any{"url"},
 		},
 	},
-	MinTier: domain.TierJourneyman, // Level 6+ — network access requires trust
+	MinTier:  domain.TierJourneyman, // Level 6+ — network access requires trust
+	Category: ToolCategoryNetwork,
 }
 
 var inspectEnvironmentSpec = toolSpec{
@@ -410,7 +447,8 @@ var inspectEnvironmentSpec = toolSpec{
 			"properties": map[string]any{},
 		},
 	},
-	MinTier: domain.TierApprentice, // Read-only environment inspection — safe for all tiers
+	MinTier:  domain.TierApprentice, // Read-only environment inspection — safe for all tiers
+	Category: ToolCategoryInspect,
 }
 
 var gitOperationSpec = toolSpec{
@@ -447,7 +485,8 @@ var gitOperationSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierJourneyman, // Level 6+ — version control requires demonstrated trust
+	MinTier:  domain.TierJourneyman, // Level 6+ — version control requires demonstrated trust
+	Category: ToolCategoryBuild,
 }
 
 var buildProjectSpec = toolSpec{
@@ -469,7 +508,8 @@ var buildProjectSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierJourneyman, // Level 6+ — building requires development trust
+	MinTier:  domain.TierJourneyman, // Level 6+ — building requires development trust
+	Category: ToolCategoryBuild,
 }
 
 var manageDependenciesSpec = toolSpec{
@@ -498,7 +538,8 @@ var manageDependenciesSpec = toolSpec{
 		},
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier: domain.TierExpert, // Level 11+ — dependency changes affect build reproducibility
+	MinTier:  domain.TierExpert, // Level 11+ — dependency changes affect build reproducibility
+	Category: ToolCategoryBuild,
 }
 
 // ToolRegistry manages available tools for agent execution.
@@ -735,6 +776,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    readFileHandler,
 		Skills:     readFileSpec.Skills,
 		MinTier:    readFileSpec.MinTier,
+		Category:   readFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -742,6 +784,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    readFileRangeHandler,
 		Skills:     readFileRangeSpec.Skills,
 		MinTier:    readFileRangeSpec.MinTier,
+		Category:   readFileRangeSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -749,6 +792,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    writeFileHandler,
 		Skills:     writeFileSpec.Skills,
 		MinTier:    writeFileSpec.MinTier,
+		Category:   writeFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -756,6 +800,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    patchFileHandler,
 		Skills:     patchFileSpec.Skills,
 		MinTier:    patchFileSpec.MinTier,
+		Category:   patchFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -763,6 +808,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    deleteFileHandler,
 		Skills:     deleteFileSpec.Skills,
 		MinTier:    deleteFileSpec.MinTier,
+		Category:   deleteFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -770,6 +816,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    renameFileHandler,
 		Skills:     renameFileSpec.Skills,
 		MinTier:    renameFileSpec.MinTier,
+		Category:   renameFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -777,6 +824,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    createDirectoryHandler,
 		Skills:     createDirectorySpec.Skills,
 		MinTier:    createDirectorySpec.MinTier,
+		Category:   createDirectorySpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -784,6 +832,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    listDirectoryHandler,
 		Skills:     listDirectorySpec.Skills,
 		MinTier:    listDirectorySpec.MinTier,
+		Category:   listDirectorySpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -791,6 +840,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    globFilesHandler,
 		Skills:     globFilesSpec.Skills,
 		MinTier:    globFilesSpec.MinTier,
+		Category:   globFilesSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -798,6 +848,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    searchTextHandler,
 		Skills:     searchTextSpec.Skills,
 		MinTier:    searchTextSpec.MinTier,
+		Category:   searchTextSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -805,6 +856,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    runTestsHandler,
 		Skills:     runTestsSpec.Skills,
 		MinTier:    runTestsSpec.MinTier,
+		Category:   runTestsSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -812,6 +864,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    lintCheckHandler,
 		Skills:     lintCheckSpec.Skills,
 		MinTier:    lintCheckSpec.MinTier,
+		Category:   lintCheckSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -819,6 +872,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    runCommandHandler,
 		Skills:     runCommandSpec.Skills,
 		MinTier:    runCommandSpec.MinTier,
+		Category:   runCommandSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -826,6 +880,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    httpRequestHandler,
 		Skills:     httpRequestSpec.Skills,
 		MinTier:    httpRequestSpec.MinTier,
+		Category:   httpRequestSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -833,6 +888,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    inspectEnvironmentHandler,
 		Skills:     inspectEnvironmentSpec.Skills,
 		MinTier:    inspectEnvironmentSpec.MinTier,
+		Category:   inspectEnvironmentSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -840,6 +896,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    gitOperationHandler,
 		Skills:     gitOperationSpec.Skills,
 		MinTier:    gitOperationSpec.MinTier,
+		Category:   gitOperationSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -847,6 +904,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    buildProjectHandler,
 		Skills:     buildProjectSpec.Skills,
 		MinTier:    buildProjectSpec.MinTier,
+		Category:   buildProjectSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -854,6 +912,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Handler:    manageDepsHandler,
 		Skills:     manageDependenciesSpec.Skills,
 		MinTier:    manageDependenciesSpec.MinTier,
+		Category:   manageDependenciesSpec.Category,
 	})
 
 	// Terminal tools — these stop the agentic loop on successful execution.
@@ -878,8 +937,9 @@ func (r *ToolRegistry) RegisterBuiltins() {
 				"required": []any{},
 			},
 		},
-		Handler: submitWorkProductHandler,
-		MinTier: domain.TierApprentice, // All tiers can submit work
+		Handler:  submitWorkProductHandler,
+		MinTier:  domain.TierApprentice, // All tiers can submit work
+		Category: ToolCategoryCore,
 	})
 
 	r.Register(RegisteredTool{
@@ -897,8 +957,9 @@ func (r *ToolRegistry) RegisterBuiltins() {
 				"required": []any{"question"},
 			},
 		},
-		Handler: askClarificationHandler,
-		MinTier: domain.TierApprentice, // All tiers can ask questions
+		Handler:  askClarificationHandler,
+		MinTier:  domain.TierApprentice, // All tiers can ask questions
+		Category: ToolCategoryCore,
 	})
 
 	decomposeExec := questdagexec.NewDecomposeExecutor()
@@ -916,7 +977,8 @@ func (r *ToolRegistry) RegisterBuiltins() {
 				result.StopLoop = true
 				return result
 			},
-			MinTier: domain.TierMaster, // Level 16+ — only party leads (Master+) can decompose quests
+			MinTier:  domain.TierMaster, // Level 16+ — only party leads (Master+) can decompose quests
+			Category: ToolCategoryPartyLead,
 		})
 	}
 
@@ -934,7 +996,8 @@ func (r *ToolRegistry) RegisterBuiltins() {
 				result.StopLoop = true
 				return result
 			},
-			MinTier: domain.TierMaster, // Level 16+ — only party leads (Master+) can review sub-quests
+			MinTier:  domain.TierMaster, // Level 16+ — only party leads (Master+) can review sub-quests
+			Category: ToolCategoryPartyLead,
 		})
 	}
 
@@ -952,7 +1015,8 @@ func (r *ToolRegistry) RegisterBuiltins() {
 				result.StopLoop = true
 				return result
 			},
-			MinTier: domain.TierMaster, // Level 16+ — only party leads (Master+) can answer clarifications
+			MinTier:  domain.TierMaster, // Level 16+ — only party leads (Master+) can answer clarifications
+			Category: ToolCategoryPartyLead,
 		})
 	}
 }
@@ -2296,8 +2360,9 @@ func (r *ToolRegistry) RegisterGraphQuery(queryFn EntityQueryFunc) {
 				"required": []any{"entity_type"},
 			},
 		},
-		Handler: graphQueryHandler(queryFn),
-		MinTier: domain.TierApprentice, // Level 1+ — read-only graph access
+		Handler:  graphQueryHandler(queryFn),
+		MinTier:  domain.TierApprentice, // Level 1+ — read-only graph access
+		Category: ToolCategoryKnowledge,
 	})
 }
 
@@ -2331,9 +2396,10 @@ func (r *ToolRegistry) RegisterWebSearch(provider SearchProvider) {
 				"required": []any{"query"},
 			},
 		},
-		Handler: handler,
-		Skills:  []domain.SkillTag{domain.SkillResearch},
-		MinTier: domain.TierApprentice,
+		Handler:  handler,
+		Skills:   []domain.SkillTag{domain.SkillResearch},
+		MinTier:  domain.TierApprentice,
+		Category: ToolCategoryNetwork,
 	})
 }
 
@@ -2382,8 +2448,9 @@ func (r *ToolRegistry) RegisterGraphSearch(graphqlURL string) {
 				"required": []any{"query_type"},
 			},
 		},
-		Handler: graphSearchHandler(graphqlURL),
-		MinTier: domain.TierApprentice, // Read-only knowledge-graph access
+		Handler:  graphSearchHandler(graphqlURL),
+		MinTier:  domain.TierApprentice, // Read-only knowledge-graph access
+		Category: ToolCategoryKnowledge,
 	})
 }
 

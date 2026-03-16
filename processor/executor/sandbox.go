@@ -298,6 +298,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxReadFileHandler(client),
 		Skills:     readFileSpec.Skills,
 		MinTier:    readFileSpec.MinTier,
+		Category:   readFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -305,6 +306,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxReadFileRangeHandler(client),
 		Skills:     readFileRangeSpec.Skills,
 		MinTier:    readFileRangeSpec.MinTier,
+		Category:   readFileRangeSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -312,6 +314,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxWriteFileHandler(client),
 		Skills:     writeFileSpec.Skills,
 		MinTier:    writeFileSpec.MinTier,
+		Category:   writeFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -319,6 +322,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxPatchFileHandler(client),
 		Skills:     patchFileSpec.Skills,
 		MinTier:    patchFileSpec.MinTier,
+		Category:   patchFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -326,6 +330,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxDeleteFileHandler(client),
 		Skills:     deleteFileSpec.Skills,
 		MinTier:    deleteFileSpec.MinTier,
+		Category:   deleteFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -333,6 +338,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxRenameFileHandler(client),
 		Skills:     renameFileSpec.Skills,
 		MinTier:    renameFileSpec.MinTier,
+		Category:   renameFileSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -340,6 +346,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxCreateDirectoryHandler(client),
 		Skills:     createDirectorySpec.Skills,
 		MinTier:    createDirectorySpec.MinTier,
+		Category:   createDirectorySpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -347,6 +354,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxListDirectoryHandler(client),
 		Skills:     listDirectorySpec.Skills,
 		MinTier:    listDirectorySpec.MinTier,
+		Category:   listDirectorySpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -354,6 +362,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxGlobFilesHandler(client),
 		Skills:     globFilesSpec.Skills,
 		MinTier:    globFilesSpec.MinTier,
+		Category:   globFilesSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -361,6 +370,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxSearchTextHandler(client),
 		Skills:     searchTextSpec.Skills,
 		MinTier:    searchTextSpec.MinTier,
+		Category:   searchTextSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -368,6 +378,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxRunTestsHandler(client),
 		Skills:     runTestsSpec.Skills,
 		MinTier:    runTestsSpec.MinTier,
+		Category:   runTestsSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -375,6 +386,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxLintCheckHandler(client),
 		Skills:     lintCheckSpec.Skills,
 		MinTier:    lintCheckSpec.MinTier,
+		Category:   lintCheckSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -382,6 +394,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxRunCommandHandler(client),
 		Skills:     runCommandSpec.Skills,
 		MinTier:    runCommandSpec.MinTier,
+		Category:   runCommandSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -389,6 +402,7 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Handler:    makeSandboxHTTPRequestHandler(client),
 		Skills:     httpRequestSpec.Skills,
 		MinTier:    httpRequestSpec.MinTier,
+		Category:   httpRequestSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -399,8 +413,9 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 			func(_ agentic.ToolCall) (string, error) { return inspectEnvironmentScript, nil },
 			nil,
 		),
-		Skills:  inspectEnvironmentSpec.Skills,
-		MinTier: inspectEnvironmentSpec.MinTier,
+		Skills:   inspectEnvironmentSpec.Skills,
+		MinTier:  inspectEnvironmentSpec.MinTier,
+		Category: inspectEnvironmentSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -411,8 +426,9 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 			func(call agentic.ToolCall) (string, error) { return buildGitCommand(call) },
 			nil,
 		),
-		Skills:  gitOperationSpec.Skills,
-		MinTier: gitOperationSpec.MinTier,
+		Skills:   gitOperationSpec.Skills,
+		MinTier:  gitOperationSpec.MinTier,
+		Category: gitOperationSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -423,8 +439,9 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 			func(call agentic.ToolCall) (string, error) { return buildProjectCommand(call) },
 			nil,
 		),
-		Skills:  buildProjectSpec.Skills,
-		MinTier: buildProjectSpec.MinTier,
+		Skills:   buildProjectSpec.Skills,
+		MinTier:  buildProjectSpec.MinTier,
+		Category: buildProjectSpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -435,8 +452,9 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 			func(call agentic.ToolCall) (string, error) { return buildManageDepsCommand(call) },
 			nil,
 		),
-		Skills:  manageDependenciesSpec.Skills,
-		MinTier: manageDependenciesSpec.MinTier,
+		Skills:   manageDependenciesSpec.Skills,
+		MinTier:  manageDependenciesSpec.MinTier,
+		Category: manageDependenciesSpec.Category,
 	})
 }
 
