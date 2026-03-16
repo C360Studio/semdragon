@@ -105,7 +105,7 @@ test.describe.serial('Quest Pipeline', () => {
 		page,
 		lifecycleApi
 	}) => {
-		test.setTimeout(isMockLLM() ? 120_000 : 300_000);
+		test.setTimeout(isMockLLM() ? 120_000 : 480_000);
 
 		// Post a research quest via DM chat. The prompt must match both reQuestBrief
 		// ("create.*quest") and reResearch ("research|investigate") so the mock LLM
@@ -138,7 +138,7 @@ test.describe.serial('Quest Pipeline', () => {
 
 		await test.step('wait for research quest to complete', async () => {
 			await waitForAnyQuestInColumn(page, 'completed', {
-				timeout: isMockLLM() ? 90_000 : 240_000,
+				timeout: isMockLLM() ? 90_000 : 420_000,
 				// At least 2 completed quests (solo + research)
 				minCount: 2
 			});
