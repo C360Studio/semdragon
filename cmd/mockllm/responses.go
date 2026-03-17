@@ -14,7 +14,7 @@ const questBriefResponse = `Here is a quest based on your request.
   "title": "Mock Quest: Analyze Test Data",
   "goal": "Process the test dataset and generate a summary report covering all data points.",
   "difficulty": 2,
-  "skills": ["analysis", "summarization"],
+  "skills": ["analysis"],
   "requirements": [
     "Summary report generated",
     "All data points processed",
@@ -23,13 +23,12 @@ const questBriefResponse = `Here is a quest based on your request.
   "scenarios": [
     {
       "name": "Data ingestion",
-      "description": "Load all CSV files from the input directory and validate schema conformance",
-      "skills": ["analysis"]
+      "description": "Load all CSV files from the input directory and validate schema conformance"
     },
     {
       "name": "Summary generation",
       "description": "Compute aggregate statistics and produce a formatted summary report",
-      "skills": ["summarization"]
+      "depends_on": ["Data ingestion"]
     }
   ]
 }
