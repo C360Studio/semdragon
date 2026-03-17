@@ -477,6 +477,9 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 		// A quest posted with party_required=true triggers the full orchestration:
 		// find lead → form party → recruit → claim → start.
 		c.maybeInitiatePartyQuest(prev, quest)
+		// A quest completing may unblock dependent party quests whose initial
+		// claim failed due to unmet dependencies. Re-check those now.
+		c.retryBlockedPartyQuests(prev, quest)
 	}
 }
 
@@ -610,6 +613,82 @@ func (c *Component) maybeInitiatePartyQuest(prev, curr *domain.Quest) {
 		"party_id", party.ID,
 		"lead", lead.ID,
 		"total_members", recruited+1)
+}
+
+// retryBlockedPartyQuests is called when a quest transitions to "completed".
+// It scans the quest cache for posted party quests that depend on the completed
+// quest and retries the claim+start flow. This handles the case where a party
+// formed but the initial claim failed due to unmet dependencies.
+func (c *Component) retryBlockedPartyQuests(prev, completed *domain.Quest) {
+	// Only react to transitions INTO completed status.
+	if completed.Status != domain.QuestCompleted {
+		return
+	}
+	prevStatus := domain.QuestStatus("")
+	if prev != nil {
+		prevStatus = prev.Status
+	}
+	if prevStatus == completed.Status {
+		return
+	}
+
+	completedID := completed.ID
+
+	// Scan quest cache for posted party quests that depend on this one.
+	c.questsMu.RLock()
+	var blocked []*domain.Quest
+	for _, q := range c.quests {
+		if q.Status != domain.QuestPosted || !q.PartyRequired {
+			continue
+		}
+		for _, dep := range q.DependsOn {
+			if string(dep) == string(completedID) {
+				blocked = append(blocked, q)
+				break
+			}
+		}
+	}
+	c.questsMu.RUnlock()
+
+	if len(blocked) == 0 {
+		return
+	}
+
+	ctx := context.Background()
+	qb := c.resolveQuestBoard()
+	if qb == nil {
+		return
+	}
+
+	for _, quest := range blocked {
+		// If a party already exists (formed earlier but claim failed),
+		// retry the claim+start directly.
+		if quest.PartyID != nil {
+			c.logger.Info("retrying blocked party quest after dependency completed",
+				"quest_id", quest.ID,
+				"party_id", *quest.PartyID,
+				"unblocked_by", completedID)
+
+			if err := qb.ClaimQuestForParty(ctx, quest.ID, *quest.PartyID); err != nil {
+				c.logger.Warn("retry: still cannot claim blocked party quest",
+					"quest_id", quest.ID, "error", err)
+				continue
+			}
+			if err := qb.StartQuest(ctx, quest.ID); err != nil {
+				c.logger.Error("retry: failed to start unblocked party quest",
+					"quest_id", quest.ID, "error", err)
+				continue
+			}
+			c.logger.Info("retry: unblocked party quest started",
+				"quest_id", quest.ID, "party_id", *quest.PartyID)
+		} else {
+			// No party yet — trigger the full formation flow.
+			// Pass nil as prev to simulate a fresh "posted" transition.
+			c.logger.Info("initiating party quest after dependency completed",
+				"quest_id", quest.ID, "unblocked_by", completedID)
+			c.maybeInitiatePartyQuest(nil, quest)
+		}
+	}
 }
 
 // findIdleAgents lists all agents from the graph and returns those that are idle.
