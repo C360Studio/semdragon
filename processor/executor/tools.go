@@ -2569,10 +2569,12 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 			return graphQLRequest{}, fmt.Errorf("search_text is required for nlq queries (your natural language question)")
 		}
 		// NLQ uses globalSearch with community summaries for richer context.
-		// Returns entities, summaries, and classification metadata.
-		maxCommunities := min(limit, 5)
+		// Cap communities to min(limit, 3) to control response size — each
+		// community summary can be several hundred tokens. Entity list is kept
+		// to IDs only (use entity/relationships queries for details).
+		maxCommunities := min(limit, 3)
 		return graphQLRequest{
-			Query: fmt.Sprintf(`{ globalSearch(query: %q, level: 1, maxCommunities: %d) { entities { id type triples { predicate object } } communities { title summary } count classification { queryType confidence } } }`, sanitizeGraphQLString(text), maxCommunities),
+			Query: fmt.Sprintf(`{ globalSearch(query: %q, level: 1, maxCommunities: %d) { entities { id type } communities { title summary } count classification { queryType confidence } } }`, sanitizeGraphQLString(text), maxCommunities),
 		}, nil
 
 	default:
