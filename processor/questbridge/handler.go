@@ -2273,8 +2273,9 @@ func buildUserPrompt(quest *domain.Quest) string {
 func (c *Component) waitForKnowledgeSources(ctx context.Context, entityID string) {
 	// Gate on graph manifest (via graph-gateway GraphQL) rather than semsource REST,
 	// because the graph manifest reflects what's actually queryable via graph_search.
-	// We wait for the "source" predicate family — that signals code/doc content is indexed.
-	if c.graphManifestClient == nil || c.config.KnowledgeReadyTimeout <= 0 {
+	// Only gate when semsource is configured (manifestClient != nil) — without semsource,
+	// non-game predicates will never appear and the gate would always timeout.
+	if c.graphManifestClient == nil || c.manifestClient == nil || c.config.KnowledgeReadyTimeout <= 0 {
 		return
 	}
 
@@ -2383,15 +2384,10 @@ func (c *Component) toolsForQuest(quest *domain.Quest, agent *agentprogression.A
 		return nil
 	}
 
-	// Check if the graph has non-game knowledge sources. When the manifest
-	// is empty (only game predicates), omit graph_search from the tool list
-	// since it would only return game data that agents shouldn't query directly.
-	hasKnowledgeSources := false
-	if c.graphManifestClient != nil {
-		if m := c.graphManifestClient.Fetch(context.Background()); m != nil && len(m.PredicateFamilies) > 0 {
-			hasKnowledgeSources = true
-		}
-	}
+	// Include graph_search when graph-gateway is configured. The tool can query
+	// game entities (always available) and knowledge sources (when semsource runs).
+	// The entity context injection tells agents what's actually in the graph.
+	hasKnowledgeSources := c.graphManifestClient != nil
 
 	allowedCats := categoriesForQuest(quest, agent)
 
