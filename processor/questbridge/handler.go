@@ -2284,7 +2284,16 @@ func (c *Component) waitForKnowledgeSources(ctx context.Context, entityID string
 	}
 
 	// Check current state before entering the poll loop.
-	if c.graphManifestClient.HasSourceContent(ctx) {
+	// If the graph-gateway is unreachable (Fetch returns nil), skip the gate
+	// entirely — no point waiting 5 minutes for a service that isn't running.
+	manifest := c.graphManifestClient.Fetch(ctx)
+	if manifest == nil {
+		c.logger.Debug("graph-gateway unreachable, skipping knowledge gate",
+			"entity_id", entityID)
+		c.knowledgeReady.Store(true)
+		return
+	}
+	if len(manifest.PredicateFamilies) > 0 {
 		c.knowledgeReady.Store(true)
 		return
 	}
