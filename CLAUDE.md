@@ -483,6 +483,7 @@ Processors registered but excluded from the default config (opt-in):
 - `partycoord` — party lifecycle management (form, assign, merge, disband)
 - `dmworldstate` — world state aggregation (used by API but can run standalone)
 - `dmsession`, `dmapproval`, `dmpartyformation` — DM session management (functional, not in default config)
+- `redteam` — guild red-team review; posts adversarial review quests before boss battle, extracts lessons. Enabled by default alongside `bossbattle.red_team_enabled: true`
 
 **Adding a new processor**: implement in `processor/<name>/`, register in `componentregistry/register.go`, optionally add to `config/semdragons.json`.
 

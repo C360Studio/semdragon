@@ -257,6 +257,29 @@ const (
 	PredicateGuildApplicationRejected = "guild.application.rejected"
 )
 
+// --- Red-Team Review Predicates ---
+
+const (
+	// PredicateRedTeamPosted - Red-team review quest posted for a submitted quest.
+	PredicateRedTeamPosted = "redteam.lifecycle.posted"
+
+	// PredicateRedTeamCompleted - Red-team review completed, findings available.
+	PredicateRedTeamCompleted = "redteam.lifecycle.completed"
+
+	// PredicateRedTeamSkipped - Red-team review skipped (timeout or no eligible reviewers).
+	PredicateRedTeamSkipped = "redteam.lifecycle.skipped"
+)
+
+// --- Guild Knowledge Predicates ---
+
+const (
+	// PredicateGuildLessonAdded - New lesson added to guild knowledge base.
+	PredicateGuildLessonAdded = "guild.knowledge.lessonadded"
+
+	// PredicateGuildKnowledgeUpdated - Guild knowledge base updated (batch).
+	PredicateGuildKnowledgeUpdated = "guild.knowledge.updated"
+)
+
 // --- DM Session Predicates ---
 
 const (
@@ -621,6 +644,26 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicateGuildApplicationRejected,
 		vocabulary.WithDescription("Founder rejected a guild application"),
+	)
+
+	// Red-team review predicates
+	vocabulary.Register(PredicateRedTeamPosted,
+		vocabulary.WithDescription("Red-team review quest posted for a submitted quest"),
+	)
+	vocabulary.Register(PredicateRedTeamCompleted,
+		vocabulary.WithDescription("Red-team review completed, findings available on target quest"),
+	)
+	vocabulary.Register(PredicateRedTeamSkipped,
+		vocabulary.WithDescription("Red-team review skipped due to timeout or no eligible reviewers"),
+	)
+
+	// Guild knowledge predicates
+	vocabulary.Register(PredicateGuildLessonAdded,
+		vocabulary.WithDescription("New lesson added to guild knowledge base"),
+		vocabulary.WithDataType("Lesson"),
+	)
+	vocabulary.Register(PredicateGuildKnowledgeUpdated,
+		vocabulary.WithDescription("Guild knowledge base updated with lessons from quest review"),
 	)
 
 	// DM session predicates

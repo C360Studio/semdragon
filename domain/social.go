@@ -39,6 +39,7 @@ type Guild struct {
 
 	// Guild Hall - shared knowledge and resources
 	SharedTools []string `json:"shared_tools"` // Tool IDs available to members
+	Lessons     []Lesson `json:"lessons,omitempty"` // Structured lessons learned from quest reviews
 
 	// Quest routing (clients trust certain guilds)
 	QuestTypes       []string `json:"quest_types,omitempty"` // Types of quests they handle

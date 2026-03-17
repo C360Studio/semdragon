@@ -263,7 +263,25 @@ func (e *DefaultBoidEngine) computeAttraction(
 			guildMatch *= 1.0 + guild.Reputation*0.5 // up to 1.5x multiplier
 		}
 	}
-	attr.AffinityScore = (skillMatch + guildMatch) * rules.AffinityWeight
+	// Cross-guild bonus for red-team review quests: agents from a DIFFERENT guild
+	// than the implementing team get a 1.5x multiplier on skill match (since guild
+	// match is zero for cross-guild). Agents from the SAME guild as the blue team
+	// get a penalty — you can't red-team your own team's work.
+	crossGuildBonus := 0.0
+	if quest.QuestType == domain.QuestTypeRedTeam {
+		if quest.GuildPriority != nil && agent.Guild != "" {
+			if agent.Guild != *quest.GuildPriority {
+				// Different guild — this is exactly what we want.
+				crossGuildBonus = skillMatch * 1.5
+			}
+			// Same guild as blue team: guildMatch is already 0 (no priority match).
+		} else if agent.Guild != "" {
+			// No guild priority set — any guild member gets a moderate bonus.
+			crossGuildBonus = skillMatch * 0.5
+		}
+	}
+
+	attr.AffinityScore = (skillMatch + guildMatch + crossGuildBonus) * rules.AffinityWeight
 
 	// Peer reputation modifier: agents rated highly by peers get a stronger affinity pull.
 	// PeerReviewAvg is on a 1–5 scale; we normalize it to a -1.0..+1.0 range around the

@@ -544,6 +544,15 @@ func formatOutputForJudge(output any) string {
 		return "No output was provided."
 	}
 
+	// Check for combined output with red-team findings.
+	if m, ok := output.(map[string]any); ok {
+		if questOutput, hasQO := m["quest_output"]; hasQO {
+			if rtFindings, hasRT := m["red_team_findings"]; hasRT {
+				return formatCombinedOutput(questOutput, rtFindings)
+			}
+		}
+	}
+
 	switch v := output.(type) {
 	case string:
 		return fmt.Sprintf("## Quest Output\n\n%s", v)
@@ -554,6 +563,44 @@ func formatOutputForJudge(output any) string {
 		}
 		return fmt.Sprintf("## Quest Output\n\n```json\n%s\n```", string(data))
 	}
+}
+
+// formatCombinedOutput renders both the quest output and red-team findings
+// for the boss battle judge. The judge sees both and factors them into scoring.
+func formatCombinedOutput(questOutput, rtFindings any) string {
+	var b strings.Builder
+
+	b.WriteString("## Quest Output\n\n")
+	switch v := questOutput.(type) {
+	case string:
+		b.WriteString(v)
+	default:
+		data, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			fmt.Fprintf(&b, "%v", v)
+		} else {
+			fmt.Fprintf(&b, "```json\n%s\n```", string(data))
+		}
+	}
+
+	b.WriteString("\n\n---\n\n## Red-Team Review Findings\n\n")
+	b.WriteString("A separate team reviewed the output above. Consider their findings " +
+		"when scoring, but apply your own judgment — the red team may have missed issues " +
+		"or flagged non-issues.\n\n")
+
+	switch v := rtFindings.(type) {
+	case string:
+		b.WriteString(v)
+	default:
+		data, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			fmt.Fprintf(&b, "%v", v)
+		} else {
+			fmt.Fprintf(&b, "```json\n%s\n```", string(data))
+		}
+	}
+
+	return b.String()
 }
 
 // clampScore ensures a score is within [0.0, 1.0].

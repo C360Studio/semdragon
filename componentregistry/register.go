@@ -36,6 +36,7 @@ import (
 	"github.com/c360studio/semdragons/processor/questbridge"
 	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semdragons/processor/questtools"
+	"github.com/c360studio/semdragons/processor/redteam"
 	"github.com/c360studio/semdragons/processor/seeding"
 )
 
@@ -91,6 +92,7 @@ func RegisterAll(registry *component.Registry) error {
 		questbridge.Register,
 		questdagexec.Register,
 		questtools.Register,
+		redteam.Register,
 	}
 
 	for _, register := range processors {
@@ -146,6 +148,7 @@ func RegisterProcessors(registry *component.Registry) error {
 		questbridge.Register,
 		questdagexec.Register,
 		questtools.Register,
+		redteam.Register,
 	}
 
 	for _, register := range processors {
@@ -189,6 +192,7 @@ func ComponentNames() []string {
 		questbridge.ComponentName,
 		questdagexec.ComponentName,
 		questtools.ComponentName,
+		redteam.ComponentName,
 	}
 }
 
@@ -224,5 +228,6 @@ func ProcessorNames() []string {
 		questbridge.ComponentName,
 		questdagexec.ComponentName,
 		questtools.ComponentName,
+		redteam.ComponentName,
 	}
 }

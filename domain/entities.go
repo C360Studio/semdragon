@@ -19,6 +19,12 @@ type Quest struct {
 	Status      QuestStatus     `json:"status"`
 	Difficulty  QuestDifficulty `json:"difficulty"`
 
+	// Quest classification
+	QuestType     QuestType `json:"quest_type,omitempty"`      // "" = normal, "red_team_review" = review quest
+	RedTeamTarget  *QuestID `json:"red_team_target,omitempty"`   // Quest being red-teamed (set when QuestType == QuestTypeRedTeam)
+	RedTeamQuestID *QuestID `json:"red_team_quest_id,omitempty"` // Reverse pointer: the red-team quest reviewing this quest
+	RedTeamStatus  string   `json:"red_team_status,omitempty"`   // "completed" or "skipped" — stored as triple for KV watcher detection
+
 	// Requirements
 	RequiredSkills []SkillTag `json:"required_skills"`
 	RequiredTools  []string   `json:"required_tools"` // Tool IDs

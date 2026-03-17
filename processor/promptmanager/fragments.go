@@ -46,6 +46,8 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerWorkspacePriorWorkDirective(r)
 	registerSharedProductDirective(r)
 	registerPartyCooperationDirective(r)
+	registerRedTeamDirective(r)
+	registerGuildLessonsDirective(r)
 }
 
 // partyLeadDirectiveBase is the tool-call instruction for party leads when no
@@ -642,6 +644,84 @@ func registerArchetypeWorkflows(r *PromptRegistry) {
 		Priority: 12,
 		Condition: func(ctx AssemblyContext) bool {
 			return ctx.Archetype == domain.ArchetypeStrategist && !isPartyLead(ctx)
+		},
+	})
+}
+
+// =============================================================================
+// RED-TEAM REVIEW DIRECTIVE
+// =============================================================================
+
+// redTeamDirective instructs agents on how to conduct constructive red-team reviews.
+// Explicitly not zero-sum: the goal is team learning, not proving the implementer wrong.
+const redTeamDirective = `RED-TEAM REVIEW MISSION:
+You are reviewing another team's quest output. Your mission is constructive adversarial review.
+
+REVIEW PROCESS:
+1. READ the target output thoroughly before forming any judgments.
+2. IDENTIFY STRENGTHS — what works well, what patterns should be replicated.
+3. IDENTIFY RISKS — correctness errors, security issues, missing requirements, integration risks.
+4. SUGGEST IMPROVEMENTS — actionable, specific, with reasoning.
+
+OUTPUT FORMAT:
+Produce a structured findings report with these sections:
+- **Strengths**: What the team did well (be specific, cite evidence).
+- **Risks**: Issues found, each tagged with severity (info/warning/critical) and category
+  (correctness, completeness, quality, security, performance, integration, documentation).
+- **Suggestions**: Actionable improvements, each linked to a specific risk.
+- **Confidence**: Your overall confidence in the work product (high/medium/low) with reasoning.
+
+RULES:
+- Your goal is to help the team produce better work, not to prove them wrong.
+- Positive findings are as valuable as negative findings — a confirmed good pattern is a lesson for everyone.
+- Tag every finding with a skill (e.g., codegen, analysis) and category for the knowledge base.
+- Be specific: "function X doesn't handle nil input" beats "error handling is weak".
+- If the work is genuinely excellent, say so. Don't manufacture problems.`
+
+func registerRedTeamDirective(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:       "builtin.red-team-directive",
+		Category: CategoryToolDirective,
+		Content:  redTeamDirective,
+		Priority: 50, // High priority — this is the primary mission for red-team agents.
+		Condition: func(ctx AssemblyContext) bool {
+			return ctx.QuestType == domain.QuestTypeRedTeam
+		},
+	})
+}
+
+// =============================================================================
+// GUILD LESSONS DIRECTIVE
+// =============================================================================
+
+func registerGuildLessonsDirective(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:       "builtin.guild-lessons",
+		Category: CategoryGuildKnowledge,
+		Content:  "", // Dynamic content — populated by ContentFunc.
+		Priority: 3,  // After shared-product (0), before party-cooperation (5).
+		Condition: func(ctx AssemblyContext) bool {
+			return len(ctx.GuildLessons) > 0
+		},
+		ContentFunc: func(ctx AssemblyContext) string {
+			if len(ctx.GuildLessons) == 0 {
+				return ""
+			}
+			var b strings.Builder
+			b.WriteString("GUILD KNOWLEDGE — Lessons from previous quests:\n")
+			for i, lesson := range ctx.GuildLessons {
+				if i >= 10 {
+					fmt.Fprintf(&b, "... and %d more lessons.\n", len(ctx.GuildLessons)-10)
+					break
+				}
+				kind := "AVOID"
+				if lesson.Positive {
+					kind = "BEST PRACTICE"
+				}
+				fmt.Fprintf(&b, "- [%s][%s/%s] %s\n",
+					kind, lesson.Skill, lesson.Category, lesson.Summary)
+			}
+			return b.String()
 		},
 	})
 }

@@ -40,6 +40,9 @@ func (q *Quest) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "quest.status.state", Object: string(q.Status), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "quest.difficulty.level", Object: int(q.Difficulty), Source: source, Timestamp: now, Confidence: 1.0},
 
+		// Classification
+		{Subject: entityID, Predicate: "quest.classification.type", Object: string(q.QuestType), Source: source, Timestamp: now, Confidence: 1.0},
+
 		// Requirements
 		{Subject: entityID, Predicate: "quest.tier.minimum", Object: int(q.MinTier), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "quest.party.required", Object: q.PartyRequired, Source: source, Timestamp: now, Confidence: 1.0},
@@ -88,6 +91,27 @@ func (q *Quest) Triples() []message.Triple {
 	if q.GuildPriority != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.priority.guild", Object: string(*q.GuildPriority),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	if q.RedTeamTarget != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.classification.red_team_target", Object: string(*q.RedTeamTarget),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	if q.RedTeamStatus != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.classification.red_team_status", Object: q.RedTeamStatus,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
+	if q.RedTeamQuestID != nil {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "quest.classification.red_team_quest_id", Object: string(*q.RedTeamQuestID),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -534,6 +558,14 @@ func (g *Guild) Triples() []message.Triple {
 				Source: source, Timestamp: now, Confidence: 1.0,
 			})
 		}
+	}
+
+	// Lessons (stored as a single JSON blob, like quest.dag.definition)
+	if len(g.Lessons) > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "guild.knowledge.lessons", Object: g.Lessons,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
 	}
 
 	return triples

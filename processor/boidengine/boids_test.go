@@ -399,3 +399,173 @@ func TestAffinityScore_NoPeerReviews(t *testing.T) {
 		t.Errorf("AffinityScore = %.6f, want %.6f (count=0 must leave score unchanged)", attr.AffinityScore, want)
 	}
 }
+
+// =============================================================================
+// CROSS-GUILD AFFINITY BONUS (RED-TEAM) UNIT TESTS
+// =============================================================================
+// These tests exercise the red-team cross-guild bonus branch inside
+// computeAttraction. The setup uses a single-agent, single-quest pair so the
+// AffinityScore arithmetic is deterministic and easy to verify.
+//
+// Cross-guild bonus rules (from boids.go):
+//   - Different guild from GuildPriority → crossGuildBonus = skillMatch * 1.5
+//   - No GuildPriority but agent is guilded → crossGuildBonus = skillMatch * 0.5
+//   - Same guild as GuildPriority → crossGuildBonus = 0 (no bonus, no penalty)
+//   - Not a red-team quest → crossGuildBonus = 0
+//
+// All agents below have 1 matching skill (code_gen), no peer reviews, and
+// the quest has no GuildPriority overriding the affinity path unless noted.
+// Base skill match (no guild, no cross-guild): skillMatch=1, guildMatch=0 → 1*1.5 = 1.5
+// =============================================================================
+
+// makeRedTeamAttraction is a helper that runs ComputeAttractions for a single
+// agent against a red-team quest and returns the resulting QuestAttraction.
+func makeRedTeamAttraction(t *testing.T, agent agentprogression.Agent, guildPriority *domain.GuildID) QuestAttraction {
+	t.Helper()
+
+	engine := NewDefaultBoidEngine()
+	rules := DefaultBoidRules()
+
+	quest := domain.Quest{
+		ID:             "rt-quest",
+		Status:         domain.QuestPosted,
+		QuestType:      domain.QuestTypeRedTeam,
+		RequiredSkills: []domain.SkillTag{"code_gen"},
+		GuildPriority:  guildPriority,
+	}
+	agents := []agentprogression.Agent{agent}
+	quests := []domain.Quest{quest}
+
+	attractions := engine.ComputeAttractions(agents, quests, rules)
+	if len(attractions) == 0 {
+		t.Fatal("expected at least one attraction, got none")
+	}
+	return attractions[0]
+}
+
+func TestCrossGuildBonus_DifferentGuildGetBonus(t *testing.T) {
+	// Agent is in "redguild"; quest GuildPriority is "blueguild".
+	// crossGuildBonus = skillMatch(1) * 1.5 = 1.5
+	// AffinityScore = (1 + 0 + 1.5) * 1.5 = 3.75
+	blueGuild := domain.GuildID("blueguild")
+	agent := agentprogression.Agent{
+		ID:     "agent-red",
+		Status: domain.AgentIdle,
+		Guild:  "redguild",
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			"code_gen": {},
+		},
+	}
+
+	attr := makeRedTeamAttraction(t, agent, &blueGuild)
+
+	const want = 3.75
+	if math.Abs(attr.AffinityScore-want) > 1e-9 {
+		t.Errorf("AffinityScore = %.6f, want %.6f (cross-guild 1.5x bonus should apply)", attr.AffinityScore, want)
+	}
+}
+
+func TestCrossGuildBonus_NoGuildPriorityModerateBonus(t *testing.T) {
+	// No GuildPriority on quest, agent is guilded.
+	// crossGuildBonus = skillMatch(1) * 0.5 = 0.5
+	// AffinityScore = (1 + 0 + 0.5) * 1.5 = 2.25
+	agent := agentprogression.Agent{
+		ID:     "agent-any-guild",
+		Status: domain.AgentIdle,
+		Guild:  "someguild",
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			"code_gen": {},
+		},
+	}
+
+	attr := makeRedTeamAttraction(t, agent, nil)
+
+	const want = 2.25
+	if math.Abs(attr.AffinityScore-want) > 1e-9 {
+		t.Errorf("AffinityScore = %.6f, want %.6f (moderate 0.5x bonus for guilded, no priority)", attr.AffinityScore, want)
+	}
+}
+
+func TestCrossGuildBonus_NormalQuestNoBonus(t *testing.T) {
+	// Normal (non-red-team) quest: cross-guild bonus is always zero.
+	// Base affinity: skillMatch=1, guildMatch=0, crossGuildBonus=0 → 1.0 * 1.5 = 1.5
+	engine := NewDefaultBoidEngine()
+	rules := DefaultBoidRules()
+
+	blueGuild := domain.GuildID("blueguild")
+	agent := agentprogression.Agent{
+		ID:     "agent-normal",
+		Status: domain.AgentIdle,
+		Guild:  "redguild",
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			"code_gen": {},
+		},
+	}
+	quest := domain.Quest{
+		ID:             "normal-quest",
+		Status:         domain.QuestPosted,
+		QuestType:      domain.QuestTypeNormal,
+		RequiredSkills: []domain.SkillTag{"code_gen"},
+		GuildPriority:  &blueGuild,
+	}
+
+	attractions := engine.ComputeAttractions([]agentprogression.Agent{agent}, []domain.Quest{quest}, rules)
+	if len(attractions) == 0 {
+		t.Fatal("expected at least one attraction, got none")
+	}
+
+	// No cross-guild bonus for normal quest; guildMatch=0 (priority is blueGuild, agent is in redguild)
+	const want = 1.5
+	if math.Abs(attractions[0].AffinityScore-want) > 1e-9 {
+		t.Errorf("AffinityScore = %.6f, want %.6f (non-red-team quest must not apply cross-guild bonus)", attractions[0].AffinityScore, want)
+	}
+}
+
+func TestCrossGuildBonus_SameGuildNoBonus(t *testing.T) {
+	// Agent is in the SAME guild as the blue-team GuildPriority.
+	// guildMatch applies (agent.Guild == *quest.GuildPriority), so no crossGuildBonus.
+	// guildMatch = 1.0 (base, no guild context for rank/reputation boost in this test)
+	// AffinityScore = (1 + 1 + 0) * 1.5 = 3.0
+	blueGuild := domain.GuildID("blueguild")
+	agent := agentprogression.Agent{
+		ID:     "agent-blue",
+		Status: domain.AgentIdle,
+		Guild:  "blueguild",
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			"code_gen": {},
+		},
+	}
+
+	attr := makeRedTeamAttraction(t, agent, &blueGuild)
+
+	// Same guild → guildMatch = 1.0 (no engine.guilds context → no rank/rep multiplier)
+	// crossGuildBonus = 0 (same guild)
+	// AffinityScore = (1 + 1 + 0) * 1.5 = 3.0
+	const want = 3.0
+	if math.Abs(attr.AffinityScore-want) > 1e-9 {
+		t.Errorf("AffinityScore = %.6f, want %.6f (same guild should get standard guild match, not cross-guild bonus)", attr.AffinityScore, want)
+	}
+}
+
+func TestCrossGuildBonus_UnguildedAgentNoBonus(t *testing.T) {
+	// Unguilded agent on a red-team quest with GuildPriority set.
+	// agent.Guild == "" → the else-if branch (agent.Guild != "") is false → crossGuildBonus = 0
+	// guildMatch = 0 (no priority match)
+	// AffinityScore = (1 + 0 + 0) * 1.5 = 1.5
+	blueGuild := domain.GuildID("blueguild")
+	agent := agentprogression.Agent{
+		ID:     "agent-unguilded",
+		Status: domain.AgentIdle,
+		Guild:  "", // no guild
+		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
+			"code_gen": {},
+		},
+	}
+
+	attr := makeRedTeamAttraction(t, agent, &blueGuild)
+
+	const want = 1.5
+	if math.Abs(attr.AffinityScore-want) > 1e-9 {
+		t.Errorf("AffinityScore = %.6f, want %.6f (unguilded agent should get no cross-guild bonus)", attr.AffinityScore, want)
+	}
+}

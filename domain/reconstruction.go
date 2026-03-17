@@ -217,6 +217,18 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 				q.ProducedEntities = append(q.ProducedEntities, v)
 			}
 
+		// Quest classification
+		case "quest.classification.type":
+			q.QuestType = QuestType(AsString(triple.Object))
+		case "quest.classification.red_team_target":
+			targetID := QuestID(AsString(triple.Object))
+			q.RedTeamTarget = &targetID
+		case "quest.classification.red_team_status":
+			q.RedTeamStatus = AsString(triple.Object)
+		case "quest.classification.red_team_quest_id":
+			rtQuestID := QuestID(AsString(triple.Object))
+			q.RedTeamQuestID = &rtQuestID
+
 		// Quest spec
 		case "quest.spec.goal":
 			q.Goal = AsString(triple.Object)
@@ -395,6 +407,10 @@ func GuildFromEntityState(entity *graph.EntityState) *Guild {
 		// Resources
 		case "guild.resource.tool":
 			g.SharedTools = append(g.SharedTools, AsString(triple.Object))
+
+		// Knowledge
+		case "guild.knowledge.lessons":
+			g.Lessons = asLessonsSlice(triple.Object)
 
 		// Routing
 		case "guild.routing.quest_type":
@@ -713,4 +729,67 @@ func AsTime(v any) time.Time {
 	default:
 		return time.Time{}
 	}
+}
+
+// asLessonsSlice converts a triple Object to []Lesson.
+// Handles both in-process typed slices and JSON-deserialized []any from KV.
+func asLessonsSlice(obj any) []Lesson {
+	if obj == nil {
+		return nil
+	}
+	// Direct type assertion (in-process).
+	if lessons, ok := obj.([]Lesson); ok {
+		return lessons
+	}
+	// After KV round-trip: JSON deserialised as []any of map[string]any.
+	raw, ok := obj.([]any)
+	if !ok {
+		return nil
+	}
+	lessons := make([]Lesson, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		l := Lesson{}
+		if v, ok := m["id"].(string); ok {
+			l.ID = v
+		}
+		if v, ok := m["skill"].(string); ok {
+			l.Skill = SkillTag(v)
+		}
+		if v, ok := m["category"].(string); ok {
+			l.Category = LessonCategory(v)
+		}
+		if v, ok := m["summary"].(string); ok {
+			l.Summary = v
+		}
+		if v, ok := m["detail"].(string); ok {
+			l.Detail = v
+		}
+		if v, ok := m["severity"].(string); ok {
+			l.Severity = LessonSeverity(v)
+		}
+		if v, ok := m["positive"].(bool); ok {
+			l.Positive = v
+		}
+		if v, ok := m["quest_id"].(string); ok {
+			l.QuestID = QuestID(v)
+		}
+		if v, ok := m["discovered_by"].(string); ok {
+			l.DiscoveredBy = AgentID(v)
+		}
+		if v, ok := m["guild_id"].(string); ok {
+			l.GuildID = GuildID(v)
+		}
+		if v, ok := m["red_team_quest"].(string); ok {
+			id := QuestID(v)
+			l.RedTeamQuest = &id
+		}
+		if l.Summary != "" {
+			lessons = append(lessons, l)
+		}
+	}
+	return lessons
 }

@@ -2139,4 +2139,90 @@ func TestDomainAwareEvaluator_MergeResults_MissingFallsBack(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// isRedTeamEligible TESTS
+// =============================================================================
+// isRedTeamEligible only reads Quest fields — a zero-value Component is safe.
+
+func TestIsRedTeamEligible_NormalQuestWithReview(t *testing.T) {
+	c := &Component{}
+	parent := domain.QuestID("parent-q")
+	tests := []struct {
+		name  string
+		quest *domain.Quest
+		want  bool
+	}{
+		{
+			name: "require_review true normal quest",
+			quest: &domain.Quest{
+				ID: "q1",
+				Constraints: domain.QuestConstraints{
+					RequireReview: true,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "require_review false",
+			quest: &domain.Quest{
+				ID: "q2",
+				Constraints: domain.QuestConstraints{
+					RequireReview: false,
+				},
+			},
+			want: false,
+		},
+		{
+			name: "sub-quest (ParentQuest set)",
+			quest: &domain.Quest{
+				ID:          "q3",
+				ParentQuest: &parent,
+				Constraints: domain.QuestConstraints{
+					RequireReview: true,
+				},
+			},
+			want: false,
+		},
+		{
+			name: "red-team quest type",
+			quest: &domain.Quest{
+				ID:        "q4",
+				QuestType: domain.QuestTypeRedTeam,
+				Constraints: domain.QuestConstraints{
+					RequireReview: true,
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := c.isRedTeamEligible(tt.quest)
+			if got != tt.want {
+				t.Errorf("isRedTeamEligible() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestIsRedTeamEligible_SubQuestTakesPrecedence verifies that a quest which is
+// BOTH a sub-quest and has RequireReview=true is still ineligible — ParentQuest
+// check fires before QuestType.
+func TestIsRedTeamEligible_SubQuestTakesPrecedence(t *testing.T) {
+	c := &Component{}
+	parent := domain.QuestID("parent-q")
+	quest := &domain.Quest{
+		ID:          "q-sub-rt",
+		QuestType:   domain.QuestTypeRedTeam,
+		ParentQuest: &parent,
+		Constraints: domain.QuestConstraints{
+			RequireReview: true,
+		},
+	}
+
+	if c.isRedTeamEligible(quest) {
+		t.Error("sub-quest that is also a red-team quest should not be eligible")
+	}
+}
 

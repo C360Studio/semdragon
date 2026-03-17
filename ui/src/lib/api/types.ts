@@ -59,9 +59,11 @@ type RawAgentInventory = components['schemas']['AgentInventory'];
 // ID fields are overridden with branded types for compile-time safety.
 // The generated schema uses plain `string`; brands exist only in TypeScript.
 
+export type QuestType = '' | 'red_team_review';
+
 export type Quest = Omit<
 	RawQuest,
-	'id' | 'claimed_by' | 'party_id' | 'guild_priority' | 'parent_quest' | 'sub_quests' | 'decomposed_by'
+	'id' | 'claimed_by' | 'party_id' | 'guild_priority' | 'parent_quest' | 'sub_quests' | 'decomposed_by' | 'red_team_target' | 'red_team_quest_id'
 > & {
 	id: QuestID;
 	name?: string;
@@ -71,6 +73,10 @@ export type Quest = Omit<
 	parent_quest?: QuestID | null;
 	sub_quests?: QuestID[];
 	decomposed_by?: AgentID | null;
+	// Quest classification — red-team review quests
+	quest_type?: QuestType;
+	red_team_target?: QuestID | null;
+	red_team_quest_id?: QuestID | null;
 	// Context metadata — populated by questbridge after prompt assembly.
 	context_token_count?: number;
 	context_sources?: string[];
@@ -100,10 +106,13 @@ export type Party = Omit<RawParty, 'id' | 'quest_id' | 'lead' | 'members'> & {
 	members: PartyMember[];
 };
 
+export type Lesson = components['schemas']['Lesson'];
+
 export type Guild = Omit<RawGuild, 'id' | 'founded_by' | 'members'> & {
 	id: GuildID;
 	founded_by: AgentID;
 	members: GuildMember[];
+	lessons?: Lesson[];
 };
 
 export type PeerReview = Omit<
@@ -440,7 +449,11 @@ export type GameEventType =
 	| 'agent.inventory.updated'
 	| 'review.lifecycle.pending'
 	| 'review.lifecycle.submitted'
-	| 'review.lifecycle.completed';
+	| 'review.lifecycle.completed'
+	| 'redteam.lifecycle.posted'
+	| 'redteam.lifecycle.completed'
+	| 'redteam.lifecycle.skipped'
+	| 'guild.knowledge.lessonadded';
 
 export interface GameEvent {
 	type: GameEventType;

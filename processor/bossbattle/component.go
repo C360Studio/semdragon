@@ -61,6 +61,10 @@ type Component struct {
 	// Battle tracking
 	activeBattles sync.Map // map[BattleID]*activeBattle
 
+	// Red-team coordination: quests waiting for red-team review before battle.
+	// Key is quest entity ID (string), value is *pendingRedTeamBattle.
+	redTeamPending sync.Map
+
 	// Internal state
 	running  atomic.Bool
 	mu       sync.RWMutex
@@ -339,11 +343,18 @@ func (c *Component) Start(ctx context.Context) error {
 		go c.processQuestWatchUpdates()
 	}
 
+	// Safety sweep for pending red-team battles — in case the redteam processor
+	// crashes or fails to emit completed/skipped, we start the battle anyway.
+	if c.config.RedTeamEnabled {
+		go c.sweepStalePendingRedTeam()
+	}
+
 	c.logger.Info("bossbattle component started",
 		"org", c.config.Org,
 		"platform", c.config.Platform,
 		"board", c.config.Board,
-		"auto_start", c.config.AutoStartOnSubmit)
+		"auto_start", c.config.AutoStartOnSubmit,
+		"red_team_enabled", c.config.RedTeamEnabled)
 
 	return nil
 }

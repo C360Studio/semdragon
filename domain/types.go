@@ -225,6 +225,15 @@ func (sp SkillProficiency) CanLevelUp() bool {
 // QUEST PRIMITIVES
 // =============================================================================
 
+// QuestType classifies quest purpose. The zero value ("") is a normal quest.
+type QuestType string
+
+// Quest type constants.
+const (
+	QuestTypeNormal      QuestType = ""                // Standard implementation quest
+	QuestTypeRedTeam     QuestType = "red_team_review" // Adversarial review of another quest's output
+)
+
 // QuestStatus represents the lifecycle state of a quest.
 type QuestStatus string
 

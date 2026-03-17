@@ -63,9 +63,10 @@ test.describe('Party Formation', () => {
 		const party = parties[0];
 		expect(party.quest_id).toContain(questId);
 
-		// Verify the quest was claimed (partycoord auto-claims)
+		// Verify the quest progressed past posted (partycoord auto-claims).
+		// With red-team enabled, quests may reach in_review before battle starts.
 		const questAfter = await lifecycleApi.getQuest(questId);
-		expect(['claimed', 'in_progress', 'completed']).toContain(questAfter.status);
+		expect(['claimed', 'in_progress', 'in_review', 'completed']).toContain(questAfter.status);
 	});
 
 	test('list parties returns empty array when no parties exist', async ({ lifecycleApi }) => {

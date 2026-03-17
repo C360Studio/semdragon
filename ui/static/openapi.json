@@ -2549,6 +2549,9 @@
             },
             "type": "array"
           },
+          "archetype": {
+            "type": "string"
+          },
           "config": {
             "properties": {
               "max_tokens": {
@@ -3430,6 +3433,9 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "archetype": {
+                "type": "string"
               },
               "config": {
                 "properties": {
@@ -4474,6 +4480,9 @@
                   "name": {
                     "type": "string"
                   },
+                  "repo": {
+                    "type": "string"
+                  },
                   "requirements": {
                     "items": {
                       "type": "string"
@@ -4634,6 +4643,9 @@
                           ]
                         },
                         "name": {
+                          "type": "string"
+                        },
+                        "repo": {
                           "type": "string"
                         },
                         "requirements": {
@@ -5273,6 +5285,65 @@
           "id": {
             "type": "string"
           },
+          "lessons": {
+            "items": {
+              "properties": {
+                "category": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "discovered_by": {
+                  "type": "string"
+                },
+                "guild_id": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "positive": {
+                  "type": "boolean"
+                },
+                "quest_id": {
+                  "type": "string"
+                },
+                "red_team_quest": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "severity": {
+                  "type": "string"
+                },
+                "skill": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "skill",
+                "category",
+                "summary",
+                "severity",
+                "positive",
+                "quest_id",
+                "discovered_by",
+                "guild_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "max_members": {
             "type": "integer"
           },
@@ -5541,6 +5612,62 @@
           "id",
           "type",
           "config"
+        ],
+        "type": "object"
+      },
+      "Lesson": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "discovered_by": {
+            "type": "string"
+          },
+          "guild_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "positive": {
+            "type": "boolean"
+          },
+          "quest_id": {
+            "type": "string"
+          },
+          "red_team_quest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "severity": {
+            "type": "string"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "skill",
+          "category",
+          "summary",
+          "severity",
+          "positive",
+          "quest_id",
+          "discovered_by",
+          "guild_id"
         ],
         "type": "object"
       },
@@ -6652,13 +6779,7 @@
             },
             "type": "array"
           },
-          "artifacts_commit": {
-            "type": "string"
-          },
           "artifacts_indexed": {
-            "type": "boolean"
-          },
-          "artifacts_merge_conflict": {
             "type": "boolean"
           },
           "artifacts_merged": {
@@ -6940,7 +7061,33 @@
             },
             "type": "array"
           },
+          "quest_type": {
+            "type": "string"
+          },
           "recovery_path": {
+            "type": "string"
+          },
+          "red_team_quest_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "red_team_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repo": {
             "type": "string"
           },
           "required_skills": {
@@ -7187,6 +7334,9 @@
           "name": {
             "type": "string"
           },
+          "repo": {
+            "type": "string"
+          },
           "requirements": {
             "items": {
               "type": "string"
@@ -7339,6 +7489,9 @@
                   ]
                 },
                 "name": {
+                  "type": "string"
+                },
+                "repo": {
                   "type": "string"
                 },
                 "requirements": {
@@ -7497,6 +7650,9 @@
             ]
           },
           "name": {
+            "type": "string"
+          },
+          "repo": {
             "type": "string"
           },
           "requirements": {
@@ -8067,6 +8223,18 @@
         ],
         "type": "object"
       },
+      "SandboxInfoView": {
+        "properties": {
+          "available": {
+            "description": "Whether the sandbox is available for artifact storage",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "type": "object"
+      },
       "SetTokenBudgetRequest": {
         "properties": {
           "global_hourly_limit": {
@@ -8380,7 +8548,7 @@
           "workspace": {
             "properties": {
               "available": {
-                "description": "Whether the artifact store is available",
+                "description": "Whether the sandbox is available for artifact storage",
                 "type": "boolean"
               }
             },
@@ -9481,18 +9649,6 @@
           "url",
           "connected",
           "healthy"
-        ],
-        "type": "object"
-      },
-      "WorkspaceInfoView": {
-        "properties": {
-          "available": {
-            "description": "Whether the artifact store is available",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "available"
         ],
         "type": "object"
       },

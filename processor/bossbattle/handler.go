@@ -16,6 +16,24 @@ import (
 )
 
 // =============================================================================
+// RED-TEAM COORDINATION
+// =============================================================================
+
+// pendingRedTeamBattle tracks a quest that entered in_review and is waiting
+// for a red-team review before the boss battle starts.
+type pendingRedTeamBattle struct {
+	quest       *domain.Quest
+	reviewLevel domain.ReviewLevel
+	entityKey   string
+	deferredAt  time.Time
+}
+
+// redTeamSafetyTimeout is the maximum time bossbattle waits for a red-team
+// signal before proceeding with the battle anyway. This is a safety net in
+// case the redteam processor fails to emit completed/skipped.
+const redTeamSafetyTimeout = 10 * time.Minute
+
+// =============================================================================
 // KV WATCH HANDLER - Entity-centric quest state monitoring
 // =============================================================================
 
@@ -41,7 +59,10 @@ func (c *Component) processQuestWatchUpdates() {
 }
 
 // handleQuestStateChange processes a quest entity state change from KV.
-// Detects when a quest transitions to "in_review" and starts a battle.
+// Detects two types of events:
+//  1. Quest transitions to "in_review" — either starts a battle immediately
+//     or defers to wait for red-team review (when RedTeamEnabled).
+//  2. Red-team predicates appear on a pending quest — starts the deferred battle.
 func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 	if !c.running.Load() {
 		return
@@ -58,9 +79,11 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	// Extract current quest status from triples
+	// Extract current quest status, review level, quest type, and red-team signals.
 	var currentStatus domain.QuestStatus
 	var reviewLevel domain.ReviewLevel
+	var questType domain.QuestType
+	var hasRedTeamCompleted, hasRedTeamSkipped bool
 	for _, triple := range entityState.Triples {
 		switch triple.Predicate {
 		case "quest.status.state":
@@ -71,25 +94,52 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 			if v, ok := triple.Object.(float64); ok {
 				reviewLevel = domain.ReviewLevel(int(v))
 			}
+		case "quest.classification.type":
+			if v, ok := triple.Object.(string); ok {
+				questType = domain.QuestType(v)
+			}
+		case "quest.classification.red_team_status":
+			if v, ok := triple.Object.(string); ok {
+				hasRedTeamCompleted = v == "completed"
+				hasRedTeamSkipped = v == "skipped"
+			}
 		}
 	}
 
-	// Check for transition to in_review (state diffing against cache)
+	// Check for red-team signal on a quest we're waiting on.
+	if (hasRedTeamCompleted || hasRedTeamSkipped) && currentStatus == domain.QuestInReview {
+		if pending, ok := c.redTeamPending.LoadAndDelete(entry.Key()); ok {
+			p := pending.(*pendingRedTeamBattle)
+			c.logger.Info("red-team review signal received, starting battle",
+				"quest", p.quest.ID,
+				"completed", hasRedTeamCompleted,
+				"skipped", hasRedTeamSkipped)
+			// Re-read the quest to pick up any new triples (e.g., findings).
+			freshState, readErr := c.graph.GetQuest(context.Background(), p.quest.ID)
+			if readErr == nil && freshState != nil {
+				p.quest = domain.QuestFromEntityState(freshState)
+			}
+			c.startBattleForQuest(p.quest, p.reviewLevel)
+			return
+		}
+	}
+
+	// State diffing against cache for status transitions.
 	prevStatus, hadPrev := c.questCache.Load(entry.Key())
 	c.questCache.Store(entry.Key(), currentStatus)
 
 	if !hadPrev || prevStatus == currentStatus {
-		return // Not a status transition, or first time seeing this entity
+		return
 	}
 
-	// Only react to transitions INTO in_review
+	// Only react to transitions INTO in_review.
 	if currentStatus != domain.QuestInReview {
 		return
 	}
 
 	c.lastActivity.Store(time.Now())
 
-	// Reconstruct quest from entity state
+	// Reconstruct quest from entity state.
 	quest := domain.QuestFromEntityState(entityState)
 	if quest == nil {
 		c.logger.Warn("failed to reconstruct quest from entity state", "quest", entry.Key())
@@ -104,7 +154,40 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	// Start battle with background context (watcher goroutine context)
+	// Red-team quests themselves don't get red-team reviewed (no recursion).
+	// They also don't go through boss battle since RequireReview is false.
+	if questType == domain.QuestTypeRedTeam {
+		return
+	}
+
+	// Should we defer for red-team review?
+	if c.config.RedTeamEnabled && c.isRedTeamEligible(quest) {
+		// Check if the red-team signal already arrived (race: redteam processor
+		// may have written the predicate before we saw the in_review transition).
+		if hasRedTeamCompleted || hasRedTeamSkipped {
+			c.logger.Debug("red-team already signaled, starting battle immediately",
+				"quest", quest.ID)
+			c.startBattleForQuest(quest, reviewLevel)
+			return
+		}
+
+		c.logger.Info("deferring battle for red-team review",
+			"quest", quest.ID)
+		c.redTeamPending.Store(entry.Key(), &pendingRedTeamBattle{
+			quest:       quest,
+			reviewLevel: reviewLevel,
+			entityKey:   entry.Key(),
+			deferredAt:  time.Now(),
+		})
+		return
+	}
+
+	c.startBattleForQuest(quest, reviewLevel)
+}
+
+// startBattleForQuest runs the battle start sequence for a quest that is
+// ready for evaluation (either immediately or after red-team review).
+func (c *Component) startBattleForQuest(quest *domain.Quest, reviewLevel domain.ReviewLevel) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -115,7 +198,11 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	battle, err := c.StartBattle(ctx, quest, quest.Output)
+	// Build output for the judge. If a red-team quest completed, include
+	// its findings alongside the original output so the judge sees both.
+	output := c.buildBattleOutput(ctx, quest)
+
+	battle, err := c.StartBattle(ctx, quest, output)
 	if err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to start battle",
@@ -143,6 +230,100 @@ func (c *Component) handleQuestStateChange(entry jetstream.KeyValueEntry) {
 	c.logger.Debug("started battle for submitted quest",
 		"quest", quest.ID,
 		"battle", battle.ID)
+}
+
+// buildBattleOutput constructs the output payload for the boss battle judge.
+// When a red-team quest has completed for this quest, its findings are included
+// so the judge can evaluate both the implementation and the red-team review.
+func (c *Component) buildBattleOutput(ctx context.Context, quest *domain.Quest) any {
+	if !c.config.RedTeamEnabled {
+		return quest.Output
+	}
+
+	// Look up the red-team quest by ID (stored on the original quest by redteam processor).
+	rtOutput := c.findRedTeamOutput(ctx, quest)
+	if rtOutput == nil {
+		return quest.Output
+	}
+
+	// Combine original output with red-team findings in a structured wrapper.
+	return map[string]any{
+		"quest_output":      quest.Output,
+		"red_team_findings": rtOutput,
+	}
+}
+
+// findRedTeamOutput loads the red-team quest for the given original quest
+// and returns its output, or nil if none found. Uses the RedTeamQuestID
+// field written by the redteam processor for direct lookup (no scan).
+func (c *Component) findRedTeamOutput(ctx context.Context, quest *domain.Quest) any {
+	if quest.RedTeamQuestID == nil {
+		return nil
+	}
+
+	rtEntity, err := c.graph.GetQuest(ctx, *quest.RedTeamQuestID)
+	if err != nil {
+		c.logger.Debug("failed to load red-team quest", "id", *quest.RedTeamQuestID, "error", err)
+		return nil
+	}
+
+	rtQuest := domain.QuestFromEntityState(rtEntity)
+	if rtQuest == nil || rtQuest.Status != domain.QuestCompleted {
+		return nil
+	}
+
+	c.logger.Info("found red-team findings for battle",
+		"target", quest.ID,
+		"red_team_quest", rtQuest.ID)
+	return rtQuest.Output
+}
+
+// sweepStalePendingRedTeam periodically checks for pending red-team entries
+// that have exceeded the safety timeout. This handles the case where the
+// redteam processor fails to emit completed/skipped (crash, network partition).
+func (c *Component) sweepStalePendingRedTeam() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case <-ticker.C:
+			now := time.Now()
+			c.redTeamPending.Range(func(key, value any) bool {
+				p, ok := value.(*pendingRedTeamBattle)
+				if !ok {
+					return true
+				}
+				if now.Sub(p.deferredAt) > redTeamSafetyTimeout {
+					c.redTeamPending.Delete(key)
+					c.logger.Warn("red-team safety timeout reached, starting battle without red-team",
+						"quest", p.quest.ID,
+						"waited", now.Sub(p.deferredAt))
+					c.startBattleForQuest(p.quest, p.reviewLevel)
+				}
+				return true
+			})
+		}
+	}
+}
+
+// isRedTeamEligible checks whether a quest qualifies for red-team review.
+func (c *Component) isRedTeamEligible(quest *domain.Quest) bool {
+	// Must require review.
+	if !quest.Constraints.RequireReview {
+		return false
+	}
+	// Must not be a sub-quest (already checked, but defensive).
+	if quest.ParentQuest != nil {
+		return false
+	}
+	// Must not already be a red-team quest.
+	if quest.QuestType == domain.QuestTypeRedTeam {
+		return false
+	}
+	return true
 }
 
 // =============================================================================

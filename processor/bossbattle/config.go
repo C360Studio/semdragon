@@ -27,6 +27,12 @@ type Config struct {
 	// configured. Raise to 30-60 when semsource is running alongside the game.
 	IndexingTimeout int `json:"indexing_timeout" schema:"type:int,description:Seconds to wait for semsource indexing after merge (0=immediate),category:advanced,default:0"`
 
+	// RedTeamEnabled enables waiting for a red-team review before starting the
+	// boss battle. When true, bossbattle defers evaluation for eligible quests
+	// until the redteam processor signals completion or skip via predicates on
+	// the quest entity. When false, battles start immediately on in_review.
+	RedTeamEnabled bool `json:"red_team_enabled" schema:"type:bool,description:Wait for red-team review before starting battle"`
+
 	// Domain selects which DomainCatalog to inject (e.g. "software", "dnd", "research").
 	Domain string `json:"domain,omitempty"`
 

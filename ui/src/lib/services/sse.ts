@@ -79,7 +79,11 @@ const CATEGORY_TO_EVENT_TYPE: Record<string, GameEventType> = {
 	'party.formed': 'party.formation.created',
 	'party.joined': 'party.formation.created',
 	'party.disbanded': 'party.formation.disbanded',
-	'store.item.listed': 'store.item.purchased'
+	'store.item.listed': 'store.item.purchased',
+	'redteam.posted': 'redteam.lifecycle.posted',
+	'redteam.completed': 'redteam.lifecycle.completed',
+	'redteam.skipped': 'redteam.lifecycle.skipped',
+	'guild.knowledge.lessonadded': 'guild.knowledge.lessonadded'
 };
 
 /**

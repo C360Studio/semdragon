@@ -802,6 +802,7 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 			reflect.TypeOf(domain.BattleVerdict{}),
 			reflect.TypeOf(domain.Guild{}),
 			reflect.TypeOf(domain.GuildMember{}),
+			reflect.TypeOf(domain.Lesson{}),
 			reflect.TypeOf(domain.PeerReview{}),
 			reflect.TypeOf(domain.ReviewSubmission{}),
 			reflect.TypeOf(domain.ReviewRatings{}),

@@ -57,8 +57,10 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	//   - workspace prior work directive
 	//   - shared product directive
 	//   - party cooperation directive
-	if got := reg.FragmentCount(); got != 16 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 16", got)
+	//   - red-team directive
+	//   - guild lessons directive
+	if got := reg.FragmentCount(); got != 18 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 18", got)
 	}
 }
 

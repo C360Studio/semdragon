@@ -2169,12 +2169,27 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		DecomposabilityClass: quest.DecomposabilityClass,
 		AvailableToolNames:   toolNames,
 		MaxIterations:        maxIterationsForDifficulty(c.config.MaxIterations, quest.Difficulty),
+		QuestType:             quest.QuestType,
+		GuildLessons:          c.loadGuildLessons(ctx, agent, quest),
+		RedTeamTargetOutput:   nil, // Set below after single target load.
+		RedTeamTargetTitle:    "",
 		WorkspaceHasPriorWork: quest.Attempts > 1,
 		FailureHistory:        convertFailureHistory(quest.FailureHistory),
 		SalvagedOutput:       domain.AsString(quest.SalvagedOutput),
 		FailureAnalysis:      quest.FailureAnalysis,
 		RecoveryPath:         string(quest.RecoveryPath),
 		AntiPatterns:         quest.AntiPatterns,
+	}
+
+	// Load red-team target in a single KV read (avoids double-read for output + title).
+	if quest.QuestType == domain.QuestTypeRedTeam && quest.RedTeamTarget != nil {
+		if targetEntity, err := c.graph.GetQuest(ctx, *quest.RedTeamTarget); err == nil && targetEntity != nil {
+			target := domain.QuestFromEntityState(targetEntity)
+			if target != nil {
+				assemblyCtx.RedTeamTargetOutput = target.Output
+				assemblyCtx.RedTeamTargetTitle = target.Title
+			}
+		}
 	}
 
 	return c.promptAssembler.AssembleSystemPrompt(assemblyCtx)
@@ -2196,6 +2211,44 @@ func convertFailureHistory(records []domain.FailureRecord) []promptmanager.Failu
 		}
 	}
 	return summaries
+}
+
+// loadGuildLessons returns relevant guild lessons for the agent's guild,
+// filtered to only include lessons matching the quest's required skills.
+func (c *Component) loadGuildLessons(ctx context.Context, agent *agentprogression.Agent, quest *domain.Quest) []domain.Lesson {
+	if agent.Guild == "" {
+		return nil
+	}
+
+	guildEntity, err := c.graph.GetGuild(ctx, agent.Guild)
+	if err != nil {
+		return nil
+	}
+	guild := domain.GuildFromEntityState(guildEntity)
+	if guild == nil || len(guild.Lessons) == 0 {
+		return nil
+	}
+
+	// Build skill set for quick lookup.
+	questSkills := make(map[domain.SkillTag]struct{}, len(quest.RequiredSkills))
+	for _, s := range quest.RequiredSkills {
+		questSkills[s] = struct{}{}
+	}
+
+	// Filter lessons to those matching the quest's skills.
+	var relevant []domain.Lesson
+	for _, lesson := range guild.Lessons {
+		if _, match := questSkills[lesson.Skill]; match {
+			relevant = append(relevant, lesson)
+		}
+	}
+
+	// Cap at 10 lessons to stay within context budget.
+	if len(relevant) > 10 {
+		relevant = relevant[len(relevant)-10:]
+	}
+
+	return relevant
 }
 
 // buildLegacySystemPrompt is the fallback string concatenation path.

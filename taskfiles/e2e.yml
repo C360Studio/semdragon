@@ -2,6 +2,7 @@ version: "3"
 
 vars:
   BACKEND_PORT: '{{.BACKEND_PORT | default "8081"}}'
+  UI_PORT: '{{.UI_PORT | default "5174"}}'
   COMPOSE: docker compose -f docker/compose.yml
   TIER1_CONFIG: /etc/semdragons/semdragons-e2e-tier1.json
 
@@ -20,7 +21,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock, CONFIG: "{{.TIER1_CONFIG}}" }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
+      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier1
         ignore_error: true
       # Tier 2 needs clean state — tier 1 creates agents, quests, and triggers
       # agentic loops that pollute the board. Rebuild from scratch.
@@ -28,7 +29,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
@@ -47,7 +48,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock, CONFIG: "{{.TIER1_CONFIG}}" }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier1
+      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier1
         ignore_error: true
       - task: maybe:down
 
@@ -59,7 +60,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
@@ -71,7 +72,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/gemini.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+      - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
@@ -83,7 +84,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/anthropic.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+      - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
@@ -95,7 +96,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/openai.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+      - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
@@ -107,7 +108,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/ollama.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=ollama BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+      - cmd: cd ui && E2E_LLM_MODE=ollama BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
@@ -119,7 +120,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/mixed-gemini-claude.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=hybrid BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier2-scenarios
+      - cmd: cd ui && E2E_LLM_MODE=hybrid BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier2-scenarios
         ignore_error: true
       - task: maybe:down
 
@@ -133,7 +134,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/gemini.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-osh.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
+      - cmd: cd ui && E2E_LLM_MODE=gemini BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
       - task: maybe:down
 
@@ -145,7 +146,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/anthropic.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-osh.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
+      - cmd: cd ui && E2E_LLM_MODE=anthropic BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
       - task: maybe:down
 
@@ -157,7 +158,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/openai.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-osh.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
+      - cmd: cd ui && E2E_LLM_MODE=openai BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
       - task: maybe:down
 
@@ -169,7 +170,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/mixed-gemini-claude.json, PROFILE: semsource, CONFIG: /etc/semdragons/semdragons-semsource.json, SEMSOURCE_CONFIG: semsource-osh.json }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=hybrid BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --project=tier3-epic
+      - cmd: cd ui && E2E_LLM_MODE=hybrid BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
       - task: maybe:down
 
@@ -191,13 +192,13 @@ tasks:
     desc: Run Playwright tests against running stack
     dir: ui
     cmds:
-      - E2E_LLM_MODE={{.MODE | default "mock"}} BACKEND_PORT={{.BACKEND_PORT}} npx playwright test {{.CLI_ARGS}}
+      - E2E_LLM_MODE={{.MODE | default "mock"}} BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test {{.CLI_ARGS}}
 
   spec:
     desc: "Run single spec: task e2e:spec -- quest-lifecycle"
     dir: ui
     cmds:
-      - E2E_LLM_MODE={{.MODE | default "mock"}} BACKEND_PORT={{.BACKEND_PORT}} npx playwright test {{.CLI_ARGS}}
+      - E2E_LLM_MODE={{.MODE | default "mock"}} BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test {{.CLI_ARGS}}
 
   headed:
     desc: Run E2E in headed browser mode
@@ -206,7 +207,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
       - task: wait
-      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --headed
+      - cmd: cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --headed
         ignore_error: true
       - task: maybe:down
 
@@ -217,7 +218,7 @@ tasks:
       - task: stack:up
         vars: { MODELS: /etc/semdragons/models/mock.json, PROFILE: mock }
       - task: wait
-      - cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} npx playwright test --ui
+      - cd ui && E2E_LLM_MODE=mock BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --ui
 
   report:
     desc: Open last Playwright report
@@ -237,6 +238,7 @@ tasks:
       - >-
         SEED_E2E=true
         BACKEND_PORT={{.BACKEND_PORT}}
+        UI_PORT={{.UI_PORT}}
         SEMDRAGONS_MODELS={{.MODELS}}
         {{if .CONFIG}}SEMDRAGONS_CONFIG={{.CONFIG}}{{end}}
         {{if .SEMSOURCE_CONFIG}}SEMSOURCE_CONFIG={{.SEMSOURCE_CONFIG}}{{end}}

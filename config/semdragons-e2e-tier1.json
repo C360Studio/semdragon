@@ -260,7 +260,22 @@
         "board": "board1",
         "domain": "software",
         "auto_start_on_submit": true,
-        "max_concurrent": 10
+        "max_concurrent": 10,
+        "red_team_enabled": true
+      }
+    },
+    "redteam": {
+      "type": "processor",
+      "name": "redteam",
+      "enabled": true,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "min_difficulty": 1,
+        "claim_timeout_seconds": 30,
+        "execution_timeout_seconds": 60,
+        "prefer_cross_guild": true
       }
     },
     "agent_progression": {

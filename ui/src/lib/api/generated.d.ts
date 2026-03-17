@@ -3765,6 +3765,7 @@ export interface components {
                 quest_id?: string | null;
                 quests_remaining: number;
             }[];
+            archetype?: string;
             config: {
                 max_tokens: number;
                 metadata: {
@@ -3994,6 +3995,7 @@ export interface components {
                     quest_id?: string | null;
                     quests_remaining: number;
                 }[];
+                archetype?: string;
                 config: {
                     max_tokens: number;
                     metadata: {
@@ -4278,6 +4280,7 @@ export interface components {
                     suggested_skills?: string[];
                 } | null;
                 name?: string;
+                repo?: string;
                 requirements?: string[];
                 scenarios?: {
                     depends_on?: string[];
@@ -4306,6 +4309,7 @@ export interface components {
                         suggested_skills?: string[];
                     } | null;
                     name?: string;
+                    repo?: string;
                     requirements?: string[];
                     scenarios?: {
                         depends_on?: string[];
@@ -4479,6 +4483,19 @@ export interface components {
             founded: string;
             founded_by: string;
             id: string;
+            lessons?: {
+                category: string;
+                detail?: string;
+                discovered_by: string;
+                guild_id: string;
+                id: string;
+                positive: boolean;
+                quest_id: string;
+                red_team_quest?: string | null;
+                severity: string;
+                skill: string;
+                summary: string;
+            }[];
             max_members: number;
             members: {
                 agent_id: string;
@@ -4553,6 +4570,19 @@ export interface components {
             id: string;
             /** @enum {string} */
             type: "automated" | "llm" | "human";
+        };
+        Lesson: {
+            category: string;
+            detail?: string;
+            discovered_by: string;
+            guild_id: string;
+            id: string;
+            positive: boolean;
+            quest_id: string;
+            red_team_quest?: string | null;
+            severity: string;
+            skill: string;
+            summary: string;
         };
         LogEntryPayload: {
             fields: {
@@ -4918,9 +4948,7 @@ export interface components {
             acceptance?: string[];
             allowed_tools?: string[];
             anti_patterns?: string[];
-            artifacts_commit?: string;
             artifacts_indexed?: boolean;
-            artifacts_merge_conflict?: boolean;
             artifacts_merged?: string;
             attempts: number;
             base_xp: number;
@@ -4991,7 +5019,11 @@ export interface components {
             /** Format: date-time */
             posted_at: string;
             produced_entities?: string[];
+            quest_type?: string;
             recovery_path?: string;
+            red_team_quest_id?: string | null;
+            red_team_target?: string | null;
+            repo?: string;
             required_skills: string[];
             required_tools: string[];
             requirements?: string[];
@@ -5060,6 +5092,7 @@ export interface components {
                     suggested_skills?: string[];
                 } | null;
                 name?: string;
+                repo?: string;
                 requirements?: string[];
                 scenarios?: {
                     depends_on?: string[];
@@ -5218,6 +5251,10 @@ export interface components {
             /** Format: date-time */
             timestamp: string;
         };
+        SandboxInfoView: {
+            /** @description Whether the sandbox is available for artifact storage */
+            available: boolean;
+        };
         SetTokenBudgetRequest: {
             /** @description New hourly token limit (0 = unlimited) */
             global_hourly_limit: number;
@@ -5335,7 +5372,7 @@ export interface components {
                 url: string;
             };
             workspace: {
-                /** @description Whether the artifact store is available */
+                /** @description Whether the sandbox is available for artifact storage */
                 available: boolean;
             };
         };
@@ -5672,10 +5709,6 @@ export interface components {
             status?: string;
             /** @description WebSocket server URL */
             url: string;
-        };
-        WorkspaceInfoView: {
-            /** @description Whether the artifact store is available */
-            available: boolean;
         };
         WorldStateResponse: {
             /** @description List of agent entities */

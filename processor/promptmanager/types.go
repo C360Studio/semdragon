@@ -114,6 +114,9 @@ type AssemblyContext struct {
 	SystemPrompt string // from AgentConfig (override)
 	PersonaPrompt string // from AgentPersona
 
+	// Quest classification
+	QuestType domain.QuestType // "" = normal, "red_team_review" = review quest
+
 	// Quest details
 	QuestTitle           string
 	QuestDescription     string
@@ -191,6 +194,15 @@ type AssemblyContext struct {
 	// Iteration budget — tells the agent how many tool-use rounds it has.
 	// Set from questbridge/executor config so agents plan work accordingly.
 	MaxIterations int `json:"max_iterations,omitempty"`
+
+	// Guild lessons — relevant lessons from the agent's guild, filtered by
+	// quest required skills. Injected by questbridge context builder.
+	GuildLessons []domain.Lesson `json:"guild_lessons,omitempty"`
+
+	// Red-team context — when QuestType == QuestTypeRedTeam, this carries
+	// the target quest's output for the red-team agent to review.
+	RedTeamTargetOutput any    `json:"red_team_target_output,omitempty"`
+	RedTeamTargetTitle  string `json:"red_team_target_title,omitempty"`
 
 	// Resolution
 	Provider string // from resolved endpoint ("anthropic", "openai", etc.)

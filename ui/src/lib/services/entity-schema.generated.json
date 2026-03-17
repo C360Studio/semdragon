@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-15T20:56:58Z",
+  "generated_at": "2026-03-17T18:35:55Z",
   "entities": {
     "agent": {
       "static": [
@@ -114,6 +114,7 @@
       "static": [
         "quest.attempts.current",
         "quest.attempts.max",
+        "quest.classification.type",
         "quest.difficulty.level",
         "quest.identity.description",
         "quest.identity.name",

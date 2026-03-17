@@ -13,8 +13,10 @@ import type {
 	Quest,
 	QuestID,
 	QuestStatus,
+	QuestType,
 	QuestDifficulty,
 	ReviewLevel,
+	Lesson,
 	Guild,
 	GuildID,
 	GuildStatus,
@@ -287,6 +289,14 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 					level_change: 0,
 					feedback: str(m.get('quest.verdict.feedback'))
 				}
+			: undefined,
+		// Red-team classification
+		quest_type: (str(m.get('quest.classification.type')) || '') as QuestType,
+		red_team_target: m.has('quest.classification.red_team_target')
+			? questId(str(m.get('quest.classification.red_team_target')))
+			: undefined,
+		red_team_quest_id: m.has('quest.classification.red_team_quest_id')
+			? questId(str(m.get('quest.classification.red_team_quest_id')))
 			: undefined
 	};
 }
@@ -329,7 +339,12 @@ function transformGuild(key: string, entity: GraphEntity): Guild {
 		shared_tools: sharedTools,
 		quest_types: questTypes.length > 0 ? questTypes : undefined,
 		quorum_size: num(m.get('guild.config.quorum_size'), 3),
-		created_at: str(m.get('guild.lifecycle.created_at'))
+		created_at: str(m.get('guild.lifecycle.created_at')),
+		lessons: (() => {
+			const raw = m.get('guild.knowledge.lessons');
+			if (!Array.isArray(raw)) return undefined;
+			return raw as Lesson[];
+		})()
 	};
 }
 
