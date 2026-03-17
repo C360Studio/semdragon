@@ -266,6 +266,9 @@
 												Claimed by: {worldStore.agentName(quest.claimed_by)}
 											</div>
 										{/if}
+										{#if quest.failure_reason && (quest.status === 'escalated' || quest.status === 'failed')}
+											<p class="quest-escalation-hint">{quest.failure_reason}</p>
+										{/if}
 									</button>
 								{/if}
 							{:else}
@@ -331,6 +334,19 @@
 								<dd><a href="/trajectories/{quest.loop_id}">View</a></dd>
 							{/if}
 						</dl>
+
+						{#if quest.escalated || quest.failure_reason}
+							<div class="escalation-block">
+								<h4>Escalation</h4>
+								{#if quest.failure_reason}
+									<p class="escalation-reason-text">{quest.failure_reason}</p>
+								{/if}
+								{#if Array.isArray(quest.dm_clarifications) && quest.dm_clarifications.length > 0}
+									<span class="clarification-count">{quest.dm_clarifications.length} clarification{quest.dm_clarifications.length > 1 ? 's' : ''}</span>
+								{/if}
+								<a href="/quests/{quest.id}" class="escalation-details-link">View full context</a>
+							</div>
+						{/if}
 
 						{#if selectedQuestVerdict}
 							{@const v = selectedQuestVerdict}
@@ -856,6 +872,57 @@
 
 	.battle-link {
 		margin-left: auto;
+		font-size: 0.75rem;
+		color: var(--ui-interactive-primary);
+	}
+
+	/* Escalation hint on quest cards */
+	.quest-escalation-hint {
+		margin: var(--spacing-xs) 0 0;
+		font-size: 0.6875rem;
+		color: var(--quest-escalated, #e67e22);
+		line-height: 1.3;
+		overflow: hidden;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+	}
+
+	/* Escalation block in right panel */
+	.escalation-block {
+		margin-top: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--ui-surface-secondary);
+		border: 1px solid var(--quest-escalated, #e67e22);
+		border-radius: var(--radius-md);
+	}
+
+	.escalation-block h4 {
+		margin: 0 0 var(--spacing-xs);
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--quest-escalated, #e67e22);
+	}
+
+	.escalation-reason-text {
+		margin: 0 0 var(--spacing-xs);
+		font-size: 0.8125rem;
+		line-height: 1.4;
+		color: var(--ui-text-secondary);
+		white-space: pre-wrap;
+	}
+
+	.clarification-count {
+		display: block;
+		font-size: 0.6875rem;
+		color: var(--ui-text-tertiary);
+		margin-bottom: var(--spacing-xs);
+	}
+
+	.escalation-details-link {
 		font-size: 0.75rem;
 		color: var(--ui-interactive-primary);
 	}

@@ -60,6 +60,22 @@
 		return () => pageContext.clear();
 	});
 
+	// Parse dm_clarifications from unknown → typed array
+	interface ClarificationExchange {
+		question: string;
+		answer: string;
+		asked_at: string;
+	}
+
+	const clarifications = $derived.by((): ClarificationExchange[] => {
+		const raw = quest?.dm_clarifications;
+		if (!Array.isArray(raw)) return [];
+		return raw as ClarificationExchange[];
+	});
+
+	const failureHistory = $derived(quest?.failure_history ?? []);
+	let historyExpanded = $state(false);
+
 	let leftPanelOpen = $state(true);
 	let rightPanelOpen = $state(false);
 	let leftPanelWidth = $state(280);
@@ -170,6 +186,85 @@
 							</dl>
 						</section>
 					{/if}
+
+				{#if quest.escalated || quest.failure_reason || failureHistory.length > 0}
+					<section class="detail-card full-width escalation-card">
+						<h2>Escalation Context</h2>
+
+						{#if quest.failure_reason}
+							<div class="escalation-reason">
+								<span class="reason-label">Agent's question</span>
+								<p class="reason-text">{quest.failure_reason}</p>
+							</div>
+						{/if}
+
+						{#if quest.failure_type}
+							<dl class="escalation-meta">
+								<dt>Failure Type</dt>
+								<dd>
+									<span class="failure-type-badge" data-type={quest.failure_type}>{quest.failure_type}</span>
+								</dd>
+							</dl>
+						{/if}
+
+						{#if quest.failure_analysis}
+							<div class="escalation-reason">
+								<span class="reason-label">DM analysis</span>
+								<p class="reason-text">{quest.failure_analysis}</p>
+							</div>
+						{/if}
+
+						{#if clarifications.length > 0}
+							<div class="clarification-thread">
+								<span class="reason-label">Clarification history ({clarifications.length})</span>
+								{#each clarifications as exchange}
+									<div class="clarification-exchange">
+										<div class="exchange-question">
+											<span class="exchange-role">Agent</span>
+											<p>{exchange.question}</p>
+										</div>
+										{#if exchange.answer}
+											<div class="exchange-answer">
+												<span class="exchange-role">DM</span>
+												<p>{exchange.answer}</p>
+											</div>
+										{/if}
+										<time class="exchange-time">{new Date(exchange.asked_at).toLocaleString()}</time>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						{#if failureHistory.length > 0}
+							<div class="failure-history">
+								<button
+									class="history-toggle"
+									onclick={() => (historyExpanded = !historyExpanded)}
+								>
+									Attempt history ({failureHistory.length})
+									<span class="toggle-arrow" class:expanded={historyExpanded}>&#9656;</span>
+								</button>
+								{#if historyExpanded}
+									<div class="history-list">
+										{#each failureHistory as attempt}
+											<div class="history-item">
+												<div class="history-meta">
+													<span class="attempt-num">#{attempt.attempt}</span>
+													<span class="failure-type-badge" data-type={attempt.failure_type}>{attempt.failure_type}</span>
+													<time>{new Date(attempt.timestamp).toLocaleString()}</time>
+												</div>
+												{#if attempt.agent_id}
+													<span class="history-agent">{worldStore.agentName(attempt.agent_id)}</span>
+												{/if}
+												<p class="history-reason">{attempt.failure_reason}</p>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{/if}
+					</section>
+				{/if}
 
 				{#if quest.parent_quest}
 					<section class="detail-card">
@@ -355,6 +450,11 @@
 		border-radius: var(--radius-full);
 		font-size: 0.75rem;
 		font-weight: 500;
+	}
+
+	.status-badge[data-status='escalated'] {
+		background: var(--quest-escalated-container);
+		color: var(--quest-escalated);
 	}
 
 	.status-badge[data-status='posted'] {
@@ -614,5 +714,181 @@
 		font-size: 0.875rem;
 		line-height: 1.5;
 		margin-top: var(--spacing-xs);
+	}
+
+	/* Escalation context card */
+	.escalation-card {
+		border-color: var(--quest-escalated, #e67e22);
+	}
+
+	.escalation-reason {
+		margin-bottom: var(--spacing-md);
+	}
+
+	.reason-label {
+		display: block;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--ui-text-tertiary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: var(--spacing-xs);
+	}
+
+	.reason-text {
+		margin: 0;
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--ui-surface-primary);
+		border-radius: var(--radius-md);
+		border-left: 3px solid var(--quest-escalated, #e67e22);
+		font-size: 0.875rem;
+		line-height: 1.5;
+		white-space: pre-wrap;
+	}
+
+	.escalation-meta {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: var(--spacing-xs) var(--spacing-md);
+		margin: 0 0 var(--spacing-md);
+	}
+
+	.failure-type-badge {
+		font-size: 0.6875rem;
+		padding: 2px 8px;
+		border-radius: var(--radius-sm);
+		font-weight: 600;
+		background: var(--ui-surface-tertiary);
+		color: var(--ui-text-secondary);
+	}
+
+	.failure-type-badge[data-type='quality'] { color: var(--quest-failed); }
+	.failure-type-badge[data-type='timeout'] { color: var(--quest-escalated, #e67e22); }
+	.failure-type-badge[data-type='error'] { color: var(--status-error, #e74c3c); }
+
+	/* Clarification thread */
+	.clarification-thread {
+		margin-bottom: var(--spacing-md);
+	}
+
+	.clarification-exchange {
+		padding: var(--spacing-sm) 0;
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.clarification-exchange:last-child {
+		border-bottom: none;
+	}
+
+	.exchange-question,
+	.exchange-answer {
+		display: flex;
+		gap: var(--spacing-sm);
+		align-items: baseline;
+		margin-bottom: var(--spacing-xs);
+	}
+
+	.exchange-question p,
+	.exchange-answer p {
+		margin: 0;
+		font-size: 0.875rem;
+		line-height: 1.5;
+	}
+
+	.exchange-role {
+		flex-shrink: 0;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 1px 6px;
+		border-radius: var(--radius-sm);
+		background: var(--ui-surface-tertiary);
+		color: var(--ui-text-tertiary);
+	}
+
+	.exchange-answer .exchange-role {
+		background: var(--ui-interactive-primary);
+		color: var(--ui-text-on-primary);
+	}
+
+	.exchange-time {
+		display: block;
+		font-size: 0.6875rem;
+		color: var(--ui-text-tertiary);
+		text-align: right;
+	}
+
+	/* Failure history */
+	.failure-history {
+		margin-top: var(--spacing-xs);
+	}
+
+	.history-toggle {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+		background: none;
+		border: none;
+		padding: var(--spacing-xs) 0;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--ui-text-secondary);
+		cursor: pointer;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.history-toggle:hover {
+		color: var(--ui-text-primary);
+	}
+
+	.toggle-arrow {
+		display: inline-block;
+		transition: transform 150ms ease;
+	}
+
+	.toggle-arrow.expanded {
+		transform: rotate(90deg);
+	}
+
+	.history-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+		margin-top: var(--spacing-sm);
+	}
+
+	.history-item {
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--ui-surface-primary);
+		border-radius: var(--radius-md);
+		border-left: 3px solid var(--ui-border-subtle);
+	}
+
+	.history-meta {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		margin-bottom: var(--spacing-xs);
+		font-size: 0.75rem;
+		color: var(--ui-text-tertiary);
+	}
+
+	.attempt-num {
+		font-weight: 600;
+		color: var(--ui-text-secondary);
+	}
+
+	.history-agent {
+		font-size: 0.75rem;
+		color: var(--ui-text-secondary);
+	}
+
+	.history-reason {
+		margin: var(--spacing-xs) 0 0;
+		font-size: 0.8125rem;
+		line-height: 1.4;
+		color: var(--ui-text-secondary);
 	}
 </style>
