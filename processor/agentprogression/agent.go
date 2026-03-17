@@ -195,10 +195,17 @@ func (a *Agent) Triples() []message.Triple {
 		// Identity
 		{Subject: entityID, Predicate: "agent.identity.name", Object: a.Name, Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "agent.identity.display_name", Object: a.DisplayName, Source: source, Timestamp: now, Confidence: 1.0},
+	}
 
-		// Archetype (class identity — fixed at creation)
-		{Subject: entityID, Predicate: "agent.identity.archetype", Object: string(a.Archetype), Source: source, Timestamp: now, Confidence: 1.0},
+	// Archetype (class identity — fixed at creation, omit if unset for legacy agents)
+	if a.Archetype != "" {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: "agent.identity.archetype", Object: string(a.Archetype),
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
 
+	triples = append(triples, []message.Triple{
 		// Status
 		{Subject: entityID, Predicate: "agent.status.state", Object: string(a.Status), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "agent.npc.flag", Object: a.IsNPC, Source: source, Timestamp: now, Confidence: 1.0},
@@ -219,7 +226,7 @@ func (a *Agent) Triples() []message.Triple {
 		// Lifecycle
 		{Subject: entityID, Predicate: "agent.lifecycle.created_at", Object: a.CreatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "agent.lifecycle.updated_at", Object: a.UpdatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
-	}
+	}...)
 
 	// Guild membership (single guild)
 	if a.Guild != "" {

@@ -544,6 +544,8 @@ const strategistWorkflow = `STRATEGIST WORKFLOW:
 // registerArchetypeWorkflows registers the four archetype-specific workflow directives.
 // These fire at priority 12 — after scenario directives (10) and before work output (15) —
 // so agents see their class workflow before the generic completion rules.
+// Excluded for party leads — they have their own decomposition workflow via the
+// party lead directive and tool_choice enforcement.
 func registerArchetypeWorkflows(r *PromptRegistry) {
 	r.Register(&PromptFragment{
 		ID:       "builtin.archetype.scholar-workflow",
@@ -551,7 +553,7 @@ func registerArchetypeWorkflows(r *PromptRegistry) {
 		Content:  scholarWorkflow,
 		Priority: 12,
 		Condition: func(ctx AssemblyContext) bool {
-			return ctx.Archetype == domain.ArchetypeScholar
+			return ctx.Archetype == domain.ArchetypeScholar && !isPartyLead(ctx)
 		},
 	})
 	r.Register(&PromptFragment{
@@ -560,7 +562,7 @@ func registerArchetypeWorkflows(r *PromptRegistry) {
 		Content:  engineerWorkflow,
 		Priority: 12,
 		Condition: func(ctx AssemblyContext) bool {
-			return ctx.Archetype == domain.ArchetypeEngineer
+			return ctx.Archetype == domain.ArchetypeEngineer && !isPartyLead(ctx)
 		},
 	})
 	r.Register(&PromptFragment{
@@ -569,7 +571,7 @@ func registerArchetypeWorkflows(r *PromptRegistry) {
 		Content:  scribeWorkflow,
 		Priority: 12,
 		Condition: func(ctx AssemblyContext) bool {
-			return ctx.Archetype == domain.ArchetypeScribe
+			return ctx.Archetype == domain.ArchetypeScribe && !isPartyLead(ctx)
 		},
 	})
 	r.Register(&PromptFragment{
@@ -578,7 +580,7 @@ func registerArchetypeWorkflows(r *PromptRegistry) {
 		Content:  strategistWorkflow,
 		Priority: 12,
 		Condition: func(ctx AssemblyContext) bool {
-			return ctx.Archetype == domain.ArchetypeStrategist
+			return ctx.Archetype == domain.ArchetypeStrategist && !isPartyLead(ctx)
 		},
 	})
 }
