@@ -11,6 +11,8 @@ func GetCatalog(id domain.ID) *promptmanager.DomainCatalog {
 	switch id {
 	case domain.DomainSoftware:
 		return &SoftwarePromptCatalog
+	case domain.DomainSoftwareRPG:
+		return &SoftwareRPGPromptCatalog
 	case domain.DomainDnD:
 		return &DnDPromptCatalog
 	case domain.DomainResearch:

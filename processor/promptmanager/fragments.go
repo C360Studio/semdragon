@@ -44,6 +44,8 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerReviewBrief(r)
 	registerToolSelectionGuidance(r)
 	registerWorkspacePriorWorkDirective(r)
+	registerSharedProductDirective(r)
+	registerPartyCooperationDirective(r)
 }
 
 // partyLeadDirectiveBase is the tool-call instruction for party leads when no
@@ -540,6 +542,65 @@ const strategistWorkflow = `STRATEGIST WORKFLOW:
 3. Write a design spec to a file with clear sections: Overview, Components, Interfaces, Data Models, Dependencies.
 4. For decomposition tasks, map components to sub-quests with explicit acceptance criteria.
 5. Submit the spec file — do NOT implement. Your job is to design, not build.`
+
+// =============================================================================
+// TEAM DYNAMICS - Shared product awareness + party cooperation
+// =============================================================================
+// Research insight (pursuit-evasion / hide-and-seek literature): intra-team
+// cooperation emerges naturally when teams share objectives and compete on
+// quality. Parties are the primary team unit — formed often, disbanded after
+// the quest. Multiple parties typically work on the same product, each tackling
+// a different aspect. The guild is long-lived background context, not the
+// primary competitive frame.
+// =============================================================================
+
+// sharedProductDirective tells agents that other parties are working on the same
+// product. This prevents siloed thinking ("my quest is the whole world") and
+// encourages output that integrates cleanly with what other teams produce.
+const sharedProductDirective = `SHARED PRODUCT:
+Other teams are working on the same product as you, tackling different tasks.
+- Your output must integrate cleanly with theirs — follow existing patterns and conventions.
+- Don't make assumptions that conflict with work happening in parallel.
+- When modifying shared code, prefer additive changes over rewrites.
+- The knowledge graph reflects the current state of the product. Use it.`
+
+func registerSharedProductDirective(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:       "builtin.shared-product",
+		Category: CategoryGuildKnowledge,
+		Content:  sharedProductDirective,
+		Priority: 0,
+		Condition: func(ctx AssemblyContext) bool {
+			// Fires for any agent in a party or guild — i.e. anyone who isn't
+			// working in complete isolation.
+			return ctx.PartyRequired || ctx.Guild != ""
+		},
+	})
+}
+
+// partyCooperationDirective reinforces intra-party cooperation for agents working
+// in a party (both leads and members). The shared-objective framing drives natural
+// cooperation: your work enables or blocks teammates, and the party succeeds or
+// fails as a unit.
+const partyCooperationDirective = `PARTY DYNAMICS:
+Your party succeeds or fails as a unit. Your work directly enables or blocks your teammates.
+- Produce clear, well-structured output that others can build on.
+- If your sub-quest depends on a teammate's output, build on what they gave you — don't redo their work.
+- If your output will be consumed by a downstream teammate, make it self-contained and documented.
+- The party lead reviews all work. Consistent quality from every member is what wins the quest.
+Your party's success earns everyone bonus XP. A single weak link can sink the whole team.`
+
+func registerPartyCooperationDirective(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:       "builtin.party-cooperation",
+		Category: CategoryGuildKnowledge,
+		Content:  partyCooperationDirective,
+		Priority: 5, // After shared product (0)
+		Condition: func(ctx AssemblyContext) bool {
+			return ctx.PartyRequired
+		},
+	})
+}
 
 // registerArchetypeWorkflows registers the four archetype-specific workflow directives.
 // These fire at priority 12 — after scenario directives (10) and before work output (15) —

@@ -55,8 +55,10 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	//   - review brief
 	//   - tool selection guidance
 	//   - workspace prior work directive
-	if got := reg.FragmentCount(); got != 14 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 14", got)
+	//   - shared product directive
+	//   - party cooperation directive
+	if got := reg.FragmentCount(); got != 16 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 16", got)
 	}
 }
 

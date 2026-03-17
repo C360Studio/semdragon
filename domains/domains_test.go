@@ -57,6 +57,17 @@ var allDomains = []domainEntry{
 		},
 	},
 	{
+		name:   "software_rpg",
+		config: SoftwareRPGDomain,
+		catalog: &catalogEntry{
+			domainID:        SoftwareRPGPromptCatalog.DomainID,
+			systemBase:      SoftwareRPGPromptCatalog.SystemBase,
+			judgeSystemBase: SoftwareRPGPromptCatalog.JudgeSystemBase,
+			tierGuardrails:  SoftwareRPGPromptCatalog.TierGuardrails,
+			skillFragments:  SoftwareRPGPromptCatalog.SkillFragments,
+		},
+	},
+	{
 		name:   "dnd",
 		config: DnDDomain,
 		catalog: &catalogEntry{

@@ -327,9 +327,10 @@ type ID string
 
 // Standard domain IDs.
 const (
-	DomainSoftware ID = "software"
-	DomainDnD      ID = "dnd"
-	DomainResearch ID = "research"
+	DomainSoftware    ID = "software"
+	DomainSoftwareRPG ID = "software_rpg"
+	DomainDnD         ID = "dnd"
+	DomainResearch    ID = "research"
 )
 
 // Config holds the configuration for a specific domain.
