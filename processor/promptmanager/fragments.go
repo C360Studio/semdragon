@@ -27,6 +27,8 @@ import (
 //     solo agents must submit finished work, not descriptions or plans.
 //   - Research output directive (CategoryToolDirective) — skill-gated to research/analysis
 //     quests, instructs agents to write structured markdown files via write_file.
+//   - Archetype workflow directives (CategoryToolDirective) — class-specific step-by-step
+//     workflows for Scholar, Engineer, Scribe, and Strategist archetypes.
 //   - Gemini/OpenAI tool enforcement hint (CategoryProviderHints) — reinforces
 //     immediate tool-call behaviour for providers that may otherwise respond with text.
 //
@@ -38,6 +40,7 @@ func RegisterBuiltinFragments(r *PromptRegistry) {
 	registerSoloAgentScenarioDirective(r)
 	registerSoloAgentWorkOutputDirective(r)
 	registerResearchOutputDirective(r)
+	registerArchetypeWorkflows(r)
 	registerReviewBrief(r)
 	registerToolSelectionGuidance(r)
 	registerWorkspacePriorWorkDirective(r)
@@ -491,5 +494,91 @@ func registerToolSelectionGuidance(r *PromptRegistry) {
 		Priority:    0,
 		Condition:   hasMultipleTools,
 		ContentFunc: buildToolSelectionGuidance,
+	})
+}
+
+// =============================================================================
+// ARCHETYPE WORKFLOW DIRECTIVES - Class-specific step-by-step workflows
+// =============================================================================
+// Priority 12: between solo scenario directive (10) and work output directive (15).
+// Each workflow fires only when ctx.Archetype matches the archetype's value.
+// =============================================================================
+
+const scholarWorkflow = `SCHOLAR WORKFLOW:
+1. Check the knowledge graph FIRST (graph_search with nlq or search).
+2. For EVERY source you consult, IMMEDIATELY save findings to a file.
+   Example: write_file("findings_osh_api.md", "## OSH API\n\n...findings...")
+   Do NOT accumulate research in conversation — save to files as you go.
+3. After 2-3 sources, review your saved files and identify gaps.
+4. Fill gaps with targeted searches, appending to your files.
+5. Write a final synthesis file combining all findings.
+6. Submit with a brief summary — your files ARE the deliverable.
+
+Your workspace is your memory. If you fail, the next scholar inherits your files.
+Every http_request or graph_search result MUST be saved to a file in the same turn.`
+
+const engineerWorkflow = `ENGINEER WORKFLOW:
+1. Read dependency context — your predecessor's research/design output.
+2. Explore existing workspace (list_directory, read_file) before writing ANY code.
+3. Implement incrementally: write one file → build_project → fix errors → next file.
+4. Write tests alongside implementation, not after.
+5. Run lint_check and run_tests before submitting.
+6. Submit with a summary of files created/modified.
+
+Do NOT write all code at once. Build-verify-iterate in small steps.`
+
+const scribeWorkflow = `SCRIBE WORKFLOW:
+1. Read all input files and dependency context thoroughly.
+2. Outline the document structure before writing.
+3. Write the document to a file (NOT inline in submit_work_product).
+4. Review for clarity, completeness, and proper formatting.
+5. Submit with a brief summary — the document file is the deliverable.`
+
+const strategistWorkflow = `STRATEGIST WORKFLOW:
+1. Analyze the problem space — read dependency context, query the knowledge graph.
+2. Identify components, interfaces, and dependencies.
+3. Write a design spec to a file with clear sections: Overview, Components, Interfaces, Data Models, Dependencies.
+4. For decomposition tasks, map components to sub-quests with explicit acceptance criteria.
+5. Submit the spec file — do NOT implement. Your job is to design, not build.`
+
+// registerArchetypeWorkflows registers the four archetype-specific workflow directives.
+// These fire at priority 12 — after scenario directives (10) and before work output (15) —
+// so agents see their class workflow before the generic completion rules.
+func registerArchetypeWorkflows(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:       "builtin.archetype.scholar-workflow",
+		Category: CategoryToolDirective,
+		Content:  scholarWorkflow,
+		Priority: 12,
+		Condition: func(ctx AssemblyContext) bool {
+			return ctx.Archetype == domain.ArchetypeScholar
+		},
+	})
+	r.Register(&PromptFragment{
+		ID:       "builtin.archetype.engineer-workflow",
+		Category: CategoryToolDirective,
+		Content:  engineerWorkflow,
+		Priority: 12,
+		Condition: func(ctx AssemblyContext) bool {
+			return ctx.Archetype == domain.ArchetypeEngineer
+		},
+	})
+	r.Register(&PromptFragment{
+		ID:       "builtin.archetype.scribe-workflow",
+		Category: CategoryToolDirective,
+		Content:  scribeWorkflow,
+		Priority: 12,
+		Condition: func(ctx AssemblyContext) bool {
+			return ctx.Archetype == domain.ArchetypeScribe
+		},
+	})
+	r.Register(&PromptFragment{
+		ID:       "builtin.archetype.strategist-workflow",
+		Category: CategoryToolDirective,
+		Content:  strategistWorkflow,
+		Priority: 12,
+		Condition: func(ctx AssemblyContext) bool {
+			return ctx.Archetype == domain.ArchetypeStrategist
+		},
 	})
 }

@@ -51,11 +51,12 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	//   - solo agent scenario directive
 	//   - solo agent work output directive
 	//   - research output directive
+	//   - archetype workflows (scholar, engineer, scribe, strategist)
 	//   - review brief
 	//   - tool selection guidance
 	//   - workspace prior work directive
-	if got := reg.FragmentCount(); got != 10 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 10", got)
+	if got := reg.FragmentCount(); got != 14 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 14", got)
 	}
 }
 

@@ -137,6 +137,42 @@ const (
 	SkillTraining      SkillTag = "training"
 )
 
+// AgentArchetype defines an agent's class identity. Fixed at creation,
+// determines workflow prompts and playstyle. Leveling up improves trust
+// and proficiency within the class — it never changes the archetype.
+type AgentArchetype string
+
+const (
+	// ArchetypeScholar agents research, analyze, and synthesize findings.
+	// Primary: research. Secondaries: analysis, summarization.
+	ArchetypeScholar AgentArchetype = "scholar"
+	// ArchetypeEngineer agents implement, test, and review code.
+	// Primary: code_generation. Secondaries: code_review, data_transformation.
+	ArchetypeEngineer AgentArchetype = "engineer"
+	// ArchetypeScribe agents write documentation and communications.
+	// Primary: summarization. Secondaries: customer_communications, training.
+	ArchetypeScribe AgentArchetype = "scribe"
+	// ArchetypeStrategist agents design systems, decompose work, and write specs.
+	// Primary: planning. Secondaries: analysis, research.
+	ArchetypeStrategist AgentArchetype = "strategist"
+)
+
+// ArchetypeForSkill derives the canonical archetype for a primary skill tag.
+func ArchetypeForSkill(primary SkillTag) AgentArchetype {
+	switch primary {
+	case SkillResearch, SkillAnalysis:
+		return ArchetypeScholar
+	case SkillCodeGen, SkillCodeReview, SkillDataTransform:
+		return ArchetypeEngineer
+	case SkillSummarization, SkillCustomerComms, SkillTraining:
+		return ArchetypeScribe
+	case SkillPlanning:
+		return ArchetypeStrategist
+	default:
+		return ArchetypeEngineer
+	}
+}
+
 // ProficiencyLevel represents mastery level of a skill (1-5).
 type ProficiencyLevel int
 

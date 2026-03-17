@@ -104,6 +104,7 @@ type agentSpec struct {
 	namePattern string // e.g. "apprentice-{n}" or a fixed name
 	level       int    // base level assigned
 	skills      []domain.SkillTag
+	archetype   domain.AgentArchetype
 	isNPC       bool
 	count       int // how many to create (1 = single named agent)
 }
@@ -117,11 +118,12 @@ func seedAgents(
 	boardCfg *domain.BoardConfig,
 ) error {
 	specs := []agentSpec{
-		// 1 grandmaster (level 19-20) — board anchor, broad generalist
+		// 1 grandmaster (level 19-20) — board anchor, Strategist
 		{
 			namePattern: "archon",
 			level:       20,
-			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillAnalysis, domain.SkillPlanning},
+			skills:      []domain.SkillTag{domain.SkillPlanning, domain.SkillAnalysis},
+			archetype:   domain.ArchetypeStrategist,
 			count:       1,
 		},
 
@@ -129,13 +131,15 @@ func seedAgents(
 		{
 			namePattern: "forge-master",
 			level:       17,
-			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillPlanning},
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
+			archetype:   domain.ArchetypeEngineer,
 			count:       1,
 		},
 		{
 			namePattern: "lorekeeper",
 			level:       16,
-			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillResearch, domain.SkillSummarization, domain.SkillTraining},
+			skills:      []domain.SkillTag{domain.SkillResearch, domain.SkillAnalysis},
+			archetype:   domain.ArchetypeScholar,
 			count:       1,
 		},
 
@@ -143,19 +147,22 @@ func seedAgents(
 		{
 			namePattern: "iron-coder",
 			level:       14,
-			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview, domain.SkillPlanning},
+			skills:      []domain.SkillTag{domain.SkillCodeGen},
+			archetype:   domain.ArchetypeEngineer,
 			count:       1,
 		},
 		{
 			namePattern: "data-sage",
 			level:       13,
-			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillDataTransform, domain.SkillResearch},
+			skills:      []domain.SkillTag{domain.SkillDataTransform, domain.SkillAnalysis},
+			archetype:   domain.ArchetypeEngineer,
 			count:       1,
 		},
 		{
 			namePattern: "herald",
 			level:       12,
-			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillCustomerComms, domain.SkillPlanning},
+			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillCustomerComms},
+			archetype:   domain.ArchetypeScribe,
 			count:       1,
 		},
 
@@ -163,58 +170,67 @@ func seedAgents(
 		{
 			namePattern: "blade-runner",
 			level:       9,
-			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
+			skills:      []domain.SkillTag{domain.SkillCodeGen},
+			archetype:   domain.ArchetypeEngineer,
 			count:       1,
 		},
 		{
 			namePattern: "circuit-breaker",
 			level:       8,
 			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform},
+			archetype:   domain.ArchetypeEngineer,
 			count:       1,
 		},
 		{
 			namePattern: "deep-diver",
 			level:       8,
-			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillResearch},
-			count:       1,
-		},
-		{
-			namePattern: "scroll-keeper",
-			level:       7,
-			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillResearch},
+			skills:      []domain.SkillTag{domain.SkillResearch},
+			archetype:   domain.ArchetypeScholar,
 			count:       1,
 		},
 		{
 			namePattern: "wire-tap",
 			level:       7,
-			skills:      []domain.SkillTag{domain.SkillDataTransform, domain.SkillAnalysis},
+			skills:      []domain.SkillTag{domain.SkillAnalysis},
+			archetype:   domain.ArchetypeScholar,
+			count:       1,
+		},
+		{
+			namePattern: "scroll-keeper",
+			level:       7,
+			skills:      []domain.SkillTag{domain.SkillSummarization},
+			archetype:   domain.ArchetypeScribe,
 			count:       1,
 		},
 
 		// 9 apprentices (level 1-5) — bottom-heavy pyramid; earn their way up through quest work
 		{
+			namePattern: "flint",
+			level:       4,
+			skills:      []domain.SkillTag{domain.SkillPlanning},
+			archetype:   domain.ArchetypeStrategist,
+			count:       1,
+		},
+		{
 			namePattern: "spark-{n}",
 			level:       3,
-			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
+			skills:      []domain.SkillTag{domain.SkillCodeGen},
+			archetype:   domain.ArchetypeEngineer,
 			count:       3,
 		},
 		{
 			namePattern: "ember-{n}",
 			level:       2,
-			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillResearch},
+			skills:      []domain.SkillTag{domain.SkillResearch},
+			archetype:   domain.ArchetypeScholar,
 			count:       3,
 		},
 		{
 			namePattern: "echo-{n}",
 			level:       2,
-			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillCustomerComms},
+			skills:      []domain.SkillTag{domain.SkillSummarization},
+			archetype:   domain.ArchetypeScribe,
 			count:       2,
-		},
-		{
-			namePattern: "flint",
-			level:       4,
-			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillPlanning},
-			count:       1,
 		},
 	}
 
@@ -273,6 +289,12 @@ func seedOneAgent(
 		}
 	}
 
+	// Derive archetype from spec or fall back to the agent's primary skill.
+	archetype := spec.archetype
+	if archetype == "" && len(spec.skills) > 0 {
+		archetype = domain.ArchetypeForSkill(spec.skills[0])
+	}
+
 	agent := &agentprogression.Agent{
 		ID:                 domain.AgentID(agentEntityID),
 		Name:               name,
@@ -282,6 +304,7 @@ func seedOneAgent(
 		XP:                 currentXP,
 		XPToLevel:          xpToNext,
 		Tier:               tier,
+		Archetype:          archetype,
 		IsNPC:              spec.isNPC,
 		Guild:              "",
 		SkillProficiencies: skillProfs,

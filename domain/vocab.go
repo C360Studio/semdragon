@@ -87,6 +87,14 @@ const (
 	PredicateBattleRetreat = "battle.review.retreat"
 )
 
+// --- Agent Identity Predicates ---
+
+const (
+	// PredicateAgentArchetype - Agent class identity (scholar, engineer, scribe, strategist).
+	// Fixed at creation; never changes on level-up.
+	PredicateAgentArchetype = "agent.identity.archetype"
+)
+
 // --- Agent Progression Predicates ---
 
 const (
@@ -433,6 +441,12 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateBattleRetreat,
 		vocabulary.WithDescription("Agent requested re-do of submission"),
 		vocabulary.WithDataType("BattleRetreatPayload"),
+	)
+
+	// Agent identity predicates
+	vocabulary.Register(PredicateAgentArchetype,
+		vocabulary.WithDescription("Agent class identity (scholar, engineer, scribe, strategist) — fixed at creation"),
+		vocabulary.WithDataType("string"),
 	)
 
 	// Agent progression predicates

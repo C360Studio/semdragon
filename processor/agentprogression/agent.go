@@ -34,6 +34,9 @@ type Agent struct {
 	XPToLevel  int64 `json:"xp_to_level"`
 	DeathCount int   `json:"death_count"`
 
+	// Archetype is the agent's class identity. Fixed at creation; never changes on level-up.
+	Archetype domain.AgentArchetype `json:"archetype,omitempty"`
+
 	// Capabilities & Trust
 	Tier      domain.TrustTier `json:"tier"`
 	Equipment []domain.Tool    `json:"equipment"`
@@ -193,6 +196,9 @@ func (a *Agent) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "agent.identity.name", Object: a.Name, Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "agent.identity.display_name", Object: a.DisplayName, Source: source, Timestamp: now, Confidence: 1.0},
 
+		// Archetype (class identity — fixed at creation)
+		{Subject: entityID, Predicate: "agent.identity.archetype", Object: string(a.Archetype), Source: source, Timestamp: now, Confidence: 1.0},
+
 		// Status
 		{Subject: entityID, Predicate: "agent.status.state", Object: string(a.Status), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "agent.npc.flag", Object: a.IsNPC, Source: source, Timestamp: now, Confidence: 1.0},
@@ -337,6 +343,8 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 			a.Name = domain.AsString(triple.Object)
 		case "agent.identity.display_name":
 			a.DisplayName = domain.AsString(triple.Object)
+		case "agent.identity.archetype":
+			a.Archetype = domain.AgentArchetype(domain.AsString(triple.Object))
 
 		// Status
 		case "agent.status.state":

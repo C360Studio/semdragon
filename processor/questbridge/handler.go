@@ -2141,6 +2141,7 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		Tier:                 agent.Tier,
 		Level:                agent.Level,
 		Skills:               agent.SkillProficiencies,
+		Archetype:            agent.Archetype,
 		Guild:                agent.Guild,
 		SystemPrompt:         agent.Config.SystemPrompt,
 		PersonaPrompt:        personaPrompt,
