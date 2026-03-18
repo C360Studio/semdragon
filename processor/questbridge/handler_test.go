@@ -1696,16 +1696,16 @@ func TestCategoriesForQuest(t *testing.T) {
 			},
 		},
 		{
-			name:  "research quest excludes write/build/inspect",
+			name:  "research quest keeps write but excludes build/inspect",
 			quest: &domain.Quest{RequiredSkills: []domain.SkillTag{domain.SkillResearch}},
 			agent: journeymanAgent,
 			wantCats: []executor.ToolCategory{
 				executor.ToolCategoryCore,
+				executor.ToolCategoryWrite,
 				executor.ToolCategoryNetwork,
 				executor.ToolCategoryKnowledge,
 			},
 			notWantCats: []executor.ToolCategory{
-				executor.ToolCategoryWrite,
 				executor.ToolCategoryBuild,
 				executor.ToolCategoryInspect,
 				executor.ToolCategoryPartyLead,

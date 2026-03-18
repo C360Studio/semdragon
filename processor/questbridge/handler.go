@@ -2520,9 +2520,9 @@ func categoriesForQuest(quest *domain.Quest, agent *agentprogression.Agent) map[
 	}
 
 	// Research-only quests (no CodeGen skill required) don't need
-	// write/build/inspect tools — saves ~8 tool definitions.
+	// build/inspect tools — saves ~5 tool definitions.
+	// Write tools are kept so scholars can save findings to markdown files.
 	if !questRequiresCodeGen(quest) {
-		delete(cats, executor.ToolCategoryWrite)
 		delete(cats, executor.ToolCategoryBuild)
 		delete(cats, executor.ToolCategoryInspect)
 	}
