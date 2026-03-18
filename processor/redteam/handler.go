@@ -2,6 +2,7 @@ package redteam
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semstreams/natsclient"
 )
 
 // processQuestWatchUpdates handles quest entity state changes from KV.
@@ -289,59 +291,83 @@ func (c *Component) watchTimeout(ctx context.Context, cancel context.CancelFunc,
 
 // attachFindings writes the red-team findings to the original quest entity
 // and emits the redteam.lifecycle.completed predicate.
+//
+// Uses CAS (compare-and-swap) to avoid clobbering concurrent status changes.
+// Without CAS, loading a stale entity and writing it back can regress the quest
+// from in_review → in_progress, preventing boss battle from ever starting.
 func (c *Component) attachFindings(targetQuestID domain.QuestID, rtQuest *domain.Quest) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Load the original quest to update it.
-	entityState, err := c.graph.GetQuest(ctx, targetQuestID)
-	if err != nil {
-		c.logger.Error("failed to load target quest for findings", "quest", targetQuestID, "error", err)
-		c.errorsCount.Add(1)
-		return
-	}
-
-	quest := domain.QuestFromEntityState(entityState)
-	if quest == nil {
-		c.logger.Error("failed to reconstruct target quest", "quest", targetQuestID)
-		return
-	}
-
-	// Log the red-team output for observability.
 	c.logger.Info("attaching red-team findings to target quest",
 		"target", targetQuestID,
 		"red_team", rtQuest.ID,
 		"has_output", rtQuest.Output != nil)
 
-	// Set the red-team status triple so bossbattle's KV watcher can detect it.
-	quest.RedTeamStatus = "completed"
-	if err := c.graph.EmitEntityUpdate(ctx, quest, domain.PredicateRedTeamCompleted); err != nil {
-		c.logger.Error("failed to emit red-team completed", "quest", targetQuestID, "error", err)
-		c.errorsCount.Add(1)
+	for attempt := range 3 {
+		entityState, revision, err := c.graph.GetQuestWithRevision(ctx, targetQuestID)
+		if err != nil {
+			c.logger.Error("failed to load target quest for findings", "quest", targetQuestID, "error", err)
+			c.errorsCount.Add(1)
+			return
+		}
+
+		quest := domain.QuestFromEntityState(entityState)
+		if quest == nil {
+			c.logger.Error("failed to reconstruct target quest", "quest", targetQuestID)
+			return
+		}
+
+		quest.RedTeamStatus = "completed"
+		if err := c.graph.EmitEntityCAS(ctx, quest, domain.PredicateRedTeamCompleted, revision); err != nil {
+			if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
+				c.logger.Debug("CAS conflict attaching red-team findings, retrying",
+					"quest", targetQuestID, "attempt", attempt+1)
+				continue
+			}
+			c.logger.Error("failed to emit red-team completed", "quest", targetQuestID, "error", err)
+			c.errorsCount.Add(1)
+			return
+		}
+		return // success
 	}
+	c.logger.Error("failed to attach red-team findings after 3 CAS retries", "quest", targetQuestID)
+	c.errorsCount.Add(1)
 }
 
 // emitSkipped writes a skip signal on the original quest so bossbattle proceeds.
+// Uses CAS to avoid clobbering concurrent status changes (same pattern as attachFindings).
 func (c *Component) emitSkipped(questID domain.QuestID, reason string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	entityState, err := c.graph.GetQuest(ctx, questID)
-	if err != nil {
-		c.logger.Error("failed to load quest for skip signal", "quest", questID, "error", err)
-		return
-	}
-
-	quest := domain.QuestFromEntityState(entityState)
-	if quest == nil {
-		return
-	}
-
-	quest.RedTeamStatus = "skipped"
 	c.logger.Debug("emitting red-team skip", "quest", questID, "reason", reason)
-	if err := c.graph.EmitEntityUpdate(ctx, quest, domain.PredicateRedTeamSkipped); err != nil {
-		c.logger.Error("failed to emit red-team skipped", "quest", questID, "error", err)
+
+	for attempt := range 3 {
+		entityState, revision, err := c.graph.GetQuestWithRevision(ctx, questID)
+		if err != nil {
+			c.logger.Error("failed to load quest for skip signal", "quest", questID, "error", err)
+			return
+		}
+
+		quest := domain.QuestFromEntityState(entityState)
+		if quest == nil {
+			return
+		}
+
+		quest.RedTeamStatus = "skipped"
+		if err := c.graph.EmitEntityCAS(ctx, quest, domain.PredicateRedTeamSkipped, revision); err != nil {
+			if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
+				c.logger.Debug("CAS conflict emitting red-team skip, retrying",
+					"quest", questID, "attempt", attempt+1)
+				continue
+			}
+			c.logger.Error("failed to emit red-team skipped", "quest", questID, "error", err)
+			return
+		}
+		return // success
 	}
+	c.logger.Warn("failed to emit red-team skip after 3 CAS retries", "quest", questID)
 }
 
 // resolveAgentGuild loads an agent and returns their guild ID, or nil.
