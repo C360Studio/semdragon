@@ -347,7 +347,7 @@ var searchTextSpec = toolSpec{
 var runTestsSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "run_tests",
-		Description: "Run a test command and return stdout/stderr. Only test runner commands are allowed (go test, npm test, pytest, cargo test, gradle test, mvn test, make test). Use after writing code to verify it works.",
+		Description: "Run a test command and return stdout/stderr. Allowed: go test, npm test, pytest, python3 -m pytest, python3 -m unittest, cargo test, gradle test, mvn test, make test. For Python, use 'python3 -m unittest discover' or 'python3 -m pytest'. Use after writing code to verify it works.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -2240,7 +2240,10 @@ func containsShellMeta(command string) bool {
 // The tool validates that the command starts with one of these.
 var allowedTestPrefixes = []string{
 	"go test", "npm test", "npm run test", "npx vitest", "npx jest",
-	"pytest", "python -m pytest", "make test", "make check",
+	"pytest", "python -m pytest", "python3 -m pytest",
+	"python -m unittest", "python3 -m unittest",
+	"python3 -c", "python -c", // one-liner test scripts
+	"make test", "make check",
 	"cargo test", "dotnet test", "mvn test", "gradle test",
 }
 

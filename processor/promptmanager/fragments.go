@@ -418,7 +418,7 @@ var toolGuidanceEntries = map[string]string{
 	// Knowledge tools
 	"graph_query":  "Game state (quests, agents, guilds, parties, battles). Fast.",
 	"graph_search": "Knowledge graph (code, docs, repos, prior tool results). ALWAYS try this FIRST for project-specific lookups — includes results from prior quest tool calls (API responses, search results, test output). Use query_type 'nlq' to ask natural language questions about the codebase.",
-	"web_search":   "External info not in the graph (third-party APIs, libraries, general knowledge).",
+	"web_search":   "External info not in the graph (third-party APIs, libraries, general knowledge). Use this BEFORE http_request to find the right URLs — never guess URLs.",
 	// Exploration tools — use these BEFORE reading/writing to find the right files
 	"list_directory": "See what files and folders exist at a path. Start here to understand project layout.",
 	"glob_files":     "Find files by pattern (e.g. '**/*.java', 'src/**/*.go'). Use to locate files before reading.",
@@ -433,10 +433,10 @@ var toolGuidanceEntries = map[string]string{
 	// Build and dependency tools
 	"build_project":       "Build the project using auto-detected build system (Go, Gradle, npm, Maven, Cargo, Make). Optional target param.",
 	"manage_dependencies": "Install, add, remove, or tidy dependencies via auto-detected package manager.",
-	"run_tests":           "Run test commands (go test, npm test, pytest, gradle test, etc.). Use after writing code.",
+	"run_tests":           "Run test commands (go test, npm test, python3 -m pytest, python3 -m unittest discover, cargo test, etc.). Use after writing code.",
 	"lint_check":          "Run linters (go vet, eslint, pylint, etc.). Use after writing code to catch issues.",
 	// Network tools
-	"http_request": "Fetch URLs or call REST APIs. Best for testing APIs you are building or fetching specific files. For broad research, prefer graph_search (project data) or web_search (external docs). Always include https:// in the url parameter.",
+	"http_request": "Fetch a specific known URL. Do NOT guess URLs — use web_search first to find the right URL, then http_request to fetch it. Best for testing APIs you are building or downloading specific files. Returns raw HTML which is hard to parse — prefer web_search for research.",
 	// Shell tools
 	"run_command":      "General shell command. Use only when no specialized tool covers the operation.",
 	"create_directory": "Create directories (including parents). Use before write_file if the target dir doesn't exist.",
@@ -510,26 +510,30 @@ func registerToolSelectionGuidance(r *PromptRegistry) {
 
 const scholarWorkflow = `SCHOLAR WORKFLOW:
 1. Check the knowledge graph FIRST (graph_search with nlq or search).
-2. For EVERY source you consult, IMMEDIATELY save findings to a file.
-   Example: write_file("findings_osh_api.md", "## OSH API\n\n...findings...")
+2. For external research, use web_search to find relevant URLs. Do NOT guess URLs with http_request.
+3. For EVERY source you consult, IMMEDIATELY save findings to a file.
+   Example: write_file("findings_owasp.md", "## OWASP Input Validation\n\n...findings...")
    Do NOT accumulate research in conversation — save to files as you go.
-3. After 2-3 sources, review your saved files and identify gaps.
-4. Fill gaps with targeted searches, appending to your files.
-5. Write a final synthesis file combining all findings.
-6. Submit with a brief summary — your files ARE the deliverable.
+4. After 2-3 sources, review your saved files and identify gaps.
+5. Fill gaps with targeted searches, appending to your files.
+6. Write a final synthesis file combining all findings.
+7. Submit with a brief summary — your files ARE the deliverable.
 
-Your workspace is your memory. If you fail, the next scholar inherits your files.
-Every http_request or graph_search result MUST be saved to a file in the same turn.`
+CRITICAL: Your workspace is your memory. If you fail, the next scholar inherits your files.
+Every research result MUST be saved to a file in the same turn — never hold findings only in context.
+Do NOT paste full research into submit_work_product — write files, then submit a summary only.`
 
 const engineerWorkflow = `ENGINEER WORKFLOW:
 1. Read dependency context — your predecessor's research/design output.
 2. Explore existing workspace (list_directory, read_file) before writing ANY code.
 3. Implement incrementally: write one file → build_project → fix errors → next file.
 4. Write tests alongside implementation, not after.
-5. Run lint_check and run_tests before submitting.
+5. Run tests before submitting: use run_tests with the appropriate command for the language
+   (e.g., "python3 -m pytest", "python3 -m unittest discover", "go test ./...", "npm test").
 6. Submit with a summary of files created/modified.
 
-Do NOT write all code at once. Build-verify-iterate in small steps.`
+Do NOT write all code at once. Build-verify-iterate in small steps.
+Do NOT submit without running tests — untested code will be rejected in review.`
 
 const scribeWorkflow = `SCRIBE WORKFLOW:
 1. Read all input files and dependency context thoroughly.
