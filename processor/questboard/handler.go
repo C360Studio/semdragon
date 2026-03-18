@@ -130,6 +130,13 @@ func (c *Component) PostSubQuests(ctx context.Context, parentID domain.QuestID, 
 	for _, sq := range subQuests {
 		sq.ParentQuest = &parentID
 		sq.DecomposedBy = &decomposer
+		sq.QuestType = parent.QuestType
+		sq.RedTeamTarget = parent.RedTeamTarget
+
+		// Red-team sub-quests skip boss battle (same as their parent).
+		if parent.QuestType == domain.QuestTypeRedTeam {
+			sq.Constraints.RequireReview = false
+		}
 
 		result, err := c.PostQuest(ctx, sq)
 		if err != nil {

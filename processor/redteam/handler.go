@@ -141,7 +141,9 @@ func (c *Component) handleNormalQuestInReview(quest *domain.Quest) {
 		guildPriority = c.pickCrossGuild(*blueTeamGuild)
 	}
 
-	// Build red-team quest.
+	// Build red-team quest. Mirror the original quest's structure so that
+	// party quests get party red-team reviews (with scenario-driven decomposition)
+	// and solo quests get solo red-team reviews.
 	rtQuest := domain.Quest{
 		QuestType:     domain.QuestTypeRedTeam,
 		RedTeamTarget: &quest.ID,
@@ -150,6 +152,14 @@ func (c *Component) handleNormalQuestInReview(quest *domain.Quest) {
 		Difficulty:    quest.Difficulty,
 		RequiredSkills: quest.RequiredSkills,
 		GuildPriority: guildPriority,
+		// Mirror structural fields so party leads decompose the review
+		// into per-scenario review sub-quests.
+		Goal:                 quest.Goal,
+		Requirements:         quest.Requirements,
+		Scenarios:            quest.Scenarios,
+		PartyRequired:        quest.PartyRequired,
+		MinPartySize:         quest.MinPartySize,
+		DecomposabilityClass: quest.DecomposabilityClass,
 		Input: map[string]any{
 			"target_quest_id": string(quest.ID),
 			"target_title":    quest.Title,
