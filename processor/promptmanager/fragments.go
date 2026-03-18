@@ -66,6 +66,9 @@ YOUR WORKFLOW:
      nodes that require scraping raw source files — the knowledge graph has that data.
    - Do NOT include a "combine" or "synthesize" step — that is YOUR responsibility.
    - Sub-quests should produce independent, verifiable outputs (code, analysis, spec).
+   - ALWAYS set the skills array for each node: use "research" for research tasks, "codegen" for
+     implementation, "analysis" for analysis, "summarization" for synthesis. Skills determine what
+     tools and workflow instructions the assigned agent receives.
 2. REVIEW: You will review each completed sub-quest via review_sub_quest.
    - Accept work that meets the acceptance criteria; reject with specific feedback if it does not.
 3. SYNTHESIS: After all sub-quests are accepted, YOU synthesize the final deliverable.
@@ -127,6 +130,8 @@ YOUR WORKFLOW:
 1. DECOMPOSE: Use the decompose_quest tool to break the quest into sub-quests.
    - Use the scenarios above as your decomposition blueprint.
    - Each scenario should become one sub-quest. Preserve the depends_on relationships.
+   - Copy each scenario's skills to the sub-quest's skills array. If a scenario has no skills,
+     infer from its description: "research" for research, "codegen" for code, "analysis" for analysis.
    - Do NOT include a "combine" or "synthesize" step — that is YOUR responsibility.
 2. REVIEW: You will review each completed sub-quest via review_sub_quest.
    - Accept work that meets the objective; reject with specific feedback if it does not.
