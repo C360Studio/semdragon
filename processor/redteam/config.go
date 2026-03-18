@@ -32,6 +32,10 @@ type Config struct {
 	// PreferCrossGuild routes red-team quests to guilds different from the
 	// implementing agent's guild. When false, any guild can red-team.
 	PreferCrossGuild bool `json:"prefer_cross_guild" schema:"type:bool,description:Prefer guilds other than the implementer's guild"`
+
+	// PartyTimeoutMultiplier scales the execution timeout for party red-team
+	// quests which need multiple LLM calls (decompose + sub-quests + review + synthesis).
+	PartyTimeoutMultiplier int `json:"party_timeout_multiplier,omitempty" schema:"type:int,description:Timeout multiplier for party red-team quests (default 3)"`
 }
 
 // DefaultConfig returns a configuration with sensible defaults.
@@ -43,7 +47,8 @@ func DefaultConfig() Config {
 		MinDifficulty:      domain.DifficultyModerate,
 		ClaimTimeoutSec:    120,
 		ExecutionTimeoutSec: 300,
-		PreferCrossGuild:   true,
+		PreferCrossGuild:       true,
+		PartyTimeoutMultiplier: 3,
 	}
 }
 

@@ -175,7 +175,13 @@ func (c *Component) handleNormalQuestInReview(quest *domain.Quest) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.config.ExecutionTimeout())
+	// Scale timeout for party quests — they need decompose + N sub-quests + review + synthesis.
+	timeout := c.config.ExecutionTimeout()
+	if quest.PartyRequired && c.config.PartyTimeoutMultiplier > 1 {
+		timeout *= time.Duration(c.config.PartyTimeoutMultiplier)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
 	posted, err := qb.PostQuest(ctx, rtQuest)
 	if err != nil {
@@ -270,7 +276,8 @@ func (c *Component) handleRedTeamQuestFinished(rtQuest *domain.Quest, targetQues
 }
 
 // watchTimeout monitors the execution timeout for a red-team quest.
-// If the context expires before the red-team quest completes, it emits a skip signal.
+// On timeout: fails the red-team quest (cleans up sub-quests) then emits skip
+// on the original quest so boss battle proceeds without red-team findings.
 func (c *Component) watchTimeout(ctx context.Context, cancel context.CancelFunc, originalID, redTeamID domain.QuestID) {
 	defer cancel()
 
@@ -282,6 +289,18 @@ func (c *Component) watchTimeout(ctx context.Context, cancel context.CancelFunc,
 			c.logger.Info("red-team review timed out",
 				"original", originalID,
 				"red_team", redTeamID)
+
+			// Fail the timed-out red-team quest so it and its sub-quests
+			// don't remain orphaned at in_progress.
+			if qb := c.resolveQuestBoard(); qb != nil {
+				failCtx, failCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				if err := qb.FailQuest(failCtx, redTeamID, "red-team review timed out"); err != nil {
+					c.logger.Warn("failed to fail timed-out red-team quest",
+						"red_team", redTeamID, "error", err)
+				}
+				failCancel()
+			}
+
 			c.emitSkipped(originalID, "timeout")
 		}
 	case <-c.stopChan:

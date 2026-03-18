@@ -24,9 +24,10 @@ import (
 	"github.com/c360studio/semdragons/domain"
 )
 
-// QuestBoardRef is the minimal interface needed to post red-team quests.
+// QuestBoardRef is the minimal interface needed to post and manage red-team quests.
 type QuestBoardRef interface {
 	PostQuest(ctx context.Context, quest domain.Quest) (*domain.Quest, error)
+	FailQuest(ctx context.Context, questID domain.QuestID, reason string) error
 }
 
 // Component implements the red-team review processor.
