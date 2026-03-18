@@ -403,12 +403,13 @@
         "timeout": "600s",
         "stream_name": "AGENT",
         "loops_bucket": "AGENT_LOOPS",
-        "trajectories_bucket": "AGENT_TRAJECTORIES",
+        "content_bucket": "AGENT_CONTENT",
         "context": {
           "enabled": true,
           "compact_threshold": 0.6,
           "tool_result_max_age": 3,
-          "summarization_model": "ollama-coder"
+          "headroom_ratio": 0.05,
+          "headroom_tokens": 4000
         }
       }
     },

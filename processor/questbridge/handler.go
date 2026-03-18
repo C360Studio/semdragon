@@ -879,7 +879,23 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		return
 	}
 
-	// All quests route through in_review. Bossbattle determines the outcome:
+	// Quests with RequireReview=false (e.g., red-team review quests) skip
+	// boss battle entirely and complete directly. Without this, they get
+	// stuck at in_review because bossbattle correctly ignores them.
+	if !quest.Constraints.RequireReview {
+		quest.Status = domain.QuestCompleted
+		if err := c.graph.EmitEntityUpdate(ctx, quest, domain.PredicateQuestCompleted); err != nil {
+			c.logger.Error("failed to emit quest completion (no review required)",
+				"quest_id", questID, "error", err)
+			c.errorsCount.Add(1)
+			return
+		}
+		c.logger.Info("quest completed directly (no review required)",
+			"quest_id", questID)
+		return
+	}
+
+	// All other quests route through in_review. Bossbattle determines the outcome:
 	// auto-pass (trivial quests), LLM judge, or human review based on the
 	// domain catalog's ReviewConfig and the quest's review level.
 	// Sub-quests are skipped by bossbattle and reviewed by the party lead

@@ -19,9 +19,12 @@ const (
 	dmSessionHistory    = 5
 	dmSessionTTL        = 7 * 24 * time.Hour
 
-	// trajectoryBucketName is the NATS KV bucket that holds agent trajectory data.
-	// Defined here because natsTrajectoryQuerier (below) is the sole consumer.
-	trajectoryBucketName = "AGENT_TRAJECTORIES"
+	// trajectoryQuerySubject is the NATS request/reply subject served by agentic-loop
+	// for trajectory lookups. Replaces direct AGENT_TRAJECTORIES KV reads.
+	trajectoryQuerySubject = "agentic.query.trajectory"
+
+	// trajectoryQueryTimeout is the timeout for trajectory request/reply calls.
+	trajectoryQueryTimeout = 5 * time.Second
 
 	// appendTurnMaxRetries is the maximum number of CAS retry attempts in appendTurn.
 	appendTurnMaxRetries = 3
@@ -201,31 +204,23 @@ func (s *dmSessionStore) GetSession(ctx context.Context, sessionID string) (*DMC
 	return &session, nil
 }
 
-// natsTrajectoryQuerier reads trajectory data from the AGENT_TRAJECTORIES KV bucket.
-// Returns raw JSON bytes to avoid coupling to the agentic.Trajectory type.
-// mu guards the cached bucket field so concurrent callers do not race on first access.
+// natsTrajectoryQuerier reads trajectory data via NATS request/reply to agentic-loop.
+// The agentic-loop component serves trajectories from its in-memory cache (active
+// and recently completed loops) on the "agentic.query.trajectory" subject.
 type natsTrajectoryQuerier struct {
-	nats   *natsclient.Client
-	mu     sync.Mutex
-	bucket jetstream.KeyValue // cached after first successful access; guarded by mu
+	nats *natsclient.Client
 }
 
 func (q *natsTrajectoryQuerier) GetTrajectory(ctx context.Context, id string) ([]byte, error) {
-	q.mu.Lock()
-	if q.bucket == nil {
-		bucket, err := q.nats.GetKeyValueBucket(ctx, trajectoryBucketName)
-		if err != nil {
-			q.mu.Unlock()
-			return nil, err
-		}
-		q.bucket = bucket
+	req, err := json.Marshal(struct {
+		LoopID string `json:"loopId"`
+	}{LoopID: id})
+	if err != nil {
+		return nil, fmt.Errorf("marshal trajectory request: %w", err)
 	}
-	bucket := q.bucket
-	q.mu.Unlock()
-
-	entry, err := bucket.Get(ctx, id)
+	data, err := q.nats.Request(ctx, trajectoryQuerySubject, req, trajectoryQueryTimeout)
 	if err != nil {
 		return nil, err
 	}
-	return entry.Value(), nil
+	return data, nil
 }
