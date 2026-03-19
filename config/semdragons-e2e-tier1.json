@@ -261,7 +261,7 @@
         "domain": "software",
         "auto_start_on_submit": true,
         "max_concurrent": 10,
-        "red_team_enabled": true
+        "red_team_enabled": false
       }
     },
     "redteam": {

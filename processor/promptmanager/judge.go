@@ -22,6 +22,29 @@ func (a *PromptAssembler) AssembleJudgePrompt(
 	questTitle, questDesc, provider string,
 	checklist ...ChecklistItem,
 ) AssembledPrompt {
+	return a.assembleJudgePromptWithAcceptance(judgeBase, criteria, questTitle, questDesc, provider, nil, checklist...)
+}
+
+// AssembleJudgePromptWithAcceptance builds a judge prompt that includes acceptance criteria.
+// The acceptance criteria are the ground truth for what the quest must deliver — the judge
+// should fail submissions that don't meet them, regardless of internal quality.
+func (a *PromptAssembler) AssembleJudgePromptWithAcceptance(
+	judgeBase string,
+	criteria []domain.ReviewCriterion,
+	questTitle, questDesc, provider string,
+	acceptance []string,
+	checklist ...ChecklistItem,
+) AssembledPrompt {
+	return a.assembleJudgePromptWithAcceptance(judgeBase, criteria, questTitle, questDesc, provider, acceptance, checklist...)
+}
+
+func (a *PromptAssembler) assembleJudgePromptWithAcceptance(
+	judgeBase string,
+	criteria []domain.ReviewCriterion,
+	questTitle, questDesc, provider string,
+	acceptance []string,
+	checklist ...ChecklistItem,
+) AssembledPrompt {
 	style := a.registry.GetStyle(provider)
 
 	var sections []string
@@ -93,6 +116,13 @@ func (a *PromptAssembler) AssembleJudgePrompt(
 	}
 	if questDesc != "" {
 		questParts = append(questParts, fmt.Sprintf("Description: %s", questDesc))
+	}
+	if len(acceptance) > 0 {
+		questParts = append(questParts, "Acceptance Criteria (the submission MUST meet ALL of these):")
+		for _, a := range acceptance {
+			questParts = append(questParts, fmt.Sprintf("  - %s", a))
+		}
+		questParts = append(questParts, "FAIL the submission if any acceptance criterion is not met, regardless of other quality scores.")
 	}
 	if len(questParts) > 0 {
 		sections = append(sections, formatSection("Quest", strings.Join(questParts, "\n"), style))

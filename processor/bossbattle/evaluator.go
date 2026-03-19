@@ -224,13 +224,15 @@ func (e *DomainAwareEvaluator) Evaluate(ctx context.Context, battle *BossBattle,
 		)
 	}
 
-	// Assemble the judge prompt using domain catalog
-	assembled := e.assembler.AssembleJudgePrompt(
+	// Assemble the judge prompt using domain catalog.
+	// Acceptance criteria are the ground truth for what the quest must deliver.
+	assembled := e.assembler.AssembleJudgePromptWithAcceptance(
 		e.catalog.JudgeSystemBase,
 		battle.Criteria,
 		quest.Title,
 		quest.Description,
 		endpoint.Provider,
+		quest.Acceptance,
 		checklist...,
 	)
 
