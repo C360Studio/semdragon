@@ -8,9 +8,37 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// ---------------------------------------------------------------------------
+// Global graph source registry (semspec pattern)
+// ---------------------------------------------------------------------------
+// Initialized once in main.go from the top-level "graph_sources" config.
+// Components call GlobalGraphSources() during Start() — nil means not configured.
+
+var (
+	globalGraphSources   *GraphSourceRegistry
+	globalGraphSourcesMu sync.RWMutex
+)
+
+// SetGlobalGraphSources stores the process-wide graph source registry.
+// Called once during application startup before components start.
+func SetGlobalGraphSources(r *GraphSourceRegistry) {
+	globalGraphSourcesMu.Lock()
+	globalGraphSources = r
+	globalGraphSourcesMu.Unlock()
+}
+
+// GlobalGraphSources returns the process-wide graph source registry, or nil
+// when graph sources are not configured.
+func GlobalGraphSources() *GraphSourceRegistry {
+	globalGraphSourcesMu.RLock()
+	defer globalGraphSourcesMu.RUnlock()
+	return globalGraphSources
+}
 
 // GraphSource represents a queryable graph endpoint.
 type GraphSource struct {

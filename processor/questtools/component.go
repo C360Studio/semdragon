@@ -186,11 +186,10 @@ func (c *Component) Start(ctx context.Context) error {
 	gc := semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
 	c.toolRegistry.RegisterGraphQuery(c.buildGraphQueryFunc(gc))
 
-	// Register graph_search tool — multi-source routing when GraphSources is configured,
-	// single-URL fallback when only GraphQLURL is set.
-	if len(c.config.GraphSources) > 0 {
-		registry := questbridge.NewGraphSourceRegistry(c.config.GraphSources, c.logger)
-		c.toolRegistry.RegisterGraphSearchWithRouter(registry)
+	// Register graph_search tool — use global registry for multi-source routing,
+	// single-URL fallback when registry is not configured.
+	if reg := questbridge.GlobalGraphSources(); reg != nil {
+		c.toolRegistry.RegisterGraphSearchWithRouter(reg)
 	} else if c.config.GraphQLURL != "" {
 		c.toolRegistry.RegisterGraphSearch(c.config.GraphQLURL)
 	}

@@ -84,14 +84,9 @@ type Config struct {
 
 	// KnowledgeReadyTimeout is the maximum seconds to wait for the knowledge graph
 	// to have indexed source content (code, docs) before dispatching a quest.
-	// When GraphSources is configured, waits for all semsource sources to report ready.
-	// 0 disables the gate. Default: 300 (5 minutes).
+	// When the global graph source registry has semsource entries, waits for all
+	// semsource sources to report ready. 0 disables the gate. Default: 300 (5 minutes).
 	KnowledgeReadyTimeout int `json:"knowledge_ready_timeout,omitempty"`
-
-	// GraphSources configures the multi-source graph query routing.
-	// graph_search fans out to relevant sources based on query type and entity prefix.
-	// If empty, falls back to GraphQLURL for backward compatibility.
-	GraphSources []GraphSource `json:"graph_sources,omitempty"`
 
 	// DomainCatalog enables domain-aware prompt assembly when set.
 	// Not serialized to JSON — resolved from Domain at construction time.

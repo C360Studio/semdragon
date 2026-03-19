@@ -332,11 +332,9 @@ func (c *Component) Start(ctx context.Context) error {
 		c.logger.Info("graph manifest client initialized", "graphql_url", c.config.GraphQLURL)
 	}
 
-	// Initialize multi-source graph registry when graph_sources is configured.
-	if len(c.config.GraphSources) > 0 {
-		c.graphSources = NewGraphSourceRegistry(c.config.GraphSources, c.logger)
-		c.logger.Info("graph source registry initialized",
-			"sources", len(c.config.GraphSources))
+	// Use the process-wide graph source registry (initialized in main.go).
+	if reg := GlobalGraphSources(); reg != nil {
+		c.graphSources = reg
 	}
 
 	// Create prompt assembler when a domain catalog is provided.

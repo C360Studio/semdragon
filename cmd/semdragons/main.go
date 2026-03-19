@@ -28,6 +28,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
+	"github.com/c360studio/semdragons/processor/questbridge"
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
 
@@ -82,7 +83,7 @@ func run() error {
 	}
 
 	// 3. Load and validate configuration
-	cfg, err := loadConfig(cliCfg.ConfigPath, cliCfg.ModelsPath)
+	cfg, rawConfigData, err := loadConfig(cliCfg.ConfigPath, cliCfg.ModelsPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -125,6 +126,10 @@ func run() error {
 	slog.Info("Semdragons ready",
 		"version", Version,
 		"build_time", BuildTime)
+
+	// 6a. Initialize global graph source registry from top-level config.
+	// Components access this via questbridge.GlobalGraphSources() during Start().
+	initGraphSources(rawConfigData, logger)
 
 	// 7. Create remaining infrastructure
 	metricsRegistry, platform, configManager, err := setupInfrastructure(ctx, cfg, natsClient, logger)
@@ -238,6 +243,32 @@ func ensureBoardBucket(ctx context.Context, cfg *config.Config, natsClient *nats
 
 	fmt.Printf("OK (%s)\n", boardCfg.BucketName())
 	return nil
+}
+
+// graphSourcesEnvelope is a minimal struct for extracting the top-level
+// "graph_sources" array from the semdragons config JSON. semstreams'
+// config.Config doesn't know about this field, so we parse it separately.
+type graphSourcesEnvelope struct {
+	GraphSources []questbridge.GraphSource `json:"graph_sources"`
+}
+
+// initGraphSources parses the top-level graph_sources from raw config JSON
+// and initializes the process-wide GraphSourceRegistry singleton.
+// Components access it via questbridge.GlobalGraphSources().
+func initGraphSources(rawConfig []byte, logger *slog.Logger) {
+	var envelope graphSourcesEnvelope
+	if err := json.Unmarshal(rawConfig, &envelope); err != nil {
+		logger.Warn("failed to parse graph_sources from config", "error", err)
+		return
+	}
+	if len(envelope.GraphSources) == 0 {
+		return
+	}
+
+	reg := questbridge.NewGraphSourceRegistry(envelope.GraphSources, logger)
+	questbridge.SetGlobalGraphSources(reg)
+	logger.Info("graph source registry initialized",
+		"sources", len(envelope.GraphSources))
 }
 
 // setupLogger creates a structured logger.
@@ -491,17 +522,19 @@ func startPProfServer(port int) {
 // The overlay file is deep-merged on top of the base: map values are merged
 // recursively, all other types are replaced. This allows model overlay files to
 // set just model_registry and component tuning without duplicating the full config.
-func loadConfig(basePath, modelsPath string) (*config.Config, error) {
+// Returns both the parsed config and the raw merged JSON bytes (for extracting
+// semdragons-specific top-level fields that semstreams config.Config doesn't know about).
+func loadConfig(basePath, modelsPath string) (*config.Config, []byte, error) {
 	baseData, err := os.ReadFile(basePath)
 	if err != nil {
-		return nil, fmt.Errorf("read base config %s: %w", basePath, err)
+		return nil, nil, fmt.Errorf("read base config %s: %w", basePath, err)
 	}
 
 	data := baseData
 	if modelsPath != "" {
 		merged, mergeErr := mergeOverlay(data, modelsPath)
 		if mergeErr != nil {
-			return nil, fmt.Errorf("merge models overlay: %w", mergeErr)
+			return nil, nil, fmt.Errorf("merge models overlay: %w", mergeErr)
 		}
 		data = merged
 		fmt.Printf("Merged model overlay: %s\n", modelsPath)
@@ -510,7 +543,7 @@ func loadConfig(basePath, modelsPath string) (*config.Config, error) {
 	loader := config.NewLoader()
 	cfg, err := loader.LoadFromBytes(data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse config: %w", err)
 	}
-	return cfg, nil
+	return cfg, data, nil
 }
