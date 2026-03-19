@@ -348,7 +348,7 @@
         },
         "detection_interval": "30s",
         "batch_size": 100,
-        "enable_llm": true,
+        "enable_llm": false,
         "min_community_size": 2,
         "max_iterations": 100,
         "enable_structural": true,
