@@ -340,7 +340,7 @@
     "redteam": {
       "type": "processor",
       "name": "redteam",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",
