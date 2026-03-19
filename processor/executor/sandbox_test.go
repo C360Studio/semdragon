@@ -418,7 +418,7 @@ func TestSandboxRunCommand(t *testing.T) {
 	reg := executor.NewToolRegistry()
 	reg.RegisterSandboxTools(client)
 
-	call := testCall("run_command", map[string]any{"command": "echo hello"})
+	call := testCall("bash", map[string]any{"command": "echo hello"})
 	agent := testAgent(domain.TierMaster)
 	result := reg.Execute(context.Background(), call, testQuest, agent)
 
@@ -432,11 +432,11 @@ func TestSandboxRunCommand_TierGated(t *testing.T) {
 	reg := executor.NewToolRegistry()
 	reg.RegisterSandboxTools(client)
 
-	call := testCall("run_command", map[string]any{"command": "echo hello"})
+	call := testCall("bash", map[string]any{"command": "echo hello"})
 	// Expert can't run arbitrary commands.
 	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierExpert))
 	if result.Error == "" {
-		t.Fatal("expected tier gate error for Expert running run_command")
+		t.Fatal("expected tier gate error for Expert running bash")
 	}
 }
 

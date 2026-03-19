@@ -154,7 +154,7 @@ var readFileRangeSpec = toolSpec{
 var writeFileSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "write_file",
-		Description: "Create or overwrite a file with the given content. Parent directories must exist — use create_directory first if needed. For small edits to existing files, prefer patch_file.",
+		Description: "Create or overwrite a file with the given content. This is how you create source code, config files, scripts, and documentation. Always use this instead of bash when you need to create or modify files. For small targeted edits to existing files, prefer patch_file.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -386,8 +386,8 @@ var lintCheckSpec = toolSpec{
 
 var runCommandSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
-		Name:        "run_command",
-		Description: "Run a shell command in the workspace sandbox. Has full access to installed tools (go, node, java, gradle, maven, python, git, curl, etc.). Use for operations not covered by other tools. Prefer build_project for builds, run_tests for tests, and git_operation for version control.",
+		Name:        "bash",
+		Description: "Run a SHORT shell command (ls, mkdir, pip install, cat, curl, etc.). Do NOT write source code here — use write_file to create files. Do NOT pass multi-line scripts. For tests use run_tests, for builds use build_project.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

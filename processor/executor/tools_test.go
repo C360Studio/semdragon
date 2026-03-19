@@ -60,7 +60,7 @@ func TestBuiltinToolTierAlignment(t *testing.T) {
 		{tool: "manage_dependencies", wantTier: domain.TierExpert, reason: "dependency changes affect builds"},
 
 		// Master — unrestricted shell and party-lead DAG operations require level 16+.
-		{tool: "run_command", wantTier: domain.TierMaster, reason: "unrestricted shell requires high trust"},
+		{tool: "bash", wantTier: domain.TierMaster, reason: "unrestricted shell requires high trust"},
 		{tool: "decompose_quest", wantTier: domain.TierMaster, reason: "only party leads (Master+) can decompose quests"},
 		{tool: "review_sub_quest", wantTier: domain.TierMaster, reason: "only party leads (Master+) can review sub-quests"},
 		{tool: "answer_clarification", wantTier: domain.TierMaster, reason: "only party leads (Master+) can answer clarifications"},
@@ -1478,7 +1478,7 @@ func TestRunCommandHandler(t *testing.T) {
 
 	t.Run("successful echo command returns output", func(t *testing.T) {
 		t.Parallel()
-		call := makeToolCall("run_command", map[string]any{
+		call := makeToolCall("bash", map[string]any{
 			"command":      "echo hello",
 			"_sandbox_dir": tmpDir,
 		})
@@ -1491,7 +1491,7 @@ func TestRunCommandHandler(t *testing.T) {
 
 	t.Run("failing command returns error with output", func(t *testing.T) {
 		t.Parallel()
-		call := makeToolCall("run_command", map[string]any{
+		call := makeToolCall("bash", map[string]any{
 			"command":      "exit 1",
 			"_sandbox_dir": tmpDir,
 		})
@@ -1694,7 +1694,7 @@ func TestGetToolsForQuest(t *testing.T) {
 		assertContainsStr(t, names, "read_file")
 		assertContainsStr(t, names, "list_directory")
 		assertNotContainsStr(t, names, "write_file") // TierExpert required
-		assertNotContainsStr(t, names, "run_command") // TierMaster required
+		assertNotContainsStr(t, names, "bash") // TierMaster required
 	})
 
 	t.Run("master tier sees all tools (with required skills)", func(t *testing.T) {
@@ -1716,7 +1716,7 @@ func TestGetToolsForQuest(t *testing.T) {
 
 		assertContainsStr(t, names, "read_file")
 		assertContainsStr(t, names, "write_file")
-		assertContainsStr(t, names, "run_command")
+		assertContainsStr(t, names, "bash")
 		assertContainsStr(t, names, "run_tests")
 	})
 

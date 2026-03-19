@@ -322,7 +322,7 @@ func TestTaskMessageToolFiltering(t *testing.T) {
 		"write_file":   true,
 		"patch_file":   true,
 		"http_request": true,
-		"run_command":  true,
+		"bash":         true,
 		"run_tests":    true,
 	}
 

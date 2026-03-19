@@ -172,6 +172,7 @@ COMPLETION RULES:
 5. Your deliverable MUST contain the actual work output — code, analysis, or results — not a description of what you did.
 6. If the task requires code, include BOTH implementation AND tests directly in your deliverable. Your reviewer can only see what you include — they cannot access external files.
 7. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
+8. NEVER write source code using bash — use write_file to create files, patch_file for edits.
 8. Complete the work in as few iterations as possible — avoid unnecessary exploration.
 9. For project-specific lookups (code structure, API patterns, docs), use graph_search FIRST. Only use http_request for external resources not in the knowledge graph.`
 
@@ -443,7 +444,7 @@ var toolGuidanceEntries = map[string]string{
 	// Network tools
 	"http_request": "Fetch a specific known URL. Do NOT guess URLs — use web_search first to find the right URL, then http_request to fetch it. Best for testing APIs you are building or downloading specific files. Returns raw HTML which is hard to parse — prefer web_search for research.",
 	// Shell tools
-	"run_command":      "General shell command. Use only when no specialized tool covers the operation.",
+	"bash":             "Run a short shell command (ls, mkdir, pip install, curl). Do NOT write source code here — use write_file for that.",
 	"create_directory": "Create directories (including parents). Use before write_file if the target dir doesn't exist.",
 }
 
@@ -457,7 +458,7 @@ var toolGuidanceOrder = []string{
 	"build_project", "manage_dependencies",
 	"run_tests", "lint_check",
 	"http_request",
-	"run_command", "create_directory",
+	"bash", "create_directory",
 }
 
 // hasMultipleTools gates the tool guidance fragment — only included when the
@@ -536,6 +537,13 @@ const engineerWorkflow = `ENGINEER WORKFLOW:
 5. Run tests before submitting: use run_tests with the appropriate command for the language
    (e.g., "python3 -m pytest", "python3 -m unittest discover", "go test ./...", "npm test").
 6. Submit with a summary of files created/modified.
+
+TOOL RULES:
+- Create/edit source code, configs, scripts → write_file or patch_file
+- Run tests → run_tests
+- Shell commands (ls, pip install, mkdir, curl) → bash
+- Read existing code → read_file
+- NEVER write source code using bash — it will be interpreted as shell commands and fail.
 
 Do NOT write all code at once. Build-verify-iterate in small steps.
 Do NOT submit without running tests — untested code will be rejected in review.`

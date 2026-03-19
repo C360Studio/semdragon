@@ -94,12 +94,15 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 	// Execute the tool through the registry, which enforces tier and skill gates.
 	result := c.toolRegistry.Execute(ctx, call, quest, agent)
 
-	// Ensure Content is non-empty when an error occurred. The agentic-loop converts
-	// ToolResult.Content into the ChatMessage.Content for role=tool messages. Gemini
-	// (and other providers) reject tool result messages with empty content, so we
-	// must surface the error string as content for the LLM to react to.
+	// Ensure Content is non-empty. The agentic-loop converts ToolResult.Content
+	// into the ChatMessage.Content for role=tool messages. Gemini (and other
+	// providers) reject tool result messages with empty content.
 	if result.Content == "" && result.Error != "" {
 		result.Content = fmt.Sprintf("Tool error: %s", result.Error)
+	} else if result.Content == "" {
+		// SWE-agent insight: explicit feedback on empty output prevents agents
+		// from re-running commands or assuming failure.
+		result.Content = "(no output)"
 	}
 
 	// Propagate correlation identifiers so the loop can match this result.
