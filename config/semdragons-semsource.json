@@ -194,8 +194,8 @@
         },
         "backpressure": {
           "enabled": true,
-          "queue_size": 50,
-          "on_full": "block"
+          "queue_size": 100,
+          "on_full": "drop_oldest"
         },
         "ports": {
           "outputs": [
