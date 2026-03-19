@@ -515,18 +515,19 @@ func registerToolSelectionGuidance(r *PromptRegistry) {
 // =============================================================================
 
 const scholarWorkflow = `SCHOLAR WORKFLOW:
-1. Check the knowledge graph FIRST (graph_search with nlq or search).
-2. For external research, use web_search to find relevant URLs. Do NOT guess URLs with http_request.
-3. For EVERY source you consult, IMMEDIATELY save findings to a file.
+1. Quick workspace check: ONE call to list_directory(".") to see if relevant files exist.
+   If the workspace is empty or only has boilerplate, move on — do NOT keep reading files.
+2. Use web_search to find authoritative sources on the topic. Start here for external research.
+3. If the quest involves project code, use graph_search or read_file to examine relevant files.
+4. For EVERY source you consult, IMMEDIATELY save findings to a file.
    Example: write_file("findings_owasp.md", "## OWASP Input Validation\n\n...findings...")
    Do NOT accumulate research in conversation — save to files as you go.
-4. After 2-3 sources, review your saved files and identify gaps.
-5. Fill gaps with targeted searches, appending to your files.
-6. Write a final synthesis file combining all findings.
-7. Submit with a brief summary — your files ARE the deliverable.
+5. After 2-3 sources, read your saved files and identify gaps.
+6. Fill gaps with targeted searches, saving results to files.
+7. Write a final synthesis file combining all findings.
+8. Submit with a brief summary — your files ARE the deliverable.
 
-CRITICAL: Your workspace is your memory. If you fail, the next scholar inherits your files.
-Every research result MUST be saved to a file in the same turn — never hold findings only in context.
+CRITICAL: Do NOT read the same file more than once. If a file has no useful information, move on.
 Do NOT paste full research into submit_work_product — write files, then submit a summary only.`
 
 const engineerWorkflow = `ENGINEER WORKFLOW:
