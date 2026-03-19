@@ -192,6 +192,11 @@
             "multiplier": 2.0
           }
         },
+        "backpressure": {
+          "enabled": true,
+          "queue_size": 50,
+          "on_full": "block"
+        },
         "ports": {
           "outputs": [
             {
