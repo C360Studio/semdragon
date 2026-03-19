@@ -103,8 +103,12 @@
     "GRAPH": {
       "subjects": [
         "graph.ingest.entity",
-        "graph.export.>"
+        "graph.ingest.batch",
+        "graph.ingest.manifest",
+        "graph.ingest.status",
+        "graph.ingest.predicates"
       ],
+      "storage": "file",
       "max_age": "24h",
       "storage": "file",
       "replicas": 1
@@ -396,7 +400,7 @@
           },
           {
             "name": "workspace",
-            "graphql_url": "http://local-semsource:8084/graphql",
+            "graphql_url": "http://local-semsource:8082/graphql",
             "status_url": "http://local-semsource:8080/source-manifest/status",
             "type": "semsource",
             "entity_prefix": "local.semsource.",

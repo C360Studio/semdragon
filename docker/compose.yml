@@ -84,9 +84,6 @@ services:
       semembed:
         condition: service_healthy
         required: false
-      local-semsource:
-        condition: service_healthy
-        required: false
     environment:
       SEMDRAGONS_NATS_URLS: nats://nats:4222
       SEMDRAGONS_CONFIG: "${SEMDRAGONS_CONFIG:-/etc/semdragons/semdragons.json}"
@@ -168,11 +165,11 @@ services:
       - --log-level
       - ${SEMSOURCE_LOG_LEVEL:-info}
     depends_on:
-      nats:
+      backend:
         condition: service_healthy
     environment:
       NATS_URL: nats://nats:4222
-      SEMSOURCE_GRAPH_GATEWAY_PORT: "8084"
+      SEMSOURCE_GRAPH_GATEWAY_PORT: "8082"
     volumes:
       - ./semsource-local.json:/etc/semsource/semsource-local.json:ro
       - ${REPOS_DIR:-./repos}:/sources:ro

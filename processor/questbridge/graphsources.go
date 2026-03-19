@@ -37,6 +37,8 @@ type GraphSource struct {
 
 	// ready is set to true when the source reports phase "ready" or "degraded".
 	ready atomic.Bool
+	// FailCount tracks consecutive status check failures for fast-skip.
+	FailCount int `json:"-"`
 }
 
 // GraphSourceRegistry manages multiple graph sources for query routing.
@@ -190,11 +192,21 @@ func (r *GraphSourceRegistry) checkAllReady(ctx context.Context) bool {
 
 		phase, entities, err := r.fetchStatus(ctx, src.StatusURL)
 		if err != nil {
+			src.FailCount++
 			r.logger.Debug("semsource status check failed",
-				"source", src.Name, "error", err)
+				"source", src.Name, "error", err, "consecutive_failures", src.FailCount)
+			// After 3 consecutive failures, treat as degraded and proceed.
+			// Prevents blocking quest dispatch when semsource is unreachable.
+			if src.FailCount >= 3 {
+				src.ready.Store(true)
+				r.logger.Warn("semsource unreachable after 3 attempts, proceeding without",
+					"source", src.Name)
+				continue
+			}
 			allReady = false
 			continue
 		}
+		src.FailCount = 0 // Reset on successful contact
 
 		switch phase {
 		case "ready":
