@@ -551,7 +551,7 @@
           },
           {
             "name": "workspace",
-            "graphql_url": "http://local-semsource:8082/graphql",
+            "graphql_url": "http://local-semsource:8080/graph-gateway/graphql",
             "status_url": "http://local-semsource:8080/source-manifest/status",
             "type": "semsource",
             "entity_prefix": "local.semsource.",
