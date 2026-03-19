@@ -600,6 +600,14 @@ func makeSandboxWriteFileHandler(client *SandboxClient) ToolHandler {
 			}
 		}
 
+		// Linter gate: reject files with obvious syntax errors before writing.
+		if lintErr := lintContent(path, content); lintErr != "" {
+			return agentic.ToolResult{
+				CallID: call.ID,
+				Error:  fmt.Sprintf("Syntax check failed for %s: %s. Fix the content and try again.", path, lintErr),
+			}
+		}
+
 		req := sandboxWriteFileReq{QuestID: questID, Path: path, Content: content}
 		if err := client.doJSON(ctx, http.MethodPut, "/file", req, nil); err != nil {
 			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to write file: %v", err)}

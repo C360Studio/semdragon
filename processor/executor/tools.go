@@ -1108,6 +1108,14 @@ func writeFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Ques
 		}
 	}
 
+	// Linter gate: reject files with obvious syntax errors before writing.
+	if lintErr := lintContent(path, content); lintErr != "" {
+		return agentic.ToolResult{
+			CallID: call.ID,
+			Error:  fmt.Sprintf("Syntax check failed for %s: %s. Fix the content and try again.", path, lintErr),
+		}
+	}
+
 	// Validate path is within sandbox
 	sandboxDir := getSandboxDir(call)
 	cleanPath, err := validatePath(path, sandboxDir)

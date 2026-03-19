@@ -98,7 +98,7 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 	// into the ChatMessage.Content for role=tool messages. Gemini (and other
 	// providers) reject tool result messages with empty content.
 	if result.Content == "" && result.Error != "" {
-		result.Content = fmt.Sprintf("Tool error: %s", result.Error)
+		result.Content = fmt.Sprintf("Tool error: %s", addToolHint(call.Name, result.Error))
 	} else if result.Content == "" {
 		// SWE-agent insight: explicit feedback on empty output prevents agents
 		// from re-running commands or assuming failure.
@@ -236,4 +236,35 @@ func (c *Component) buildContextFromMetadata(call *agentic.ToolCall) (*agentprog
 	}
 
 	return agent, quest
+}
+
+// addToolHint appends a corrective hint to tool error messages when the agent
+// is likely using the wrong tool. This is more reliable than prompt instructions
+// because the agent sees the hint at the exact moment of failure.
+func addToolHint(toolName, errMsg string) string {
+	lower := strings.ToLower(errMsg)
+
+	switch toolName {
+	case "bash":
+		if strings.Contains(lower, "syntax error") || strings.Contains(lower, "unexpected") {
+			return errMsg + "\n\nHINT: If you were trying to write code, use write_file instead of bash. bash is for shell commands only."
+		}
+		if strings.Contains(lower, "permission denied") && strings.Contains(lower, "python") {
+			return errMsg + "\n\nHINT: Use 'python3' instead of 'python'. Or use write_file to create a .py file and run_tests to execute it."
+		}
+	case "read_file":
+		if strings.Contains(lower, "not found") || strings.Contains(lower, "404") {
+			return errMsg + "\n\nHINT: File doesn't exist yet. Use write_file to create it, or list_directory to see what files exist."
+		}
+	case "run_tests":
+		if strings.Contains(lower, "only allows test commands") {
+			return errMsg + "\n\nHINT: Use 'python3 -m pytest' or 'python3 -m unittest discover' for Python tests."
+		}
+	case "graph_search":
+		if strings.Contains(lower, "eof") || strings.Contains(lower, "failed") {
+			return errMsg + "\n\nHINT: The knowledge graph may be temporarily unavailable. Try web_search instead, or proceed with what you know."
+		}
+	}
+
+	return errMsg
 }
