@@ -335,11 +335,16 @@
 							{/if}
 						</dl>
 
-						{#if quest.escalated || quest.failure_reason}
+						{#if quest.escalated || quest.failure_reason || quest.status === 'failed'}
 							<div class="escalation-block">
-								<h4>Escalation</h4>
+								<h4>{quest.status === 'failed' ? 'Failure Reason' : 'Escalation'}</h4>
+								{#if quest.failure_type}
+									<span class="status-badge" data-status="failed">{quest.failure_type}</span>
+								{/if}
 								{#if quest.failure_reason}
 									<p class="escalation-reason-text">{quest.failure_reason}</p>
+								{:else if quest.status === 'failed'}
+									<p class="escalation-reason-text" style="opacity: 0.6">No failure details available. Check the trajectory for tool call history.</p>
 								{/if}
 								{#if Array.isArray(quest.dm_clarifications) && quest.dm_clarifications.length > 0}
 									<span class="clarification-count">{quest.dm_clarifications.length} clarification{quest.dm_clarifications.length > 1 ? 's' : ''}</span>
