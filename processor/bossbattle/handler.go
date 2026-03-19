@@ -727,6 +727,18 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				ab.quest.StartedAt = nil
 				ab.quest.FailureReason = ab.battle.Verdict.Feedback
 				ab.quest.FailureType = domain.FailureQuality
+
+				// Clear DAG state so the lead re-decomposes fresh on retry.
+				// Without this, questdagexec sees stale "completed" node states
+				// from the previous attempt and never assigns the new sub-quests.
+				ab.quest.DAGExecutionID = ""
+				ab.quest.DAGDefinition = nil
+				ab.quest.DAGNodeQuestIDs = nil
+				ab.quest.DAGNodeStates = nil
+				ab.quest.DAGNodeAssignees = nil
+				ab.quest.DAGCompletedNodes = nil
+				ab.quest.DAGFailedNodes = nil
+				ab.quest.DAGNodeRetries = nil
 			} else {
 				ab.quest.Status = domain.QuestFailed
 				ab.quest.FailureReason = ab.battle.Verdict.Feedback
