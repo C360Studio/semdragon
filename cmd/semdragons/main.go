@@ -108,21 +108,6 @@ func run() error {
 		natsClient.Close(closeCtx)
 	}()
 
-	// 4a. Create dedicated KV watcher connection to isolate heavy entity-state
-	// watchers (graph-index, graph-embedding) from the primary connection.
-	kvWatchClient, err := createNATSClient(cfg)
-	if err != nil {
-		return fmt.Errorf("create KV watcher client: %w", err)
-	}
-	if err := kvWatchClient.Connect(ctx); err != nil {
-		return fmt.Errorf("connect KV watcher client: %w", err)
-	}
-	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		kvWatchClient.Close(closeCtx)
-	}()
-
 	// 5. Ensure JetStream streams exist
 	if err := ensureStreams(ctx, cfg, natsClient); err != nil {
 		return err
@@ -155,7 +140,7 @@ func run() error {
 	}
 
 	// 9. Create service dependencies
-	svcDeps := createServiceDependencies(natsClient, kvWatchClient, metricsRegistry, logger, platform, configManager, componentRegistry)
+	svcDeps := createServiceDependencies(natsClient, metricsRegistry, logger, platform, configManager, componentRegistry)
 
 	// 10. Configure and create services
 	if err := configureAndCreateServices(cfg, manager, svcDeps); err != nil {
@@ -409,7 +394,6 @@ func ensureServiceManagerConfig(cfg *config.Config) {
 // createServiceDependencies creates the Dependencies struct for services.
 func createServiceDependencies(
 	natsClient *natsclient.Client,
-	kvWatchClient *natsclient.Client,
 	metricsRegistry *metric.MetricsRegistry,
 	logger *slog.Logger,
 	platform types.PlatformMeta,
@@ -418,7 +402,6 @@ func createServiceDependencies(
 ) *service.Dependencies {
 	return &service.Dependencies{
 		NATSClient:        natsClient,
-		KVWatchClient:     kvWatchClient,
 		MetricsRegistry:   metricsRegistry,
 		Logger:            logger,
 		Platform:          platform,
