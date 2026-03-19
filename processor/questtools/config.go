@@ -3,6 +3,7 @@ package questtools
 import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/executor"
+	"github.com/c360studio/semdragons/processor/questbridge"
 )
 
 // Config holds all configuration for the questtools processor.
@@ -16,8 +17,13 @@ type Config struct {
 	EnableBuiltins   bool   `json:"enable_builtins"`
 	SandboxDir       string `json:"sandbox_dir"`
 	// GraphQLURL is the graph-gateway GraphQL endpoint for the graph_search tool.
-	// When empty, graph_search is not registered. Example: "http://localhost:8082/graphql"
+	// When empty and GraphSources is also empty, graph_search is not registered.
+	// Backward-compatible: used when GraphSources is not configured.
 	GraphQLURL string `json:"graphql_url,omitempty"`
+	// GraphSources configures multi-source graph query routing.
+	// When set, graph_search fans out to relevant sources based on query type.
+	// Takes precedence over GraphQLURL.
+	GraphSources []questbridge.GraphSource `json:"graph_sources,omitempty"`
 	// Search configures the web_search tool. When nil/empty provider, web_search
 	// is not registered. Supports "brave" (more providers can be added).
 	Search *executor.SearchConfig `json:"search,omitempty"`

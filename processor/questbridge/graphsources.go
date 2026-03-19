@@ -101,6 +101,19 @@ func (r *GraphSourceRegistry) ResolveEntity(entityID string) *GraphSource {
 	return r.resolveByPrefix(entityID)
 }
 
+// GraphQLURLsForQuery implements executor.GraphSearchRouter.
+// Returns the GraphQL endpoint URLs to query for a given query type and entity context.
+func (r *GraphSourceRegistry) GraphQLURLsForQuery(queryType, entityID, prefix string) []string {
+	sources := r.SourcesForQuery(queryType, entityID, prefix)
+	urls := make([]string, 0, len(sources))
+	for _, src := range sources {
+		if src.GraphQLURL != "" {
+			urls = append(urls, src.GraphQLURL)
+		}
+	}
+	return urls
+}
+
 // HasSemsources returns true if any semsource-type sources are configured.
 func (r *GraphSourceRegistry) HasSemsources() bool {
 	for _, src := range r.sources {

@@ -108,6 +108,10 @@ type Component struct {
 	// Optional: nil means graph contents section is omitted from entity knowledge.
 	graphManifestClient *semsource.GraphManifestClient
 
+	// Multi-source graph query registry for routing graph_search to the right gateway(s).
+	// Optional: nil means graph_search uses GraphQLURL directly.
+	graphSources *GraphSourceRegistry
+
 	// Board pause integration
 	pauseChecker boardcontrol.PauseChecker // Optional: nil means always-running
 	resumeSub    *natsclient.Subscription  // Subscription to board.control.resumed
@@ -326,6 +330,13 @@ func (c *Component) Start(ctx context.Context) error {
 	if c.config.GraphQLURL != "" {
 		c.graphManifestClient = semsource.NewGraphManifestClient(c.config.GraphQLURL, c.logger)
 		c.logger.Info("graph manifest client initialized", "graphql_url", c.config.GraphQLURL)
+	}
+
+	// Initialize multi-source graph registry when graph_sources is configured.
+	if len(c.config.GraphSources) > 0 {
+		c.graphSources = NewGraphSourceRegistry(c.config.GraphSources, c.logger)
+		c.logger.Info("graph source registry initialized",
+			"sources", len(c.config.GraphSources))
 	}
 
 	// Create prompt assembler when a domain catalog is provided.

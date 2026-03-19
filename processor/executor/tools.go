@@ -2418,11 +2418,32 @@ func (r *ToolRegistry) RegisterWebSearch(provider SearchProvider) {
 // GRAPH SEARCH TOOL
 // =============================================================================
 
+// GraphSearchRouter routes graph_search queries to the appropriate graph-gateway(s).
+// Implementations may fan out to multiple sources (local + semsource instances)
+// and merge results.
+type GraphSearchRouter interface {
+	// GraphQLURLsForQuery returns the GraphQL endpoint URLs to query for a given
+	// query type and optional entity ID or prefix.
+	GraphQLURLsForQuery(queryType, entityID, prefix string) []string
+}
+
+// singleURLRouter is a backward-compatible router that always returns one URL.
+type singleURLRouter struct{ url string }
+
+func (r *singleURLRouter) GraphQLURLsForQuery(_, _, _ string) []string {
+	return []string{r.url}
+}
+
 // RegisterGraphSearch adds the graph_search tool to the registry.
 // graphqlURL is the graph-gateway GraphQL endpoint (e.g. "http://localhost:8082/graphql").
-// Unlike graph_query (which is limited to game entities), graph_search queries ALL
-// entities via GraphQL — including semsource entities such as docs, code, and repos.
+// For multi-source routing, use RegisterGraphSearchWithRouter instead.
 func (r *ToolRegistry) RegisterGraphSearch(graphqlURL string) {
+	r.RegisterGraphSearchWithRouter(&singleURLRouter{url: graphqlURL})
+}
+
+// RegisterGraphSearchWithRouter adds graph_search with multi-source routing.
+// The router determines which graph-gateway(s) to query based on query type and entity prefix.
+func (r *ToolRegistry) RegisterGraphSearchWithRouter(router GraphSearchRouter) {
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
 			Name:        "graph_search",
@@ -2459,7 +2480,7 @@ func (r *ToolRegistry) RegisterGraphSearch(graphqlURL string) {
 				"required": []any{"query_type"},
 			},
 		},
-		Handler:  graphSearchHandler(graphqlURL),
+		Handler:  graphSearchHandler(router),
 		MinTier:  domain.TierApprentice, // Read-only knowledge-graph access
 		Category: ToolCategoryKnowledge,
 	})
@@ -2480,10 +2501,8 @@ type graphQLResponse struct {
 }
 
 // graphSearchHandler returns a ToolHandler that dispatches GraphQL queries to
-// the configured graph-gateway endpoint based on the query_type argument.
-func graphSearchHandler(graphqlURL string) ToolHandler {
-	// graphSearchClient is a plain HTTP client — graphqlURL is operator-configured,
-	// not agent-supplied, so SSRF prevention is not required here.
+// one or more graph-gateway endpoints via the router.
+func graphSearchHandler(router GraphSearchRouter) ToolHandler {
 	client := &http.Client{Timeout: graphQLTimeout}
 
 	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
@@ -2508,15 +2527,44 @@ func graphSearchHandler(graphqlURL string) ToolHandler {
 			return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
 		}
 
+		// Route to the appropriate graph-gateway(s).
+		entityID, _ := call.Arguments["entity_id"].(string)
+		prefix, _ := call.Arguments["prefix"].(string)
+		urls := router.GraphQLURLsForQuery(queryType, entityID, prefix)
+		if len(urls) == 0 {
+			return agentic.ToolResult{CallID: call.ID, Error: "no graph sources available for this query"}
+		}
+
 		reqCtx, cancel := context.WithTimeout(ctx, graphQLTimeout)
 		defer cancel()
 
-		result, err := executeGraphQLQuery(reqCtx, client, graphqlURL, gqlReq)
-		if err != nil {
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("graph search failed: %v", err)}
+		// Single source: direct query (most common path).
+		if len(urls) == 1 {
+			result, err := executeGraphQLQuery(reqCtx, client, urls[0], gqlReq)
+			if err != nil {
+				return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("graph search failed: %v", err)}
+			}
+			return agentic.ToolResult{CallID: call.ID, Content: result}
 		}
 
-		return agentic.ToolResult{CallID: call.ID, Content: result}
+		// Multiple sources: fan out, merge results.
+		var allResults []string
+		for _, url := range urls {
+			result, err := executeGraphQLQuery(reqCtx, client, url, gqlReq)
+			if err != nil {
+				// Log but don't fail — other sources may succeed.
+				continue
+			}
+			if result != "" {
+				allResults = append(allResults, result)
+			}
+		}
+
+		if len(allResults) == 0 {
+			return agentic.ToolResult{CallID: call.ID, Error: "graph search returned no results from any source"}
+		}
+
+		return agentic.ToolResult{CallID: call.ID, Content: strings.Join(allResults, "\n\n---\n\n")}
 	}
 }
 

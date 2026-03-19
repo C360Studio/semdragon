@@ -2340,16 +2340,33 @@ func buildUserPrompt(quest *domain.Quest) string {
 // subsequent quests skip immediately once readiness is established (or timed out).
 // No-op when semsource is not configured or timeout is 0.
 func (c *Component) waitForKnowledgeSources(ctx context.Context, entityID string) {
-	// Gate on graph manifest (via graph-gateway GraphQL) rather than semsource REST,
-	// because the graph manifest reflects what's actually queryable via graph_search.
-	// Only gate when semsource is configured (manifestClient != nil) — without semsource,
-	// non-game predicates will never appear and the gate would always timeout.
-	if c.graphManifestClient == nil || c.manifestClient == nil || c.config.KnowledgeReadyTimeout <= 0 {
+	if c.config.KnowledgeReadyTimeout <= 0 {
 		return
 	}
 
 	// Fast path: readiness already established (or timed out) by a prior quest.
 	if c.knowledgeReady.Load() {
+		return
+	}
+
+	// Preferred path: use GraphSourceRegistry to poll semsource status endpoints directly.
+	if c.graphSources != nil && c.graphSources.HasSemsources() {
+		timeout := time.Duration(c.config.KnowledgeReadyTimeout) * time.Second
+		c.logger.Info("waiting for semsource readiness",
+			"entity_id", entityID, "timeout_seconds", c.config.KnowledgeReadyTimeout)
+		if err := c.graphSources.WaitForReady(ctx, timeout); err != nil {
+			c.logger.Warn("semsource readiness wait failed — proceeding",
+				"entity_id", entityID, "error", err)
+		} else {
+			c.logger.Info("all semsource sources ready", "entity_id", entityID)
+		}
+		c.knowledgeReady.Store(true)
+		return
+	}
+
+	// Legacy path: gate on graph manifest (via graph-gateway GraphQL).
+	// Only gate when semsource is configured (manifestClient != nil).
+	if c.graphManifestClient == nil || c.manifestClient == nil {
 		return
 	}
 

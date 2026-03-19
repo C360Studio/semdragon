@@ -180,7 +180,7 @@
     "websocket_input": {
       "type": "input",
       "name": "websocket_input",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "mode": "client",
         "client": {
@@ -509,7 +509,23 @@
         "dm_mode": "full_auto",
         "max_clarification_rounds": 3,
         "graphql_url": "http://localhost:8080/graph-gateway/graphql",
-        "semsource_url": "ws://semsource:7890/ws"
+        "semsource_url": "ws://semsource:7890/ws",
+        "graph_sources": [
+          {
+            "name": "local",
+            "graphql_url": "http://localhost:8080/graph-gateway/graphql",
+            "type": "local",
+            "always_query": true
+          },
+          {
+            "name": "osh",
+            "graphql_url": "http://semsource:8082/graphql",
+            "status_url": "http://semsource:8080/source-manifest/status",
+            "type": "semsource",
+            "entity_prefix": "osh.",
+            "always_query": false
+          }
+        ]
       }
     },
     "questtools": {
@@ -526,7 +542,22 @@
         "enable_builtins": true,
         "sandbox_dir": "/workspace",
         "sandbox_url": "http://sandbox:8090",
-        "graphql_url": "http://localhost:8080/graph-gateway/graphql",
+        "graph_sources": [
+          {
+            "name": "local",
+            "graphql_url": "http://localhost:8080/graph-gateway/graphql",
+            "type": "local",
+            "always_query": true
+          },
+          {
+            "name": "osh",
+            "graphql_url": "http://semsource:8082/graphql",
+            "status_url": "http://semsource:8080/source-manifest/status",
+            "type": "semsource",
+            "entity_prefix": "osh.",
+            "always_query": false
+          }
+        ],
         "search": {
           "provider": "brave",
           "api_key_env": "BRAVE_SEARCH_API_KEY"
