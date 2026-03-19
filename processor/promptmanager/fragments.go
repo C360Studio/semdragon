@@ -527,7 +527,8 @@ const scholarWorkflow = `SCHOLAR WORKFLOW:
 7. Write a final synthesis file combining all findings.
 8. Submit with a brief summary — your files ARE the deliverable.
 
-CRITICAL: Do NOT read the same file more than once. If a file has no useful information, move on.
+CRITICAL: Do NOT re-read workspace files (README, existing code) that had no useful info.
+Re-reading YOUR OWN research files to check gaps is fine — that's the workflow.
 Do NOT paste full research into submit_work_product — write files, then submit a summary only.`
 
 const engineerWorkflow = `ENGINEER WORKFLOW:
