@@ -1,4 +1,13 @@
-import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/test-base';
+import {
+	test,
+	expect,
+	hasBackend,
+	extractInstance,
+	retry,
+	isComponentEnabled
+} from '../fixtures/test-base';
+
+// Note: hasBackend is used in beforeEach hooks below alongside isComponentEnabled.
 
 /**
  * Red-Team Review Lifecycle — Integration Tests (Tier 1)
@@ -21,8 +30,12 @@ import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/te
  */
 
 test.describe('Red-Team Review - Lifecycle', () => {
-	test('submitted quest with review triggers red-team quest', async ({ lifecycleApi }) => {
+	test.beforeEach(async () => {
 		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(!(await isComponentEnabled('redteam')), 'Requires redteam component enabled');
+	});
+
+	test('submitted quest with review triggers red-team quest', async ({ lifecycleApi }) => {
 		test.setTimeout(30_000);
 
 		// 1. Create a quest that requires review (difficulty >= moderate = 2)
@@ -69,7 +82,7 @@ test.describe('Red-Team Review - Lifecycle', () => {
 	});
 
 	test('red-team quest has matching skills from original', async ({ lifecycleApi }) => {
-		test.skip(!hasBackend(), 'Requires running backend');
+
 		test.setTimeout(30_000);
 
 		// Create a quest with specific skills
@@ -104,7 +117,7 @@ test.describe('Red-Team Review - Lifecycle', () => {
 	});
 
 	test('trivial quest skips red-team review', async ({ lifecycleApi, apiRequest }) => {
-		test.skip(!hasBackend(), 'Requires running backend');
+
 		test.setTimeout(15_000);
 
 		// Create a trivial (difficulty=0) quest with review enabled.
@@ -148,8 +161,12 @@ test.describe('Red-Team Review - Lifecycle', () => {
 });
 
 test.describe('Red-Team Review - Boss Battle Coordination', () => {
-	test('boss battle starts after red-team completes', async ({ lifecycleApi }) => {
+	test.beforeEach(async () => {
 		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(!(await isComponentEnabled('redteam')), 'Requires redteam component enabled');
+	});
+
+	test('boss battle starts after red-team completes', async ({ lifecycleApi }) => {
 		// This test exercises the full reactive pipeline: redteam processor watches
 		// the red-team quest KV, emits PredicateRedTeamCompleted on the original,
 		// bossbattle sees the signal and starts the battle. KV propagation can take
@@ -220,11 +237,15 @@ test.describe('Red-Team Review - Boss Battle Coordination', () => {
 });
 
 test.describe('Red-Team Review - Quest Board Display', () => {
+	test.beforeEach(async () => {
+		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(!(await isComponentEnabled('redteam')), 'Requires redteam component enabled');
+	});
+
 	test('red-team quests visible in quest list with correct type', async ({
 		page,
 		lifecycleApi
 	}) => {
-		test.skip(!hasBackend(), 'Requires running backend');
 		test.setTimeout(30_000);
 
 		// Create and submit a quest to trigger red-team

@@ -854,6 +854,30 @@ export function isMockLLM(): boolean {
 	return getLLMMode() === 'mock';
 }
 
+/**
+ * Check if a specific component is running on the backend.
+ * Calls GET /game/settings and checks the components list.
+ * Returns false if backend is unavailable or component not found.
+ */
+export async function isComponentEnabled(componentName: string): Promise<boolean> {
+	if (!hasBackend()) return false;
+	try {
+		const port = process.env.BACKEND_PORT || '8081';
+		const resp = await fetch(`http://localhost:${port}/game/settings`);
+		if (!resp.ok) return false;
+		const settings = (await resp.json()) as {
+			components?: Array<{ name: string; status?: string }>;
+		};
+		return (
+			settings.components?.some(
+				(c) => c.name === componentName && c.status === 'running'
+			) ?? false
+		);
+	} catch {
+		return false;
+	}
+}
+
 // Re-export expect for convenience
 export { expect };
 
