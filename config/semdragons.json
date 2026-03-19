@@ -462,7 +462,22 @@
         "enable_builtins": true,
         "sandbox_dir": "/workspace",
         "sandbox_url": "http://sandbox:8090",
-        "graphql_url": "http://localhost:8080/graph-gateway/graphql",
+        "graph_sources": [
+          {
+            "name": "local",
+            "graphql_url": "http://localhost:8080/graph-gateway/graphql",
+            "type": "local",
+            "always_query": true
+          },
+          {
+            "name": "workspace",
+            "graphql_url": "http://local-semsource:8084/graphql",
+            "status_url": "http://local-semsource:8080/source-manifest/status",
+            "type": "semsource",
+            "entity_prefix": "local.semsource.",
+            "always_query": false
+          }
+        ],
         "search": {
           "provider": "brave",
           "api_key_env": "BRAVE_SEARCH_API_KEY"

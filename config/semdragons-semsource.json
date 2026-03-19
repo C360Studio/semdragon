@@ -550,6 +550,14 @@
             "always_query": true
           },
           {
+            "name": "workspace",
+            "graphql_url": "http://local-semsource:8084/graphql",
+            "status_url": "http://local-semsource:8080/source-manifest/status",
+            "type": "semsource",
+            "entity_prefix": "local.semsource.",
+            "always_query": false
+          },
+          {
             "name": "osh",
             "graphql_url": "http://semsource:8082/graphql",
             "status_url": "http://semsource:8080/source-manifest/status",
