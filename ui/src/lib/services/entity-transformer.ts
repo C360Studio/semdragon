@@ -274,7 +274,9 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 		posted_at: str(m.get('quest.lifecycle.posted_at')),
 		attempts: num(m.get('quest.attempts.current')),
 		max_attempts: num(m.get('quest.attempts.max'), 3),
-		escalated: false,
+		failure_reason: str(m.get('quest.failure.reason')) || undefined,
+		failure_type: (str(m.get('quest.failure.type')) || undefined) as Quest['failure_type'],
+		escalated: m.get('quest.failure.escalated') === true || m.get('quest.failure.escalated') === 'true',
 		loop_id: str(m.get('quest.execution.loop_id')),
 		context_token_count: m.has('quest.context.token_count')
 			? num(m.get('quest.context.token_count'))
