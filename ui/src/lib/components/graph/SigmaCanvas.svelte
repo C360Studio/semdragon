@@ -58,6 +58,7 @@
 			renderEdgeLabels: false,
 			defaultEdgeType: 'arrow',
 			labelRenderedSizeThreshold: 8,
+			zIndex: true,
 			labelColor: { color: '#f4f4f4' },
 			defaultDrawNodeHover: (context, data, settings) => {
 				const size = data.size || 5;
@@ -91,17 +92,21 @@
 			nodeReducer: (node, data) => {
 				const res = { ...data };
 
-				if (selectedEntityId && node !== selectedEntityId) {
-					const isNeighbor =
-						graph!.hasEdge(selectedEntityId, node) ||
-						graph!.hasEdge(node, selectedEntityId);
-					if (!isNeighbor) {
+				if (selectedEntityId && node !== selectedEntityId && graph!.hasNode(selectedEntityId)) {
+					const neighbors = graph!.neighbors(selectedEntityId);
+					if (!neighbors.includes(node)) {
 						res.color = '#525252';
 						res.label = '';
+						res.zIndex = 0;
+					} else {
+						res.zIndex = 1;
 					}
 				}
 
-				if (node === hoveredEntityId) {
+				if (node === selectedEntityId) {
+					res.zIndex = 2;
+					res.highlighted = true;
+				} else if (node === hoveredEntityId) {
 					res.highlighted = true;
 				}
 

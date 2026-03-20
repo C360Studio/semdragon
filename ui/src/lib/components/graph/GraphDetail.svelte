@@ -127,7 +127,7 @@
 			<section class="section" aria-label="Outgoing relationships">
 				<h4 class="section-title">Outgoing ({entity.outgoing.length})</h4>
 				<div class="relationships-list">
-					{#each entity.outgoing as rel (rel.id)}
+					{#each entity.outgoing as rel, idx (rel.id + ':' + idx)}
 						<button
 							class="relationship-row"
 							onclick={() => handleRelatedEntityClick(rel.targetId)}
@@ -156,7 +156,7 @@
 			<section class="section" aria-label="Incoming relationships">
 				<h4 class="section-title">Incoming ({entity.incoming.length})</h4>
 				<div class="relationships-list">
-					{#each entity.incoming as rel (rel.id)}
+					{#each entity.incoming as rel, idx (rel.id + ':' + idx)}
 						<button
 							class="relationship-row"
 							onclick={() => handleRelatedEntityClick(rel.sourceId)}
