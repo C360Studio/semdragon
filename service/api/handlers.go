@@ -557,6 +557,20 @@ func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Validate dependencies
+	for _, depID := range quest.DependsOn {
+		depEntity, depErr := s.graph.GetQuest(ctx, depID)
+		if depErr != nil {
+			s.writeError(w, "dependency not found: "+string(depID), http.StatusConflict)
+			return
+		}
+		dep := domain.QuestFromEntityState(depEntity)
+		if dep == nil || dep.Status != domain.QuestCompleted {
+			s.writeError(w, "quest has unmet dependency: "+string(depID), http.StatusConflict)
+			return
+		}
+	}
+
 	// Claim quest
 	now := time.Now()
 	agentID := agent.ID

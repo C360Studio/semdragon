@@ -496,6 +496,77 @@ func (c *Component) checkDependenciesMet(ctx context.Context, quest *domain.Ques
 	return nil
 }
 
+// notifyDependents finds posted quests that depend on the completed quest and
+// touches them via EmitEntityUpdate to trigger KV watch events. This unblocks
+// the boid engine and autonomy so they re-evaluate the now-claimable quests.
+//
+// Best-effort: errors are logged as warnings and never propagated. A failed
+// notification means the dependent quest will be picked up on the next manual
+// availability check, just with more latency.
+func (c *Component) notifyDependents(ctx context.Context, completedQuestID domain.QuestID) {
+	entities, err := c.graph.ListEntitiesByType(ctx, "quest", 10000)
+	if err != nil {
+		c.logger.Warn("notifyDependents: failed to list quests", "error", err)
+		return
+	}
+
+	// Build entity map for dependency status lookups (same pattern as AvailableQuests).
+	entityMap := make(map[string]*graph.EntityState, len(entities))
+	for i := range entities {
+		entityMap[entities[i].ID] = &entities[i]
+	}
+
+	completedID := string(completedQuestID)
+	for _, entity := range entities {
+		quest := c.questFromEntity(&entity)
+		if quest == nil || quest.Status != domain.QuestPosted {
+			continue
+		}
+
+		// Check if this quest depends on the completed quest.
+		dependsOnCompleted := false
+		for _, depID := range quest.DependsOn {
+			if string(depID) == completedID {
+				dependsOnCompleted = true
+				break
+			}
+		}
+		if !dependsOnCompleted {
+			continue
+		}
+
+		// Check if ALL dependencies are now met (not just the one that completed).
+		allMet := true
+		for _, depID := range quest.DependsOn {
+			depEntity := entityMap[string(depID)]
+			if depEntity == nil {
+				allMet = false
+				break
+			}
+			dep := c.questFromEntity(depEntity)
+			if dep == nil || dep.Status != domain.QuestCompleted {
+				allMet = false
+				break
+			}
+		}
+
+		if !allMet {
+			continue
+		}
+
+		// Touch the quest entity to trigger KV watch events.
+		if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.dependencies.ready"); err != nil {
+			c.logger.Warn("notifyDependents: failed to touch dependent quest",
+				"quest_id", quest.ID, "error", err)
+			continue
+		}
+
+		c.logger.Info("notified dependent quest — dependencies met",
+			"quest_id", quest.ID,
+			"completed_dependency", completedQuestID)
+	}
+}
+
 // ClaimQuestForParty assigns a quest to a party.
 func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID) error {
 	if !c.running.Load() {
@@ -853,6 +924,10 @@ func (c *Component) CompleteQuest(ctx context.Context, questID domain.QuestID, v
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "CompleteQuest", "emit update")
 	}
+
+	// Notify dependent quests that this dependency is now met.
+	// Runs in a goroutine to avoid blocking the completion path.
+	go c.notifyDependents(ctx, questID)
 
 	// End trace for this quest (terminal state)
 	c.traces.EndQuestTrace(questID)
