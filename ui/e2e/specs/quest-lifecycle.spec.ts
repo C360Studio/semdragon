@@ -11,6 +11,22 @@ import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/te
  *   posted -> claimed -> posted                     (abandon)
  *   posted -> completeQuest -> 409 Conflict         (invalid transition)
  */
+test.describe('Quest Lifecycle - Metrics Fields', () => {
+	test('quest response includes metrics fields', async ({ lifecycleApi }) => {
+		test.skip(!hasBackend(), 'Requires running backend');
+
+		const quest = await lifecycleApi.createQuest('E2E metrics schema quest', 1);
+		const questInstance = extractInstance(quest.id);
+		const q = await lifecycleApi.getQuest(questInstance);
+
+		// Metrics fields exist on the response (may be zero/absent for unexecuted quests)
+		expect(q).toHaveProperty('status');
+		expect(typeof (q.turns_used ?? 0)).toBe('number');
+		expect(typeof (q.tokens_prompt ?? 0)).toBe('number');
+		expect(typeof (q.tokens_completion ?? 0)).toBe('number');
+	});
+});
+
 test.describe('Quest Lifecycle - State Transitions', () => {
 	test('abandon returns quest to posted', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');

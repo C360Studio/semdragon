@@ -31,7 +31,7 @@ Quest creation uses a structured spec (`QuestBrief`) with a required `goal` and 
 the full structure.
 
 ```bash
-curl -s -X POST http://localhost:8080/game/quests \
+curl -s -X POST http://localhost/game/quests \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Analyze Q3 revenue trends",
@@ -77,7 +77,7 @@ Submit multiple interdependent quests as a batch. Dependencies between chain ent
 use 0-based array indices referencing other entries in the same submission:
 
 ```bash
-curl -s -X POST http://localhost:8080/game/quests/chain \
+curl -s -X POST http://localhost/game/quests/chain \
   -H "Content-Type: application/json" \
   -d '{
     "quests": [

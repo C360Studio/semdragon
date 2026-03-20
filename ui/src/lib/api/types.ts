@@ -63,7 +63,7 @@ export type QuestType = '' | 'red_team_review';
 
 export type Quest = Omit<
 	RawQuest,
-	'id' | 'claimed_by' | 'party_id' | 'guild_priority' | 'parent_quest' | 'sub_quests' | 'decomposed_by' | 'red_team_target' | 'red_team_quest_id'
+	'id' | 'claimed_by' | 'party_id' | 'guild_priority' | 'parent_quest' | 'sub_quests' | 'decomposed_by' | 'red_team_target' | 'red_team_quest_id' | 'duration'
 > & {
 	id: QuestID;
 	name?: string;
@@ -83,6 +83,12 @@ export type Quest = Omit<
 	context_entities?: string[];
 	// Verdict — set by bossbattle (auto-pass or full evaluation).
 	verdict?: BattleVerdict | null;
+	// Execution metrics — populated by questbridge from agentic-loop completion.
+	// For party quests, parent metrics are the sum of all sub-quest metrics.
+	turns_used?: number;
+	tokens_prompt?: number;
+	tokens_completion?: number;
+	duration?: string;
 };
 
 export type Agent = Omit<RawAgent, 'id' | 'current_quest' | 'current_party' | 'guilds'> & {

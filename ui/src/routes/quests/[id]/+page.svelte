@@ -7,6 +7,7 @@
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { pageContext } from '$lib/stores/pageContext.svelte';
 	import { QuestDifficultyNames, TrustTierNames, questId, extractInstance, type BattleVerdict } from '$types';
+	import { formatTokenCount } from '$lib/utils/format';
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import ActivityFeed from '$components/ActivityFeed.svelte';
@@ -287,13 +288,50 @@
 									{#if sub.claimed_by}
 										<span class="sub-quest-agent">{worldStore.agentName(sub.claimed_by)}</span>
 									{/if}
+									{#if (sub.tokens_prompt ?? 0) + (sub.tokens_completion ?? 0) > 0}
+										<span class="sub-quest-tokens">{formatTokenCount((sub.tokens_prompt ?? 0) + (sub.tokens_completion ?? 0))}</span>
+									{/if}
 								</a>
 							{/each}
 						</div>
 					</section>
 				{/if}
 
-					{#if quest.loop_id}
+					{#if (quest.tokens_prompt ?? 0) > 0 || (quest.tokens_completion ?? 0) > 0 || (quest.turns_used ?? 0) > 0 || quest.duration}
+					<section class="detail-card full-width">
+						<h2>Execution Metrics</h2>
+						<div class="metrics-grid">
+							{#if quest.duration}
+								<div class="metric-item">
+									<span class="metric-value">{quest.duration}</span>
+									<span class="metric-label">Duration</span>
+								</div>
+							{/if}
+							{#if (quest.turns_used ?? 0) > 0}
+								<div class="metric-item">
+									<span class="metric-value">{quest.turns_used}</span>
+									<span class="metric-label">Turns</span>
+								</div>
+							{/if}
+							{#if (quest.tokens_prompt ?? 0) + (quest.tokens_completion ?? 0) > 0}
+								<div class="metric-item">
+									<span class="metric-value">{formatTokenCount((quest.tokens_prompt ?? 0) + (quest.tokens_completion ?? 0))}</span>
+									<span class="metric-label">Total Tokens</span>
+								</div>
+								<div class="metric-item">
+									<span class="metric-value">{formatTokenCount(quest.tokens_prompt ?? 0)}</span>
+									<span class="metric-label">Prompt</span>
+								</div>
+								<div class="metric-item">
+									<span class="metric-value">{formatTokenCount(quest.tokens_completion ?? 0)}</span>
+									<span class="metric-label">Completion</span>
+								</div>
+							{/if}
+						</div>
+					</section>
+				{/if}
+
+				{#if quest.loop_id}
 						<section class="detail-card full-width">
 							<h2>Trajectory</h2>
 							<a href="/trajectories/{quest.loop_id}" class="trajectory-link">
@@ -407,6 +445,36 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 		gap: var(--spacing-md);
+	}
+
+	.metrics-grid {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--spacing-md);
+	}
+
+	.metric-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--ui-surface-tertiary);
+		border-radius: var(--radius-md);
+		min-width: 80px;
+	}
+
+	.metric-value {
+		font-size: 1.125rem;
+		font-weight: 700;
+		color: var(--ui-interactive-primary);
+	}
+
+	.metric-label {
+		font-size: 0.625rem;
+		color: var(--ui-text-tertiary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-top: 2px;
 	}
 
 	.detail-card {
@@ -622,6 +690,14 @@
 	.sub-quest-agent {
 		font-size: 0.75rem;
 		color: var(--ui-text-secondary);
+	}
+
+	.sub-quest-tokens {
+		font-size: 0.625rem;
+		color: var(--ui-text-tertiary);
+		background: var(--ui-surface-tertiary);
+		padding: 1px 6px;
+		border-radius: var(--radius-sm);
 	}
 
 	.not-found {

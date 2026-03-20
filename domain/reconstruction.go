@@ -167,6 +167,14 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 				q.Duration = d
 			}
 
+		// Execution metrics
+		case PredicateQuestMetricsTurns:
+			q.TurnsUsed = AsInt(triple.Object)
+		case PredicateQuestMetricsTokensIn:
+			q.TokensPrompt = AsInt(triple.Object)
+		case PredicateQuestMetricsTokensOut:
+			q.TokensCompletion = AsInt(triple.Object)
+
 		// DAG execution state (parent quest)
 		case "quest.dag.execution_id":
 			q.DAGExecutionID = AsString(triple.Object)

@@ -5022,6 +5022,7 @@ export interface components {
             quest_type?: string;
             recovery_path?: string;
             red_team_quest_id?: string | null;
+            red_team_status?: string;
             red_team_target?: string | null;
             repo?: string;
             required_skills: string[];
@@ -5039,6 +5040,9 @@ export interface components {
             status: "posted" | "claimed" | "in_progress" | "in_review" | "completed" | "failed" | "escalated" | "cancelled";
             sub_quests?: string[];
             title: string;
+            tokens_completion?: number;
+            tokens_prompt?: number;
+            turns_used?: number;
             verdict?: {
                 feedback: string;
                 level_change: number;
@@ -5481,6 +5485,7 @@ export interface components {
             /** Format: date-time */
             start_time: string;
             steps: {
+                capability?: string;
                 duration: number;
                 messages?: {
                     content?: string;
@@ -5504,8 +5509,10 @@ export interface components {
                 }[];
                 model?: string;
                 prompt?: string;
+                provider?: string;
                 request_id?: string;
                 response?: string;
+                retry_count?: number;
                 step_type: string;
                 /** Format: date-time */
                 timestamp: string;
@@ -5533,6 +5540,7 @@ export interface components {
             total_tokens_out: number;
         };
         TrajectoryStep: {
+            capability?: string;
             duration: number;
             messages?: {
                 content?: string;
@@ -5556,8 +5564,10 @@ export interface components {
             }[];
             model?: string;
             prompt?: string;
+            provider?: string;
             request_id?: string;
             response?: string;
+            retry_count?: number;
             step_type: string;
             /** Format: date-time */
             timestamp: string;

@@ -7077,6 +7077,9 @@
               }
             ]
           },
+          "red_team_status": {
+            "type": "string"
+          },
           "red_team_target": {
             "anyOf": [
               {
@@ -7171,6 +7174,15 @@
           },
           "title": {
             "type": "string"
+          },
+          "tokens_completion": {
+            "type": "integer"
+          },
+          "tokens_prompt": {
+            "type": "integer"
+          },
+          "turns_used": {
+            "type": "integer"
           },
           "verdict": {
             "anyOf": [
@@ -8938,6 +8950,9 @@
           "steps": {
             "items": {
               "properties": {
+                "capability": {
+                  "type": "string"
+                },
                 "duration": {
                   "type": "integer"
                 },
@@ -9008,11 +9023,17 @@
                 "prompt": {
                   "type": "string"
                 },
+                "provider": {
+                  "type": "string"
+                },
                 "request_id": {
                   "type": "string"
                 },
                 "response": {
                   "type": "string"
+                },
+                "retry_count": {
+                  "type": "integer"
                 },
                 "step_type": {
                   "type": "string"
@@ -9098,6 +9119,9 @@
       },
       "TrajectoryStep": {
         "properties": {
+          "capability": {
+            "type": "string"
+          },
           "duration": {
             "type": "integer"
           },
@@ -9168,11 +9192,17 @@
           "prompt": {
             "type": "string"
           },
+          "provider": {
+            "type": "string"
+          },
           "request_id": {
             "type": "string"
           },
           "response": {
             "type": "string"
+          },
+          "retry_count": {
+            "type": "integer"
           },
           "step_type": {
             "type": "string"

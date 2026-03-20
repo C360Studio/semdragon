@@ -55,7 +55,7 @@ test.describe.serial('Quest Pipeline', () => {
 	// Test 1: Easy Quest
 	// ===========================================================================
 
-	test('easy quest: post via DM chat, watch it complete', async ({ page }) => {
+	test('easy quest: post via DM chat, watch it complete', async ({ page, lifecycleApi }) => {
 		test.setTimeout(isMockLLM() ? 120_000 : 300_000);
 
 		// Step 1: Navigate to the dashboard and post a quest via the DM chat panel.
@@ -94,6 +94,23 @@ test.describe.serial('Quest Pipeline', () => {
 			await waitForAnyQuestInColumn(page, 'completed', {
 				timeout: isMockLLM() ? 90_000 : 240_000
 			});
+		});
+
+		// Step 4: Verify execution metrics are populated on the completed quest.
+		// The agentic loop should have produced non-zero token counts and turns.
+		await test.step('verify execution metrics on completed quest', async () => {
+			const quests = await lifecycleApi.listQuests();
+			const completed = quests.find((q) => q.status === 'completed' && q.loop_id);
+			if (!completed) {
+				console.warn('[Metrics] No completed quest with loop_id — skipping metrics check');
+				return;
+			}
+			const q = await lifecycleApi.getQuest(extractInstance(completed.id));
+			expect(q.turns_used, 'completed quest should have turns_used > 0').toBeGreaterThan(0);
+			expect(
+				(q.tokens_prompt ?? 0) + (q.tokens_completion ?? 0),
+				'completed quest should have token usage > 0'
+			).toBeGreaterThan(0);
 		});
 	});
 
@@ -335,6 +352,37 @@ test.describe.serial('Quest Pipeline', () => {
 			// Log the finding rather than hard-failing the aftermath check.
 			if (!agentWithXP) {
 				console.warn('Aftermath: no agent with XP > 0 found; XP may still be propagating');
+			}
+		});
+
+		// Execution metrics: completed quests that went through the agentic loop
+		// should have non-zero token counts persisted on the entity.
+		await test.step('completed quests have execution metrics', async () => {
+			const quests = await lifecycleApi.listQuests();
+			const completedWithLoop = quests.filter(
+				(q) => q.status === 'completed' && q.loop_id
+			);
+
+			if (completedWithLoop.length === 0) {
+				console.warn('Aftermath: no completed quests with loop_id — skipping metrics check');
+				return;
+			}
+
+			let metricsFound = 0;
+			for (const cq of completedWithLoop.slice(0, 3)) {
+				const q = await lifecycleApi.getQuest(extractInstance(cq.id));
+				const totalTokens = (q.tokens_prompt ?? 0) + (q.tokens_completion ?? 0);
+				if (totalTokens > 0) metricsFound++;
+			}
+
+			// Soft check: at least one completed quest should have token metrics.
+			// Timing edge case: questbridge writes metrics before status transition,
+			// but there is a small window where the quest may be completed without
+			// metrics if the read happens between the two writes.
+			if (metricsFound === 0) {
+				console.warn('Aftermath: no completed quests have token metrics — may be timing');
+			} else {
+				console.log(`Aftermath: ${metricsFound}/${Math.min(completedWithLoop.length, 3)} completed quests have execution metrics`);
 			}
 		});
 

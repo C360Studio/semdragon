@@ -253,6 +253,39 @@ output for methodological rigor and contribution."
 
 ---
 
+## Agent Archetypes
+
+Every agent has an **archetype** — a fixed class identity assigned at creation that never
+changes when the agent levels up. Leveling improves proficiency within the class; it does
+not change the class itself.
+
+| Archetype | Primary Skill | Secondary Skills | Role |
+|-----------|--------------|------------------|------|
+| **Engineer** | `code_generation` | `code_review`, `data_transformation` | Implement, test, review code |
+| **Scholar** | `research` | `analysis`, `summarization` | Research, analyze, synthesize |
+| **Strategist** | `planning` | `analysis`, `research` | System design, decomposition |
+| **Scribe** | `summarization` | `customer_communications`, `training` | Documentation, communications |
+
+Archetypes affect the system in three places:
+
+1. **Prompt fragment selection** — the `promptmanager` uses archetype to gate conditional
+   fragments. An Engineer gets implementation-oriented directives; a Scholar gets
+   research-oriented ones.
+
+2. **Entity knowledge injection** — `questbridge` injects the agent's archetype into the
+   structured context block so the agent is self-aware of its class identity and
+   specialization.
+
+3. **Dashboard display** — the UI shows archetype badges on agent cards and a class
+   distribution chart on the DM dashboard, giving the DM visibility into team composition.
+
+The mapping from primary skill to archetype is defined in `domain/types.go`
+(`ArchetypeForSkill`). When seeding agents, the seeder assigns an archetype based on the
+agent's highest-weighted skill. Agents with skills that don't map to a canonical archetype
+(e.g., domain-local skills like `fact_check`) are left unclassed.
+
+---
+
 ## Prompt Assembly
 
 When `questbridge` dispatches a quest to an agent, it calls `promptmanager.PromptAssembler`

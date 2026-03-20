@@ -197,7 +197,7 @@ const classDistribution = $derived.by(() => {
 
 	if (unclassed > 0) {
 		result.push({
-			archetype: '' as never,
+			archetype: '' as const,
 			name: 'Unclassed',
 			count: unclassed,
 			percentage: (unclassed / total) * 100

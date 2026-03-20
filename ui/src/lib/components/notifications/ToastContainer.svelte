@@ -42,7 +42,7 @@
 					<button
 						class="toast-dismiss"
 						onclick={() => handleDismiss(toast.id)}
-						aria-label="Dismiss"
+						aria-label="Dismiss {toast.questTitle} notification"
 					>&times;</button>
 				</div>
 				<div class="toast-title">{toast.questTitle}</div>

@@ -125,10 +125,11 @@ semdragons/
 │   ├── autonomy/           # Heartbeat-driven agent decision loop
 │   ├── boidengine/         # Periodic boid attraction computation, publishes per-agent suggestions
 │   ├── guildformation/     # Auto guild clustering from shared performance patterns
+│   ├── redteam/            # Guild red-team adversarial review before boss battle
 │   ├── partycoord/         # Party lifecycle: form, assign, merge, disband
 │   ├── promptmanager/      # Fragment-based domain-aware prompt assembly (library, not standalone)
 │   ├── boardcontrol/       # Board state management (pause/resume)
-│   ├── tokenbudget/        # Token budget tracking for context windows
+│   ├── tokenbudget/        # Token budget ledger — hourly spend tracking and circuit breaker (library, not standalone)
 │   ├── dmsession/          # DM session lifecycle
 │   ├── dmapproval/         # DM approval gate via NATS request/reply
 │   ├── dmpartyformation/   # DM-initiated party formation
@@ -235,14 +236,13 @@ Key endpoint groups under `/game/`:
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/01-GETTING-STARTED.md) | Prerequisites, Docker Compose walkthrough, first quest |
-| [Design](docs/02-DESIGN.md) | Architecture, concept map, trust tiers, data flow, death mechanics |
+| [Design](docs/02-DESIGN.md) | Architecture, concept map, trust tiers, red-team review, DM attention, death mechanics |
 | [Quests](docs/03-QUESTS.md) | Quest lifecycle state machine, difficulty/XP table, boss battles, chains |
 | [Parties](docs/04-PARTIES.md) | Party formation, DAG decomposition, peer reviews, feedback loop |
 | [Boids](docs/05-BOIDS.md) | Emergent quest-claiming rules, guild/reputation integration, tuning guide |
-| [Domains](docs/06-DOMAINS.md) | Software, D&D, and research domain configs; skill taxonomies; prompt catalogs |
+| [Domains](docs/06-DOMAINS.md) | Domain configs, agent archetypes, skill taxonomies, prompt catalogs |
 | [Model Registry](docs/07-MODEL-REGISTRY.md) | LLM provider config, capability routing, fallback chains |
-| [DAG Lessons Learned](docs/08-DAG-LESSONS-LEARNED.md) | Hard-won implementation notes on party quest DAG execution |
-| [Workspace Repo](docs/08-WORKSPACE-REPO.md) | Git-backed artifact storage: worktree lifecycle, quality gate via merge, semsource integration |
+| [Sandbox Repos](docs/08-SANDBOX-REPOS.md) | Git-backed artifact storage: worktree lifecycle, quality gate via merge, semsource integration |
 | [ADR-001: DM Chat Routing](docs/adr/001-dm-chat-routing.md) | DM chat mode routing and orchestration |
 | [ADR-002: Party Quest DAG](docs/adr/002-party-quest-dag-execution.md) | Reactive DAG execution architecture |
 | [ADR-003: DAG Refactor](docs/adr/003-questdagexec-refactor.md) | Single-goroutine event loop replacing concurrent model |

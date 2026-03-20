@@ -89,6 +89,12 @@ type Quest struct {
 	// Duration of quest execution (from start to completion)
 	Duration time.Duration `json:"duration,omitempty"`
 
+	// Execution metrics — populated by questbridge from agentic-loop completion events.
+	// For party quests, parent metrics are the sum of all sub-quest metrics.
+	TurnsUsed        int `json:"turns_used,omitempty"`
+	TokensPrompt     int `json:"tokens_prompt,omitempty"`
+	TokensCompletion int `json:"tokens_completion,omitempty"`
+
 	// Observability — LoopID is the agentic-loop execution ID, also the key
 	// in AGENT_TRAJECTORIES KV bucket for trajectory lookup.
 	LoopID string `json:"loop_id,omitempty"`

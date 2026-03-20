@@ -543,7 +543,11 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 			"loop_type", mapping.LoopType,
 			"iterations", event.Iterations)
 	} else {
-		c.completeQuest(ctx, questID, mapping, event.Result)
+		c.completeQuest(ctx, questID, mapping, event.Result, loopMetrics{
+			TurnsUsed: event.Iterations,
+			TokensIn:   event.TokensIn,
+			TokensOut:   event.TokensOut,
+		})
 		c.logger.Info("quest execution completed via agentic loop",
 			"quest_id", questID,
 			"loop_id", event.LoopID,
@@ -617,7 +621,11 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 			"loop_type", mapping.LoopType,
 			"error", event.Error)
 	} else {
-		c.failQuest(ctx, questID, mapping, event.Error)
+		c.failQuest(ctx, questID, mapping, event.Error, loopMetrics{
+			TurnsUsed: event.Iterations,
+			TokensIn:   event.TokensIn,
+			TokensOut:   event.TokensOut,
+		})
 		c.logger.Info("quest execution failed via agentic loop",
 			"quest_id", questID,
 			"loop_id", event.LoopID,
@@ -668,7 +676,7 @@ func (c *Component) handleLoopCancelled(ctx context.Context, event *agentic.Loop
 
 	// Only transition quest state for execution loops.
 	if mapping.LoopType != LoopTypeReview && mapping.LoopType != LoopTypeClarify {
-		c.failQuest(ctx, questID, mapping, reason)
+		c.failQuest(ctx, questID, mapping, reason, loopMetrics{})
 	}
 
 	now := time.Now()
@@ -722,7 +730,14 @@ func (c *Component) storeLoopIDOnQuest(ctx context.Context, questID domain.Quest
 // or triggers DAG sub-quest posting when the lead's output contains a valid DAG.
 // The agent is NOT released here — bossbattle auto-passes or runs evaluation,
 // then agentprogression handles agent release on the terminal quest status.
-func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, mapping *QuestLoopMapping, output string) {
+// loopMetrics captures execution metrics from an agentic-loop completion event.
+type loopMetrics struct {
+	TurnsUsed int
+	TokensIn  int
+	TokensOut int
+}
+
+func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, mapping *QuestLoopMapping, output string, metrics loopMetrics) {
 	questEntity, err := c.graph.GetQuest(ctx, questID)
 	if err != nil {
 		c.logger.Error("failed to load quest for completion", "quest_id", questID, "error", err)
@@ -778,6 +793,12 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	}
 
 	quest.LoopID = mapping.LoopID
+
+	// Persist execution metrics from agentic-loop completion.
+	quest.TurnsUsed = metrics.TurnsUsed
+	quest.TokensPrompt = metrics.TokensIn
+	quest.TokensCompletion = metrics.TokensOut
+	quest.Duration = time.Since(mapping.StartedAt)
 
 	// Try tool-based JSON output first (submit_work_product / ask_clarification).
 	// Falls back to legacy intent tags and heuristic detection for non-compliant models.
@@ -1201,7 +1222,7 @@ func dagNodesToQuests(nodes []questdagexec.QuestNode, parent *domain.Quest) []do
 }
 
 // failQuest transitions the quest to failed and releases the agent.
-func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mapping *QuestLoopMapping, reason string) {
+func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mapping *QuestLoopMapping, reason string, metrics loopMetrics) {
 	questEntity, err := c.graph.GetQuest(ctx, questID)
 	if err != nil {
 		c.logger.Error("failed to load quest for failure", "quest_id", questID, "error", err)
@@ -1224,12 +1245,18 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 		return
 	}
 
+	// Persist execution metrics from agentic-loop (partial metrics for failed quests).
+	quest.TurnsUsed = metrics.TurnsUsed
+	quest.TokensPrompt = metrics.TokensIn
+	quest.TokensCompletion = metrics.TokensOut
+	quest.Duration = time.Since(mapping.StartedAt)
+
 	// Delegate to questboard when available — this routes through the triage
 	// gate which may hold the quest for DM evaluation instead of terminal failure.
 	// Questboard handles agent release internally.
 	if qf := c.resolveQuestFailer(); qf != nil {
-		// Ensure LoopID is set on the quest entity before delegating, so
-		// questboard's FailQuest can capture it in the FailureRecord.
+		// Ensure LoopID and metrics are set on the quest entity before delegating, so
+		// questboard's FailQuest can capture them in the FailureRecord.
 		quest.LoopID = mapping.LoopID
 		if writeErr := c.graph.EmitEntityUpdate(ctx, quest, "quest.execution.loop_id"); writeErr != nil {
 			c.logger.Error("failed to write loop_id before failQuest delegation", "error", writeErr)

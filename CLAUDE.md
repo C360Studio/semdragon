@@ -475,6 +475,7 @@ Components enabled in the default config (`config/semdragons.json`):
 - `agentic-loop`, `agentic-model` — semstreams event-driven LLM loop orchestration
 - `questbridge`, `questtools` — quest-to-LLM bridge (requires model_registry and AGENT stream)
 - `questdagexec` — party quest DAG execution (requires questbridge, questtools)
+- `redteam` — guild red-team adversarial review before boss battle, extracts lessons to guild knowledge
 
 Processors registered but excluded from the default config (opt-in):
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)
@@ -483,7 +484,6 @@ Processors registered but excluded from the default config (opt-in):
 - `partycoord` — party lifecycle management (form, assign, merge, disband)
 - `dmworldstate` — world state aggregation (used by API but can run standalone)
 - `dmsession`, `dmapproval`, `dmpartyformation` — DM session management (functional, not in default config)
-- `redteam` — guild red-team review; posts adversarial review quests before boss battle, extracts lessons. Enabled by default alongside `bossbattle.red_team_enabled: true`
 
 **Adding a new processor**: implement in `processor/<name>/`, register in `componentregistry/register.go`, optionally add to `config/semdragons.json`.
 

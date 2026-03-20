@@ -261,6 +261,26 @@ func (q *Quest) Triples() []message.Triple {
 		})
 	}
 
+	// Execution metrics
+	if q.TurnsUsed > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: PredicateQuestMetricsTurns, Object: q.TurnsUsed,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.TokensPrompt > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: PredicateQuestMetricsTokensIn, Object: q.TokensPrompt,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+	if q.TokensCompletion > 0 {
+		triples = append(triples, message.Triple{
+			Subject: entityID, Predicate: PredicateQuestMetricsTokensOut, Object: q.TokensCompletion,
+			Source: source, Timestamp: now, Confidence: 1.0,
+		})
+	}
+
 	// DAG execution state (parent quest fields)
 	if q.DAGExecutionID != "" {
 		triples = append(triples, message.Triple{

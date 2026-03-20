@@ -298,7 +298,12 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 			: undefined,
 		red_team_quest_id: m.has('quest.classification.red_team_quest_id')
 			? questId(str(m.get('quest.classification.red_team_quest_id')))
-			: undefined
+			: undefined,
+		// Execution metrics
+		turns_used: m.has('quest.metrics.turns_used') ? num(m.get('quest.metrics.turns_used')) : undefined,
+		tokens_prompt: m.has('quest.metrics.tokens_prompt') ? num(m.get('quest.metrics.tokens_prompt')) : undefined,
+		tokens_completion: m.has('quest.metrics.tokens_completion') ? num(m.get('quest.metrics.tokens_completion')) : undefined,
+		duration: str(m.get('quest.duration')) || undefined
 	};
 }
 

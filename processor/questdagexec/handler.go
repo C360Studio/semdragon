@@ -862,6 +862,34 @@ func (c *Component) triggerRollupWithResult(ctx context.Context, dagState *DAGEx
 		"parent_quest_id", dagState.ParentQuestID,
 		"result_length", len(result))
 
+	// Aggregate sub-quest metrics onto parent before SubmitResult transitions it.
+	var totalTurns, totalTokensIn, totalTokensOut int
+	var totalDuration time.Duration
+	if c.graph != nil {
+		allNodes := make([]string, 0, len(dagState.CompletedNodes)+len(dagState.FailedNodes))
+		allNodes = append(allNodes, dagState.CompletedNodes...)
+		allNodes = append(allNodes, dagState.FailedNodes...)
+		for _, nodeID := range allNodes {
+			subQuestID, ok := dagState.NodeQuestIDs[nodeID]
+			if !ok || subQuestID == "" {
+				continue
+			}
+			questEntity, err := c.graph.GetQuest(ctx, domain.QuestID(subQuestID))
+			if err != nil {
+				continue
+			}
+			sq := domain.QuestFromEntityState(questEntity)
+			if sq == nil {
+				continue
+			}
+			totalTurns += sq.TurnsUsed
+			totalTokensIn += sq.TokensPrompt
+			totalTokensOut += sq.TokensCompletion
+			totalDuration += sq.Duration
+		}
+	}
+	c.aggregateMetricsToParent(ctx, dagState, totalTurns, totalTokensIn, totalTokensOut, totalDuration)
+
 	if qb := c.resolveQuestBoard(); qb != nil {
 		parentID := domain.QuestID(dagState.ParentQuestID)
 		if err := qb.SubmitResult(ctx, parentID, result); err != nil {
@@ -906,12 +934,20 @@ func (c *Component) triggerRollup(ctx context.Context, dagState *DAGExecutionSta
 		"parent_quest_id", dagState.ParentQuestID,
 		"completed_nodes", len(dagState.CompletedNodes))
 
-	// Collect sub-quest outputs in completion order.
+	// Collect sub-quest outputs and aggregate execution metrics in a single pass.
 	// When the graph client is unavailable (e.g. in unit tests), outputs will
 	// be empty but rollup still proceeds — an empty result map is valid.
 	outputs := make(map[string]any, len(dagState.CompletedNodes))
+	var totalTurns, totalTokensIn, totalTokensOut int
+	var totalDuration time.Duration
 	if c.graph != nil {
-		for _, nodeID := range dagState.CompletedNodes {
+		// Collect outputs from completed nodes AND metrics from all nodes
+		// (including failed — they still consumed tokens/turns).
+		allNodes := make([]string, 0, len(dagState.CompletedNodes)+len(dagState.FailedNodes))
+		allNodes = append(allNodes, dagState.CompletedNodes...)
+		allNodes = append(allNodes, dagState.FailedNodes...)
+
+		for _, nodeID := range allNodes {
 			subQuestID, ok := dagState.NodeQuestIDs[nodeID]
 			if !ok || subQuestID == "" {
 				continue
@@ -924,12 +960,27 @@ func (c *Component) triggerRollup(ctx context.Context, dagState *DAGExecutionSta
 				continue
 			}
 
-			quest := domain.QuestFromEntityState(questEntity)
-			if quest != nil && quest.Output != nil {
-				outputs[nodeID] = quest.Output
+			sq := domain.QuestFromEntityState(questEntity)
+			if sq == nil {
+				continue
 			}
+
+			// Only completed nodes contribute output to rollup.
+			if sq.Output != nil && sq.Status == domain.QuestCompleted {
+				outputs[nodeID] = sq.Output
+			}
+
+			// All nodes contribute metrics (failed quests still consumed resources).
+			totalTurns += sq.TurnsUsed
+			totalTokensIn += sq.TokensPrompt
+			totalTokensOut += sq.TokensCompletion
+			totalDuration += sq.Duration
 		}
 	}
+
+	// Write aggregated metrics to parent quest before SubmitResult transitions it.
+	// Both writes happen in this goroutine sequentially — no CAS needed.
+	c.aggregateMetricsToParent(ctx, dagState, totalTurns, totalTokensIn, totalTokensOut, totalDuration)
 
 	if qb := c.resolveQuestBoard(); qb != nil {
 		parentID := domain.QuestID(dagState.ParentQuestID)
@@ -967,6 +1018,40 @@ func (c *Component) triggerRollup(ctx context.Context, dagState *DAGExecutionSta
 		"execution_id", dagState.ExecutionID,
 		"parent_quest_id", dagState.ParentQuestID,
 		"outputs_collected", len(outputs))
+}
+
+// aggregateMetricsToParent sums execution metrics from sub-quests and writes
+// them to the parent quest entity. Called from both triggerRollup and
+// triggerRollupWithResult before SubmitResult transitions the parent.
+func (c *Component) aggregateMetricsToParent(
+	ctx context.Context,
+	dagState *DAGExecutionState,
+	totalTurns, totalTokensIn, totalTokensOut int,
+	totalDuration time.Duration,
+) {
+	if c.graph == nil || (totalTurns == 0 && totalTokensIn == 0) {
+		return
+	}
+
+	parentID := domain.QuestID(dagState.ParentQuestID)
+	parentEntity, err := c.graph.GetQuest(ctx, parentID)
+	if err != nil {
+		c.logger.Warn("failed to load parent quest for metrics aggregation",
+			"parent_quest_id", dagState.ParentQuestID, "error", err)
+		return
+	}
+	parent := domain.QuestFromEntityState(parentEntity)
+	if parent == nil {
+		return
+	}
+	parent.TurnsUsed = totalTurns
+	parent.TokensPrompt = totalTokensIn
+	parent.TokensCompletion = totalTokensOut
+	parent.Duration = totalDuration
+	if emitErr := c.graph.EmitEntityUpdate(ctx, parent, "quest.metrics.rollup"); emitErr != nil {
+		c.logger.Warn("failed to emit aggregated metrics on parent quest",
+			"parent_quest_id", dagState.ParentQuestID, "error", emitErr)
+	}
 }
 
 // =============================================================================

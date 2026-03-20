@@ -11,6 +11,8 @@
 - [Artifact Lifecycle](#artifact-lifecycle)
 - [Example Flow](#example-flow-analyze-q3-sales-data-and-send-summary-to-stakeholders)
 - [Death Mechanics](#death-mechanics)
+- [Guild Red-Team Review](#guild-red-team-review)
+- [DM Attention System](#dm-attention-system)
 - [Design Decisions](#design-decisions)
 - [Agent Store System](#agent-store-system)
 
@@ -359,6 +361,81 @@ party.formation.disbanded  → {party_id: "p-456"}
 | TPK (party wipe) | All members cooldown, quest escalated | Higher-level party or DM |
 | Catastrophic (data loss, breach) | Permadeath, agent retired | New agent, level 1 |
 | Repeated failures at level | Level down, XP reset | Must re-earn level |
+
+---
+
+## Guild Red-Team Review
+
+When a quest is submitted for review, the `redteam` processor posts an **adversarial
+review quest** before the boss battle evaluates the result. A different agent — ideally
+from a different guild — claims the red-team quest and attempts to find flaws, edge cases,
+or weaknesses in the original agent's output.
+
+The flow:
+
+1. Quest submitted (`in_review`) → `redteam` posts a review quest with the original
+   output as context.
+2. The boid engine applies a **1.5x cross-guild affinity** multiplier, attracting agents
+   from guilds other than the original agent's. This ensures adversarial diversity.
+3. The red-team agent produces findings (weaknesses, missed requirements, edge cases).
+4. Findings are attached to the original quest before the boss battle judge evaluates it.
+   The judge sees both the agent's output and the red-team critique.
+5. After the boss battle, the `redteam` processor extracts **lessons** from the findings
+   and persists them to the reviewing guild's knowledge base, indexed by skill tag and
+   lesson category.
+
+**Non-blocking with timeouts:** If no agent claims the red-team quest within the claim
+timeout, or if execution exceeds the execution timeout, the processor emits a `skipped`
+signal and the boss battle proceeds without red-team input. The system never blocks on
+red-team availability.
+
+**Configuration:** Both the `redteam` component and `bossbattle.red_team_enabled: true`
+must be set. The `min_difficulty` config (default: 1, i.e., Easy) controls which quests
+trigger red-team review — trivial quests skip it.
+
+---
+
+## DM Attention System
+
+The dashboard surfaces quest failures and escalations to the Dungeon Master through two
+UI channels: **toasts** (transient notifications) and **chat attention cards** (persistent
+action items in the DM chat panel).
+
+### Notification tiers
+
+| Quest transition | Toast | Chat card | Status badge |
+|-----------------|-------|-----------|--------------|
+| Agent fails, retries remain (`in_progress → posted`) | "Re-queued" (blue) | No | No |
+| Retries exhausted (`→ pending_triage`) | "Needs Triage" (orange) | No | No |
+| Triage escalates / clarification (`→ escalated`) | "Escalation" (magenta) | Yes | Yes |
+| Terminal failure (`→ failed`) | "Failed" (red) | No | No |
+
+The design principle: **only interrupt the DM for decisions that require human judgment.**
+Auto-retries and auto-triage handle recoverable failures silently (toasts provide
+awareness). The chat attention card — which auto-opens the chat panel and requires explicit
+action — appears only when the system has exhausted all automated recovery paths.
+
+### Triage flow
+
+When retries are exhausted, the quest enters `pending_triage`. The auto-triage system
+(configurable via `dmMode`: `full_auto`, `assisted`, `supervised`, `manual`) evaluates
+the failure and selects a recovery path:
+
+- **Salvage** — preserve partial output, grant one more attempt
+- **TPK** — clear output, inject anti-patterns as warnings, grant one more attempt
+- **Escalate** — route to DM via chat attention card
+- **Terminal** — permanently fail the quest
+
+### Attention card actions
+
+Escalation cards in the DM chat offer three actions:
+
+- **Repost** — re-queue the quest for a new agent
+- **Repost with Guidance** — re-queue with DM-provided instructions injected into context
+- **Abandon** — permanently close the quest
+
+The status bar shows a pulsing badge with the count of unresolved escalations. Cards
+auto-resolve when the quest leaves the `escalated` state.
 
 ---
 

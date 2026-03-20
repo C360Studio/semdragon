@@ -55,6 +55,19 @@ const (
 	PredicateQuestRepo = "quest.context.repo"
 )
 
+// --- Quest Metrics Predicates ---
+
+const (
+	// PredicateQuestMetricsTurns - Number of agentic-loop turns used during execution.
+	PredicateQuestMetricsTurns = "quest.metrics.turns_used"
+
+	// PredicateQuestMetricsTokensIn - Prompt tokens consumed during execution.
+	PredicateQuestMetricsTokensIn = "quest.metrics.tokens_prompt"
+
+	// PredicateQuestMetricsTokensOut - Completion tokens consumed during execution.
+	PredicateQuestMetricsTokensOut = "quest.metrics.tokens_completion"
+)
+
 // --- Quest Artifact Predicates ---
 
 const (
@@ -428,6 +441,20 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicateQuestDecomposed,
 		vocabulary.WithDescription("Quest broken into sub-quests by party lead"),
+	)
+
+	// Quest metrics predicates
+	vocabulary.Register(PredicateQuestMetricsTurns,
+		vocabulary.WithDescription("Number of agentic-loop turns used during quest execution"),
+		vocabulary.WithDataType("int"),
+	)
+	vocabulary.Register(PredicateQuestMetricsTokensIn,
+		vocabulary.WithDescription("Prompt tokens consumed during quest execution"),
+		vocabulary.WithDataType("int"),
+	)
+	vocabulary.Register(PredicateQuestMetricsTokensOut,
+		vocabulary.WithDescription("Completion tokens consumed during quest execution"),
+		vocabulary.WithDataType("int"),
 	)
 
 	// Quest context predicates

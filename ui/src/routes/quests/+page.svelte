@@ -7,6 +7,7 @@
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
 	import { QuestDifficultyNames, type Quest, type QuestStatus, type BossBattle, type BattleVerdict } from '$types';
+	import { formatTokenCount } from '$lib/utils/format';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -208,6 +209,9 @@
 													{QuestDifficultyNames[quest.difficulty]}
 												</span>
 												<span class="xp-badge">{quest.base_xp} XP</span>
+												{#if (quest.tokens_prompt ?? 0) + (quest.tokens_completion ?? 0) > 0}
+													<span class="token-badge">{formatTokenCount((quest.tokens_prompt ?? 0) + (quest.tokens_completion ?? 0))}</span>
+												{/if}
 											</div>
 											{#if quest.claimed_by}
 												<div class="quest-assignee">
@@ -232,6 +236,9 @@
 															{QuestDifficultyNames[child.difficulty]}
 														</span>
 														<span class="xp-badge">{child.base_xp} XP</span>
+														{#if (child.tokens_prompt ?? 0) + (child.tokens_completion ?? 0) > 0}
+															<span class="token-badge">{formatTokenCount((child.tokens_prompt ?? 0) + (child.tokens_completion ?? 0))}</span>
+														{/if}
 													</div>
 													{#if child.claimed_by}
 														<div class="quest-assignee">
@@ -260,6 +267,9 @@
 												{QuestDifficultyNames[quest.difficulty]}
 											</span>
 											<span class="xp-badge">{quest.base_xp} XP</span>
+											{#if (quest.tokens_prompt ?? 0) + (quest.tokens_completion ?? 0) > 0}
+												<span class="token-badge">{formatTokenCount((quest.tokens_prompt ?? 0) + (quest.tokens_completion ?? 0))}</span>
+											{/if}
 										</div>
 										{#if quest.claimed_by}
 											<div class="quest-assignee">
@@ -468,7 +478,9 @@
 		gap: var(--spacing-md);
 		padding: var(--spacing-md);
 		overflow-x: auto;
+		overflow-y: hidden;
 		min-height: 0;
+		height: 0;
 	}
 
 	.kanban-column {
@@ -478,6 +490,7 @@
 		background: var(--ui-surface-secondary);
 		border-radius: var(--radius-lg);
 		min-height: 0;
+		overflow: hidden;
 	}
 
 	.column-header {
@@ -509,6 +522,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-sm);
+		min-height: 0;
+	}
+
+	.column-content > * {
+		flex-shrink: 0;
 	}
 
 	/* Quest Card */
@@ -519,6 +537,8 @@
 		padding: var(--spacing-md);
 		text-align: left;
 		cursor: pointer;
+		color: var(--ui-text-primary);
+		font: inherit;
 		transition:
 			border-color 150ms ease,
 			box-shadow 150ms ease;
@@ -578,7 +598,8 @@
 		color: var(--difficulty-legendary);
 	}
 
-	.xp-badge {
+	.xp-badge,
+	.token-badge {
 		font-size: 0.625rem;
 		padding: 2px 6px;
 		border-radius: var(--radius-sm);
@@ -629,7 +650,7 @@
 	.sub-quest-list {
 		display: flex;
 		flex-direction: column;
-		background: var(--ui-surface-secondary);
+		background: var(--ui-surface-tertiary);
 	}
 
 	.sub-quest-card {
@@ -639,6 +660,7 @@
 		padding: var(--spacing-sm) var(--spacing-md);
 		padding-left: calc(var(--spacing-md) + 8px);
 		font-size: 0.8125rem;
+		background: var(--ui-surface-tertiary);
 	}
 
 	.sub-quest-card:last-child {
