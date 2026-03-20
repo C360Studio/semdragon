@@ -69,7 +69,8 @@ func newTestComponent() *Component {
 func TestActionsForState_Idle(t *testing.T) {
 	c := newTestComponent()
 	actions := c.actionsForState(domain.AgentIdle)
-	want := []string{"review_guild_applications", "claim_quest", "join_guild", "create_guild", "use_consumable", "shop"}
+	// Store disabled for MVP — no use_consumable or shop actions
+	want := []string{"review_guild_applications", "claim_quest", "join_guild", "create_guild"}
 
 	if len(actions) != len(want) {
 		t.Fatalf("idle actions: got %d, want %d", len(actions), len(want))
@@ -85,37 +86,26 @@ func TestActionsForState_Idle(t *testing.T) {
 func TestActionsForState_OnQuest(t *testing.T) {
 	c := newTestComponent()
 	actions := c.actionsForState(domain.AgentOnQuest)
-	want := []string{"shop_strategic", "use_consumable"}
-
-	if len(actions) != len(want) {
-		t.Fatalf("on_quest actions: got %d, want %d", len(actions), len(want))
-	}
-
-	for i, act := range actions {
-		if act.name != want[i] {
-			t.Errorf("on_quest action[%d] = %q, want %q", i, act.name, want[i])
-		}
+	// Store disabled for MVP — no actions while on quest
+	if len(actions) != 0 {
+		t.Fatalf("on_quest actions: got %d, want 0", len(actions))
 	}
 }
 
 func TestActionsForState_InBattle(t *testing.T) {
 	c := newTestComponent()
 	actions := c.actionsForState(domain.AgentInBattle)
-	want := []string{"use_consumable"}
-
-	if len(actions) != len(want) {
-		t.Fatalf("in_battle actions: got %d, want %d", len(actions), len(want))
-	}
-
-	if actions[0].name != want[0] {
-		t.Errorf("in_battle action[0] = %q, want %q", actions[0].name, want[0])
+	// Store disabled for MVP — no actions while in battle
+	if len(actions) != 0 {
+		t.Fatalf("in_battle actions: got %d, want 0", len(actions))
 	}
 }
 
 func TestActionsForState_Cooldown(t *testing.T) {
 	c := newTestComponent()
 	actions := c.actionsForState(domain.AgentCooldown)
-	want := []string{"use_cooldown_skip", "review_guild_applications", "join_guild", "shop"}
+	// Store disabled for MVP — no cooldown_skip or shop
+	want := []string{"review_guild_applications", "join_guild"}
 
 	if len(actions) != len(want) {
 		t.Fatalf("cooldown actions: got %d, want %d", len(actions), len(want))

@@ -2579,7 +2579,7 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 			return graphQLRequest{}, fmt.Errorf("entity_id is required for entity queries")
 		}
 		return graphQLRequest{
-			Query: fmt.Sprintf(`{ entity(id: %q) { id triples } }`, sanitizeGraphQLString(id)),
+			Query: fmt.Sprintf(`{ entity(id: %q) { id triples { predicate object } } }`, sanitizeGraphQLString(id)),
 		}, nil
 
 	case "prefix":
@@ -2730,19 +2730,33 @@ func formatGraphSearchResult(data map[string]json.RawMessage) string {
 	// entity query: single entity with triples.
 	if raw, ok := data["entity"]; ok {
 		var entity struct {
-			ID      string            `json:"id"`
-			Triples []json.RawMessage `json:"triples"`
+			ID      string `json:"id"`
+			Triples []struct {
+				Predicate string `json:"predicate"`
+				Object    string `json:"object"`
+			} `json:"triples"`
 		}
 		if err := json.Unmarshal(raw, &entity); err != nil || entity.ID == "" {
 			b.WriteString("Entity not found.\n")
 			return b.String()
 		}
 		b.WriteString(fmt.Sprintf("Entity: %s\n", entity.ID))
-		b.WriteString(fmt.Sprintf("Triples (%d):\n", len(entity.Triples)))
-		for _, t := range entity.Triples {
-			b.WriteString("  ")
-			b.Write(t)
-			b.WriteByte('\n')
+		if len(entity.Triples) == 0 {
+			b.WriteString("  (no properties)\n")
+		} else {
+			b.WriteString(fmt.Sprintf("Properties (%d):\n", len(entity.Triples)))
+			for _, t := range entity.Triples {
+				// Show leaf predicate segment for readability
+				pred := t.Predicate
+				if idx := strings.LastIndex(pred, "."); idx >= 0 {
+					pred = t.Predicate[idx+1:]
+				}
+				val := t.Object
+				if len(val) > 200 {
+					val = val[:200] + "..."
+				}
+				b.WriteString(fmt.Sprintf("  %s: %s\n", pred, val))
+			}
 		}
 		return b.String()
 	}
@@ -2765,23 +2779,51 @@ func formatGraphSearchResult(data map[string]json.RawMessage) string {
 		return b.String()
 	}
 
-	// globalSearch query: entities with count.
+	// globalSearch query: entities with count + community summaries.
 	if raw, ok := data["globalSearch"]; ok {
 		var result struct {
 			Entities []struct {
 				ID   string `json:"id"`
 				Type string `json:"type"`
 			} `json:"entities"`
-			Count int `json:"count"`
+			Communities []struct {
+				Title   string `json:"title"`
+				Summary string `json:"summary"`
+			} `json:"communities"`
+			Count          int `json:"count"`
+			Classification struct {
+				QueryType  string  `json:"queryType"`
+				Confidence float64 `json:"confidence"`
+			} `json:"classification"`
 		}
-		if err := json.Unmarshal(raw, &result); err != nil || len(result.Entities) == 0 {
+		if err := json.Unmarshal(raw, &result); err != nil {
 			b.WriteString("No search results found.\n")
 			return b.String()
 		}
-		b.WriteString(fmt.Sprintf("Search results (%d total, showing %d):\n", result.Count, len(result.Entities)))
-		for _, e := range result.Entities {
-			b.WriteString(fmt.Sprintf("  [%s] %s\n", e.Type, e.ID))
+
+		// Community summaries are the most useful part — show them first.
+		if len(result.Communities) > 0 {
+			for _, c := range result.Communities {
+				if c.Summary == "" {
+					continue
+				}
+				if c.Title != "" {
+					b.WriteString(fmt.Sprintf("## %s\n", c.Title))
+				}
+				b.WriteString(c.Summary)
+				b.WriteString("\n\n")
+			}
 		}
+
+		if len(result.Entities) > 0 {
+			b.WriteString(fmt.Sprintf("Related entities (%d total, showing %d):\n", result.Count, len(result.Entities)))
+			for _, e := range result.Entities {
+				b.WriteString(fmt.Sprintf("  [%s] %s\n", e.Type, e.ID))
+			}
+		} else if len(result.Communities) == 0 {
+			b.WriteString("No search results found.\n")
+		}
+
 		return b.String()
 	}
 

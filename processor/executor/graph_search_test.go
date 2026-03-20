@@ -182,12 +182,15 @@ func TestGraphSearchHandler(t *testing.T) {
 		t.Parallel()
 
 		srv := newGraphSearchServer(t, func(_ string) graphQLMockResponse {
-			// The entity query uses the "entity" GraphQL field.
+			// The entity query uses the "entity" GraphQL field with typed triples.
 			return graphQLMockResponse{
 				Data: map[string]any{
 					"entity": map[string]any{
-						"id":      "c360.prod.game.board1.quest.abc123",
-						"triples": []any{`"quest.lifecycle.posted"`},
+						"id": "c360.prod.game.board1.quest.abc123",
+						"triples": []any{
+							map[string]any{"predicate": "quest.lifecycle.status", "object": "posted"},
+							map[string]any{"predicate": "quest.identity.title", "object": "Test Quest"},
+						},
 					},
 				},
 			}
@@ -209,6 +212,8 @@ func TestGraphSearchHandler(t *testing.T) {
 		}
 		assertContains(t, result.Content, "c360.prod.game.board1.quest.abc123")
 		assertContains(t, result.Content, "Entity:")
+		assertContains(t, result.Content, "status: posted")
+		assertContains(t, result.Content, "title: Test Quest")
 	})
 
 	t.Run("search query success", func(t *testing.T) {
@@ -242,7 +247,7 @@ func TestGraphSearchHandler(t *testing.T) {
 		if result.Error != "" {
 			t.Fatalf("unexpected error: %s", result.Error)
 		}
-		assertContains(t, result.Content, "Search results")
+		assertContains(t, result.Content, "Related entities")
 		assertContains(t, result.Content, "c360.prod.game.board1.quest.abc123")
 		assertContains(t, result.Content, "c360.prod.game.board1.agent.dragon")
 	})
