@@ -174,7 +174,7 @@ COMPLETION RULES:
 7. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
 8. NEVER write source code using bash — use write_file to create files, patch_file for edits.
 8. Complete the work in as few iterations as possible — avoid unnecessary exploration.
-9. For project-specific lookups (code structure, API patterns, docs), use graph_search FIRST. Only use http_request for external resources not in the knowledge graph.`
+9. For project-specific lookups (code structure, API patterns, docs), try graph_search FIRST. If graph results are empty or unhelpful, use web_search as fallback. Only use http_request for fetching specific known URLs.`
 
 // isSubQuestExecutor returns true for agents working on sub-quests within a
 // party DAG (party members executing DAG nodes, not the lead).
@@ -423,8 +423,8 @@ func registerReviewBrief(r *PromptRegistry) {
 var toolGuidanceEntries = map[string]string{
 	// Knowledge tools
 	"graph_query":  "Game state (quests, agents, guilds, parties, battles). Fast.",
-	"graph_search": "Knowledge graph (code, docs, repos, prior tool results). ALWAYS try this FIRST for project-specific lookups — includes results from prior quest tool calls (API responses, search results, test output). Use query_type 'nlq' to ask natural language questions about the codebase.",
-	"web_search":   "External info not in the graph (third-party APIs, libraries, general knowledge). Use this BEFORE http_request to find the right URLs — never guess URLs.",
+	"graph_search": "Knowledge graph (code, docs, repos, prior tool results). Try this FIRST for project-specific lookups. Use query_type 'nlq' for natural language questions. If results are empty or unhelpful, FALL BACK to web_search — don't retry the same graph query.",
+	"web_search":   "External info AND fallback when graph search returns poor results. Use for third-party APIs, libraries, general knowledge, or when the knowledge graph didn't answer your question. Use BEFORE http_request to find the right URLs — never guess URLs.",
 	// Exploration tools — use these BEFORE reading/writing to find the right files
 	"list_directory": "See what files and folders exist at a path. Start here to understand project layout.",
 	"glob_files":     "Find files by pattern (e.g. '**/*.java', 'src/**/*.go'). Use to locate files before reading.",
