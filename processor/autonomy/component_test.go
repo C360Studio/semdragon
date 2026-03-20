@@ -674,6 +674,7 @@ func TestAutonomousQuestClaim_AllStale(t *testing.T) {
 // =============================================================================
 
 func TestAutonomousIdleShopping(t *testing.T) {
+	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
@@ -736,6 +737,7 @@ func TestAutonomousIdleShopping(t *testing.T) {
 }
 
 func TestAutonomousCooldownSkip(t *testing.T) {
+	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
@@ -804,6 +806,7 @@ func TestAutonomousCooldownSkip(t *testing.T) {
 }
 
 func TestAutonomousConsumableUse_InBattle(t *testing.T) {
+	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
@@ -1332,6 +1335,7 @@ func TestClaimIntentEmitted(t *testing.T) {
 }
 
 func TestShopIntentEmitted(t *testing.T) {
+	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
@@ -1514,6 +1518,7 @@ func TestGuildIntentEmitted(t *testing.T) {
 }
 
 func TestUseIntentEmitted(t *testing.T) {
+	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
@@ -2025,6 +2030,7 @@ func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
 // =============================================================================
 
 func TestStrategicShopping(t *testing.T) {
+	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()

@@ -308,20 +308,21 @@ func TestToolExecutionTierRejection(t *testing.T) {
 	callID := "call-tier-reject-001"
 	call := agentic.ToolCall{
 		ID:   callID,
-		Name: "write_file",
+		Name: "patch_file",
 		Arguments: map[string]any{
-			"path":    "/tmp/should-not-write.txt",
-			"content": "unauthorized write",
+			"path":     "/tmp/should-not-patch.txt",
+			"old_text": "a",
+			"new_text": "b",
 		},
 		Metadata: map[string]any{
 			"agent_id":   "apprentice-agent",
-			"trust_tier": apprenticeTier, // Tier 0 — below Expert (tier 2) required by write_file.
+			"trust_tier": apprenticeTier, // Tier 0 — below Journeyman (tier 1) required by patch_file.
 			"skills":     []any{string(domain.SkillCodeGen)},
 			"quest_id":   "quest-tier-reject-001",
 		},
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.write_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.patch_file", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error == "" {
@@ -696,15 +697,17 @@ func TestNoMetadataDefaultsToApprentice(t *testing.T) {
 	callID := "call-nometa-001"
 	call := agentic.ToolCall{
 		ID:   callID,
-		Name: "write_file",
+		Name: "patch_file",
 		Arguments: map[string]any{
-			"path":    "/tmp/anything.txt",
-			"content": "test",
+			"path":     "/tmp/anything.txt",
+			"old_text": "a",
+			"new_text": "b",
 		},
 		// Intentionally omit Metadata — handler defaults to TierApprentice.
+		// patch_file requires TierJourneyman, so this should be rejected.
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.write_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.patch_file", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error == "" {

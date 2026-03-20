@@ -365,25 +365,24 @@ func TestToolRegistryTierGating(t *testing.T) {
 	registry := NewToolRegistry()
 	registry.RegisterBuiltins()
 
-	// Apprentice agent cannot use write_file (requires TierExpert).
+	// Apprentice agent cannot use patch_file (requires TierJourneyman).
 	// But they do have CodeGen skill.
 	agent := makeAgent(domain.TierApprentice, domain.SkillCodeGen)
 	quest := makeQuest("q-tier", "Tier Gated Quest", domain.SkillCodeGen)
-	// No AllowedTools restriction — let the tier gate speak.
 
 	tools := registry.GetToolsForQuest(quest, agent)
 	for _, tool := range tools {
-		if tool.Name == "write_file" {
-			t.Error("write_file should not be available to TierApprentice agents")
+		if tool.Name == "patch_file" {
+			t.Error("patch_file should not be available to TierApprentice agents")
 		}
 	}
 
-	// Direct Execute with an Apprentice agent on write_file must return an error.
+	// Direct Execute with an Apprentice agent on patch_file must return an error.
 	ctx := context.Background()
 	result := registry.Execute(ctx, agentic.ToolCall{
 		ID:        "call-tier",
-		Name:      "write_file",
-		Arguments: map[string]any{"path": "out.txt", "content": "hello"},
+		Name:      "patch_file",
+		Arguments: map[string]any{"path": "out.txt", "old_text": "a", "new_text": "b"},
 	}, quest, agent)
 
 	if result.Error == "" {
