@@ -210,6 +210,7 @@ function transformAgent(key: string, entity: GraphEntity): Agent {
 		id: agentId(key),
 		name: str(m.get('agent.identity.name'), key),
 		display_name: str(m.get('agent.identity.display_name')),
+		archetype: str(m.get('agent.identity.archetype')) || undefined,
 		status: str(m.get('agent.status.state'), 'idle') as AgentStatus,
 		level,
 		xp: num(m.get('agent.progression.xp.current')),

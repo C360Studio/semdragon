@@ -267,6 +267,8 @@ export type ConsumableType =
 	| 'quality_shield'
 	| 'insight_scroll';
 
+export type AgentArchetype = 'scholar' | 'engineer' | 'scribe' | 'strategist';
+
 export type DMMode = 'full_auto' | 'assisted' | 'supervised' | 'manual';
 export type PartyStrategy = 'balanced' | 'specialist' | 'mentor' | 'minimal';
 export type InterventionType = 'assist' | 'redirect' | 'takeover' | 'abort' | 'augment';
@@ -321,6 +323,20 @@ export const ConsumableTypeNames: Record<ConsumableType, string> = {
 	xp_boost: 'XP Boost',
 	quality_shield: 'Quality Shield',
 	insight_scroll: 'Insight Scroll'
+};
+
+export const ArchetypeNames: Record<AgentArchetype, string> = {
+	scholar: 'Scholar',
+	engineer: 'Engineer',
+	scribe: 'Scribe',
+	strategist: 'Strategist'
+};
+
+export const ArchetypeDescriptions: Record<AgentArchetype, string> = {
+	scholar: 'Research, analyze, synthesize',
+	engineer: 'Implement, test, review code',
+	scribe: 'Documentation, communications',
+	strategist: 'System design, decomposition'
 };
 
 export const ConsumableTypeDescriptions: Record<ConsumableType, string> = {

@@ -5,9 +5,10 @@
  * Uses Svelte 5 runes for reactive state management.
  *
  * Transition handling:
- *   → escalated:       toast + chat attention card (auto-opens chat)
- *   → pending_triage:  toast + chat attention card (auto-opens chat)
- *   → failed:          toast only (shows retry attempt count)
+ *   → escalated:       toast + chat attention card (terminal — needs human DM)
+ *   → pending_triage:  toast only (auto-triage may resolve without human)
+ *   → failed:          toast only (terminal failure)
+ *   → posted (repost): toast only (informational — agent failed, quest re-queued)
  */
 
 import type { QuestID, Quest } from '$types';
@@ -22,7 +23,7 @@ import { chatStore } from '$lib/stores/chatStore.svelte';
 
 export interface Toast {
 	id: string;
-	type: 'escalation' | 'triage' | 'failure';
+	type: 'escalation' | 'triage' | 'failure' | 'repost';
 	questId: QuestID;
 	questTitle: string;
 	message: string;
@@ -52,7 +53,7 @@ let initialized = false;
 
 const needsAttentionQuests = $derived(
 	worldStore.questList.filter(
-		(q) => q.status === 'escalated' || (q.status as string) === 'pending_triage'
+		(q) => q.status === 'escalated'
 	)
 );
 
@@ -131,28 +132,17 @@ function handleTransition(quest: Quest, newStatus: AttentionStatus) {
 		};
 		chatStore.injectAttentionCard(card);
 	} else if (newStatus === 'pending_triage') {
+		// Toast only — auto-triage may resolve this without human involvement.
+		// Chat card is injected only when triage escalates (→ escalated status).
 		const toast: Toast = {
 			id: crypto.randomUUID(),
 			type: 'triage',
 			questId: quest.id,
 			questTitle: title,
-			message: quest.failure_reason ?? 'Retries exhausted — needs triage',
+			message: quest.failure_reason ?? 'Retries exhausted — evaluating recovery',
 			timestamp: Date.now()
 		};
 		addToast(toast);
-
-		const card: AttentionCard = {
-			type: 'triage',
-			questId: quest.id,
-			questTitle: title,
-			agentName,
-			failureReason: quest.failure_reason ?? undefined,
-			failureType: quest.failure_type ?? undefined,
-			attempts: quest.attempts,
-			maxAttempts: quest.max_attempts,
-			resolved: false
-		};
-		chatStore.injectAttentionCard(card);
 	} else if (newStatus === 'failed') {
 		const attempt = quest.attempts && quest.max_attempts
 			? `Attempt ${quest.attempts}/${quest.max_attempts}`
@@ -168,6 +158,31 @@ function handleTransition(quest: Quest, newStatus: AttentionStatus) {
 		addToast(toast);
 		// No chat card for plain failures
 	}
+}
+
+// =============================================================================
+// REPOST DETECTION
+// =============================================================================
+
+function handleRepost(quest: Quest) {
+	const key = `${quest.id}-repost-${quest.attempts ?? 0}`;
+	if (seen.has(key)) return;
+	seen.add(key);
+
+	const title = quest.title ?? String(quest.id).split('.').pop() ?? 'Unknown quest';
+	const attempt = quest.attempts && quest.max_attempts
+		? `Attempt ${quest.attempts}/${quest.max_attempts}`
+		: 'Retrying';
+
+	const toast: Toast = {
+		id: crypto.randomUUID(),
+		type: 'repost',
+		questId: quest.id,
+		questTitle: title,
+		message: `${attempt} — agent failed, quest re-queued`,
+		timestamp: Date.now()
+	};
+	addToast(toast);
 }
 
 // =============================================================================
@@ -199,12 +214,18 @@ function watchQuests(questList: Quest[], synced: boolean) {
 		nextStatuses.set(quest.id, quest.status);
 		const prev = previousStatuses.get(quest.id);
 
-		// Only fire on transitions TO attention statuses
+		// Only fire on transitions (not when status stays the same)
 		if (prev === quest.status) continue;
 
 		const status = quest.status as string;
 		if (status === 'escalated' || status === 'pending_triage' || status === 'failed') {
 			handleTransition(quest, status as AttentionStatus);
+		}
+
+		// Detect auto-repost: quest went from in_progress back to posted
+		// (agent failed but retries remain — questboard auto-reposted)
+		if (status === 'posted' && prev === 'in_progress') {
+			handleRepost(quest);
 		}
 	}
 

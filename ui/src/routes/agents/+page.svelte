@@ -6,7 +6,7 @@
 	import ThreePanelLayout from '$components/layout/ThreePanelLayout.svelte';
 	import ExplorerNav from '$components/layout/ExplorerNav.svelte';
 	import { worldStore } from '$stores/worldStore.svelte';
-	import { TrustTierNames, type Agent } from '$types';
+	import { TrustTierNames, ArchetypeNames, type Agent, type AgentArchetype } from '$types';
 
 	// Panel state
 	let leftPanelOpen = $state(true);
@@ -120,8 +120,15 @@
 							<span class="agent-level">Lv.{agent.level}</span>
 						</div>
 
-						<div class="tier-badge" data-tier={agent.tier} data-testid="tier-badge">
-							{TrustTierNames[agent.tier]}
+						<div class="card-badges">
+							<span class="tier-badge" data-tier={agent.tier} data-testid="tier-badge">
+								{TrustTierNames[agent.tier]}
+							</span>
+							{#if agent.archetype}
+								<span class="archetype-badge" data-archetype={agent.archetype}>
+									{ArchetypeNames[agent.archetype as AgentArchetype] ?? agent.archetype}
+								</span>
+							{/if}
 						</div>
 
 						<div
@@ -170,9 +177,16 @@
 					<section class="detail-section">
 						<div class="agent-profile">
 							<h3>{agent.name}</h3>
-							<span class="tier-badge large" data-tier={agent.tier}>
-								{TrustTierNames[agent.tier]}
-							</span>
+							<div class="profile-badges">
+								<span class="tier-badge large" data-tier={agent.tier}>
+									{TrustTierNames[agent.tier]}
+								</span>
+								{#if agent.archetype}
+									<span class="archetype-badge large" data-archetype={agent.archetype}>
+										{ArchetypeNames[agent.archetype as AgentArchetype] ?? agent.archetype}
+									</span>
+								{/if}
+							</div>
 						</div>
 
 						<div class="level-display">
@@ -373,6 +387,14 @@
 		border-radius: var(--radius-sm);
 	}
 
+	.card-badges,
+	.profile-badges {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+		margin-bottom: var(--spacing-sm);
+	}
+
 	.tier-badge {
 		display: inline-block;
 		font-size: 0.625rem;
@@ -380,7 +402,40 @@
 		border-radius: var(--radius-full);
 		text-transform: uppercase;
 		font-weight: 600;
-		margin-bottom: var(--spacing-sm);
+	}
+
+	.archetype-badge {
+		display: inline-block;
+		font-size: 0.625rem;
+		padding: 2px 8px;
+		border-radius: var(--radius-full);
+		text-transform: uppercase;
+		font-weight: 600;
+	}
+
+	.archetype-badge[data-archetype='engineer'] {
+		background: color-mix(in srgb, var(--tier-expert, #2196f3) 20%, transparent);
+		color: var(--tier-expert, #2196f3);
+	}
+
+	.archetype-badge[data-archetype='scholar'] {
+		background: color-mix(in srgb, var(--tier-journeyman, #4caf50) 20%, transparent);
+		color: var(--tier-journeyman, #4caf50);
+	}
+
+	.archetype-badge[data-archetype='strategist'] {
+		background: color-mix(in srgb, var(--tier-master, #9c27b0) 20%, transparent);
+		color: var(--tier-master, #9c27b0);
+	}
+
+	.archetype-badge[data-archetype='scribe'] {
+		background: color-mix(in srgb, var(--tier-grandmaster, #ff9800) 20%, transparent);
+		color: var(--tier-grandmaster, #ff9800);
+	}
+
+	.archetype-badge.large {
+		font-size: 0.75rem;
+		padding: 4px 12px;
 	}
 
 	.tier-badge[data-tier='0'] {

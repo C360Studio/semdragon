@@ -104,13 +104,13 @@
 						class="battle-card"
 						class:selected={worldStore.selectedBattleId === battle.id}
 						data-status={battle.status}
-						aria-label="Battle {battle.id.slice(0, 8)}, {battle.status}, {ReviewLevelNames[battle.level]} review"
+						aria-label="{worldStore.questTitle(battle.quest_id)}, {battle.status}, {ReviewLevelNames[battle.level]} review"
 						aria-pressed={worldStore.selectedBattleId === battle.id}
 						onclick={() => selectBattle(battle)}
 						data-testid="battle-card"
 					>
 						<div class="battle-header">
-							<span class="battle-id">Battle #{battle.id.slice(0, 8)}</span>
+							<span class="battle-title">{worldStore.questTitle(battle.quest_id)}</span>
 							<span class="battle-status" data-status={battle.status}>
 								{battle.status}
 							</span>
@@ -119,7 +119,7 @@
 						<div class="battle-info">
 							<div class="info-row">
 								<span class="label">Quest:</span>
-								<span class="value">{battle.quest_id}</span>
+								<a href="/quests/{battle.quest_id}" class="value quest-link">{worldStore.questTitle(battle.quest_id)}</a>
 							</div>
 							<div class="info-row">
 								<span class="label">Agent:</span>
@@ -168,7 +168,7 @@
 				{#if worldStore.selectedBattle}
 					{@const battle = worldStore.selectedBattle}
 					<section class="detail-section">
-						<h3>Battle #{battle.id.slice(0, 8)}</h3>
+						<h3>{worldStore.questTitle(battle.quest_id)}</h3>
 
 						<div class="status-display" data-status={battle.status}>
 							{battle.status.toUpperCase()}
@@ -176,7 +176,7 @@
 
 						<dl class="detail-list">
 							<dt>Quest</dt>
-							<dd><a href="/quests/{battle.quest_id}">{battle.quest_id}</a></dd>
+							<dd><a href="/quests/{battle.quest_id}">{worldStore.questTitle(battle.quest_id)}</a></dd>
 							<dt>Agent</dt>
 							<dd><a href="/agents/{battle.agent_id}">{worldStore.agentName(battle.agent_id)}</a></dd>
 							<dt>Review Level</dt>
@@ -395,8 +395,26 @@
 		margin-bottom: var(--spacing-sm);
 	}
 
-	.battle-id {
+	.battle-title {
 		font-weight: 600;
+		font-size: 0.875rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		flex: 1;
+		margin-right: var(--spacing-sm);
+	}
+
+	.quest-link {
+		color: var(--ui-interactive-primary);
+		text-decoration: none;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.quest-link:hover {
+		text-decoration: underline;
 	}
 
 	.battle-status {

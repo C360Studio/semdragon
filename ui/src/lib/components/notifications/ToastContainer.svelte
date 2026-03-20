@@ -3,9 +3,8 @@
 	 * ToastContainer - Fixed overlay for quest attention toasts
 	 *
 	 * Renders active toasts from notificationStore in the top-right corner.
-	 * Color-coded by type: magenta (escalation), orange (triage), red (failure).
-	 * Escalation/triage toasts have a "View in Chat" button.
-	 * Failure toasts show retry attempt count.
+	 * Color-coded by type: magenta (escalation), orange (triage), red (failure), blue (repost).
+	 * Only escalation toasts have a "View in Chat" button (terminal — needs human DM).
 	 */
 
 	import { notificationStore, type Toast } from '$lib/stores/notificationStore.svelte';
@@ -24,6 +23,7 @@
 			case 'escalation': return 'Escalation';
 			case 'triage': return 'Needs Triage';
 			case 'failure': return 'Failed';
+			case 'repost': return 'Re-queued';
 		}
 	}
 </script>
@@ -47,7 +47,7 @@
 				</div>
 				<div class="toast-title">{toast.questTitle}</div>
 				<div class="toast-message">{toast.message}</div>
-				{#if toast.type !== 'failure'}
+				{#if toast.type === 'escalation'}
 					<button
 						class="toast-action"
 						onclick={handleViewInChat}
@@ -96,6 +96,10 @@
 		border-left-color: var(--quest-failed);
 	}
 
+	.toast[data-type='repost'] {
+		border-left-color: var(--quest-posted, #5b8def);
+	}
+
 	.toast-header {
 		display: flex;
 		justify-content: space-between;
@@ -120,6 +124,10 @@
 
 	.toast[data-type='failure'] .toast-type {
 		color: var(--quest-failed);
+	}
+
+	.toast[data-type='repost'] .toast-type {
+		color: var(--quest-posted, #5b8def);
 	}
 
 	.toast-dismiss {

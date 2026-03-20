@@ -173,6 +173,40 @@ const tierDistribution = $derived.by(() => {
 	}));
 });
 
+// Class (archetype) distribution for agent breakdown
+const classDistribution = $derived.by(() => {
+	const classes = [
+		{ archetype: 'engineer' as const, name: 'Engineer', count: 0 },
+		{ archetype: 'scholar' as const, name: 'Scholar', count: 0 },
+		{ archetype: 'strategist' as const, name: 'Strategist', count: 0 },
+		{ archetype: 'scribe' as const, name: 'Scribe', count: 0 }
+	];
+	let unclassed = 0;
+
+	for (const agent of agentList) {
+		const cls = classes.find(c => c.archetype === agent.archetype);
+		if (cls) cls.count++;
+		else unclassed++;
+	}
+
+	const total = agentList.length || 1;
+	const result = classes.map(c => ({
+		...c,
+		percentage: (c.count / total) * 100
+	}));
+
+	if (unclassed > 0) {
+		result.push({
+			archetype: '' as never,
+			name: 'Unclassed',
+			count: unclassed,
+			percentage: (unclassed / total) * 100
+		});
+	}
+
+	return result;
+});
+
 // Total XP earned across all agents
 const totalXpEarned = $derived(
 	agentList.reduce((sum, agent) => sum + agent.stats.total_xp_earned, 0)
@@ -641,6 +675,7 @@ export const worldStore = {
 
 	// Dashboard derived state
 	get tierDistribution() { return tierDistribution; },
+	get classDistribution() { return classDistribution; },
 	get totalXpEarned() { return totalXpEarned; },
 	get battleStats() { return battleStats; },
 
@@ -708,6 +743,7 @@ export const worldStore = {
 		return agents.get(agentId as AgentID)?.name ?? String(agentId).split('.').pop() ?? String(agentId);
 	},
 	questTitle(questId: QuestID | string): string {
-		return quests.get(questId as QuestID)?.title ?? String(questId).split('.').pop() ?? String(questId);
+		const quest = quests.get(questId as QuestID);
+		return quest?.name || quest?.title || String(questId).split('.').pop() || String(questId);
 	}
 };

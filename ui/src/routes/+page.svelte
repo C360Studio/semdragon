@@ -150,6 +150,26 @@
 					</div>
 				</section>
 
+				<!-- Agent Class Distribution -->
+				<section class="dashboard-section" aria-labelledby="class-heading">
+					<h2 id="class-heading">Agent Distribution by Class</h2>
+					<div class="tier-bars">
+						{#each worldStore.classDistribution as cls}
+							<div class="tier-row" data-testid="class-{cls.archetype || 'unclassed'}">
+								<span class="tier-name">{cls.name}</span>
+								<div class="tier-bar-container">
+									<div
+										class="class-bar"
+										style="width: {Math.max(cls.percentage, 2)}%"
+										data-archetype={cls.archetype}
+									></div>
+								</div>
+								<span class="tier-count">{cls.count}</span>
+							</div>
+						{/each}
+					</div>
+				</section>
+
 				<!-- Active Quests -->
 				<section class="dashboard-section" aria-labelledby="quests-heading">
 					<h2 id="quests-heading">Active Quests</h2>
@@ -344,6 +364,33 @@
 
 	.tier-bar[data-tier='4'] {
 		background: var(--tier-grandmaster, #ff9800);
+	}
+
+	/* Class Distribution Bars */
+	.class-bar {
+		height: 100%;
+		border-radius: var(--radius-md);
+		transition: width 300ms ease;
+	}
+
+	.class-bar[data-archetype='engineer'] {
+		background: var(--tier-expert, #2196f3);
+	}
+
+	.class-bar[data-archetype='scholar'] {
+		background: var(--tier-journeyman, #4caf50);
+	}
+
+	.class-bar[data-archetype='strategist'] {
+		background: var(--tier-master, #9c27b0);
+	}
+
+	.class-bar[data-archetype='scribe'] {
+		background: var(--tier-grandmaster, #ff9800);
+	}
+
+	.class-bar[data-archetype=''] {
+		background: var(--ui-text-tertiary);
 	}
 
 	.tier-count {
