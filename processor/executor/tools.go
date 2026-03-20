@@ -43,6 +43,9 @@ const (
 	maxMatchLineLength = 200
 	// maxHTTPResponseSize is the maximum bytes to return from an HTTP response.
 	maxHTTPResponseSize = 100000
+	// maxGraphResponseSize is the maximum bytes for graph search responses.
+	// Larger than HTTP because community summaries + entity lists are verbose.
+	maxGraphResponseSize = 500000
 	// maxCommandOutput is the maximum bytes to capture from command output.
 	maxCommandOutput = 100000
 	// commandTimeout is the default timeout for shell commands.
@@ -2628,12 +2631,12 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 			return graphQLRequest{}, fmt.Errorf("search_text is required for nlq queries (your natural language question)")
 		}
 		// NLQ uses globalSearch with community summaries for richer context.
-		// Cap communities to min(limit, 3) to control response size — each
-		// community summary can be several hundred tokens. Entity list is kept
-		// to IDs only (use entity/relationships queries for details).
+		// Cap communities and entities to control response size — community
+		// summaries are the most useful content, entity IDs are supplementary.
 		maxCommunities := min(limit, 3)
+		maxEntities := min(limit, 10)
 		return graphQLRequest{
-			Query: fmt.Sprintf(`{ globalSearch(query: %q, level: 1, maxCommunities: %d) { entities { id type } communities { title summary } count classification { queryType confidence } } }`, sanitizeGraphQLString(text), maxCommunities),
+			Query: fmt.Sprintf(`{ globalSearch(query: %q, level: 1, maxCommunities: %d, maxEntities: %d) { entities { id type } communities { title summary } count classification { queryType confidence } } }`, sanitizeGraphQLString(text), maxCommunities, maxEntities),
 		}, nil
 
 	default:
@@ -2678,7 +2681,7 @@ func executeGraphQLQuery(ctx context.Context, client *http.Client, graphqlURL st
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPResponseSize+1))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxGraphResponseSize+1))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -2698,7 +2701,7 @@ func executeGraphQLQuery(ctx context.Context, client *http.Client, graphqlURL st
 	// If the response was truncated by the size limit, we can't parse it as
 	// JSON. Return a descriptive content message rather than a hard error so
 	// the agent can continue with other tools.
-	if len(respBody) > maxHTTPResponseSize {
+	if len(respBody) > maxGraphResponseSize {
 		return "Graph query returned a very large response that was truncated. Try a more specific query (e.g., narrower prefix, specific entity_id, or add a limit).", nil
 	}
 
