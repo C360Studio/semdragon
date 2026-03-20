@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -83,7 +84,10 @@ type usage struct {
 // ---- Pattern matching -------------------------------------------------------
 
 var (
-	reChain      = regexp.MustCompile(`(?i)chain|multiple.*quest`)
+	// Boss battle judge detection: system prompt from AssembleJudgePromptWithAcceptance
+	// contains "evaluating" + structural checklist items.
+	reBossBattleJudge = regexp.MustCompile(`(?i)evaluating.*work output|evaluating.*quest performance`)
+	reChain           = regexp.MustCompile(`(?i)chain|multiple.*quest`)
 	reQuestBrief = regexp.MustCompile(`(?i)create.*quest|quest.*brief|build|analyze`)
 	// Matches the DM triage system prompt which contains "recovery path" or "triage".
 	reTriage = regexp.MustCompile(`(?i)recovery path.*salvage|triage.*retry`)
@@ -281,9 +285,17 @@ func route(req chatRequest, logger *slog.Logger) chatResponse {
 		return resp
 	}
 
-	// DM chat path: check system prompt first for triage requests,
-	// then pattern-match on the last user message.
+	// No-tools path: boss battle judge, DM triage, or DM chat.
 	sysPrompt := systemMessage(req.Messages)
+
+	// Boss battle evaluation: the evaluator calls with no tools, system prompt
+	// from the domain catalog's JudgeSystemBase.
+	if reBossBattleJudge.MatchString(sysPrompt) {
+		resp := routeBossBattleJudge(req.Messages, logger)
+		logResponse(logger, "boss-battle-judge", resp)
+		return resp
+	}
+
 	if reTriage.MatchString(sysPrompt) {
 		logger.Info("route", "path", "dm-triage")
 		return completionResponse(triageResponse)
@@ -332,6 +344,37 @@ func logResponse(logger *slog.Logger, path string, resp chatResponse) {
 		}
 		logger.Info("route", "path", path, "finish", c.FinishReason, "content_preview", preview)
 	}
+}
+
+// bossBattleAttempts tracks how many times each quest has been evaluated.
+// First evaluation returns defeat; subsequent evaluations return victory.
+// This exercises the retry path in E2E tests.
+var bossBattleAttempts sync.Map // map[questTitle]int
+
+// routeBossBattleJudge returns a judge verdict for boss battle evaluations.
+// First attempt for a given quest returns DEFEAT (checklist failure) to exercise
+// the retry/repost path. Second attempt returns VICTORY.
+func routeBossBattleJudge(msgs []requestMsg, logger *slog.Logger) chatResponse {
+	// Extract quest context from user message to track per-quest attempts.
+	userMsg := lastUserMessage(msgs)
+	questKey := "default"
+	if len(userMsg) > 50 {
+		questKey = userMsg[:50]
+	}
+
+	attempts := 1
+	if v, loaded := bossBattleAttempts.LoadOrStore(questKey, 1); loaded {
+		attempts = v.(int) + 1
+		bossBattleAttempts.Store(questKey, attempts)
+	}
+
+	if attempts == 1 {
+		logger.Info("boss-battle-judge", "verdict", "defeat", "attempt", attempts)
+		return completionResponse(bossBattleDefeatResponse)
+	}
+
+	logger.Info("boss-battle-judge", "verdict", "victory", "attempt", attempts)
+	return completionResponse(bossBattleVictoryResponse)
 }
 
 // routeToolCall picks the right tool call based on which tools are available.

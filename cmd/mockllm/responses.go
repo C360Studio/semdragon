@@ -108,6 +108,33 @@ Both sub-tasks can be executed in parallel since they have no dependencies.`
 // QuestNode objects with id, objective, skills, acceptance, depends_on, difficulty).
 const dagDecompositionArgs = `{"goal":"Complete the requested work through parallel sub-tasks","nodes":[{"id":"node-1","objective":"Implement the first component of the task","skills":["code_generation"],"acceptance":["Code compiles","Tests pass"],"depends_on":[],"difficulty":2},{"id":"node-2","objective":"Implement the second component of the task","skills":["code_generation"],"acceptance":["Code compiles","Tests pass"],"depends_on":[],"difficulty":2}]}`
 
+// bossBattleDefeatResponse is returned for the first boss battle evaluation of a quest.
+// Uses a checklist failure (automatic defeat) to reliably trigger the retry/repost path.
+const bossBattleDefeatResponse = `{
+  "criteria": [
+    {"name": "correctness", "score": 0.7, "reasoning": "Core logic is present but output is incomplete."},
+    {"name": "completeness", "score": 0.5, "reasoning": "Missing required components identified in acceptance criteria."}
+  ],
+  "checklist": [
+    {"name": "tests-included", "passed": false, "reasoning": "No test files found in submission. Tests are required for all code deliverables."}
+  ],
+  "overall_feedback": "The submission is incomplete. Required tests are missing and the implementation does not fully address the acceptance criteria. Resubmit with tests and complete implementation. [STRUCTURAL FAILURES: tests-included]",
+  "peer_review": {"q1": 2, "q2": 3, "q3": 2}
+}`
+
+// bossBattleVictoryResponse is returned for subsequent boss battle evaluations (retry attempts).
+const bossBattleVictoryResponse = `{
+  "criteria": [
+    {"name": "correctness", "score": 0.9, "reasoning": "Implementation is correct and handles edge cases."},
+    {"name": "completeness", "score": 0.85, "reasoning": "All acceptance criteria met with tests."}
+  ],
+  "checklist": [
+    {"name": "tests-included", "passed": true, "reasoning": "Comprehensive test suite included."}
+  ],
+  "overall_feedback": "Good work. Implementation meets all requirements with solid test coverage.",
+  "peer_review": {"q1": 4, "q2": 4, "q3": 4}
+}`
+
 // triageResponse is returned when the system prompt matches a DM triage evaluation.
 // The questboard triage module sends a system prompt containing "recovery path" and
 // a user message with quest failure details. The mock always returns "salvage" to
