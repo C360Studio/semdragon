@@ -7,6 +7,7 @@
 
 import type {
 	Agent,
+	AgentArchetype,
 	AgentID,
 	Quest,
 	QuestID,
@@ -175,11 +176,11 @@ const tierDistribution = $derived.by(() => {
 
 // Class (archetype) distribution for agent breakdown
 const classDistribution = $derived.by(() => {
-	const classes = [
-		{ archetype: 'engineer' as const, name: 'Engineer', count: 0 },
-		{ archetype: 'scholar' as const, name: 'Scholar', count: 0 },
-		{ archetype: 'strategist' as const, name: 'Strategist', count: 0 },
-		{ archetype: 'scribe' as const, name: 'Scribe', count: 0 }
+	const classes: { archetype: AgentArchetype | ''; name: string; count: number }[] = [
+		{ archetype: 'engineer', name: 'Engineer', count: 0 },
+		{ archetype: 'scholar', name: 'Scholar', count: 0 },
+		{ archetype: 'strategist', name: 'Strategist', count: 0 },
+		{ archetype: 'scribe', name: 'Scribe', count: 0 }
 	];
 	let unclassed = 0;
 
@@ -197,7 +198,7 @@ const classDistribution = $derived.by(() => {
 
 	if (unclassed > 0) {
 		result.push({
-			archetype: '' as const,
+			archetype: '',
 			name: 'Unclassed',
 			count: unclassed,
 			percentage: (unclassed / total) * 100
