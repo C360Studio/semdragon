@@ -214,13 +214,12 @@ func TestWorldState_QuestCounts_Accurate(t *testing.T) {
 
 	gc := semdragons.NewGraphClient(client, comp.boardConfig)
 
-	// Create quests in various active states (only active statuses appear in world state).
+	// Create quests in various states — all statuses appear in world state.
 	putTestQuest(t, ctx, gc, comp.boardConfig, "posted-1", domain.QuestPosted)
 	putTestQuest(t, ctx, gc, comp.boardConfig, "posted-2", domain.QuestPosted)
 	putTestQuest(t, ctx, gc, comp.boardConfig, "in-progress", domain.QuestInProgress)
 	putTestQuest(t, ctx, gc, comp.boardConfig, "in-review", domain.QuestInReview)
 	putTestQuest(t, ctx, gc, comp.boardConfig, "escalated", domain.QuestEscalated)
-	// Completed quests are not included in active quest list.
 	putTestQuest(t, ctx, gc, comp.boardConfig, "completed", domain.QuestCompleted)
 	putTestQuest(t, ctx, gc, comp.boardConfig, "failed-q", domain.QuestFailed)
 

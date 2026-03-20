@@ -195,8 +195,9 @@ func (c *Component) onReviewCompleted(ctx context.Context, evt dagEvent) {
 	// Parse the verdict JSON from the review_sub_quest tool output.
 	// Fall back to heuristic extraction when the LLM responded with prose.
 	var verdict struct {
-		Verdict    string `json:"verdict"`
-		SubQuestID string `json:"sub_quest_id"`
+		Verdict     string `json:"verdict"`
+		SubQuestID  string `json:"sub_quest_id"`
+		Explanation string `json:"explanation,omitempty"`
 	}
 
 	if parseErr := json.Unmarshal([]byte(evt.Result), &verdict); parseErr != nil {
@@ -297,7 +298,11 @@ func (c *Component) onReviewCompleted(ctx context.Context, evt dagEvent) {
 
 	case "reject":
 		quest.Status = domain.QuestFailed
-		quest.FailureReason = "Rejected by party lead during review"
+		if verdict.Explanation != "" {
+			quest.FailureReason = fmt.Sprintf("Rejected by party lead: %s", verdict.Explanation)
+		} else {
+			quest.FailureReason = "Rejected by party lead during review"
+		}
 		if emitErr := c.graph.EmitEntityUpdate(ctx, quest, "quest.dag.node_rejected"); emitErr != nil {
 			c.logger.Error("failed to fail sub-quest after review reject",
 				"sub_quest_id", verdict.SubQuestID, "error", emitErr)

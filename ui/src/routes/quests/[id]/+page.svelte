@@ -188,14 +188,18 @@
 						</section>
 					{/if}
 
-				{#if quest.escalated || quest.failure_reason || failureHistory.length > 0}
+				{#if quest.escalated || quest.status === 'failed' || quest.failure_reason || failureHistory.length > 0}
 					<section class="detail-card full-width escalation-card">
-						<h2>Escalation Context</h2>
+						<h2>{quest.status === 'failed' ? 'Failure Reason' : 'Escalation Context'}</h2>
 
 						{#if quest.failure_reason}
 							<div class="escalation-reason">
-								<span class="reason-label">Agent's question</span>
+								<span class="reason-label">{quest.failure_type === 'quality' ? 'Review feedback' : "Agent's question"}</span>
 								<p class="reason-text">{quest.failure_reason}</p>
+							</div>
+						{:else if quest.status === 'failed'}
+							<div class="escalation-reason">
+								<p class="reason-text" style="opacity: 0.6">No failure details available. Check the trajectory for tool call history.</p>
 							</div>
 						{/if}
 

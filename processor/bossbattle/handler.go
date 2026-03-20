@@ -2,13 +2,17 @@ package bossbattle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/nats-io/nuid"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
@@ -728,6 +732,11 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				ab.quest.FailureReason = ab.battle.Verdict.Feedback
 				ab.quest.FailureType = domain.FailureQuality
 
+				// Fail all sub-quests from the previous DAG attempt so agents
+				// feel the consequences and XP/progression reflects the defeat.
+				// Must happen BEFORE clearing DAG fields (we read NodeQuestIDs).
+				c.failPartySubQuests(persistCtx, ab.quest, ab.battle.Verdict.Feedback)
+
 				// Clear DAG state so the lead re-decomposes fresh on retry.
 				// Without this, questdagexec sees stale "completed" node states
 				// from the previous attempt and never assigns the new sub-quests.
@@ -740,6 +749,8 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				ab.quest.DAGFailedNodes = nil
 				ab.quest.DAGNodeRetries = nil
 			} else {
+				// Terminal failure — fail sub-quests too.
+				c.failPartySubQuests(persistCtx, ab.quest, ab.battle.Verdict.Feedback)
 				ab.quest.Status = domain.QuestFailed
 				ab.quest.FailureReason = ab.battle.Verdict.Feedback
 				ab.quest.FailureType = domain.FailureQuality
@@ -994,4 +1005,149 @@ func (c *Component) setIndexed(ctx context.Context, questID domain.QuestID, prod
 
 	c.logger.Error("indexing: gave up writing ArtifactsIndexed after retries",
 		"quest", questID, "max_retries", maxRetries)
+}
+
+// =============================================================================
+// PARTY SUB-QUEST CLEANUP ON BOSS BATTLE DEFEAT
+// =============================================================================
+
+// failPartySubQuests transitions all sub-quests of a party quest to failed
+// status with the boss battle feedback as their failure reason. This ensures
+// agents feel the consequences of a defeated boss battle and prevents orphaned
+// sub-quests when the parent is reposted for retry.
+//
+// Called from the boss battle verdict persistence path — both for retry reposts
+// and terminal failures. Safe to call on non-party quests (no-op).
+func (c *Component) failPartySubQuests(ctx context.Context, quest *domain.Quest, feedback string) {
+	nodeQuestIDs := anyToStringMap(quest.DAGNodeQuestIDs)
+	if len(nodeQuestIDs) == 0 {
+		return
+	}
+
+	if len(feedback) > 500 {
+		feedback = feedback[:500] + "..."
+	}
+
+	var failed int
+	for nodeID, subQuestID := range nodeQuestIDs {
+		if subQuestID == "" {
+			continue
+		}
+
+		questEntity, err := c.graph.GetQuest(ctx, domain.QuestID(subQuestID))
+		if err != nil {
+			c.logger.Warn("failPartySubQuests: failed to load sub-quest",
+				"sub_quest_id", subQuestID, "node_id", nodeID, "error", err)
+			continue
+		}
+
+		subQuest := domain.QuestFromEntityState(questEntity)
+		if subQuest == nil {
+			continue
+		}
+
+		// Skip already-terminal sub-quests.
+		if subQuest.Status == domain.QuestFailed {
+			continue
+		}
+
+		// Cancel any active agentic loop (defensive — sub-quests should be
+		// completed at boss battle time, but handles edge cases).
+		if subQuest.LoopID != "" && subQuest.Status == domain.QuestInProgress {
+			c.sendCancelSignal(ctx, subQuest.LoopID)
+		}
+
+		// Status-aware failure reason: sub-quests that completed successfully
+		// shouldn't receive the same blame as the ones that were the weak link.
+		var reason string
+		switch subQuest.Status {
+		case domain.QuestCompleted:
+			reason = "Sub-quest work was accepted but the combined party output failed boss battle review"
+			if feedback != "" {
+				reason += ": " + feedback
+			}
+		default:
+			reason = "Parent quest failed boss battle review"
+			if feedback != "" {
+				reason += ": " + feedback
+			}
+		}
+
+		subQuest.Status = domain.QuestFailed
+		subQuest.FailureReason = reason
+		subQuest.FailureType = domain.FailureQuality
+		if emitErr := c.graph.EmitEntityUpdate(ctx, subQuest, "quest.failed"); emitErr != nil {
+			c.logger.Warn("failPartySubQuests: failed to fail sub-quest",
+				"sub_quest_id", subQuestID, "node_id", nodeID, "error", emitErr)
+			continue
+		}
+		failed++
+	}
+
+	if failed > 0 {
+		c.logger.Info("failed party sub-quests after boss battle defeat",
+			"parent_quest", quest.ID, "failed_count", failed, "total_nodes", len(nodeQuestIDs))
+	}
+}
+
+// sendCancelSignal publishes a cancel UserSignal to the AGENT JetStream stream
+// for the given loop ID. The agentic-loop watches agent.signal.{loopID} and
+// terminates the loop when it receives a cancel signal.
+func (c *Component) sendCancelSignal(ctx context.Context, loopID string) {
+	if loopID == "" {
+		return
+	}
+
+	js, err := c.deps.NATSClient.JetStream()
+	if err != nil {
+		c.logger.Warn("sendCancelSignal: failed to get JetStream", "error", err)
+		return
+	}
+
+	signal := &agentic.UserSignal{
+		SignalID:    "cancel-" + nuid.Next(),
+		Type:        agentic.SignalCancel,
+		LoopID:      loopID,
+		UserID:      "bossbattle",
+		ChannelType: "system",
+		ChannelID:   "bossbattle",
+		Timestamp:   time.Now(),
+	}
+
+	baseMsg := message.NewBaseMessage(signal.Schema(), signal, "bossbattle")
+	data, marshalErr := json.Marshal(baseMsg)
+	if marshalErr != nil {
+		c.logger.Warn("sendCancelSignal: failed to marshal signal", "error", marshalErr)
+		return
+	}
+
+	subject := fmt.Sprintf("agent.signal.%s", loopID)
+	if _, pubErr := js.Publish(ctx, subject, data); pubErr != nil {
+		c.logger.Warn("sendCancelSignal: failed to publish cancel signal",
+			"loop_id", loopID, "error", pubErr)
+	} else {
+		c.logger.Info("sent cancel signal to loop", "loop_id", loopID)
+	}
+}
+
+// anyToStringMap converts a value (typically from Quest.DAGNodeQuestIDs) to
+// map[string]string. Returns nil if the input is nil or not a recognized map type.
+func anyToStringMap(v any) map[string]string {
+	if v == nil {
+		return nil
+	}
+	switch m := v.(type) {
+	case map[string]string:
+		return m
+	case map[string]any:
+		result := make(map[string]string, len(m))
+		for k, val := range m {
+			if s, ok := val.(string); ok {
+				result[k] = s
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }

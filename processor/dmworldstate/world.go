@@ -47,7 +47,7 @@ func (w *WorldStateAggregator) WorldState(ctx context.Context) (*domain.WorldSta
 		agents = []*agentprogression.Agent{}
 	}
 
-	quests, err := w.loadActiveQuests(ctx)
+	quests, err := w.loadAllQuests(ctx)
 	if err != nil {
 		w.logger.Warn("failed to load quests for world state", "error", err)
 		quests = []domain.Quest{}
@@ -131,24 +131,16 @@ func (w *WorldStateAggregator) loadAllAgents(ctx context.Context) ([]*agentprogr
 	return agents, nil
 }
 
-func (w *WorldStateAggregator) loadActiveQuests(ctx context.Context) ([]domain.Quest, error) {
+func (w *WorldStateAggregator) loadAllQuests(ctx context.Context) ([]domain.Quest, error) {
 	entities, err := w.graph.ListQuestsByPrefix(ctx, w.maxEntities)
 	if err != nil {
 		return nil, err
 	}
 
-	activeStatuses := map[domain.QuestStatus]bool{
-		domain.QuestPosted:     true,
-		domain.QuestClaimed:    true,
-		domain.QuestInProgress: true,
-		domain.QuestInReview:   true,
-		domain.QuestEscalated:  true,
-	}
-
 	var quests []domain.Quest
 	for _, entity := range entities {
 		quest := domain.QuestFromEntityState(&entity)
-		if quest != nil && activeStatuses[quest.Status] {
+		if quest != nil {
 			quests = append(quests, *quest)
 		}
 	}
@@ -306,7 +298,7 @@ func (w *WorldStateAggregator) GetIdleAgents(ctx context.Context) ([]agentprogre
 
 // GetEscalatedQuests returns all quests that need DM attention.
 func (w *WorldStateAggregator) GetEscalatedQuests(ctx context.Context) ([]domain.Quest, error) {
-	quests, err := w.loadActiveQuests(ctx)
+	quests, err := w.loadAllQuests(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -374,7 +366,7 @@ func (w *WorldStateAggregator) GetAgentsBySkill(ctx context.Context, skill domai
 
 // GetQuestsByDifficulty returns quests filtered by difficulty level.
 func (w *WorldStateAggregator) GetQuestsByDifficulty(ctx context.Context, difficulty domain.QuestDifficulty) ([]domain.Quest, error) {
-	quests, err := w.loadActiveQuests(ctx)
+	quests, err := w.loadAllQuests(ctx)
 	if err != nil {
 		return nil, err
 	}
