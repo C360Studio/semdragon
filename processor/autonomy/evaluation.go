@@ -199,24 +199,16 @@ func (c *Component) actionsForState(status domain.AgentStatus) []action {
 			c.claimQuestAction(),
 			c.joinGuildAction(),   // Boid-driven: fires when boid.guild suggestion of type "join" is cached
 			c.createGuildAction(), // Boid-driven: fires when boid.guild suggestion of type "form" is cached
-			c.useConsumableAction(),
-			c.shopAction(),
+			// Store disabled for MVP — consumable effects not wired to gameplay
 		}
 	case domain.AgentOnQuest:
-		return []action{
-			c.shopStrategicAction(),
-			c.useConsumableAction(),
-		}
+		return nil // Store disabled for MVP
 	case domain.AgentInBattle:
-		return []action{
-			c.useConsumableAction(),
-		}
+		return nil // Store disabled for MVP
 	case domain.AgentCooldown:
 		return []action{
-			c.useCooldownSkipAction(),
 			c.reviewGuildApplicationsAction(),
 			c.joinGuildAction(), // Boid-driven: fires on cooldown too
-			c.shopAction(),
 		}
 	default:
 		// Retired or unknown

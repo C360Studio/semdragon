@@ -10,7 +10,8 @@ import type { StoreItemResponse } from '../fixtures/test-base';
  * Requires the backend to have the agentstore component running with the
  * default catalog seeded (10 items: 5 tools + 5 consumables).
  */
-test.describe('Store Lifecycle', () => {
+// Store disabled for MVP — consumable effects not wired to gameplay
+test.describe.skip('Store Lifecycle', () => {
 	test('list store returns seeded catalog', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
 
@@ -116,7 +117,7 @@ test.describe('Store Lifecycle', () => {
 // CONSUMABLE USAGE
 // =============================================================================
 
-test.describe('Consumable Usage', () => {
+test.describe.skip('Consumable Usage', () => {
 	test('purchase consumable appears in inventory consumables map', async ({ lifecycleApi }) => {
 		test.skip(!hasBackend(), 'Requires running backend');
 

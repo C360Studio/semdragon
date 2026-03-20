@@ -38,7 +38,7 @@ test.describe('Navigation', () => {
 		await expect(page).toHaveURL(/.*\/trajectories/);
 	});
 
-	test('can navigate from dashboard to store', async ({ dashboardPage, page }) => {
+	test.skip('can navigate from dashboard to store — store disabled for MVP', async ({ dashboardPage, page }) => {
 		await dashboardPage.goto();
 
 		await dashboardPage.navStore.click();
@@ -92,7 +92,7 @@ test.describe('Navigation - Direct URLs', () => {
 		await expect(page).toHaveURL(/.*\/battles/);
 	});
 
-	test('direct navigation to /store works', async ({ page }) => {
+	test.skip('direct navigation to /store works — store disabled for MVP', async ({ page }) => {
 		await page.goto('/store');
 		await expect(page).toHaveURL(/.*\/store/);
 	});

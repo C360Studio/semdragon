@@ -56,11 +56,12 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 		return fmt.Errorf("seed: agents: %w", err)
 	}
 
-	if fullSeed {
-		if err := seedStore(ctx, graph); err != nil {
-			return fmt.Errorf("seed: store: %w", err)
-		}
-	}
+	// Store disabled for MVP — consumable effects not wired to gameplay
+	// if fullSeed {
+	// 	if err := seedStore(ctx, graph); err != nil {
+	// 		return fmt.Errorf("seed: store: %w", err)
+	// 	}
+	// }
 
 	slog.Info("Seed data written successfully", "mode", seedMode(fullSeed))
 	return nil

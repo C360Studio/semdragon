@@ -117,10 +117,12 @@
 			<span class="nav-icon">K</span>
 			<span class="nav-label">Knowledge Graph</span>
 		</a>
+		<!-- Store disabled for MVP — consumable effects not wired to gameplay
 		<a href="/store" class="nav-item" class:active={isActive('/store')} data-testid="nav-store">
 			<span class="nav-icon">S</span>
 			<span class="nav-label">Store</span>
 		</a>
+		-->
 		<a href="/files" class="nav-item" class:active={isActive('/files')} data-testid="nav-files">
 			<span class="nav-icon">F</span>
 			<span class="nav-label">Files</span>

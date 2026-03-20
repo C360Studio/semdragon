@@ -271,54 +271,7 @@
 						</dl>
 					</section>
 
-					<section class="detail-card bag-of-holding" data-testid="bag-of-holding">
-						<h2>Bag of Holding</h2>
-						{#if !inventory || bagIsEmpty}
-							<div class="bag-empty">
-								<span class="empty-text">No items yet</span>
-								<a href="/store?agent={page.params.id}" class="store-link">Visit the Store</a>
-							</div>
-						{:else}
-							{#if ownedTools.length > 0}
-								<div class="bag-section">
-									<span class="bag-section-label">Tools</span>
-									<div class="bag-items">
-										{#each ownedTools as tool (tool.item_id)}
-											<div class="bag-item">
-												<span class="bag-item-name">{tool.item_name}</span>
-												{#if tool.purchase_type === 'rental' && tool.uses_remaining !== undefined}
-													<span class="bag-badge bag-badge--rental">{tool.uses_remaining} uses</span>
-												{:else}
-													<span class="bag-badge bag-badge--owned">Permanent</span>
-												{/if}
-											</div>
-										{/each}
-									</div>
-								</div>
-							{/if}
-
-							{#if consumableList.length > 0}
-								<div class="bag-section">
-									<span class="bag-section-label">Consumables</span>
-									<div class="bag-items">
-										{#each consumableList as [consumableId, qty]}
-											<div class="bag-item">
-												<span class="bag-item-name">
-													{ConsumableTypeNames[consumableId as keyof typeof ConsumableTypeNames] ?? consumableId.replaceAll('_', ' ')}
-												</span>
-												<span class="bag-badge bag-badge--qty">x{qty}</span>
-											</div>
-										{/each}
-									</div>
-								</div>
-							{/if}
-
-							<div class="bag-footer">
-								<span class="bag-total">Total spent: {inventory.total_spent.toLocaleString()} XP</span>
-								<a href="/store?agent={page.params.id}" class="store-link">Store</a>
-							</div>
-						{/if}
-					</section>
+					<!-- Store/Bag of Holding disabled for MVP — consumable effects not wired to gameplay -->
 				</div>
 
 				<section class="history-section">

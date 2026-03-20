@@ -384,7 +384,7 @@
     "agent_store": {
       "type": "processor",
       "name": "agent_store",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",
