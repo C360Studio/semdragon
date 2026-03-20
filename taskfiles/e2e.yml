@@ -174,6 +174,50 @@ tasks:
         ignore_error: true
       - task: maybe:down
 
+  # The Pros — pre-leveled Expert+ roster for lab use
+
+  pros:
+    desc: "Launch clean instance with The Pros roster (Expert+ agents, Gemini skill-routed)"
+    cmds:
+      - task: install
+      - task: clean
+      - task: seed:repos
+      - >-
+        {{.COMPOSE}} build {{if eq (env "NO_CACHE") "1"}}--no-cache{{end}}
+      - >-
+        SEED_PROS=true
+        SEED_E2E=false
+        SEED_AGENTS=false
+        BACKEND_PORT={{.BACKEND_PORT}}
+        UI_PORT={{.UI_PORT}}
+        SEMDRAGONS_MODELS=/etc/semdragons/models/pros.json
+        {{if ne (env "DEBUG") ""}}SEMDRAGONS_LOG_LEVEL=debug{{end}}
+        {{.COMPOSE}} up -d --wait
+      - task: wait
+      - echo "The Pros ready at http://localhost:{{.UI_PORT}}"
+
+  pros:gemini:
+    desc: "Tier 3 epic (Meshtastic) with The Pros roster (Gemini, skill-routed)"
+    cmds:
+      - task: install
+      - task: clean
+      - task: seed:repos
+      - >-
+        {{.COMPOSE}} build {{if eq (env "NO_CACHE") "1"}}--no-cache{{end}}
+      - >-
+        SEED_PROS=true
+        SEED_E2E=false
+        SEED_AGENTS=false
+        BACKEND_PORT={{.BACKEND_PORT}}
+        UI_PORT={{.UI_PORT}}
+        SEMDRAGONS_MODELS=/etc/semdragons/models/pros.json
+        {{if ne (env "DEBUG") ""}}SEMDRAGONS_LOG_LEVEL=debug{{end}}
+        {{.COMPOSE}} up -d --wait
+      - task: wait
+      - cmd: cd ui && E2E_LLM_MODE=gemini SEED_PROS=true BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier3-epic
+        ignore_error: true
+      - task: maybe:down
+
   mock:
     desc: Start mock E2E stack (use with e2e:spec to run individual specs)
     cmds:

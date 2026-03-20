@@ -1,0 +1,156 @@
+{
+  "model_registry": {
+    "endpoints": {
+      "gemini-flash": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-flash",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "low"
+      },
+      "gemini-pro": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-pro",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "medium"
+      },
+      "gemini-pro-low": {
+        "provider": "openai",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-pro",
+        "api_key_env": "GEMINI_API_KEY",
+        "max_tokens": 1048576,
+        "supports_tools": true,
+        "stream": true,
+        "reasoning_effort": "low"
+      },
+      "semembed": {
+        "provider": "openai",
+        "url": "http://semembed:8081/v1",
+        "model": "BAAI/bge-small-en-v1.5",
+        "max_tokens": 0
+      }
+    },
+    "capabilities": {
+      "agent-work": {
+        "preferred": ["gemini-flash"],
+        "requires_tools": true
+      },
+
+      "agent-work.expert": {
+        "preferred": ["gemini-flash"],
+        "requires_tools": true
+      },
+      "agent-work.expert.code_generation": {
+        "preferred": ["gemini-flash"],
+        "requires_tools": true
+      },
+      "agent-work.expert.code_review": {
+        "preferred": ["gemini-flash"],
+        "requires_tools": true
+      },
+      "agent-work.expert.data_transformation": {
+        "preferred": ["gemini-flash"],
+        "requires_tools": true
+      },
+      "agent-work.expert.research": {
+        "preferred": ["gemini-pro-low"],
+        "requires_tools": true
+      },
+      "agent-work.expert.analysis": {
+        "preferred": ["gemini-pro-low"],
+        "requires_tools": true
+      },
+      "agent-work.expert.summarization": {
+        "preferred": ["gemini-flash"],
+        "requires_tools": true
+      },
+      "agent-work.expert.customer_communications": {
+        "preferred": ["gemini-flash"],
+        "requires_tools": true
+      },
+      "agent-work.expert.planning": {
+        "preferred": ["gemini-pro-low"],
+        "requires_tools": true
+      },
+
+      "agent-work.master": {
+        "preferred": ["gemini-pro-low"],
+        "requires_tools": true
+      },
+      "agent-work.master.code_generation": {
+        "preferred": ["gemini-pro-low"],
+        "requires_tools": true
+      },
+      "agent-work.master.code_review": {
+        "preferred": ["gemini-pro-low"],
+        "requires_tools": true
+      },
+      "agent-work.master.research": {
+        "preferred": ["gemini-pro"],
+        "requires_tools": true
+      },
+      "agent-work.master.planning": {
+        "preferred": ["gemini-pro"],
+        "requires_tools": true
+      },
+
+      "agent-work.grandmaster": {
+        "preferred": ["gemini-pro"],
+        "requires_tools": true
+      },
+      "agent-work.grandmaster.planning": {
+        "preferred": ["gemini-pro"],
+        "requires_tools": true
+      },
+
+      "boss-battle": {
+        "preferred": ["gemini-pro"]
+      },
+      "dm-chat": {
+        "preferred": ["gemini-pro"]
+      },
+      "quest-design": {
+        "preferred": ["gemini-pro"]
+      },
+      "embedding": {
+        "description": "Vector embeddings for graph semantic search",
+        "preferred": ["semembed"]
+      },
+      "community_summary": {
+        "description": "LLM community summaries for graph clustering",
+        "preferred": ["gemini-flash"]
+      },
+      "query_classification": {
+        "description": "NLQ classification for graph queries",
+        "preferred": ["gemini-flash"]
+      }
+    },
+    "defaults": {
+      "model": "gemini-flash"
+    }
+  },
+  "components": {
+    "agentic-loop": {
+      "config": {
+        "context": {
+          "tool_result_max_age": 10,
+          "summarization_model": "gemini-flash"
+        }
+      }
+    },
+    "agentic-model": {
+      "config": {
+        "timeout": "300s",
+        "retry": { "max_attempts": 3 }
+      }
+    }
+  }
+}

@@ -91,6 +91,7 @@ services:
       SEMDRAGONS_LOG_LEVEL: "${SEMDRAGONS_LOG_LEVEL:-info}"
       SEED_E2E: "${SEED_E2E:-false}"
       SEED_AGENTS: "${SEED_AGENTS:-true}"
+      SEED_PROS: "${SEED_PROS:-false}"
       SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"

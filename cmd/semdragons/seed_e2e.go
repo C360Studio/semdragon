@@ -29,10 +29,11 @@ import (
 // path, because other processors that would consume those events may not be
 // started yet and the KV writes must be synchronous before the UI connects.
 func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclient.Client) error {
+	prosSeed := os.Getenv("SEED_PROS") == "true"
 	fullSeed := os.Getenv("SEED_E2E") == "true"
 	agentsOnly := os.Getenv("SEED_AGENTS") == "true"
 
-	if !fullSeed && !agentsOnly {
+	if !prosSeed && !fullSeed && !agentsOnly {
 		return nil
 	}
 
@@ -41,14 +42,29 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 		return fmt.Errorf("seed: resolve board config: %w", err)
 	}
 
+	mode := seedMode(fullSeed)
+	if prosSeed {
+		mode = "pros"
+	}
+
 	slog.Info("Seeding into board",
-		"mode", seedMode(fullSeed),
+		"mode", mode,
 		"org", boardCfg.Org,
 		"platform", boardCfg.Platform,
 		"board", boardCfg.Board,
 		"bucket", boardCfg.BucketName())
 
 	graph := semdragons.NewGraphClient(natsClient, boardCfg)
+
+	// The Pros: pre-leveled Expert+ roster for lab use.
+	// Mutually exclusive with E2E seed — different roster shape.
+	if prosSeed {
+		if err := seedPros(ctx, graph, boardCfg); err != nil {
+			return fmt.Errorf("seed: pros: %w", err)
+		}
+		slog.Info("Seed data written successfully", "mode", mode)
+		return nil
+	}
 
 	// Both modes seed agents. Full seed also seeds the store catalog.
 	// Quests are never seeded — users create them via DM chat or API.
@@ -63,7 +79,7 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 	// 	}
 	// }
 
-	slog.Info("Seed data written successfully", "mode", seedMode(fullSeed))
+	slog.Info("Seed data written successfully", "mode", mode)
 	return nil
 }
 
@@ -364,6 +380,104 @@ func seedStore(ctx context.Context, graph *semdragons.GraphClient) error {
 			"type", item.ItemType,
 			"xp_cost", item.XPCost,
 			"guild_discount", item.GuildDiscount)
+	}
+
+	return nil
+}
+
+// seedPros creates "The Pros" — a pre-leveled Expert+ roster for lab use.
+// All agents are Expert tier or above, with diverse skill coverage for party
+// formation and skill-based model routing.
+func seedPros(
+	ctx context.Context,
+	graph *semdragons.GraphClient,
+	boardCfg *domain.BoardConfig,
+) error {
+	specs := []agentSpec{
+		// 1 grandmaster — board anchor, DM delegate
+		{
+			namePattern: "apex",
+			level:       20,
+			skills:      []domain.SkillTag{domain.SkillPlanning, domain.SkillAnalysis},
+			archetype:   domain.ArchetypeStrategist,
+			count:       1,
+		},
+
+		// 3 masters — party leads with different specializations
+		{
+			namePattern: "sentinel",
+			level:       18,
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
+			archetype:   domain.ArchetypeEngineer,
+			count:       1,
+		},
+		{
+			namePattern: "oracle",
+			level:       17,
+			skills:      []domain.SkillTag{domain.SkillResearch, domain.SkillAnalysis},
+			archetype:   domain.ArchetypeScholar,
+			count:       1,
+		},
+		{
+			namePattern: "architect",
+			level:       16,
+			skills:      []domain.SkillTag{domain.SkillPlanning, domain.SkillCodeReview},
+			archetype:   domain.ArchetypeStrategist,
+			count:       1,
+		},
+
+		// 6 experts — diverse skill coverage for party composition
+		{
+			namePattern: "vanguard",
+			level:       15,
+			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform},
+			archetype:   domain.ArchetypeEngineer,
+			count:       1,
+		},
+		{
+			namePattern: "catalyst",
+			level:       14,
+			skills:      []domain.SkillTag{domain.SkillCodeGen},
+			archetype:   domain.ArchetypeEngineer,
+			count:       1,
+		},
+		{
+			namePattern: "cipher",
+			level:       13,
+			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillResearch},
+			archetype:   domain.ArchetypeScholar,
+			count:       1,
+		},
+		{
+			namePattern: "nexus",
+			level:       12,
+			skills:      []domain.SkillTag{domain.SkillDataTransform, domain.SkillAnalysis},
+			archetype:   domain.ArchetypeEngineer,
+			count:       1,
+		},
+		{
+			namePattern: "chronicle",
+			level:       12,
+			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillCustomerComms},
+			archetype:   domain.ArchetypeScribe,
+			count:       1,
+		},
+		{
+			namePattern: "pathfinder",
+			level:       11,
+			skills:      []domain.SkillTag{domain.SkillResearch, domain.SkillPlanning},
+			archetype:   domain.ArchetypeScholar,
+			count:       1,
+		},
+	}
+
+	for _, spec := range specs {
+		for i := 0; i < spec.count; i++ {
+			name := resolveAgentName(spec.namePattern, i+1)
+			if err := seedOneAgent(ctx, graph, boardCfg, name, spec, i); err != nil {
+				return fmt.Errorf("agent %q: %w", name, err)
+			}
+		}
 	}
 
 	return nil

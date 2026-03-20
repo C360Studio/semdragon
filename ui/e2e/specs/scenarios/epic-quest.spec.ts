@@ -46,8 +46,10 @@ test.describe.serial('Epic Quest Pipeline', () => {
 
 			await postQuestViaDMChat(
 				page,
-				'Create a Meshtastic driver for OpenSensorHub (OSH) so that clients ' +
-					'can use the Connected Systems API of OSH to interact with the Meshtastic network.',
+				'Design and implement a Meshtastic driver for OpenSensorHub (OSH). ' +
+					'The driver must be working code — not a design document. ' +
+					'It should use the Connected Systems API of OSH to send and receive messages over the Meshtastic network. ' +
+					'Deliver source files, tests, and a README with usage examples.',
 				{ timeout: 240_000 }
 			);
 		});

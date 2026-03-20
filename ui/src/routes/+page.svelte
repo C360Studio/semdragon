@@ -140,7 +140,7 @@
 								<div class="tier-bar-container">
 									<div
 										class="tier-bar"
-										style="width: {Math.max(tier.percentage, 2)}%"
+										style="width: {tier.count > 0 ? Math.max(tier.percentage, 2) : 0}%"
 										data-tier={tier.tier}
 									></div>
 								</div>
@@ -160,7 +160,7 @@
 								<div class="tier-bar-container">
 									<div
 										class="class-bar"
-										style="width: {Math.max(cls.percentage, 2)}%"
+										style="width: {cls.count > 0 ? Math.max(cls.percentage, 2) : 0}%"
 										data-archetype={cls.archetype}
 									></div>
 								</div>
