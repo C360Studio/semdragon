@@ -15,6 +15,16 @@
 	let leftPanelWidth = $state(280);
 	let rightPanelWidth = $state(320);
 
+	// Track which party quests have their sub-quest list expanded
+	let expandedParties = $state(new Set<string>());
+	function togglePartyExpand(questId: string, event: MouseEvent) {
+		event.stopPropagation();
+		const next = new Set(expandedParties);
+		if (next.has(questId)) next.delete(questId);
+		else next.add(questId);
+		expandedParties = next;
+	}
+
 	// Build parent→children index for party quest grouping
 	const subQuestsByParent = $derived.by(() => {
 		const index = new Map<string, Quest[]>();
@@ -199,7 +209,18 @@
 										>
 											<div class="quest-title-row">
 												<h4 class="quest-title" data-testid="quest-title">{quest.title}</h4>
-												<span class="party-badge">{children.length} sub-quests</span>
+												<span
+													class="party-badge"
+													role="button"
+													tabindex="0"
+													onclick={(e) => togglePartyExpand(String(quest.id), e)}
+													onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePartyExpand(String(quest.id), e); } }}
+													aria-expanded={expandedParties.has(String(quest.id))}
+													aria-label="Toggle {children.length} sub-quests"
+												>
+													<span class="expand-chevron" class:expanded={expandedParties.has(String(quest.id))}>&#9656;</span>
+													{children.length} sub-quests
+												</span>
 											</div>
 											<div class="quest-meta">
 												<span
@@ -219,35 +240,37 @@
 												</div>
 											{/if}
 										</button>
-										<div class="sub-quest-list">
-											{#each children as child}
-												<button
-													class="quest-card sub-quest-card"
-													class:selected={worldStore.selectedQuestId === child.id}
-													aria-label="{child.title}, sub-quest, {QuestDifficultyNames[child.difficulty]} difficulty"
-													aria-pressed={worldStore.selectedQuestId === child.id}
-													onclick={() => selectQuest(child)}
-													data-testid="quest-card"
-												>
-													<h4 class="quest-title" data-testid="quest-title">{child.title}</h4>
-													<div class="quest-meta">
-														<span class="status-pip" data-status={child.status}></span>
-														<span class="difficulty-badge" data-difficulty={child.difficulty}>
-															{QuestDifficultyNames[child.difficulty]}
-														</span>
-														<span class="xp-badge">{child.base_xp} XP</span>
-														{#if (child.tokens_prompt ?? 0) + (child.tokens_completion ?? 0) > 0}
-															<span class="token-badge">{formatTokenCount((child.tokens_prompt ?? 0) + (child.tokens_completion ?? 0))}</span>
-														{/if}
-													</div>
-													{#if child.claimed_by}
-														<div class="quest-assignee">
-															{worldStore.agentName(child.claimed_by)}
+										{#if expandedParties.has(String(quest.id))}
+											<div class="sub-quest-list">
+												{#each children as child}
+													<button
+														class="quest-card sub-quest-card"
+														class:selected={worldStore.selectedQuestId === child.id}
+														aria-label="{child.title}, sub-quest, {QuestDifficultyNames[child.difficulty]} difficulty"
+														aria-pressed={worldStore.selectedQuestId === child.id}
+														onclick={() => selectQuest(child)}
+														data-testid="quest-card"
+													>
+														<h4 class="quest-title" data-testid="quest-title">{child.title}</h4>
+														<div class="quest-meta">
+															<span class="status-pip" data-status={child.status}></span>
+															<span class="difficulty-badge" data-difficulty={child.difficulty}>
+																{QuestDifficultyNames[child.difficulty]}
+															</span>
+															<span class="xp-badge">{child.base_xp} XP</span>
+															{#if (child.tokens_prompt ?? 0) + (child.tokens_completion ?? 0) > 0}
+																<span class="token-badge">{formatTokenCount((child.tokens_prompt ?? 0) + (child.tokens_completion ?? 0))}</span>
+															{/if}
 														</div>
-													{/if}
-												</button>
-											{/each}
-										</div>
+														{#if child.claimed_by}
+															<div class="quest-assignee">
+																{worldStore.agentName(child.claimed_by)}
+															</div>
+														{/if}
+													</button>
+												{/each}
+											</div>
+										{/if}
 									</div>
 								{:else}
 									<button
@@ -635,10 +658,30 @@
 	.party-badge {
 		font-size: 0.625rem;
 		padding: 2px 6px;
+		border: none;
 		border-radius: var(--radius-sm);
 		background: var(--ui-interactive-primary);
 		color: var(--ui-text-on-primary);
 		white-space: nowrap;
+		cursor: pointer;
+		font: inherit;
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.party-badge:hover {
+		filter: brightness(1.2);
+	}
+
+	.expand-chevron {
+		display: inline-block;
+		transition: transform 150ms ease;
+		font-size: 0.5rem;
+	}
+
+	.expand-chevron.expanded {
+		transform: rotate(90deg);
 	}
 
 	.parent-card {
