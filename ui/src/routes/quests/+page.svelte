@@ -17,7 +17,7 @@
 
 	// Track which party quests have their sub-quest list expanded
 	let expandedParties = $state(new Set<string>());
-	function togglePartyExpand(questId: string, event: MouseEvent) {
+	function togglePartyExpand(questId: string, event: Event) {
 		event.stopPropagation();
 		const next = new Set(expandedParties);
 		if (next.has(questId)) next.delete(questId);
@@ -198,6 +198,10 @@
 							{#each questsByStatus[column.status] as quest}
 								{@const children = subQuestsByParent.get(String(quest.id)) ?? []}
 								{#if children.length > 0}
+									{@const failed = children.filter(c => c.status === 'failed').length}
+									{@const escalated = children.filter(c => c.status === 'escalated').length}
+									{@const completed = children.filter(c => c.status === 'completed').length}
+									{@const inProgress = children.filter(c => c.status === 'in_progress' || c.status === 'in_review').length}
 									<div class="quest-group">
 										<button
 											class="quest-card parent-card"
@@ -239,6 +243,20 @@
 													Lead: {worldStore.agentName(quest.claimed_by)}
 												</div>
 											{/if}
+											<div class="sub-quest-summary">
+												{#if completed > 0}
+													<span class="summary-pip" data-status="completed">{completed}</span>
+												{/if}
+												{#if inProgress > 0}
+													<span class="summary-pip" data-status="in_progress">{inProgress}</span>
+												{/if}
+												{#if failed > 0}
+													<span class="summary-pip" data-status="failed">{failed}</span>
+												{/if}
+												{#if escalated > 0}
+													<span class="summary-pip" data-status="escalated">{escalated}</span>
+												{/if}
+											</div>
 										</button>
 										{#if expandedParties.has(String(quest.id))}
 											<div class="sub-quest-list">
@@ -683,6 +701,26 @@
 	.expand-chevron.expanded {
 		transform: rotate(90deg);
 	}
+
+	.sub-quest-summary {
+		display: flex;
+		gap: 6px;
+		margin-top: 4px;
+		flex-wrap: wrap;
+	}
+
+	.summary-pip {
+		font-size: 0.6rem;
+		padding: 1px 5px;
+		border-radius: var(--radius-sm);
+		color: var(--ui-text-primary);
+		opacity: 0.85;
+	}
+
+	.summary-pip[data-status='completed'] { background: color-mix(in srgb, var(--quest-completed) 25%, transparent); }
+	.summary-pip[data-status='in_progress'] { background: color-mix(in srgb, var(--quest-in-progress) 25%, transparent); }
+	.summary-pip[data-status='failed'] { background: color-mix(in srgb, var(--quest-failed) 30%, transparent); color: var(--quest-failed); font-weight: 600; }
+	.summary-pip[data-status='escalated'] { background: color-mix(in srgb, var(--quest-escalated) 30%, transparent); color: var(--quest-escalated); font-weight: 600; }
 
 	.parent-card {
 		border: none;
