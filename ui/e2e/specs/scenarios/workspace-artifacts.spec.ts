@@ -107,6 +107,46 @@ test.describe.serial('Files Artifacts', () => {
 	});
 
 	// ===========================================================================
+	// Test 2b: Quest context header shows quest metadata
+	// ===========================================================================
+
+	test('files page header shows quest title, status, and agent', async ({ page }) => {
+		test.setTimeout(30_000);
+
+		if (!artifactQuestInstanceId) {
+			test.skip(true, 'No quest with artifacts found in previous test');
+			return;
+		}
+
+		await page.goto(`/files?quest=${artifactQuestInstanceId}`);
+		await waitForHydration(page);
+
+		// Header should show the quest title (not just the raw instance ID)
+		const heading = page.locator('.page-header h1');
+		await expect(heading).toBeVisible({ timeout: 5_000 });
+		const title = await heading.textContent();
+		expect(title).toBeTruthy();
+		expect(title).not.toBe('Files'); // Should be the quest title, not generic
+
+		// Status badge should be present
+		const statusBadge = page.locator('.page-header .status-badge');
+		await expect(statusBadge).toBeVisible();
+
+		// Back link should navigate to quest picker
+		const backLink = page.locator('.back-link');
+		await expect(backLink).toBeVisible();
+		await expect(backLink).toHaveAttribute('href', '/files');
+
+		// Right panel should auto-open with quest details
+		const detailsPanel = page.locator('.details-panel');
+		await expect(detailsPanel).toBeVisible({ timeout: 3_000 });
+
+		// Details should include a link to the full quest page
+		const fullLink = page.locator('.view-full-link');
+		await expect(fullLink).toBeVisible();
+	});
+
+	// ===========================================================================
 	// Test 3: Verify artifact tracking predicates on quest entity
 	// ===========================================================================
 

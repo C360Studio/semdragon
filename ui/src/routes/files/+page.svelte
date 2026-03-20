@@ -17,7 +17,7 @@
 	import CopyButton from '$components/CopyButton.svelte';
 	import { listQuestArtifacts, getArtifactFile, getArtifactsDownloadUrl } from '$services/api';
 	import { worldStore } from '$stores/worldStore.svelte';
-	import { extractInstance } from '$types';
+	import { QuestDifficultyNames, extractInstance } from '$types';
 
 	// ---------------------------------------------------------------------------
 	// Types
@@ -44,6 +44,19 @@
 	// ---------------------------------------------------------------------------
 
 	let questId = $derived(page.url.searchParams.get('quest') ?? '');
+
+	// Resolve full quest entity from worldStore for context display
+	const currentQuest = $derived(
+		questId ? worldStore.questList.find((q) => extractInstance(q.id) === questId) ?? null : null
+	);
+	const currentAgentName = $derived(
+		currentQuest?.claimed_by ? worldStore.agentName(currentQuest.claimed_by) : null
+	);
+	const currentParentQuest = $derived(
+		currentQuest?.parent_quest
+			? worldStore.questList.find((q) => q.id === currentQuest.parent_quest) ?? null
+			: null
+	);
 
 	let fileTree = $state<FileNode[]>([]);
 	let fileCount = $state(0);
@@ -255,10 +268,19 @@
 	function downloadUrl(): string {
 		return getArtifactsDownloadUrl(questId);
 	}
+
+	// Auto-open right panel when viewing a quest's files
+	$effect(() => {
+		if (questId && currentQuest) {
+			untrack(() => { rightPanelOpen = true; });
+		} else {
+			untrack(() => { rightPanelOpen = false; });
+		}
+	});
 </script>
 
 <svelte:head>
-	<title>Files - Semdragons</title>
+	<title>{currentQuest ? `${currentQuest.title} Files` : 'Files'} - Semdragons</title>
 </svelte:head>
 
 <ThreePanelLayout
@@ -276,28 +298,101 @@
 	{/snippet}
 
 	{#snippet rightPanel()}
-		<div class="right-panel-placeholder"></div>
+		<div class="details-panel">
+			<header class="panel-header">
+				<h2>Quest Details</h2>
+			</header>
+			<div class="details-content">
+				{#if currentQuest}
+					{@const quest = currentQuest}
+					<section class="detail-section">
+						<p class="quest-description">{quest.description}</p>
+						<dl class="detail-list">
+							<dt>Status</dt>
+							<dd><span class="status-badge" data-status={quest.status}>{quest.status}</span></dd>
+							<dt>Difficulty</dt>
+							<dd>{QuestDifficultyNames[quest.difficulty]}</dd>
+							<dt>Base XP</dt>
+							<dd>{quest.base_xp}</dd>
+							<dt>Required Skills</dt>
+							<dd>{quest.required_skills.join(', ') || 'None'}</dd>
+							{#if quest.claimed_by}
+								<dt>Claimed By</dt>
+								<dd><a href="/agents/{quest.claimed_by}">{worldStore.agentName(quest.claimed_by)}</a></dd>
+							{/if}
+							<dt>Attempts</dt>
+							<dd>{quest.attempts} / {quest.max_attempts}</dd>
+							{#if quest.artifacts_merged}
+								<dt>Merged</dt>
+								<dd><code class="merge-hash">{quest.artifacts_merged.slice(0, 8)}</code></dd>
+							{/if}
+							{#if quest.loop_id}
+								<dt>Trajectory</dt>
+								<dd><a href="/trajectories/{quest.loop_id}">View</a></dd>
+							{/if}
+						</dl>
+
+						{#if quest.failure_reason}
+							<div class="escalation-block">
+								<h4>{quest.status === 'failed' ? 'Failure' : 'Escalation'}</h4>
+								<p class="escalation-reason-text">{quest.failure_reason}</p>
+							</div>
+						{/if}
+
+						<a href="/quests/{quest.id}" class="view-full-link">View full quest</a>
+					</section>
+				{:else if questId}
+					<p class="empty-state">Quest not found in world state.</p>
+				{:else}
+					<p class="empty-state">Select a quest to view details.</p>
+				{/if}
+			</div>
+		</div>
 	{/snippet}
 
 	{#snippet centerPanel()}
 		<div class="files-page">
 			<header class="page-header">
-				<div class="header-row">
-					<h1>Files</h1>
-					{#if questId && fileCount > 0}
-						<div class="header-actions">
+				{#if questId && currentQuest}
+					<a href="/files" class="back-link">&larr; All quests</a>
+					<div class="header-row">
+						<h1>{currentQuest.title}</h1>
+						<div class="header-badges">
+							<span class="status-badge" data-status={currentQuest.status}>{currentQuest.status}</span>
+							<span class="difficulty-badge" data-difficulty={currentQuest.difficulty}>{QuestDifficultyNames[currentQuest.difficulty]}</span>
+						</div>
+					</div>
+					<div class="header-meta">
+						{#if currentAgentName}
+							<span>{currentAgentName}</span>
+						{/if}
+						{#if currentQuest.artifacts_merged}
+							<span class="merge-pill merged">Merged</span>
+						{:else if currentQuest.status === 'in_progress'}
+							<span class="merge-pill worktree">Worktree</span>
+						{:else if currentQuest.status === 'completed' || currentQuest.status === 'in_review'}
+							<span class="merge-pill worktree">Worktree</span>
+						{/if}
+						{#if fileCount > 0}
 							<span class="file-count">{fileCount} file{fileCount === 1 ? '' : 's'}</span>
-							<a href={downloadUrl()} class="download-btn" download aria-label="Download all as ZIP">
-								Download ZIP
-							</a>
+							<a href={downloadUrl()} class="download-btn" download>ZIP</a>
+						{/if}
+					</div>
+					{#if currentParentQuest}
+						<div class="breadcrumb">
+							Part of: <a href="/files?quest={extractInstance(currentParentQuest.id)}">{currentParentQuest.title}</a>
 						</div>
 					{/if}
-				</div>
-				{#if questId}
-					<p class="quest-id-label">
-						<a href="/files" class="back-link">&larr; All quests</a>
-						<span>Quest: <code>{questId}</code></span>
-					</p>
+				{:else if questId}
+					<a href="/files" class="back-link">&larr; All quests</a>
+					<div class="header-row">
+						<h1>Files</h1>
+					</div>
+					<p class="quest-id-label">Quest: <code>{questId}</code></p>
+				{:else}
+					<div class="header-row">
+						<h1>Files</h1>
+					</div>
 				{/if}
 			</header>
 
@@ -465,12 +560,6 @@
 		font-weight: 600;
 	}
 
-	.header-actions {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-md);
-	}
-
 	.file-count {
 		font-size: 0.875rem;
 		color: var(--ui-text-tertiary);
@@ -498,12 +587,6 @@
 		color: var(--ui-text-tertiary);
 	}
 
-	.quest-id-label {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-	}
-
 	.quest-id-label code {
 		font-family: var(--font-mono, monospace);
 		font-size: 0.8rem;
@@ -518,6 +601,63 @@
 	.back-link:hover {
 		color: var(--ui-text-primary);
 	}
+
+	.header-badges {
+		display: flex;
+		gap: var(--spacing-xs);
+		align-items: center;
+	}
+
+	.header-meta {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		margin-top: var(--spacing-xs);
+		font-size: 0.8125rem;
+		color: var(--ui-text-tertiary);
+	}
+
+	.merge-pill {
+		font-size: 0.6875rem;
+		padding: 1px 6px;
+		border-radius: var(--radius-sm);
+		font-weight: 500;
+	}
+
+	.merge-pill.merged {
+		background: color-mix(in srgb, var(--status-success) 20%, transparent);
+		color: var(--status-success);
+	}
+
+	.merge-pill.worktree {
+		background: var(--ui-surface-tertiary);
+		color: var(--ui-text-secondary);
+	}
+
+	.breadcrumb {
+		margin-top: var(--spacing-xs);
+		font-size: 0.8125rem;
+		color: var(--ui-text-tertiary);
+	}
+
+	.breadcrumb a {
+		color: var(--ui-interactive-primary);
+	}
+
+	.difficulty-badge {
+		font-size: 0.625rem;
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		font-weight: 600;
+	}
+
+	.difficulty-badge[data-difficulty='0'] { background: var(--difficulty-trivial-container); color: var(--difficulty-trivial); }
+	.difficulty-badge[data-difficulty='1'] { background: var(--difficulty-easy-container); color: var(--difficulty-easy); }
+	.difficulty-badge[data-difficulty='2'] { background: var(--difficulty-moderate-container); color: var(--difficulty-moderate); }
+	.difficulty-badge[data-difficulty='3'] { background: var(--difficulty-hard-container); color: var(--difficulty-hard); }
+	.difficulty-badge[data-difficulty='4'] { background: var(--difficulty-epic-container); color: var(--difficulty-epic); }
+	.difficulty-badge[data-difficulty='5'] { background: var(--difficulty-legendary-container); color: var(--difficulty-legendary); }
 
 	/* State views */
 	.empty-state,
@@ -763,5 +903,91 @@
 		background: none;
 		padding: 0;
 		font-size: inherit;
+	}
+
+	/* Details panel */
+	.details-panel {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.panel-header {
+		padding: var(--spacing-sm) var(--spacing-md);
+		border-bottom: 1px solid var(--ui-border-subtle);
+	}
+
+	.panel-header h2 {
+		margin: 0;
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+
+	.details-content {
+		flex: 1;
+		overflow-y: auto;
+		padding: var(--spacing-md);
+	}
+
+	.quest-description {
+		color: var(--ui-text-secondary);
+		font-size: 0.875rem;
+		margin-bottom: var(--spacing-md);
+	}
+
+	.detail-list {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: var(--spacing-xs) var(--spacing-md);
+	}
+
+	.detail-list dt {
+		color: var(--ui-text-tertiary);
+		font-size: 0.75rem;
+	}
+
+	.detail-list dd {
+		margin: 0;
+		font-size: 0.875rem;
+	}
+
+	.merge-hash {
+		font-family: var(--font-mono, monospace);
+		font-size: 0.8rem;
+		color: var(--status-success);
+	}
+
+	.escalation-block {
+		margin-top: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--ui-surface-secondary);
+		border: 1px solid var(--quest-escalated, #e67e22);
+		border-radius: var(--radius-md);
+	}
+
+	.escalation-block h4 {
+		margin: 0 0 var(--spacing-xs);
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--quest-escalated, #e67e22);
+	}
+
+	.escalation-reason-text {
+		margin: 0;
+		font-size: 0.8125rem;
+		line-height: 1.4;
+		color: var(--ui-text-secondary);
+		white-space: pre-wrap;
+	}
+
+	.view-full-link {
+		display: block;
+		text-align: center;
+		padding: var(--spacing-sm);
+		margin-top: var(--spacing-md);
+		font-size: 0.8125rem;
+		color: var(--ui-interactive-primary);
 	}
 </style>
