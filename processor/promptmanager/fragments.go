@@ -159,9 +159,10 @@ func registerPartyLeadDirective(r *PromptRegistry) {
 // buildSubQuestExecutorDirective guides party member agents working on sub-quests.
 // Injects an iteration budget when MaxIterations is set (same pattern as solo agents).
 //
-// Rule 1 requires a quick workspace check before submission. Without any gate,
-// small models (Gemini Flash) call submit_work_product immediately on the first
-// turn. But the gate is scoped to ONE list_directory call — not open-ended reading.
+// When graph tools are available (semsource indexed the repo), rule 1 leads with
+// graph_summary → graph_search for project orientation instead of filesystem
+// exploration. This scales to real repos with thousands of files where
+// list_directory(".") is overwhelming.
 func buildSubQuestExecutorDirective(ctx AssemblyContext) string {
 	var b strings.Builder
 	b.WriteString("You are executing a SUB-QUEST assigned to you by a party lead.\n\n")
@@ -170,17 +171,36 @@ func buildSubQuestExecutorDirective(ctx AssemblyContext) string {
 		b.WriteString(fmt.Sprintf("ITERATION BUDGET: %d tool-use rounds. Plan your work to finish well within this limit.\n\n", ctx.MaxIterations))
 	}
 
-	b.WriteString(`COMPLETION RULES:
-1. Quick workspace check: ONE call to list_directory(".") to see what exists. If the workspace is empty or has only boilerplate, move on — do NOT keep reading files.
-2. Complete the task described in the quest objective.
+	// Check if graph tools are available — determines orientation strategy.
+	hasGraph := false
+	for _, name := range ctx.AvailableToolNames {
+		if name == "graph_summary" {
+			hasGraph = true
+			break
+		}
+	}
+
+	b.WriteString("COMPLETION RULES:\n")
+	if hasGraph {
+		b.WriteString(`1. ORIENT via knowledge graph: call graph_summary ONCE to see what's indexed, then graph_search to find files/patterns relevant to YOUR objective. Do NOT explore the filesystem blindly — the graph has the project structure.
+`)
+	} else {
+		b.WriteString(`1. Quick workspace check: ONE call to list_directory(".") to see what exists. If the workspace is empty or has only boilerplate, move on — do NOT keep reading files.
+`)
+	}
+
+	b.WriteString(`2. Complete the task described in the quest objective.
 3. Use available tools (read_file, write_file, patch_file, etc.) to produce your work.
 4. When you have finished, respond with [INTENT: work_product] followed by your complete deliverable.
 5. Your deliverable MUST contain the actual work output — code, analysis, or results — not a description of what you did.
 6. If the task requires code, include BOTH implementation AND tests directly in your deliverable. Your reviewer can only see what you include — they cannot access external files.
 7. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
 8. NEVER write source code using bash — use write_file to create files, patch_file for edits.
-9. Complete the work in as few iterations as possible — avoid unnecessary exploration.
-10. For project-specific lookups, call graph_summary ONCE to see what's indexed, then graph_search for targeted queries. Fall back to web_search if graph results are unhelpful.`)
+9. Complete the work in as few iterations as possible — avoid unnecessary exploration.`)
+	if hasGraph {
+		b.WriteString(`
+10. For project-specific lookups, use graph_search with targeted queries. Fall back to web_search only if the graph doesn't have what you need.`)
+	}
 	return b.String()
 }
 
@@ -199,11 +219,11 @@ func registerSubQuestExecutorDirective(r *PromptRegistry) {
 		ContentFunc: buildSubQuestExecutorDirective,
 	})
 	// Gemini Flash tends to skip tools and call submit_work_product immediately.
-	// Softened: one list_directory check, then focus on producing output.
+	// Softened: orient first (graph or list_directory), then produce output.
 	r.Register(&PromptFragment{
 		ID:        "builtin.sub-quest-executor.provider-hint",
 		Category:  CategoryProviderHints,
-		Content:   "Call list_directory once to check the workspace, then focus on producing your deliverable. Do not submit on your first turn without using at least one tool.",
+		Content:   "Orient yourself first (graph_summary or list_directory), then focus on producing your deliverable. Do not submit on your first turn without using at least one tool.",
 		Priority:  0,
 		Providers: []string{"gemini", "openai"},
 		Condition: isSubQuestExecutor,
