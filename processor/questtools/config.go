@@ -29,18 +29,26 @@ type Config struct {
 	// ConsumerNameSuffix disambiguates multiple instances consuming the same stream.
 	ConsumerNameSuffix string `json:"consumer_name_suffix,omitempty"`
 	DeleteConsumerOnStop bool   `json:"delete_consumer_on_stop,omitempty"`
+	// HTTPTextMaxChars limits characters returned after HTML-to-text conversion.
+	// 0 means use the package default (20000).
+	HTTPTextMaxChars int `json:"http_text_max_chars,omitempty"`
+	// HTTPPersistToGraph enables persisting fetched HTML pages to the knowledge graph.
+	// Requires a valid NATS connection. Defaults to true.
+	HTTPPersistToGraph bool `json:"http_persist_to_graph"`
 }
 
 // DefaultConfig returns a Config with safe production defaults.
 func DefaultConfig() Config {
 	return Config{
-		Org:              "default",
-		Platform:         "local",
-		Board:            "main",
-		StreamName:       "AGENT",
-		QuestLoopsBucket: "QUEST_LOOPS",
-		Timeout:          "60s",
-		EnableBuiltins:   true,
+		Org:                "default",
+		Platform:           "local",
+		Board:              "main",
+		StreamName:         "AGENT",
+		QuestLoopsBucket:   "QUEST_LOOPS",
+		Timeout:            "60s",
+		EnableBuiltins:     true,
+		HTTPTextMaxChars:   20000,
+		HTTPPersistToGraph: true,
 	}
 }
 

@@ -4,11 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,11 +20,13 @@ import (
 	"sync"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semstreams/message"
 )
 
 // =============================================================================
@@ -59,6 +64,46 @@ const (
 	// maxContextLines is the maximum context lines allowed by search_text.
 	maxContextLines = 5
 )
+
+// =============================================================================
+// HTTP RESPONSE HANDLING - HTML conversion and graph persistence
+// =============================================================================
+
+// httpTextMaxSize is the maximum characters after HTML-to-text conversion.
+// Configurable via SetHTTPTextMaxSize; defaults to 20000.
+var httpTextMaxSize = 20000
+
+// minHTTPPersistLength is the minimum text length (after conversion) required
+// to persist a web page to the knowledge graph. Short pages are likely error
+// pages or stubs not worth storing.
+var minHTTPPersistLength = 500
+
+// httpGraphPersist is set when graph persistence is enabled.
+// Nil means graph persistence is disabled (the default).
+var httpGraphPersist *graphPersister
+
+// graphPersister holds the dependencies required to write web content to the
+// knowledge graph. Populated by SetHTTPGraphPersist.
+type graphPersister struct {
+	graph  *semdragons.GraphClient
+	config *domain.BoardConfig
+}
+
+// SetHTTPTextMaxSize configures the maximum characters returned after
+// HTML-to-text conversion. Call this from the component's Start method.
+func SetHTTPTextMaxSize(maxChars int) { httpTextMaxSize = maxChars }
+
+// SetHTTPGraphPersist enables knowledge-graph persistence for HTML responses.
+// Pass a nil GraphClient to disable persistence.
+func SetHTTPGraphPersist(gc *semdragons.GraphClient, cfg *domain.BoardConfig) {
+	if gc == nil {
+		httpGraphPersist = nil
+		return
+	}
+	httpGraphPersist = &graphPersister{graph: gc, config: cfg}
+}
+
+// =============================================================================
 
 // ToolHandler executes a tool and returns the result.
 // The handler receives the tool call arguments and quest/agent context.
@@ -2118,16 +2163,102 @@ func httpRequestHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Qu
 		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to read response: %v", err)}
 	}
 
-	result := string(body)
-	truncated := ""
-	if len(body) > maxHTTPResponseSize {
-		result = result[:maxHTTPResponseSize]
-		truncated = "\n... (response truncated)"
+	contentType := resp.Header.Get("Content-Type")
+	isHTML := strings.Contains(contentType, "text/html")
+
+	var result string
+	var truncMsg string
+
+	if isHTML {
+		title := extractTitle(bytes.NewReader(body))
+		text, wasTruncated := htmlToText(bytes.NewReader(body), httpTextMaxSize)
+		result = text
+		if wasTruncated {
+			truncMsg = fmt.Sprintf("\n... (converted from HTML, truncated at %d chars)", httpTextMaxSize)
+		}
+
+		// Persist to the knowledge graph if the page meets the quality threshold.
+		if httpGraphPersist != nil && len(text) >= minHTTPPersistLength {
+			go persistWebContent(httpGraphPersist, urlStr, title, text, call)
+		}
+	} else {
+		result = string(body)
+		if len(body) > maxHTTPResponseSize {
+			result = result[:maxHTTPResponseSize]
+			truncMsg = "\n... (response truncated)"
+		}
 	}
 
 	return agentic.ToolResult{
 		CallID:  call.ID,
-		Content: fmt.Sprintf("HTTP %d %s\n\n%s%s", resp.StatusCode, resp.Status, result, truncated),
+		Content: fmt.Sprintf("HTTP %d %s\n\n%s%s", resp.StatusCode, resp.Status, result, truncMsg),
+	}
+}
+
+// webContentEntity is a thin Graphable wrapper for a fetched web document.
+// It lets GraphClient.EmitEntity marshal and store the web content triples
+// using the standard entity-state pipeline.
+type webContentEntity struct {
+	id      string
+	triples []message.Triple
+}
+
+func (e *webContentEntity) EntityID() string          { return e.id }
+func (e *webContentEntity) Triples() []message.Triple { return e.triples }
+
+// persistWebContent writes a fetched web page to the knowledge graph as a
+// source.doc entity. This runs in a goroutine; failures are logged and ignored
+// so they never block or surface to the agent.
+func persistWebContent(p *graphPersister, rawURL, title, content string, call agentic.ToolCall) {
+	urlHash := fmt.Sprintf("%x", sha256.Sum256([]byte(rawURL)))[:6]
+
+	effectiveTitle := title
+	if effectiveTitle == "" {
+		if u, err := url.Parse(rawURL); err == nil {
+			effectiveTitle = u.Host + u.Path
+		} else {
+			effectiveTitle = rawURL
+		}
+	}
+
+	slug := slugify(effectiveTitle, 40)
+	instance := slug + "-" + urlHash
+
+	entityID := fmt.Sprintf("%s.%s.web.agent.doc.%s",
+		p.config.Org, p.config.Platform, instance)
+
+	summary := content
+	if len(summary) > 200 {
+		summary = summary[:200] + "..."
+	}
+
+	agentID, _ := call.Metadata["agent_id"].(string)
+	questID, _ := call.Metadata["quest_id"].(string)
+
+	triples := []message.Triple{
+		{Subject: entityID, Predicate: "source.doc.content", Object: content},
+		{Subject: entityID, Predicate: "source.doc.summary", Object: summary},
+		{Subject: entityID, Predicate: "source.doc.url", Object: rawURL},
+		{Subject: entityID, Predicate: "source.doc.mime_type", Object: "text/html"},
+		{Subject: entityID, Predicate: "source.doc.scope", Object: "all"},
+		{Subject: entityID, Predicate: "dc.terms.title", Object: effectiveTitle},
+		{Subject: entityID, Predicate: "dc.terms.modified", Object: time.Now().Format(time.RFC3339)},
+	}
+	if agentID != "" {
+		triples = append(triples, message.Triple{Subject: entityID, Predicate: "source.doc.fetched_by", Object: agentID})
+	}
+	if questID != "" {
+		triples = append(triples, message.Triple{Subject: entityID, Predicate: "source.doc.quest_id", Object: questID})
+	}
+
+	entity := &webContentEntity{id: entityID, triples: triples}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := p.graph.EmitEntity(ctx, entity, "web.content.fetched"); err != nil {
+		slog.Debug("failed to persist web content to graph",
+			"url", rawURL, "entity_id", entityID, "error", err)
 	}
 }
 

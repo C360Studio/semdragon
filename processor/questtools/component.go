@@ -199,6 +199,17 @@ func (c *Component) Start(ctx context.Context) error {
 		c.toolRegistry.RegisterGraphSummary(reg)
 	}
 
+	// Configure HTML-to-text conversion and optional graph persistence for
+	// the http_request tool. These are package-level vars in the executor
+	// package, so they are set once globally for the process.
+	if c.config.HTTPTextMaxChars > 0 {
+		executor.SetHTTPTextMaxSize(c.config.HTTPTextMaxChars)
+	}
+	if c.config.HTTPPersistToGraph {
+		graphClient := semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
+		executor.SetHTTPGraphPersist(graphClient, c.boardConfig)
+	}
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
