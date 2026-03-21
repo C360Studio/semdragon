@@ -329,46 +329,62 @@ task e2e:gemini             # E2E with Gemini
 task e2e:spec -- name       # Single spec against running stack
 ```
 
-### E2E Active Monitoring Protocol (MANDATORY)
+### E2E Monitoring Protocol (MANDATORY)
 
-**E2E tests with real LLM providers are long-running. You MUST monitor them actively — never block in foreground waiting for completion.**
+**Always use task commands** — never bare `npx playwright` or raw `docker compose`. Tasks inject env vars, compose profiles, and seed steps. If a task is broken, fix the task.
 
-#### Launch Pattern
-1. Run `DEBUG=1 task e2e:gemini` (or other provider) via `run_in_background: true`
-2. `DEBUG=1` keeps the stack alive after tests finish for post-mortem inspection
+#### Launch: Always pipe through tee
 
-#### Monitor Three Data Sources In Parallel While Tests Run
-Check every 20-30s. Do NOT wait for test completion before investigating.
+```bash
+DEBUG=1 task e2e:gemini 2>&1 | tee /tmp/e2e-test.log
+```
 
-1. **Test output**: `TaskOutput` (non-blocking) to see which test is running, pass/fail, timing
+Run as `run_in_background: true`. Docker compose buffers build output — without tee, test results are lost if the background task times out. `DEBUG=1` keeps the stack alive after tests for post-mortem regardless of pass/fail.
+
+**Task variants:**
+- `task e2e` — full run (tier1 + clean + tier2)
+- `task e2e:tier1` / `task e2e:tier2` — single tier
+- `task e2e:gemini` / `task e2e:anthropic` — real LLM providers
+- `task e2e:spec -- quest-lifecycle` — single spec against running stack (fastest)
+- `task e2e:run` — all specs against running stack
+- `task e2e:mock` — start stack without running tests (use with `e2e:spec`)
+- `task e2e:pros:gemini` — tier3 epic with The Pros roster
+
+**`NO_CACHE=1`** rebuilds all images (slow — includes sandbox). To rebuild only the backend: `docker compose -f docker/compose.yml build --no-cache backend`
+
+#### Monitor: Three data sources, never timeout > 30s
+
+Poll every 20-30s. **Never set timeout > 30 seconds** on any poll command.
+
+1. **Test output**: `tail -20 /tmp/e2e-test.log`
 2. **Backend logs** (filtered — debug is extremely noisy):
    ```bash
    docker compose -f docker/compose.yml logs --since=30s backend 2>&1 | \
      grep -iE '(quest|agentic|loop|bridge|model|error|fail|complet|submit|tool|clarif|400|429)' | \
-     grep -v 'community\|pivot\|k-core\|structural\|graph-cluster\|predicate index\|embedding' | tail -30
+     grep -v 'community\|pivot\|k-core\|structural\|graph-cluster\|predicate index\|embedding' | tail -20
    ```
 3. **Trajectories** — fetch when a quest enters agentic loop:
    ```bash
-   # Find loop_id from questbridge log: "published TaskMessage ... loop_id=..."
    curl -s http://localhost:8081/game/trajectories/{loop_id}
    ```
 
-#### Dump Evidence to Files
-For post-mortem analysis, dump logs and trajectory data to `/tmp/` files rather than depending on Playwright assertions or terminal output:
+#### Post-mortem: Dump evidence to files
+
 ```bash
 docker compose -f docker/compose.yml logs backend > /tmp/e2e-backend.log 2>&1
-curl -s http://localhost:8081/game/trajectories/{loop_id} > /tmp/e2e-trajectory.json
 curl -s http://localhost:8081/game/world > /tmp/e2e-world.json
 ```
 
-#### Error Artifacts
-- `ui/test-results/*/error-context.md` — page snapshot at failure time
+Also check: `ui/test-results/*/error-context.md` — page snapshots at failure time.
 
-#### Rules
-- **Always use task commands** (`task e2e:gemini`, etc.) — never raw docker compose
-- **Abort early** if logs show the quest is stuck in a loop, hitting errors, or burning tokens on clarification cycles
-- **Report findings with evidence** — quote specific log lines, trajectory data, model responses. Never guess at root cause when data is available.
-- **Quest lifecycle trace**: posted → claimed → in_progress → (agentic loop) → submitted/completed/failed/escalated. Cross-reference timestamps across all three data sources.
+#### Key facts
+
+- `ignore_error: true` on Playwright commands means **exit code 0 does NOT indicate pass/fail** — must read the Playwright summary line in test output
+- `task e2e` (default) runs tier1, tears down, rebuilds, runs tier2 — two full cycles
+- Tier 2 scenarios have **0 retries** — real LLM tokens, retries create duplicate quests
+- Cold start after reboot: Go compile + UI build can take 3-5 min (cached layers fast after)
+- **Abort early** if logs show stuck loops, repeated errors, or token burn
+- **Report with evidence** — quote log lines, trajectory data, model responses. Never guess.
 
 ### Test Categories
 
