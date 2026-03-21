@@ -422,8 +422,9 @@ func registerReviewBrief(r *PromptRegistry) {
 // Only tools present in AvailableToolNames are included in the output.
 var toolGuidanceEntries = map[string]string{
 	// Knowledge tools
-	"graph_query":  "Game state (quests, agents, guilds, parties, battles). Fast.",
-	"graph_search": "Knowledge graph (code, docs, repos, prior tool results). Try this FIRST for project-specific lookups. Use query_type 'nlq' for natural language questions. If results are empty or unhelpful, FALL BACK to web_search — don't retry the same graph query.",
+	"graph_query":   "Game state (quests, agents, guilds, parties, battles). Fast.",
+	"graph_summary": "Overview of what's indexed in the knowledge graph — sources, entity types, counts, predicates. Call ONCE before graph_search to understand available data.",
+	"graph_search":  "Knowledge graph (code, docs, repos, prior tool results). Try this FIRST for project-specific lookups. Use query_type 'nlq' for natural language questions. If results are empty or unhelpful, FALL BACK to web_search — don't retry the same graph query.",
 	"web_search":   "External info AND fallback when graph search returns poor results. Use for third-party APIs, libraries, general knowledge, or when the knowledge graph didn't answer your question. Use BEFORE http_request to find the right URLs — never guess URLs.",
 	// Exploration tools — use these BEFORE reading/writing to find the right files
 	"list_directory": "See what files and folders exist at a path. Start here to understand project layout.",
@@ -450,7 +451,7 @@ var toolGuidanceEntries = map[string]string{
 
 // toolGuidanceOrder controls the display order of tool guidance entries.
 var toolGuidanceOrder = []string{
-	"graph_query", "graph_search", "web_search",
+	"graph_query", "graph_summary", "graph_search", "web_search",
 	"list_directory", "glob_files", "search_text",
 	"inspect_environment",
 	"read_file", "write_file", "patch_file",

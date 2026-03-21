@@ -194,6 +194,11 @@ func (c *Component) Start(ctx context.Context) error {
 		c.toolRegistry.RegisterGraphSearch(c.config.GraphQLURL)
 	}
 
+	// Register graph_summary tool for semsource source discovery.
+	if reg := questbridge.GlobalGraphSources(); reg != nil {
+		c.toolRegistry.RegisterGraphSummary(reg)
+	}
+
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())

@@ -121,6 +121,10 @@ func (r *GraphSourceRegistry) SourcesForQuery(queryType, entityID, prefix string
 		// Fan out to all ready sources.
 		return r.readySources()
 
+	case "summary":
+		// Only semsource sources expose the /summary endpoint.
+		return r.SourcesForSummary()
+
 	default:
 		return r.readySources()
 	}
@@ -142,6 +146,47 @@ func (r *GraphSourceRegistry) GraphQLURLsForQuery(queryType, entityID, prefix st
 		}
 	}
 	return urls
+}
+
+// SummaryURL derives the summary endpoint URL from StatusURL by replacing
+// "/status" with "/summary". Returns an empty string when StatusURL is empty.
+func (s *GraphSource) SummaryURL() string {
+	if s.StatusURL == "" {
+		return ""
+	}
+	return strings.Replace(s.StatusURL, "/status", "/summary", 1)
+}
+
+// GraphSummaryRouter returns summary endpoint URLs for ready semsource sources.
+type GraphSummaryRouter interface {
+	SummaryURLs() []string
+}
+
+// SummaryURLs returns the summary endpoint URLs for all ready semsource sources.
+// Local graph sources do not expose this endpoint and are excluded.
+func (r *GraphSourceRegistry) SummaryURLs() []string {
+	var urls []string
+	for _, src := range r.sources {
+		if src.Type != "semsource" || !src.ready.Load() {
+			continue
+		}
+		if u := src.SummaryURL(); u != "" {
+			urls = append(urls, u)
+		}
+	}
+	return urls
+}
+
+// SourcesForSummary returns only ready semsource sources — used by graph_summary tool.
+// Local graph sources don't have the /summary endpoint.
+func (r *GraphSourceRegistry) SourcesForSummary() []*GraphSource {
+	var result []*GraphSource
+	for _, src := range r.sources {
+		if src.Type == "semsource" && src.ready.Load() && src.SummaryURL() != "" {
+			result = append(result, src)
+		}
+	}
+	return result
 }
 
 // HasSemsources returns true if any semsource-type sources are configured.
