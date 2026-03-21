@@ -23,6 +23,7 @@ type entityKnowledgeBuilder struct {
 	logger              *slog.Logger
 	manifestClient      *semsource.ManifestClient
 	graphManifestClient *semsource.GraphManifestClient
+	graphSources        *GraphSourceRegistry
 }
 
 // entityKnowledge is the result of building entity context.
@@ -63,8 +64,18 @@ func (b *entityKnowledgeBuilder) build(ctx context.Context, quest *domain.Quest,
 		}
 	}
 
-	// Source manifest — what's available in the knowledge graph (best-effort, non-blocking)
+	// Knowledge graph summary — aggregated from all ready semsource sources.
+	// Takes priority over the manifest client fallbacks below; those only run
+	// when graphSources is nil or returns empty (e.g. no semsource configured).
 	hasGraphKnowledge := false
+	if b.graphSources != nil {
+		if s := b.graphSources.FormatSummaryForPrompt(ctx); s != "" {
+			sections = append(sections, s)
+			hasGraphKnowledge = true
+		}
+	}
+
+	// Source manifest — what's available in the knowledge graph (best-effort, non-blocking)
 	if b.manifestClient != nil {
 		if s := b.manifestClient.FormatForPrompt(ctx); s != "" {
 			sections = append(sections, s)
@@ -83,7 +94,7 @@ func (b *entityKnowledgeBuilder) build(ctx context.Context, quest *domain.Quest,
 	// Fallback: when no manifest data was available but a knowledge graph exists
 	// (semsource configured), inject a hint so agents try graph_search anyway.
 	// Data may have finished indexing between dispatch and the agent's first tool call.
-	if !hasGraphKnowledge && (b.manifestClient != nil || b.graphManifestClient != nil) {
+	if !hasGraphKnowledge && (b.graphSources != nil || b.manifestClient != nil || b.graphManifestClient != nil) {
 		sections = append(sections, "--- Knowledge Graph ---\n"+
 			"A knowledge graph is being populated with project data. "+
 			"Try graph_search before using http_request for project-related lookups.")

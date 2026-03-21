@@ -218,12 +218,31 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	var entityKnowledgeContent string
 	var knowledgeEntityIDs []string
 	if c.config.EntityContextBudget > 0 {
+		entityBudget := c.config.EntityContextBudget
+		if entityBudget == 0 {
+			entityBudget = 2000
+		}
+		// Scale budget based on the model's context window size.
+		// Larger models get more entity context: 0.5% of their context window
+		// or the configured default, whichever is larger.
+		if c.registry != nil {
+			capability := c.resolveCapability(agent, quest)
+			if endpointName := c.registry.Resolve(capability); endpointName != "" {
+				if ep := c.registry.GetEndpoint(endpointName); ep != nil && ep.MaxTokens > 0 {
+					scaled := ep.MaxTokens / 200 // 0.5% of context window
+					if scaled > entityBudget {
+						entityBudget = scaled
+					}
+				}
+			}
+		}
 		ekb := &entityKnowledgeBuilder{
 			graph:               c.graph,
-			budgetToken:         c.config.EntityContextBudget,
+			budgetToken:         entityBudget,
 			logger:              c.logger,
 			manifestClient:      c.manifestClient,
 			graphManifestClient: c.graphManifestClient,
+			graphSources:        c.graphSources,
 		}
 		ek := ekb.build(ctx, quest, agent)
 		entityKnowledgeContent = ek.content

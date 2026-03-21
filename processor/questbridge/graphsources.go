@@ -74,7 +74,40 @@ type GraphSourceRegistry struct {
 	sources []*GraphSource
 	logger  *slog.Logger
 	client  *http.Client
+
+	// Summary cache for prompt injection — keyed by summary URL.
+	summaryMu    sync.Mutex
+	summaryCache map[string]summCacheEntry
 }
+
+// summCacheEntry holds a parsed semsource summary with its fetch timestamp.
+type summCacheEntry struct {
+	summary *sourceSummary
+	fetched time.Time
+}
+
+// sourceSummary mirrors the semsource /summary response JSON.
+type sourceSummary struct {
+	Namespace      string          `json:"namespace"`
+	Phase          string          `json:"phase"`
+	EntityIDFormat string          `json:"entity_id_format"`
+	TotalEntities  int             `json:"total_entities"`
+	Domains        []summaryDomain `json:"domains"`
+}
+
+type summaryDomain struct {
+	Domain      string        `json:"domain"`
+	EntityCount int           `json:"entity_count"`
+	Types       []summaryType `json:"types"`
+	Sources     []string      `json:"sources"`
+}
+
+type summaryType struct {
+	Type  string `json:"type"`
+	Count int    `json:"count"`
+}
+
+const summCacheTTL = 5 * time.Minute
 
 // NewGraphSourceRegistry creates a registry from config.
 func NewGraphSourceRegistry(sources []GraphSource, logger *slog.Logger) *GraphSourceRegistry {
@@ -87,9 +120,10 @@ func NewGraphSourceRegistry(sources []GraphSource, logger *slog.Logger) *GraphSo
 		}
 	}
 	return &GraphSourceRegistry{
-		sources: ptrs,
-		logger:  logger,
-		client:  &http.Client{Timeout: 5 * time.Second},
+		sources:      ptrs,
+		logger:       logger,
+		client:       &http.Client{Timeout: 5 * time.Second},
+		summaryCache: make(map[string]summCacheEntry),
 	}
 }
 
@@ -356,4 +390,160 @@ func (r *GraphSourceRegistry) resolveByPrefix(id string) *GraphSource {
 		}
 	}
 	return localFallback
+}
+
+// FormatSummaryForPrompt fetches and formats aggregated semsource summary data
+// for injection into agent prompts. Only ready semsource sources are queried.
+// Results are cached for summCacheTTL (5 minutes) to avoid hammering the endpoint.
+// Returns empty string when no semsource sources are ready or all fetches fail.
+func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string {
+	semsources := r.SourcesForSummary()
+	if len(semsources) == 0 {
+		return ""
+	}
+
+	// Sort by name for stable output across calls.
+	sorted := make([]*GraphSource, len(semsources))
+	copy(sorted, semsources)
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0 && sorted[j].Name < sorted[j-1].Name; j-- {
+			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
+		}
+	}
+
+	type fetchedSrc struct {
+		src     *GraphSource
+		summary *sourceSummary
+	}
+
+	var fetched []fetchedSrc
+	totalEntities := 0
+
+	for _, src := range sorted {
+		summURL := src.SummaryURL()
+		if summURL == "" {
+			continue
+		}
+
+		sm := r.fetchSummaryWithCache(ctx, summURL)
+		if sm == nil {
+			continue
+		}
+
+		fetched = append(fetched, fetchedSrc{src: src, summary: sm})
+		totalEntities += sm.TotalEntities
+	}
+
+	if len(fetched) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("--- Graph Contents ---\n")
+	sb.WriteString(fmt.Sprintf("%d knowledge source", len(fetched)))
+	if len(fetched) != 1 {
+		sb.WriteString("s")
+	}
+	sb.WriteString(fmt.Sprintf(", %d entities total.\n\n", totalEntities))
+
+	// Entity ID format guidance.
+	sb.WriteString("Entity IDs use 6-part dotted notation: org.platform.domain.system.type.instance\n")
+	for _, f := range fetched {
+		if f.src.EntityPrefix != "" {
+			// Derive a compact format hint from the entity prefix.
+			prefix := strings.TrimSuffix(f.src.EntityPrefix, ".")
+			sb.WriteString(fmt.Sprintf("  %s: %s.{domain}.{system}.{type}.{instance}\n",
+				f.src.Name, prefix))
+		}
+	}
+
+	// Per-source entity breakdown.
+	for _, f := range fetched {
+		sb.WriteString(fmt.Sprintf("\n%s (%d entities):\n", f.src.Name, f.summary.TotalEntities))
+		for _, d := range f.summary.Domains {
+			if len(d.Types) == 0 {
+				continue
+			}
+			var typeParts []string
+			for _, t := range d.Types {
+				typeParts = append(typeParts, fmt.Sprintf("%s (%d)", t.Type, t.Count))
+			}
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", d.Domain, strings.Join(typeParts, ", ")))
+		}
+	}
+
+	sb.WriteString("\nQuery with graph_search: use \"prefix\" to scope by source (e.g. ")
+	if len(fetched) > 0 && fetched[0].src.EntityPrefix != "" {
+		prefix := strings.TrimSuffix(fetched[0].src.EntityPrefix, ".")
+		// Use first domain from first source for example.
+		exampleDomain := ""
+		if len(fetched[0].summary.Domains) > 0 {
+			exampleDomain = fetched[0].summary.Domains[0].Domain
+		}
+		if exampleDomain != "" {
+			sb.WriteString(fmt.Sprintf("%q", prefix+"."+exampleDomain))
+		} else {
+			sb.WriteString(fmt.Sprintf("%q", prefix))
+		}
+	} else {
+		sb.WriteString(`"source.domain"`)
+	}
+	sb.WriteString(`), "predicate" for targeted lookups, or "nlq" for natural language questions.` + "\n")
+	sb.WriteString(`Use graph_summary tool for full predicate schema with descriptions.`)
+
+	return sb.String()
+}
+
+// fetchSummaryWithCache retrieves a parsed sourceSummary for the given URL,
+// serving from cache when the entry is still within summCacheTTL.
+func (r *GraphSourceRegistry) fetchSummaryWithCache(ctx context.Context, url string) *sourceSummary {
+	r.summaryMu.Lock()
+	entry, ok := r.summaryCache[url]
+	r.summaryMu.Unlock()
+
+	if ok && time.Since(entry.fetched) < summCacheTTL {
+		return entry.summary
+	}
+
+	sm, err := r.fetchSummary(ctx, url)
+	if err != nil {
+		r.logger.Debug("failed to fetch semsource summary for prompt", "url", url, "error", err)
+		return nil
+	}
+
+	r.summaryMu.Lock()
+	r.summaryCache[url] = summCacheEntry{summary: sm, fetched: time.Now()}
+	r.summaryMu.Unlock()
+
+	return sm
+}
+
+// fetchSummary calls a semsource /summary endpoint and parses the response.
+func (r *GraphSourceRegistry) fetchSummary(ctx context.Context, summaryURL string) (*sourceSummary, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, summaryURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d from %s", resp.StatusCode, summaryURL)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+
+	var sm sourceSummary
+	if err := json.Unmarshal(body, &sm); err != nil {
+		return nil, fmt.Errorf("parse summary response: %w", err)
+	}
+
+	return &sm, nil
 }
