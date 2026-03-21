@@ -146,12 +146,11 @@ func (c *Component) produceQuestEvents(ctx context.Context, events chan<- dagEve
 
 	bootstrapping := true
 
-	// seenDAGParents tracks entity keys of parent quests whose DAG has already
-	// been emitted to the event loop. This prevents re-emitting dagEventNewDAG
-	// every time questdagexec persists DAG state back onto the parent quest entity,
-	// breaking what would otherwise be an infinite feedback loop:
-	//   persistDAGState → KV write → watch event → dagEventNewDAG → onDAGEntry → persist...
-	seenDAGParents := make(map[string]bool)
+	// seenExecutionIDs tracks the last-seen DAG execution ID per parent quest
+	// entity key. This prevents re-emitting dagEventNewDAG on every persist-back
+	// (same execution ID = suppress) while allowing retry DAGs after boss battle
+	// defeat (new execution ID = new DAG, emit).
+	seenExecutionIDs := make(map[string]string)
 
 	for {
 		select {
@@ -177,15 +176,12 @@ func (c *Component) produceQuestEvents(ctx context.Context, events chan<- dagEve
 
 			entityKey := entry.Key()
 
-			// Prune completed DAGs so seenDAGParents doesn't grow unbounded.
-			if _, completed := c.completedDAGKeys.LoadAndDelete(entityKey); completed {
-				delete(seenDAGParents, entityKey)
-			}
-
 			// Check if this is a parent quest with DAG execution state.
+			// A new execution ID means a new DAG (retry after boss battle defeat).
+			// Same execution ID means a persist-back from questdagexec (suppress).
 			executionID := tripleString(entityState.Triples, "quest.dag.execution_id")
-			if executionID != "" && !seenDAGParents[entityKey] {
-				seenDAGParents[entityKey] = true
+			if executionID != "" && executionID != seenExecutionIDs[entityKey] {
+				seenExecutionIDs[entityKey] = executionID
 
 				evt := dagEvent{
 					Type:          dagEventNewDAG,

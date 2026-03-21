@@ -156,25 +156,33 @@ func registerPartyLeadDirective(r *PromptRegistry) {
 	})
 }
 
-// subQuestExecutorDirective guides party member agents working on sub-quests.
-// Without this, agents spin through tools without knowing how to signal completion.
+// buildSubQuestExecutorDirective guides party member agents working on sub-quests.
+// Injects an iteration budget when MaxIterations is set (same pattern as solo agents).
 //
-// IMPORTANT: Rule 1 requires workspace exploration before submission. Without
-// this gate, small models (Gemini Flash) call submit_work_product immediately
-// on the first turn, producing low-quality output from context alone.
-const subQuestExecutorDirective = `You are executing a SUB-QUEST assigned to you by a party lead.
+// Rule 1 requires a quick workspace check before submission. Without any gate,
+// small models (Gemini Flash) call submit_work_product immediately on the first
+// turn. But the gate is scoped to ONE list_directory call — not open-ended reading.
+func buildSubQuestExecutorDirective(ctx AssemblyContext) string {
+	var b strings.Builder
+	b.WriteString("You are executing a SUB-QUEST assigned to you by a party lead.\n\n")
 
-COMPLETION RULES:
-1. BEFORE submitting, you MUST use at least one workspace tool (read_file, list_directory, search_text, or glob_files) to understand the existing codebase. Submissions without workspace exploration will be rejected.
+	if ctx.MaxIterations > 0 {
+		b.WriteString(fmt.Sprintf("ITERATION BUDGET: %d tool-use rounds. Plan your work to finish well within this limit.\n\n", ctx.MaxIterations))
+	}
+
+	b.WriteString(`COMPLETION RULES:
+1. Quick workspace check: ONE call to list_directory(".") to see what exists. If the workspace is empty or has only boilerplate, move on — do NOT keep reading files.
 2. Complete the task described in the quest objective.
-3. Use available tools (read_file, write_file, patch_file, etc.) to understand context and produce your work.
+3. Use available tools (read_file, write_file, patch_file, etc.) to produce your work.
 4. When you have finished, respond with [INTENT: work_product] followed by your complete deliverable.
 5. Your deliverable MUST contain the actual work output — code, analysis, or results — not a description of what you did.
 6. If the task requires code, include BOTH implementation AND tests directly in your deliverable. Your reviewer can only see what you include — they cannot access external files.
 7. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
 8. NEVER write source code using bash — use write_file to create files, patch_file for edits.
-8. Complete the work in as few iterations as possible — avoid unnecessary exploration.
-9. For project-specific lookups (code structure, API patterns, docs), try graph_search FIRST. If graph results are empty or unhelpful, use web_search as fallback. Only use http_request for fetching specific known URLs.`
+9. Complete the work in as few iterations as possible — avoid unnecessary exploration.
+10. For project-specific lookups, call graph_summary ONCE to see what's indexed, then graph_search for targeted queries. Fall back to web_search if graph results are unhelpful.`)
+	return b.String()
+}
 
 // isSubQuestExecutor returns true for agents working on sub-quests within a
 // party DAG (party members executing DAG nodes, not the lead).
@@ -184,18 +192,18 @@ func isSubQuestExecutor(ctx AssemblyContext) bool {
 
 func registerSubQuestExecutorDirective(r *PromptRegistry) {
 	r.Register(&PromptFragment{
-		ID:        "builtin.sub-quest-executor.tool-directive",
-		Category:  CategoryToolDirective,
-		Content:   subQuestExecutorDirective,
-		Priority:  0,
-		Condition: isSubQuestExecutor,
+		ID:          "builtin.sub-quest-executor.tool-directive",
+		Category:    CategoryToolDirective,
+		Priority:    0,
+		Condition:   isSubQuestExecutor,
+		ContentFunc: buildSubQuestExecutorDirective,
 	})
 	// Gemini Flash tends to skip tools and call submit_work_product immediately.
-	// This hint reinforces that workspace exploration is mandatory before submission.
+	// Softened: one list_directory check, then focus on producing output.
 	r.Register(&PromptFragment{
 		ID:        "builtin.sub-quest-executor.provider-hint",
 		Category:  CategoryProviderHints,
-		Content:   "You MUST call read_file or list_directory before submitting work. Explore the workspace first. Do not submit on your first turn.",
+		Content:   "Call list_directory once to check the workspace, then focus on producing your deliverable. Do not submit on your first turn without using at least one tool.",
 		Priority:  0,
 		Providers: []string{"gemini", "openai"},
 		Condition: isSubQuestExecutor,

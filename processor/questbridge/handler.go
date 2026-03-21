@@ -2216,7 +2216,7 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 		GuildLessons:          c.loadGuildLessons(ctx, agent, quest),
 		RedTeamTargetOutput:   nil, // Set below after single target load.
 		RedTeamTargetTitle:    "",
-		WorkspaceHasPriorWork: quest.Attempts > 1,
+		WorkspaceHasPriorWork: quest.Attempts > 1 && quest.ParentQuest == nil,
 		FailureHistory:        convertFailureHistory(quest.FailureHistory),
 		SalvagedOutput:       domain.AsString(quest.SalvagedOutput),
 		FailureAnalysis:      quest.FailureAnalysis,
