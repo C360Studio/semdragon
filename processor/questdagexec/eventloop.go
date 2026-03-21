@@ -627,7 +627,18 @@ func (c *Component) handleSubQuestTransition(
 			// Triage decided terminal — fail permanently and escalate parent.
 			c.handleTriageTerminal(ctx, dagState, nodeID)
 		} else {
-			c.handleNodeFailed(ctx, dagState, nodeID)
+			// Boss battle cleanup — terminal, don't retry.
+			// The parent quest is being reposted fresh with a new DAG.
+			failureType := tripleString(entity.Triples, "quest.failure.type")
+			if domain.FailureType(failureType) == domain.FailureBossDefeat {
+				c.logger.Info("DAG node failed by boss battle defeat — skipping retry",
+					"execution_id", dagState.ExecutionID, "node_id", nodeID)
+				dagState.NodeStates[nodeID] = NodeFailed
+				dagState.FailedNodes = append(dagState.FailedNodes, nodeID)
+				c.nodesFailed.Add(1)
+			} else {
+				c.handleNodeFailed(ctx, dagState, nodeID)
+			}
 		}
 
 	case domain.QuestEscalated:

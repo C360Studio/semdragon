@@ -170,6 +170,10 @@ const (
 	FailureError FailureType = "error"
 	// FailureAbandoned indicates the agent abandoned the quest.
 	FailureAbandoned FailureType = "abandoned"
+	// FailureBossDefeat indicates the sub-quest was failed as cleanup after the
+	// parent quest's boss battle was defeated. Not an agent execution failure —
+	// questdagexec should NOT retry these.
+	FailureBossDefeat FailureType = "boss_defeat"
 )
 
 // RecoveryPath categorizes the DM's triage decision for a failed quest.

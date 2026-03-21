@@ -1075,7 +1075,7 @@ func (c *Component) failPartySubQuests(ctx context.Context, quest *domain.Quest,
 
 		subQuest.Status = domain.QuestFailed
 		subQuest.FailureReason = reason
-		subQuest.FailureType = domain.FailureQuality
+		subQuest.FailureType = domain.FailureBossDefeat
 		if emitErr := c.graph.EmitEntityUpdate(ctx, subQuest, "quest.failed"); emitErr != nil {
 			c.logger.Warn("failPartySubQuests: failed to fail sub-quest",
 				"sub_quest_id", subQuestID, "node_id", nodeID, "error", emitErr)

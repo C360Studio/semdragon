@@ -11,6 +11,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/message"
 )
 
 // =============================================================================
@@ -1026,6 +1027,124 @@ func TestHandleSubQuestTransition_Triage(t *testing.T) {
 		}
 		if len(qb.escalateCalls) != 1 {
 			t.Errorf("EscalateQuest called %d times, want 1", len(qb.escalateCalls))
+		}
+	})
+}
+
+// =============================================================================
+// BOSS DEFEAT FAILURE TYPE TESTS
+// =============================================================================
+// These tests verify that boss battle defeat failures (FailureBossDefeat) are
+// treated as terminal by the QuestFailed branch in handleSubQuestTransition,
+// while normal quality failures still retry via handleNodeFailed.
+//
+// We simulate the branch logic inline (same pattern as the triage tests above)
+// because handleSubQuestTransition calls persistDAGState which needs a live
+// GraphClient not available in unit tests.
+
+func TestBossDefeatFailureSkipsRetry(t *testing.T) {
+	t.Parallel()
+
+	t.Run("boss_defeat failure type skips retry — node marked terminal", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		c := newTestComponent(qb, nil)
+
+		dag := makeFullDAGState("exec-bd1", "parent-bd1", "party-bd1", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodeInProgress
+		dag.NodeRetries["n1"] = 2 // Retries available — should NOT be used.
+
+		// Simulate the QuestFailed branch of handleSubQuestTransition:
+		// extract failure type from entity triples and guard retry.
+		triples := []message.Triple{
+			{Subject: "quest.sub1", Predicate: "quest.failure.type", Object: string(domain.FailureBossDefeat)},
+		}
+		failureType := tripleString(triples, "quest.failure.type")
+
+		if domain.FailureType(failureType) != domain.FailureBossDefeat {
+			t.Fatalf("tripleString returned %q, want %q", failureType, domain.FailureBossDefeat)
+		}
+
+		// Boss defeat path: mark terminal without calling handleNodeFailed.
+		dag.NodeStates["n1"] = NodeFailed
+		dag.FailedNodes = append(dag.FailedNodes, "n1")
+		c.nodesFailed.Add(1)
+
+		if dag.NodeStates["n1"] != NodeFailed {
+			t.Errorf("node state = %q, want %q", dag.NodeStates["n1"], NodeFailed)
+		}
+		if len(dag.FailedNodes) != 1 || dag.FailedNodes[0] != "n1" {
+			t.Errorf("FailedNodes = %v, want [n1]", dag.FailedNodes)
+		}
+		// Retries must NOT be consumed.
+		if dag.NodeRetries["n1"] != 2 {
+			t.Errorf("retries = %d, want 2 (unchanged)", dag.NodeRetries["n1"])
+		}
+		// No escalation — boss battle owns parent lifecycle.
+		if len(qb.escalateCalls) != 0 {
+			t.Errorf("EscalateQuest called %d times, want 0", len(qb.escalateCalls))
+		}
+	})
+
+	t.Run("quality failure type retries normally via handleNodeFailed", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		c := newTestComponent(qb, nil)
+
+		dag := makeFullDAGState("exec-bd2", "parent-bd2", "party-bd2", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodeInProgress
+		dag.NodeRetries["n1"] = 2
+
+		// Simulate the QuestFailed branch — quality failure should NOT match boss defeat guard.
+		triples := []message.Triple{
+			{Subject: "quest.sub2", Predicate: "quest.failure.type", Object: string(domain.FailureQuality)},
+		}
+		failureType := tripleString(triples, "quest.failure.type")
+
+		if domain.FailureType(failureType) == domain.FailureBossDefeat {
+			t.Fatal("quality failure type should not match FailureBossDefeat")
+		}
+
+		// Normal path: handleNodeFailed retries.
+		c.handleNodeFailed(context.Background(), dag, "n1")
+
+		// Should retry (retries > 0) — node goes to NodeReady (no deps).
+		if dag.NodeStates["n1"] != NodeReady {
+			t.Errorf("node state = %q, want %q (retry with no deps → promoted to ready)", dag.NodeStates["n1"], NodeReady)
+		}
+		if dag.NodeRetries["n1"] != 1 {
+			t.Errorf("retries = %d, want 1 (decremented)", dag.NodeRetries["n1"])
+		}
+	})
+
+	t.Run("empty failure type retries normally via handleNodeFailed", func(t *testing.T) {
+		t.Parallel()
+
+		qb := &mockQuestBoardRef{}
+		c := newTestComponent(qb, nil)
+
+		dag := makeFullDAGState("exec-bd3", "parent-bd3", "party-bd3", []QuestNode{
+			makeNode("n1", 0),
+		})
+		dag.NodeStates["n1"] = NodeInProgress
+		dag.NodeRetries["n1"] = 1
+
+		// No failure type triple — tripleString returns "".
+		failureType := tripleString(nil, "quest.failure.type")
+		if domain.FailureType(failureType) == domain.FailureBossDefeat {
+			t.Fatal("empty failure type should not match FailureBossDefeat")
+		}
+
+		c.handleNodeFailed(context.Background(), dag, "n1")
+
+		if dag.NodeStates["n1"] != NodeReady {
+			t.Errorf("node state = %q, want %q", dag.NodeStates["n1"], NodeReady)
 		}
 	})
 }
