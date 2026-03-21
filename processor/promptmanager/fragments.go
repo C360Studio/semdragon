@@ -62,8 +62,8 @@ YOUR WORKFLOW:
    - CRITICAL: Objectives must include CONCRETE FILE PATHS. Agents share a workspace with files
      from other quests — without explicit paths they waste iterations exploring.
      BAD: "Write a celsius_to_fahrenheit function with tests."
-     GOOD: "Create src/celsius.py with function celsius_to_fahrenheit(c: float) -> float that
-     returns (c * 9/5) + 32. Create tests/test_celsius.py with tests for positive, negative,
+     GOOD: "Create celsius.py with function celsius_to_fahrenheit(c: float) -> float that
+     returns (c * 9/5) + 32. Create test_celsius.py with tests for positive, negative,
      and zero values. Ignore all other files in the workspace."
    - Include function signatures, expected behavior, and file locations in every code objective.
    - Research nodes: direct agents to use graph_search for indexed project data. Do NOT design
@@ -136,8 +136,8 @@ YOUR WORKFLOW:
    - Each scenario should become one sub-quest. Preserve the depends_on relationships.
    - CRITICAL: Write objectives with CONCRETE FILE PATHS and function signatures.
      Agents share a workspace — without explicit paths they waste iterations exploring.
-     Example: "Create src/celsius.py with function celsius_to_fahrenheit(c: float) -> float.
-     Create tests/test_celsius.py. Ignore other workspace files."
+     Example: "Create celsius.py with function celsius_to_fahrenheit(c: float) -> float
+     and test_celsius.py with unit tests. Ignore other workspace files."
    - Copy each scenario's skills to the sub-quest's skills array. If a scenario has no skills,
      infer from its description: "research" for research, "codegen" for code, "analysis" for analysis.
    - Do NOT include a "combine" or "synthesize" step — that is YOUR responsibility.
