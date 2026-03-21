@@ -85,7 +85,7 @@ func (e *DecomposeExecutor) ListTools() []agentic.ToolDefinition {
 							},
 							"objective": map[string]any{
 								"type":        "string",
-								"description": "What the sub-quest must accomplish",
+								"description": "Detailed spec for the agent. For code: include file paths to create (e.g. 'Create src/converter.py with function celsius_to_fahrenheit(c) -> float, and tests/test_converter.py'). Agents share a workspace — be specific about what to create and what to ignore.",
 							},
 							"skills": map[string]any{
 								"type":        "array",

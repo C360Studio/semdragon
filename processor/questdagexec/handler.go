@@ -1628,7 +1628,8 @@ func dagStateFromQuest(quest *domain.Quest, defaultRetries int) *DAGExecutionSta
 	failedNodes := anyToStringSlice(quest.DAGFailedNodes)
 
 	// If NodeStates is absent, this is a freshly decomposed quest that
-	// questdagexec has not yet seeded. Initialise node states from the DAG.
+	// questdagexec has not yet seeded. Initialise node states from the DAG
+	// and clear stale assignees/completed/failed from any previous attempt.
 	if len(nodeStates) == 0 && len(dag.Nodes) > 0 {
 		nodeStates = make(map[string]string, len(dag.Nodes))
 		for _, node := range dag.Nodes {
@@ -1637,6 +1638,10 @@ func dagStateFromQuest(quest *domain.Quest, defaultRetries int) *DAGExecutionSta
 		for _, readyID := range DAGReadyNodes(dag, nodeStates) {
 			nodeStates[readyID] = NodeReady
 		}
+		// Fresh DAG — no assignments, completions, or failures yet.
+		nodeAssignees = make(map[string]string)
+		completedNodes = []string{}
+		failedNodes = []string{}
 	}
 
 	// If NodeRetries is absent, seed defaults.
