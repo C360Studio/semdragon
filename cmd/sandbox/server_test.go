@@ -433,4 +433,24 @@ func TestResolveQuestPath(t *testing.T) {
 			}
 		})
 	}
+
+	// Symlink escape: create a symlink inside the quest workspace pointing
+	// outside it, then verify resolveQuestPath rejects it.
+	t.Run("symlink escape blocked", func(t *testing.T) {
+		questDir := filepath.Join(workspace, "q1")
+		if err := os.MkdirAll(questDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Create a symlink pointing to the workspace parent (outside quest root).
+		symPath := filepath.Join(questDir, "escape_link")
+		if err := os.Symlink(workspace, symPath); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Remove(symPath) })
+
+		_, err := srv.resolveQuestPath("q1", "escape_link")
+		if err == nil {
+			t.Error("expected symlink escape to be rejected, got nil error")
+		}
+	})
 }

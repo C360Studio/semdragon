@@ -599,6 +599,27 @@ func (s *Server) resolveQuestPath(questID, relPath string) (string, error) {
 		return "", fmt.Errorf("path escapes quest workspace")
 	}
 
+	// Resolve symlinks to prevent symlink-based workspace escape.
+	// An agent could create a symlink pointing outside the workspace and then
+	// read/write through it via the file API. EvalSymlinks resolves the real
+	// target and the prefix check below catches escapes.
+	// Skip for the quest root itself (path == ".") — no symlink risk.
+	if absPath != questRoot {
+		realPath, err := filepath.EvalSymlinks(absPath)
+		if err == nil {
+			// File/symlink exists — verify the real target is within the workspace.
+			realRoot, rootErr := filepath.EvalSymlinks(questRoot)
+			if rootErr != nil {
+				realRoot = questRoot
+			}
+			if !strings.HasPrefix(realPath, realRoot+string(filepath.Separator)) && realPath != realRoot {
+				return "", fmt.Errorf("symlink escapes quest workspace")
+			}
+		}
+		// If EvalSymlinks fails, the file doesn't exist yet (write path).
+		// The original prefix check above already validated the string path.
+	}
+
 	return absPath, nil
 }
 

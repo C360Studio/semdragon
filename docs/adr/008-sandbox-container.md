@@ -2,6 +2,34 @@
 
 ## Status: Accepted
 
+## Update (2026-03-22): Bash-first tool consolidation
+
+The original design proxied individual named tools (`write_file`, `read_file`,
+`run_tests`, `patch_file`, etc.) through the sandbox. These 23+ tools have since been
+consolidated into a single `bash` tool (Journeyman+) that runs arbitrary shell commands
+inside the agent's `/workspace/{quest-id}/` directory.
+
+Key changes from the original design:
+
+- **`bash` replaces all file/shell/build/test/git tools.** Agents use `bash` for every
+  operation that was previously a dedicated tool. The sandbox `POST /exec` endpoint is
+  the only execution path.
+- **`submit_work_product` renamed to `submit_work`.** Same semantics — completion signal,
+  not a code dump — but the tool name changed.
+- **Sandbox container is the security boundary.** Tier-gated per-tool enforcement was
+  removed. The container itself enforces isolation via `cap_drop: ALL`,
+  `no-new-privileges`, read-only root filesystem, symlink escape protection, and
+  process limits. `questtools` still enforces the `bash` tool's minimum tier
+  (Journeyman) but does not restrict individual commands within it.
+- **Tier-gated execution table** (below) is historical. The current tool set is seven
+  tools: `bash`, `http_request`, `submit_work`, `ask_clarification`, `decompose_quest`,
+  `review_sub_quest`, `answer_clarification`, plus conditionally registered graph and
+  web search tools.
+
+The original design intent — real file execution, meaningful boss battle evaluation,
+and `submit_work` as a clean completion signal — is preserved. Only the tool surface
+changed.
+
 ## Context
 
 Agents execute quests that often require writing code and running tests. Currently, agents write code inline in their `submit_work_product` deliverable text, and the LLM judge evaluates the text without actually executing anything. This creates three problems:

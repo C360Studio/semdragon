@@ -252,11 +252,16 @@ The payload registry is how we pass typed data across the event bus. Even though
 
 | Level | Tier | Capabilities |
 |-------|------|--------------|
-| 1-5 | Apprentice | Read-only, summarize, classify |
-| 6-10 | Journeyman | Tools, API requests, staging writes |
-| 11-15 | Expert | Prod writes, deployments, money |
-| 16-18 | Master | Agent supervision, quest decomposition, party lead |
+| 1-5 | Apprentice | `submit_work`, `ask_clarification` — completion signals only, no shell or network |
+| 6-10 | Journeyman | `bash` (universal shell: files, tests, builds, git), `http_request` |
+| 11-15 | Expert | All Journeyman tools; eligible for production-critical quests |
+| 16-18 | Master | All Expert tools + `decompose_quest`, `review_sub_quest`, `answer_clarification` (party lead) |
 | 19-20 | Grandmaster | DM delegation, guild management |
+
+The sandbox container is the security boundary. `bash` runs inside the agent's isolated
+`/workspace/{quest-id}/` directory with `cap_drop: ALL`, `no-new-privileges`, and a
+read-only root filesystem. Per-tool command restrictions are not enforced — the container
+enforces isolation.
 
 ## Package Structure
 
@@ -277,7 +282,7 @@ The root `semdragons` package re-exports type aliases from `domain/` and provide
 
 Two components form the **agentic integration layer** that bridges quest lifecycle to semstreams' event-driven LLM execution:
 - `questbridge` — Watches quest entities for `in_progress` transitions, assembles `TaskMessage` (prompt, tools, metadata), publishes to AGENT JetStream stream, handles loop completion/failure events. Uses KV twofer bootstrap protocol for crash recovery via QUEST_LOOPS bucket.
-- `questtools` — Consumes `tool.execute.*` from AGENT stream, enforces tier/skill/sandbox gates via `executor.ToolRegistry`, publishes `tool.result.*` back. Reconstructs agent/quest context from `ToolCall.Metadata` to avoid KV round-trips on the hot path.
+- `questtools` — Consumes `tool.execute.*` from AGENT stream, enforces tier gates and sandbox routing via `executor.ToolRegistry`, publishes `tool.result.*` back. Reconstructs agent/quest context from `ToolCall.Metadata` to avoid KV round-trips on the hot path.
 - `questdagexec` — Reactive DAG execution for party quest decompositions — watches sub-quest KV transitions, drives node assignment via `ClaimQuestForParty`, dispatches lead review tool calls, aggregates outputs for rollup, and escalates the parent quest on node exhaustion. DAG state stored as `quest.dag.*` predicates on the parent quest entity in the graph.
 
 **`processor/dmworldstate/`** aggregates all entity state into a single world-state snapshot consumed by the REST API's `/api/game/world` endpoint.

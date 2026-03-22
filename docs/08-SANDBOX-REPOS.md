@@ -11,6 +11,7 @@ before code enters the knowledge graph via semsource.
 - [Overview](#overview)
 - [Quest → Repo Flow](#quest--repo-flow)
 - [Docker Volume Topology](#docker-volume-topology)
+- [Bind-Mounting Local Repos](#bind-mounting-local-repos)
 - [Safety Model](#safety-model)
 - [Sandbox API Endpoints](#sandbox-api-endpoints)
 - [Semsource Integration](#semsource-integration)
@@ -32,7 +33,7 @@ NAMED DOCKER VOLUME
 FLOW:
   1. Quest brief declares repo    → "repo": "semstreams"
   2. CreateWorkspace               → git branch + worktree from repo's main
-  3. Agent works in worktree       → commits via git_operation tool
+  3. Agent works in worktree       → commits via bash (git commands)
   4. Boss battle approves          → POST /workspace/{id}/merge-to-main
   5. Semsource watches main        → indexes approved changes → graph entities
 ```
@@ -50,9 +51,8 @@ FLOW:
    - Configures git identity in the worktree
 
 3. **Agent execution**: The agent works in `/workspace/{questID}/`. It can:
-   - Read/write files via sandbox file endpoints
-   - Run commands, tests, builds via sandbox exec endpoint
-   - Commit changes via the `git_operation` tool (add, commit, status, diff, log)
+   - Read/write files, run commands, tests, and builds via the `bash` tool
+   - Commit changes using `git` commands inside `bash` (add, commit, status, diff, log)
    - The agent sees the full codebase from the branch point (read access to all repo files)
 
 4. **Boss battle review**: The evaluator reads quest artifacts from the sandbox via
@@ -85,15 +85,82 @@ FLOW:
 **Backend mounts zero workspace volumes.** It communicates with the sandbox exclusively
 via `SANDBOX_URL` (HTTP API).
 
+## Bind-Mounting Local Repos
+
+Users can mount their own local repositories into the sandbox for agents to work on.
+This is the intended workflow for development teams using semdragons on their own code.
+
+### Setup
+
+1. Clone your repo(s) on the host:
+   ```bash
+   mkdir -p ~/repos
+   git clone https://github.com/your-org/your-project ~/repos/your-project
+   ```
+
+2. Set `REPOS_DIR` to point at your repos directory:
+   ```bash
+   export REPOS_DIR=~/repos
+   docker compose -f docker/compose.yml up -d
+   ```
+
+3. Create quests with the `repo` field matching the directory name:
+   ```json
+   { "title": "Add input validation", "repo": "your-project" }
+   ```
+
+4. Agents work in a git worktree branched from your repo's `main`. Approved work
+   merges back — changes appear in `~/repos/your-project` on the host.
+
+### What agents can see
+
+Agents work in `/workspace/{quest-id}/`, which is a git worktree of your repo. They
+have **full read access to every file in the repo** at the branch point. This includes:
+- All source code, configuration files, and documentation
+- Git history (via `git log`, `git blame`, etc.)
+- Any secrets committed to the repo (`.env` files, API keys, credentials)
+
+### Risks
+
+| Risk | Description | Mitigation |
+|------|-------------|------------|
+| **Secret exposure** | Agents see all files in the repo, including committed secrets. LLM providers receive file contents as context. | Remove secrets before mounting. Use `.gitignore` and `git-secrets`. Never commit credentials to repos agents will access. |
+| **Code exfiltration** | Agents have network access (for `http_request` and `web_search`). A misbehaving agent could send repo contents to external URLs via `bash("curl ...")`. | Review quest outputs. For sensitive repos, disable `web_search` and restrict `http_request` URLs. Network policy (future) would allow blocking outbound traffic. |
+| **Host filesystem writes** | `/repos` is mounted RW. The sandbox server writes to it during `merge-to-main`. A compromised sandbox server (not just an agent) could write arbitrary files to the host. | The merge endpoint only writes via `git merge`. Agents cannot reach `/repos/` directly — `resolveQuestPath` constrains API access to `/workspace/{quest-id}/`. Symlink escape protection prevents indirection. |
+| **Cross-repo access** | All repos are mounted under `/repos/`. An agent running `bash` in their workspace cannot directly access `/repos/other-repo`, but the sandbox server has access. | Agents work in worktree directories, not `/repos/`. The `bash` command runs with `Cmd.Dir` set to the quest workspace. However, absolute paths in bash commands (`cat /repos/other/secret.key`) would work inside the container. |
+| **Concurrent modifications** | If you edit files on the host while agents are working in worktrees of the same repo, git may encounter conflicts. | Avoid editing files agents are working on. Use separate branches. The worktree model isolates agent work from host changes on `main`. |
+
+### Recommendation
+
+For sensitive codebases, create a **dedicated clone** for semdragons rather than
+mounting your working copy. This prevents agents from seeing uncommitted work and
+protects against accidental modifications to your development checkout.
+
+```bash
+# Dedicated clone for agents (separate from your dev checkout)
+git clone --bare https://github.com/org/repo ~/repos/repo
+```
+
 ## Safety Model
+
+The sandbox container is the primary security boundary. Agent code execution is
+isolated at the container level, not enforced per-tool.
 
 | Layer | Protection |
 |-------|-----------|
-| **HTTP path validation** | `resolveQuestPath()` constrains agents to `/workspace/{quest-id}/`. Agents cannot reach `/repos/`. |
-| **Git operation restrictions** | `git_operation` tool blocks push, pull, rebase, reset, force. Agents can only: init, status, diff, log, add, commit, branch, checkout, show. |
+| **Container hardening** | `cap_drop: ALL`, `no-new-privileges`, read-only root filesystem, process limits. Agents cannot escalate privileges or escape the container. |
+| **HTTP path validation** | `resolveQuestPath()` constrains the sandbox API to `/workspace/{quest-id}/`. Agents cannot reach `/repos/` via the sandbox HTTP API. |
+| **Symlink escape protection** | All file paths are resolved and validated against the workspace root before any operation. |
+| **`bash` scope** | Agents run `bash` commands inside their `/workspace/{quest-id}/` directory (`Cmd.Dir`). Git operations that affect `main` (push, merge, rebase to main) are not available from inside the workspace — `merge-to-main` is a privileged sandbox server endpoint only. |
 | **Worktree isolation** | Each quest gets its own branch and worktree. Agents never touch `main` directly. |
 | **Merge gate** | Only boss battle victory triggers `merge-to-main`. This is a privileged sandbox server endpoint, not an agent tool. |
 | **Rollback** | If a merge goes wrong, `git revert` on main is trivial. |
+
+> **Known limitation**: `bash` commands run as the `sandbox` user inside the container.
+> While `Cmd.Dir` is set to the quest workspace, absolute paths in bash commands
+> (e.g., `cat /repos/other-repo/file`) can access any file the sandbox user can read.
+> All mounted repos are accessible. For multi-tenant deployments, consider running
+> separate sandbox containers per tenant or using per-quest user namespaces.
 
 ## Sandbox API Endpoints
 

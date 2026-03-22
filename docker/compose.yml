@@ -55,6 +55,20 @@ services:
       - workspaces:/workspace
       - ${REPOS_DIR:-./repos}:/repos:rw
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN          # chown workspace dirs
+      - DAC_OVERRIDE   # read/write files as sandbox user
+      - FOWNER         # git operations on workspace files
+      - SETGID         # git subprocess
+      - SETUID         # git subprocess
+    read_only: true
+    tmpfs:
+      - /tmp:size=512M
+      - /var/tmp:size=256M
     deploy:
       resources:
         limits:
@@ -63,6 +77,11 @@ services:
         reservations:
           cpus: "0.5"
           memory: 512M
+    ulimits:
+      nproc: 512
+      nofile:
+        soft: 4096
+        hard: 8192
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8090/health"]
       interval: 5s
