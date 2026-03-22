@@ -203,7 +203,8 @@ tasks:
       - task: clean
       - task: seed:repos
       - >-
-        {{.COMPOSE}} build {{if eq (env "NO_CACHE") "1"}}--no-cache{{end}}
+        {{.COMPOSE}} --profile semsource
+        build {{if eq (env "NO_CACHE") "1"}}--no-cache{{end}}
       - >-
         SEED_PROS=true
         SEED_E2E=false
@@ -211,8 +212,10 @@ tasks:
         BACKEND_PORT={{.BACKEND_PORT}}
         UI_PORT={{.UI_PORT}}
         SEMDRAGONS_MODELS=/etc/semdragons/models/pros.json
+        SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-semsource.json
+        SEMSOURCE_CONFIG=semsource-osh.json
         {{if ne (env "DEBUG") ""}}SEMDRAGONS_LOG_LEVEL=debug{{end}}
-        {{.COMPOSE}} up -d --wait
+        {{.COMPOSE}} --profile semsource up -d --wait
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=gemini SEED_PROS=true BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
@@ -225,7 +228,8 @@ tasks:
       - task: clean
       - task: seed:repos
       - >-
-        {{.COMPOSE}} build {{if eq (env "NO_CACHE") "1"}}--no-cache{{end}}
+        {{.COMPOSE}} --profile semsource
+        build {{if eq (env "NO_CACHE") "1"}}--no-cache{{end}}
       - >-
         SEED_PROS=true
         SEED_E2E=false
@@ -233,8 +237,10 @@ tasks:
         BACKEND_PORT={{.BACKEND_PORT}}
         UI_PORT={{.UI_PORT}}
         SEMDRAGONS_MODELS=/etc/semdragons/models/pros-anthropic.json
+        SEMDRAGONS_CONFIG=/etc/semdragons/semdragons-semsource.json
+        SEMSOURCE_CONFIG=semsource-osh.json
         {{if ne (env "DEBUG") ""}}SEMDRAGONS_LOG_LEVEL=debug{{end}}
-        {{.COMPOSE}} up -d --wait
+        {{.COMPOSE}} --profile semsource up -d --wait
       - task: wait
       - cmd: cd ui && E2E_LLM_MODE=anthropic SEED_PROS=true BACKEND_PORT={{.BACKEND_PORT}} UI_PORT={{.UI_PORT}} npx playwright test --project=tier3-epic
         ignore_error: true
