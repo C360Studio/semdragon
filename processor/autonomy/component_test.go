@@ -233,13 +233,19 @@ func TestBoidSuggestionCached(t *testing.T) {
 		t.Fatalf("Publish suggestions: %v", err)
 	}
 
-	// Wait for suggestions to be cached
+	// Wait for suggestions to be received and processed. With immediate
+	// evaluation enabled, the goroutine triggered by handleBoidSuggestion
+	// may consume (and clear) the suggestions before we can observe them
+	// in the cache. So we check for EITHER cached suggestions OR evidence
+	// that evaluation ran (evaluationsRun counter increased).
+	evalsBefore := comp.evaluationsRun.Load()
 	deadline := time.After(3 * time.Second)
 	for {
 		select {
 		case <-deadline:
-			t.Fatal("timed out waiting for suggestion cache")
+			t.Fatal("timed out waiting for suggestion processing")
 		case <-time.After(50 * time.Millisecond):
+			// Check 1: suggestions still cached (may be transient)
 			comp.trackersMu.RLock()
 			tracker := comp.trackers[instance]
 			hasSuggestions := tracker != nil && len(tracker.suggestions) > 0
@@ -248,13 +254,13 @@ func TestBoidSuggestionCached(t *testing.T) {
 				comp.trackersMu.RLock()
 				cached := comp.trackers[instance].suggestions
 				comp.trackersMu.RUnlock()
-				if len(cached) != 2 {
-					t.Errorf("cached suggestions count = %d, want 2", len(cached))
+				if len(cached) == 2 && string(cached[0].QuestID) == string(suggestions[0].QuestID) {
+					return // Suggestions cached as expected
 				}
-				if string(cached[0].QuestID) != string(suggestions[0].QuestID) {
-					t.Errorf("cached[0].QuestID = %v, want %v", cached[0].QuestID, suggestions[0].QuestID)
-				}
-				return
+			}
+			// Check 2: evaluation was triggered (suggestions consumed)
+			if comp.evaluationsRun.Load() > evalsBefore {
+				return // Immediate evaluation fired — suggestions were processed
 			}
 		}
 	}
@@ -486,6 +492,111 @@ func TestAutonomousQuestClaim(t *testing.T) {
 				t.Errorf("Quest ClaimedBy = %v, want %v", updatedQuest.ClaimedBy, agentID)
 			}
 			return
+		}
+	}
+}
+
+// TestBoidSuggestionTriggersImmediateEvaluation verifies the fix for the
+// "autonomy stall" bug: when an idle agent has backed off its heartbeat to a
+// long interval, receiving a boid suggestion must trigger immediate quest
+// evaluation — not wait for the next heartbeat tick.
+//
+// Setup: agent with 30-second heartbeat (simulating heavy backoff), posted
+// quest ready to claim. Boid suggestion published. Quest must be claimed
+// within 2 seconds (proving evaluation happened immediately, not after 30s).
+func TestBoidSuggestionTriggersImmediateEvaluation(t *testing.T) {
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "immeval"
+	config.InitialDelayMs = 100
+	// Set a VERY long idle interval to simulate heavy backoff. Without the
+	// immediate-evaluation fix, the agent would wait 30s before claiming.
+	config.IdleIntervalMs = 30000
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	// Create a posted quest
+	questInstance := domain.GenerateInstance()
+	questID := domain.QuestID(comp.BoardConfig().QuestEntityID(questInstance))
+	quest := &domain.Quest{
+		ID:       questID,
+		Title:    "Immediate eval test quest",
+		Status:   domain.QuestPosted,
+		PostedAt: time.Now(),
+		MinTier:  domain.TierApprentice,
+		BaseXP:   100,
+	}
+	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
+		t.Fatalf("Failed to create test quest: %v", err)
+	}
+
+	// Create idle agent
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	agent := &agentprogression.Agent{
+		ID:        agentID,
+		Name:      "immeval-agent",
+		Status:    domain.AgentIdle,
+		Level:     5,
+		Tier:      domain.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("Failed to create test agent: %v", err)
+	}
+
+	// Wait for agent to be tracked
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+
+	// Publish boid suggestion pointing at the quest
+	suggestions := []boidengine.SuggestedClaim{
+		{
+			AgentID:    agentID,
+			QuestID:    questID,
+			Score:      5.0,
+			Confidence: 0.9,
+			Reason:     "immediate eval test",
+		},
+	}
+	data, err := json.Marshal(suggestions)
+	if err != nil {
+		t.Fatalf("Marshal suggestions: %v", err)
+	}
+	if err := client.Publish(ctx, "boid.suggestions."+agentInstance, data); err != nil {
+		t.Fatalf("Publish suggestions: %v", err)
+	}
+
+	// The quest MUST be claimed within 2 seconds. The heartbeat is set to 30s,
+	// so if the claim happens within 2s it proves the immediate evaluation
+	// path is working — not the heartbeat timer.
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("quest not claimed within 2s — immediate evaluation did not trigger " +
+				"(heartbeat interval is 30s, so this proves the fix is broken)")
+		case <-time.After(50 * time.Millisecond):
+			questEntity, err := gc.GetQuest(ctx, questID)
+			if err != nil {
+				continue
+			}
+			updated := domain.QuestFromEntityState(questEntity)
+			if updated != nil && (updated.Status == domain.QuestClaimed || updated.Status == domain.QuestInProgress) {
+				// Claimed! Verify it was by our agent.
+				if updated.ClaimedBy == nil || domain.AgentID(*updated.ClaimedBy) != agentID {
+					t.Errorf("Quest ClaimedBy = %v, want %v", updated.ClaimedBy, agentID)
+				}
+				return
+			}
 		}
 	}
 }
