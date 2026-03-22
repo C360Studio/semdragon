@@ -47,11 +47,11 @@
         "requires_tools": true
       },
       "agent-work.expert.research": {
-        "preferred": ["claude-sonnet"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
       "agent-work.expert.analysis": {
-        "preferred": ["claude-sonnet"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
       "agent-work.expert.summarization": {
@@ -59,7 +59,7 @@
         "requires_tools": true
       },
       "agent-work.expert.planning": {
-        "preferred": ["claude-sonnet"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
 
@@ -72,11 +72,11 @@
         "requires_tools": true
       },
       "agent-work.master.code_review": {
-        "preferred": ["claude-sonnet"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
       "agent-work.master.research": {
-        "preferred": ["claude-sonnet"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
       "agent-work.master.planning": {
