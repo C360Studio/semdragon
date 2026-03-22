@@ -57,6 +57,17 @@
 			<h3 class="title-text">Graph Summary</h3>
 			<span class="title-sub">Agent knowledge view</span>
 		</div>
+		<button
+			class="refresh-button"
+			class:spinning={loading}
+			aria-label="Refresh graph summary"
+			disabled={loading}
+			onclick={() => {
+				loading = true;
+				error = null;
+				data = null;
+			}}
+		>↻</button>
 	</div>
 
 	{#if loading}
@@ -465,6 +476,44 @@
 	.retry-button:hover {
 		border-color: var(--ui-border-strong);
 		color: var(--ui-text-primary);
+	}
+
+	/* Refresh button in panel header */
+	.refresh-button {
+		width: 24px;
+		height: 24px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: 50%;
+		font-size: 14px;
+		color: var(--ui-text-secondary);
+		cursor: pointer;
+		flex-shrink: 0;
+		padding: 0;
+		line-height: 1;
+		transition: border-color 0.15s, color 0.15s;
+	}
+
+	.refresh-button:hover:not(:disabled) {
+		border-color: var(--ui-border-strong);
+		color: var(--ui-text-primary);
+	}
+
+	.refresh-button:disabled {
+		cursor: default;
+		opacity: 0.4;
+	}
+
+	.refresh-button.spinning {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
 	}
 
 	/* Empty fallback */

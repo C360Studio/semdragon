@@ -396,41 +396,46 @@ func (r *GraphSourceRegistry) resolveByPrefix(id string) *GraphSource {
 	return localFallback
 }
 
-// FormatSummaryForPrompt fetches and formats aggregated semsource summary data
-// for injection into agent prompts. Only ready semsource sources are queried.
-// Results are cached for summCacheTTL (5 minutes) to avoid hammering the endpoint.
-// Returns empty string when no semsource sources are ready or all fetches fail.
+// FormatSummaryForPrompt fetches and formats aggregated graph summary data
+// for injection into agent prompts. Includes both local and semsource sources.
+// Results are cached for summCacheTTL (5 minutes) to avoid hammering endpoints.
+// Returns empty string when no sources have data.
 func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string {
-	semsources := r.SourcesForSummary()
-	if len(semsources) == 0 {
-		return ""
+	type fetchedSrc struct {
+		src     *GraphSource
+		summary *sourceSummary
 	}
 
-	// Sort by name for stable output across calls.
-	sorted := make([]*GraphSource, len(semsources))
-	copy(sorted, semsources)
+	// Sort sources by name for stable output.
+	sorted := make([]*GraphSource, len(r.sources))
+	copy(sorted, r.sources)
 	for i := 1; i < len(sorted); i++ {
 		for j := i; j > 0 && sorted[j].Name < sorted[j-1].Name; j-- {
 			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
 		}
 	}
 
-	type fetchedSrc struct {
-		src     *GraphSource
-		summary *sourceSummary
-	}
-
 	var fetched []fetchedSrc
 	totalEntities := 0
 
 	for _, src := range sorted {
-		summURL := src.SummaryURL()
-		if summURL == "" {
-			continue
+		var sm *sourceSummary
+
+		switch src.Type {
+		case "local":
+			if src.GraphQLURL != "" {
+				sm = r.fetchLocalSummary(ctx, src.GraphQLURL)
+			}
+		case "semsource":
+			if !src.ready.Load() {
+				continue
+			}
+			if summURL := src.SummaryURL(); summURL != "" {
+				sm = r.fetchSummaryWithCache(ctx, summURL)
+			}
 		}
 
-		sm := r.fetchSummaryWithCache(ctx, summURL)
-		if sm == nil {
+		if sm == nil || sm.TotalEntities == 0 {
 			continue
 		}
 
@@ -454,7 +459,6 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 	sb.WriteString("Entity IDs use 6-part dotted notation: org.platform.domain.system.type.instance\n")
 	for _, f := range fetched {
 		if f.src.EntityPrefix != "" {
-			// Derive a compact format hint from the entity prefix.
 			prefix := strings.TrimSuffix(f.src.EntityPrefix, ".")
 			sb.WriteString(fmt.Sprintf("  %s: %s.{domain}.{system}.{type}.{instance}\n",
 				f.src.Name, prefix))
@@ -479,7 +483,6 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 	sb.WriteString("\nQuery with graph_search: use \"prefix\" to scope by source (e.g. ")
 	if len(fetched) > 0 && fetched[0].src.EntityPrefix != "" {
 		prefix := strings.TrimSuffix(fetched[0].src.EntityPrefix, ".")
-		// Use first domain from first source for example.
 		exampleDomain := ""
 		if len(fetched[0].summary.Domains) > 0 {
 			exampleDomain = fetched[0].summary.Domains[0].Domain
@@ -524,13 +527,19 @@ func (r *GraphSourceRegistry) StructuredSummary(ctx context.Context) []SourceSum
 			Domains:      []SummaryDomain{},
 		}
 
-		if src.Type == "semsource" && src.ready.Load() {
+		switch {
+		case src.Type == "semsource" && src.ready.Load():
 			summURL := src.SummaryURL()
 			if summURL != "" {
 				if sm := r.fetchSummaryWithCache(ctx, summURL); sm != nil {
 					entry.TotalEntities = sm.TotalEntities
 					entry.Domains = sm.Domains
 				}
+			}
+		case src.Type == "local" && src.GraphQLURL != "":
+			if sm := r.fetchLocalSummary(ctx, src.GraphQLURL); sm != nil {
+				entry.TotalEntities = sm.TotalEntities
+				entry.Domains = sm.Domains
 			}
 		}
 
@@ -540,88 +549,133 @@ func (r *GraphSourceRegistry) StructuredSummary(ctx context.Context) []SourceSum
 }
 
 // SummaryWithText returns both the formatted prompt text and the structured
-// per-source data in a single pass, avoiding the double cache lookup that
-// results from calling FormatSummaryForPrompt and StructuredSummary separately.
-//
-// The text field is the same string FormatSummaryForPrompt would return.
-// Empty text means no semsource sources are ready (check sources for details).
+// per-source data. The text is identical to what FormatSummaryForPrompt returns.
+// Both methods share the same cache, so the second call is effectively free.
 func (r *GraphSourceRegistry) SummaryWithText(ctx context.Context) (string, []SourceSummaryData) {
+	text := r.FormatSummaryForPrompt(ctx)
 	sources := r.StructuredSummary(ctx)
+	return text, sources
+}
 
-	// Collect only semsource entries that have data to format.
-	type readySrc struct {
-		data SourceSummaryData
+// fetchLocalSummary queries the local graph-gateway GraphQL endpoint and builds
+// a sourceSummary by counting entities grouped by domain and type.
+// Entity IDs follow the six-part notation: org.platform.domain.system.type.instance,
+// so we group by parts[2] (domain) and parts[4] (type).
+// Returns nil (not an error) when the local GraphQL is unreachable so callers
+// can gracefully fall back to zero-entity summaries.
+func (r *GraphSourceRegistry) fetchLocalSummary(ctx context.Context, graphqlURL string) *sourceSummary {
+	cacheKey := "local:" + graphqlURL
+
+	r.summaryMu.Lock()
+	entry, ok := r.summaryCache[cacheKey]
+	r.summaryMu.Unlock()
+
+	if ok && time.Since(entry.fetched) < summCacheTTL {
+		return entry.summary
 	}
-	var ready []readySrc
-	totalEntities := 0
-	for _, s := range sources {
-		if s.Type == "semsource" && s.Ready && s.TotalEntities > 0 {
-			ready = append(ready, readySrc{data: s})
-			totalEntities += s.TotalEntities
+
+	body, err := json.Marshal(map[string]string{
+		"query": `{ entitiesByPrefix(prefix: "", limit: 5000) { id } }`,
+	})
+	if err != nil {
+		r.logger.Debug("fetchLocalSummary: marshal failed", "error", err)
+		return nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, graphqlURL,
+		strings.NewReader(string(body)))
+	if err != nil {
+		r.logger.Debug("fetchLocalSummary: request build failed", "error", err)
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		r.logger.Debug("fetchLocalSummary: request failed", "graphql_url", graphqlURL, "error", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		r.logger.Debug("fetchLocalSummary: non-200 response",
+			"graphql_url", graphqlURL, "status", resp.StatusCode)
+		return nil
+	}
+
+	var gqlResp struct {
+		Data struct {
+			EntitiesByPrefix []struct {
+				ID string `json:"id"`
+			} `json:"entitiesByPrefix"`
+		} `json:"data"`
+	}
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		r.logger.Debug("fetchLocalSummary: read body failed", "error", err)
+		return nil
+	}
+	if err := json.Unmarshal(respBody, &gqlResp); err != nil {
+		r.logger.Debug("fetchLocalSummary: parse response failed", "error", err)
+		return nil
+	}
+
+	// Group by domain (parts[2]) then type (parts[4]).
+	// domainTypes: domain -> type -> count
+	domainTypes := make(map[string]map[string]int)
+	total := 0
+	for _, e := range gqlResp.Data.EntitiesByPrefix {
+		parts := strings.Split(e.ID, ".")
+		if len(parts) < 5 {
+			continue
 		}
-	}
-
-	if len(ready) == 0 {
-		return "", sources
-	}
-
-	// Sort by name for stable output — insertion sort (small n).
-	for i := 1; i < len(ready); i++ {
-		for j := i; j > 0 && ready[j].data.Name < ready[j-1].data.Name; j-- {
-			ready[j], ready[j-1] = ready[j-1], ready[j]
+		domain := parts[2]
+		entityType := parts[4]
+		if domainTypes[domain] == nil {
+			domainTypes[domain] = make(map[string]int)
 		}
+		domainTypes[domain][entityType]++
+		total++
 	}
 
-	var sb strings.Builder
-	sb.WriteString("--- Graph Contents ---\n")
-	sb.WriteString(fmt.Sprintf("%d knowledge source", len(ready)))
-	if len(ready) != 1 {
-		sb.WriteString("s")
-	}
-	sb.WriteString(fmt.Sprintf(", %d entities total.\n\n", totalEntities))
-
-	sb.WriteString("Entity IDs use 6-part dotted notation: org.platform.domain.system.type.instance\n")
-	for _, f := range ready {
-		if f.data.EntityPrefix != "" {
-			prefix := strings.TrimSuffix(f.data.EntityPrefix, ".")
-			sb.WriteString(fmt.Sprintf("  %s: %s.{domain}.{system}.{type}.{instance}\n",
-				f.data.Name, prefix))
+	domains := make([]SummaryDomain, 0, len(domainTypes))
+	for domain, typeCounts := range domainTypes {
+		types := make([]SummaryType, 0, len(typeCounts))
+		domainTotal := 0
+		for t, count := range typeCounts {
+			types = append(types, SummaryType{Type: t, Count: count})
+			domainTotal += count
 		}
-	}
-
-	for _, f := range ready {
-		sb.WriteString(fmt.Sprintf("\n%s (%d entities):\n", f.data.Name, f.data.TotalEntities))
-		for _, d := range f.data.Domains {
-			if len(d.Types) == 0 {
-				continue
+		// Sort types by count descending for stable, readable output.
+		for i := 1; i < len(types); i++ {
+			for j := i; j > 0 && types[j].Count > types[j-1].Count; j-- {
+				types[j], types[j-1] = types[j-1], types[j]
 			}
-			var typeParts []string
-			for _, t := range d.Types {
-				typeParts = append(typeParts, fmt.Sprintf("%s (%d)", t.Type, t.Count))
-			}
-			sb.WriteString(fmt.Sprintf("  %s: %s\n", d.Domain, strings.Join(typeParts, ", ")))
+		}
+		domains = append(domains, SummaryDomain{
+			Domain:      domain,
+			EntityCount: domainTotal,
+			Types:       types,
+		})
+	}
+	// Sort domains alphabetically for stable output.
+	for i := 1; i < len(domains); i++ {
+		for j := i; j > 0 && domains[j].Domain < domains[j-1].Domain; j-- {
+			domains[j], domains[j-1] = domains[j-1], domains[j]
 		}
 	}
 
-	sb.WriteString("\nQuery with graph_search: use \"prefix\" to scope by source (e.g. ")
-	if ready[0].data.EntityPrefix != "" {
-		prefix := strings.TrimSuffix(ready[0].data.EntityPrefix, ".")
-		exampleDomain := ""
-		if len(ready[0].data.Domains) > 0 {
-			exampleDomain = ready[0].data.Domains[0].Domain
-		}
-		if exampleDomain != "" {
-			sb.WriteString(fmt.Sprintf("%q", prefix+"."+exampleDomain))
-		} else {
-			sb.WriteString(fmt.Sprintf("%q", prefix))
-		}
-	} else {
-		sb.WriteString(`"source.domain"`)
+	sm := &sourceSummary{
+		Phase:         "ready",
+		TotalEntities: total,
+		Domains:       domains,
 	}
-	sb.WriteString(`), "predicate" for targeted lookups, or "nlq" for natural language questions.` + "\n")
-	sb.WriteString(`Use graph_summary tool for full predicate schema with descriptions.`)
 
-	return sb.String(), sources
+	r.summaryMu.Lock()
+	r.summaryCache[cacheKey] = summCacheEntry{summary: sm, fetched: time.Now()}
+	r.summaryMu.Unlock()
+
+	return sm
 }
 
 // fetchSummaryWithCache retrieves a parsed sourceSummary for the given URL,
