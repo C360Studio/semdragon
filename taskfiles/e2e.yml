@@ -351,6 +351,19 @@ tasks:
     cmds:
       - cmd: "{{.COMPOSE}} --profile mock --profile semsource down -v --remove-orphans 2>/dev/null"
         ignore_error: true
+      # Reset test repo to initial commit — prevents stale git history from
+      # accumulating across E2E runs (semsource indexes all commits on startup).
+      - cmd: |
+          REPO_DIR=docker/repos/testrepo
+          if [ -d "$REPO_DIR/.git" ]; then
+            INITIAL=$(git -C "$REPO_DIR" rev-list --max-parents=0 HEAD 2>/dev/null)
+            if [ -n "$INITIAL" ]; then
+              git -C "$REPO_DIR" reset --hard "$INITIAL" 2>/dev/null
+              git -C "$REPO_DIR" clean -fdx 2>/dev/null
+              git -C "$REPO_DIR" checkout -B main 2>/dev/null
+            fi
+          fi
+        ignore_error: true
 
   maybe:down:
     internal: true
