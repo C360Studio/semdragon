@@ -16,7 +16,7 @@
       "always_query": true
     },
     {
-      "name": "workspace",
+      "name": "sandbox",
       "graphql_url": "http://local-semsource:8080/graph-gateway/graphql",
       "status_url": "http://local-semsource:8080/source-manifest/status",
       "type": "semsource",

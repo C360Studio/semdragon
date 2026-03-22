@@ -80,7 +80,9 @@
 		async listEntities({ prefix = '', limit = 200 }) {
 			// Use the selected source prefix when set; otherwise fall through to
 			// whatever prefix the caller supplied (empty string = all entities).
-			const queryPrefix = selectedSource || prefix;
+			// Strip trailing dot — GraphQL prefix matching treats it as a literal.
+			const rawPrefix = selectedSource || prefix;
+			const queryPrefix = rawPrefix.endsWith('.') ? rawPrefix.slice(0, -1) : rawPrefix;
 			const backendEntities = await graphApi.getEntitiesByPrefix(queryPrefix, limit);
 			const entities = transformPathSearchResult({ entities: backendEntities, edges: [] });
 			return { entities };

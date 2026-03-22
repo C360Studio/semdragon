@@ -387,6 +387,28 @@ func (r *GraphSourceRegistry) fetchStatus(ctx context.Context, statusURL string)
 	return status.Phase, status.TotalEntities, nil
 }
 
+// checkAndUpdateReady performs a single status check on a semsource source and
+// updates its ready flag if it has become ready since the last check.
+// Called lazily when we encounter a not-ready source during summary generation.
+func (r *GraphSourceRegistry) checkAndUpdateReady(ctx context.Context, src *GraphSource) bool {
+	if src.ready.Load() {
+		return true
+	}
+	if src.StatusURL == "" {
+		return false
+	}
+	phase, _, err := r.fetchStatus(ctx, src.StatusURL)
+	if err != nil {
+		return false
+	}
+	if phase == "ready" || phase == "degraded" {
+		src.ready.Store(true)
+		r.logger.Info("semsource became ready (lazy check)", "source", src.Name, "phase", phase)
+		return true
+	}
+	return false
+}
+
 // readySources returns all sources that are ready to be queried.
 func (r *GraphSourceRegistry) readySources() []*GraphSource {
 	var result []*GraphSource
@@ -446,7 +468,7 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 		if src.Type != "semsource" {
 			continue
 		}
-		if !src.ready.Load() {
+		if !r.checkAndUpdateReady(ctx, src) {
 			continue
 		}
 		var sm *sourceSummary
@@ -571,8 +593,9 @@ func (r *GraphSourceRegistry) fetchExampleIDs(ctx context.Context, src *GraphSou
 	}
 
 	// Query up to 50 entities under this source prefix in a single request.
-	prefix := src.EntityPrefix
-	query := fmt.Sprintf(`{ entitiesByPrefix(prefix: %q, limit: 50) { id type } }`, prefix)
+	// Strip trailing dot from prefix — GraphQL prefix matching is substring-based.
+	prefix := strings.TrimSuffix(src.EntityPrefix, ".")
+	query := fmt.Sprintf(`{ entitiesByPrefix(prefix: %q, limit: 50) { id } }`, prefix)
 	payload, err := json.Marshal(map[string]string{"query": query})
 	if err != nil {
 		return nil
@@ -601,8 +624,7 @@ func (r *GraphSourceRegistry) fetchExampleIDs(ctx context.Context, src *GraphSou
 	var gqlResp struct {
 		Data struct {
 			EntitiesByPrefix []struct {
-				ID   string `json:"id"`
-				Type string `json:"type"`
+				ID string `json:"id"`
 			} `json:"entitiesByPrefix"`
 		} `json:"data"`
 	}
@@ -610,21 +632,23 @@ func (r *GraphSourceRegistry) fetchExampleIDs(ctx context.Context, src *GraphSou
 		return nil
 	}
 
-	// clusteringTypes are semsource graph-clustering internal node types that
-	// add noise when shown as example IDs to agents.
-	clusteringTypes := map[string]bool{"group": true, "container": true, "level": true}
+	// Clustering internal types/instances that add noise when shown as examples.
+	clusteringNames := map[string]bool{"group": true, "container": true, "level": true}
 
-	// Group entity IDs by domain (third segment of the 6-part ID).
+	// Group entity IDs by domain (3rd segment of the 6-part ID).
+	// Filter out clustering internals by type (5th) and instance (6th) segments.
 	byDomain := make(map[string][]string)
 	for _, e := range gqlResp.Data.EntitiesByPrefix {
-		if clusteringTypes[e.Type] {
+		parts := strings.SplitN(e.ID, ".", 7) // 6 parts, but SplitN(7) to handle dots in instance
+		if len(parts) < 6 {
 			continue
 		}
-		parts := strings.SplitN(e.ID, ".", 6)
-		if len(parts) < 4 {
+		domain := parts[2]   // org.platform.domain.system.type.instance
+		entityType := parts[4]
+		instance := parts[5]
+		if clusteringNames[entityType] || clusteringNames[instance] {
 			continue
 		}
-		domain := parts[2] // org.platform.domain.system.type.instance
 		if len(byDomain[domain]) < 3 {
 			byDomain[domain] = append(byDomain[domain], e.ID)
 		}
@@ -659,15 +683,16 @@ func (r *GraphSourceRegistry) StructuredSummary(ctx context.Context) []SourceSum
 		if src.Type != "semsource" {
 			continue
 		}
+		ready := r.checkAndUpdateReady(ctx, src)
 		entry := SourceSummaryData{
 			Name:         src.Name,
 			Type:         src.Type,
-			Ready:        src.ready.Load(),
+			Ready:        ready,
 			EntityPrefix: src.EntityPrefix,
 			Domains:      []SummaryDomain{},
 		}
 
-		if src.ready.Load() {
+		if ready {
 			if summURL := src.SummaryURL(); summURL != "" {
 				if sm := r.fetchSummaryWithCache(ctx, summURL); sm != nil {
 					entry.TotalEntities = sm.TotalEntities
