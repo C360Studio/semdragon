@@ -1601,57 +1601,23 @@ func graphQueryHandler(queryFn EntityQueryFunc) ToolHandler {
 // GRAPH SUMMARY TOOL - semsource source discovery
 // =============================================================================
 
-// GraphSummaryRouter returns summary endpoint URLs for ready semsource sources.
+// GraphSummaryRouter returns summary endpoint URLs for ready semsource sources
+// and produces the formatted summary text for agent prompts.
 type GraphSummaryRouter interface {
 	SummaryURLs() []string
-}
-
-// summaryCache is a simple in-memory cache for graph summary responses.
-type summaryCache struct {
-	mu      sync.Mutex
-	entries map[string]summaryCacheEntry
-}
-
-type summaryCacheEntry struct {
-	data    string
-	fetched time.Time
-}
-
-const summaryCacheTTL = 5 * time.Minute
-
-var globalSummaryCache = &summaryCache{entries: make(map[string]summaryCacheEntry)}
-
-func (c *summaryCache) get(url string) (string, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.entries[url]
-	if !ok || time.Since(entry.fetched) > summaryCacheTTL {
-		return "", false
-	}
-	return entry.data, true
-}
-
-func (c *summaryCache) set(url, data string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.entries[url] = summaryCacheEntry{data: data, fetched: time.Now()}
+	FormattedSummary(ctx context.Context) string
 }
 
 // RegisterGraphSummary adds the graph_summary tool to the registry.
-// The router provides summary endpoint URLs for ready semsource sources.
+// The router provides the formatted summary text for ready knowledge sources.
 func (r *ToolRegistry) RegisterGraphSummary(router GraphSummaryRouter) {
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
 			Name:        "graph_summary",
-			Description: "Get an overview of what's indexed in the knowledge graph — sources, entity types, counts, and queryable predicates. Call this ONCE before graph_search to understand available data.",
+			Description: "Get an overview of what's indexed in the knowledge graph — sources, entity types, counts, and example entity IDs. Call this ONCE before graph_search to understand available data and how to scope queries by prefix.",
 			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"source_filter": map[string]any{
-						"type":        "string",
-						"description": "Optional: filter to a specific source name",
-					},
-				},
+				"type":       "object",
+				"properties": map[string]any{},
 			},
 		},
 		Handler:  graphSummaryHandler(router),
@@ -1660,11 +1626,9 @@ func (r *ToolRegistry) RegisterGraphSummary(router GraphSummaryRouter) {
 	})
 }
 
-// graphSummaryHandler returns a ToolHandler that fetches summary data from
-// one or more semsource /summary endpoints, with a 5-minute in-memory cache.
+// graphSummaryHandler returns a ToolHandler that returns the formatted knowledge
+// graph summary text. Caching is handled by the router (GraphSourceRegistry).
 func graphSummaryHandler(router GraphSummaryRouter) ToolHandler {
-	client := &http.Client{Timeout: 10 * time.Second}
-
 	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
 		select {
 		case <-ctx.Done():
@@ -1672,57 +1636,10 @@ func graphSummaryHandler(router GraphSummaryRouter) ToolHandler {
 		default:
 		}
 
-		sourceFilter, _ := call.Arguments["source_filter"].(string)
-
-		urls := router.SummaryURLs()
-		if len(urls) == 0 {
-			return agentic.ToolResult{CallID: call.ID, Error: "no semsource sources configured for graph_summary"}
+		text := router.FormattedSummary(ctx)
+		if text == "" {
+			return agentic.ToolResult{CallID: call.ID, Error: "no knowledge sources indexed yet"}
 		}
-
-		var parts []string
-		for _, url := range urls {
-			// Apply optional source filter by matching the URL against the filter string.
-			if sourceFilter != "" && !strings.Contains(url, sourceFilter) {
-				continue
-			}
-
-			// Check cache first.
-			if cached, ok := globalSummaryCache.get(url); ok {
-				parts = append(parts, fmt.Sprintf("=== Source: %s (cached) ===\n%s", url, cached))
-				continue
-			}
-
-			reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
-			if err != nil {
-				cancel()
-				continue
-			}
-
-			resp, err := client.Do(req)
-			cancel()
-			if err != nil {
-				continue
-			}
-
-			body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-			resp.Body.Close()
-			if err != nil || resp.StatusCode != http.StatusOK {
-				continue
-			}
-
-			data := string(body)
-			globalSummaryCache.set(url, data)
-			parts = append(parts, fmt.Sprintf("=== Source: %s ===\n%s", url, data))
-		}
-
-		if len(parts) == 0 {
-			if sourceFilter != "" {
-				return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("no summary data available for source_filter %q", sourceFilter)}
-			}
-			return agentic.ToolResult{CallID: call.ID, Error: "no summary data available from any semsource source"}
-		}
-
-		return agentic.ToolResult{CallID: call.ID, Content: strings.Join(parts, "\n\n")}
+		return agentic.ToolResult{CallID: call.ID, Content: text}
 	}
 }

@@ -78,6 +78,16 @@ type GraphSourceRegistry struct {
 	// Summary cache for prompt injection — keyed by summary URL.
 	summaryMu    sync.Mutex
 	summaryCache map[string]summCacheEntry
+
+	// Examples cache — keyed by "examples:{entityPrefix}", stores domain→[]entityID maps.
+	examplesMu    sync.Mutex
+	examplesCache map[string]examplesCacheEntry
+}
+
+// examplesCacheEntry caches the domain→entity ID examples for one source prefix.
+type examplesCacheEntry struct {
+	byDomain map[string][]string
+	fetched  time.Time
 }
 
 // summCacheEntry holds a parsed semsource summary with its fetch timestamp.
@@ -125,10 +135,11 @@ func NewGraphSourceRegistry(sources []GraphSource, logger *slog.Logger) *GraphSo
 		}
 	}
 	return &GraphSourceRegistry{
-		sources:      ptrs,
-		logger:       logger,
-		client:       &http.Client{Timeout: 5 * time.Second},
-		summaryCache: make(map[string]summCacheEntry),
+		sources:       ptrs,
+		logger:        logger,
+		client:        &http.Client{Timeout: 5 * time.Second},
+		summaryCache:  make(map[string]summCacheEntry),
+		examplesCache: make(map[string]examplesCacheEntry),
 	}
 }
 
@@ -196,9 +207,17 @@ func (s *GraphSource) SummaryURL() string {
 	return strings.Replace(s.StatusURL, "/status", "/summary", 1)
 }
 
-// GraphSummaryRouter returns summary endpoint URLs for ready semsource sources.
+// GraphSummaryRouter returns summary endpoint URLs for ready semsource sources
+// and produces the formatted summary text for agent prompts.
 type GraphSummaryRouter interface {
 	SummaryURLs() []string
+	FormattedSummary(ctx context.Context) string
+}
+
+// FormattedSummary returns the agent-readable graph summary text.
+// It is an alias for FormatSummaryForPrompt satisfying the GraphSummaryRouter interface.
+func (r *GraphSourceRegistry) FormattedSummary(ctx context.Context) string {
+	return r.FormatSummaryForPrompt(ctx)
 }
 
 // SummaryURLs returns the summary endpoint URLs for all ready semsource sources.
@@ -398,13 +417,14 @@ func (r *GraphSourceRegistry) resolveByPrefix(id string) *GraphSource {
 }
 
 // FormatSummaryForPrompt fetches and formats aggregated graph summary data
-// for injection into agent prompts. Includes both local and semsource sources.
+// for injection into agent prompts. Covers all semsource sources.
 // Results are cached for summCacheTTL (5 minutes) to avoid hammering endpoints.
 // Returns empty string when no sources have data.
 func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string {
 	type fetchedSrc struct {
-		src     *GraphSource
-		summary *sourceSummary
+		src      *GraphSource
+		summary  *sourceSummary
+		examples map[string][]string // domain → example entity IDs
 	}
 
 	// Sort sources by name for stable output.
@@ -438,7 +458,8 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 			continue
 		}
 
-		fetched = append(fetched, fetchedSrc{src: src, summary: sm})
+		examples := r.fetchExampleIDs(ctx, src)
+		fetched = append(fetched, fetchedSrc{src: src, summary: sm, examples: examples})
 		totalEntities += sm.TotalEntities
 	}
 
@@ -447,19 +468,37 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 	}
 
 	var sb strings.Builder
-	sb.WriteString("--- Graph Contents ---\n")
-	sb.WriteString(fmt.Sprintf("%d knowledge source", len(fetched)))
-	if len(fetched) != 1 {
-		sb.WriteString("s")
+	sb.WriteString("--- Knowledge Graph ---\n")
+	sb.WriteString(fmt.Sprintf("%d ", totalEntities))
+	if totalEntities == 1 {
+		sb.WriteString("entity")
+	} else {
+		sb.WriteString("entities")
 	}
-	sb.WriteString(fmt.Sprintf(", %d entities total.\n\n", totalEntities))
+	sb.WriteString(fmt.Sprintf(" indexed from %d ", len(fetched)))
+	if len(fetched) == 1 {
+		sb.WriteString("source")
+	} else {
+		sb.WriteString("sources")
+	}
+	sb.WriteString(".\n\n")
 
 	// Entity ID format guidance.
 	sb.WriteString("Entity IDs use 6-part dotted notation: org.platform.domain.system.type.instance\n\n")
 
-	// Per-source entity breakdown with examples.
+	// Per-source section showing name, prefix, and domain breakdown with examples.
 	for _, f := range fetched {
-		sb.WriteString(fmt.Sprintf("%s (%d entities):\n", f.src.Name, f.summary.TotalEntities))
+		prefix := f.src.EntityPrefix
+		if prefix != "" && strings.HasSuffix(prefix, ".") {
+			// Strip trailing dot for display; shown as "prefix: local.semsource"
+			prefix = strings.TrimSuffix(prefix, ".")
+		}
+		if prefix != "" {
+			sb.WriteString(fmt.Sprintf("%s (prefix: %s):\n", f.src.Name, prefix))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s:\n", f.src.Name))
+		}
+
 		for _, d := range f.summary.Domains {
 			if len(d.Types) == 0 {
 				continue
@@ -470,41 +509,132 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 			}
 			sb.WriteString(fmt.Sprintf("  %s: %s\n", d.Domain, strings.Join(typeParts, ", ")))
 			// Show example entity IDs so agents understand the ID structure.
-			for _, ex := range d.ExampleIDs {
+			for _, ex := range f.examples[d.Domain] {
 				sb.WriteString(fmt.Sprintf("    e.g. %s\n", ex))
 			}
 		}
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("Query with graph_search:\n")
-	sb.WriteString("  - Use \"prefix\" to scope by domain (e.g. ")
-	// Pick the first real example from any domain.
-	exampleWritten := false
+	// Build a source prefix example for the query guidance line.
+	var prefixExample string
 	for _, f := range fetched {
-		for _, d := range f.summary.Domains {
-			if len(d.ExampleIDs) > 0 {
-				// Use just the first 3 parts as a prefix example.
-				parts := strings.SplitN(d.ExampleIDs[0], ".", 4)
-				if len(parts) >= 3 {
-					sb.WriteString(fmt.Sprintf("%q", strings.Join(parts[:3], ".")))
-					exampleWritten = true
-					break
-				}
+		if f.src.EntityPrefix != "" {
+			prefixExample = strings.TrimSuffix(f.src.EntityPrefix, ".")
+			// Append the first domain name if available.
+			if len(f.summary.Domains) > 0 {
+				prefixExample = prefixExample + "." + f.summary.Domains[0].Domain
 			}
-		}
-		if exampleWritten {
 			break
 		}
 	}
-	if !exampleWritten {
-		sb.WriteString(`"source.domain"`)
+	if prefixExample == "" {
+		prefixExample = "source.domain"
 	}
-	sb.WriteString(")\n")
+
+	sb.WriteString("Query with graph_search:\n")
+	sb.WriteString(fmt.Sprintf("  - Use \"prefix\" to scope by source (e.g. %q)\n", prefixExample))
 	sb.WriteString("  - Use \"predicate\" for targeted property lookups\n")
 	sb.WriteString("  - Use \"nlq\" for natural language questions")
 
 	return sb.String()
+}
+
+// fetchExampleIDs queries the local graph source for a sample of entity IDs
+// under the given semsource source's prefix, returning up to 3 per domain.
+// Results are cached under the key "examples:{entityPrefix}" for summCacheTTL.
+// Falls back gracefully — returns empty map on any error.
+func (r *GraphSourceRegistry) fetchExampleIDs(ctx context.Context, src *GraphSource) map[string][]string {
+	if src.EntityPrefix == "" {
+		return nil
+	}
+
+	cacheKey := src.EntityPrefix
+	r.examplesMu.Lock()
+	entry, ok := r.examplesCache[cacheKey]
+	r.examplesMu.Unlock()
+
+	if ok && time.Since(entry.fetched) < summCacheTTL {
+		return entry.byDomain
+	}
+
+	// Find the local graph source to use for the GraphQL query.
+	var graphqlURL string
+	for _, s := range r.sources {
+		if s.Type == "local" && s.GraphQLURL != "" {
+			graphqlURL = s.GraphQLURL
+			break
+		}
+	}
+	if graphqlURL == "" {
+		return nil
+	}
+
+	// Query up to 50 entities under this source prefix in a single request.
+	prefix := src.EntityPrefix
+	query := fmt.Sprintf(`{ entitiesByPrefix(prefix: %q, limit: 50) { id type } }`, prefix)
+	payload, err := json.Marshal(map[string]string{"query": query})
+	if err != nil {
+		return nil
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, graphqlURL, strings.NewReader(string(payload)))
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		r.logger.Debug("fetchExampleIDs: GraphQL request failed", "source", src.Name, "error", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var gqlResp struct {
+		Data struct {
+			EntitiesByPrefix []struct {
+				ID   string `json:"id"`
+				Type string `json:"type"`
+			} `json:"entitiesByPrefix"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &gqlResp); err != nil {
+		return nil
+	}
+
+	// clusteringTypes are semsource graph-clustering internal node types that
+	// add noise when shown as example IDs to agents.
+	clusteringTypes := map[string]bool{"group": true, "container": true, "level": true}
+
+	// Group entity IDs by domain (third segment of the 6-part ID).
+	byDomain := make(map[string][]string)
+	for _, e := range gqlResp.Data.EntitiesByPrefix {
+		if clusteringTypes[e.Type] {
+			continue
+		}
+		parts := strings.SplitN(e.ID, ".", 6)
+		if len(parts) < 4 {
+			continue
+		}
+		domain := parts[2] // org.platform.domain.system.type.instance
+		if len(byDomain[domain]) < 3 {
+			byDomain[domain] = append(byDomain[domain], e.ID)
+		}
+	}
+
+	r.examplesMu.Lock()
+	r.examplesCache[cacheKey] = examplesCacheEntry{byDomain: byDomain, fetched: time.Now()}
+	r.examplesMu.Unlock()
+
+	return byDomain
 }
 
 // SourceSummaryData is the structured per-source summary returned by StructuredSummary.
@@ -541,7 +671,14 @@ func (r *GraphSourceRegistry) StructuredSummary(ctx context.Context) []SourceSum
 			if summURL := src.SummaryURL(); summURL != "" {
 				if sm := r.fetchSummaryWithCache(ctx, summURL); sm != nil {
 					entry.TotalEntities = sm.TotalEntities
-					entry.Domains = sm.Domains
+					// Merge example IDs into each domain entry.
+					examples := r.fetchExampleIDs(ctx, src)
+					domains := make([]SummaryDomain, len(sm.Domains))
+					copy(domains, sm.Domains)
+					for i := range domains {
+						domains[i].ExampleIDs = examples[domains[i].Domain]
+					}
+					entry.Domains = domains
 				}
 			}
 		}

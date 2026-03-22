@@ -6,40 +6,29 @@
 	 * - Section A: raw formatted text from the backend (agent view)
 	 * - Section B: structured source cards with domain breakdowns
 	 *
-	 * Fetches once on mount and caches the result; re-renders do not re-fetch.
+	 * Data is passed as props from the parent page — no internal fetch.
+	 * The parent owns the fetch lifecycle and passes onRefresh to reset it.
 	 */
 
-	import { getGraphSummary } from '$lib/services/api';
-	import type { GraphSummaryResponse, GraphSummarySource } from '$lib/services/api';
+	import type { GraphSummaryResponse } from '$lib/services/api';
 
 	// ---------------------------------------------------------------------------
-	// State
+	// Props
 	// ---------------------------------------------------------------------------
-	let data = $state<GraphSummaryResponse | null>(null);
-	let loading = $state(true);
-	let error = $state<string | null>(null);
-
-	// ---------------------------------------------------------------------------
-	// Fetch on mount — cache in component-local state, no re-fetch on re-render
-	// ---------------------------------------------------------------------------
-	$effect(() => {
-		// Only fetch once; data stays populated across re-renders
-		if (data !== null) return;
-
-		loading = true;
-		error = null;
-
-		getGraphSummary()
-			.then((result) => {
-				data = result;
-			})
-			.catch((err: unknown) => {
-				error = err instanceof Error ? err.message : 'Failed to load graph summary';
-			})
-			.finally(() => {
-				loading = false;
-			});
-	});
+	interface GraphSummaryProps {
+		/** entity_prefix of the currently selected source in the toolbar dropdown.
+		 *  Empty string means "all sources" — no card is highlighted. */
+		activeSource?: string;
+		/** Summary data from the parent page fetch. Null while loading or on error. */
+		data: GraphSummaryResponse | null;
+		/** True while the parent is fetching summary data. */
+		loading: boolean;
+		/** Error message if the parent fetch failed. Null on success. */
+		error: string | null;
+		/** Called when the user requests a refresh — parent resets its fetch state. */
+		onRefresh: () => void;
+	}
+	let { activeSource = '', data, loading, error, onRefresh }: GraphSummaryProps = $props();
 
 	// ---------------------------------------------------------------------------
 	// Helpers
@@ -62,11 +51,7 @@
 			class:spinning={loading}
 			aria-label="Refresh graph summary"
 			disabled={loading}
-			onclick={() => {
-				loading = true;
-				error = null;
-				data = null;
-			}}
+			onclick={onRefresh}
 		>↻</button>
 	</div>
 
@@ -81,14 +66,7 @@
 		<div class="section" role="alert">
 			<h4 class="section-title">Error</h4>
 			<p class="error-message">{error}</p>
-			<button
-				class="retry-button"
-				onclick={() => {
-					loading = true;
-					error = null;
-					data = null;
-				}}
-			>
+			<button class="retry-button" onclick={onRefresh}>
 				Retry
 			</button>
 		</div>
@@ -105,11 +83,20 @@
 				<h4 class="section-title">Sources ({data.sources.length})</h4>
 				<div class="sources-list">
 					{#each data.sources as source (source.name)}
-						<div class="source-card" data-testid="source-card-{source.name}">
+						<div
+							class="source-card"
+							class:source-card-active={activeSource !== '' && source.entity_prefix === activeSource}
+							data-testid="source-card-{source.name}"
+						>
 							<!-- Source header row -->
 							<div class="source-header">
 								<span class="source-name">{source.name}</span>
 								<span class="source-badge {sourceTypeBadgeClass(source.type)}">{source.type}</span>
+								{#if activeSource !== '' && source.entity_prefix === activeSource}
+									<span class="source-viewing-badge" aria-label="Currently viewing this source">
+										viewing
+									</span>
+								{/if}
 								<span
 									class="source-ready"
 									class:ready={source.ready}
@@ -269,7 +256,15 @@
 		gap: 8px;
 	}
 
+	/* Badge palette — component-scoped so these respond to theme changes if tokens are added later */
 	.source-card {
+		--badge-semsource-bg: rgba(99, 102, 241, 0.2);
+		--badge-semsource-fg: #a5b4fc;
+		--badge-local-bg: rgba(34, 197, 94, 0.15);
+		--badge-local-fg: #86efac;
+		--badge-viewing-bg: rgba(99, 102, 241, 0.25);
+		--badge-viewing-fg: #c7d2fe;
+
 		background: var(--ui-surface-primary);
 		border: 1px solid var(--ui-border-subtle);
 		border-radius: 4px;
@@ -277,6 +272,24 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+	}
+
+	/* Active source card — highlighted when selected in the toolbar dropdown */
+	.source-card-active {
+		border-color: var(--ui-border-strong, #555);
+		box-shadow: inset 0 0 0 1px var(--ui-border-strong, #555);
+	}
+
+	.source-viewing-badge {
+		font-size: 9px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		padding: 1px 5px;
+		border-radius: 3px;
+		background: var(--badge-viewing-bg);
+		color: var(--badge-viewing-fg);
+		flex-shrink: 0;
 	}
 
 	.source-header {
@@ -307,13 +320,13 @@
 	}
 
 	.badge-semsource {
-		background: rgba(99, 102, 241, 0.2);
-		color: #a5b4fc;
+		background: var(--badge-semsource-bg);
+		color: var(--badge-semsource-fg);
 	}
 
 	.badge-local {
-		background: rgba(34, 197, 94, 0.15);
-		color: #86efac;
+		background: var(--badge-local-bg);
+		color: var(--badge-local-fg);
 	}
 
 	.source-ready {

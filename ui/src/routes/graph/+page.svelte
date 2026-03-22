@@ -26,6 +26,8 @@
 	import { graphApi } from '$lib/services/graphApi';
 	import { transformPathSearchResult, transformGlobalSearchResult } from '$lib/services/graphTransform';
 	import type { GraphStoreAdapter } from '$lib/stores/graphStore.svelte';
+	import { getGraphSummary } from '$lib/services/api';
+	import type { GraphSummaryResponse, GraphSummarySource } from '$lib/services/api';
 
 	// ---------------------------------------------------------------------------
 	// Panel state — matches the pattern used in trajectories/quests pages
@@ -36,6 +38,38 @@
 	let rightPanelWidth = $state(320);
 
 	// ---------------------------------------------------------------------------
+	// Source selector state
+	// empty string = all sources (no prefix filter)
+	// ---------------------------------------------------------------------------
+	let selectedSource = $state<string>('');
+	let availableSources = $state<GraphSummarySource[]>([]);
+
+	// ---------------------------------------------------------------------------
+	// Summary data — fetched once here and passed as props to GraphSummary.
+	// Hoisted to the page so GraphSummary is purely props-driven and the source
+	// list and summary panel share a single fetch with no duplicate requests.
+	// ---------------------------------------------------------------------------
+	let summaryData = $state<GraphSummaryResponse | null>(null);
+	let summaryLoading = $state(true);
+	let summaryError = $state<string | null>(null);
+
+	$effect(() => {
+		if (summaryData !== null) return;
+
+		getGraphSummary()
+			.then((result) => {
+				summaryData = result;
+				availableSources = result.sources;
+			})
+			.catch((err) => {
+				summaryError = err instanceof Error ? err.message : 'Failed to load graph summary';
+			})
+			.finally(() => {
+				summaryLoading = false;
+			});
+	});
+
+	// ---------------------------------------------------------------------------
 	// GraphStoreAdapter adapter
 	//
 	// graphStore expects listEntities / getEntityNeighbors / searchEntities.
@@ -44,7 +78,10 @@
 	// ---------------------------------------------------------------------------
 	const graphApiAdapter: GraphStoreAdapter = {
 		async listEntities({ prefix = '', limit = 200 }) {
-			const backendEntities = await graphApi.getEntitiesByPrefix(prefix, limit);
+			// Use the selected source prefix when set; otherwise fall through to
+			// whatever prefix the caller supplied (empty string = all entities).
+			const queryPrefix = selectedSource || prefix;
+			const backendEntities = await graphApi.getEntitiesByPrefix(queryPrefix, limit);
 			const entities = transformPathSearchResult({ entities: backendEntities, edges: [] });
 			return { entities };
 		},
@@ -64,14 +101,16 @@
 	};
 
 	// ---------------------------------------------------------------------------
-	// Load initial graph on first mount only.
-	// If the user navigates away and back, the existing store data is preserved
-	// rather than silently resetting their exploration. The refresh button
-	// provides an explicit way to reload.
+	// Load (or reload) the graph whenever selectedSource changes.
+	// On first run (mount), selectedSource is '' — loads all entities.
+	// When the user picks a different source from the dropdown, $effect re-runs
+	// automatically because selectedSource is $state-tracked.
 	// ---------------------------------------------------------------------------
 	$effect(() => {
-		if (graphStore.entities.size > 0) return;
-		graphStore.loadInitialGraph(graphApiAdapter);
+		// Track selectedSource so the effect re-runs on every dropdown change.
+		const _prefix = selectedSource;
+		graphStore.clearEntities();
+		void graphStore.loadInitialGraph(graphApiAdapter);
 	});
 
 	// ---------------------------------------------------------------------------
@@ -130,6 +169,7 @@
 		graphStore.selectEntity(entityId);
 		void graphStore.expandEntity(graphApiAdapter, entityId);
 	}
+
 </script>
 
 <svelte:head>
@@ -154,6 +194,19 @@
 		<div class="graph-page" data-testid="graph-page">
 			<!-- Top bar: filters + metrics in a single horizontal row -->
 			<div class="graph-toolbar">
+				<div class="source-selector">
+					<select
+						bind:value={selectedSource}
+						aria-label="Filter by knowledge source"
+					>
+						<option value="">All sources</option>
+						{#each availableSources as source (source.name)}
+							<option value={source.entity_prefix}>
+								{source.name}{source.total_entities > 0 ? ` (${source.total_entities})` : ''}
+							</option>
+						{/each}
+					</select>
+				</div>
 				<GraphFilters
 					visibleTypes={graphStore.visibleTypes}
 					presentTypes={graphStore.presentEntityTypes}
@@ -208,7 +261,13 @@
 				onEntitySelect={handleRelatedEntitySelect}
 			/>
 		{:else}
-			<GraphSummary />
+			<GraphSummary
+					activeSource={selectedSource}
+					data={summaryData}
+					loading={summaryLoading}
+					error={summaryError}
+					onRefresh={() => { summaryData = null; summaryLoading = true; summaryError = null; }}
+				/>
 		{/if}
 	{/snippet}
 </ThreePanelLayout>
@@ -233,6 +292,36 @@
 
 	.toolbar-spacer {
 		flex: 1;
+	}
+
+	/* Source selector dropdown — compact, matching toolbar aesthetic */
+	.source-selector {
+		display: flex;
+		align-items: center;
+		flex-shrink: 0;
+		padding: 0 4px 0 8px;
+		border-right: 1px solid var(--ui-border-subtle);
+	}
+
+	.source-selector select {
+		font-size: 11px;
+		padding: 4px 8px;
+		background: var(--ui-surface-primary);
+		border: 1px solid var(--ui-border-subtle);
+		border-radius: 4px;
+		color: var(--ui-text-primary);
+		cursor: pointer;
+		outline: none;
+		max-width: 200px;
+	}
+
+	.source-selector select:hover {
+		border-color: var(--ui-border-strong);
+	}
+
+	.source-selector select:focus-visible {
+		outline: 2px solid var(--ui-border-strong);
+		outline-offset: 1px;
 	}
 
 	/* Canvas fills all remaining height below the toolbar */
