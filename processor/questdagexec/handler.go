@@ -704,6 +704,12 @@ func buildLeadReviewSystemPrompt(objective string, acceptance []string, output s
 		sb.WriteString("The party member did not provide output — this constitutes a failure.\n\n")
 	}
 
+	sb.WriteString("REVIEW CHECKLIST:\n")
+	sb.WriteString("- Does the output meet ALL acceptance criteria?\n")
+	sb.WriteString("- If the objective specifies file paths (e.g., 'create foo.md'), did the agent actually write those files? ")
+	sb.WriteString("Inline deliverable text is NOT the same as writing to the workspace. If the objective says 'produce X.md' ")
+	sb.WriteString("but the agent only submitted text without writing the file, that is INCOMPLETE — reject it.\n")
+	sb.WriteString("- Is the output usable by downstream tasks that depend on this node?\n\n")
 	sb.WriteString("Use the review_sub_quest tool to submit your verdict (accept or reject).\n")
 	sb.WriteString("Be honest. A 3 for solid work is the correct rating — not a 5.")
 	return sb.String()
