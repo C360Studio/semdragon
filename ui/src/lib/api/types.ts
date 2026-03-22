@@ -378,17 +378,13 @@ export interface ToolInfo {
 
 /** Static tool definitions matching the Go ToolRegistry.RegisterBuiltins(). */
 export const BuiltinTools: ToolInfo[] = [
-	{ name: 'read_file', description: 'Read the contents of a file', min_tier: 0, category: 'filesystem' },
-	{ name: 'list_directory', description: 'List the contents of a directory', min_tier: 0, category: 'filesystem' },
-	{ name: 'search_text', description: 'Search for text patterns in files', min_tier: 0, category: 'filesystem' },
-	{ name: 'patch_file', description: 'Apply a targeted find-and-replace edit', min_tier: 1, category: 'filesystem' },
-	{ name: 'http_request', description: 'Make an HTTP request to a URL', min_tier: 1, category: 'network' },
-	{ name: 'write_file', description: 'Write content to a file', min_tier: 2, category: 'filesystem' },
-	{ name: 'run_tests', description: 'Run a test command in the workspace', min_tier: 2, category: 'execution' },
-	{ name: 'run_command', description: 'Run an arbitrary shell command', min_tier: 3, category: 'execution' },
-	{ name: 'submit_work_product', description: 'Submit completed deliverable for review', min_tier: 0, category: 'terminal' },
+	{ name: 'bash', description: 'Run any shell command (files, tests, builds, git, deps)', min_tier: 1, category: 'execution' },
+	{ name: 'http_request', description: 'Fetch a URL with HTML-to-text conversion', min_tier: 1, category: 'network' },
+	{ name: 'submit_work', description: 'Submit finished work and end the quest', min_tier: 0, category: 'terminal' },
 	{ name: 'ask_clarification', description: 'Ask the quest issuer a clarifying question', min_tier: 0, category: 'terminal' },
 	{ name: 'decompose_quest', description: 'Break a quest into a DAG of sub-quests', min_tier: 3, category: 'coordination' },
+	{ name: 'review_sub_quest', description: 'Review a party member sub-quest output', min_tier: 3, category: 'coordination' },
+	{ name: 'answer_clarification', description: 'Answer a party member question', min_tier: 3, category: 'coordination' },
 ];
 
 /** Returns tools available at a given trust tier. */

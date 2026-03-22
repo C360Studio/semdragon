@@ -145,7 +145,7 @@ const triageResponse = `{"path":"salvage","analysis":"The agent produced partial
 // Simulates a research query that an agent working on a research quest would issue.
 const webSearchArgs = `{"query":"best practices data validation Go","max_results":3}`
 
-// webSearchSubmitArgs is the submit_work_product arguments returned after
+// webSearchSubmitArgs is the submit_work arguments returned after
 // receiving web_search results. Contains a research summary deliverable.
 const webSearchSubmitArgs = `{"deliverable":"Based on web search results, the top 3 recommendations for input validation in Go web applications are:\n\n1. Use struct validation tags with a library like go-playground/validator for declarative field constraints.\n2. Sanitize all user input at the boundary layer before it reaches business logic.\n3. Implement allowlist-based validation rather than blocklist patterns for security-sensitive fields.\n\nAll recommendations are sourced from recent Go community documentation and security best practices guides.","summary":"Research complete: input validation best practices summarized"}`
 
@@ -153,13 +153,13 @@ const webSearchSubmitArgs = `{"deliverable":"Based on web search results, the to
 // Simulates a knowledge graph query that an agent working on a research quest would issue.
 const graphSearchArgs = `{"query_type":"search","search_text":"data validation best practices","limit":5}`
 
-// graphSearchSubmitArgs is the submit_work_product arguments returned after
+// graphSearchSubmitArgs is the submit_work arguments returned after
 // receiving graph_search results. Contains a research summary deliverable.
 const graphSearchSubmitArgs = `{"deliverable":"Based on graph search results, found 3 relevant entities covering data validation patterns, input sanitization approaches, and schema conformance checks. All sources are indexed in the project knowledge graph.","summary":"Graph search complete: validation patterns identified"}`
 
 // reviewAcceptArgs was previously a static constant with a placeholder sub_quest_id.
-// It is now built dynamically by buildReviewAcceptArgs() in router.go, which
-// extracts the real sub-quest ID from the prompt messages.
+// It is now built dynamically by buildReviewAcceptArgs() in router.go,
+// which extracts the real sub-quest ID from the prompt messages.
 
 // reviewAcceptCompletion is the completion content after review tool results.
 const reviewAcceptCompletion = `I have reviewed the sub-quest output. The work meets all acceptance criteria and I accept it.`
@@ -169,7 +169,7 @@ const dmGraphQueryArgs = `{"entity_type":"quest","limit":10}`
 
 // dmGraphQueryCompletion is the DM's natural-language response after receiving
 // graph_query results. Unlike agent paths, the DM responds with text, not
-// submit_work_product.
+// submit_work.
 const dmGraphQueryCompletion = `Based on querying the game state, I can see the current quest board status. There are active quests being worked on by agents and some posted quests awaiting claims. The board is healthy and agents are actively engaging with the available work.`
 
 // dmWebSearchCompletion is the DM's response after web_search tool results.
@@ -177,9 +177,6 @@ const dmWebSearchCompletion = `Based on my web search results, I found relevant 
 
 // dmGraphSearchCompletion is the DM's response after graph_search tool results.
 const dmGraphSearchCompletion = `The knowledge graph contains several entities related to your query. I found relevant documentation and code patterns that should help inform the quest design.`
-
-// dmReadFileCompletion is the DM's response after read_file tool results.
-const dmReadFileCompletion = `I have reviewed the file contents. The file contains relevant information for your question.`
 
 // dmGenericToolCompletion is the DM's fallback response after any other tool results.
 const dmGenericToolCompletion = `I have gathered the requested information using the available tools. Based on what I found, here is my analysis of the current situation.`

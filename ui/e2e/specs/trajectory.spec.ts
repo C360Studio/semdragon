@@ -26,8 +26,8 @@ function mockCompletedTrajectory() {
 			{
 				timestamp: '2026-03-02T10:00:03Z',
 				step_type: 'tool_call',
-				tool_name: 'read_file',
-				tool_arguments: { path: 'src/auth/handler.go', sandbox_dir: '/workspace' },
+				tool_name: 'bash',
+				tool_arguments: { command: 'cat src/auth/handler.go' },
 				tool_result:
 					'package auth\n\nfunc HandleLogin(w http.ResponseWriter, r *http.Request) {\n\t// TODO: implement\n}',
 				duration: 150
@@ -46,12 +46,11 @@ function mockCompletedTrajectory() {
 			{
 				timestamp: '2026-03-02T10:00:06Z',
 				step_type: 'tool_call',
-				tool_name: 'write_file',
+				tool_name: 'bash',
 				tool_arguments: {
-					path: 'src/auth/handler.go',
-					content: 'package auth\n\nfunc HandleLogin(...) { ... }'
+					command: "cat <<'EOF' > src/auth/handler.go\npackage auth\n\nfunc HandleLogin(...) { ... }\nEOF"
 				},
-				tool_result: 'File written successfully',
+				tool_result: '(no output)',
 				duration: 80
 			},
 			{
@@ -255,9 +254,9 @@ test.describe('Trajectory Detail - Completed', () => {
 		const toolEvents = page.locator('[data-testid="timeline-event"][data-step-type="tool_call"]');
 		await expect(toolEvents).toHaveCount(2);
 
-		// First tool call — read_file
+		// First tool call — bash (cat)
 		const readFile = toolEvents.first();
-		await expect(readFile.getByTestId('event-type')).toHaveText('read_file');
+		await expect(readFile.getByTestId('event-type')).toHaveText('bash');
 
 		// Click to expand, then check tool arguments
 		await readFile.locator('.event-content').click();
@@ -267,10 +266,10 @@ test.describe('Trajectory Detail - Completed', () => {
 	test('tool_call events display duration', async ({ page }) => {
 		const toolEvents = page.locator('[data-testid="timeline-event"][data-step-type="tool_call"]');
 
-		// read_file: 150ms
+		// bash (cat): 150ms
 		await expect(toolEvents.first().getByTestId('event-duration')).toContainText('150ms');
 
-		// write_file: 80ms
+		// bash (write): 80ms
 		await expect(toolEvents.nth(1).getByTestId('event-duration')).toContainText('80ms');
 	});
 

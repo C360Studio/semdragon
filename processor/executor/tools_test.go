@@ -33,21 +33,12 @@ func TestBuiltinToolTierAlignment(t *testing.T) {
 		wantTier domain.TrustTier
 		reason   string
 	}{
-		// Apprentice — read-only; safe for every agent regardless of level.
-		{tool: "read_file", wantTier: domain.TierApprentice, reason: "read-only file access (supports optional line range)"},
-		{tool: "list_directory", wantTier: domain.TierApprentice, reason: "read-only directory listing"},
-		{tool: "search_text", wantTier: domain.TierApprentice, reason: "read-only text search"},
-		{tool: "glob_files", wantTier: domain.TierApprentice, reason: "read-only file discovery"},
-		{tool: "submit_work_product", wantTier: domain.TierApprentice, reason: "all tiers can submit work"},
+		// Apprentice — terminal tools safe for every agent.
+		{tool: "submit_work", wantTier: domain.TierApprentice, reason: "all tiers can submit work"},
 		{tool: "ask_clarification", wantTier: domain.TierApprentice, reason: "all tiers can ask questions"},
 
-		{tool: "write_file", wantTier: domain.TierApprentice, reason: "sandbox workspace — all tiers write files"},
-
-		// Journeyman — targeted writes, network access, and execution require demonstrated trust.
-		{tool: "patch_file", wantTier: domain.TierJourneyman, reason: "targeted file edits require level 6+"},
+		// Journeyman — network access and shell execution require demonstrated trust.
 		{tool: "http_request", wantTier: domain.TierJourneyman, reason: "network access requires level 6+"},
-
-		// Journeyman — sandbox is the security boundary; shell needs same trust as file writes.
 		{tool: "bash", wantTier: domain.TierJourneyman, reason: "sandbox-constrained shell execution"},
 
 		// Master — party-lead DAG operations require level 16+.
@@ -89,17 +80,14 @@ func TestBuiltinToolCount(t *testing.T) {
 	t.Parallel()
 
 	// RegisterBuiltins registers:
-	//   read_file, list_directory, search_text,
-	//   glob_files                                     — 4 read-only Apprentice tools
-	//   write_file                                     — 1 write Apprentice tool (sandbox workspace)
-	//   submit_work_product, ask_clarification         — 2 terminal tools (Apprentice)
-	//   patch_file, http_request, bash                 — 3 Journeyman tools
+	//   submit_work, ask_clarification                 — 2 terminal tools (Apprentice)
+	//   http_request, bash                             — 2 Journeyman tools
 	//   decompose_quest, review_sub_quest,
 	//   answer_clarification                           — 3 DAG tools (Master)
 	//
 	// web_search is excluded — registered conditionally via RegisterWebSearch.
 	// graph_query is excluded — requires a live EntityQueryFunc (RegisterGraphQuery).
-	const wantCount = 13
+	const wantCount = 7
 
 	reg := NewToolRegistry()
 	reg.RegisterBuiltins()
@@ -112,191 +100,6 @@ func TestBuiltinToolCount(t *testing.T) {
 			got, wantCount,
 		)
 	}
-}
-
-// TestGlobFilesMatching verifies that glob_files finds files matching ** patterns.
-func TestGlobFilesMatching(t *testing.T) {
-	t.Parallel()
-
-	// Build a temp directory tree:
-	//   root/
-	//     main.go
-	//     README.md
-	//     sub/
-	//       util.go
-	//       style.css
-	//     sub/deep/
-	//       handler.go
-	tmpDir := t.TempDir()
-	mustWriteFile(t, filepath.Join(tmpDir, "main.go"), "package main")
-	mustWriteFile(t, filepath.Join(tmpDir, "README.md"), "# readme")
-	mustWriteFile(t, filepath.Join(tmpDir, "sub", "util.go"), "package sub")
-	mustWriteFile(t, filepath.Join(tmpDir, "sub", "style.css"), "body {}")
-	mustWriteFile(t, filepath.Join(tmpDir, "sub", "deep", "handler.go"), "package deep")
-
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
-	quest := &domain.Quest{}
-
-	t.Run("recursive go files", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("glob_files", map[string]any{
-			"pattern":      "**/*.go",
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "main.go")
-		assertContains(t, result.Content, "util.go")
-		assertContains(t, result.Content, "handler.go")
-		assertNotContains(t, result.Content, "README.md")
-		assertNotContains(t, result.Content, "style.css")
-	})
-
-	t.Run("root-level only", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("glob_files", map[string]any{
-			"pattern":      "*.go",
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "main.go")
-		assertNotContains(t, result.Content, "util.go")
-	})
-
-	t.Run("no matches returns helpful message", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("glob_files", map[string]any{
-			"pattern":      "**/*.rs",
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "No files matched")
-	})
-}
-
-// TestSearchTextRegex verifies that search_text works in regex mode.
-func TestSearchTextRegex(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	mustWriteFile(t, filepath.Join(tmpDir, "sample.txt"),
-		"foo123\nbar456\nbaz789\nFOO999\n")
-
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
-	quest := &domain.Quest{}
-
-	t.Run("regex matches digits", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("search_text", map[string]any{
-			"pattern":      "foo[0-9]+",
-			"path":         filepath.Join(tmpDir, "sample.txt"),
-			"regex":        true,
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "foo123")
-		assertNotContains(t, result.Content, "bar456")
-		// Case-sensitive by default — FOO999 should not match foo[0-9]+
-		assertNotContains(t, result.Content, "FOO999")
-	})
-
-	t.Run("invalid regex returns error", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("search_text", map[string]any{
-			"pattern":      "[invalid",
-			"path":         filepath.Join(tmpDir, "sample.txt"),
-			"regex":        true,
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error for invalid regex, got none")
-		}
-		assertContains(t, result.Error, "invalid regex")
-	})
-}
-
-// TestSearchTextFileGlob verifies that the file_glob parameter filters files.
-func TestSearchTextFileGlob(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	mustWriteFile(t, filepath.Join(tmpDir, "main.go"), "package main // hello")
-	mustWriteFile(t, filepath.Join(tmpDir, "main.ts"), "// hello from ts")
-	mustWriteFile(t, filepath.Join(tmpDir, "notes.md"), "hello notes")
-
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
-	quest := &domain.Quest{}
-
-	call := makeToolCall("search_text", map[string]any{
-		"pattern":      "hello",
-		"path":         tmpDir,
-		"file_glob":    "*.go",
-		"_sandbox_dir": tmpDir,
-	})
-	result := reg.Execute(context.Background(), call, quest, agent)
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	assertContains(t, result.Content, "main.go")
-	assertNotContains(t, result.Content, "main.ts")
-	assertNotContains(t, result.Content, "notes.md")
-}
-
-// TestSearchTextContextLines verifies that context_lines shows surrounding lines.
-func TestSearchTextContextLines(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	content := strings.Join([]string{
-		"line one",
-		"line two",
-		"TARGET line",
-		"line four",
-		"line five",
-	}, "\n")
-	mustWriteFile(t, filepath.Join(tmpDir, "data.txt"), content)
-
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
-	quest := &domain.Quest{}
-
-	call := makeToolCall("search_text", map[string]any{
-		"pattern":       "TARGET",
-		"path":          filepath.Join(tmpDir, "data.txt"),
-		"context_lines": float64(1),
-		"_sandbox_dir":  tmpDir,
-	})
-	result := reg.Execute(context.Background(), call, quest, agent)
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	assertContains(t, result.Content, "line two")   // one line before
-	assertContains(t, result.Content, "TARGET line") // the match
-	assertContains(t, result.Content, "line four")  // one line after
-	assertNotContains(t, result.Content, "line one") // outside context
 }
 
 // mockSearchProvider is a test SearchProvider that returns canned results.
@@ -385,7 +188,7 @@ func TestWebSearchHandler(t *testing.T) {
 	})
 }
 
-// TestSubmitWorkProductHandler verifies the submit_work_product terminal tool:
+// TestSubmitWorkProductHandler verifies the submit_work terminal tool:
 // valid submissions produce JSON with type=work_product and StopLoop=true;
 // summary is required; deliverable is optional (for file-based work).
 func TestSubmitWorkProductHandler(t *testing.T) {
@@ -453,7 +256,7 @@ func TestSubmitWorkProductHandler(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			call := makeToolCall("submit_work_product", tc.args)
+			call := makeToolCall("submit_work", tc.args)
 			result := reg.Execute(context.Background(), call, quest, agent)
 
 			if tc.wantErr != "" {
@@ -590,350 +393,6 @@ func TestRegisterWebSearchConditional(t *testing.T) {
 		if tool.Definition.Name != "web_search" {
 			t.Errorf("tool name = %q, want %q", tool.Definition.Name, "web_search")
 		}
-	})
-}
-
-// TestReadFileHandler verifies content reading, missing-file errors, and truncation.
-func TestReadFileHandler(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
-	quest := &domain.Quest{}
-
-	t.Run("reads existing file content", func(t *testing.T) {
-		t.Parallel()
-		filePath := filepath.Join(tmpDir, "hello.txt")
-		mustWriteFile(t, filePath, "hello semdragons")
-		call := makeToolCall("read_file", map[string]any{
-			"path":         filePath,
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "hello semdragons")
-	})
-
-	t.Run("non-existent file returns error", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("read_file", map[string]any{
-			"path":         filepath.Join(tmpDir, "does_not_exist.txt"),
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error reading non-existent file, got none")
-		}
-		assertContains(t, result.Error, "failed to read file")
-	})
-
-	t.Run("directory path returns helpful error", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("read_file", map[string]any{
-			"path":         tmpDir,
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error reading directory, got none")
-		}
-		assertContains(t, result.Error, "is a directory")
-		assertContains(t, result.Error, "list_directory")
-	})
-
-	t.Run("file larger than 100KB is truncated", func(t *testing.T) {
-		t.Parallel()
-		// Build a file that exceeds maxFileReadSize (100,000 bytes).
-		largeContent := strings.Repeat("x", 101000)
-		filePath := filepath.Join(tmpDir, "large.txt")
-		mustWriteFile(t, filePath, largeContent)
-		call := makeToolCall("read_file", map[string]any{
-			"path":         filePath,
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "(truncated)")
-	})
-}
-
-// TestListDirectoryHandler verifies [dir] and [file] prefixes and error on missing dir.
-func TestListDirectoryHandler(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
-	quest := &domain.Quest{}
-
-	// Populate a small tree: one file and one subdirectory.
-	mustWriteFile(t, filepath.Join(tmpDir, "readme.txt"), "docs")
-	if err := os.MkdirAll(filepath.Join(tmpDir, "subdir"), 0755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-
-	t.Run("lists files and directories with correct prefixes", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("list_directory", map[string]any{
-			"path":         tmpDir,
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "[dir]")
-		assertContains(t, result.Content, "subdir")
-		assertContains(t, result.Content, "[file]")
-		assertContains(t, result.Content, "readme.txt")
-	})
-
-	t.Run("non-existent directory returns error", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("list_directory", map[string]any{
-			"path":         filepath.Join(tmpDir, "ghost"),
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error listing non-existent directory, got none")
-		}
-		assertContains(t, result.Error, "failed to read directory")
-	})
-}
-
-// TestPatchFileHandler verifies successful replacement, not-found failure,
-// and ambiguous-match failure.
-func TestPatchFileHandler(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{
-		Tier: domain.TierJourneyman,
-		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
-		},
-	}
-	quest := &domain.Quest{}
-
-	t.Run("patches file successfully", func(t *testing.T) {
-		t.Parallel()
-		filePath := filepath.Join(tmpDir, "patch_success.go")
-		mustWriteFile(t, filePath, "package main\n\nfunc hello() {}\n")
-		call := makeToolCall("patch_file", map[string]any{
-			"path":         filePath,
-			"old_text":     "func hello() {}",
-			"new_text":     "func hello() { return }",
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "patched")
-		content, err := os.ReadFile(filePath)
-		if err != nil {
-			t.Fatalf("read back: %v", err)
-		}
-		assertContains(t, string(content), "func hello() { return }")
-	})
-
-	t.Run("fails when old_text not found", func(t *testing.T) {
-		t.Parallel()
-		filePath := filepath.Join(tmpDir, "patch_notfound.go")
-		mustWriteFile(t, filePath, "package main\n")
-		call := makeToolCall("patch_file", map[string]any{
-			"path":         filePath,
-			"old_text":     "func missing() {}",
-			"new_text":     "func replaced() {}",
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error when old_text not found, got none")
-		}
-		assertContains(t, result.Error, "not found")
-	})
-
-	t.Run("fails when old_text is ambiguous", func(t *testing.T) {
-		t.Parallel()
-		filePath := filepath.Join(tmpDir, "patch_ambiguous.go")
-		mustWriteFile(t, filePath, "foo\nfoo\n")
-		call := makeToolCall("patch_file", map[string]any{
-			"path":         filePath,
-			"old_text":     "foo",
-			"new_text":     "bar",
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error for ambiguous old_text, got none")
-		}
-		assertContains(t, result.Error, "ambiguous")
-	})
-}
-
-// TestSearchTextCancelled verifies that a pre-cancelled context causes search_text
-// to return a cancellation error before doing any file I/O.
-func TestSearchTextCancelled(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	mustWriteFile(t, filepath.Join(tmpDir, "data.txt"), "some content to search")
-
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
-	quest := &domain.Quest{}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately
-
-	call := makeToolCall("search_text", map[string]any{
-		"pattern":      "content",
-		"path":         filepath.Join(tmpDir, "data.txt"),
-		"_sandbox_dir": tmpDir,
-	})
-	result := reg.Execute(ctx, call, quest, agent)
-	if result.Error == "" {
-		t.Fatal("expected cancellation error, got none")
-	}
-	assertContains(t, result.Error, "cancel")
-}
-
-// TestWriteFileHandler verifies that write_file creates files, creates parent
-// directories when missing, enforces the 1 MB size limit, and rejects sandbox
-// escape attempts.
-func TestWriteFileHandler(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	// Resolve symlinks so validatePath sees the same canonical path on macOS.
-	realTmpDir, err := filepath.EvalSymlinks(tmpDir)
-	if err != nil {
-		t.Fatalf("EvalSymlinks: %v", err)
-	}
-	reg := NewToolRegistryWithSandbox(realTmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{
-		Tier: domain.TierExpert,
-		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
-		},
-	}
-	quest := &domain.Quest{}
-
-	t.Run("writes new file and verifies content", func(t *testing.T) {
-		t.Parallel()
-		filePath := filepath.Join(realTmpDir, "output.txt")
-		call := makeToolCall("write_file", map[string]any{
-			"path":         filePath,
-			"content":      "hello semdragons",
-			"_sandbox_dir": realTmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "Successfully wrote")
-
-		got, readErr := os.ReadFile(filePath)
-		if readErr != nil {
-			t.Fatalf("read back: %v", readErr)
-		}
-		if string(got) != "hello semdragons" {
-			t.Errorf("file content = %q, want %q", string(got), "hello semdragons")
-		}
-	})
-
-	t.Run("creates parent directories when missing", func(t *testing.T) {
-		t.Parallel()
-		filePath := filepath.Join(realTmpDir, "nested", "deep", "file.txt")
-		call := makeToolCall("write_file", map[string]any{
-			"path":         filePath,
-			"content":      "nested content",
-			"_sandbox_dir": realTmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		if _, statErr := os.Stat(filePath); statErr != nil {
-			t.Errorf("expected file at %s after write_file: %v", filePath, statErr)
-		}
-	})
-
-	t.Run("rejects content exceeding 1 MB", func(t *testing.T) {
-		t.Parallel()
-		// maxFileWriteSize = 1<<20 = 1048576 bytes; write one byte over.
-		oversized := strings.Repeat("x", maxFileWriteSize+1)
-		call := makeToolCall("write_file", map[string]any{
-			"path":         filepath.Join(realTmpDir, "oversized.txt"),
-			"content":      oversized,
-			"_sandbox_dir": realTmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error for oversized content, got none")
-		}
-		assertContains(t, result.Error, "too large")
-	})
-
-	t.Run("missing path argument returns error", func(t *testing.T) {
-		t.Parallel()
-		// path key present but not a string — handler checks .(string) ok.
-		call := makeToolCall("write_file", map[string]any{
-			"path":         42, // wrong type triggers !ok
-			"content":      "data",
-			"_sandbox_dir": realTmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error for non-string path, got none")
-		}
-		assertContains(t, result.Error, "path argument must be a string")
-	})
-
-	t.Run("missing content argument returns error", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("write_file", map[string]any{
-			"path":         filepath.Join(realTmpDir, "out.txt"),
-			"content":      123, // wrong type triggers !ok
-			"_sandbox_dir": realTmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error for non-string content, got none")
-		}
-		assertContains(t, result.Error, "content argument must be a string")
-	})
-
-	t.Run("sandbox escape rejected", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("write_file", map[string]any{
-			"path":         filepath.Join(realTmpDir, "..", "escape.txt"),
-			"content":      "bad",
-			"_sandbox_dir": realTmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error for sandbox-escaping path, got none")
-		}
-		assertContains(t, result.Error, "escapes sandbox")
 	})
 }
 
@@ -1243,33 +702,25 @@ func TestGetToolsForQuest(t *testing.T) {
 		tools := reg.GetToolsForQuest(quest, agent)
 		names := toolNames(tools)
 
-		// Apprentice can read but not write.
-		assertContainsStr(t, names, "read_file")
-		assertContainsStr(t, names, "list_directory")
-		assertNotContainsStr(t, names, "write_file") // SkillCodeGen required
+		// Apprentice sees terminal tools but not Journeyman-gated tools.
+		assertContainsStr(t, names, "submit_work")
+		assertContainsStr(t, names, "ask_clarification")
 		assertNotContainsStr(t, names, "bash") // TierJourneyman required
 	})
 
-	t.Run("master tier sees all tools (with required skills)", func(t *testing.T) {
+	t.Run("journeyman tier sees shell and network tools", func(t *testing.T) {
 		t.Parallel()
 		reg := NewToolRegistryWithSandbox(tmpDir)
 		reg.RegisterBuiltins()
 
-		agent := &agentprogression.Agent{
-			Tier: domain.TierMaster,
-			SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-				domain.SkillCodeGen:    {Level: domain.ProficiencyNovice},
-				domain.SkillCodeReview: {Level: domain.ProficiencyNovice},
-			},
-		}
+		agent := &agentprogression.Agent{Tier: domain.TierJourneyman}
 		quest := &domain.Quest{}
 
 		tools := reg.GetToolsForQuest(quest, agent)
 		names := toolNames(tools)
 
-		assertContainsStr(t, names, "read_file")
-		assertContainsStr(t, names, "write_file")
 		assertContainsStr(t, names, "bash")
+		assertContainsStr(t, names, "http_request")
 	})
 
 	t.Run("quest AllowedTools restricts available tools", func(t *testing.T) {
@@ -1277,32 +728,14 @@ func TestGetToolsForQuest(t *testing.T) {
 		reg := NewToolRegistryWithSandbox(tmpDir)
 		reg.RegisterBuiltins()
 
-		agent := &agentprogression.Agent{Tier: domain.TierApprentice}
-		quest := &domain.Quest{AllowedTools: []string{"read_file"}}
+		agent := &agentprogression.Agent{Tier: domain.TierJourneyman}
+		quest := &domain.Quest{AllowedTools: []string{"bash"}}
 
 		tools := reg.GetToolsForQuest(quest, agent)
 		names := toolNames(tools)
 
-		assertContainsStr(t, names, "read_file")
-		assertNotContainsStr(t, names, "list_directory") // not in AllowedTools
-	})
-
-	t.Run("agent without required skill cannot use skill-gated tool", func(t *testing.T) {
-		t.Parallel()
-		reg := NewToolRegistryWithSandbox(tmpDir)
-		reg.RegisterBuiltins()
-
-		// Expert tier but no SkillCodeGen — write_file requires it.
-		agent := &agentprogression.Agent{
-			Tier:               domain.TierExpert,
-			SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{},
-		}
-		quest := &domain.Quest{}
-
-		tools := reg.GetToolsForQuest(quest, agent)
-		names := toolNames(tools)
-
-		assertNotContainsStr(t, names, "write_file")
+		assertContainsStr(t, names, "bash")
+		assertNotContainsStr(t, names, "http_request") // not in AllowedTools
 	})
 }
 

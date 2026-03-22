@@ -109,7 +109,7 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 		if failuresMentionNoWork(ctx.FailureHistory) {
 			recovery.WriteString("\nCRITICAL: Your previous submission was rejected because you submitted a question or request for information instead of completed work. ")
 			recovery.WriteString("If you need more information, use the ask_clarification tool — you will NOT be penalized. ")
-			recovery.WriteString("Only use submit_work_product when you have actual finished work (code, analysis, results) to deliver.\n")
+			recovery.WriteString("Only use submit_work when you have actual finished work (code, analysis, results) to deliver.\n")
 		}
 		sections = append(sections, formatSection("Failure Recovery", recovery.String(), style))
 		usedIDs = append(usedIDs, "failure-recovery-context")
@@ -215,7 +215,7 @@ func (a *PromptAssembler) AssembleSystemPrompt(ctx AssemblyContext) AssembledPro
 // responseFormatInstruction is injected into every assembled system prompt.
 // It instructs the LLM to use terminal tools to signal completion or clarification
 // so questbridge can route the output appropriately.
-const responseFormatInstruction = `When you have completed your work, you MUST call the submit_work_product tool with your deliverable.
+const responseFormatInstruction = `When you have completed your work, you MUST call the submit_work tool with your deliverable.
 When you need more information before you can proceed, call the ask_clarification tool with your question.
 
 DELIVERABLE RULES:

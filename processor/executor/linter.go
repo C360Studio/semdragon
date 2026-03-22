@@ -12,7 +12,7 @@ import (
 // like writing shell commands as Python code or producing malformed JSON.
 //
 // The check is intentionally lightweight — we catch obvious errors, not style issues.
-// Full linting happens via the lint_check tool after the file is written.
+// Full linting happens via bash (e.g., pylint, go vet) after the file is written.
 func lintContent(path, content string) string {
 	ext := strings.ToLower(filepath.Ext(path))
 
@@ -42,7 +42,7 @@ func lintPython(content string) string {
 		if strings.HasPrefix(first, "$ ") || strings.HasPrefix(first, "# !") {
 			// Allow shebangs
 			if !strings.HasPrefix(first, "#!") {
-				return "Content looks like shell commands, not Python code. Use write_file for source code, bash for commands."
+				return "Content looks like shell commands, not Python code. Use bash to write source code via heredoc (cat <<'EOF' > file.py)."
 			}
 		}
 	}
@@ -97,7 +97,7 @@ func lintJavaScript(content string) string {
 	if len(lines) > 0 {
 		first := strings.TrimSpace(lines[0])
 		if strings.HasPrefix(first, "$ ") {
-			return "Content looks like shell commands, not JavaScript. Use write_file for source code, bash for commands."
+			return "Content looks like shell commands, not JavaScript. Use bash to write source code via heredoc (cat <<'EOF' > file.js)."
 		}
 	}
 	return ""

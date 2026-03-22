@@ -9089,6 +9089,9 @@
                 },
                 "tool_result": {
                   "type": "string"
+                },
+                "utilization": {
+                  "type": "number"
                 }
               },
               "required": [
@@ -9258,6 +9261,9 @@
           },
           "tool_result": {
             "type": "string"
+          },
+          "utilization": {
+            "type": "number"
           }
         },
         "required": [

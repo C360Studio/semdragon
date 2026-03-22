@@ -247,7 +247,7 @@ func TestGraphSearchHandler(t *testing.T) {
 		if result.Error != "" {
 			t.Fatalf("unexpected error: %s", result.Error)
 		}
-		assertContains(t, result.Content, "Related entities")
+		assertContains(t, result.Content, "Entities")
 		assertContains(t, result.Content, "c360.prod.game.board1.quest.abc123")
 		assertContains(t, result.Content, "c360.prod.game.board1.agent.dragon")
 	})

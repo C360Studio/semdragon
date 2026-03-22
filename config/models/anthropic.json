@@ -81,6 +81,10 @@
       "query_classification": {
         "description": "NLQ classification for graph queries",
         "preferred": ["claude-haiku"]
+      },
+      "answer_synthesis": {
+        "description": "Synthesize natural language answers from graph search results",
+        "preferred": ["claude-haiku"]
       }
     },
     "defaults": {

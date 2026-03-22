@@ -5535,6 +5535,7 @@ export interface components {
                 }[];
                 tool_name?: string;
                 tool_result?: string;
+                utilization?: number;
             }[];
             total_tokens_in: number;
             total_tokens_out: number;
@@ -5590,6 +5591,7 @@ export interface components {
             }[];
             tool_name?: string;
             tool_result?: string;
+            utilization?: number;
         };
         TriageDecision: {
             analysis: string;

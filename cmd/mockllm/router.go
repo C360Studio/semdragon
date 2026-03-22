@@ -171,14 +171,14 @@ func handleChatCompletions(logger *slog.Logger) http.HandlerFunc {
 }
 
 // isDMToolRequest returns true when the request carries tools but none of them
-// is agent-specific. Regular agents include submit_work_product; party leads
-// get decompose_quest/review_sub_quest instead (submit_work_product is withheld
+// is agent-specific. Regular agents include submit_work; party leads
+// get decompose_quest/review_sub_quest instead (submit_work is withheld
 // during decomposition to force delegation). The DM allowlist
 // (service/api/dm_tools.go) never includes any of these.
 func isDMToolRequest(tools []toolDef) bool {
 	for _, t := range tools {
 		switch t.Function.Name {
-		case "submit_work_product", "decompose_quest", "review_sub_quest", "answer_clarification":
+		case "submit_work", "decompose_quest", "review_sub_quest", "answer_clarification":
 			return false // agent request
 		}
 	}
@@ -231,7 +231,7 @@ func routeDMToolCall(tools []toolDef, msgs []requestMsg) chatResponse {
 }
 
 // routeDMWithToolResults handles the second turn of a DM tool-calling request,
-// after tool results have been returned. The DM has no submit_work_product tool,
+// after tool results have been returned. The DM has no submit_work tool,
 // so this MUST return a text completion (finish_reason: "stop"), not a tool call.
 func routeDMWithToolResults(req chatRequest) chatResponse {
 	for i := len(req.Messages) - 1; i >= 0; i-- {
@@ -244,8 +244,6 @@ func routeDMWithToolResults(req chatRequest) chatResponse {
 				return completionResponse(dmWebSearchCompletion)
 			case "graph_search":
 				return completionResponse(dmGraphSearchCompletion)
-			case "read_file":
-				return completionResponse(dmReadFileCompletion)
 			default:
 				return completionResponse(dmGenericToolCompletion)
 			}
@@ -262,7 +260,7 @@ func route(req chatRequest, logger *slog.Logger) chatResponse {
 	// Second turn — tool results already in messages — return a completion
 	// so the loop finishes cleanly.
 	if len(req.Tools) > 0 {
-		// DM tool loop: tools present but no agent-specific tools (submit_work_product).
+		// DM tool loop: tools present but no agent-specific tools (submit_work).
 		// Must be checked BEFORE the agent path since both have tools.
 		if isDMToolRequest(req.Tools) {
 			if hasToolResults(req.Messages) {
@@ -425,7 +423,7 @@ func routeToolCall(tools []toolDef, msgs []requestMsg) chatResponse {
 // routeWithToolResults handles the second+ turn of an agentic loop (tool
 // results are present). For DAG decomposition, returns the DAG JSON content
 // so questbridge can extract and process it. For generic loops, calls
-// submit_work_product to cleanly terminate the loop.
+// submit_work to cleanly terminate the loop.
 func routeWithToolResults(req chatRequest) chatResponse {
 	// Check what tool was last called by looking at tool_calls in messages.
 	for i := len(req.Messages) - 1; i >= 0; i-- {
@@ -437,20 +435,20 @@ func routeWithToolResults(req chatRequest) chatResponse {
 			case "review_sub_quest":
 				return completionResponse(reviewAcceptCompletion)
 			case "graph_search":
-				// graph_search result received — submit a research summary via submit_work_product.
-				return namedToolCallResponse("submit_work_product", graphSearchSubmitArgs)
+				// graph_search result received — submit a research summary via submit_work.
+				return namedToolCallResponse("submit_work", graphSearchSubmitArgs)
 			case "web_search":
-				// web_search result received — submit a research summary via submit_work_product.
-				return namedToolCallResponse("submit_work_product", webSearchSubmitArgs)
-			case "submit_work_product":
-				// submit_work_product sets StopLoop=true, so the loop should
+				// web_search result received — submit a research summary via submit_work.
+				return namedToolCallResponse("submit_work", webSearchSubmitArgs)
+			case "submit_work":
+				// submit_work sets StopLoop=true, so the loop should
 				// not reach here. If it does, just complete cleanly.
 				return completionResponse(completionContent)
 			}
 		}
 	}
-	// Generic loop (filesystem tool result) → call submit_work_product to terminate.
-	return namedToolCallResponse("submit_work_product",
+	// Generic loop (bash tool result) → call submit_work to terminate.
+	return namedToolCallResponse("submit_work",
 		`{"deliverable":"The requested operation finished successfully. All output has been validated and is ready for review.","summary":"Task complete"}`)
 }
 
@@ -522,12 +520,12 @@ func lastUserMessage(msgs []requestMsg) string {
 }
 
 // toolCallResponse picks a tool from the request's tools list.
-// Priority: write_file (expert agents) > list_directory > read_file > first tool.
-// This ensures expert agents exercise the workspace artifact path while
-// apprentice agents stick to read-only tools.
+// Priority: bash (for file writes and reads) > first tool.
+// All file operations are expressed as bash commands since write_file,
+// read_file, and list_directory have been removed from the tool registry.
 func toolCallResponse(tools []toolDef) chatResponse {
 	name := tools[0].Function.Name
-	arguments := `{"path": "."}`
+	arguments := `{"command":"ls -la"}`
 
 	// Build a name→bool set for O(1) lookups.
 	toolNames := make(map[string]bool, len(tools))
@@ -535,16 +533,9 @@ func toolCallResponse(tools []toolDef) chatResponse {
 		toolNames[t.Function.Name] = true
 	}
 
-	switch {
-	case toolNames["write_file"]:
-		name = "write_file"
-		arguments = `{"path":"solution.py","content":"# Mock solution\nimport json\n\ndef analyze(data):\n    return {\"summary\": \"processed\", \"count\": len(data)}\n\nif __name__ == \"__main__\":\n    print(analyze([1,2,3]))\n"}`
-	case toolNames["list_directory"]:
-		name = "list_directory"
-		arguments = `{"path": "."}`
-	case toolNames["read_file"]:
-		name = "read_file"
-		arguments = `{"path": "README.md"}`
+	if toolNames["bash"] {
+		name = "bash"
+		arguments = `{"command":"cat <<'MOCKEOF' > solution.py\n# Mock solution\nimport json\n\ndef analyze(data):\n    return {\"summary\": \"processed\", \"count\": len(data)}\n\nif __name__ == \"__main__\":\n    print(analyze([1,2,3]))\nMOCKEOF"}`
 	}
 
 	return namedToolCallResponse(name, arguments)

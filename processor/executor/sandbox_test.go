@@ -195,155 +195,6 @@ func TestSandboxClient_DeleteWorkspace(t *testing.T) {
 // Sandbox tool handler tests
 // =============================================================================
 
-func TestSandboxReadFile(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("read_file", map[string]any{"path": "main.go"})
-	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if result.Content == "" {
-		t.Fatal("expected non-empty content")
-	}
-	if result.Content != "hello from main.go" {
-		t.Errorf("got %q, want %q", result.Content, "hello from main.go")
-	}
-}
-
-func TestSandboxReadFile_MissingQuestID(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := agentic.ToolCall{
-		ID:        "call-123",
-		Name:      "read_file",
-		Arguments: map[string]any{"path": "main.go"},
-		// No metadata — quest_id missing
-	}
-	agent := testAgent(domain.TierApprentice)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error == "" {
-		t.Fatal("expected error for missing quest_id")
-	}
-}
-
-func TestSandboxWriteFile(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("write_file", map[string]any{
-		"path":    "output.go",
-		"content": "package main\n",
-	})
-	agent := testAgent(domain.TierExpert, domain.SkillCodeGen)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if !strings.Contains(result.Content, "Successfully wrote") {
-		t.Errorf("unexpected content: %s", result.Content)
-	}
-}
-
-func TestSandboxWriteFile_TierGated(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("write_file", map[string]any{
-		"path":    "output.go",
-		"content": "package main\n",
-	})
-	// Apprentice without SkillCodeGen cannot write files (skill gate).
-	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
-	if result.Error == "" {
-		t.Fatal("expected tier gate error")
-	}
-}
-
-func TestSandboxPatchFile(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("patch_file", map[string]any{
-		"path":     "patchable.go",
-		"old_text": "func old() {}",
-		"new_text": "func new() {}",
-	})
-	agent := testAgent(domain.TierJourneyman, domain.SkillCodeGen)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if !strings.Contains(result.Content, "Successfully patched") {
-		t.Errorf("unexpected content: %s", result.Content)
-	}
-}
-
-func TestSandboxListDirectory(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("list_directory", map[string]any{"path": "."})
-	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if !strings.Contains(result.Content, "main.go") {
-		t.Errorf("expected main.go in output, got: %s", result.Content)
-	}
-	if !strings.Contains(result.Content, "[dir]") {
-		t.Errorf("expected [dir] marker in output, got: %s", result.Content)
-	}
-}
-
-func TestSandboxGlobFiles(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("glob_files", map[string]any{"pattern": "**/*.go"})
-	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if !strings.Contains(result.Content, ".go") {
-		t.Errorf("expected .go files in output, got: %s", result.Content)
-	}
-}
-
-func TestSandboxSearchText(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("search_text", map[string]any{
-		"pattern": "main",
-		"path":    ".",
-	})
-	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if !strings.Contains(result.Content, "main.go") {
-		t.Errorf("expected main.go in search results, got: %s", result.Content)
-	}
-}
-
 func TestSandboxRunCommand(t *testing.T) {
 	_, client := newSandboxTestServer(t)
 	reg := executor.NewToolRegistry()
@@ -379,8 +230,8 @@ func TestSandboxContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	call := testCall("read_file", map[string]any{"path": "main.go"})
-	result := reg.Execute(ctx, call, testQuest, testAgent(domain.TierApprentice))
+	call := testCall("bash", map[string]any{"command": "echo hello"})
+	result := reg.Execute(ctx, call, testQuest, testAgent(domain.TierJourneyman))
 
 	if result.Error == "" {
 		t.Fatal("expected error for cancelled context")
@@ -391,34 +242,30 @@ func TestSandboxContextCancelled(t *testing.T) {
 }
 
 // TestSandboxToolsOverwriteBuiltins verifies that sandbox tools replace
-// builtin handlers when both are registered.
+// builtin handlers when both are registered, and that terminal tools from
+// RegisterBuiltins are preserved.
 func TestSandboxToolsOverwriteBuiltins(t *testing.T) {
 	_, client := newSandboxTestServer(t)
 	reg := executor.NewToolRegistry()
 	reg.RegisterBuiltins()
 	reg.RegisterSandboxTools(client)
 
-	// read_file should work via sandbox, not local filesystem.
-	call := testCall("read_file", map[string]any{"path": "main.go"})
-	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
+	// bash should be proxied through the sandbox handler.
+	call := testCall("bash", map[string]any{"command": "echo hello"})
+	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierJourneyman))
 
 	if result.Error != "" {
 		t.Fatalf("unexpected error: %s", result.Error)
 	}
-	// The mock sandbox returns "hello from main.go" — the local handler
-	// would fail because there's no file at that path.
-	if result.Content != "hello from main.go" {
-		t.Errorf("got %q — sandbox handler not used?", result.Content)
-	}
 
 	// Terminal tools should still be registered from RegisterBuiltins.
-	tool := reg.Get("submit_work_product")
+	tool := reg.Get("submit_work")
 	if tool == nil {
-		t.Fatal("submit_work_product should still be registered after sandbox tools overwrite")
+		t.Fatal("submit_work should still be registered after sandbox tools overwrite")
 	}
 }
 
-func TestSandboxReadFile_ServerError(t *testing.T) {
+func TestSandboxRunCommand_ServerError(t *testing.T) {
 	// Create a server that returns 500 for all requests.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -430,14 +277,14 @@ func TestSandboxReadFile_ServerError(t *testing.T) {
 	reg := executor.NewToolRegistry()
 	reg.RegisterSandboxTools(client)
 
-	call := testCall("read_file", map[string]any{"path": "main.go"})
-	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
+	call := testCall("bash", map[string]any{"command": "echo hello"})
+	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierJourneyman))
 
 	if result.Error == "" {
 		t.Fatal("expected error for server 500")
 	}
-	if !strings.Contains(result.Error, "failed to read file") {
-		t.Errorf("expected 'failed to read file' error, got: %s", result.Error)
+	if !strings.Contains(result.Error, "exec failed") {
+		t.Errorf("expected 'exec failed' error, got: %s", result.Error)
 	}
 }
 

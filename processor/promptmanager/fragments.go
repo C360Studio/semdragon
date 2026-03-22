@@ -26,7 +26,7 @@ import (
 //   - Solo agent work output directive (CategoryToolDirective) — reinforces that all
 //     solo agents must submit finished work, not descriptions or plans.
 //   - Research output directive (CategoryToolDirective) — skill-gated to research/analysis
-//     quests, instructs agents to write structured markdown files via write_file.
+//     quests, instructs agents to write structured markdown files via bash heredoc.
 //   - Archetype workflow directives (CategoryToolDirective) — class-specific step-by-step
 //     workflows for Scholar, Engineer, Scribe, and Strategist archetypes.
 //   - Gemini/OpenAI tool enforcement hint (CategoryProviderHints) — reinforces
@@ -170,7 +170,7 @@ func registerPartyLeadDirective(r *PromptRegistry) {
 // When graph tools are available (semsource indexed the repo), rule 1 leads with
 // graph_summary → graph_search for project orientation instead of filesystem
 // exploration. This scales to real repos with thousands of files where
-// list_directory(".") is overwhelming.
+// bash("ls -la") alone is overwhelming.
 func buildSubQuestExecutorDirective(ctx AssemblyContext) string {
 	var b strings.Builder
 	b.WriteString("You are executing a SUB-QUEST assigned to you by a party lead.\n\n")
@@ -193,18 +193,17 @@ func buildSubQuestExecutorDirective(ctx AssemblyContext) string {
 		b.WriteString(`1. ORIENT via knowledge graph: call graph_summary ONCE to see what's indexed, then graph_search to find files/patterns relevant to YOUR objective. Do NOT explore the filesystem blindly — the graph has the project structure.
 `)
 	} else {
-		b.WriteString(`1. Quick workspace check: ONE call to list_directory(".") to see what exists. If the workspace is empty or has only boilerplate, move on — do NOT keep reading files.
+		b.WriteString(`1. Quick workspace check: bash("ls -la") to see what exists. If the workspace is empty or has only boilerplate, move on — do NOT keep reading files.
 `)
 	}
 
 	b.WriteString(`2. Complete the task described in the quest objective.
-3. Use available tools (read_file, write_file, patch_file, etc.) to produce your work.
+3. Use bash for ALL file operations: read (cat), write (cat <<'EOF' > file), search (grep -rn).
 4. When you have finished, respond with [INTENT: work_product] followed by your complete deliverable.
 5. Your deliverable MUST contain the actual work output — code, analysis, or results — not a description of what you did.
 6. If the task requires code, include BOTH implementation AND tests directly in your deliverable. Your reviewer can only see what you include — they cannot access external files.
 7. Do NOT ask clarifying questions unless the objective is truly ambiguous. Default to reasonable assumptions.
-8. NEVER write source code using bash — use write_file to create files, patch_file for edits.
-9. Complete the work in as few iterations as possible — avoid unnecessary exploration.`)
+8. Complete the work in as few iterations as possible — avoid unnecessary exploration.`)
 	if hasGraph {
 		b.WriteString(`
 10. For project-specific lookups, use graph_search with targeted queries. Fall back to web_search only if the graph doesn't have what you need.`)
@@ -226,12 +225,12 @@ func registerSubQuestExecutorDirective(r *PromptRegistry) {
 		Condition:   isSubQuestExecutor,
 		ContentFunc: buildSubQuestExecutorDirective,
 	})
-	// Gemini Flash tends to skip tools and call submit_work_product immediately.
-	// Softened: orient first (graph or list_directory), then produce output.
+	// Gemini Flash tends to skip tools and call submit_work immediately.
+	// Softened: orient first (graph_summary or bash("ls -la")), then produce output.
 	r.Register(&PromptFragment{
 		ID:        "builtin.sub-quest-executor.provider-hint",
 		Category:  CategoryProviderHints,
-		Content:   "Orient yourself first (graph_summary or list_directory), then focus on producing your deliverable. Do not submit on your first turn without using at least one tool.",
+		Content:   "Orient yourself first (graph_summary or bash(\"ls -la\")), then focus on producing your deliverable. Do not submit on your first turn without using at least one tool.",
 		Priority:  0,
 		Providers: []string{"gemini", "openai"},
 		Condition: isSubQuestExecutor,
@@ -286,7 +285,7 @@ func buildSoloAgentScenarioDirective(ctx AssemblyContext) string {
 		b.WriteString(line + "\n")
 	}
 
-	b.WriteString("\nComplete all scenarios and submit your deliverable using the submit_work_product tool.")
+	b.WriteString("\nComplete all scenarios and submit your deliverable using the submit_work tool.")
 	return b.String()
 }
 
@@ -315,8 +314,8 @@ func buildSoloAgentWorkOutputDirective(ctx AssemblyContext) string {
 		b.WriteString(fmt.Sprintf("0. You have a budget of %d tool-use rounds. Plan your work to finish well within this budget. Do NOT explore open-endedly.\n", ctx.MaxIterations))
 	}
 
-	b.WriteString(`1. BEFORE submitting, you MUST use at least one workspace tool (read_file, list_directory, search_text, or glob_files) to understand the existing codebase. Submissions without workspace exploration will be rejected.
-2. Use available tools (read_file, write_file, patch_file, etc.) to understand context and produce your deliverable.
+	b.WriteString(`1. BEFORE submitting, explore the workspace with bash("ls -la") or bash("cat README.md") to understand what exists. Submissions without workspace exploration will be rejected.
+2. Use bash to read, write, and search files. Produce your deliverable from what you find.
 3. Your deliverable MUST be the finished work output — code, implementation, analysis, or results.
 4. Do NOT submit a description of what you would do. Do NOT submit a plan. Submit the completed work itself.
 5. If the task requires code, include BOTH the implementation AND tests in your deliverable. Your reviewer can only evaluate what you include in the deliverable text — they cannot access external files.
@@ -345,14 +344,14 @@ func registerSoloAgentWorkOutputDirective(r *PromptRegistry) {
 // =============================================================================
 
 // researchOutputDirective instructs research and analysis agents to write
-// structured markdown files instead of dumping raw text into submit_work_product.
+// structured markdown files instead of dumping raw text into submit_work.
 // Skill-gated to SkillResearch and SkillAnalysis — fires for any quest requiring
 // either skill, whether solo, sub-quest, or party member.
 const researchOutputDirective = `RESEARCH OUTPUT FORMAT:
-1. Write your findings as a structured markdown file using write_file (e.g., "research_findings.md").
+1. Write your findings as a structured markdown file using bash (e.g., bash("cat <<'EOF' > research_findings.md\n...EOF")).
 2. Structure with clear sections: ## Summary, ## Findings, ## Sources (at minimum).
 3. Cite sources with URLs or references. Include code examples in fenced blocks where relevant.
-4. After writing the file, call submit_work_product with a brief summary only (3-5 sentences).
+4. After writing the file, call submit_work with a brief summary only (3-5 sentences).
    Your workspace is a git branch — files you write are committed automatically on completion.
    Do NOT paste the full report into the deliverable field.`
 
@@ -372,7 +371,7 @@ func registerResearchOutputDirective(r *PromptRegistry) {
 
 const workspacePriorWorkDirective = `WORKSPACE PRIOR WORK:
 Your workspace contains files from a previous attempt at this quest.
-1. Start by running list_directory on "." to see what already exists.
+1. Start by running bash("ls -la") to see what already exists.
 2. Review existing files before writing new ones — the previous agent may have made progress.
 3. Build on existing work rather than starting from scratch where possible.
 4. If the prior work is unusable, you may overwrite it, but explain why in your deliverable.`
@@ -462,28 +461,17 @@ var toolGuidanceEntries = map[string]string{
 	"graph_summary": "Overview of what's indexed in the knowledge graph — sources, entity types, counts, predicates. Call ONCE before graph_search to understand available data.",
 	"graph_search":  "Knowledge graph (code, docs, repos, prior tool results). Try this FIRST for project-specific lookups. Use query_type 'nlq' for natural language questions. If results are empty or unhelpful, FALL BACK to web_search — don't retry the same graph query.",
 	"web_search":    "External info AND fallback when graph search returns poor results. Use for third-party APIs, libraries, general knowledge, or when the knowledge graph didn't answer your question. Use BEFORE http_request to find the right URLs — never guess URLs.",
-	// Exploration tools — use these BEFORE reading/writing to find the right files
-	"list_directory": "See what files and folders exist at a path. Start here to understand project layout.",
-	"glob_files":     "Find files by pattern (e.g. '**/*.java', 'src/**/*.go'). Use to locate files before reading.",
-	"search_text":    "Search file contents for text or regex. Use file_glob param to filter by extension. Returns file:line matches.",
-	// File tools
-	"read_file":  "Read a file's full contents (or a line range with start_line/end_line). Use glob_files or list_directory first if you don't know the exact path.",
-	"write_file": "Create or overwrite a file. Parent directories are created automatically.",
-	"patch_file": "Apply targeted find-and-replace edits to an existing file. Prefer over write_file for small changes.",
 	// Network tools
-	"http_request": "Fetch a specific known URL. Do NOT guess URLs — use web_search first to find the right URL, then http_request to fetch it. Returns raw HTML which is hard to parse — prefer web_search for research.",
+	"http_request": "Fetch a URL with automatic HTML-to-text conversion. Use web_search first to find URLs — never guess.",
 	// Shell — universal command execution
-	"bash": "Run ANY shell command: tests (python3 -m pytest, go test), builds (go build, npm run build), " +
-		"git (git add, git commit), deps (pip install), file ops (rm, mv, mkdir -p), etc. " +
-		"For Python, create a venv first: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt. " +
-		"Do NOT write source code in bash — use write_file for that.",
+	"bash": "Universal tool for ALL operations: read files (cat), write files (cat <<'EOF' > file\\n...\\nEOF), " +
+		"search (grep -rn), list dirs (ls -la), tests (python3 -m pytest), builds, git, deps. " +
+		"For Python venv: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
 }
 
 // toolGuidanceOrder controls the display order of tool guidance entries.
 var toolGuidanceOrder = []string{
 	"graph_query", "graph_summary", "graph_search", "web_search",
-	"list_directory", "glob_files", "search_text",
-	"read_file", "write_file", "patch_file",
 	"http_request",
 	"bash",
 }
@@ -542,12 +530,12 @@ func registerToolSelectionGuidance(r *PromptRegistry) {
 // =============================================================================
 
 const scholarWorkflow = `SCHOLAR WORKFLOW:
-1. Quick workspace check: ONE call to list_directory(".") to see if relevant files exist.
+1. Quick workspace check: bash("ls -la") to see if relevant files exist.
    If the workspace is empty or only has boilerplate, move on — do NOT keep reading files.
 2. Use web_search to find authoritative sources on the topic. Start here for external research.
-3. If the quest involves project code, use graph_search or read_file to examine relevant files.
+3. If the quest involves project code, use graph_search or bash("cat file.py") to examine relevant files.
 4. For EVERY source you consult, IMMEDIATELY save findings to a file.
-   Example: write_file("findings_owasp.md", "## OWASP Input Validation\n\n...findings...")
+   Example: bash("cat <<'EOF' > findings_owasp.md\n## OWASP Input Validation\n\n...findings...\nEOF")
    Do NOT accumulate research in conversation — save to files as you go.
 5. After 2-3 sources, read your saved files and identify gaps.
 6. Fill gaps with targeted searches, saving results to files.
@@ -556,27 +544,22 @@ const scholarWorkflow = `SCHOLAR WORKFLOW:
 
 CRITICAL: Do NOT re-read workspace files (README, existing code) that had no useful info.
 Re-reading YOUR OWN research files to check gaps is fine — that's the workflow.
-Do NOT paste full research into submit_work_product — write files, then submit a summary only.`
+Do NOT paste full research into submit_work — write files, then submit a summary only.`
 
 const engineerWorkflow = `ENGINEER WORKFLOW:
 1. Read dependency context — your predecessor's research/design output.
-2. Explore existing workspace (list_directory, read_file) before writing ANY code.
+2. Explore workspace: bash("ls -la") and bash("cat README.md") before writing ANY code.
 3. Set up environment:
    - Python: bash("python3 -m venv .venv && .venv/bin/pip install -r requirements.txt")
    - Go: bash("go mod download")
    - Node: bash("npm install")
 4. Implement incrementally: write one file → test → fix errors → next file.
-5. Write tests alongside implementation, not after.
-6. Run tests before submitting:
-   - Python: bash(".venv/bin/python3 -m pytest") or bash("python3 -m pytest")
+   Write files: bash("cat <<'EOF' > filename.py\n<code here>\nEOF")
+5. Run tests before submitting:
+   - Python: bash(".venv/bin/python3 -m pytest")
    - Go: bash("go test ./...")
    - Node: bash("npm test")
-7. Submit with a summary of files created/modified.
-
-TOOL RULES:
-- Create/edit source code → write_file or patch_file
-- Everything else (tests, builds, git, deps, shell) → bash
-- NEVER write source code in bash — use write_file.
+6. Submit with a summary of files created/modified.
 
 Do NOT write all code at once. Build-verify-iterate in small steps.
 Do NOT submit without running tests — untested code will be rejected in review.`
@@ -584,7 +567,7 @@ Do NOT submit without running tests — untested code will be rejected in review
 const scribeWorkflow = `SCRIBE WORKFLOW:
 1. Read all input files and dependency context thoroughly.
 2. Outline the document structure before writing.
-3. Write the document to a file (NOT inline in submit_work_product).
+3. Write the document to a file (NOT inline in submit_work).
 4. Review for clarity, completeness, and proper formatting.
 5. Submit with a brief summary — the document file is the deliverable.`
 

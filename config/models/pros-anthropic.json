@@ -1,35 +1,21 @@
 {
   "model_registry": {
     "endpoints": {
-      "gemini-flash": {
-        "provider": "openai",
-        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "model": "gemini-2.5-flash",
-        "api_key_env": "GEMINI_API_KEY",
-        "max_tokens": 1048576,
-        "supports_tools": true,
-        "stream": true,
-        "reasoning_effort": "low"
+      "claude-haiku": {
+        "provider": "anthropic",
+        "url": "https://api.anthropic.com/v1",
+        "model": "claude-haiku-4-5-20251001",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "max_tokens": 200000,
+        "supports_tools": true
       },
-      "gemini-pro": {
-        "provider": "openai",
-        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "model": "gemini-2.5-pro",
-        "api_key_env": "GEMINI_API_KEY",
-        "max_tokens": 1048576,
-        "supports_tools": true,
-        "stream": true,
-        "reasoning_effort": "medium"
-      },
-      "gemini-pro-low": {
-        "provider": "openai",
-        "url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "model": "gemini-2.5-pro",
-        "api_key_env": "GEMINI_API_KEY",
-        "max_tokens": 1048576,
-        "supports_tools": true,
-        "stream": true,
-        "reasoning_effort": "low"
+      "claude-sonnet": {
+        "provider": "anthropic",
+        "url": "https://api.anthropic.com/v1",
+        "model": "claude-sonnet-4-6",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "max_tokens": 200000,
+        "supports_tools": true
       },
       "semembed": {
         "provider": "openai",
@@ -40,85 +26,77 @@
     },
     "capabilities": {
       "agent-work": {
-        "preferred": ["gemini-flash"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
 
       "agent-work.expert": {
-        "preferred": ["gemini-flash"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
       "agent-work.expert.code_generation": {
-        "preferred": ["gemini-flash"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
       "agent-work.expert.code_review": {
-        "preferred": ["gemini-flash"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
       "agent-work.expert.data_transformation": {
-        "preferred": ["gemini-flash"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
       "agent-work.expert.research": {
-        "preferred": ["gemini-pro-low"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
       "agent-work.expert.analysis": {
-        "preferred": ["gemini-pro-low"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
       "agent-work.expert.summarization": {
-        "preferred": ["gemini-flash"],
-        "requires_tools": true
-      },
-      "agent-work.expert.customer_communications": {
-        "preferred": ["gemini-flash"],
+        "preferred": ["claude-haiku"],
         "requires_tools": true
       },
       "agent-work.expert.planning": {
-        "preferred": ["gemini-pro-low"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
 
       "agent-work.master": {
-        "preferred": ["gemini-pro-low"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
       "agent-work.master.code_generation": {
-        "preferred": ["gemini-pro-low"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
       "agent-work.master.code_review": {
-        "preferred": ["gemini-pro-low"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
       "agent-work.master.research": {
-        "preferred": ["gemini-pro"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
       "agent-work.master.planning": {
-        "preferred": ["gemini-pro"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
 
       "agent-work.grandmaster": {
-        "preferred": ["gemini-pro"],
-        "requires_tools": true
-      },
-      "agent-work.grandmaster.planning": {
-        "preferred": ["gemini-pro"],
+        "preferred": ["claude-sonnet"],
         "requires_tools": true
       },
 
       "boss-battle": {
-        "preferred": ["gemini-pro"]
+        "preferred": ["claude-sonnet"]
       },
       "dm-chat": {
-        "preferred": ["gemini-pro"]
+        "preferred": ["claude-sonnet"]
       },
       "quest-design": {
-        "preferred": ["gemini-pro"]
+        "preferred": ["claude-sonnet"]
       },
       "embedding": {
         "description": "Vector embeddings for graph semantic search",
@@ -126,27 +104,27 @@
       },
       "community_summary": {
         "description": "LLM community summaries for graph clustering",
-        "preferred": ["gemini-flash"]
+        "preferred": ["claude-haiku"]
       },
       "query_classification": {
         "description": "NLQ classification for graph queries",
-        "preferred": ["gemini-flash"]
+        "preferred": ["claude-haiku"]
       },
       "answer_synthesis": {
         "description": "Synthesize natural language answers from graph search results",
-        "preferred": ["gemini-flash"]
+        "preferred": ["claude-haiku"]
       }
     },
     "defaults": {
-      "model": "gemini-flash"
+      "model": "claude-haiku"
     }
   },
   "components": {
     "agentic-loop": {
       "config": {
         "context": {
-          "tool_result_max_age": 10,
-          "summarization_model": "gemini-flash"
+          "tool_result_max_age": 20,
+          "summarization_model": "claude-haiku"
         }
       }
     },

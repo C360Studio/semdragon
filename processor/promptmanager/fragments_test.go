@@ -825,8 +825,8 @@ func TestResearchOutputDirective_IncludedForResearchQuest(t *testing.T) {
 	if !strings.Contains(result.SystemMessage, "RESEARCH OUTPUT FORMAT") {
 		t.Error("expected RESEARCH OUTPUT FORMAT directive for research quest")
 	}
-	if !strings.Contains(result.SystemMessage, "write_file") {
-		t.Error("expected write_file instruction in research output directive")
+	if !strings.Contains(result.SystemMessage, "bash") {
+		t.Error("expected bash instruction in research output directive")
 	}
 	if !strings.Contains(result.SystemMessage, "git branch") {
 		t.Error("expected git branch mention in research output directive")

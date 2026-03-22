@@ -302,6 +302,25 @@ func classifyBashCommand(call agentic.ToolCall) string {
 		strings.Contains(lower, " git "):
 		return "git"
 
+	// File reads
+	case strings.HasPrefix(lower, "cat ") && !strings.Contains(lower, "<<"):
+		return "read"
+	case strings.HasPrefix(lower, "head ") || strings.HasPrefix(lower, "tail "):
+		return "read"
+
+	// File writes
+	case strings.Contains(lower, "cat <<") ||
+		(strings.Contains(lower, "echo ") && strings.Contains(lower, ">")):
+		return "write"
+
+	// Search
+	case strings.HasPrefix(lower, "grep ") || strings.HasPrefix(lower, "find "):
+		return "search"
+
+	// Directory listing
+	case strings.HasPrefix(lower, "ls") || lower == "ls":
+		return "list"
+
 	default:
 		return "shell"
 	}
@@ -316,7 +335,7 @@ func addToolHint(toolName, errMsg string) string {
 	switch toolName {
 	case "bash":
 		if strings.Contains(lower, "syntax error") || strings.Contains(lower, "unexpected") {
-			return errMsg + "\n\nHINT: If you were trying to write code, use write_file instead of bash. bash is for shell commands only."
+			return errMsg + "\n\nHINT: Check your bash syntax. To write files use: bash(\"cat <<'EOF' > filename\\n<content>\\nEOF\")"
 		}
 		if strings.Contains(lower, "permission denied") && strings.Contains(lower, "python") {
 			return errMsg + "\n\nHINT: Use 'python3' instead of 'python'. For pip, create a venv: " +
@@ -325,13 +344,6 @@ func addToolHint(toolName, errMsg string) string {
 		if strings.Contains(lower, "externally-managed") {
 			return errMsg + "\n\nHINT: Python environment is OS-managed. Create a venv first: " +
 				"bash(\"python3 -m venv .venv && .venv/bin/pip install -r requirements.txt\")"
-		}
-	case "read_file":
-		if strings.Contains(lower, "not found") || strings.Contains(lower, "404") {
-			return errMsg + "\n\nHINT: File doesn't exist yet. Use write_file to create it, or list_directory to see what files exist."
-		}
-		if strings.Contains(lower, "is a directory") {
-			return errMsg + "\n\nHINT: Use list_directory to see contents of a directory."
 		}
 	case "graph_search":
 		if strings.Contains(lower, "eof") || strings.Contains(lower, "failed") {

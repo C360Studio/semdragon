@@ -53,11 +53,15 @@ func (b *entityKnowledgeBuilder) build(ctx context.Context, quest *domain.Quest,
 	// runtimes are available without calling inspect_environment (saves 1 tool call).
 	if b.hasSandbox {
 		sections = append(sections, `--- Workspace Environment ---
-Python 3.11 (use python3, NOT python). Git available.
-Use bash for ALL shell commands: tests, builds, git, deps, file ops.
-Setup: bash("python3 -m venv .venv && .venv/bin/pip install -r requirements.txt")
-Tests: bash(".venv/bin/python3 -m pytest") or bash("go test ./...")
-Git: bash("git add . && git commit -m 'message'")`)
+Python 3.11, Git available. Use bash for EVERYTHING:
+  Read: bash("cat file.py") or bash("head -50 file.py")
+  Write: bash("cat <<'EOF' > file.py\n...\nEOF")
+  Search: bash("grep -rn 'pattern' .") or bash("find . -name '*.py'")
+  List: bash("ls -la")
+  Deps: bash("python3 -m venv .venv && .venv/bin/pip install -r requirements.txt")
+  Tests: bash(".venv/bin/python3 -m pytest")
+  Git: bash("git add -A && git commit -m 'message'")
+When done, call submit_work with a summary.`)
 	}
 
 	// Party context — load from graph if this is a party quest

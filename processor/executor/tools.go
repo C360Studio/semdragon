@@ -13,8 +13,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -37,14 +35,6 @@ import (
 
 // Tool handler constants for limits and configuration.
 const (
-	// maxFileReadSize is the maximum bytes to return from a file read.
-	maxFileReadSize = 100000
-	// maxFileWriteSize is the maximum bytes allowed in a file write.
-	maxFileWriteSize = 1 << 20 // 1MB
-	// maxSearchMatches is the maximum number of search results to return.
-	maxSearchMatches = 50
-	// maxMatchLineLength is the maximum line length shown in search results.
-	maxMatchLineLength = 200
 	// maxHTTPResponseSize is the maximum bytes to return from an HTTP response.
 	maxHTTPResponseSize = 100000
 	// maxGraphResponseSize is the maximum bytes for graph search responses.
@@ -56,12 +46,6 @@ const (
 	commandTimeout = 60 * time.Second
 	// httpRequestTimeout is the timeout for HTTP requests.
 	httpRequestTimeout = 30 * time.Second
-	// maxGlobResults is the maximum number of file paths returned by glob_files.
-	maxGlobResults = 200
-	// maxReadFileRangeLines is the maximum line range allowed by read_file_range.
-	maxReadFileRangeLines = 500
-	// maxContextLines is the maximum context lines allowed by search_text.
-	maxContextLines = 5
 )
 
 // =============================================================================
@@ -149,162 +133,6 @@ type toolSpec struct {
 // Shared tool specs — single source of truth for definition, tier, and skills.
 // Handlers are provided separately by RegisterBuiltins (local OS) and
 // RegisterSandboxTools (proxied through a SandboxClient).
-
-var readFileSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "read_file",
-		Description: "Read the contents of a file. Optionally specify start_line and end_line to read a specific line range. Use glob_files or list_directory first if you don't know the exact path.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "The file path to read",
-				},
-				"start_line": map[string]any{
-					"type":        "integer",
-					"description": "Optional: first line to read (1-based). Omit to read from beginning.",
-				},
-				"end_line": map[string]any{
-					"type":        "integer",
-					"description": "Optional: last line to read (inclusive). Omit to read to end. Max 500 lines when start_line is set.",
-				},
-			},
-			"required": []any{"path"},
-		},
-	},
-	MinTier:  domain.TierApprentice, // Read-only — all tiers can read files
-	Category: ToolCategoryCore,
-}
-
-var writeFileSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "write_file",
-		Description: "Create or overwrite a file with the given content. This is how you create source code, config files, scripts, and documentation. Always use this instead of bash when you need to create or modify files. For small targeted edits to existing files, prefer patch_file.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "The file path to write to",
-				},
-				"content": map[string]any{
-					"type":        "string",
-					"description": "The content to write to the file",
-				},
-			},
-			"required": []any{"path", "content"},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier:  domain.TierApprentice, // All tiers — sandbox is the workspace, writing files is fundamental
-	Category: ToolCategoryWrite,
-}
-
-var patchFileSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "patch_file",
-		Description: "Apply a targeted find-and-replace edit to a file. More precise than write_file for small changes.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "The file path to edit",
-				},
-				"old_text": map[string]any{
-					"type":        "string",
-					"description": "The exact text to find in the file",
-				},
-				"new_text": map[string]any{
-					"type":        "string",
-					"description": "The replacement text",
-				},
-			},
-			"required": []any{"path", "old_text", "new_text"},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier:  domain.TierJourneyman, // Level 6+ — targeted edits require some trust
-	Category: ToolCategoryWrite,
-}
-
-var listDirectorySpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "list_directory",
-		Description: "List files and subdirectories in a directory. Returns names with type indicators (/ for dirs). Use to explore project structure before reading specific files.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "The directory path to list",
-				},
-			},
-			"required": []any{"path"},
-		},
-	},
-	MinTier:  domain.TierApprentice, // Read-only — all tiers can list directories
-	Category: ToolCategoryCore,
-}
-
-var globFilesSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "glob_files",
-		Description: "Find files matching a glob pattern (e.g. '**/*.java', 'src/**/*.go', '*.json'). Returns matching file paths. Use to discover files before reading them.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"pattern": map[string]any{
-					"type":        "string",
-					"description": "Glob pattern to match, e.g. '**/*.go' or 'src/**/*.ts'",
-				},
-				"path": map[string]any{
-					"type":        "string",
-					"description": "Base directory to search from. Defaults to sandbox root.",
-				},
-			},
-			"required": []any{"pattern"},
-		},
-	},
-	MinTier:  domain.TierApprentice, // Read-only — all tiers can search for files
-	Category: ToolCategoryCore,
-}
-
-var searchTextSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "search_text",
-		Description: "Search for text or regex patterns across files. Returns matching lines with file paths and line numbers. Use file_glob to narrow by extension (e.g. '*.go'). Use context_lines to see surrounding code.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"pattern": map[string]any{
-					"type":        "string",
-					"description": "The text pattern to search for",
-				},
-				"path": map[string]any{
-					"type":        "string",
-					"description": "The file or directory to search in",
-				},
-				"file_glob": map[string]any{
-					"type":        "string",
-					"description": "Optional glob pattern to filter files (e.g. '*.go', '*.ts')",
-				},
-				"context_lines": map[string]any{
-					"type":        "integer",
-					"description": "Number of lines of context before and after each match (default 0, max 5)",
-				},
-				"regex": map[string]any{
-					"type":        "boolean",
-					"description": "Treat pattern as a regular expression instead of a literal string (default false)",
-				},
-			},
-			"required": []any{"pattern", "path"},
-		},
-	},
-	MinTier:  domain.TierApprentice, // Read-only — all tiers can search files
-	Category: ToolCategoryCore,
-}
 
 var runCommandSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
@@ -519,60 +347,6 @@ func containsToolName(allowed []string, name string) bool {
 	return false
 }
 
-// validatePath ensures a path is within the sandbox directory.
-// Resolves symlinks to prevent symlink-based sandbox escape (TOCTOU).
-// Returns the real absolute path if valid, or an error if the path escapes the sandbox.
-func validatePath(path, sandboxDir string) (string, error) {
-	cleanPath := filepath.Clean(path)
-
-	if sandboxDir == "" {
-		return cleanPath, nil
-	}
-
-	absSandbox, err := filepath.Abs(sandboxDir)
-	if err != nil {
-		return "", fmt.Errorf("invalid sandbox directory: %w", err)
-	}
-
-	// Resolve symlinks in the sandbox itself.
-	realSandbox, err := filepath.EvalSymlinks(absSandbox)
-	if err != nil {
-		return "", fmt.Errorf("resolve sandbox path: %w", err)
-	}
-
-	absPath, err := filepath.Abs(cleanPath)
-	if err != nil {
-		return "", fmt.Errorf("invalid path: %w", err)
-	}
-
-	// Resolve symlinks in the target path.
-	// If the file doesn't exist yet (write_file, patch_file), resolve the parent.
-	// If the parent doesn't exist either, fall back to the cleaned absolute path
-	// so the sandbox boundary check below can still reject traversals.
-	realPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		parentReal, parentErr := filepath.EvalSymlinks(filepath.Dir(absPath))
-		if parentErr != nil {
-			// Neither the file nor its parent exist. Use the cleaned absolute path
-			// so the sandbox prefix check still detects an escape attempt.
-			realPath = absPath
-		} else {
-			realPath = filepath.Join(parentReal, filepath.Base(absPath))
-		}
-	}
-
-	rel, err := filepath.Rel(realSandbox, realPath)
-	if err != nil {
-		return "", fmt.Errorf("path validation failed: %w", err)
-	}
-
-	if strings.HasPrefix(rel, "..") {
-		return "", fmt.Errorf("path escapes sandbox: %s", path)
-	}
-
-	return realPath, nil
-}
-
 // getSandboxDir extracts the sandbox directory from call arguments.
 func getSandboxDir(call agentic.ToolCall) string {
 	if call.Arguments == nil {
@@ -586,54 +360,6 @@ func getSandboxDir(call agentic.ToolCall) string {
 
 // RegisterBuiltins adds the standard built-in tools to the registry.
 func (r *ToolRegistry) RegisterBuiltins() {
-	r.Register(RegisteredTool{
-		Definition: readFileSpec.Definition,
-		Handler:    readFileHandler,
-		Skills:     readFileSpec.Skills,
-		MinTier:    readFileSpec.MinTier,
-		Category:   readFileSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: writeFileSpec.Definition,
-		Handler:    writeFileHandler,
-		Skills:     writeFileSpec.Skills,
-		MinTier:    writeFileSpec.MinTier,
-		Category:   writeFileSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: patchFileSpec.Definition,
-		Handler:    patchFileHandler,
-		Skills:     patchFileSpec.Skills,
-		MinTier:    patchFileSpec.MinTier,
-		Category:   patchFileSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: listDirectorySpec.Definition,
-		Handler:    listDirectoryHandler,
-		Skills:     listDirectorySpec.Skills,
-		MinTier:    listDirectorySpec.MinTier,
-		Category:   listDirectorySpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: globFilesSpec.Definition,
-		Handler:    globFilesHandler,
-		Skills:     globFilesSpec.Skills,
-		MinTier:    globFilesSpec.MinTier,
-		Category:   globFilesSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: searchTextSpec.Definition,
-		Handler:    searchTextHandler,
-		Skills:     searchTextSpec.Skills,
-		MinTier:    searchTextSpec.MinTier,
-		Category:   searchTextSpec.Category,
-	})
-
 	r.Register(RegisteredTool{
 		Definition: runCommandSpec.Definition,
 		Handler:    runCommandHandler,
@@ -651,12 +377,12 @@ func (r *ToolRegistry) RegisterBuiltins() {
 	})
 
 	// Terminal tools — these stop the agentic loop on successful execution.
-	// submit_work_product replaces [INTENT: work_product] tags.
+	// submit_work replaces [INTENT: work_product] tags.
 	// ask_clarification replaces [INTENT: clarification] tags.
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
-			Name:        "submit_work_product",
-			Description: "Submit your FINISHED work for review. Files you wrote/modified are captured automatically — you do NOT need to paste file contents. Provide a summary describing what you built and any design decisions. Only call this when you have completed the actual work — never use this to ask questions or describe plans.",
+			Name:        "submit_work",
+			Description: "Submit your FINISHED work. Files you created/modified are captured automatically — provide a brief summary of what was delivered. This ends your quest — only call when all work is complete.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -680,7 +406,7 @@ func (r *ToolRegistry) RegisterBuiltins() {
 	r.Register(RegisteredTool{
 		Definition: agentic.ToolDefinition{
 			Name:        "ask_clarification",
-			Description: "Ask the quest issuer a question when you need more information. Use this instead of submit_work_product when you have questions or are unsure how to proceed. You will NOT be penalized for asking questions — this is the correct way to request guidance.",
+			Description: "Ask the quest issuer a question when you need more information. Use this instead of submit_work when you have questions or are unsure how to proceed. You will NOT be penalized for asking questions — this is the correct way to request guidance.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -760,594 +486,6 @@ func (r *ToolRegistry) RegisterBuiltins() {
 // BUILT-IN TOOL HANDLERS
 // =============================================================================
 
-func readFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	// Check for context cancellation
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("operation cancelled: %v", ctx.Err()),
-		}
-	default:
-	}
-
-	path, ok := call.Arguments["path"].(string)
-	if !ok {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "path argument must be a string",
-		}
-	}
-
-	// Validate path is within sandbox
-	sandboxDir := getSandboxDir(call)
-	cleanPath, err := validatePath(path, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  err.Error(),
-		}
-	}
-
-	// Check if path is a directory — agents commonly call read_file(".") or
-	// read_file("src") and get an unhelpful OS error. Give a clear hint.
-	if info, statErr := os.Stat(cleanPath); statErr == nil && info.IsDir() {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("%q is a directory, not a file. Use list_directory to see its contents.", path),
-		}
-	}
-
-	content, err := os.ReadFile(cleanPath)
-	if err != nil {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("failed to read file: %v", err),
-		}
-	}
-
-	// Limit content size to prevent huge outputs
-	result := string(content)
-	if len(result) > maxFileReadSize {
-		result = result[:maxFileReadSize] + "\n... (truncated)"
-	}
-
-	// Handle optional line range (merged from read_file_range).
-	if startLine, ok := call.Arguments["start_line"].(float64); ok && startLine > 0 {
-		lines := strings.Split(result, "\n")
-		start := int(startLine) - 1 // 0-indexed
-		if start >= len(lines) {
-			return agentic.ToolResult{
-				CallID: call.ID,
-				Error:  fmt.Sprintf("start_line %d exceeds file length (%d lines)", int(startLine), len(lines)),
-			}
-		}
-		end := len(lines)
-		if endLine, ok := call.Arguments["end_line"].(float64); ok && endLine > 0 {
-			end = int(endLine)
-			if end > len(lines) {
-				end = len(lines)
-			}
-		}
-		// Cap range to maxReadFileRangeLines.
-		if end-start > maxReadFileRangeLines {
-			end = start + maxReadFileRangeLines
-		}
-		result = strings.Join(lines[start:end], "\n")
-	}
-
-	return agentic.ToolResult{
-		CallID:  call.ID,
-		Content: result,
-	}
-}
-
-func writeFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	// Check for context cancellation
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("operation cancelled: %v", ctx.Err()),
-		}
-	default:
-	}
-
-	path, ok := call.Arguments["path"].(string)
-	if !ok {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "path argument must be a string",
-		}
-	}
-	content, ok := call.Arguments["content"].(string)
-	if !ok {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "content argument must be a string",
-		}
-	}
-
-	// Check content size limit
-	if len(content) > maxFileWriteSize {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("content too large: %d bytes (max %d)", len(content), maxFileWriteSize),
-		}
-	}
-
-	// Linter gate: reject files with obvious syntax errors before writing.
-	if lintErr := lintContent(path, content); lintErr != "" {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("Syntax check failed for %s: %s. Fix the content and try again.", path, lintErr),
-		}
-	}
-
-	// Validate path is within sandbox
-	sandboxDir := getSandboxDir(call)
-	cleanPath, err := validatePath(path, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  err.Error(),
-		}
-	}
-
-	// Create parent directories if needed
-	dir := filepath.Dir(cleanPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("failed to create directory: %v", err),
-		}
-	}
-
-	if err := os.WriteFile(cleanPath, []byte(content), 0644); err != nil {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("failed to write file: %v", err),
-		}
-	}
-
-	return agentic.ToolResult{
-		CallID:  call.ID,
-		Content: fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), cleanPath),
-	}
-}
-
-func listDirectoryHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	// Check for context cancellation
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("operation cancelled: %v", ctx.Err()),
-		}
-	default:
-	}
-
-	path, ok := call.Arguments["path"].(string)
-	if !ok {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "path argument must be a string",
-		}
-	}
-
-	// Validate path is within sandbox
-	sandboxDir := getSandboxDir(call)
-	cleanPath, err := validatePath(path, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  err.Error(),
-		}
-	}
-
-	entries, err := os.ReadDir(cleanPath)
-	if err != nil {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("failed to read directory: %v", err),
-		}
-	}
-
-	var result strings.Builder
-	for _, entry := range entries {
-		info, _ := entry.Info()
-		if entry.IsDir() {
-			result.WriteString(fmt.Sprintf("[dir]  %s/\n", entry.Name()))
-		} else if info != nil {
-			result.WriteString(fmt.Sprintf("[file] %s (%d bytes)\n", entry.Name(), info.Size()))
-		} else {
-			result.WriteString(fmt.Sprintf("[file] %s\n", entry.Name()))
-		}
-	}
-
-	return agentic.ToolResult{
-		CallID:  call.ID,
-		Content: result.String(),
-	}
-}
-
-func searchTextHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	// Check for context cancellation
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("operation cancelled: %v", ctx.Err()),
-		}
-	default:
-	}
-
-	pattern, ok := call.Arguments["pattern"].(string)
-	if !ok {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "pattern argument must be a string",
-		}
-	}
-	path, ok := call.Arguments["path"].(string)
-	if !ok {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "path argument must be a string",
-		}
-	}
-
-	// Parse optional enhanced parameters.
-	var opts searchOptions
-	if fg, ok := call.Arguments["file_glob"].(string); ok {
-		opts.fileGlob = fg
-	}
-	if cl, ok := call.Arguments["context_lines"].(float64); ok {
-		opts.contextLines = int(cl)
-	}
-	if rx, ok := call.Arguments["regex"].(bool); ok {
-		opts.useRegex = rx
-	}
-
-	// Pre-compile the regex once so we don't recompile per file during the walk.
-	if opts.useRegex {
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			return agentic.ToolResult{
-				CallID: call.ID,
-				Error:  fmt.Sprintf("invalid regex: %v", err),
-			}
-		}
-		opts.compiledRe = re
-	}
-
-	// Validate path is within sandbox
-	sandboxDir := getSandboxDir(call)
-	cleanPath, err := validatePath(path, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  err.Error(),
-		}
-	}
-
-	// Check if path is a file or directory
-	info, err := os.Stat(cleanPath)
-	if err != nil {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("failed to stat path: %v", err),
-		}
-	}
-
-	var matches []string
-
-	if info.IsDir() {
-		// Search directory recursively with context checking
-		err = filepath.Walk(cleanPath, func(filePath string, fileInfo os.FileInfo, walkErr error) error {
-			// Check context on each file
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			if walkErr != nil || fileInfo.IsDir() {
-				return nil
-			}
-
-			// Apply file_glob filter if specified.
-			if opts.fileGlob != "" && !globMatchesName(opts.fileGlob, filepath.Base(filePath)) {
-				return nil
-			}
-
-			if len(matches) >= maxSearchMatches {
-				return filepath.SkipAll
-			}
-			fileMatches := searchInFileWithOpts(filePath, pattern, opts)
-			matches = append(matches, fileMatches...)
-			return nil
-		})
-		if err != nil && err != filepath.SkipAll && err != context.Canceled && err != context.DeadlineExceeded {
-			return agentic.ToolResult{
-				CallID: call.ID,
-				Error:  fmt.Sprintf("failed to walk directory: %v", err),
-			}
-		}
-		if err == context.Canceled || err == context.DeadlineExceeded {
-			return agentic.ToolResult{
-				CallID: call.ID,
-				Error:  fmt.Sprintf("operation cancelled: %v", err),
-			}
-		}
-	} else {
-		matches = searchInFileWithOpts(cleanPath, pattern, opts)
-	}
-
-	if len(matches) == 0 {
-		return agentic.ToolResult{
-			CallID:  call.ID,
-			Content: fmt.Sprintf("No matches found for '%s' in %s", pattern, cleanPath),
-		}
-	}
-
-	var result strings.Builder
-	for _, match := range matches {
-		result.WriteString(match)
-		result.WriteByte('\n')
-	}
-	if len(matches) >= maxSearchMatches {
-		result.WriteString(fmt.Sprintf("\n... (showing first %d matches)", maxSearchMatches))
-	}
-
-	return agentic.ToolResult{
-		CallID:  call.ID,
-		Content: result.String(),
-	}
-}
-
-func truncateLine(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
-
-// =============================================================================
-// searchTextHandler — enhanced search with regex, file_glob, and context_lines
-// =============================================================================
-
-// searchOptions holds the optional parameters for searchInFileWithOpts.
-type searchOptions struct {
-	// fileGlob filters files by name pattern when walking a directory.
-	fileGlob string
-	// contextLines is how many lines before/after a match to include.
-	contextLines int
-	// useRegex treats the pattern as a compiled regexp.
-	useRegex bool
-	// compiledRe is a pre-compiled regex, set by the caller to avoid
-	// recompilation on every file during a directory walk.
-	compiledRe *regexp.Regexp
-}
-
-// searchInFileWithOpts searches for a pattern in a single file using opts.
-// It replaces the simple searchInFile for internal use while preserving
-// backward-compatible callers via the searchInFile wrapper.
-func searchInFileWithOpts(path, pattern string, opts searchOptions) []string {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-
-	lines := strings.Split(string(content), "\n")
-
-	// Build a matcher function based on opts.
-	var matchFn func(line string) bool
-	if opts.useRegex && opts.compiledRe != nil {
-		matchFn = opts.compiledRe.MatchString
-	} else if opts.useRegex {
-		// Fallback: compile from pattern if caller did not pre-compile.
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			return []string{fmt.Sprintf("error: invalid regex %q: %v", pattern, err)}
-		}
-		matchFn = re.MatchString
-	} else {
-		matchFn = func(line string) bool { return strings.Contains(line, pattern) }
-	}
-
-	// Clamp context lines.
-	nContext := opts.contextLines
-	if nContext < 0 {
-		nContext = 0
-	}
-	if nContext > maxContextLines {
-		nContext = maxContextLines
-	}
-
-	var matches []string
-	for lineNum, line := range lines {
-		if !matchFn(line) {
-			continue
-		}
-
-		if nContext == 0 {
-			matches = append(matches, fmt.Sprintf("%s:%d: %s", path, lineNum+1, truncateLine(line, maxMatchLineLength)))
-			continue
-		}
-
-		// Emit a "file:line --" header for the block then the context lines.
-		start := lineNum - nContext
-		if start < 0 {
-			start = 0
-		}
-		end := lineNum + nContext
-		if end >= len(lines) {
-			end = len(lines) - 1
-		}
-		for i := start; i <= end; i++ {
-			prefix := "  "
-			if i == lineNum {
-				prefix = "> "
-			}
-			matches = append(matches, fmt.Sprintf("%s:%d:%s%s", path, i+1, prefix, truncateLine(lines[i], maxMatchLineLength)))
-		}
-	}
-	return matches
-}
-
-// globMatchesName reports whether name matches the simple glob pattern
-// using filepath.Match semantics (no ** support — used per-segment).
-func globMatchesName(pattern, name string) bool {
-	matched, err := filepath.Match(pattern, name)
-	return err == nil && matched
-}
-
-// =============================================================================
-// glob_files handler
-// =============================================================================
-
-func globFilesHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-	default:
-	}
-
-	pattern, _ := call.Arguments["pattern"].(string)
-	if pattern == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "pattern argument is required"}
-	}
-
-	sandboxDir := getSandboxDir(call)
-
-	// Determine base path.
-	basePath := sandboxDir
-	if p, ok := call.Arguments["path"].(string); ok && p != "" {
-		basePath = p
-	}
-	if basePath == "" {
-		basePath = "."
-	}
-
-	cleanBase, err := validatePath(basePath, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
-	}
-
-	info, err := os.Stat(cleanBase)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("base path not found: %v", err)}
-	}
-	if !info.IsDir() {
-		return agentic.ToolResult{CallID: call.ID, Error: "path must be a directory"}
-	}
-
-	var results []string
-
-	err = filepath.WalkDir(cleanBase, func(walkPath string, d os.DirEntry, walkErr error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if walkErr != nil {
-			return nil // skip unreadable entries
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if len(results) >= maxGlobResults {
-			return filepath.SkipAll
-		}
-
-		// Compute the path relative to cleanBase for pattern matching.
-		rel, err := filepath.Rel(cleanBase, walkPath)
-		if err != nil {
-			return nil
-		}
-
-		if matchGlobPattern(pattern, rel) {
-			results = append(results, walkPath)
-		}
-		return nil
-	})
-
-	if err != nil && err != filepath.SkipAll {
-		if err == context.Canceled || err == context.DeadlineExceeded {
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", err)}
-		}
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("walk failed: %v", err)}
-	}
-
-	if len(results) == 0 {
-		return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("No files matched pattern %q in %s", pattern, cleanBase)}
-	}
-
-	var sb strings.Builder
-	for _, p := range results {
-		sb.WriteString(p)
-		sb.WriteByte('\n')
-	}
-	if len(results) >= maxGlobResults {
-		sb.WriteString(fmt.Sprintf("\n... (showing first %d matches)", maxGlobResults))
-	}
-
-	return agentic.ToolResult{CallID: call.ID, Content: sb.String()}
-}
-
-// matchGlobPattern matches a relative file path against a glob pattern that
-// may contain ** for recursive directory matching.
-//
-// Rules:
-//   - A leading **/ matches any number of directory components (including zero).
-//   - A trailing /** matches everything under a directory.
-//   - ** in the middle matches any sequence of path segments.
-//   - Non-** segments are matched with filepath.Match against the corresponding
-//     segment from the file path.
-func matchGlobPattern(pattern, relPath string) bool {
-	// Normalise separators so tests run on Windows too.
-	pattern = filepath.ToSlash(pattern)
-	relPath = filepath.ToSlash(relPath)
-
-	patParts := strings.Split(pattern, "/")
-	pathParts := strings.Split(relPath, "/")
-	return matchSegments(patParts, pathParts)
-}
-
-// matchSegments recursively matches pattern segments against path segments.
-func matchSegments(pat, path []string) bool {
-	for len(pat) > 0 {
-		seg := pat[0]
-		if seg == "**" {
-			// ** can match zero or more path segments.
-			pat = pat[1:]
-			if len(pat) == 0 {
-				return true // ** at end matches everything remaining
-			}
-			// Try consuming 0..N path segments before the next pattern segment.
-			for i := 0; i <= len(path); i++ {
-				if matchSegments(pat, path[i:]) {
-					return true
-				}
-			}
-			return false
-		}
-
-		if len(path) == 0 {
-			return false
-		}
-
-		matched, err := filepath.Match(seg, path[0])
-		if err != nil || !matched {
-			return false
-		}
-		pat = pat[1:]
-		path = path[1:]
-	}
-	return len(path) == 0
-}
-
 // =============================================================================
 // web_search handler
 // =============================================================================
@@ -1387,7 +525,7 @@ func makeWebSearchHandler(provider SearchProvider) ToolHandler {
 }
 
 // =============================================================================
-// TERMINAL TOOL HANDLERS (submit_work_product, ask_clarification)
+// TERMINAL TOOL HANDLERS (submit_work, ask_clarification)
 // =============================================================================
 
 func submitWorkProductHandler(_ context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
@@ -1404,7 +542,7 @@ func submitWorkProductHandler(_ context.Context, call agentic.ToolCall, _ *domai
 			CallID: call.ID,
 			Error: "Your deliverable appears to be a question or request for information, not completed work. " +
 				"Use the ask_clarification tool instead — you will NOT be penalized for asking questions. " +
-				"Only use submit_work_product when you have finished work to submit.",
+				"Only use submit_work when you have finished work to submit.",
 		}
 	}
 
@@ -1437,7 +575,7 @@ func submitWorkProductHandler(_ context.Context, call agentic.ToolCall, _ *domai
 
 // looksLikeQuestion detects deliverables that are actually questions or requests
 // for information rather than completed work. This catches agents (especially
-// smaller models) that use submit_work_product instead of ask_clarification.
+// smaller models) that use submit_work instead of ask_clarification.
 func looksLikeQuestion(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	if len(trimmed) == 0 {
@@ -1519,69 +657,6 @@ func askClarificationHandler(_ context.Context, call agentic.ToolCall, _ *domain
 		CallID:   call.ID,
 		Content:  string(jsonBytes),
 		StopLoop: true,
-	}
-}
-
-func patchFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-	default:
-	}
-
-	path, _ := call.Arguments["path"].(string)
-	oldText, _ := call.Arguments["old_text"].(string)
-	newText, _ := call.Arguments["new_text"].(string)
-
-	if path == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
-	}
-	if oldText == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "old_text argument is required"}
-	}
-
-	sandboxDir := getSandboxDir(call)
-	cleanPath, err := validatePath(path, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
-	}
-
-	content, err := os.ReadFile(cleanPath)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to read file: %v", err)}
-	}
-
-	fileContent := string(content)
-	if !strings.Contains(fileContent, oldText) {
-		return agentic.ToolResult{CallID: call.ID, Error: "old_text not found in file"}
-	}
-
-	count := strings.Count(fileContent, oldText)
-	if count > 1 {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("old_text is ambiguous: found %d occurrences (must be unique)", count)}
-	}
-
-	newContent := strings.Replace(fileContent, oldText, newText, 1)
-
-	if len(newContent) > maxFileWriteSize {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  fmt.Sprintf("resulting file too large: %d bytes (max %d)", len(newContent), maxFileWriteSize),
-		}
-	}
-
-	if err := os.WriteFile(cleanPath, []byte(newContent), 0644); err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to write file: %v", err)}
-	}
-
-	msg := fmt.Sprintf("Successfully patched %s (%d bytes -> %d bytes)", cleanPath, len(oldText), len(newText))
-	if newText == "" {
-		msg = fmt.Sprintf("Successfully removed %d bytes from %s", len(oldText), cleanPath)
-	}
-
-	return agentic.ToolResult{
-		CallID:  call.ID,
-		Content: msg,
 	}
 }
 
@@ -2191,12 +1266,10 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 		if text == "" {
 			return graphQLRequest{}, fmt.Errorf("search_text is required for search queries")
 		}
-		// maxCommunities controls how many communities are searched — each can
-		// return many entities, so cap it lower than the general limit to keep
-		// response sizes manageable.
 		maxCommunities := min(limit, 5)
 		return graphQLRequest{
-			Query: fmt.Sprintf(`{ globalSearch(query: %q, maxCommunities: %d) { entities { id type } count } }`, sanitizeGraphQLString(text), maxCommunities),
+			Query: fmt.Sprintf(`{ globalSearch(query: %q, maxCommunities: %d) { answer answer_model entity_digests { id type label relevance } community_summaries { communityId summary keywords relevance member_count entities { id type label relevance } } entities { id type } count } }`,
+				sanitizeGraphQLString(text), maxCommunities),
 		}, nil
 
 	case "nlq":
@@ -2204,13 +1277,14 @@ func buildGraphSearchQuery(queryType string, limit int, args map[string]any) (gr
 		if text == "" {
 			return graphQLRequest{}, fmt.Errorf("search_text is required for nlq queries (your natural language question)")
 		}
-		// NLQ uses globalSearch with community summaries for richer context.
-		// Cap communities and entities to control response size — community
-		// summaries are the most useful content, entity IDs are supplementary.
+		// NLQ uses globalSearch with answer synthesis — the answer field is the
+		// primary output. Community summaries and entity digests provide follow-up
+		// context for targeted queries.
 		maxCommunities := min(limit, 3)
 		maxEntities := min(limit, 10)
 		return graphQLRequest{
-			Query: fmt.Sprintf(`{ globalSearch(query: %q, level: 1, maxCommunities: %d, maxEntities: %d) { entities { id type } communities { title summary } count classification { queryType confidence } } }`, sanitizeGraphQLString(text), maxCommunities, maxEntities),
+			Query: fmt.Sprintf(`{ globalSearch(query: %q, level: 1, maxCommunities: %d, maxEntities: %d) { answer answer_model entity_digests { id type label relevance } community_summaries { communityId summary keywords relevance member_count entities { id type label relevance } } entities { id type } count classification { queryType confidence } } }`,
+				sanitizeGraphQLString(text), maxCommunities, maxEntities),
 		}, nil
 
 	default:
@@ -2356,17 +1430,35 @@ func formatGraphSearchResult(data map[string]json.RawMessage) string {
 		return b.String()
 	}
 
-	// globalSearch query: entities with count + community summaries.
+	// globalSearch query: answer → community_summaries → entity_digests → entities.
+	// Priority: use the highest-quality field available, skip lower ones.
 	if raw, ok := data["globalSearch"]; ok {
 		var result struct {
-			Entities []struct {
+			Answer      string `json:"answer"`
+			AnswerModel string `json:"answer_model"`
+			Entities    []struct {
 				ID   string `json:"id"`
 				Type string `json:"type"`
 			} `json:"entities"`
-			Communities []struct {
-				Title   string `json:"title"`
-				Summary string `json:"summary"`
-			} `json:"communities"`
+			EntityDigests []struct {
+				ID        string  `json:"id"`
+				Type      string  `json:"type"`
+				Label     string  `json:"label"`
+				Relevance float64 `json:"relevance"`
+			} `json:"entity_digests"`
+			CommunitySummaries []struct {
+				CommunityID string  `json:"communityId"`
+				Summary     string  `json:"summary"`
+				Keywords    []string `json:"keywords"`
+				Relevance   float64 `json:"relevance"`
+				MemberCount int     `json:"member_count"`
+				Entities    []struct {
+					ID        string  `json:"id"`
+					Type      string  `json:"type"`
+					Label     string  `json:"label"`
+					Relevance float64 `json:"relevance"`
+				} `json:"entities"`
+			} `json:"community_summaries"`
 			Count          int `json:"count"`
 			Classification struct {
 				QueryType  string  `json:"queryType"`
@@ -2378,27 +1470,62 @@ func formatGraphSearchResult(data map[string]json.RawMessage) string {
 			return b.String()
 		}
 
-		// Community summaries are the most useful part — show them first.
-		if len(result.Communities) > 0 {
-			for _, c := range result.Communities {
-				if c.Summary == "" {
+		// 1. Answer — synthesized natural language response. Use this first.
+		if result.Answer != "" {
+			b.WriteString(result.Answer)
+			b.WriteString("\n")
+		}
+
+		// 2. Community summaries with representative entities.
+		if len(result.CommunitySummaries) > 0 {
+			if result.Answer == "" {
+				// No answer — show community summaries as the primary content.
+				for _, c := range result.CommunitySummaries {
+					if c.Summary == "" {
+						continue
+					}
+					b.WriteString(c.Summary)
+					b.WriteString("\n")
+				}
+			}
+			// Show representative entities from communities for follow-up.
+			for _, c := range result.CommunitySummaries {
+				if len(c.Entities) == 0 {
 					continue
 				}
-				if c.Title != "" {
-					b.WriteString(fmt.Sprintf("## %s\n", c.Title))
+				b.WriteString(fmt.Sprintf("\nKey entities (%d in cluster):\n", c.MemberCount))
+				for _, e := range c.Entities {
+					if e.Label != "" {
+						b.WriteString(fmt.Sprintf("  %s [%s] — %s\n", e.Label, e.Type, e.ID))
+					} else {
+						b.WriteString(fmt.Sprintf("  [%s] %s\n", e.Type, e.ID))
+					}
 				}
-				b.WriteString(c.Summary)
-				b.WriteString("\n\n")
 			}
 		}
 
-		if len(result.Entities) > 0 {
-			b.WriteString(fmt.Sprintf("Related entities (%d total, showing %d):\n", result.Count, len(result.Entities)))
-			for _, e := range result.Entities {
-				b.WriteString(fmt.Sprintf("  [%s] %s\n", e.Type, e.ID))
+		// 3. Entity digests — lightweight context for all matched entities.
+		if len(result.EntityDigests) > 0 && result.Answer == "" && len(result.CommunitySummaries) == 0 {
+			b.WriteString(fmt.Sprintf("Matched entities (%d total):\n", result.Count))
+			for _, e := range result.EntityDigests {
+				if e.Label != "" {
+					b.WriteString(fmt.Sprintf("  %s [%s] — %s\n", e.Label, e.Type, e.ID))
+				} else {
+					b.WriteString(fmt.Sprintf("  [%s] %s\n", e.Type, e.ID))
+				}
 			}
-		} else if len(result.Communities) == 0 {
-			b.WriteString("No search results found.\n")
+		}
+
+		// 4. Bare entity IDs — last resort when no higher-quality fields available.
+		if result.Answer == "" && len(result.CommunitySummaries) == 0 && len(result.EntityDigests) == 0 {
+			if len(result.Entities) > 0 {
+				b.WriteString(fmt.Sprintf("Entities (%d total, showing %d):\n", result.Count, len(result.Entities)))
+				for _, e := range result.Entities {
+					b.WriteString(fmt.Sprintf("  [%s] %s\n", e.Type, e.ID))
+				}
+			} else {
+				b.WriteString("No search results found.\n")
+			}
 		}
 
 		return b.String()

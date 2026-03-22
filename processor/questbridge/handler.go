@@ -820,7 +820,7 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 	quest.TokensCompletion = metrics.TokensOut
 	quest.Duration = time.Since(mapping.StartedAt)
 
-	// Try tool-based JSON output first (submit_work_product / ask_clarification).
+	// Try tool-based JSON output first (submit_work / ask_clarification).
 	// Falls back to legacy intent tags and heuristic detection for non-compliant models.
 	isClarification := false
 	if outputType, content, ok := parseToolOutput(output); ok {
@@ -828,14 +828,14 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		case "work_product":
 			// Extract deliverable as the actual quest output (strip JSON envelope).
 			output = content
-			// Safety net: some models submit questions via submit_work_product
+			// Safety net: some models submit questions via submit_work
 			// instead of ask_clarification. Only check the structured intent tag
 			// here — NOT the "?" heuristic. The agent explicitly called the
-			// submit_work_product tool, so trust its intent. Research deliverables
+			// submit_work tool, so trust its intent. Research deliverables
 			// legitimately contain question marks (e.g. "What is XSS?").
 			if hasIntentClarification(content) {
 				isClarification = true
-				c.logger.Warn("agent submitted question via submit_work_product, rerouting to clarification",
+				c.logger.Warn("agent submitted question via submit_work, rerouting to clarification",
 					"quest_id", questID, "agent_id", mapping.AgentID)
 			} else {
 				c.logger.Info("tool-based work product submission",
@@ -953,7 +953,7 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 }
 
 // parseToolOutput attempts to parse the loop output as a tool-based completion
-// JSON envelope produced by submit_work_product or ask_clarification.
+// JSON envelope produced by submit_work or ask_clarification.
 // Returns the output type ("work_product" or "clarification"), the extracted
 // content (deliverable or question), and whether parsing succeeded.
 //
@@ -1000,7 +1000,7 @@ func parseToolOutput(output string) (outputType, content string, ok bool) {
 //     agents that ignore the format instruction.
 // hasIntentClarification checks only for a structured [INTENT: clarification]
 // tag in the output. Unlike isOutputClarificationRequest, it does NOT use the
-// "?" heuristic. Use this when the agent explicitly called submit_work_product
+// "?" heuristic. Use this when the agent explicitly called submit_work
 // — trust the tool choice, only override if the intent tag says otherwise.
 func hasIntentClarification(output any) bool {
 	text, ok := output.(string)
@@ -1032,7 +1032,7 @@ func isOutputClarificationRequest(output any) bool {
 
 	// Strategy 2: Heuristic — any question mark in unstructured output.
 	// If we reach this point, the model ignored tool-calling instructions
-	// (no submit_work_product or ask_clarification tool call, no intent tag).
+	// (no submit_work or ask_clarification tool call, no intent tag).
 	// In that context, any "?" signals the model is asking for information
 	// rather than delivering work. Route through clarification so the agent
 	// isn't penalized by boss battle for a non-deliverable response.
