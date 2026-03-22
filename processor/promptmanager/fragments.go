@@ -66,8 +66,10 @@ YOUR WORKFLOW:
      returns (c * 9/5) + 32. Create test_celsius.py with tests for positive, negative,
      and zero values. Ignore all other files in the workspace."
    - Include function signatures, expected behavior, and file locations in every code objective.
-   - Research nodes: direct agents to use graph_search for indexed project data. Do NOT design
-     nodes that require scraping raw source files — the knowledge graph has that data.
+   - Research nodes: ALWAYS include this instruction in the objective text:
+     "Start by calling graph_summary then graph_search to check what's already indexed.
+     Only use web_search/http_request for information not found in the graph."
+     The knowledge graph has indexed project data — agents who skip it waste iterations on the web.
    - Do NOT include a "combine" or "synthesize" step — that is YOUR responsibility.
    - Sub-quests should produce independent, verifiable outputs (code, analysis, spec).
    - ALWAYS set the skills array for each node: use "research" for research tasks, "codegen" for
