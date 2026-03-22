@@ -81,6 +81,17 @@
 	const filteredRelationships = $derived(graphStore.filteredRelationships);
 	const selectedEntity = $derived(graphStore.selectedEntity);
 
+	/** Entity counts per type — computed from all entities (not filtered) so
+	 *  counts stay stable when toggling type visibility. */
+	const typeCounts = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const e of graphStore.entities.values()) {
+			const t = e.idParts.type || 'unknown';
+			counts.set(t, (counts.get(t) ?? 0) + 1);
+		}
+		return counts;
+	});
+
 	// ---------------------------------------------------------------------------
 	// Event handlers — delegate straight to graphStore mutations
 	// ---------------------------------------------------------------------------
@@ -146,6 +157,7 @@
 				<GraphFilters
 					visibleTypes={graphStore.visibleTypes}
 					presentTypes={graphStore.presentEntityTypes}
+					{typeCounts}
 					search={graphStore.filters.search}
 					onToggleType={handleToggleType}
 					onSearchChange={handleSearchChange}
@@ -154,7 +166,7 @@
 				/>
 				<div class="toolbar-spacer"></div>
 				<GraphMetrics
-					entities={filteredEntities}
+					entityCount={filteredEntities.length}
 					relationships={filteredRelationships}
 				/>
 			</div>

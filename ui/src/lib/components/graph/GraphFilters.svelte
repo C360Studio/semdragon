@@ -19,6 +19,8 @@
 		visibleTypes: Set<string>;
 		/** Entity types present in the current data set */
 		presentTypes: string[];
+		/** Entity count per type (keyed by type name) */
+		typeCounts: Map<string, number>;
 		/** Current search string from graphStore.filters.search */
 		search: string;
 		/** Callback when user toggles a type checkbox */
@@ -34,6 +36,7 @@
 	let {
 		visibleTypes,
 		presentTypes,
+		typeCounts,
 		search,
 		onToggleType,
 		onSearchChange,
@@ -59,6 +62,7 @@
 		{#each presentTypes as type (type)}
 			{@const checked = visibleTypes.has(type)}
 			{@const color = ENTITY_TYPE_COLORS[type] ?? ENTITY_TYPE_COLORS.unknown}
+			{@const count = typeCounts.get(type) ?? 0}
 			<label
 				class="type-checkbox"
 				class:type-checked={checked}
@@ -69,10 +73,11 @@
 					type="checkbox"
 					{checked}
 					onchange={() => onToggleType(type)}
-					aria-label="Show {type} entities"
+					aria-label="Show {type} entities ({count})"
 				/>
 				<span class="type-dot" aria-hidden="true"></span>
 				<span class="type-name">{type.replaceAll('_', ' ')}</span>
+				<span class="type-count">{count}</span>
 			</label>
 		{/each}
 	</div>
@@ -177,6 +182,17 @@
 
 	.type-name {
 		text-transform: capitalize;
+	}
+
+	.type-count {
+		font-size: 10px;
+		font-weight: 600;
+		color: var(--ui-text-tertiary);
+		font-family: var(--font-mono, monospace);
+	}
+
+	.type-checked .type-count {
+		color: var(--ui-text-secondary);
 	}
 
 	/* Quick-action buttons */
