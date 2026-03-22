@@ -394,80 +394,80 @@ func seedPros(
 	boardCfg *domain.BoardConfig,
 ) error {
 	specs := []agentSpec{
-		// 1 grandmaster — board anchor, DM delegate
+		// 2 grandmasters — board anchors, DM delegates
 		{
-			namePattern: "apex",
+			namePattern: "apex-{n}",
 			level:       20,
 			skills:      []domain.SkillTag{domain.SkillPlanning, domain.SkillAnalysis},
 			archetype:   domain.ArchetypeStrategist,
-			count:       1,
+			count:       2,
 		},
 
-		// 3 masters — party leads with different specializations
+		// 6 masters — party leads with different specializations
 		{
-			namePattern: "sentinel",
+			namePattern: "sentinel-{n}",
 			level:       18,
 			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
 			archetype:   domain.ArchetypeEngineer,
-			count:       1,
+			count:       2,
 		},
 		{
-			namePattern: "oracle",
+			namePattern: "oracle-{n}",
 			level:       17,
 			skills:      []domain.SkillTag{domain.SkillResearch, domain.SkillAnalysis},
 			archetype:   domain.ArchetypeScholar,
-			count:       1,
+			count:       2,
 		},
 		{
-			namePattern: "architect",
+			namePattern: "architect-{n}",
 			level:       16,
 			skills:      []domain.SkillTag{domain.SkillPlanning, domain.SkillCodeReview},
 			archetype:   domain.ArchetypeStrategist,
-			count:       1,
+			count:       2,
 		},
 
-		// 6 experts — diverse skill coverage for party composition
+		// 12 experts — diverse skill coverage for party composition
 		{
-			namePattern: "vanguard",
+			namePattern: "vanguard-{n}",
 			level:       15,
 			skills:      []domain.SkillTag{domain.SkillCodeGen, domain.SkillDataTransform},
 			archetype:   domain.ArchetypeEngineer,
-			count:       1,
+			count:       2,
 		},
 		{
-			namePattern: "catalyst",
+			namePattern: "catalyst-{n}",
 			level:       14,
 			skills:      []domain.SkillTag{domain.SkillCodeGen},
 			archetype:   domain.ArchetypeEngineer,
-			count:       1,
+			count:       2,
 		},
 		{
-			namePattern: "cipher",
+			namePattern: "cipher-{n}",
 			level:       13,
 			skills:      []domain.SkillTag{domain.SkillAnalysis, domain.SkillResearch},
 			archetype:   domain.ArchetypeScholar,
-			count:       1,
+			count:       2,
 		},
 		{
-			namePattern: "nexus",
+			namePattern: "nexus-{n}",
 			level:       12,
 			skills:      []domain.SkillTag{domain.SkillDataTransform, domain.SkillAnalysis},
 			archetype:   domain.ArchetypeEngineer,
-			count:       1,
+			count:       2,
 		},
 		{
-			namePattern: "chronicle",
+			namePattern: "chronicle-{n}",
 			level:       12,
 			skills:      []domain.SkillTag{domain.SkillSummarization, domain.SkillCustomerComms},
 			archetype:   domain.ArchetypeScribe,
-			count:       1,
+			count:       2,
 		},
 		{
-			namePattern: "pathfinder",
+			namePattern: "pathfinder-{n}",
 			level:       11,
 			skills:      []domain.SkillTag{domain.SkillResearch, domain.SkillPlanning},
 			archetype:   domain.ArchetypeScholar,
-			count:       1,
+			count:       2,
 		},
 	}
 
