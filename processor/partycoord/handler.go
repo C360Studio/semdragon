@@ -407,6 +407,91 @@ func (c *Component) stopQuestWatcher() {
 	}
 }
 
+// startAgentWatcher sets up a KV watcher for agent state changes.
+// When an agent transitions to idle, partycoord re-evaluates posted party quests
+// that previously failed formation due to "no eligible lead/member".
+func (c *Component) startAgentWatcher(ctx context.Context) error {
+	kv, err := c.graph.KVBucket(ctx)
+	if err != nil {
+		return err
+	}
+
+	agentPrefix := c.graph.Config().TypePrefix("agent") + ".>"
+	watcher, err := kv.Watch(ctx, agentPrefix)
+	if err != nil {
+		return err
+	}
+	c.agentWatch = watcher
+
+	go c.processAgentWatchUpdates()
+
+	c.logger.Debug("started KV watcher for agent state")
+	return nil
+}
+
+// stopAgentWatcher stops the agent KV watcher.
+func (c *Component) stopAgentWatcher() {
+	if c.agentWatch != nil {
+		c.agentWatch.Stop()
+	}
+}
+
+// processAgentWatchUpdates consumes agent KV updates. When an agent goes idle,
+// scans for posted party quests that need formation.
+func (c *Component) processAgentWatchUpdates() {
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case entry, ok := <-c.agentWatch.Updates():
+			if !ok {
+				return
+			}
+			if entry == nil {
+				continue // initial sync complete
+			}
+			c.handleAgentStatusChange(entry)
+		}
+	}
+}
+
+// handleAgentStatusChange reacts to agent state changes. When an agent becomes
+// idle, checks if there are posted party quests waiting for formation.
+func (c *Component) handleAgentStatusChange(entry jetstream.KeyValueEntry) {
+	if entry.Operation() == jetstream.KeyValueDelete {
+		return
+	}
+	if !c.config.AutoFormParties {
+		return
+	}
+
+	entityState, err := semdragons.DecodeEntityState(entry)
+	if err != nil || entityState == nil {
+		return
+	}
+	agent := agentprogression.AgentFromEntityState(entityState)
+	if agent == nil || agent.Status != domain.AgentIdle {
+		return
+	}
+
+	// An agent just became idle. Scan for posted party quests that need formation.
+	c.questsMu.RLock()
+	var pendingPartyQuests []*domain.Quest
+	for _, q := range c.quests {
+		if q.Status == domain.QuestPosted && q.PartyRequired && q.PartyID == nil {
+			pendingPartyQuests = append(pendingPartyQuests, q)
+		}
+	}
+	c.questsMu.RUnlock()
+
+	for _, quest := range pendingPartyQuests {
+		c.logger.Debug("agent became idle, retrying party quest formation",
+			"agent", agent.ID, "quest_id", quest.ID)
+		// Pass nil as prev to simulate a fresh "posted" transition.
+		c.maybeInitiatePartyQuest(nil, quest)
+	}
+}
+
 // processQuestWatchUpdates consumes KV watch updates for quest state changes.
 // Runs in a dedicated goroutine; signals watchDoneCh when it exits.
 func (c *Component) processQuestWatchUpdates() {

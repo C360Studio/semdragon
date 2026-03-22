@@ -42,8 +42,9 @@ type Component struct {
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
 
-	// KV watch for quest state changes (facts about the world)
+	// KV watch for quest and agent state changes (facts about the world)
 	questWatch jetstream.KeyWatcher
+	agentWatch jetstream.KeyWatcher
 
 	// Cached quest state for reactive auto-formation decisions
 	quests   map[string]*domain.Quest
@@ -270,9 +271,12 @@ func (c *Component) Start(ctx context.Context) error {
 		return errs.Wrap(err, "PartyCoord", "Start", "load initial quest state")
 	}
 
-	// Set up KV watcher to react to quest state changes (facts about the world)
+	// Set up KV watchers to react to quest and agent state changes
 	if err := c.startQuestWatcher(ctx); err != nil {
 		return errs.Wrap(err, "PartyCoord", "Start", "start quest KV watcher")
+	}
+	if err := c.startAgentWatcher(ctx); err != nil {
+		return errs.Wrap(err, "PartyCoord", "Start", "start agent KV watcher")
 	}
 
 	c.startTime = time.Now()
@@ -306,8 +310,9 @@ func (c *Component) Stop(timeout time.Duration) error {
 		timeout = 5 * time.Second
 	}
 
-	// Stop the KV watcher, which unblocks the watch goroutine
+	// Stop KV watchers, which unblock the watch goroutines
 	c.stopQuestWatcher()
+	c.stopAgentWatcher()
 
 	// Wait for watch goroutine to finish
 	select {
