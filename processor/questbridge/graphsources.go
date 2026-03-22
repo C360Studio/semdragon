@@ -420,20 +420,18 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 	totalEntities := 0
 
 	for _, src := range sorted {
+		// Only semsource sources represent indexed knowledge.
+		// Local graph sources are the database — they contain the same
+		// entities semsource has indexed and would double-count.
+		if src.Type != "semsource" {
+			continue
+		}
+		if !src.ready.Load() {
+			continue
+		}
 		var sm *sourceSummary
-
-		switch src.Type {
-		case "local":
-			if src.GraphQLURL != "" {
-				sm = r.fetchLocalSummary(ctx, src.GraphQLURL)
-			}
-		case "semsource":
-			if !src.ready.Load() {
-				continue
-			}
-			if summURL := src.SummaryURL(); summURL != "" {
-				sm = r.fetchSummaryWithCache(ctx, summURL)
-			}
+		if summURL := src.SummaryURL(); summURL != "" {
+			sm = r.fetchSummaryWithCache(ctx, summURL)
 		}
 
 		if sm == nil || sm.TotalEntities == 0 {
@@ -527,6 +525,10 @@ type SourceSummaryData struct {
 func (r *GraphSourceRegistry) StructuredSummary(ctx context.Context) []SourceSummaryData {
 	result := make([]SourceSummaryData, 0, len(r.sources))
 	for _, src := range r.sources {
+		// Only semsource sources — local graph is infrastructure, not knowledge.
+		if src.Type != "semsource" {
+			continue
+		}
 		entry := SourceSummaryData{
 			Name:         src.Name,
 			Type:         src.Type,
@@ -535,19 +537,12 @@ func (r *GraphSourceRegistry) StructuredSummary(ctx context.Context) []SourceSum
 			Domains:      []SummaryDomain{},
 		}
 
-		switch {
-		case src.Type == "semsource" && src.ready.Load():
-			summURL := src.SummaryURL()
-			if summURL != "" {
+		if src.ready.Load() {
+			if summURL := src.SummaryURL(); summURL != "" {
 				if sm := r.fetchSummaryWithCache(ctx, summURL); sm != nil {
 					entry.TotalEntities = sm.TotalEntities
 					entry.Domains = sm.Domains
 				}
-			}
-		case src.Type == "local" && src.GraphQLURL != "":
-			if sm := r.fetchLocalSummary(ctx, src.GraphQLURL); sm != nil {
-				entry.TotalEntities = sm.TotalEntities
-				entry.Domains = sm.Domains
 			}
 		}
 
@@ -563,152 +558,6 @@ func (r *GraphSourceRegistry) SummaryWithText(ctx context.Context) (string, []So
 	text := r.FormatSummaryForPrompt(ctx)
 	sources := r.StructuredSummary(ctx)
 	return text, sources
-}
-
-// fetchLocalSummary queries the local graph-gateway GraphQL endpoint and builds
-// a sourceSummary by counting entities grouped by domain and type.
-// Entity IDs follow the six-part notation: org.platform.domain.system.type.instance,
-// so we group by parts[2] (domain) and parts[4] (type).
-// Returns nil (not an error) when the local GraphQL is unreachable so callers
-// can gracefully fall back to zero-entity summaries.
-func (r *GraphSourceRegistry) fetchLocalSummary(ctx context.Context, graphqlURL string) *sourceSummary {
-	cacheKey := "local:" + graphqlURL
-
-	r.summaryMu.Lock()
-	entry, ok := r.summaryCache[cacheKey]
-	r.summaryMu.Unlock()
-
-	if ok && time.Since(entry.fetched) < summCacheTTL {
-		return entry.summary
-	}
-
-	body, err := json.Marshal(map[string]string{
-		"query": `{ entitiesByPrefix(prefix: "", limit: 5000) { id } }`,
-	})
-	if err != nil {
-		r.logger.Debug("fetchLocalSummary: marshal failed", "error", err)
-		return nil
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, graphqlURL,
-		strings.NewReader(string(body)))
-	if err != nil {
-		r.logger.Debug("fetchLocalSummary: request build failed", "error", err)
-		return nil
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := r.client.Do(req)
-	if err != nil {
-		r.logger.Debug("fetchLocalSummary: request failed", "graphql_url", graphqlURL, "error", err)
-		return nil
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		r.logger.Debug("fetchLocalSummary: non-200 response",
-			"graphql_url", graphqlURL, "status", resp.StatusCode)
-		return nil
-	}
-
-	var gqlResp struct {
-		Data struct {
-			EntitiesByPrefix []struct {
-				ID string `json:"id"`
-			} `json:"entitiesByPrefix"`
-		} `json:"data"`
-	}
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		r.logger.Debug("fetchLocalSummary: read body failed", "error", err)
-		return nil
-	}
-	if err := json.Unmarshal(respBody, &gqlResp); err != nil {
-		r.logger.Debug("fetchLocalSummary: parse response failed", "error", err)
-		return nil
-	}
-
-	// Domains to exclude — game state and infrastructure, not queryable knowledge.
-	skipDomains := map[string]bool{"game": true, "agent": true}
-	// Entity types and instance names that are semsource clustering internals.
-	skipTypes := map[string]bool{"group": true, "container": true}
-	skipInstances := map[string]bool{"group": true, "container": true, "level": true}
-
-	// Group by domain (parts[2]) then type (parts[4]).
-	// Collect up to 3 example IDs per domain for the summary.
-	type domainData struct {
-		typeCounts map[string]int
-		examples   []string
-	}
-	byDomain := make(map[string]*domainData)
-	total := 0
-	for _, e := range gqlResp.Data.EntitiesByPrefix {
-		parts := strings.Split(e.ID, ".")
-		if len(parts) < 6 {
-			continue
-		}
-		domain := parts[2]
-		entityType := parts[4]
-		instance := parts[5]
-
-		if skipDomains[domain] {
-			continue
-		}
-		if skipTypes[entityType] || skipInstances[instance] {
-			continue
-		}
-
-		dd := byDomain[domain]
-		if dd == nil {
-			dd = &domainData{typeCounts: make(map[string]int)}
-			byDomain[domain] = dd
-		}
-		dd.typeCounts[entityType]++
-		if len(dd.examples) < 3 {
-			dd.examples = append(dd.examples, e.ID)
-		}
-		total++
-	}
-
-	domains := make([]SummaryDomain, 0, len(byDomain))
-	for domain, dd := range byDomain {
-		types := make([]SummaryType, 0, len(dd.typeCounts))
-		domainTotal := 0
-		for t, count := range dd.typeCounts {
-			types = append(types, SummaryType{Type: t, Count: count})
-			domainTotal += count
-		}
-		// Sort types by count descending for stable, readable output.
-		for i := 1; i < len(types); i++ {
-			for j := i; j > 0 && types[j].Count > types[j-1].Count; j-- {
-				types[j], types[j-1] = types[j-1], types[j]
-			}
-		}
-		domains = append(domains, SummaryDomain{
-			Domain:      domain,
-			EntityCount: domainTotal,
-			Types:       types,
-			ExampleIDs:  dd.examples,
-		})
-	}
-	// Sort domains alphabetically for stable output.
-	for i := 1; i < len(domains); i++ {
-		for j := i; j > 0 && domains[j].Domain < domains[j-1].Domain; j-- {
-			domains[j], domains[j-1] = domains[j-1], domains[j]
-		}
-	}
-
-	sm := &sourceSummary{
-		Phase:         "ready",
-		TotalEntities: total,
-		Domains:       domains,
-	}
-
-	r.summaryMu.Lock()
-	r.summaryCache[cacheKey] = summCacheEntry{summary: sm, fetched: time.Now()}
-	r.summaryMu.Unlock()
-
-	return sm
 }
 
 // fetchSummaryWithCache retrieves a parsed sourceSummary for the given URL,

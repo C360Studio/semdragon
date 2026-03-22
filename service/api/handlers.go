@@ -2914,7 +2914,7 @@ func (s *Service) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
 
 	text, rawSources := registry.SummaryWithText(r.Context())
 	if text == "" {
-		text = "Local graph only — no external knowledge sources indexed."
+		text = "No knowledge sources indexed yet."
 	}
 
 	sources := make([]graphSummarySource, 0, len(rawSources))
