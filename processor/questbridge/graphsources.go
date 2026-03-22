@@ -102,6 +102,7 @@ type SummaryDomain struct {
 	EntityCount int           `json:"entity_count"`
 	Types       []SummaryType `json:"types"`
 	Sources     []string      `json:"sources"`
+	ExampleIDs  []string      `json:"example_ids,omitempty"`
 }
 
 // SummaryType is the per-entity-type breakdown within a SummaryDomain.
@@ -456,18 +457,11 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 	sb.WriteString(fmt.Sprintf(", %d entities total.\n\n", totalEntities))
 
 	// Entity ID format guidance.
-	sb.WriteString("Entity IDs use 6-part dotted notation: org.platform.domain.system.type.instance\n")
-	for _, f := range fetched {
-		if f.src.EntityPrefix != "" {
-			prefix := strings.TrimSuffix(f.src.EntityPrefix, ".")
-			sb.WriteString(fmt.Sprintf("  %s: %s.{domain}.{system}.{type}.{instance}\n",
-				f.src.Name, prefix))
-		}
-	}
+	sb.WriteString("Entity IDs use 6-part dotted notation: org.platform.domain.system.type.instance\n\n")
 
-	// Per-source entity breakdown.
+	// Per-source entity breakdown with examples.
 	for _, f := range fetched {
-		sb.WriteString(fmt.Sprintf("\n%s (%d entities):\n", f.src.Name, f.summary.TotalEntities))
+		sb.WriteString(fmt.Sprintf("%s (%d entities):\n", f.src.Name, f.summary.TotalEntities))
 		for _, d := range f.summary.Domains {
 			if len(d.Types) == 0 {
 				continue
@@ -477,26 +471,40 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 				typeParts = append(typeParts, fmt.Sprintf("%s (%d)", t.Type, t.Count))
 			}
 			sb.WriteString(fmt.Sprintf("  %s: %s\n", d.Domain, strings.Join(typeParts, ", ")))
+			// Show example entity IDs so agents understand the ID structure.
+			for _, ex := range d.ExampleIDs {
+				sb.WriteString(fmt.Sprintf("    e.g. %s\n", ex))
+			}
 		}
+		sb.WriteString("\n")
 	}
 
-	sb.WriteString("\nQuery with graph_search: use \"prefix\" to scope by source (e.g. ")
-	if len(fetched) > 0 && fetched[0].src.EntityPrefix != "" {
-		prefix := strings.TrimSuffix(fetched[0].src.EntityPrefix, ".")
-		exampleDomain := ""
-		if len(fetched[0].summary.Domains) > 0 {
-			exampleDomain = fetched[0].summary.Domains[0].Domain
+	sb.WriteString("Query with graph_search:\n")
+	sb.WriteString("  - Use \"prefix\" to scope by domain (e.g. ")
+	// Pick the first real example from any domain.
+	exampleWritten := false
+	for _, f := range fetched {
+		for _, d := range f.summary.Domains {
+			if len(d.ExampleIDs) > 0 {
+				// Use just the first 3 parts as a prefix example.
+				parts := strings.SplitN(d.ExampleIDs[0], ".", 4)
+				if len(parts) >= 3 {
+					sb.WriteString(fmt.Sprintf("%q", strings.Join(parts[:3], ".")))
+					exampleWritten = true
+					break
+				}
+			}
 		}
-		if exampleDomain != "" {
-			sb.WriteString(fmt.Sprintf("%q", prefix+"."+exampleDomain))
-		} else {
-			sb.WriteString(fmt.Sprintf("%q", prefix))
+		if exampleWritten {
+			break
 		}
-	} else {
+	}
+	if !exampleWritten {
 		sb.WriteString(`"source.domain"`)
 	}
-	sb.WriteString(`), "predicate" for targeted lookups, or "nlq" for natural language questions.` + "\n")
-	sb.WriteString(`Use graph_summary tool for full predicate schema with descriptions.`)
+	sb.WriteString(")\n")
+	sb.WriteString("  - Use \"predicate\" for targeted property lookups\n")
+	sb.WriteString("  - Use \"nlq\" for natural language questions")
 
 	return sb.String()
 }
@@ -620,29 +628,53 @@ func (r *GraphSourceRegistry) fetchLocalSummary(ctx context.Context, graphqlURL 
 		return nil
 	}
 
+	// Domains to exclude — game state and infrastructure, not queryable knowledge.
+	skipDomains := map[string]bool{"game": true, "agent": true}
+	// Entity types and instance names that are semsource clustering internals.
+	skipTypes := map[string]bool{"group": true, "container": true}
+	skipInstances := map[string]bool{"group": true, "container": true, "level": true}
+
 	// Group by domain (parts[2]) then type (parts[4]).
-	// domainTypes: domain -> type -> count
-	domainTypes := make(map[string]map[string]int)
+	// Collect up to 3 example IDs per domain for the summary.
+	type domainData struct {
+		typeCounts map[string]int
+		examples   []string
+	}
+	byDomain := make(map[string]*domainData)
 	total := 0
 	for _, e := range gqlResp.Data.EntitiesByPrefix {
 		parts := strings.Split(e.ID, ".")
-		if len(parts) < 5 {
+		if len(parts) < 6 {
 			continue
 		}
 		domain := parts[2]
 		entityType := parts[4]
-		if domainTypes[domain] == nil {
-			domainTypes[domain] = make(map[string]int)
+		instance := parts[5]
+
+		if skipDomains[domain] {
+			continue
 		}
-		domainTypes[domain][entityType]++
+		if skipTypes[entityType] || skipInstances[instance] {
+			continue
+		}
+
+		dd := byDomain[domain]
+		if dd == nil {
+			dd = &domainData{typeCounts: make(map[string]int)}
+			byDomain[domain] = dd
+		}
+		dd.typeCounts[entityType]++
+		if len(dd.examples) < 3 {
+			dd.examples = append(dd.examples, e.ID)
+		}
 		total++
 	}
 
-	domains := make([]SummaryDomain, 0, len(domainTypes))
-	for domain, typeCounts := range domainTypes {
-		types := make([]SummaryType, 0, len(typeCounts))
+	domains := make([]SummaryDomain, 0, len(byDomain))
+	for domain, dd := range byDomain {
+		types := make([]SummaryType, 0, len(dd.typeCounts))
 		domainTotal := 0
-		for t, count := range typeCounts {
+		for t, count := range dd.typeCounts {
 			types = append(types, SummaryType{Type: t, Count: count})
 			domainTotal += count
 		}
@@ -656,6 +688,7 @@ func (r *GraphSourceRegistry) fetchLocalSummary(ctx context.Context, graphqlURL 
 			Domain:      domain,
 			EntityCount: domainTotal,
 			Types:       types,
+			ExampleIDs:  dd.examples,
 		})
 	}
 	// Sort domains alphabetically for stable output.

@@ -323,6 +323,7 @@ export interface GraphSummaryDomain {
 	domain: string;
 	entity_count: number;
 	types: Array<{ type: string; count: number }>;
+	example_ids?: string[];
 }
 
 export interface GraphSummarySource {

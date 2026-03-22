@@ -2891,6 +2891,7 @@ type graphSummaryDomain struct {
 	Domain      string             `json:"domain"`
 	EntityCount int                `json:"entity_count"`
 	Types       []graphSummaryType `json:"types"`
+	ExampleIDs  []string           `json:"example_ids,omitempty"`
 }
 
 type graphSummaryType struct {
@@ -2931,6 +2932,7 @@ func (s *Service) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
 				Domain:      d.Domain,
 				EntityCount: d.EntityCount,
 				Types:       make([]graphSummaryType, 0, len(d.Types)),
+				ExampleIDs:  d.ExampleIDs,
 			}
 			for _, t := range d.Types {
 				gd.Types = append(gd.Types, graphSummaryType{Type: t.Type, Count: t.Count})

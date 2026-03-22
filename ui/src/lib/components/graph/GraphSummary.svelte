@@ -146,6 +146,13 @@
 													</span>
 												{/each}
 											</div>
+											{#if domain.example_ids && domain.example_ids.length > 0}
+												<div class="domain-examples">
+													{#each domain.example_ids as ex}
+														<code class="example-id">{ex}</code>
+													{/each}
+												</div>
+											{/if}
 										</div>
 									{/each}
 								</div>
@@ -419,6 +426,23 @@
 		font-family: var(--font-mono, monospace);
 		color: var(--ui-text-tertiary);
 		font-size: 9px;
+	}
+
+	.domain-examples {
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		margin-top: 2px;
+	}
+
+	.example-id {
+		font-family: var(--font-mono, monospace);
+		font-size: 9px;
+		color: var(--ui-text-tertiary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	/* Loading state */
