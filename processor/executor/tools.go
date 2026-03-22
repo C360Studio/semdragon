@@ -97,15 +97,15 @@ type ToolHandler func(ctx context.Context, call agentic.ToolCall, quest *domain.
 type ToolCategory string
 
 const (
-	// ToolCategoryCore groups always-included tools: read, list, glob, search, submit, clarify.
+	// ToolCategoryCore groups terminal tools: submit_work, ask_clarification.
 	ToolCategoryCore ToolCategory = "core"
-	// ToolCategoryWrite groups file mutation tools: write, patch.
+	// ToolCategoryWrite is retained for questbridge category filtering (currently unused by tools).
 	ToolCategoryWrite ToolCategory = "write"
 	// ToolCategoryNetwork groups external access tools: http_request, web_search.
 	ToolCategoryNetwork ToolCategory = "network"
-	// ToolCategoryInspect groups environment tools: run_command (bash).
+	// ToolCategoryInspect groups the bash tool.
 	ToolCategoryInspect ToolCategory = "inspect"
-	// ToolCategoryKnowledge groups graph tools: graph_query, graph_search.
+	// ToolCategoryKnowledge groups graph tools: graph_query, graph_search, graph_summary.
 	ToolCategoryKnowledge ToolCategory = "knowledge"
 	// ToolCategoryPartyLead groups DAG tools: decompose, review, answer_clarification.
 	ToolCategoryPartyLead ToolCategory = "party_lead"
@@ -137,7 +137,7 @@ type toolSpec struct {
 var runCommandSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "bash",
-		Description: "Run a shell command (ls, mkdir, go test ./..., git commit, pip install, etc.). Do NOT write source code here — use write_file to create files. Do NOT pass multi-line scripts.",
+		Description: "Run a shell command. Use for ALL operations: read (cat), write (cat <<'EOF' > file), search (grep -rn), list (ls -la), tests, builds, git, deps. Supports heredocs and pipes.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -884,7 +884,7 @@ func (w *cappedWriter) Write(p []byte) (int, error) {
 func (w *cappedWriter) String() string { return w.buf.String() }
 func (w *cappedWriter) Len() int       { return w.buf.Len() }
 
-// runShellCommand is the shared implementation for run_tests and run_command.
+// runShellCommand executes a shell command in the sandbox directory.
 func runShellCommand(ctx context.Context, call agentic.ToolCall, timeout time.Duration) agentic.ToolResult {
 	select {
 	case <-ctx.Done():

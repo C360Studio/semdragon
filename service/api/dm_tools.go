@@ -39,14 +39,13 @@ const (
 )
 
 // dmToolAllowlist is the set of tool names the DM is permitted to use.
-// bash is included for read-only exploration (cat, ls, grep); agents are
-// responsible for not issuing destructive commands in DM chat context.
+// bash is excluded — DM chat runs without a sandbox directory, so shell
+// commands would fail. DM uses graph/web tools for information gathering.
 var dmToolAllowlist = map[string]bool{
 	"graph_query":  true,
 	"graph_search": true,
 	"web_search":   true,
 	"http_request": true,
-	"bash":         true,
 }
 
 // allKnownSkills is the complete set of domain skills.

@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/message"
@@ -243,14 +245,13 @@ func TestConfigSchema(t *testing.T) {
 // TOOL EXECUTION SUCCESS TEST
 // =============================================================================
 
-// TestToolExecutionSuccess publishes a read_file ToolCall with a Journeyman
-// agent that has the code_generation skill. The built-in read_file handler
-// returns the file contents; the test verifies a non-error ToolResult.
+// TestToolExecutionSuccess publishes a bash ToolCall with a Journeyman agent.
+// The built-in bash handler runs the command in the sandbox directory; the
+// test verifies a non-error ToolResult containing the file contents.
 func TestToolExecutionSuccess(t *testing.T) {
-	// Create a temporary file for read_file to read.
+	// Create a temporary sandbox directory with a file for bash to read.
 	tmpDir := t.TempDir()
-	tmpFile := filepath.Join(tmpDir, "hello.txt")
-	if err := os.WriteFile(tmpFile, []byte("hello from questtools"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "hello.txt"), []byte("hello from questtools"), 0o644); err != nil {
 		t.Fatalf("create temp file: %v", err)
 	}
 
@@ -264,19 +265,20 @@ func TestToolExecutionSuccess(t *testing.T) {
 	callID := "call-success-001"
 	call := agentic.ToolCall{
 		ID:   callID,
-		Name: "read_file",
+		Name: "bash",
 		Arguments: map[string]any{
-			"path": tmpFile,
+			"command": "cat hello.txt",
 		},
 		Metadata: map[string]any{
-			"agent_id":   "test-agent-success",
-			"trust_tier": journeymanTier,
-			"skills":     []any{string(domain.SkillCodeGen)},
-			"quest_id":   "quest-success-001",
+			"agent_id":    "test-agent-success",
+			"trust_tier":  journeymanTier,
+			"skills":      []any{string(domain.SkillCodeGen)},
+			"quest_id":    "quest-success-001",
+			"sandbox_dir": tmpDir, // bash handler requires a sandbox directory
 		},
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.read_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.bash", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error != "" {
@@ -294,9 +296,9 @@ func TestToolExecutionSuccess(t *testing.T) {
 // TIER REJECTION TEST
 // =============================================================================
 
-// TestToolExecutionTierRejection publishes a write_file ToolCall with an
-// Apprentice agent (tier 0). write_file requires Expert (tier 2). The
-// component must publish a ToolResult with a tier/authorization error.
+// TestToolExecutionTierRejection publishes a bash ToolCall with an Apprentice
+// agent (tier 0). bash requires Journeyman (tier 1). The component must
+// publish a ToolResult with a tier/authorization error.
 func TestToolExecutionTierRejection(t *testing.T) {
 	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
@@ -308,21 +310,19 @@ func TestToolExecutionTierRejection(t *testing.T) {
 	callID := "call-tier-reject-001"
 	call := agentic.ToolCall{
 		ID:   callID,
-		Name: "patch_file",
+		Name: "bash",
 		Arguments: map[string]any{
-			"path":     "/tmp/should-not-patch.txt",
-			"old_text": "a",
-			"new_text": "b",
+			"command": "echo should-not-run",
 		},
 		Metadata: map[string]any{
 			"agent_id":   "apprentice-agent",
-			"trust_tier": apprenticeTier, // Tier 0 — below Journeyman (tier 1) required by patch_file.
+			"trust_tier": apprenticeTier, // Tier 0 — below Journeyman (tier 1) required by bash.
 			"skills":     []any{string(domain.SkillCodeGen)},
 			"quest_id":   "quest-tier-reject-001",
 		},
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.patch_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.bash", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error == "" {
@@ -339,9 +339,13 @@ func TestToolExecutionTierRejection(t *testing.T) {
 // SKILL REJECTION TEST
 // =============================================================================
 
-// TestToolExecutionSkillRejection publishes a patch_file ToolCall with a
-// Journeyman agent that has no required skills (code_generation).
-// The component must publish a ToolResult with a skill error.
+// TestToolExecutionSkillRejection registers a custom tool that requires
+// code_generation skill (Journeyman tier) and publishes a ToolCall from a
+// Journeyman agent that only has the planning skill. The component must publish
+// a ToolResult with a skill-gate error.
+//
+// bash has no skill requirement, so we register a test-only tool to verify
+// the skill gate path in the executor.
 func TestToolExecutionSkillRejection(t *testing.T) {
 	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
 	ensureAgentStream(t, tc.Client)
@@ -350,26 +354,36 @@ func TestToolExecutionSkillRejection(t *testing.T) {
 	comp := setupComponent(t, tc.Client, "skill-reject")
 	defer comp.Stop(5 * time.Second)
 
+	// Register a test tool that requires code_generation skill at Journeyman tier.
+	// This verifies the skill gate independently of any built-in tool.
+	comp.ToolRegistry().Register(executor.RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "skill_gated_test_tool",
+			Description: "Test-only tool requiring code_generation skill",
+			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+		Handler: func(_ context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+			return agentic.ToolResult{CallID: call.ID, Content: "executed"}
+		},
+		MinTier: domain.TierJourneyman,
+		Skills:  []domain.SkillTag{domain.SkillCodeGen},
+	})
+
 	callID := "call-skill-reject-001"
 	call := agentic.ToolCall{
 		ID:   callID,
-		Name: "patch_file",
-		Arguments: map[string]any{
-			"path":     "/tmp/irrelevant.txt",
-			"old_text": "foo",
-			"new_text": "bar",
-		},
+		Name: "skill_gated_test_tool",
 		Metadata: map[string]any{
 			"agent_id": "no-skill-agent",
 			// Journeyman tier satisfies the tier gate, but no matching skills.
 			"trust_tier": journeymanTier,
-			// planning is NOT in patch_file's required skills [code_generation].
+			// planning is NOT in skill_gated_test_tool's required skills [code_generation].
 			"skills":   []any{string(domain.SkillPlanning)},
 			"quest_id": "quest-skill-reject-001",
 		},
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.patch_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.skill_gated_test_tool", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error == "" {
@@ -471,8 +485,7 @@ func TestToolCallValidation(t *testing.T) {
 // if the tier and skill gates pass, context reconstruction is correct.
 func TestMetadataToContextReconstruction(t *testing.T) {
 	tmpDir := t.TempDir()
-	tmpFile := filepath.Join(tmpDir, "context.txt")
-	if err := os.WriteFile(tmpFile, []byte("context verified"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "context.txt"), []byte("context verified"), 0o644); err != nil {
 		t.Fatalf("create temp file: %v", err)
 	}
 
@@ -486,21 +499,21 @@ func TestMetadataToContextReconstruction(t *testing.T) {
 	callID := "call-meta-001"
 	call := agentic.ToolCall{
 		ID:     callID,
-		Name:   "list_directory",
+		Name:   "bash",
 		LoopID: "loop-meta-abc",
 		Arguments: map[string]any{
-			"path": tmpDir,
+			"command": "ls -la",
 		},
 		Metadata: map[string]any{
-			"agent_id":   "meta-agent-42",
-			"trust_tier": journeymanTier,
-			// analysis satisfies list_directory's skill requirement.
-			"skills":   []any{string(domain.SkillAnalysis)},
-			"quest_id": "quest-meta-001",
+			"agent_id":    "meta-agent-42",
+			"trust_tier":  journeymanTier,
+			"skills":      []any{string(domain.SkillAnalysis)},
+			"quest_id":    "quest-meta-001",
+			"sandbox_dir": tmpDir, // bash handler requires a sandbox directory
 		},
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.list_directory", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.bash", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error != "" {
@@ -520,16 +533,18 @@ func TestMetadataToContextReconstruction(t *testing.T) {
 // =============================================================================
 
 // TestSandboxEnforcement configures the component with a sandbox_dir and
-// publishes a ToolCall that attempts to escape via sandbox_dir override using
-// a ".." path. The component must reject the path and publish an error result.
+// publishes a bash ToolCall that attempts to escape via sandbox_dir override.
+// buildContextFromMetadata rejects the override, so the bash command runs in
+// the component sandbox where the file does not exist, producing an error.
 func TestSandboxEnforcement(t *testing.T) {
 	// Set up two directories: the sandbox root and a sibling outside it.
 	sandboxDir := t.TempDir()
 	outsideDir := t.TempDir()
 
-	// Write a file outside the sandbox that we will try to read.
-	outsideFile := filepath.Join(outsideDir, "secret.txt")
-	if err := os.WriteFile(outsideFile, []byte("should not be readable"), 0o644); err != nil {
+	// Write a file named "secret.txt" only in the outside directory.
+	// The bash command uses a relative path, so it can only find the file if
+	// the escape succeeds and the command runs in outsideDir.
+	if err := os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("should not be readable"), 0o644); err != nil {
 		t.Fatalf("create outside file: %v", err)
 	}
 
@@ -562,9 +577,12 @@ func TestSandboxEnforcement(t *testing.T) {
 	callID := "call-sandbox-escape-001"
 	call := agentic.ToolCall{
 		ID:   callID,
-		Name: "read_file",
+		Name: "bash",
 		Arguments: map[string]any{
-			"path": outsideFile,
+			// Relative path — only resolvable if the working dir is outsideDir.
+			// If the sandbox_dir override is rejected, the command runs in
+			// sandboxDir where secret.txt does not exist and returns an error.
+			"command": "cat secret.txt",
 		},
 		Metadata: map[string]any{
 			"agent_id":   "escape-agent",
@@ -572,20 +590,21 @@ func TestSandboxEnforcement(t *testing.T) {
 			"skills":     []any{string(domain.SkillCodeGen)},
 			"quest_id":   "quest-sandbox-001",
 			// Attempt to override sandbox to the outside directory.
-			// buildContextFromMetadata will reject this because it escapes
-			// the component-level sandbox.
+			// buildContextFromMetadata rejects this because outsideDir does
+			// not fall within the component-level sandboxDir.
 			"sandbox_dir": outsideDir,
 		},
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.read_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.bash", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
-	// The result must indicate an error: either the sandbox_dir override was
-	// rejected (so the component sandbox is used, and outsideFile is not within
-	// sandboxDir), or the path validation itself fails.
+	// If the escape is blocked (expected): command runs in sandboxDir where
+	// secret.txt does not exist → bash exits non-zero → result.Error non-empty.
+	// If the escape is NOT blocked (bug): command runs in outsideDir, file is
+	// readable → result.Error is empty (wrong).
 	if result.Error == "" {
-		t.Error("expected sandbox enforcement error, file outside sandbox should not be readable")
+		t.Error("expected sandbox enforcement error: secret.txt should not be found in the component sandbox")
 	}
 }
 
@@ -597,8 +616,7 @@ func TestSandboxEnforcement(t *testing.T) {
 // inbound ToolCall are echoed back in the ToolResult unchanged.
 func TestCorrelationIDPropagation(t *testing.T) {
 	tmpDir := t.TempDir()
-	tmpFile := filepath.Join(tmpDir, "corr.txt")
-	if err := os.WriteFile(tmpFile, []byte("correlation test"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "corr.txt"), []byte("correlation test"), 0o644); err != nil {
 		t.Fatalf("create temp file: %v", err)
 	}
 
@@ -615,21 +633,22 @@ func TestCorrelationIDPropagation(t *testing.T) {
 
 	call := agentic.ToolCall{
 		ID:      callID,
-		Name:    "read_file",
+		Name:    "bash",
 		LoopID:  wantLoopID,
 		TraceID: wantTraceID,
 		Arguments: map[string]any{
-			"path": tmpFile,
+			"command": "cat corr.txt",
 		},
 		Metadata: map[string]any{
-			"agent_id":   "corr-agent",
-			"trust_tier": journeymanTier,
-			"skills":     []any{string(domain.SkillResearch)},
-			"quest_id":   "quest-corr-001",
+			"agent_id":    "corr-agent",
+			"trust_tier":  journeymanTier,
+			"skills":      []any{string(domain.SkillResearch)},
+			"quest_id":    "quest-corr-001",
+			"sandbox_dir": tmpDir, // bash handler requires a sandbox directory
 		},
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.read_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.bash", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.LoopID != wantLoopID {
@@ -684,7 +703,7 @@ func TestUnknownTool(t *testing.T) {
 // =============================================================================
 
 // TestNoMetadataDefaultsToApprentice verifies that a ToolCall with no Metadata
-// defaults to TierApprentice. write_file requires TierExpert, so the call
+// defaults to TierApprentice. bash requires TierJourneyman, so the call
 // must be rejected with an insufficient-tier error.
 func TestNoMetadataDefaultsToApprentice(t *testing.T) {
 	tc := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage())
@@ -697,17 +716,15 @@ func TestNoMetadataDefaultsToApprentice(t *testing.T) {
 	callID := "call-nometa-001"
 	call := agentic.ToolCall{
 		ID:   callID,
-		Name: "patch_file",
+		Name: "bash",
 		Arguments: map[string]any{
-			"path":     "/tmp/anything.txt",
-			"old_text": "a",
-			"new_text": "b",
+			"command": "echo should-not-run",
 		},
 		// Intentionally omit Metadata — handler defaults to TierApprentice.
-		// patch_file requires TierJourneyman, so this should be rejected.
+		// bash requires TierJourneyman, so this should be rejected.
 	}
 
-	publishToolCall(t, tc.Client, ctx, "tool.execute.patch_file", call)
+	publishToolCall(t, tc.Client, ctx, "tool.execute.bash", call)
 
 	result := pollForToolResult(t, tc.Client, ctx, callID, 10*time.Second)
 	if result.Error == "" {

@@ -768,13 +768,13 @@ func TestSandboxDirGetterSetter(t *testing.T) {
 func TestContainsToolName(t *testing.T) {
 	t.Parallel()
 
-	allowed := []string{"read_file", "write_file", "run_tests"}
+	allowed := []string{"bash", "http_request", "submit_work"}
 
-	if !containsToolName(allowed, "write_file") {
-		t.Error("expected write_file to be found in allowed list")
+	if !containsToolName(allowed, "bash") {
+		t.Error("expected bash to be found in allowed list")
 	}
-	if containsToolName(allowed, "delete_file") {
-		t.Error("expected delete_file NOT to be found in allowed list")
+	if containsToolName(allowed, "read_file") {
+		t.Error("expected read_file NOT to be found in allowed list")
 	}
 	if containsToolName([]string{}, "any") {
 		t.Error("expected empty list to return false")

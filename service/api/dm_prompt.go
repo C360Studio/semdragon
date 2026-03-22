@@ -48,7 +48,7 @@ solely on the world state summary below:
 - **graph_query**: Query current game entities (agents, quests, guilds, parties, battles) for live data
 - **web_search**: Search the web for external information relevant to quest design
 - **graph_search**: Search the knowledge graph for code, docs, and indexed entities
-- **read_file** / **search_text** / **glob_files**: Examine workspace files
+- **http_request**: Fetch specific URLs for documentation or API references
 
 When asked about specific agents, quests, or details not covered in the world state
 summary, use graph_query first. The summary is a snapshot; tools give you live data.

@@ -283,8 +283,8 @@ func TestTaskMessageToolFiltering(t *testing.T) {
 	defer comp.Stop(5 * time.Second)
 
 	// Create an Apprentice-tier agent (level 3).
-	// Built-in tools like read_file, write_file require TierJourneyman+ so they
-	// should be absent from the TaskMessage.
+	// bash and http_request require TierJourneyman+ so they should be absent
+	// from the TaskMessage for an Apprentice agent.
 	agent := createTestAgent(t, gc, comp.boardConfig, "apprentice-agent", 3)
 
 	questID := createInProgressQuest(t, gc, comp.boardConfig, agent.ID, "Tool Filter Quest")
@@ -309,21 +309,15 @@ func TestTaskMessageToolFiltering(t *testing.T) {
 		t.Fatal("Timed out waiting for TaskMessage")
 	}
 
-	// Apprentice-tier (level 1-5) agents should receive read-only tools
-	// (read_file, list_directory, search_text) but NOT Journeyman+ tools.
-	// Note: graph_query is NOT registered by RegisterBuiltins — it requires
-	// a live EntityQueryFunc and is registered separately via RegisterGraphQuery.
+	// Apprentice-tier (level 1-5) agents should receive terminal tools
+	// (submit_work, ask_clarification) but NOT Journeyman+ tools (bash, http_request).
 	apprenticeTools := map[string]bool{
-		"read_file":      true,
-		"list_directory": true,
-		"search_text":    true,
+		"submit_work":     true,
+		"ask_clarification": true,
 	}
 	journeymanPlusTools := map[string]bool{
-		"write_file":   true,
-		"patch_file":   true,
-		"http_request": true,
 		"bash":         true,
-		"run_tests":    true,
+		"http_request": true,
 	}
 
 	foundApprentice := map[string]bool{}

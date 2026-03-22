@@ -60,7 +60,7 @@ func TestBuildContextFromMetadata_NilMetadata(t *testing.T) {
 
 	call := &agentic.ToolCall{
 		ID:       "call-1",
-		Name:     "read_file",
+		Name:     "bash",
 		Metadata: nil,
 	}
 
@@ -89,7 +89,7 @@ func TestBuildContextFromMetadata_AgentID(t *testing.T) {
 
 	call := &agentic.ToolCall{
 		ID:   "call-2",
-		Name: "read_file",
+		Name: "bash",
 		Metadata: map[string]any{
 			"agent_id": "dragon-7",
 		},
@@ -148,7 +148,7 @@ func TestBuildContextFromMetadata_TrustTierFloat64(t *testing.T) {
 			c := newTestComponent(DefaultConfig())
 			call := &agentic.ToolCall{
 				ID:   "call-f64",
-				Name: "read_file",
+				Name: "bash",
 				Metadata: map[string]any{
 					"trust_tier": tt.value,
 				},
@@ -195,7 +195,7 @@ func TestBuildContextFromMetadata_TrustTierInt(t *testing.T) {
 			c := newTestComponent(DefaultConfig())
 			call := &agentic.ToolCall{
 				ID:   "call-int",
-				Name: "read_file",
+				Name: "bash",
 				Metadata: map[string]any{
 					"trust_tier": tt.value,
 				},
@@ -230,7 +230,7 @@ func TestBuildContextFromMetadata_TrustTierOutOfBounds(t *testing.T) {
 			c := newTestComponent(DefaultConfig())
 			call := &agentic.ToolCall{
 				ID:   "call-oob",
-				Name: "read_file",
+				Name: "bash",
 				Metadata: map[string]any{
 					"trust_tier": tt.value,
 				},
@@ -255,7 +255,7 @@ func TestBuildContextFromMetadata_TrustTierWrongType(t *testing.T) {
 	c := newTestComponent(DefaultConfig())
 	call := &agentic.ToolCall{
 		ID:   "call-type",
-		Name: "read_file",
+		Name: "bash",
 		Metadata: map[string]any{
 			"trust_tier": "expert",
 		},
@@ -277,7 +277,7 @@ func TestBuildContextFromMetadata_Skills(t *testing.T) {
 		c := newTestComponent(DefaultConfig())
 		call := &agentic.ToolCall{
 			ID:   "call-skills",
-			Name: "read_file",
+			Name: "bash",
 			Metadata: map[string]any{
 				"skills": []any{"code_generation", "analysis"},
 			},
@@ -308,7 +308,7 @@ func TestBuildContextFromMetadata_Skills(t *testing.T) {
 		c := newTestComponent(DefaultConfig())
 		call := &agentic.ToolCall{
 			ID:   "call-mixed",
-			Name: "read_file",
+			Name: "bash",
 			Metadata: map[string]any{
 				"skills": []any{"research", 42, true, "planning"},
 			},
@@ -326,7 +326,7 @@ func TestBuildContextFromMetadata_Skills(t *testing.T) {
 		c := newTestComponent(DefaultConfig())
 		call := &agentic.ToolCall{
 			ID:   "call-empty-skills",
-			Name: "read_file",
+			Name: "bash",
 			Metadata: map[string]any{
 				"skills": []any{},
 			},
@@ -343,7 +343,7 @@ func TestBuildContextFromMetadata_Skills(t *testing.T) {
 		c := newTestComponent(DefaultConfig())
 		call := &agentic.ToolCall{
 			ID:       "call-noskills",
-			Name:     "read_file",
+			Name:     "bash",
 			Metadata: map[string]any{},
 		}
 
@@ -363,7 +363,7 @@ func TestBuildContextFromMetadata_QuestID(t *testing.T) {
 	c := newTestComponent(DefaultConfig())
 	call := &agentic.ToolCall{
 		ID:   "call-qid",
-		Name: "read_file",
+		Name: "bash",
 		Metadata: map[string]any{
 			"quest_id": "q-abc123",
 		},
@@ -381,7 +381,7 @@ func TestBuildContextFromMetadata_QuestIDWrongType(t *testing.T) {
 	c := newTestComponent(DefaultConfig())
 	call := &agentic.ToolCall{
 		ID:   "call-qid-bad",
-		Name: "read_file",
+		Name: "bash",
 		Metadata: map[string]any{
 			"quest_id": 9999,
 		},
@@ -406,7 +406,7 @@ func TestBuildContextFromMetadata_SandboxDir(t *testing.T) {
 
 		call := &agentic.ToolCall{
 			ID:   "call-sandbox-free",
-			Name: "read_file",
+			Name: "bash",
 			Metadata: map[string]any{
 				"sandbox_dir": "/tmp/work",
 			},
@@ -432,7 +432,7 @@ func TestBuildContextFromMetadata_SandboxDir(t *testing.T) {
 
 		call := &agentic.ToolCall{
 			ID:   "call-sandbox-narrow",
-			Name: "read_file",
+			Name: "bash",
 			Metadata: map[string]any{
 				"sandbox_dir": "/tmp/sandbox/project",
 			},
@@ -456,7 +456,7 @@ func TestBuildContextFromMetadata_SandboxDir(t *testing.T) {
 
 		call := &agentic.ToolCall{
 			ID:   "call-sandbox-escape",
-			Name: "read_file",
+			Name: "bash",
 			Metadata: map[string]any{
 				"sandbox_dir": "/etc/passwd",
 			},
@@ -485,7 +485,7 @@ func TestBuildContextFromMetadata_SandboxDir(t *testing.T) {
 
 		call := &agentic.ToolCall{
 			ID:   "call-sandbox-traversal",
-			Name: "read_file",
+			Name: "bash",
 			Metadata: map[string]any{
 				"sandbox_dir": "/tmp/sandbox/../secret",
 			},
@@ -512,7 +512,7 @@ func TestBuildContextFromMetadata_SandboxDir(t *testing.T) {
 
 		call := &agentic.ToolCall{
 			ID:   "call-no-sandbox",
-			Name: "read_file",
+			Name: "bash",
 			// No sandbox_dir in metadata, no component sandbox.
 		}
 
@@ -532,7 +532,7 @@ func TestBuildContextFromMetadata_SandboxDir(t *testing.T) {
 
 		call := &agentic.ToolCall{
 			ID:   "call-empty-sandbox",
-			Name: "read_file",
+			Name: "bash",
 			Metadata: map[string]any{
 				"sandbox_dir": "",
 			},
@@ -555,7 +555,7 @@ func TestBuildContextFromMetadata_SandboxDir(t *testing.T) {
 
 		call := &agentic.ToolCall{
 			ID:       "call-comp-sandbox",
-			Name:     "read_file",
+			Name:     "bash",
 			Metadata: map[string]any{},
 		}
 
@@ -582,7 +582,7 @@ func TestBuildContextFromMetadata_Combined(t *testing.T) {
 
 	call := &agentic.ToolCall{
 		ID:   "call-combined",
-		Name: "write_file",
+		Name: "bash",
 		Metadata: map[string]any{
 			"agent_id":    "agent-007",
 			"trust_tier":  float64(domain.TierExpert),
@@ -632,17 +632,17 @@ func TestBuildContextFromMetadata_PreservesExistingArguments(t *testing.T) {
 
 	call := &agentic.ToolCall{
 		ID:   "call-args",
-		Name: "read_file",
+		Name: "bash",
 		Arguments: map[string]any{
-			"path": "/tmp/work/data.txt",
+			"command": "cat /tmp/work/data.txt",
 		},
 		Metadata: map[string]any{},
 	}
 
 	c.buildContextFromMetadata(call)
 
-	if call.Arguments["path"] != "/tmp/work/data.txt" {
-		t.Errorf("path argument was overwritten; got %v", call.Arguments["path"])
+	if call.Arguments["command"] != "cat /tmp/work/data.txt" {
+		t.Errorf("command argument was overwritten; got %v", call.Arguments["command"])
 	}
 	if call.Arguments["_sandbox_dir"] != "/tmp/work" {
 		t.Errorf("_sandbox_dir = %v; want %q", call.Arguments["_sandbox_dir"], "/tmp/work")
