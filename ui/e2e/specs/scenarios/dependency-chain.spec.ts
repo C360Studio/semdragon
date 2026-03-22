@@ -19,8 +19,8 @@ import { test, expect, hasBackend, hasLLM, isMockLLM, extractInstance, retry } f
 test.describe.serial('Dependency Chain', () => {
 	test.beforeEach(() => {
 		test.skip(
-			!hasBackend() || !hasLLM(),
-			'Requires running backend with LLM (E2E_LLM_MODE=mock|gemini|...)'
+			!hasBackend() || !hasLLM() || !isMockLLM(),
+			'Requires running backend with mock LLM (prompts too generic for real LLMs)'
 		);
 	});
 
