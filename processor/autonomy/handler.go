@@ -136,6 +136,12 @@ func (c *Component) handleBoidSuggestion(ctx context.Context, msg *nats.Msg) {
 			"count", len(suggestions),
 			"top_quest", suggestions[0].QuestID,
 			"top_score", suggestions[0].Score)
+
+		// Trigger immediate evaluation so agents don't wait for the next
+		// heartbeat tick. Without this, an idle agent that has backed off
+		// (up to 60s) would sit idle even though actionable quests exist.
+		// Run async to avoid holding trackersMu during evaluation.
+		go c.evaluateAutonomy(instance)
 	}
 }
 
