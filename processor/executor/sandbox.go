@@ -1,7 +1,6 @@
 package executor
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -302,14 +301,6 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 	})
 
 	r.Register(RegisteredTool{
-		Definition: readFileRangeSpec.Definition,
-		Handler:    makeSandboxReadFileRangeHandler(client),
-		Skills:     readFileRangeSpec.Skills,
-		MinTier:    readFileRangeSpec.MinTier,
-		Category:   readFileRangeSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
 		Definition: writeFileSpec.Definition,
 		Handler:    makeSandboxWriteFileHandler(client),
 		Skills:     writeFileSpec.Skills,
@@ -323,30 +314,6 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Skills:     patchFileSpec.Skills,
 		MinTier:    patchFileSpec.MinTier,
 		Category:   patchFileSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: deleteFileSpec.Definition,
-		Handler:    makeSandboxDeleteFileHandler(client),
-		Skills:     deleteFileSpec.Skills,
-		MinTier:    deleteFileSpec.MinTier,
-		Category:   deleteFileSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: renameFileSpec.Definition,
-		Handler:    makeSandboxRenameFileHandler(client),
-		Skills:     renameFileSpec.Skills,
-		MinTier:    renameFileSpec.MinTier,
-		Category:   renameFileSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: createDirectorySpec.Definition,
-		Handler:    makeSandboxCreateDirectoryHandler(client),
-		Skills:     createDirectorySpec.Skills,
-		MinTier:    createDirectorySpec.MinTier,
-		Category:   createDirectorySpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -374,22 +341,6 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 	})
 
 	r.Register(RegisteredTool{
-		Definition: runTestsSpec.Definition,
-		Handler:    makeSandboxRunTestsHandler(client),
-		Skills:     runTestsSpec.Skills,
-		MinTier:    runTestsSpec.MinTier,
-		Category:   runTestsSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: lintCheckSpec.Definition,
-		Handler:    makeSandboxLintCheckHandler(client),
-		Skills:     lintCheckSpec.Skills,
-		MinTier:    lintCheckSpec.MinTier,
-		Category:   lintCheckSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
 		Definition: runCommandSpec.Definition,
 		Handler:    makeSandboxRunCommandHandler(client),
 		Skills:     runCommandSpec.Skills,
@@ -405,57 +356,6 @@ func (r *ToolRegistry) RegisterSandboxTools(client *SandboxClient) {
 		Category:   httpRequestSpec.Category,
 	})
 
-	r.Register(RegisteredTool{
-		Definition: inspectEnvironmentSpec.Definition,
-		Handler: makeSandboxExecHandler(
-			client,
-			15*time.Second,
-			func(_ agentic.ToolCall) (string, error) { return inspectEnvironmentScript, nil },
-			nil,
-		),
-		Skills:   inspectEnvironmentSpec.Skills,
-		MinTier:  inspectEnvironmentSpec.MinTier,
-		Category: inspectEnvironmentSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: gitOperationSpec.Definition,
-		Handler: makeSandboxExecHandler(
-			client,
-			commandTimeout,
-			func(call agentic.ToolCall) (string, error) { return buildGitCommand(call) },
-			nil,
-		),
-		Skills:   gitOperationSpec.Skills,
-		MinTier:  gitOperationSpec.MinTier,
-		Category: gitOperationSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: buildProjectSpec.Definition,
-		Handler: makeSandboxExecHandler(
-			client,
-			buildTimeout,
-			func(call agentic.ToolCall) (string, error) { return buildProjectCommand(call) },
-			nil,
-		),
-		Skills:   buildProjectSpec.Skills,
-		MinTier:  buildProjectSpec.MinTier,
-		Category: buildProjectSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: manageDependenciesSpec.Definition,
-		Handler: makeSandboxExecHandler(
-			client,
-			buildTimeout,
-			func(call agentic.ToolCall) (string, error) { return buildManageDepsCommand(call) },
-			nil,
-		),
-		Skills:   manageDependenciesSpec.Skills,
-		MinTier:  manageDependenciesSpec.MinTier,
-		Category: manageDependenciesSpec.Category,
-	})
 }
 
 // =============================================================================
@@ -493,77 +393,6 @@ func makeSandboxReadFileHandler(client *SandboxClient) ToolHandler {
 		}
 
 		return agentic.ToolResult{CallID: call.ID, Content: content}
-	}
-}
-
-func makeSandboxReadFileRangeHandler(client *SandboxClient) ToolHandler {
-	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-		select {
-		case <-ctx.Done():
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-		default:
-		}
-
-		questID, ok := questIDFromCall(call)
-		if !ok {
-			return agentic.ToolResult{CallID: call.ID, Error: "quest_id missing from tool call metadata"}
-		}
-
-		path, _ := call.Arguments["path"].(string)
-		if path == "" {
-			return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
-		}
-
-		// JSON numbers decode as float64.
-		startLineF, ok := call.Arguments["start_line"].(float64)
-		if !ok {
-			return agentic.ToolResult{CallID: call.ID, Error: "start_line argument must be an integer"}
-		}
-		startLine := int(startLineF)
-		if startLine < 1 {
-			return agentic.ToolResult{CallID: call.ID, Error: "start_line must be >= 1"}
-		}
-
-		endLine := startLine + 100
-		if endLineF, ok := call.Arguments["end_line"].(float64); ok {
-			endLine = int(endLineF)
-		}
-		if endLine < startLine {
-			return agentic.ToolResult{CallID: call.ID, Error: "end_line must be >= start_line"}
-		}
-		if endLine-startLine+1 > maxReadFileRangeLines {
-			endLine = startLine + maxReadFileRangeLines - 1
-		}
-
-		fileURL := "/file?" + url.Values{"quest_id": {questID}, "path": {path}}.Encode()
-		var resp sandboxReadFileResp
-		if err := client.doJSON(ctx, http.MethodGet, fileURL, nil, &resp); err != nil {
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to read file: %v", err)}
-		}
-
-		// Slice the requested line range in the handler.
-		scanner := bufio.NewScanner(strings.NewReader(resp.Content))
-		var sb strings.Builder
-		lineNum := 0
-		for scanner.Scan() {
-			lineNum++
-			if lineNum < startLine {
-				continue
-			}
-			if lineNum > endLine {
-				break
-			}
-			sb.WriteString(fmt.Sprintf("%d\t%s\n", lineNum, scanner.Text()))
-		}
-
-		if sb.Len() == 0 {
-			return agentic.ToolResult{
-				CallID:  call.ID,
-				Content: fmt.Sprintf("File has fewer than %d lines", startLine),
-			}
-		}
-
-		return agentic.ToolResult{CallID: call.ID, Content: sb.String()}
 	}
 }
 
@@ -684,136 +513,6 @@ func makeSandboxPatchFileHandler(client *SandboxClient) ToolHandler {
 		}
 
 		return agentic.ToolResult{CallID: call.ID, Content: msg}
-	}
-}
-
-func makeSandboxDeleteFileHandler(client *SandboxClient) ToolHandler {
-	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-		select {
-		case <-ctx.Done():
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-		default:
-		}
-
-		questID, ok := questIDFromCall(call)
-		if !ok {
-			return agentic.ToolResult{CallID: call.ID, Error: "quest_id missing from tool call metadata"}
-		}
-
-		path, _ := call.Arguments["path"].(string)
-		if path == "" {
-			return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
-		}
-
-		req := sandboxExecReq{
-			QuestID:   questID,
-			Command:   fmt.Sprintf("rm -- %q", path),
-			TimeoutMS: int(commandTimeout.Milliseconds()),
-		}
-		var resp sandboxExecResp
-		if err := client.doJSON(ctx, http.MethodPost, "/exec", req, &resp); err != nil {
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("delete_file: %v", err)}
-		}
-
-		if resp.TimedOut {
-			return agentic.ToolResult{CallID: call.ID, Error: "delete_file timed out"}
-		}
-		if resp.ExitCode != 0 {
-			return agentic.ToolResult{
-				CallID: call.ID,
-				Error:  fmt.Sprintf("failed to delete file: %s", strings.TrimSpace(resp.Stderr)),
-			}
-		}
-
-		return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("Deleted: %s", path)}
-	}
-}
-
-func makeSandboxRenameFileHandler(client *SandboxClient) ToolHandler {
-	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-		select {
-		case <-ctx.Done():
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-		default:
-		}
-
-		questID, ok := questIDFromCall(call)
-		if !ok {
-			return agentic.ToolResult{CallID: call.ID, Error: "quest_id missing from tool call metadata"}
-		}
-
-		oldPath, _ := call.Arguments["old_path"].(string)
-		newPath, _ := call.Arguments["new_path"].(string)
-		if oldPath == "" {
-			return agentic.ToolResult{CallID: call.ID, Error: "old_path argument is required"}
-		}
-		if newPath == "" {
-			return agentic.ToolResult{CallID: call.ID, Error: "new_path argument is required"}
-		}
-
-		req := sandboxExecReq{
-			QuestID:   questID,
-			Command:   fmt.Sprintf("mv -- %q %q", oldPath, newPath),
-			TimeoutMS: int(commandTimeout.Milliseconds()),
-		}
-		var resp sandboxExecResp
-		if err := client.doJSON(ctx, http.MethodPost, "/exec", req, &resp); err != nil {
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("rename_file: %v", err)}
-		}
-
-		if resp.TimedOut {
-			return agentic.ToolResult{CallID: call.ID, Error: "rename_file timed out"}
-		}
-		if resp.ExitCode != 0 {
-			return agentic.ToolResult{
-				CallID: call.ID,
-				Error:  fmt.Sprintf("rename failed: %s", strings.TrimSpace(resp.Stderr)),
-			}
-		}
-
-		return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("Renamed %s -> %s", oldPath, newPath)}
-	}
-}
-
-func makeSandboxCreateDirectoryHandler(client *SandboxClient) ToolHandler {
-	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-		select {
-		case <-ctx.Done():
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-		default:
-		}
-
-		questID, ok := questIDFromCall(call)
-		if !ok {
-			return agentic.ToolResult{CallID: call.ID, Error: "quest_id missing from tool call metadata"}
-		}
-
-		path, _ := call.Arguments["path"].(string)
-		if path == "" {
-			return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
-		}
-
-		req := sandboxExecReq{
-			QuestID:   questID,
-			Command:   fmt.Sprintf("mkdir -p -- %q", path),
-			TimeoutMS: int(commandTimeout.Milliseconds()),
-		}
-		var resp sandboxExecResp
-		if err := client.doJSON(ctx, http.MethodPost, "/exec", req, &resp); err != nil {
-			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("create_directory: %v", err)}
-		}
-
-		if resp.TimedOut {
-			return agentic.ToolResult{CallID: call.ID, Error: "create_directory timed out"}
-		}
-		if resp.ExitCode != 0 {
-			return agentic.ToolResult{
-				CallID: call.ID,
-				Error:  fmt.Sprintf("failed to create directory: %s", strings.TrimSpace(resp.Stderr)),
-			}
-		}
-
-		return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("Created directory: %s", path)}
 	}
 }
 
@@ -1089,56 +788,6 @@ func makeSandboxExecHandler(
 
 		return agentic.ToolResult{CallID: call.ID, Content: result.String()}
 	}
-}
-
-func makeSandboxRunTestsHandler(client *SandboxClient) ToolHandler {
-	return makeSandboxExecHandler(
-		client,
-		commandTimeout,
-		func(call agentic.ToolCall) (string, error) {
-			command, _ := call.Arguments["command"].(string)
-			if command == "" {
-				return "", fmt.Errorf("command argument is required")
-			}
-			return command, nil
-		},
-		func(command string) error {
-			if containsShellMeta(command) {
-				return fmt.Errorf("run_tests does not allow shell metacharacters (;, &&, ||, |, $, `, >, <) — use bash for compound commands")
-			}
-			for _, prefix := range allowedTestPrefixes {
-				if strings.HasPrefix(command, prefix) {
-					return nil
-				}
-			}
-			return fmt.Errorf("run_tests only allows test commands (e.g. 'go test ./...', 'npm test') — use bash for general commands")
-		},
-	)
-}
-
-func makeSandboxLintCheckHandler(client *SandboxClient) ToolHandler {
-	return makeSandboxExecHandler(
-		client,
-		commandTimeout,
-		func(call agentic.ToolCall) (string, error) {
-			command, _ := call.Arguments["command"].(string)
-			if command == "" {
-				return "", fmt.Errorf("command argument is required")
-			}
-			return command, nil
-		},
-		func(command string) error {
-			if containsShellMeta(command) {
-				return fmt.Errorf("lint_check does not allow shell metacharacters (;, &&, ||, |, $, `, >, <) — use bash for compound commands")
-			}
-			for _, prefix := range allowedLintPrefixes {
-				if strings.HasPrefix(command, prefix) {
-					return nil
-				}
-			}
-			return fmt.Errorf("lint_check only allows linter commands (e.g. 'go vet ./...', 'golangci-lint run') — use bash for general commands")
-		},
-	)
 }
 
 func makeSandboxRunCommandHandler(client *SandboxClient) ToolHandler {

@@ -24,6 +24,7 @@ type entityKnowledgeBuilder struct {
 	manifestClient      *semsource.ManifestClient
 	graphManifestClient *semsource.GraphManifestClient
 	graphSources        *GraphSourceRegistry
+	hasSandbox          bool // true when sandbox_url is configured (agents work in a container)
 }
 
 // entityKnowledge is the result of building entity context.
@@ -46,6 +47,17 @@ func (b *entityKnowledgeBuilder) build(ctx context.Context, quest *domain.Quest,
 	// Quest details — supplements what the assembler already provides
 	if s := b.formatQuestDetails(quest); s != "" {
 		sections = append(sections, s)
+	}
+
+	// Sandbox workspace environment — injected so agents know what tools and
+	// runtimes are available without calling inspect_environment (saves 1 tool call).
+	if b.hasSandbox {
+		sections = append(sections, `--- Workspace Environment ---
+Python 3.11 (use python3, NOT python). Git available.
+Use bash for ALL shell commands: tests, builds, git, deps, file ops.
+Setup: bash("python3 -m venv .venv && .venv/bin/pip install -r requirements.txt")
+Tests: bash(".venv/bin/python3 -m pytest") or bash("go test ./...")
+Git: bash("git add . && git commit -m 'message'")`)
 	}
 
 	// Party context — load from graph if this is a party quest

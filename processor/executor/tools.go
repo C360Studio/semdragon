@@ -1,7 +1,6 @@
 package executor
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -116,13 +115,11 @@ type ToolCategory string
 const (
 	// ToolCategoryCore groups always-included tools: read, list, glob, search, submit, clarify.
 	ToolCategoryCore ToolCategory = "core"
-	// ToolCategoryWrite groups file mutation tools: write, patch, delete, rename, mkdir.
+	// ToolCategoryWrite groups file mutation tools: write, patch.
 	ToolCategoryWrite ToolCategory = "write"
-	// ToolCategoryBuild groups dev workflow tools: test, lint, build, git, deps.
-	ToolCategoryBuild ToolCategory = "build"
 	// ToolCategoryNetwork groups external access tools: http_request, web_search.
 	ToolCategoryNetwork ToolCategory = "network"
-	// ToolCategoryInspect groups environment tools: inspect_environment, run_command.
+	// ToolCategoryInspect groups environment tools: run_command (bash).
 	ToolCategoryInspect ToolCategory = "inspect"
 	// ToolCategoryKnowledge groups graph tools: graph_query, graph_search.
 	ToolCategoryKnowledge ToolCategory = "knowledge"
@@ -156,26 +153,7 @@ type toolSpec struct {
 var readFileSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "read_file",
-		Description: "Read the full contents of a file. Returns the file as text. Use glob_files or list_directory first if you don't know the exact path.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "The file path to read",
-				},
-			},
-			"required": []any{"path"},
-		},
-	},
-	MinTier:  domain.TierApprentice, // Read-only — all tiers can read files
-	Category: ToolCategoryCore,
-}
-
-var readFileRangeSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "read_file_range",
-		Description: "Read a specific line range from a file. Use when a file is too large to read entirely, or to inspect a known section. Line numbers are 1-based. Returns up to 500 lines.",
+		Description: "Read the contents of a file. Optionally specify start_line and end_line to read a specific line range. Use glob_files or list_directory first if you don't know the exact path.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -185,17 +163,17 @@ var readFileRangeSpec = toolSpec{
 				},
 				"start_line": map[string]any{
 					"type":        "integer",
-					"description": "First line to read (1-based)",
+					"description": "Optional: first line to read (1-based). Omit to read from beginning.",
 				},
 				"end_line": map[string]any{
 					"type":        "integer",
-					"description": "Last line to read inclusive (defaults to start_line + 100)",
+					"description": "Optional: last line to read (inclusive). Omit to read to end. Max 500 lines when start_line is set.",
 				},
 			},
-			"required": []any{"path", "start_line"},
+			"required": []any{"path"},
 		},
 	},
-	MinTier:  domain.TierApprentice, // Read-only — all tiers can read file ranges
+	MinTier:  domain.TierApprentice, // Read-only — all tiers can read files
 	Category: ToolCategoryCore,
 }
 
@@ -248,70 +226,6 @@ var patchFileSpec = toolSpec{
 	},
 	Skills:  []domain.SkillTag{domain.SkillCodeGen},
 	MinTier:  domain.TierJourneyman, // Level 6+ — targeted edits require some trust
-	Category: ToolCategoryWrite,
-}
-
-var deleteFileSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "delete_file",
-		Description: "Delete a single file. Cannot delete directories. Use with caution — this is irreversible.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "The file path to delete",
-				},
-			},
-			"required": []any{"path"},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier:  domain.TierJourneyman, // Level 6+ — destructive operations require trust
-	Category: ToolCategoryWrite,
-}
-
-var renameFileSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "rename_file",
-		Description: "Move or rename a file. The destination directory must already exist. Use create_directory first if needed.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"old_path": map[string]any{
-					"type":        "string",
-					"description": "The current file path",
-				},
-				"new_path": map[string]any{
-					"type":        "string",
-					"description": "The target file path",
-				},
-			},
-			"required": []any{"old_path", "new_path"},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier:  domain.TierJourneyman, // Level 6+ — filesystem writes require trust
-	Category: ToolCategoryWrite,
-}
-
-var createDirectorySpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "create_directory",
-		Description: "Create a directory and any missing parent directories. Use before write_file when the target directory doesn't exist yet.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "The directory path to create",
-				},
-			},
-			"required": []any{"path"},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier:  domain.TierApprentice, // All tiers — needed alongside write_file in sandbox workspace
 	Category: ToolCategoryWrite,
 }
 
@@ -392,50 +306,10 @@ var searchTextSpec = toolSpec{
 	Category: ToolCategoryCore,
 }
 
-var runTestsSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "run_tests",
-		Description: "Run a test command and return stdout/stderr. Allowed: go test, npm test, pytest, python3 -m pytest, python3 -m unittest, cargo test, gradle test, mvn test, make test. For Python, use 'python3 -m unittest discover' or 'python3 -m pytest'. Use after writing code to verify it works.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"command": map[string]any{
-					"type":        "string",
-					"description": "The test command to run (e.g. 'go test ./...', 'npm test', 'pytest')",
-				},
-			},
-			"required": []any{"command"},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeGen, domain.SkillCodeReview},
-	MinTier:  domain.TierJourneyman, // Level 6+ — allowlist constrains to known test runners
-	Category: ToolCategoryBuild,
-}
-
-var lintCheckSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name:        "lint_check",
-		Description: "Run a linter and return the output. Only linter commands are allowed (go vet, golangci-lint, eslint, pylint, flake8, clippy, checkstyle). Use after writing code to check for issues.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"command": map[string]any{
-					"type":        "string",
-					"description": "The lint command to run (e.g. 'go vet ./...', 'golangci-lint run', 'eslint src/')",
-				},
-			},
-			"required": []any{"command"},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeReview},
-	MinTier:  domain.TierJourneyman, // Level 6+ — allowlist constrains to known linters
-	Category: ToolCategoryBuild,
-}
-
 var runCommandSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
 		Name:        "bash",
-		Description: "Run a SHORT shell command (ls, mkdir, pip install, cat, curl, etc.). Do NOT write source code here — use write_file to create files. Do NOT pass multi-line scripts. For tests use run_tests, for builds use build_project.",
+		Description: "Run a shell command (ls, mkdir, go test ./..., git commit, pip install, etc.). Do NOT write source code here — use write_file to create files. Do NOT pass multi-line scripts.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -447,7 +321,7 @@ var runCommandSpec = toolSpec{
 			"required": []any{"command"},
 		},
 	},
-	MinTier:  domain.TierMaster, // Level 16+ — unrestricted shell requires high trust
+	MinTier:  domain.TierJourneyman, // Level 6+ — sandbox is the security boundary, not the tier gate
 	Category: ToolCategoryInspect,
 }
 
@@ -481,113 +355,6 @@ var httpRequestSpec = toolSpec{
 	},
 	MinTier:  domain.TierJourneyman, // Level 6+ — network access requires trust
 	Category: ToolCategoryNetwork,
-}
-
-var inspectEnvironmentSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name: "inspect_environment",
-		Description: "Inspect the development environment: installed tools, versions, and project structure. " +
-			"Returns a structured report of available toolchains (Go, Java, Node.js, Python, Gradle, Maven, Cargo, Make) " +
-			"with their versions, plus working directory contents. " +
-			"Call this ONCE at the start of a quest instead of running multiple 'which' and 'version' commands.",
-		Parameters: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
-		},
-	},
-	MinTier:  domain.TierApprentice, // Read-only environment inspection — safe for all tiers
-	Category: ToolCategoryInspect,
-}
-
-var gitOperationSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name: "git_operation",
-		Description: "Perform structured git operations. Safer than raw shell commands. " +
-			"Supported actions: init, clone, status, diff, log, add, commit, branch, checkout, show. " +
-			"Destructive operations (push, pull, rebase, reset, force) are blocked. " +
-			"Examples: {action: 'clone', url: 'https://github.com/org/repo'}, " +
-			"{action: 'commit', message: 'feat: add parser'}, " +
-			"{action: 'diff'}, {action: 'log', args: '--oneline -10'}.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"action": map[string]any{
-					"type":        "string",
-					"description": "Git action to perform",
-					"enum":        []any{"init", "clone", "status", "diff", "log", "add", "commit", "branch", "checkout", "show"},
-				},
-				"args": map[string]any{
-					"type":        "string",
-					"description": "Additional arguments (e.g. file paths for 'add', branch name for 'checkout', '--oneline -10' for 'log')",
-				},
-				"url": map[string]any{
-					"type":        "string",
-					"description": "Repository URL for 'clone' action (https:// or git@ only)",
-				},
-				"message": map[string]any{
-					"type":        "string",
-					"description": "Commit message for 'commit' action",
-				},
-			},
-			"required": []any{"action"},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier:  domain.TierJourneyman, // Level 6+ — version control requires demonstrated trust
-	Category: ToolCategoryBuild,
-}
-
-var buildProjectSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name: "build_project",
-		Description: "Build the project using its detected build system. Auto-detects: " +
-			"Gradle (build.gradle/build.gradle.kts), Go (go.mod), npm (package.json), " +
-			"Maven (pom.xml), Cargo (Cargo.toml), Make (Makefile). " +
-			"Optionally specify a build target (e.g. 'clean', 'install', 'dist'). " +
-			"Has a 5-minute timeout. Examples: {} (auto-detect and build), {target: 'clean'}.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"target": map[string]any{
-					"type":        "string",
-					"description": "Build target or task (e.g. 'clean', 'install', 'dist'). Omit for default build.",
-				},
-			},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier:  domain.TierJourneyman, // Level 6+ — building requires development trust
-	Category: ToolCategoryBuild,
-}
-
-var manageDependenciesSpec = toolSpec{
-	Definition: agentic.ToolDefinition{
-		Name: "manage_dependencies",
-		Description: "Manage project dependencies using the detected package manager. " +
-			"Auto-detects: Go (go.mod), npm (package.json), Maven (pom.xml), " +
-			"Gradle (build.gradle), Cargo (Cargo.toml), pip (requirements.txt/pyproject.toml). " +
-			"Supported actions: install (all deps), add (new package), remove, list, tidy. " +
-			"Examples: {action: 'install'}, {action: 'add', packages: ['lodash']}, {action: 'tidy'}.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"action": map[string]any{
-					"type":        "string",
-					"description": "Dependency action to perform",
-					"enum":        []any{"install", "add", "remove", "list", "tidy"},
-				},
-				"packages": map[string]any{
-					"type":        "array",
-					"items":       map[string]any{"type": "string"},
-					"description": "Package names for add/remove actions (e.g. ['lodash', 'express'])",
-				},
-			},
-			"required": []any{"action"},
-		},
-	},
-	Skills:  []domain.SkillTag{domain.SkillCodeGen},
-	MinTier:  domain.TierExpert, // Level 11+ — dependency changes affect build reproducibility
-	Category: ToolCategoryBuild,
 }
 
 // ToolRegistry manages available tools for agent execution.
@@ -828,14 +595,6 @@ func (r *ToolRegistry) RegisterBuiltins() {
 	})
 
 	r.Register(RegisteredTool{
-		Definition: readFileRangeSpec.Definition,
-		Handler:    readFileRangeHandler,
-		Skills:     readFileRangeSpec.Skills,
-		MinTier:    readFileRangeSpec.MinTier,
-		Category:   readFileRangeSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
 		Definition: writeFileSpec.Definition,
 		Handler:    writeFileHandler,
 		Skills:     writeFileSpec.Skills,
@@ -849,30 +608,6 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Skills:     patchFileSpec.Skills,
 		MinTier:    patchFileSpec.MinTier,
 		Category:   patchFileSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: deleteFileSpec.Definition,
-		Handler:    deleteFileHandler,
-		Skills:     deleteFileSpec.Skills,
-		MinTier:    deleteFileSpec.MinTier,
-		Category:   deleteFileSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: renameFileSpec.Definition,
-		Handler:    renameFileHandler,
-		Skills:     renameFileSpec.Skills,
-		MinTier:    renameFileSpec.MinTier,
-		Category:   renameFileSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: createDirectorySpec.Definition,
-		Handler:    createDirectoryHandler,
-		Skills:     createDirectorySpec.Skills,
-		MinTier:    createDirectorySpec.MinTier,
-		Category:   createDirectorySpec.Category,
 	})
 
 	r.Register(RegisteredTool{
@@ -900,22 +635,6 @@ func (r *ToolRegistry) RegisterBuiltins() {
 	})
 
 	r.Register(RegisteredTool{
-		Definition: runTestsSpec.Definition,
-		Handler:    runTestsHandler,
-		Skills:     runTestsSpec.Skills,
-		MinTier:    runTestsSpec.MinTier,
-		Category:   runTestsSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: lintCheckSpec.Definition,
-		Handler:    lintCheckHandler,
-		Skills:     lintCheckSpec.Skills,
-		MinTier:    lintCheckSpec.MinTier,
-		Category:   lintCheckSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
 		Definition: runCommandSpec.Definition,
 		Handler:    runCommandHandler,
 		Skills:     runCommandSpec.Skills,
@@ -929,38 +648,6 @@ func (r *ToolRegistry) RegisterBuiltins() {
 		Skills:     httpRequestSpec.Skills,
 		MinTier:    httpRequestSpec.MinTier,
 		Category:   httpRequestSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: inspectEnvironmentSpec.Definition,
-		Handler:    inspectEnvironmentHandler,
-		Skills:     inspectEnvironmentSpec.Skills,
-		MinTier:    inspectEnvironmentSpec.MinTier,
-		Category:   inspectEnvironmentSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: gitOperationSpec.Definition,
-		Handler:    gitOperationHandler,
-		Skills:     gitOperationSpec.Skills,
-		MinTier:    gitOperationSpec.MinTier,
-		Category:   gitOperationSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: buildProjectSpec.Definition,
-		Handler:    buildProjectHandler,
-		Skills:     buildProjectSpec.Skills,
-		MinTier:    buildProjectSpec.MinTier,
-		Category:   buildProjectSpec.Category,
-	})
-
-	r.Register(RegisteredTool{
-		Definition: manageDependenciesSpec.Definition,
-		Handler:    manageDepsHandler,
-		Skills:     manageDependenciesSpec.Skills,
-		MinTier:    manageDependenciesSpec.MinTier,
-		Category:   manageDependenciesSpec.Category,
 	})
 
 	// Terminal tools — these stop the agentic loop on successful execution.
@@ -1102,6 +789,15 @@ func readFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest
 		}
 	}
 
+	// Check if path is a directory — agents commonly call read_file(".") or
+	// read_file("src") and get an unhelpful OS error. Give a clear hint.
+	if info, statErr := os.Stat(cleanPath); statErr == nil && info.IsDir() {
+		return agentic.ToolResult{
+			CallID: call.ID,
+			Error:  fmt.Sprintf("%q is a directory, not a file. Use list_directory to see its contents.", path),
+		}
+	}
+
 	content, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return agentic.ToolResult{
@@ -1114,6 +810,30 @@ func readFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest
 	result := string(content)
 	if len(result) > maxFileReadSize {
 		result = result[:maxFileReadSize] + "\n... (truncated)"
+	}
+
+	// Handle optional line range (merged from read_file_range).
+	if startLine, ok := call.Arguments["start_line"].(float64); ok && startLine > 0 {
+		lines := strings.Split(result, "\n")
+		start := int(startLine) - 1 // 0-indexed
+		if start >= len(lines) {
+			return agentic.ToolResult{
+				CallID: call.ID,
+				Error:  fmt.Sprintf("start_line %d exceeds file length (%d lines)", int(startLine), len(lines)),
+			}
+		}
+		end := len(lines)
+		if endLine, ok := call.Arguments["end_line"].(float64); ok && endLine > 0 {
+			end = int(endLine)
+			if end > len(lines) {
+				end = len(lines)
+			}
+		}
+		// Cap range to maxReadFileRangeLines.
+		if end-start > maxReadFileRangeLines {
+			end = start + maxReadFileRangeLines
+		}
+		result = strings.Join(lines[start:end], "\n")
 	}
 
 	return agentic.ToolResult{
@@ -1629,82 +1349,6 @@ func matchSegments(pat, path []string) bool {
 }
 
 // =============================================================================
-// read_file_range handler
-// =============================================================================
-
-func readFileRangeHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-	default:
-	}
-
-	path, _ := call.Arguments["path"].(string)
-	if path == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
-	}
-
-	// JSON numbers decode as float64.
-	startLineF, ok := call.Arguments["start_line"].(float64)
-	if !ok {
-		return agentic.ToolResult{CallID: call.ID, Error: "start_line argument must be an integer"}
-	}
-	startLine := int(startLineF)
-	if startLine < 1 {
-		return agentic.ToolResult{CallID: call.ID, Error: "start_line must be >= 1"}
-	}
-
-	endLine := startLine + 100
-	if endLineF, ok := call.Arguments["end_line"].(float64); ok {
-		endLine = int(endLineF)
-	}
-	if endLine < startLine {
-		return agentic.ToolResult{CallID: call.ID, Error: "end_line must be >= start_line"}
-	}
-	if endLine-startLine+1 > maxReadFileRangeLines {
-		endLine = startLine + maxReadFileRangeLines - 1
-	}
-
-	sandboxDir := getSandboxDir(call)
-	cleanPath, err := validatePath(path, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
-	}
-
-	f, err := os.Open(cleanPath)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to open file: %v", err)}
-	}
-	defer f.Close()
-
-	var sb strings.Builder
-	scanner := bufio.NewScanner(f)
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		if lineNum < startLine {
-			continue
-		}
-		if lineNum > endLine {
-			break
-		}
-		sb.WriteString(fmt.Sprintf("%d\t%s\n", lineNum, scanner.Text()))
-	}
-	if err := scanner.Err(); err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("error reading file: %v", err)}
-	}
-
-	if sb.Len() == 0 {
-		return agentic.ToolResult{
-			CallID:  call.ID,
-			Content: fmt.Sprintf("File has fewer than %d lines", startLine),
-		}
-	}
-
-	return agentic.ToolResult{CallID: call.ID, Content: sb.String()}
-}
-
-// =============================================================================
 // web_search handler
 // =============================================================================
 
@@ -1876,124 +1520,6 @@ func askClarificationHandler(_ context.Context, call agentic.ToolCall, _ *domain
 		Content:  string(jsonBytes),
 		StopLoop: true,
 	}
-}
-
-// =============================================================================
-// create_directory handler
-// =============================================================================
-
-func createDirectoryHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-	default:
-	}
-
-	path, _ := call.Arguments["path"].(string)
-	if path == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
-	}
-
-	sandboxDir := getSandboxDir(call)
-	cleanPath, err := validatePath(path, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
-	}
-
-	if err := os.MkdirAll(cleanPath, 0755); err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to create directory: %v", err)}
-	}
-
-	return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("Created directory: %s", cleanPath)}
-}
-
-// =============================================================================
-// delete_file handler
-// =============================================================================
-
-func deleteFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-	default:
-	}
-
-	path, _ := call.Arguments["path"].(string)
-	if path == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "path argument is required"}
-	}
-
-	sandboxDir := getSandboxDir(call)
-	cleanPath, err := validatePath(path, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
-	}
-
-	info, err := os.Stat(cleanPath)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("path not found: %v", err)}
-	}
-	if info.IsDir() {
-		return agentic.ToolResult{CallID: call.ID, Error: "delete_file cannot delete directories; use a shell command for that"}
-	}
-
-	if err := os.Remove(cleanPath); err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to delete file: %v", err)}
-	}
-
-	return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("Deleted: %s", cleanPath)}
-}
-
-// =============================================================================
-// rename_file handler
-// =============================================================================
-
-func renameFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	select {
-	case <-ctx.Done():
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
-	default:
-	}
-
-	oldPath, _ := call.Arguments["old_path"].(string)
-	newPath, _ := call.Arguments["new_path"].(string)
-	if oldPath == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "old_path argument is required"}
-	}
-	if newPath == "" {
-		return agentic.ToolResult{CallID: call.ID, Error: "new_path argument is required"}
-	}
-
-	sandboxDir := getSandboxDir(call)
-	cleanOld, err := validatePath(oldPath, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("old_path: %v", err)}
-	}
-	cleanNew, err := validatePath(newPath, sandboxDir)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("new_path: %v", err)}
-	}
-
-	// Reject directory renames — rename_file operates on files only.
-	info, statErr := os.Stat(cleanOld)
-	if statErr != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("source not found: %v", statErr)}
-	}
-	if info.IsDir() {
-		return agentic.ToolResult{CallID: call.ID, Error: "rename_file operates on files only; cannot rename directories"}
-	}
-
-	// Ensure the destination parent directory exists.
-	destDir := filepath.Dir(cleanNew)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("failed to create destination directory: %v", err)}
-	}
-
-	if err := os.Rename(cleanOld, cleanNew); err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("rename failed: %v", err)}
-	}
-
-	return agentic.ToolResult{CallID: call.ID, Content: fmt.Sprintf("Renamed %s -> %s", cleanOld, cleanNew)}
 }
 
 func patchFileHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
@@ -2361,90 +1887,7 @@ func runShellCommand(ctx context.Context, call agentic.ToolCall, timeout time.Du
 	}
 }
 
-// shellMetacharacters are dangerous shell operators that enable command chaining
-// or injection. Commands passed to allowlisted tools (run_tests, lint_check)
-// are rejected if they contain any of these to prevent Expert-tier agents
-// from bypassing the allowlist via shell metacharacters.
-var shellMetacharacters = []string{";", "&&", "||", "|", "$(", "`", ">", "<"}
-
-// containsShellMeta reports whether the command contains shell metacharacters
-// that could enable command chaining or injection.
-func containsShellMeta(command string) bool {
-	for _, meta := range shellMetacharacters {
-		if strings.Contains(command, meta) {
-			return true
-		}
-	}
-	return false
-}
-
-// allowedTestPrefixes are the commands that run_tests permits.
-// The tool validates that the command starts with one of these.
-var allowedTestPrefixes = []string{
-	"go test", "npm test", "npm run test", "npx vitest", "npx jest",
-	"pytest", "python -m pytest", "python3 -m pytest",
-	"python -m unittest", "python3 -m unittest",
-	"python3 -c", "python -c", // one-liner test scripts
-	"make test", "make check",
-	"cargo test", "dotnet test", "mvn test", "gradle test",
-}
-
-func runTestsHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	command, _ := call.Arguments["command"].(string)
-	if containsShellMeta(command) {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "run_tests does not allow shell metacharacters (;, &&, ||, |, $, `, >, <). Use run_command for compound commands.",
-		}
-	}
-	allowed := false
-	for _, prefix := range allowedTestPrefixes {
-		if strings.HasPrefix(command, prefix) {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "run_tests only allows test commands (e.g. 'go test ./...', 'npm test'). Use run_command for general commands.",
-		}
-	}
-	return runShellCommand(ctx, call, commandTimeout)
-}
-
 func runCommandHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	return runShellCommand(ctx, call, commandTimeout)
-}
-
-// allowedLintPrefixes are the commands that lint_check permits.
-var allowedLintPrefixes = []string{
-	"revive", "golangci-lint", "eslint", "npx eslint", "npm run lint",
-	"make lint", "pylint", "flake8", "mypy", "ruff",
-	"cargo clippy", "dotnet format", "go vet",
-}
-
-func lintCheckHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	command, _ := call.Arguments["command"].(string)
-	if containsShellMeta(command) {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "lint_check does not allow shell metacharacters (;, &&, ||, |, $, `, >, <). Use run_command for compound commands.",
-		}
-	}
-	allowed := false
-	for _, prefix := range allowedLintPrefixes {
-		if strings.HasPrefix(command, prefix) {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
-		return agentic.ToolResult{
-			CallID: call.ID,
-			Error:  "lint_check only allows linter commands (e.g. 'go vet ./...', 'golangci-lint run'). Use run_command for general commands.",
-		}
-	}
 	return runShellCommand(ctx, call, commandTimeout)
 }
 
@@ -3026,292 +2469,6 @@ func graphQueryHandler(queryFn EntityQueryFunc) ToolHandler {
 	}
 }
 
-// =============================================================================
-// INSPECT ENVIRONMENT
-// =============================================================================
-
-// inspectEnvironmentScript is the shell script that probes installed toolchains.
-const inspectEnvironmentScript = `echo "=== Toolchain Versions ==="
-go version 2>/dev/null || echo "go: not installed"
-java -version 2>&1 | head -1 || echo "java: not installed"
-node --version 2>/dev/null | sed 's/^/node: /' || echo "node: not installed"
-npm --version 2>/dev/null | sed 's/^/npm: /' || echo "npm: not installed"
-python3 --version 2>/dev/null || echo "python3: not installed"
-gradle --version 2>/dev/null | grep '^Gradle' || echo "gradle: not installed"
-mvn --version 2>/dev/null | head -1 || echo "maven: not installed"
-cargo --version 2>/dev/null || echo "cargo: not installed"
-make --version 2>/dev/null | head -1 || echo "make: not installed"
-git --version 2>/dev/null || echo "git: not installed"
-echo ""
-echo "=== Working Directory ==="
-pwd
-echo ""
-ls -la 2>/dev/null || echo "(empty workspace)"`
-
-func inspectEnvironmentHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	if call.Arguments == nil {
-		call.Arguments = make(map[string]any)
-	}
-	call.Arguments["command"] = inspectEnvironmentScript
-	return runShellCommand(ctx, call, 15*time.Second)
-}
-
-// =============================================================================
-// GIT OPERATION
-// =============================================================================
-
-// allowedGitActions is the set of git subcommands that git_operation permits.
-var allowedGitActions = map[string]bool{
-	"init": true, "clone": true, "status": true, "diff": true,
-	"log": true, "add": true, "commit": true, "branch": true,
-	"checkout": true, "show": true,
-}
-
-// blockedGitFlags prevents dangerous flags from being passed through args.
-var blockedGitFlags = []string{"--force", "-f", "--hard", "--mixed"}
-
-// buildGitCommand constructs a validated git command from tool call arguments.
-func buildGitCommand(call agentic.ToolCall) (string, error) {
-	action, _ := call.Arguments["action"].(string)
-	if action == "" {
-		return "", fmt.Errorf("action argument is required")
-	}
-	if !allowedGitActions[action] {
-		return "", fmt.Errorf("git action %q is not allowed; supported: init, clone, status, diff, log, add, commit, branch, checkout, show", action)
-	}
-
-	args, _ := call.Arguments["args"].(string)
-
-	// Block dangerous flags in args.
-	for _, blocked := range blockedGitFlags {
-		if strings.Contains(args, blocked) {
-			return "", fmt.Errorf("git argument %q is not allowed", blocked)
-		}
-	}
-	if args != "" && containsShellMeta(args) {
-		return "", fmt.Errorf("git_operation does not allow shell metacharacters in args")
-	}
-
-	switch action {
-	case "clone":
-		url, _ := call.Arguments["url"].(string)
-		if url == "" {
-			return "", fmt.Errorf("url argument is required for clone action")
-		}
-		if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "git@") {
-			return "", fmt.Errorf("clone URL must start with https:// or git@")
-		}
-		if containsShellMeta(url) {
-			return "", fmt.Errorf("clone URL contains invalid characters")
-		}
-		target := ""
-		if args != "" {
-			target = " " + args
-		}
-		return fmt.Sprintf("git clone --depth 1 %s%s", shellQuote(url), target), nil
-
-	case "commit":
-		message, _ := call.Arguments["message"].(string)
-		if message == "" {
-			return "", fmt.Errorf("message argument is required for commit action")
-		}
-		extraArgs := ""
-		if args != "" {
-			extraArgs = " " + args
-		}
-		return fmt.Sprintf("git commit -m %s%s", shellQuote(message), extraArgs), nil
-
-	default:
-		if args != "" {
-			return fmt.Sprintf("git %s %s", action, args), nil
-		}
-		return fmt.Sprintf("git %s", action), nil
-	}
-}
-
-// shellQuote wraps a string in single quotes, escaping any embedded single quotes.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
-
-func gitOperationHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	command, err := buildGitCommand(call)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
-	}
-	if call.Arguments == nil {
-		call.Arguments = make(map[string]any)
-	}
-	call.Arguments["command"] = command
-	return runShellCommand(ctx, call, commandTimeout)
-}
-
-// =============================================================================
-// BUILD PROJECT
-// =============================================================================
-
-const buildTimeout = 5 * time.Minute
-
-// validBuildTarget checks that a target name is alphanumeric (with hyphens/underscores/colons/dots/slashes).
-var validBuildTarget = regexp.MustCompile(`^[a-zA-Z0-9_./:=-]+$`)
-
-// buildProjectCommand constructs a build command by auto-detecting the build system.
-func buildProjectCommand(call agentic.ToolCall) (string, error) {
-	target, _ := call.Arguments["target"].(string)
-	if target != "" {
-		if !validBuildTarget.MatchString(target) {
-			return "", fmt.Errorf("build target must be alphanumeric with hyphens/underscores (got %q)", target)
-		}
-		if containsShellMeta(target) {
-			return "", fmt.Errorf("build target contains invalid characters")
-		}
-	}
-
-	type buildSys struct {
-		detect     string
-		name       string
-		defaultCmd string
-		targetFmt  string
-	}
-
-	systems := []buildSys{
-		{"[ -f build.gradle ] || [ -f build.gradle.kts ]", "Gradle", "gradle build", "gradle %s"},
-		{"[ -f go.mod ]", "Go", "go build ./...", "go build %s"},
-		{"[ -f Cargo.toml ]", "Cargo", "cargo build", "cargo %s"},
-		{"[ -f pom.xml ]", "Maven", "mvn package -q", "mvn %s"},
-		{"[ -f package.json ]", "npm", "npm run build", "npm run %s"},
-		{"[ -f Makefile ]", "Make", "make", "make %s"},
-	}
-
-	var b strings.Builder
-	b.WriteString("set -e\n")
-	for i, sys := range systems {
-		prefix := "elif"
-		if i == 0 {
-			prefix = "if"
-		}
-		cmd := sys.defaultCmd
-		if target != "" {
-			cmd = fmt.Sprintf(sys.targetFmt, target)
-		}
-		fmt.Fprintf(&b, "%s %s; then echo 'Detected: %s' && %s\n", prefix, sys.detect, sys.name, cmd)
-	}
-	b.WriteString("else echo 'ERROR: No recognized build system found (checked: build.gradle, go.mod, Cargo.toml, pom.xml, package.json, Makefile)' && exit 1; fi")
-
-	return b.String(), nil
-}
-
-func buildProjectHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	command, err := buildProjectCommand(call)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
-	}
-	if call.Arguments == nil {
-		call.Arguments = make(map[string]any)
-	}
-	call.Arguments["command"] = command
-	return runShellCommand(ctx, call, buildTimeout)
-}
-
-// =============================================================================
-// MANAGE DEPENDENCIES
-// =============================================================================
-
-// validPackageName allows standard package name characters: alphanumeric, hyphens,
-// underscores, dots, slashes (for Go/Java), @ (for npm scoped packages).
-var validPackageName = regexp.MustCompile(`^[@a-zA-Z0-9][a-zA-Z0-9._/-]*$`)
-
-// buildManageDepsCommand constructs a dependency management command.
-func buildManageDepsCommand(call agentic.ToolCall) (string, error) {
-	action, _ := call.Arguments["action"].(string)
-	if action == "" {
-		return "", fmt.Errorf("action argument is required")
-	}
-
-	validActions := map[string]bool{"install": true, "add": true, "remove": true, "list": true, "tidy": true}
-	if !validActions[action] {
-		return "", fmt.Errorf("action %q not supported; use install, add, remove, list, or tidy", action)
-	}
-
-	var packages []string
-	if pkgsRaw, ok := call.Arguments["packages"].([]any); ok {
-		for _, p := range pkgsRaw {
-			if s, ok := p.(string); ok && s != "" {
-				if !validPackageName.MatchString(s) {
-					return "", fmt.Errorf("invalid package name: %q", s)
-				}
-				packages = append(packages, s)
-			}
-		}
-	}
-
-	if (action == "add" || action == "remove") && len(packages) == 0 {
-		return "", fmt.Errorf("packages argument is required for %s action", action)
-	}
-
-	pkgStr := strings.Join(packages, " ")
-
-	switch action {
-	case "install":
-		return `set -e
-if [ -f go.mod ]; then echo "Detected: Go" && go mod download
-elif [ -f package.json ]; then echo "Detected: npm" && npm install
-elif [ -f requirements.txt ]; then echo "Detected: pip" && pip install -r requirements.txt
-elif [ -f pyproject.toml ]; then echo "Detected: pip" && pip install .
-elif [ -f Cargo.toml ]; then echo "Detected: Cargo" && cargo fetch
-elif [ -f pom.xml ]; then echo "Detected: Maven" && mvn dependency:resolve -q
-elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then echo "Detected: Gradle" && gradle dependencies --quiet
-else echo "ERROR: No recognized package manager found" && exit 1; fi`, nil
-
-	case "add":
-		return fmt.Sprintf(`set -e
-if [ -f go.mod ]; then echo "Detected: Go" && go get %s
-elif [ -f package.json ]; then echo "Detected: npm" && npm install %s
-elif [ -f requirements.txt ]; then echo "Detected: pip" && pip install %s
-elif [ -f Cargo.toml ]; then echo "Detected: Cargo" && cargo add %s
-elif [ -f pom.xml ]; then echo "ERROR: Maven add not supported — edit pom.xml directly" && exit 1
-else echo "ERROR: No recognized package manager found" && exit 1; fi`, pkgStr, pkgStr, pkgStr, pkgStr), nil
-
-	case "remove":
-		return fmt.Sprintf(`set -e
-if [ -f go.mod ]; then echo "ERROR: Go — remove module from go.mod then run 'manage_dependencies' with action 'tidy'" && exit 1
-elif [ -f package.json ]; then echo "Detected: npm" && npm uninstall %s
-elif [ -f Cargo.toml ]; then echo "Detected: Cargo" && cargo remove %s
-else echo "ERROR: No recognized package manager found" && exit 1; fi`, pkgStr, pkgStr), nil
-
-	case "list":
-		return `set -e
-if [ -f go.mod ]; then echo "Detected: Go" && go list -m all
-elif [ -f package.json ]; then echo "Detected: npm" && npm list --depth=0
-elif [ -f requirements.txt ]; then echo "Detected: pip" && pip list
-elif [ -f Cargo.toml ]; then echo "Detected: Cargo" && cargo tree --depth 1
-elif [ -f pom.xml ]; then echo "Detected: Maven" && mvn dependency:list -q
-elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then echo "Detected: Gradle" && gradle dependencies
-else echo "ERROR: No recognized package manager found" && exit 1; fi`, nil
-
-	case "tidy":
-		return `set -e
-if [ -f go.mod ]; then echo "Detected: Go" && go mod tidy
-elif [ -f package.json ]; then echo "Detected: npm" && npm prune && npm dedupe
-elif [ -f Cargo.toml ]; then echo "Detected: Cargo" && cargo update
-else echo "ERROR: No recognized package manager supports tidy" && exit 1; fi`, nil
-
-	default:
-		return "", fmt.Errorf("action %q not supported", action)
-	}
-}
-
-func manageDepsHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
-	command, err := buildManageDepsCommand(call)
-	if err != nil {
-		return agentic.ToolResult{CallID: call.ID, Error: err.Error()}
-	}
-	if call.Arguments == nil {
-		call.Arguments = make(map[string]any)
-	}
-	call.Arguments["command"] = command
-	return runShellCommand(ctx, call, buildTimeout)
-}
 
 // =============================================================================
 // GRAPH SUMMARY TOOL - semsource source discovery

@@ -105,6 +105,18 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 		result.Content = "(no output)"
 	}
 
+	// Classify bash commands for trajectory analytics. Since we consolidated
+	// specialized tools (run_tests, lint_check, etc.) into bash, tag the result
+	// metadata with what the command was actually doing.
+	if call.Name == "bash" {
+		if intent := classifyBashCommand(call); intent != "" {
+			if result.Metadata == nil {
+				result.Metadata = make(map[string]any)
+			}
+			result.Metadata["bash_intent"] = intent
+		}
+	}
+
 	// Propagate correlation identifiers so the loop can match this result.
 	result.LoopID = call.LoopID
 	result.TraceID = call.TraceID
@@ -238,6 +250,63 @@ func (c *Component) buildContextFromMetadata(call *agentic.ToolCall) (*agentprog
 	return agent, quest
 }
 
+// classifyBashCommand inspects the command string from a bash tool call and
+// returns a semantic intent label for trajectory analytics. This preserves the
+// observability we had with specialized tools (run_tests, lint_check, etc.)
+// after consolidating them into bash.
+func classifyBashCommand(call agentic.ToolCall) string {
+	command, _ := call.Arguments["command"].(string)
+	if command == "" {
+		return ""
+	}
+	lower := strings.ToLower(command)
+
+	switch {
+	// Test runners
+	case strings.Contains(lower, "pytest") ||
+		strings.Contains(lower, "unittest") ||
+		strings.Contains(lower, "go test") ||
+		strings.Contains(lower, "npm test") ||
+		strings.Contains(lower, "npx vitest") ||
+		strings.Contains(lower, "npx jest") ||
+		strings.Contains(lower, "cargo test"):
+		return "test"
+
+	// Linters
+	case strings.Contains(lower, "lint") ||
+		strings.Contains(lower, "go vet") ||
+		strings.Contains(lower, "pylint") ||
+		strings.Contains(lower, "flake8") ||
+		strings.Contains(lower, "mypy") ||
+		strings.Contains(lower, "ruff") ||
+		strings.Contains(lower, "clippy"):
+		return "lint"
+
+	// Build commands
+	case strings.Contains(lower, "go build") ||
+		strings.Contains(lower, "npm run build") ||
+		strings.Contains(lower, "cargo build") ||
+		strings.Contains(lower, "make") && !strings.Contains(lower, "mkdir"):
+		return "build"
+
+	// Dependency management
+	case strings.Contains(lower, "pip install") ||
+		strings.Contains(lower, "npm install") ||
+		strings.Contains(lower, "go mod") ||
+		strings.Contains(lower, "cargo add") ||
+		strings.Contains(lower, "cargo fetch"):
+		return "deps"
+
+	// Git operations
+	case strings.HasPrefix(lower, "git ") ||
+		strings.Contains(lower, " git "):
+		return "git"
+
+	default:
+		return "shell"
+	}
+}
+
 // addToolHint appends a corrective hint to tool error messages when the agent
 // is likely using the wrong tool. This is more reliable than prompt instructions
 // because the agent sees the hint at the exact moment of failure.
@@ -250,15 +319,19 @@ func addToolHint(toolName, errMsg string) string {
 			return errMsg + "\n\nHINT: If you were trying to write code, use write_file instead of bash. bash is for shell commands only."
 		}
 		if strings.Contains(lower, "permission denied") && strings.Contains(lower, "python") {
-			return errMsg + "\n\nHINT: Use 'python3' instead of 'python'. Or use write_file to create a .py file and run_tests to execute it."
+			return errMsg + "\n\nHINT: Use 'python3' instead of 'python'. For pip, create a venv: " +
+				"bash(\"python3 -m venv .venv && .venv/bin/pip install -r requirements.txt\")"
+		}
+		if strings.Contains(lower, "externally-managed") {
+			return errMsg + "\n\nHINT: Python environment is OS-managed. Create a venv first: " +
+				"bash(\"python3 -m venv .venv && .venv/bin/pip install -r requirements.txt\")"
 		}
 	case "read_file":
 		if strings.Contains(lower, "not found") || strings.Contains(lower, "404") {
 			return errMsg + "\n\nHINT: File doesn't exist yet. Use write_file to create it, or list_directory to see what files exist."
 		}
-	case "run_tests":
-		if strings.Contains(lower, "only allows test commands") {
-			return errMsg + "\n\nHINT: Use 'python3 -m pytest' or 'python3 -m unittest discover' for Python tests."
+		if strings.Contains(lower, "is a directory") {
+			return errMsg + "\n\nHINT: Use list_directory to see contents of a directory."
 		}
 	case "graph_search":
 		if strings.Contains(lower, "eof") || strings.Contains(lower, "failed") {

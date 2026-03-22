@@ -233,30 +233,6 @@ func TestSandboxReadFile_MissingQuestID(t *testing.T) {
 	}
 }
 
-func TestSandboxReadFileRange(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("read_file_range", map[string]any{
-		"path":       "multi-line.go",
-		"start_line": float64(3),
-		"end_line":   float64(5),
-	})
-	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if result.Content == "" {
-		t.Fatal("expected non-empty content")
-	}
-	// Should contain line numbers.
-	if !strings.Contains(result.Content, "3\t") {
-		t.Errorf("expected line 3 in output, got: %s", result.Content)
-	}
-}
-
 func TestSandboxWriteFile(t *testing.T) {
 	_, client := newSandboxTestServer(t)
 	reg := executor.NewToolRegistry()
@@ -286,7 +262,7 @@ func TestSandboxWriteFile_TierGated(t *testing.T) {
 		"path":    "output.go",
 		"content": "package main\n",
 	})
-	// Apprentice can't write files.
+	// Apprentice without SkillCodeGen cannot write files (skill gate).
 	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
 	if result.Error == "" {
 		t.Fatal("expected tier gate error")
@@ -368,51 +344,6 @@ func TestSandboxSearchText(t *testing.T) {
 	}
 }
 
-func TestSandboxRunTests(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("run_tests", map[string]any{"command": "go test ./..."})
-	agent := testAgent(domain.TierExpert, domain.SkillCodeGen, domain.SkillCodeReview)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-}
-
-func TestSandboxRunTests_FailedTests(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("run_tests", map[string]any{"command": "go test ./fail/..."})
-	agent := testAgent(domain.TierExpert, domain.SkillCodeGen, domain.SkillCodeReview)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error == "" {
-		t.Fatal("expected error for failed tests")
-	}
-	if !strings.Contains(result.Error, "exit code") {
-		t.Errorf("expected exit code error, got: %s", result.Error)
-	}
-}
-
-func TestSandboxRunTests_ShellMetaRejected(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("run_tests", map[string]any{"command": "go test ./... && rm -rf /"})
-	agent := testAgent(domain.TierExpert, domain.SkillCodeGen, domain.SkillCodeReview)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error == "" {
-		t.Fatal("expected error for shell metacharacters")
-	}
-}
-
 func TestSandboxRunCommand(t *testing.T) {
 	_, client := newSandboxTestServer(t)
 	reg := executor.NewToolRegistry()
@@ -433,64 +364,10 @@ func TestSandboxRunCommand_TierGated(t *testing.T) {
 	reg.RegisterSandboxTools(client)
 
 	call := testCall("bash", map[string]any{"command": "echo hello"})
-	// Expert can't run arbitrary commands.
-	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierExpert))
+	// Apprentice can't run shell commands — bash requires Journeyman (sandbox is the security boundary).
+	result := reg.Execute(context.Background(), call, testQuest, testAgent(domain.TierApprentice))
 	if result.Error == "" {
-		t.Fatal("expected tier gate error for Expert running bash")
-	}
-}
-
-func TestSandboxDeleteFile(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("delete_file", map[string]any{"path": "old.go"})
-	agent := testAgent(domain.TierJourneyman, domain.SkillCodeGen)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if !strings.Contains(result.Content, "Deleted") {
-		t.Errorf("expected Deleted in content, got: %s", result.Content)
-	}
-}
-
-func TestSandboxRenameFile(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("rename_file", map[string]any{
-		"old_path": "old.go",
-		"new_path": "new.go",
-	})
-	agent := testAgent(domain.TierJourneyman, domain.SkillCodeGen)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if !strings.Contains(result.Content, "Renamed") {
-		t.Errorf("expected Renamed in content, got: %s", result.Content)
-	}
-}
-
-func TestSandboxCreateDirectory(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("create_directory", map[string]any{"path": "src/pkg"})
-	agent := testAgent(domain.TierJourneyman, domain.SkillCodeGen)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-	if !strings.Contains(result.Content, "Created directory") {
-		t.Errorf("expected Created directory in content, got: %s", result.Content)
+		t.Fatal("expected tier gate error for Apprentice running bash")
 	}
 }
 
@@ -538,34 +415,6 @@ func TestSandboxToolsOverwriteBuiltins(t *testing.T) {
 	tool := reg.Get("submit_work_product")
 	if tool == nil {
 		t.Fatal("submit_work_product should still be registered after sandbox tools overwrite")
-	}
-}
-
-func TestSandboxLintCheck(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("lint_check", map[string]any{"command": "go vet ./..."})
-	agent := testAgent(domain.TierExpert, domain.SkillCodeReview)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-}
-
-func TestSandboxLintCheck_InvalidCommand(t *testing.T) {
-	_, client := newSandboxTestServer(t)
-	reg := executor.NewToolRegistry()
-	reg.RegisterSandboxTools(client)
-
-	call := testCall("lint_check", map[string]any{"command": "cat /etc/passwd"})
-	agent := testAgent(domain.TierExpert, domain.SkillCodeReview)
-	result := reg.Execute(context.Background(), call, testQuest, agent)
-
-	if result.Error == "" {
-		t.Fatal("expected error for non-lint command")
 	}
 }
 

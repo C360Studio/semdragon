@@ -1673,7 +1673,6 @@ func TestCategoriesForQuest(t *testing.T) {
 			},
 			notWantCats: []executor.ToolCategory{
 				executor.ToolCategoryWrite,
-				executor.ToolCategoryBuild,
 				executor.ToolCategoryNetwork,
 				executor.ToolCategoryInspect,
 				executor.ToolCategoryKnowledge,
@@ -1686,7 +1685,6 @@ func TestCategoriesForQuest(t *testing.T) {
 			wantCats: []executor.ToolCategory{
 				executor.ToolCategoryCore,
 				executor.ToolCategoryWrite,
-				executor.ToolCategoryBuild,
 				executor.ToolCategoryNetwork,
 				executor.ToolCategoryInspect,
 				executor.ToolCategoryKnowledge,
@@ -1696,7 +1694,7 @@ func TestCategoriesForQuest(t *testing.T) {
 			},
 		},
 		{
-			name:  "research quest keeps write but excludes build/inspect",
+			name:  "research quest keeps write but excludes inspect (bash)",
 			quest: &domain.Quest{RequiredSkills: []domain.SkillTag{domain.SkillResearch}},
 			agent: journeymanAgent,
 			wantCats: []executor.ToolCategory{
@@ -1706,7 +1704,6 @@ func TestCategoriesForQuest(t *testing.T) {
 				executor.ToolCategoryKnowledge,
 			},
 			notWantCats: []executor.ToolCategory{
-				executor.ToolCategoryBuild,
 				executor.ToolCategoryInspect,
 				executor.ToolCategoryPartyLead,
 			},
@@ -1718,7 +1715,7 @@ func TestCategoriesForQuest(t *testing.T) {
 			wantCats: []executor.ToolCategory{
 				executor.ToolCategoryCore,
 				executor.ToolCategoryWrite,
-				executor.ToolCategoryBuild,
+				executor.ToolCategoryInspect,
 			},
 			notWantCats: []executor.ToolCategory{
 				executor.ToolCategoryPartyLead,
@@ -1731,7 +1728,7 @@ func TestCategoriesForQuest(t *testing.T) {
 			wantCats: []executor.ToolCategory{
 				executor.ToolCategoryCore,
 				executor.ToolCategoryWrite,
-				executor.ToolCategoryBuild,
+				executor.ToolCategoryInspect,
 			},
 			notWantCats: []executor.ToolCategory{
 				executor.ToolCategoryPartyLead,

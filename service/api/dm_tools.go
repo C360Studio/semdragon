@@ -47,7 +47,6 @@ var dmToolAllowlist = map[string]bool{
 	"web_search":       true,
 	"http_request":     true,
 	"read_file":        true,
-	"read_file_range":  true,
 	"search_text":      true,
 	"glob_files":       true,
 	"list_directory":   true,

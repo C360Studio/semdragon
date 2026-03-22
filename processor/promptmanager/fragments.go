@@ -461,41 +461,31 @@ var toolGuidanceEntries = map[string]string{
 	"graph_query":   "Game state (quests, agents, guilds, parties, battles). Fast.",
 	"graph_summary": "Overview of what's indexed in the knowledge graph — sources, entity types, counts, predicates. Call ONCE before graph_search to understand available data.",
 	"graph_search":  "Knowledge graph (code, docs, repos, prior tool results). Try this FIRST for project-specific lookups. Use query_type 'nlq' for natural language questions. If results are empty or unhelpful, FALL BACK to web_search — don't retry the same graph query.",
-	"web_search":   "External info AND fallback when graph search returns poor results. Use for third-party APIs, libraries, general knowledge, or when the knowledge graph didn't answer your question. Use BEFORE http_request to find the right URLs — never guess URLs.",
+	"web_search":    "External info AND fallback when graph search returns poor results. Use for third-party APIs, libraries, general knowledge, or when the knowledge graph didn't answer your question. Use BEFORE http_request to find the right URLs — never guess URLs.",
 	// Exploration tools — use these BEFORE reading/writing to find the right files
 	"list_directory": "See what files and folders exist at a path. Start here to understand project layout.",
 	"glob_files":     "Find files by pattern (e.g. '**/*.java', 'src/**/*.go'). Use to locate files before reading.",
 	"search_text":    "Search file contents for text or regex. Use file_glob param to filter by extension. Returns file:line matches.",
 	// File tools
-	"read_file":  "Read a file's full contents. Use glob_files or list_directory first if you don't know the exact path.",
-	"write_file": "Create or overwrite a file. Parent dirs must exist — use create_directory first.",
+	"read_file":  "Read a file's full contents (or a line range with start_line/end_line). Use glob_files or list_directory first if you don't know the exact path.",
+	"write_file": "Create or overwrite a file. Parent directories are created automatically.",
 	"patch_file": "Apply targeted find-and-replace edits to an existing file. Prefer over write_file for small changes.",
-	// Environment and version control
-	"inspect_environment": "Discover installed tools and versions. Call once at quest start instead of multiple 'which' commands.",
-	"git_operation":       "Git version control (init, clone, status, diff, log, add, commit, branch, checkout, show). Blocks push/pull/reset.",
-	// Build and dependency tools
-	"build_project":       "Build the project using auto-detected build system (Go, Gradle, npm, Maven, Cargo, Make). Optional target param.",
-	"manage_dependencies": "Install, add, remove, or tidy dependencies via auto-detected package manager.",
-	"run_tests":           "Run test commands (go test, npm test, python3 -m pytest, python3 -m unittest discover, cargo test, etc.). Use after writing code.",
-	"lint_check":          "Run linters (go vet, eslint, pylint, etc.). Use after writing code to catch issues.",
 	// Network tools
-	"http_request": "Fetch a specific known URL. Do NOT guess URLs — use web_search first to find the right URL, then http_request to fetch it. Best for testing APIs you are building or downloading specific files. Returns raw HTML which is hard to parse — prefer web_search for research.",
-	// Shell tools
-	"bash":             "Run a short shell command (ls, mkdir, pip install, curl). Do NOT write source code here — use write_file for that.",
-	"create_directory": "Create directories (including parents). Use before write_file if the target dir doesn't exist.",
+	"http_request": "Fetch a specific known URL. Do NOT guess URLs — use web_search first to find the right URL, then http_request to fetch it. Returns raw HTML which is hard to parse — prefer web_search for research.",
+	// Shell — universal command execution
+	"bash": "Run ANY shell command: tests (python3 -m pytest, go test), builds (go build, npm run build), " +
+		"git (git add, git commit), deps (pip install), file ops (rm, mv, mkdir -p), etc. " +
+		"For Python, create a venv first: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt. " +
+		"Do NOT write source code in bash — use write_file for that.",
 }
 
 // toolGuidanceOrder controls the display order of tool guidance entries.
 var toolGuidanceOrder = []string{
 	"graph_query", "graph_summary", "graph_search", "web_search",
 	"list_directory", "glob_files", "search_text",
-	"inspect_environment",
 	"read_file", "write_file", "patch_file",
-	"git_operation",
-	"build_project", "manage_dependencies",
-	"run_tests", "lint_check",
 	"http_request",
-	"bash", "create_directory",
+	"bash",
 }
 
 // hasMultipleTools gates the tool guidance fragment — only included when the
@@ -571,18 +561,22 @@ Do NOT paste full research into submit_work_product — write files, then submit
 const engineerWorkflow = `ENGINEER WORKFLOW:
 1. Read dependency context — your predecessor's research/design output.
 2. Explore existing workspace (list_directory, read_file) before writing ANY code.
-3. Implement incrementally: write one file → build_project → fix errors → next file.
-4. Write tests alongside implementation, not after.
-5. Run tests before submitting: use run_tests with the appropriate command for the language
-   (e.g., "python3 -m pytest", "python3 -m unittest discover", "go test ./...", "npm test").
-6. Submit with a summary of files created/modified.
+3. Set up environment:
+   - Python: bash("python3 -m venv .venv && .venv/bin/pip install -r requirements.txt")
+   - Go: bash("go mod download")
+   - Node: bash("npm install")
+4. Implement incrementally: write one file → test → fix errors → next file.
+5. Write tests alongside implementation, not after.
+6. Run tests before submitting:
+   - Python: bash(".venv/bin/python3 -m pytest") or bash("python3 -m pytest")
+   - Go: bash("go test ./...")
+   - Node: bash("npm test")
+7. Submit with a summary of files created/modified.
 
 TOOL RULES:
-- Create/edit source code, configs, scripts → write_file or patch_file
-- Run tests → run_tests
-- Shell commands (ls, pip install, mkdir, curl) → bash
-- Read existing code → read_file
-- NEVER write source code using bash — it will be interpreted as shell commands and fail.
+- Create/edit source code → write_file or patch_file
+- Everything else (tests, builds, git, deps, shell) → bash
+- NEVER write source code in bash — use write_file.
 
 Do NOT write all code at once. Build-verify-iterate in small steps.
 Do NOT submit without running tests — untested code will be rejected in review.`

