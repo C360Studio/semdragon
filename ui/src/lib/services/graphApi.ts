@@ -212,7 +212,7 @@ export const graphApi = {
       signal,
     );
 
-    return data.entitiesByPrefix;
+    return data.entitiesByPrefix ?? [];
   },
 
   /**
