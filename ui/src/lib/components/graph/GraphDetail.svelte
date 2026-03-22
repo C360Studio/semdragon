@@ -190,10 +190,6 @@
 			</section>
 		{/if}
 	</div>
-{:else}
-	<div class="detail-panel detail-panel-empty" data-testid="graph-detail-panel-empty">
-		<p class="empty-message">Select an entity to view details</p>
-	</div>
 {/if}
 
 <style>
@@ -203,19 +199,6 @@
 		height: 100%;
 		overflow-y: auto;
 		background: var(--ui-surface-secondary);
-	}
-
-	.detail-panel-empty {
-		justify-content: center;
-		align-items: center;
-	}
-
-	.empty-message {
-		color: var(--ui-text-secondary);
-		font-size: 13px;
-		font-style: italic;
-		text-align: center;
-		padding: var(--spacing-lg);
 	}
 
 	/* Header */

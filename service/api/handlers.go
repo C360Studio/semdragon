@@ -23,6 +23,7 @@ import (
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semdragons/processor/questbridge"
 )
 
 const maxRequestBodySize = 1 << 20 // 1 MB
@@ -31,6 +32,10 @@ const maxRequestBodySize = 1 << 20 // 1 MB
 // component is mid-restart (nil). This lets retry.Quick re-attempt rather
 // than panicking on a nil pointer dereference.
 var errStoreUnavailable = errors.New("store component unavailable")
+
+// questbridgeGlobalGraphSources is a thin shim around the package-level accessor,
+// kept as a variable so tests can substitute a nil-returning stub if needed.
+var questbridgeGlobalGraphSources = questbridge.GlobalGraphSources
 
 // isBucketNotFound returns true if the error indicates the KV bucket doesn't exist yet.
 // This is normal before components have started and created the entity states bucket.
@@ -2856,6 +2861,86 @@ func (s *Service) handleGetModels(w http.ResponseWriter, r *http.Request) {
 		Endpoints:    endpoints,
 		Capabilities: s.models.ListCapabilities(),
 	})
+}
+
+// =============================================================================
+// GRAPH SUMMARY
+// =============================================================================
+
+// GraphSummaryResponse is the response body for GET /graph/summary.
+type GraphSummaryResponse struct {
+	// Text is the exact formatted text agents see when they call graph_summary.
+	Text string `json:"text"`
+	// Sources contains structured per-source data for richer UI rendering.
+	Sources []graphSummarySource `json:"sources"`
+}
+
+// graphSummarySource mirrors questbridge.SourceSummaryData for JSON serialisation.
+// We re-declare it here so the API package has no compile-time dependency on
+// questbridge's internal domain structs beyond the exported method call.
+type graphSummarySource struct {
+	Name          string              `json:"name"`
+	Type          string              `json:"type"`
+	Ready         bool                `json:"ready"`
+	EntityPrefix  string              `json:"entity_prefix,omitempty"`
+	TotalEntities int                 `json:"total_entities"`
+	Domains       []graphSummaryDomain `json:"domains"`
+}
+
+type graphSummaryDomain struct {
+	Domain      string             `json:"domain"`
+	EntityCount int                `json:"entity_count"`
+	Types       []graphSummaryType `json:"types"`
+}
+
+type graphSummaryType struct {
+	Type  string `json:"type"`
+	Count int    `json:"count"`
+}
+
+// handleGraphSummary returns the knowledge graph summary — the same data agents
+// see when they call the graph_summary tool. The response includes the
+// human-readable text field plus structured per-source data for UI rendering.
+func (s *Service) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
+	registry := questbridgeGlobalGraphSources()
+	if registry == nil {
+		s.writeJSON(w, GraphSummaryResponse{
+			Text:    "No graph sources configured.",
+			Sources: []graphSummarySource{},
+		})
+		return
+	}
+
+	text, rawSources := registry.SummaryWithText(r.Context())
+	if text == "" {
+		text = "Local graph only — no external knowledge sources indexed."
+	}
+
+	sources := make([]graphSummarySource, 0, len(rawSources))
+	for _, src := range rawSources {
+		gs := graphSummarySource{
+			Name:          src.Name,
+			Type:          src.Type,
+			Ready:         src.Ready,
+			EntityPrefix:  src.EntityPrefix,
+			TotalEntities: src.TotalEntities,
+			Domains:       make([]graphSummaryDomain, 0, len(src.Domains)),
+		}
+		for _, d := range src.Domains {
+			gd := graphSummaryDomain{
+				Domain:      d.Domain,
+				EntityCount: d.EntityCount,
+				Types:       make([]graphSummaryType, 0, len(d.Types)),
+			}
+			for _, t := range d.Types {
+				gd.Types = append(gd.Types, graphSummaryType{Type: t.Type, Count: t.Count})
+			}
+			gs.Domains = append(gs.Domains, gd)
+		}
+		sources = append(sources, gs)
+	}
+
+	s.writeJSON(w, GraphSummaryResponse{Text: text, Sources: sources})
 }
 
 // =============================================================================

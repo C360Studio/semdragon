@@ -88,21 +88,25 @@ type summCacheEntry struct {
 
 // sourceSummary mirrors the semsource /summary response JSON.
 type sourceSummary struct {
-	Namespace      string          `json:"namespace"`
-	Phase          string          `json:"phase"`
-	EntityIDFormat string          `json:"entity_id_format"`
-	TotalEntities  int             `json:"total_entities"`
-	Domains        []summaryDomain `json:"domains"`
+	Namespace      string         `json:"namespace"`
+	Phase          string         `json:"phase"`
+	EntityIDFormat string         `json:"entity_id_format"`
+	TotalEntities  int            `json:"total_entities"`
+	Domains        []SummaryDomain `json:"domains"`
 }
 
-type summaryDomain struct {
+// SummaryDomain is the per-domain section of a semsource /summary response.
+// Exported so that SourceSummaryData.Domains is a fully exported type.
+type SummaryDomain struct {
 	Domain      string        `json:"domain"`
 	EntityCount int           `json:"entity_count"`
-	Types       []summaryType `json:"types"`
+	Types       []SummaryType `json:"types"`
 	Sources     []string      `json:"sources"`
 }
 
-type summaryType struct {
+// SummaryType is the per-entity-type breakdown within a SummaryDomain.
+// Exported so that SourceSummaryData.Domains[n].Types is a fully exported type.
+type SummaryType struct {
 	Type  string `json:"type"`
 	Count int    `json:"count"`
 }
@@ -492,6 +496,132 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 	sb.WriteString(`Use graph_summary tool for full predicate schema with descriptions.`)
 
 	return sb.String()
+}
+
+// SourceSummaryData is the structured per-source summary returned by StructuredSummary.
+// It mirrors the semsource /summary response with added source metadata for API consumers.
+type SourceSummaryData struct {
+	Name          string          `json:"name"`
+	Type          string          `json:"type"`
+	Ready         bool            `json:"ready"`
+	EntityPrefix  string          `json:"entity_prefix,omitempty"`
+	TotalEntities int             `json:"total_entities"`
+	Domains       []SummaryDomain `json:"domains"`
+}
+
+// StructuredSummary returns per-source summary data for all configured semsource sources,
+// fetching from each source's /summary endpoint (with caching). Local sources are included
+// with zero entity counts since they do not expose the /summary endpoint.
+// This method is used by the REST API to expose the same data agents see via graph_summary.
+func (r *GraphSourceRegistry) StructuredSummary(ctx context.Context) []SourceSummaryData {
+	result := make([]SourceSummaryData, 0, len(r.sources))
+	for _, src := range r.sources {
+		entry := SourceSummaryData{
+			Name:         src.Name,
+			Type:         src.Type,
+			Ready:        src.ready.Load(),
+			EntityPrefix: src.EntityPrefix,
+			Domains:      []SummaryDomain{},
+		}
+
+		if src.Type == "semsource" && src.ready.Load() {
+			summURL := src.SummaryURL()
+			if summURL != "" {
+				if sm := r.fetchSummaryWithCache(ctx, summURL); sm != nil {
+					entry.TotalEntities = sm.TotalEntities
+					entry.Domains = sm.Domains
+				}
+			}
+		}
+
+		result = append(result, entry)
+	}
+	return result
+}
+
+// SummaryWithText returns both the formatted prompt text and the structured
+// per-source data in a single pass, avoiding the double cache lookup that
+// results from calling FormatSummaryForPrompt and StructuredSummary separately.
+//
+// The text field is the same string FormatSummaryForPrompt would return.
+// Empty text means no semsource sources are ready (check sources for details).
+func (r *GraphSourceRegistry) SummaryWithText(ctx context.Context) (string, []SourceSummaryData) {
+	sources := r.StructuredSummary(ctx)
+
+	// Collect only semsource entries that have data to format.
+	type readySrc struct {
+		data SourceSummaryData
+	}
+	var ready []readySrc
+	totalEntities := 0
+	for _, s := range sources {
+		if s.Type == "semsource" && s.Ready && s.TotalEntities > 0 {
+			ready = append(ready, readySrc{data: s})
+			totalEntities += s.TotalEntities
+		}
+	}
+
+	if len(ready) == 0 {
+		return "", sources
+	}
+
+	// Sort by name for stable output — insertion sort (small n).
+	for i := 1; i < len(ready); i++ {
+		for j := i; j > 0 && ready[j].data.Name < ready[j-1].data.Name; j-- {
+			ready[j], ready[j-1] = ready[j-1], ready[j]
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("--- Graph Contents ---\n")
+	sb.WriteString(fmt.Sprintf("%d knowledge source", len(ready)))
+	if len(ready) != 1 {
+		sb.WriteString("s")
+	}
+	sb.WriteString(fmt.Sprintf(", %d entities total.\n\n", totalEntities))
+
+	sb.WriteString("Entity IDs use 6-part dotted notation: org.platform.domain.system.type.instance\n")
+	for _, f := range ready {
+		if f.data.EntityPrefix != "" {
+			prefix := strings.TrimSuffix(f.data.EntityPrefix, ".")
+			sb.WriteString(fmt.Sprintf("  %s: %s.{domain}.{system}.{type}.{instance}\n",
+				f.data.Name, prefix))
+		}
+	}
+
+	for _, f := range ready {
+		sb.WriteString(fmt.Sprintf("\n%s (%d entities):\n", f.data.Name, f.data.TotalEntities))
+		for _, d := range f.data.Domains {
+			if len(d.Types) == 0 {
+				continue
+			}
+			var typeParts []string
+			for _, t := range d.Types {
+				typeParts = append(typeParts, fmt.Sprintf("%s (%d)", t.Type, t.Count))
+			}
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", d.Domain, strings.Join(typeParts, ", ")))
+		}
+	}
+
+	sb.WriteString("\nQuery with graph_search: use \"prefix\" to scope by source (e.g. ")
+	if ready[0].data.EntityPrefix != "" {
+		prefix := strings.TrimSuffix(ready[0].data.EntityPrefix, ".")
+		exampleDomain := ""
+		if len(ready[0].data.Domains) > 0 {
+			exampleDomain = ready[0].data.Domains[0].Domain
+		}
+		if exampleDomain != "" {
+			sb.WriteString(fmt.Sprintf("%q", prefix+"."+exampleDomain))
+		} else {
+			sb.WriteString(fmt.Sprintf("%q", prefix))
+		}
+	} else {
+		sb.WriteString(`"source.domain"`)
+	}
+	sb.WriteString(`), "predicate" for targeted lookups, or "nlq" for natural language questions.` + "\n")
+	sb.WriteString(`Use graph_summary tool for full predicate schema with descriptions.`)
+
+	return sb.String(), sources
 }
 
 // fetchSummaryWithCache retrieves a parsed sourceSummary for the given URL,

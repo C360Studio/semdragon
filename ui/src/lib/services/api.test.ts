@@ -23,8 +23,10 @@ import {
 	useConsumable,
 	getActiveEffects,
 	getWorldState,
+	getGraphSummary,
 	ApiError
 } from './api';
+import type { GraphSummaryResponse } from './api';
 import type { Quest, Agent, BossBattle, AgentStats, QuestConstraints, AgentConfig } from '$types';
 import { agentId, questId, battleId } from '$types';
 
@@ -466,6 +468,56 @@ describe('API Service', () => {
 				'http://test-api.local/game/agents/agent-1/effects',
 				expect.any(Object)
 			);
+		});
+	});
+
+	describe('getGraphSummary', () => {
+		it('fetches graph summary from /game/graph/summary', async () => {
+			const mockResponse: GraphSummaryResponse = {
+				text: '--- Graph Contents ---',
+				sources: [
+					{
+						name: 'test-source',
+						type: 'semsource',
+						ready: true,
+						entity_prefix: 'test.',
+						total_entities: 42,
+						domains: [
+							{
+								domain: 'code',
+								entity_count: 42,
+								types: [{ type: 'function', count: 42 }]
+							}
+						]
+					}
+				]
+			};
+
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse
+			});
+
+			const result = await getGraphSummary();
+
+			expect(result.text).toBe('--- Graph Contents ---');
+			expect(result.sources).toHaveLength(1);
+			expect(result.sources[0].type).toBe('semsource');
+			expect(result.sources[0].total_entities).toBe(42);
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://test-api.local/game/graph/summary',
+				expect.any(Object)
+			);
+		});
+
+		it('throws on error response', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: false,
+				status: 503,
+				text: async () => 'Service Unavailable'
+			});
+
+			await expect(getGraphSummary()).rejects.toThrow('API Error 503: Service Unavailable');
 		});
 	});
 

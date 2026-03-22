@@ -641,6 +641,18 @@ func semdragonsOpenAPISpec() *service.OpenAPISpec {
 				},
 			},
 
+			// ── Graph ─────────────────────────────────────────────
+			"/graph/summary": {
+				GET: &service.OperationSpec{
+					Summary:     "Get graph summary",
+					Description: "Returns the knowledge graph summary — the same data agents see when they call the graph_summary tool. Includes a human-readable text field and structured per-source data for UI rendering. Returns an empty summary when no graph sources are configured.",
+					Tags:        []string{"Graph"},
+					Responses: map[string]service.ResponseSpec{
+						"200": {Description: "Graph summary with text and structured source data", ContentType: "application/json"},
+					},
+				},
+			},
+
 			// ── DM ───────────────────────────────────────────────
 			"/dm/chat": {
 				POST: &service.OperationSpec{

@@ -450,6 +450,9 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	// Model registry
 	mux.HandleFunc("GET "+prefix+"models", cors(s.handleGetModels))
 
+	// Graph summary — same data agents see via graph_summary tool
+	mux.HandleFunc("GET "+prefix+"graph/summary", cors(s.handleGraphSummary))
+
 	// Workspace — artifact browser (read-only, backed by workspace repo)
 	// Workspace browser routes removed — workspace repo replaced by sandbox.
 

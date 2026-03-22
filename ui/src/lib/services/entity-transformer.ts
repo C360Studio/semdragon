@@ -250,7 +250,7 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 		required_tools: [],
 		min_tier: num(m.get('quest.tier.minimum')) as TrustTier,
 		party_required: m.get('quest.party.required') === true,
-		min_party_size: 0,
+		min_party_size: num(m.get('quest.party.min_size')),
 		base_xp: num(m.get('quest.xp.base'), 100),
 		bonus_xp: 0,
 		guild_xp: 0,
@@ -411,6 +411,7 @@ function transformBattle(key: string, entity: GraphEntity): BossBattle {
 
 	return {
 		id: battleId(key),
+		name: str(m.get('battle.identity.name')) || undefined,
 		quest_id: questId(str(m.get('battle.assignment.quest'))),
 		agent_id: agentId(str(m.get('battle.assignment.agent'))),
 		level: num(m.get('battle.review.level')) as ReviewLevel,

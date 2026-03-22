@@ -687,7 +687,7 @@ describe('transformBattle', () => {
 		const battle = transformEntity('battle', BATTLE_KEY, entity) as BossBattle;
 
 		expect(battle.criteria).toEqual([]);
-		expect(battle.results).toEqual([]);
+		expect(battle.results).toBeUndefined();
 		expect(battle.judges).toEqual([]);
 	});
 });
@@ -949,18 +949,21 @@ describe('schema contract validation', () => {
 	// -------------------------------------------------------------------------
 
 	const QUEST_HANDLED: Record<string, string> = {
+		'quest.identity.name': 'name',
 		'quest.identity.title': 'title',
 		'quest.identity.description': 'description',
 		'quest.status.state': 'status',
 		'quest.difficulty.level': 'difficulty',
 		'quest.tier.minimum': 'min_tier',
 		'quest.party.required': 'party_required',
+		'quest.party.min_size': 'min_party_size',
 		'quest.xp.base': 'base_xp',
 		'quest.review.level': 'constraints.review_level',
 		'quest.lifecycle.posted_at': 'posted_at',
 		'quest.attempts.current': 'attempts',
 		'quest.attempts.max': 'max_attempts',
-		'quest.execution.loop_id': 'loop_id'
+		'quest.execution.loop_id': 'loop_id',
+		'quest.classification.type': 'quest_type'
 	};
 
 	const QUEST_IGNORED: Record<string, string> = {
@@ -1011,11 +1014,13 @@ describe('schema contract validation', () => {
 	// -------------------------------------------------------------------------
 
 	const BATTLE_HANDLED: Record<string, string> = {
+		'battle.identity.name': 'name',
 		'battle.assignment.quest': 'quest_id',
 		'battle.assignment.agent': 'agent_id',
 		'battle.status.state': 'status',
 		'battle.review.level': 'level',
-		'battle.lifecycle.started_at': 'started_at'
+		'battle.lifecycle.started_at': 'started_at',
+		'battle.verdict.level_change': 'verdict.level_change'
 	};
 
 	const BATTLE_IGNORED: Record<string, string> = {

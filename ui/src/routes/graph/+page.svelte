@@ -19,6 +19,7 @@
 	import SigmaCanvas from '$lib/components/graph/SigmaCanvas.svelte';
 	import GraphMetrics from '$lib/components/graph/GraphMetrics.svelte';
 	import GraphDetail from '$lib/components/graph/GraphDetail.svelte';
+	import GraphSummary from '$lib/components/graph/GraphSummary.svelte';
 	import GraphFilters from '$lib/components/graph/GraphFilters.svelte';
 
 	import { graphStore } from '$lib/stores/graphStore.svelte';
@@ -189,10 +190,14 @@
 	{/snippet}
 
 	{#snippet rightPanel()}
-		<GraphDetail
-			entity={selectedEntity ?? null}
-			onEntitySelect={handleRelatedEntitySelect}
-		/>
+		{#if selectedEntity}
+			<GraphDetail
+				entity={selectedEntity}
+				onEntitySelect={handleRelatedEntitySelect}
+			/>
+		{:else}
+			<GraphSummary />
+		{/if}
 	{/snippet}
 </ThreePanelLayout>
 

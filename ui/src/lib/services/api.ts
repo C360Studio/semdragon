@@ -316,6 +316,34 @@ export async function setTokenBudget(limit: number): Promise<TokenStats> {
 }
 
 // =============================================================================
+// GRAPH SUMMARY
+// =============================================================================
+
+export interface GraphSummaryDomain {
+	domain: string;
+	entity_count: number;
+	types: Array<{ type: string; count: number }>;
+}
+
+export interface GraphSummarySource {
+	name: string;
+	type: 'local' | 'semsource';
+	ready: boolean;
+	entity_prefix: string;
+	total_entities: number;
+	domains: GraphSummaryDomain[];
+}
+
+export interface GraphSummaryResponse {
+	text: string; // Formatted text that agents see
+	sources: GraphSummarySource[];
+}
+
+export async function getGraphSummary(): Promise<GraphSummaryResponse> {
+	return fetchJson<GraphSummaryResponse>('/game/graph/summary');
+}
+
+// =============================================================================
 // ARTIFACTS
 // =============================================================================
 
@@ -479,5 +507,6 @@ export const api = {
 	getSettings,
 	getSettingsHealth,
 	updateSettings,
-	healthCheck
+	healthCheck,
+	getGraphSummary
 };
