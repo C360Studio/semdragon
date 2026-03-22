@@ -1,10 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -2943,6 +2945,106 @@ func (s *Service) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, GraphSummaryResponse{Text: text, Sources: sources})
+}
+
+// handleGraphQuery proxies a GraphQL query through the graph source registry,
+// routing to the correct graph-gateway based on the query prefix. This lets the
+// UI query entities from ANY configured source (local or external semsource)
+// through a single endpoint without knowing per-source URLs.
+//
+// Routing logic:
+//   - entitiesByPrefix: route by the "prefix" variable to the owning source
+//   - pathSearch / entity lookups: route by "startEntity" variable
+//   - globalSearch / anything else: fall through to local graph-gateway
+func (s *Service) handleGraphQuery(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodySize))
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var gqlReq struct {
+		Query     string         `json:"query"`
+		Variables map[string]any `json:"variables"`
+	}
+	if err := json.Unmarshal(body, &gqlReq); err != nil {
+		http.Error(w, "invalid GraphQL request", http.StatusBadRequest)
+		return
+	}
+
+	registry := questbridgeGlobalGraphSources()
+	if registry == nil {
+		// No source registry configured — fall through to local graph-gateway.
+		s.proxyGraphQL(w, r, body, "")
+		return
+	}
+
+	// Choose routing strategy based on the operation in the query string.
+	var targetURL string
+	switch {
+	case strings.Contains(gqlReq.Query, "entitiesByPrefix"):
+		// Route by the prefix variable to the source that owns that namespace.
+		prefix, _ := gqlReq.Variables["prefix"].(string)
+		if urls := registry.GraphQLURLsForQuery("prefix", "", prefix); len(urls) > 0 {
+			targetURL = urls[0]
+		}
+
+	case strings.Contains(gqlReq.Query, "pathSearch"):
+		// Route by startEntity to the source that owns that entity ID.
+		entityID, _ := gqlReq.Variables["startEntity"].(string)
+		if urls := registry.GraphQLURLsForQuery("entity", entityID, ""); len(urls) > 0 {
+			targetURL = urls[0]
+		}
+
+	default:
+		// For globalSearch and any other query type, use the local source.
+		// Fan-out across sources is not yet implemented; the local graph-gateway
+		// merges local entities. External prefix queries should use entitiesByPrefix.
+		if urls := registry.GraphQLURLsForQuery("entity", "", ""); len(urls) > 0 {
+			targetURL = urls[0]
+		}
+	}
+
+	if targetURL == "" {
+		http.Error(w, "no graph source available for this query", http.StatusServiceUnavailable)
+		return
+	}
+
+	s.proxyGraphQL(w, r, body, targetURL)
+}
+
+// proxyGraphQL forwards the already-read GraphQL body to the given targetURL and
+// streams the response back to the client. When targetURL is empty it falls back
+// to the local graph-gateway on localhost.
+func (s *Service) proxyGraphQL(w http.ResponseWriter, r *http.Request, body []byte, targetURL string) {
+	if targetURL == "" {
+		targetURL = "http://localhost:8080/graph-gateway/graphql"
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
+	if err != nil {
+		http.Error(w, "failed to create proxy request", http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		s.logger.Warn("graph proxy request failed", "target", targetURL, "error", err)
+		http.Error(w, fmt.Sprintf("graph query failed: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	if _, copyErr := io.Copy(w, resp.Body); copyErr != nil {
+		s.logger.Warn("graph proxy response copy failed", "target", targetURL, "error", copyErr)
+	}
 }
 
 // =============================================================================

@@ -453,6 +453,11 @@ func (s *Service) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	// Graph summary — same data agents see via graph_summary tool
 	mux.HandleFunc("GET "+prefix+"graph/summary", cors(s.handleGraphSummary))
 
+	// Graph query proxy — routes GraphQL queries to the correct source via the
+	// GraphSourceRegistry. Enables the UI to query any source (local or external
+	// semsource) through a single endpoint.
+	mux.HandleFunc("POST "+prefix+"graph/query", cors(s.handleGraphQuery))
+
 	// Workspace — artifact browser (read-only, backed by workspace repo)
 	// Workspace browser routes removed — workspace repo replaced by sandbox.
 

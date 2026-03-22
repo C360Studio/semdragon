@@ -1,9 +1,9 @@
 /**
  * Graph Gateway API client
  *
- * GraphQL client for the graph-gateway endpoint at /graph-gateway/graphql.
- * Proxied by Vite (dev) and Caddy (prod) — no auth headers required for
- * same-origin requests.
+ * Routes GraphQL queries through the backend's graph source registry at
+ * /game/graph/query, which resolves the correct graph-gateway based on
+ * entity prefix (local, external semsource, etc.).
  */
 
 import type {
@@ -13,7 +13,7 @@ import type {
   PathSearchResult,
 } from '$lib/api/graph-types';
 
-const GRAPHQL_ENDPOINT = '/graph-gateway/graphql';
+const GRAPHQL_ENDPOINT = '/game/graph/query';
 
 // =============================================================================
 // Error Type
