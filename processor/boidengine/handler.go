@@ -246,12 +246,12 @@ func (c *Component) handleQuestUpdate(entry jetstream.KeyValueEntry) {
 	}
 
 	c.questsMu.Lock()
-	// Only track posted quests without a party — party sub-quests are
-	// managed by questdagexec and should not appear in boid suggestions.
-	if quest.Status == domain.QuestPosted && quest.PartyID == nil {
+	// Track posted quests (for suggestions) and completed quests (for
+	// dependency checks). Party sub-quests are managed by questdagexec
+	// and should not appear in boid suggestions.
+	if quest.PartyID == nil && (quest.Status == domain.QuestPosted || quest.Status == domain.QuestCompleted) {
 		c.quests[instance] = quest
 	} else {
-		// Remove non-posted or party quests from cache.
 		delete(c.quests, instance)
 	}
 	c.questsMu.Unlock()
@@ -347,7 +347,9 @@ func (c *Component) computeAndPublish() {
 		if len(quest.DependsOn) > 0 {
 			blocked := false
 			for _, depID := range quest.DependsOn {
-				if dep, ok := c.quests[string(depID)]; ok {
+				// DependsOn stores full entity IDs; cache keys are instances.
+				depInstance := domain.ExtractInstance(string(depID))
+				if dep, ok := c.quests[depInstance]; ok {
 					if dep.Status != domain.QuestCompleted {
 						blocked = true
 						break
