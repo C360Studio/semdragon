@@ -65,7 +65,7 @@ task docker:up:ollama      # local Ollama, no key needed
 │   guildformation  partycoord       boidengine   │
 ├─────────────────────────────────────────────────┤
 │           QUEST BOARD + EXECUTION               │
-│  questboard · bossbattle · redteam              │
+│  questboard · bossbattle · redteam (opt-in)     │
 │  agentprogression · agentstore                  │
 │  questbridge · questtools · questdagexec        │
 │  promptmanager                                  │
@@ -101,8 +101,8 @@ event bus is needed.
 | **Dungeon Master** | The human or hybrid controller: posts quests, sets policy, intervenes via chat |
 | **Sandbox** | An isolated container where agents run code, write files, and execute shell commands |
 | **Artifact** | A file produced by an agent during quest execution, stored in the sandbox workspace |
-| **Red-Team Review** | Adversarial guild review that runs before the boss battle; extracts lessons into guild knowledge |
-| **Guild Lessons** | Indexed knowledge (by skill + category) persisted from red-team reviews and injected into future agent prompts |
+| **Red-Team Review** | Optional adversarial cross-guild review before boss battle; disabled by default, enable via `redteam` component + `bossbattle.red_team_enabled` |
+| **Guild Lessons** | Indexed knowledge (by skill + category) persisted from red-team reviews and injected into future agent prompts (requires red-team) |
 | **Explore** | A read-only sub-agent spawned via the `explore` tool for multi-step discovery without consuming the parent agent's iteration budget |
 
 ## Trust Tiers

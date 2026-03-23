@@ -497,9 +497,9 @@ Components enabled in the default config (`config/semdragons.json`):
 - `agentic-loop`, `agentic-model` — semstreams event-driven LLM loop orchestration
 - `questbridge`, `questtools` — quest-to-LLM bridge (requires model_registry and AGENT stream)
 - `questdagexec` — party quest DAG execution (requires questbridge, questtools)
-- `redteam` — guild red-team adversarial review before boss battle, extracts lessons to guild knowledge
 
 Processors registered but excluded from the default config (opt-in):
+- `redteam` — guild red-team adversarial review before boss battle, extracts lessons to guild knowledge (also requires `bossbattle.red_team_enabled: true`)
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)
 - `autonomy` — depends on executor; DM approval gate is implemented but untested with real LLM calls
 - `seeding` — requires explicit config; `ModeTrainingArena` needs LLM, `ModeTieredRoster` works without
