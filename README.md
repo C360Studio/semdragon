@@ -26,7 +26,10 @@ task docker:down
 ```
 
 The mock LLM responds with canned completions so you can watch the full quest pipeline
-without spending tokens. Once the dashboard loads:
+without spending tokens. Once the stack is up:
+
+- Dashboard: `http://localhost`
+- Swagger UI: `http://localhost/docs`
 
 1. Open the DM Chat panel and type: `Post a quest to write a hello world function`
 2. Watch the Quests view — agents claim the quest and begin executing within seconds
@@ -62,9 +65,13 @@ task docker:up:ollama      # local Ollama, no key needed
 │   guildformation  partycoord       boidengine   │
 ├─────────────────────────────────────────────────┤
 │           QUEST BOARD + EXECUTION               │
-│  questboard · bossbattle · agentprogression     │
-│  agentstore · questbridge · questtools          │
-│  questdagexec · promptmanager                   │
+│  questboard · bossbattle · redteam              │
+│  agentprogression · agentstore                  │
+│  questbridge · questtools · questdagexec        │
+│  promptmanager                                  │
+├─────────────────────────────────────────────────┤
+│              AGENTIC LOOP                        │
+│  questbridge → agentic-loop → questtools        │
 ├─────────────────────────────────────────────────┤
 │                  SEMSTREAMS                      │
 │  NATS JetStream · KV (entity state + events)   │
@@ -94,16 +101,19 @@ event bus is needed.
 | **Dungeon Master** | The human or hybrid controller: posts quests, sets policy, intervenes via chat |
 | **Sandbox** | An isolated container where agents run code, write files, and execute shell commands |
 | **Artifact** | A file produced by an agent during quest execution, stored in the sandbox workspace |
+| **Red-Team Review** | Adversarial guild review that runs before the boss battle; extracts lessons into guild knowledge |
+| **Guild Lessons** | Indexed knowledge (by skill + category) persisted from red-team reviews and injected into future agent prompts |
+| **Explore** | A read-only sub-agent spawned via the `explore` tool for multi-step discovery without consuming the parent agent's iteration budget |
 
 ## Trust Tiers
 
 | Level | Tier | Capabilities |
 |-------|------|--------------|
-| 1-5 | Apprentice | Read-only, summarize, classify |
-| 6-10 | Journeyman | Tools, API requests, staging writes |
-| 11-15 | Expert | Production writes, deployments, spend money |
-| 16-18 | Master | Supervise agents, decompose quests, lead parties |
-| 19-20 | Grandmaster | Act as DM delegate, manage guilds |
+| 1-5 | Apprentice | `submit_work`, `ask_clarification`, `explore`, `graph_query`, `graph_search`, `graph_multi_query`, `graph_summary` |
+| 6-10 | Journeyman | All Apprentice tools + `bash`, `http_request`, `web_search` |
+| 11-15 | Expert | All Journeyman tools; eligible for production-critical quests |
+| 16-18 | Master | All Expert tools + `decompose_quest`, `review_sub_quest`, `answer_clarification` (party lead) |
+| 19-20 | Grandmaster | DM delegation, guild management |
 
 ## Project Structure
 
@@ -179,6 +189,7 @@ task lint                     # revive + go vet
 task check                    # fmt + tidy + lint + test:all
 task e2e                      # Playwright E2E suite against Docker stack with mock LLM
 task e2e:gemini               # E2E against Docker stack with Gemini
+task e2e:pros:gemini          # Tier 3 epic run — full Pros roster with Gemini
 task docker:logs              # Tail backend logs
 task docker:logs:all          # Tail all service logs
 ```

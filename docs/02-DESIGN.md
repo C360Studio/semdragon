@@ -111,6 +111,9 @@ Quest transitions to in_progress
    - Consumes tool.execute.* from AGENT stream
    - Enforces tier/skill/sandbox gates via ToolRegistry
    - Publishes tool.result.* responses back to AGENT stream
+   - **explore tool**: spawns a read-only child agentic-loop for discovery work;
+     the sub-agent may use graph_query, web_search, and file read tools but no
+     state-mutating tools; result is returned synchronously to the parent loop
         │
         ▼
    questbridge (completion handler)
@@ -124,9 +127,9 @@ the semdragons integration layer over semstreams' generic agentic-loop. They tra
 quest entities and tool registrations into the message format the loop expects, then
 translate results back into quest state changes.
 
-**The `executor` component is opt-in / legacy.** It provides synchronous LLM execution
-without the agentic-loop and was the original implementation. It is not enabled in the
-default config. New deployments should use questbridge + questtools.
+**The synchronous `executor` processor is superseded by `questbridge` + `questtools`
+for event-driven execution.** It remains registered for backward compatibility but is
+not enabled in the default config. New deployments should use questbridge + questtools.
 
 ### Context Assembly
 
@@ -187,15 +190,16 @@ Key permission boundaries from `domain.TierPermissionsFor`:
 
 ## Graph Gateway
 
-The `graph-gateway` component (semstreams v1.0.0-alpha.22+) exposes a GraphQL endpoint
-for querying entity state. It enables temporal queries, NLQ classification, similarity
-search, and relationship traversal — capabilities that go beyond what the KV watch
-pattern can provide cheaply.
+The `graph-gateway` component exposes a GraphQL endpoint over the entity graph. It
+enables relationship traversal, temporal queries, NLQ classification, and similarity
+search — capabilities that go beyond what the KV watch pattern can provide cheaply.
 
-The gateway is not wired in the default config yet. When enabled, it is proxied through
-the SvelteKit BFF layer (`+page.server.ts` load functions) for dashboard pages that
-need historical or relational queries. The dashboard's `worldStore` covers the common
-case (current state of all entities); the gateway covers the rest.
+The gateway runs on port `:8082` and is enabled in the default config. The semdragons
+backend proxies GraphQL requests to it via the `/api/game/graph/query` endpoint, so
+callers do not need to reach the gateway directly. The dashboard's `worldStore` covers
+the common case (current state of all entities); the gateway covers relational and
+historical queries. SvelteKit BFF load functions (`+page.server.ts`) may call the proxy
+for dashboard pages that need these richer queries.
 
 ---
 
@@ -373,25 +377,39 @@ or weaknesses in the original agent's output.
 
 The flow:
 
-1. Quest submitted (`in_review`) → `redteam` posts a review quest with the original
-   output as context.
-2. The boid engine applies a **1.5x cross-guild affinity** multiplier, attracting agents
-   from guilds other than the original agent's. This ensures adversarial diversity.
-3. The red-team agent produces findings (weaknesses, missed requirements, edge cases).
-4. Findings are attached to the original quest before the boss battle judge evaluates it.
-   The judge sees both the agent's output and the red-team critique.
-5. After the boss battle, the `redteam` processor extracts **lessons** from the findings
-   and persists them to the reviewing guild's knowledge base, indexed by skill tag and
-   lesson category.
+1. Quest submitted (`in_review`) → `redteam` watches the KV transition and posts a
+   red-team quest with the original output and acceptance criteria as context.
+2. The red-team quest mirrors the original quest's structure (scenarios, party requirements,
+   decomposability class), so party quests receive a full party red-team review with
+   per-scenario decomposition rather than a single-agent pass.
+3. The `redteam` processor sets `GuildPriority` to the highest-reputation guild *other
+   than* the original agent's guild. The boid engine applies a **1.5x cross-guild
+   affinity** multiplier to attract agents from different guilds, ensuring adversarial
+   diversity.
+4. The red-team agent produces findings (weaknesses, missed requirements, edge cases).
+   The processor writes the red-team quest ID onto the original quest entity
+   (`quest.red_team_quest_id`) using CAS to avoid clobbering concurrent status changes.
+5. On completion, the `redteam` processor sets `RedTeamStatus: "completed"` on the
+   original quest entity. The boss battle judge reads this field and incorporates the
+   red-team critique alongside the agent's output.
+6. Lessons are extracted from the findings and persisted to the reviewing guild's
+   knowledge base, indexed by `(SkillTag, LessonCategory)`. Future agents in that guild
+   receive the lessons injected into their prompts via guild context assembly.
 
-**Non-blocking with timeouts:** If no agent claims the red-team quest within the claim
-timeout, or if execution exceeds the execution timeout, the processor emits a `skipped`
-signal and the boss battle proceeds without red-team input. The system never blocks on
-red-team availability.
+**Scope exclusions:** Sub-quests (`ParentQuest != nil`) are skipped — they are reviewed
+by the party lead via `questdagexec`. Red-team quests themselves are also excluded to
+prevent recursion.
+
+**Non-blocking with timeouts:** If no agent claims the red-team quest within
+`claim_timeout` (default: 2 minutes), or if execution exceeds `execution_timeout`
+(default: 5 minutes), the processor emits a `skipped` signal and the boss battle proceeds
+without red-team input. The timed-out quest is explicitly failed so sub-quests are not
+left orphaned. The system never blocks on red-team availability.
 
 **Configuration:** Both the `redteam` component and `bossbattle.red_team_enabled: true`
-must be set. The `min_difficulty` config (default: 1, i.e., Easy) controls which quests
-trigger red-team review — trivial quests skip it.
+must be enabled. Both are **disabled by default** in `config/semdragons.json` and must
+be opted in explicitly. The `min_difficulty` config (default: 1, i.e., Easy) controls
+which quests trigger red-team review — quests below the threshold are skipped.
 
 ---
 

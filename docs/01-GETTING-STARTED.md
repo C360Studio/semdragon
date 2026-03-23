@@ -47,7 +47,7 @@ This command builds and starts seven containers:
 | `semembed` | `ghcr.io/c360studio/semembed` | 8083 | Local embedding model for semantic search |
 | `sandbox` | Built locally | internal | Isolated execution environment for agent file tools |
 | `backend` | Built locally | 8081 | REST API + all reactive processors |
-| `ui` | Built locally | 5173 | SvelteKit dashboard (Vite dev server) |
+| `ui` | Built locally | 5173 (internal) | SvelteKit dashboard (Vite dev server) |
 | `caddy` | `caddy:2-alpine` | 80 | Reverse proxy — serves UI and API same-origin |
 
 When the command returns, all services have passed their health checks. The backend port is also
@@ -60,6 +60,8 @@ Access points:
 |-----|------|
 | `http://localhost` | Dashboard (via Caddy) |
 | `http://localhost/game/` | REST API |
+| `http://localhost/docs` | Swagger UI — interactive REST API reference |
+| `http://localhost/openapi.json` | OpenAPI spec (machine-readable) |
 | `http://localhost:8222` | NATS monitoring UI |
 
 ### Step 2: Open the dashboard
@@ -154,7 +156,14 @@ task docker:up:openai       # OpenAI (OPENAI_API_KEY in .env)
 task docker:up:ollama       # Local Ollama (requires: ollama serve)
 ```
 
-Each command loads the corresponding model config file from `config/models/` automatically.
+Each command loads the corresponding model config file from `config/models/` automatically by
+setting `SEMDRAGONS_MODELS=/etc/semdragons/models/<provider>.json` inside the container. If you
+are running the backend outside Docker and want to switch providers, set this env var yourself:
+
+```bash
+SEMDRAGONS_MODELS=config/models/gemini.json go run ./cmd/semdragons
+```
+
 The mock LLM container is not started when using a real provider.
 
 ### Step 3: Restart after switching
@@ -199,8 +208,12 @@ Key CLI flags:
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
 | `--config`, `-c` | `SEMDRAGONS_CONFIG` | `config/semdragons.json` | Config file path |
+| `--models` | `SEMDRAGONS_MODELS` | — | Model registry overlay file (e.g., `config/models/gemini.json`) |
 | `--log-level` | `SEMDRAGONS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `--log-format` | `SEMDRAGONS_LOG_FORMAT` | `json` | `json` or `text` |
+| `--debug` | — | — | Enable debug logging and pprof endpoint |
+| `--shutdown-timeout` | — | `30s` | Graceful shutdown duration |
+| `--version`, `-v` | — | — | Print version and exit |
 | `--validate` | — | — | Validate config and exit |
 
 NATS connection env vars (take priority over config file):
@@ -296,6 +309,7 @@ set `"enabled": false`. The default config enables everything needed for the ful
 | `OPENAI_API_KEY` | OpenAI API key |
 | `BRAVE_SEARCH_API_KEY` | Enables the `web_search` tool for agents |
 | `SEMDRAGONS_NATS_URLS` | Override NATS connection URL |
+| `SEMDRAGONS_MODELS` | Model registry overlay file path (set automatically by provider task variants) |
 | `SEMDRAGONS_API_KEY` | Auth key for write endpoints (empty = dev mode, no auth) |
 | `SEED_AGENTS` | Seed starter agents on boot (default: `true`) |
 | `SEED_E2E` | Full seed: agents + guilds + store catalog (default: `false`) |

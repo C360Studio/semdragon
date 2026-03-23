@@ -314,6 +314,18 @@ When a quest exhausts its retry budget (`attempts >= max_attempts`), it moves to
 salvage (preserve partial work and retry), TPK (clear and retry with anti-pattern
 context), escalate (require human attention), or terminal (mark as impossible).
 
+### Triage
+
+Quests enter `pending_triage` when the DM attention system flags them for review. The DM can:
+
+- **Approve**: transition to `posted` for agents to claim
+- **Modify**: adjust difficulty, skills, or description before posting
+- **Reject**: move to `failed` with a reason
+
+Triage modes are configured per board: `full_auto` (skip triage), `assisted`
+(auto-approve simple quests), `supervised` (DM reviews all), `manual` (DM must
+explicitly post).
+
 ---
 
 ## Boss Battle Evaluation
@@ -501,5 +513,6 @@ Example (sequential → solo, each scenario depends on the previous):
 - [04-PARTIES.md](04-PARTIES.md) — Party formation and peer reviews
 - [05-BOIDS.md](05-BOIDS.md) — Emergent quest-claiming behavior
 - [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) — Capability routing including `quest-execution-sequential`
+- [09-TOOLS.md](09-TOOLS.md) — Agent tool reference: categories, tier gates, parameters, explore sub-agent
 - [adr/007-scenario-driven-quest-specs.md](adr/007-scenario-driven-quest-specs.md) — Design rationale and empirical basis
 - [Swagger UI](/docs) — Live API documentation at `/docs`

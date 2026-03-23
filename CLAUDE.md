@@ -282,7 +282,7 @@ The root `semdragons` package re-exports type aliases from `domain/` and provide
 
 Two components form the **agentic integration layer** that bridges quest lifecycle to semstreams' event-driven LLM execution:
 - `questbridge` — Watches quest entities for `in_progress` transitions, assembles `TaskMessage` (prompt, tools, metadata), publishes to AGENT JetStream stream, handles loop completion/failure events. Uses KV twofer bootstrap protocol for crash recovery via QUEST_LOOPS bucket.
-- `questtools` — Consumes `tool.execute.*` from AGENT stream, enforces tier gates and sandbox routing via `executor.ToolRegistry`, publishes `tool.result.*` back. Reconstructs agent/quest context from `ToolCall.Metadata` to avoid KV round-trips on the hot path.
+- `questtools` — Consumes `tool.execute.*` from AGENT stream, enforces tier gates and sandbox routing via `executor.ToolRegistry`, publishes `tool.result.*` back. Reconstructs agent/quest context from `ToolCall.Metadata` to avoid KV round-trips on the hot path. Intercepts `explore` tool calls to spawn read-only child agentic loops.
 - `questdagexec` — Reactive DAG execution for party quest decompositions — watches sub-quest KV transitions, drives node assignment via `ClaimQuestForParty`, dispatches lead review tool calls, aggregates outputs for rollup, and escalates the parent quest on node exhaustion. DAG state stored as `quest.dag.*` predicates on the parent quest entity in the graph.
 
 **`processor/dmworldstate/`** aggregates all entity state into a single world-state snapshot consumed by the REST API's `/api/game/world` endpoint.
@@ -310,6 +310,7 @@ Documentation in `/docs/`:
 - `06-DOMAINS.md` — Domain system, prompt catalogs, skill taxonomies
 - `07-MODEL-REGISTRY.md` — LLM provider configuration, capabilities, fallback chains
 - `08-SANDBOX-REPOS.md` — Sandbox-owned git repos, worktree-per-quest model, merge-to-main quality gate, semsource integration
+- `09-TOOLS.md` — Agent tool reference: categories, tier gates, parameters, explore sub-agent
 - `adr/001-dm-chat-routing.md` — DM chat mode routing and orchestration design
 - API docs served live at `/docs` (Swagger UI) and `/openapi.json` — defined in `service/api/openapi.go`
 
@@ -480,10 +481,10 @@ Practical helpers in `.claude/skills/`:
 | `/quest-handler` | Handling quest lifecycle events (claim, complete, fail) |
 | `/utils` | Quick reference for semstreams utility packages |
 
-## Open Items
+See [/docs/09-TOOLS.md](docs/09-TOOLS.md) for the complete agent tool reference, including
+categories, tier gates, parameter schemas, and the `explore` sub-agent tool.
 
-API endpoints that return 501 Not Implemented:
-- `POST /api/game/dm/intervene/{questId}` — DM quest intervention
+## Open Items
 
 Components enabled in the default config (`config/semdragons.json`):
 - `graph-ingest`, `graph-index`, `graph-query` — semstreams entity persistence and indexing
