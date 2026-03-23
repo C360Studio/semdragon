@@ -547,17 +547,16 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 	}
 
 	// Determine cleanup key: execution loops are keyed by questID,
-	// review/clarify loops are keyed by loopID.
+	// review/clarify/explore loops are keyed by loopID.
 	cleanupKey := string(questID)
-	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify || mapping.LoopType == LoopTypeExplore {
 		cleanupKey = event.LoopID
 	}
 
-	// Only transition quest state for execution loops. Review and clarify
-	// loops are handled by questdagexec which watches KV state transitions
-	// written by the review/clarify tools.
-	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
-		c.logger.Info("DAG loop completed via agentic loop",
+	// Only transition quest state for execution loops. Review, clarify, and explore
+	// loops are handled externally: questdagexec for review/clarify, questtools for explore.
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify || mapping.LoopType == LoopTypeExplore {
+		c.logger.Info("sub-loop completed via agentic loop",
 			"quest_id", questID,
 			"loop_id", event.LoopID,
 			"loop_type", mapping.LoopType,
@@ -627,15 +626,15 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 	}
 
 	// Determine cleanup key: execution loops keyed by questID,
-	// review/clarify loops keyed by loopID.
+	// review/clarify/explore loops keyed by loopID.
 	cleanupKey := string(questID)
-	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify || mapping.LoopType == LoopTypeExplore {
 		cleanupKey = event.LoopID
 	}
 
 	// Only transition quest state for execution loops.
-	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
-		c.logger.Warn("DAG loop failed via agentic loop",
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify || mapping.LoopType == LoopTypeExplore {
+		c.logger.Warn("sub-loop failed via agentic loop",
 			"quest_id", questID,
 			"loop_id", event.LoopID,
 			"loop_type", mapping.LoopType,
@@ -690,12 +689,12 @@ func (c *Component) handleLoopCancelled(ctx context.Context, event *agentic.Loop
 
 	// Determine cleanup key.
 	cleanupKey := string(questID)
-	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify {
+	if mapping.LoopType == LoopTypeReview || mapping.LoopType == LoopTypeClarify || mapping.LoopType == LoopTypeExplore {
 		cleanupKey = event.LoopID
 	}
 
 	// Only transition quest state for execution loops.
-	if mapping.LoopType != LoopTypeReview && mapping.LoopType != LoopTypeClarify {
+	if mapping.LoopType != LoopTypeReview && mapping.LoopType != LoopTypeClarify && mapping.LoopType != LoopTypeExplore {
 		c.failQuest(ctx, questID, mapping, reason, loopMetrics{})
 	}
 

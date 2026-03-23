@@ -480,6 +480,109 @@ func (r *ToolRegistry) RegisterBuiltins() {
 			Category: ToolCategoryPartyLead,
 		})
 	}
+
+	// submit_findings is the terminal tool for explore sub-agents.
+	// It works identically to submit_work but is scoped to read-only research loops.
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "submit_findings",
+			Description: "Submit your research findings. Call this when you have gathered sufficient information to answer the investigation goal.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"findings": map[string]any{
+						"type":        "string",
+						"description": "Structured research findings",
+					},
+					"sources": map[string]any{
+						"type":        "array",
+						"description": "Entity IDs, URLs, or file paths consulted",
+						"items":       map[string]any{"type": "string"},
+					},
+				},
+				"required": []any{"findings"},
+			},
+		},
+		Handler: func(_ context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+			findings, _ := call.Arguments["findings"].(string)
+			if findings == "" {
+				return agentic.ToolResult{CallID: call.ID, Error: "findings argument is required and must be non-empty"}
+			}
+			return agentic.ToolResult{
+				CallID:   call.ID,
+				Content:  findings,
+				StopLoop: true,
+			}
+		},
+		MinTier:  domain.TierApprentice, // All tiers can submit findings
+		Category: ToolCategoryCore,
+	})
+}
+
+// RegisterExplore adds the explore tool to the registry.
+// The tool definition is registered here; actual execution is intercepted by
+// questtools.handleExplore before reaching the registry's Execute method.
+func (r *ToolRegistry) RegisterExplore() {
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "explore",
+			Description: "Spawn a focused sub-agent to investigate a topic using read-only tools (graph search, web search, file browsing). Use for complex multi-step discovery that requires several lookups. For single lookups, use graph_search or graph_query directly.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"goal": map[string]any{
+						"type":        "string",
+						"description": "What to investigate — be specific about what you need to find",
+					},
+					"context": map[string]any{
+						"type":        "string",
+						"description": "Additional context to help the explore agent (e.g. known entity IDs, file paths, or constraints)",
+					},
+				},
+				"required": []any{"goal"},
+			},
+		},
+		Handler: func(_ context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+			// Placeholder — actual execution is handled by questtools.handleExplore.
+			// This handler is only reached if explore is called outside of questtools.
+			return agentic.ToolResult{
+				CallID: call.ID,
+				Error:  "explore tool must be executed through questtools, not directly",
+			}
+		},
+		MinTier:  domain.TierApprentice, // All tiers can use explore
+		Category: ToolCategoryKnowledge,
+	})
+}
+
+// GetExploreTools returns the read-only tool definitions for an explore sub-agent.
+// Includes knowledge tools, network tools (read), and submit_findings.
+// Excludes: bash (write), submit_work, ask_clarification, party lead tools, and explore itself.
+func (r *ToolRegistry) GetExploreTools(agent *agentprogression.Agent) []agentic.ToolDefinition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	exploreToolNames := map[string]bool{
+		"graph_query":       true,
+		"graph_search":      true,
+		"graph_multi_query": true,
+		"graph_summary":     true,
+		"web_search":        true,
+		"http_request":      true,
+		"submit_findings":   true,
+	}
+
+	var tools []agentic.ToolDefinition
+	for name, tool := range r.tools {
+		if !exploreToolNames[name] {
+			continue
+		}
+		if agent.Tier < tool.MinTier {
+			continue
+		}
+		tools = append(tools, tool.Definition)
+	}
+	return tools
 }
 
 // =============================================================================
@@ -1136,6 +1239,180 @@ func (r *ToolRegistry) RegisterGraphSearchWithRouter(router GraphSearchRouter) {
 		MinTier:  domain.TierApprentice, // Read-only knowledge-graph access
 		Category: ToolCategoryKnowledge,
 	})
+}
+
+// NewSingleURLRouter returns a GraphSearchRouter that always routes to a single
+// GraphQL endpoint. Use this when only one graph-gateway URL is available.
+func NewSingleURLRouter(graphqlURL string) GraphSearchRouter {
+	return &singleURLRouter{url: graphqlURL}
+}
+
+// RegisterGraphMultiQuery adds the graph_multi_query tool to the registry.
+// It shares the same router as graph_search so multi-source routing applies
+// to every sub-query in a batch.
+func (r *ToolRegistry) RegisterGraphMultiQuery(router GraphSearchRouter) {
+	r.Register(RegisteredTool{
+		Definition: agentic.ToolDefinition{
+			Name:        "graph_multi_query",
+			Description: "Execute multiple graph queries in a single call. Use when you need to look up several entities, prefixes, or relationships at once. Each query uses the same parameters as graph_search. Maximum 5 queries per call.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"queries": map[string]any{
+						"type":        "array",
+						"description": "Array of graph queries to execute (max 5)",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"query_type": map[string]any{
+									"type": "string",
+									"enum": []any{"entity", "prefix", "predicate", "relationships", "search", "nlq"},
+								},
+								"entity_id":   map[string]any{"type": "string"},
+								"prefix":      map[string]any{"type": "string"},
+								"predicate":   map[string]any{"type": "string"},
+								"search_text": map[string]any{"type": "string"},
+								"limit":       map[string]any{"type": "integer"},
+							},
+							"required": []any{"query_type"},
+						},
+					},
+				},
+				"required": []any{"queries"},
+			},
+		},
+		Handler:  graphMultiQueryHandler(router),
+		MinTier:  domain.TierApprentice,
+		Category: ToolCategoryKnowledge,
+	})
+}
+
+// graphMultiQueryHandler returns a ToolHandler that executes a batch of graph
+// queries and combines their results under labeled headings.
+func graphMultiQueryHandler(router GraphSearchRouter) ToolHandler {
+	client := &http.Client{Timeout: graphQLTimeout}
+
+	return func(ctx context.Context, call agentic.ToolCall, _ *domain.Quest, _ *agentprogression.Agent) agentic.ToolResult {
+		select {
+		case <-ctx.Done():
+			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("operation cancelled: %v", ctx.Err())}
+		default:
+		}
+
+		// Parse the queries array from arguments.
+		rawQueries, ok := call.Arguments["queries"]
+		if !ok {
+			return agentic.ToolResult{CallID: call.ID, Error: "queries argument is required"}
+		}
+		queriesSlice, ok := rawQueries.([]any)
+		if !ok {
+			return agentic.ToolResult{CallID: call.ID, Error: "queries must be an array"}
+		}
+		if len(queriesSlice) == 0 {
+			return agentic.ToolResult{CallID: call.ID, Error: "queries array must contain at least one query"}
+		}
+		if len(queriesSlice) > 5 {
+			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("too many queries: %d (maximum is 5)", len(queriesSlice))}
+		}
+
+		var combined strings.Builder
+		totalBytes := 0
+
+		for i, rawQuery := range queriesSlice {
+			queryArgs, ok := rawQuery.(map[string]any)
+			if !ok {
+				combined.WriteString(fmt.Sprintf("## Query %d\nError: query must be an object\n\n", i+1))
+				continue
+			}
+
+			queryType, _ := queryArgs["query_type"].(string)
+			if queryType == "" {
+				combined.WriteString(fmt.Sprintf("## Query %d\nError: query_type is required\n\n", i+1))
+				continue
+			}
+
+			// Build a human-readable label that identifies the query key parameter.
+			label := queryType
+			switch queryType {
+			case "entity", "relationships":
+				if id, _ := queryArgs["entity_id"].(string); id != "" {
+					label = fmt.Sprintf("%s(%s)", queryType, id)
+				}
+			case "prefix":
+				if p, _ := queryArgs["prefix"].(string); p != "" {
+					label = fmt.Sprintf("prefix(%s)", p)
+				}
+			case "predicate":
+				if p, _ := queryArgs["predicate"].(string); p != "" {
+					label = fmt.Sprintf("predicate(%s)", p)
+				}
+			case "search", "nlq":
+				if t, _ := queryArgs["search_text"].(string); t != "" {
+					if len(t) > 40 {
+						t = t[:40] + "..."
+					}
+					label = fmt.Sprintf("%s(%s)", queryType, t)
+				}
+			}
+
+			limit := 20
+			if l, ok := queryArgs["limit"].(float64); ok && l > 0 {
+				limit = min(int(l), 100)
+			}
+
+			gqlReq, err := buildGraphSearchQuery(queryType, limit, queryArgs)
+			if err != nil {
+				combined.WriteString(fmt.Sprintf("## Query %d: %s\nError: %s\n\n", i+1, label, err.Error()))
+				continue
+			}
+
+			entityID, _ := queryArgs["entity_id"].(string)
+			prefix, _ := queryArgs["prefix"].(string)
+			urls := router.GraphQLURLsForQuery(queryType, entityID, prefix)
+			if len(urls) == 0 {
+				combined.WriteString(fmt.Sprintf("## Query %d: %s\nNo graph sources available for this query.\n\n", i+1, label))
+				continue
+			}
+
+			reqCtx, cancel := context.WithTimeout(ctx, graphQLTimeout)
+			var queryResult string
+
+			if len(urls) == 1 {
+				queryResult, err = executeGraphQLQuery(reqCtx, client, urls[0], gqlReq)
+				cancel()
+				if err != nil {
+					combined.WriteString(fmt.Sprintf("## Query %d: %s\nError: %s\n\n", i+1, label, err.Error()))
+					continue
+				}
+			} else {
+				// Fan out to multiple sources and merge.
+				var parts []string
+				for _, u := range urls {
+					res, ferr := executeGraphQLQuery(reqCtx, client, u, gqlReq)
+					if ferr == nil && res != "" {
+						parts = append(parts, res)
+					}
+				}
+				cancel()
+				if len(parts) == 0 {
+					combined.WriteString(fmt.Sprintf("## Query %d: %s\nNo results from any source.\n\n", i+1, label))
+					continue
+				}
+				queryResult = strings.Join(parts, "\n\n---\n\n")
+			}
+
+			section := fmt.Sprintf("## Query %d: %s\n%s\n\n", i+1, label, queryResult)
+			totalBytes += len(section)
+			if totalBytes > maxGraphResponseSize {
+				combined.WriteString(fmt.Sprintf("## Query %d: %s\nResponse truncated — combined results exceeded %d bytes. Run remaining queries individually.\n\n",
+					i+1, label, maxGraphResponseSize))
+				break
+			}
+			combined.WriteString(section)
+		}
+
+		return agentic.ToolResult{CallID: call.ID, Content: strings.TrimRight(combined.String(), "\n")}
+	}
 }
 
 // graphQLRequest is the JSON body sent to a GraphQL endpoint.

@@ -44,6 +44,7 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	RegisterBuiltinFragments(reg)
 
 	// Expect exactly 9 built-in fragments:
+	//   - discovery-first directive
 	//   - party lead tool directive
 	//   - party lead provider hint
 	//   - sub-quest executor directive
@@ -59,8 +60,8 @@ func TestRegisterBuiltinFragments_FragmentsRegistered(t *testing.T) {
 	//   - party cooperation directive
 	//   - red-team directive
 	//   - guild lessons directive
-	if got := reg.FragmentCount(); got != 18 {
-		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 18", got)
+	if got := reg.FragmentCount(); got != 19 {
+		t.Errorf("RegisterBuiltinFragments registered %d fragments, want 19", got)
 	}
 }
 

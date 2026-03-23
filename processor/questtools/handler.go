@@ -18,26 +18,34 @@ import (
 
 // startConsumer registers a durable JetStream consumer on tool.execute.* via the
 // natsclient helper, which handles consumer lifecycle and context propagation.
-func (c *Component) startConsumer(ctx context.Context) error {
+//
+// lifecycleCtx is the Start(ctx) context — it lives for the component's lifetime.
+// The natsclient consumer wraps each message in a short per-message context (30s
+// default), which is fine for synchronous tool calls. Explore tool calls run longer
+// and derive their own timeout from lifecycleCtx instead.
+func (c *Component) startConsumer(lifecycleCtx context.Context) error {
 	consumerName := "questtools-execute"
 	if c.config.ConsumerNameSuffix != "" {
 		consumerName += "-" + c.config.ConsumerNameSuffix
 	}
 
-	return c.deps.NATSClient.ConsumeStreamWithConfig(ctx, natsclient.StreamConsumerConfig{
+	return c.deps.NATSClient.ConsumeStreamWithConfig(lifecycleCtx, natsclient.StreamConsumerConfig{
 		StreamName:    c.config.StreamName,
 		ConsumerName:  consumerName,
 		FilterSubject: "tool.execute.*",
 		DeliverPolicy: "all",
 		AckPolicy:     "explicit",
-	}, c.handleToolExecute)
+	}, func(msgCtx context.Context, msg jetstream.Msg) {
+		c.handleToolExecute(lifecycleCtx, msgCtx, msg)
+	})
 }
 
 // handleToolExecute processes a single tool.execute.* message.
-// It is called by the natsclient consumer loop with a derived context.
-// The handler always acks the message (even on error) to prevent redelivery loops;
-// error results are published back as ToolResult.Error responses so the caller can react.
-func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
+//
+// lifecycleCtx is the Start(ctx) context — lives for the component's lifetime.
+// msgCtx is the per-message context with a 30s timeout — fine for synchronous tools.
+// Explore calls derive from lifecycleCtx (longer-lived); everything else uses msgCtx.
+func (c *Component) handleToolExecute(lifecycleCtx context.Context, msgCtx context.Context, msg jetstream.Msg) {
 	defer func() { _ = msg.Ack() }()
 
 	// Unwrap the BaseMessage envelope that agentic-loop wraps around ToolCalls.
@@ -49,7 +57,7 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 		c.errorsCount.Add(1)
 		if parts := strings.SplitN(msg.Subject(), ".", 3); len(parts) == 3 {
 			errMsg := fmt.Sprintf("failed to unmarshal ToolCall: %v", err)
-			_ = c.publishResult(ctx, parts[2], &agentic.ToolResult{
+			_ = c.publishResult(msgCtx, parts[2], &agentic.ToolResult{
 				CallID:  parts[2],
 				Content: "Tool error: " + errMsg,
 				Error:   errMsg,
@@ -73,7 +81,7 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 		c.errorsCount.Add(1)
 		if call.ID != "" {
 			errMsg := fmt.Sprintf("invalid tool call: %v", err)
-			_ = c.publishResult(ctx, call.ID, &agentic.ToolResult{
+			_ = c.publishResult(msgCtx, call.ID, &agentic.ToolResult{
 				CallID:  call.ID,
 				Content: "Tool error: " + errMsg,
 				Error:   errMsg,
@@ -91,8 +99,53 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 		"quest_id", quest.ID, "tier", agent.Tier,
 		"arguments", call.Arguments)
 
+	// Special handling for the explore tool — spawns a child agentic loop and
+	// blocks until it completes (or times out). Running this async keeps the
+	// consumer goroutine free while the sub-agent works.
+	if call.Name == "explore" {
+		c.exploreWg.Add(1)
+		go func() {
+			defer c.exploreWg.Done()
+
+			// Derive from lifecycleCtx (component lifetime) with explore timeout.
+			// The per-message msgCtx has a 30s timeout which is too short for
+			// explore (30-120s). lifecycleCtx cancels on component shutdown.
+			exploreCtx, exploreCancel := context.WithTimeout(lifecycleCtx, c.config.ExploreTimeoutDuration())
+			defer exploreCancel()
+
+			result := c.handleExplore(exploreCtx, call, agent, quest)
+			// Ensure Content is non-empty per the same invariant as the sync path.
+			if result.Content == "" && result.Error != "" {
+				result.Content = fmt.Sprintf("Tool error: %s", result.Error)
+			} else if result.Content == "" {
+				result.Content = "(no output)"
+			}
+			// Propagate correlation identifiers.
+			result.LoopID = call.LoopID
+			result.TraceID = call.TraceID
+			if err := c.publishResult(exploreCtx, call.ID, &result); err != nil {
+				c.logger.Error("failed to publish explore ToolResult",
+					"call_id", call.ID, "error", err)
+				c.errorsCount.Add(1)
+				return
+			}
+			if result.Error != "" {
+				c.toolsFailed.Add(1)
+			} else {
+				c.toolsExecuted.Add(1)
+			}
+			c.lastActivity.Store(time.Now())
+			c.logger.Debug("explore tool completed",
+				"call_id", call.ID, "loop_id", call.LoopID,
+				"quest_id", quest.ID, "success", result.Error == "")
+		}()
+		// The consumer message is already acked via defer at the top of the function.
+		// Return immediately — result will be published asynchronously.
+		return
+	}
+
 	// Execute the tool through the registry, which enforces tier and skill gates.
-	result := c.toolRegistry.Execute(ctx, call, quest, agent)
+	result := c.toolRegistry.Execute(msgCtx, call, quest, agent)
 
 	// Ensure Content is non-empty. The agentic-loop converts ToolResult.Content
 	// into the ChatMessage.Content for role=tool messages. Gemini (and other
@@ -122,7 +175,7 @@ func (c *Component) handleToolExecute(ctx context.Context, msg jetstream.Msg) {
 	result.TraceID = call.TraceID
 
 	// Publish the result to tool.result.{callID} on the same AGENT stream.
-	if err := c.publishResult(ctx, call.ID, &result); err != nil {
+	if err := c.publishResult(msgCtx, call.ID, &result); err != nil {
 		c.logger.Error("failed to publish ToolResult",
 			"call_id", call.ID,
 			"error", err)

@@ -36,6 +36,7 @@ func TestBuiltinToolTierAlignment(t *testing.T) {
 		// Apprentice — terminal tools safe for every agent.
 		{tool: "submit_work", wantTier: domain.TierApprentice, reason: "all tiers can submit work"},
 		{tool: "ask_clarification", wantTier: domain.TierApprentice, reason: "all tiers can ask questions"},
+		{tool: "submit_findings", wantTier: domain.TierApprentice, reason: "all tiers can submit explore findings"},
 
 		// Journeyman — network access and shell execution require demonstrated trust.
 		{tool: "http_request", wantTier: domain.TierJourneyman, reason: "network access requires level 6+"},
@@ -80,14 +81,15 @@ func TestBuiltinToolCount(t *testing.T) {
 	t.Parallel()
 
 	// RegisterBuiltins registers:
-	//   submit_work, ask_clarification                 — 2 terminal tools (Apprentice)
-	//   http_request, bash                             — 2 Journeyman tools
+	//   submit_work, ask_clarification, submit_findings — 3 terminal tools (Apprentice)
+	//   http_request, bash                              — 2 Journeyman tools
 	//   decompose_quest, review_sub_quest,
-	//   answer_clarification                           — 3 DAG tools (Master)
+	//   answer_clarification                            — 3 DAG tools (Master)
 	//
 	// web_search is excluded — registered conditionally via RegisterWebSearch.
 	// graph_query is excluded — requires a live EntityQueryFunc (RegisterGraphQuery).
-	const wantCount = 7
+	// explore is excluded — registered separately via RegisterExplore (questtools Start).
+	const wantCount = 8
 
 	reg := NewToolRegistry()
 	reg.RegisterBuiltins()

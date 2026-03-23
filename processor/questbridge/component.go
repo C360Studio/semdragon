@@ -58,6 +58,7 @@ const (
 	LoopTypeExecution = "execution" // Quest execution loop (questbridge)
 	LoopTypeReview    = "review"    // Lead review loop (questdagexec)
 	LoopTypeClarify   = "clarify"   // Lead clarification loop (questdagexec)
+	LoopTypeExplore   = "explore"   // Explore sub-agent loop (questtools)
 )
 
 // QuestLoopMapping tracks the relationship between a quest and its agentic loop.

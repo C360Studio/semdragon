@@ -14,6 +14,7 @@ import (
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/questbridge"
 	"github.com/c360studio/semstreams/component"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // Component consumes tool.execute.* messages from the AGENT JetStream stream,
@@ -27,6 +28,19 @@ type Component struct {
 	toolRegistry *executor.ToolRegistry
 	logger       *slog.Logger
 	boardConfig  *domain.BoardConfig
+
+	// questLoopsBucket persists explore loop mappings for crash recovery.
+	// Shared with questbridge (same bucket name). Nil before Start.
+	questLoopsBucket jetstream.KeyValue
+
+	// activeExplores tracks in-flight explore loops by parent LoopID.
+	// Only one explore per parent loop is allowed at a time.
+	// Key: parent LoopID, Value: struct{} (presence set).
+	activeExplores sync.Map
+
+	// exploreWg tracks in-flight explore goroutines so Stop() can wait
+	// for them to drain before tearing down the NATS connection.
+	exploreWg sync.WaitGroup
 
 	// Lifecycle
 	running   atomic.Bool
@@ -190,13 +204,37 @@ func (c *Component) Start(ctx context.Context) error {
 	// single-URL fallback when registry is not configured.
 	if reg := questbridge.GlobalGraphSources(); reg != nil {
 		c.toolRegistry.RegisterGraphSearchWithRouter(reg)
+		c.toolRegistry.RegisterGraphMultiQuery(reg)
 	} else if c.config.GraphQLURL != "" {
 		c.toolRegistry.RegisterGraphSearch(c.config.GraphQLURL)
+		c.toolRegistry.RegisterGraphMultiQuery(executor.NewSingleURLRouter(c.config.GraphQLURL))
 	}
 
 	// Register graph_summary tool for semsource source discovery.
 	if reg := questbridge.GlobalGraphSources(); reg != nil {
 		c.toolRegistry.RegisterGraphSummary(reg)
+	}
+
+	// Register explore tool — spawns a read-only sub-agent for discovery work.
+	// Actual execution is intercepted in handleToolExecute before reaching the registry.
+	c.toolRegistry.RegisterExplore()
+
+	// Get or create the QUEST_LOOPS KV bucket for explore loop crash-recovery mappings.
+	// The bucket is shared with questbridge (same name), so we use KeyValue to attach
+	// to an existing bucket rather than creating a new one.
+	{
+		js, jsErr := c.deps.NATSClient.JetStream()
+		if jsErr != nil {
+			c.logger.Warn("failed to get JetStream for QUEST_LOOPS bucket", "error", jsErr)
+		} else {
+			bucket, kvErr := js.KeyValue(ctx, c.config.QuestLoopsBucket)
+			if kvErr != nil {
+				c.logger.Warn("QUEST_LOOPS bucket not available — explore loop mappings will not be written",
+					"bucket", c.config.QuestLoopsBucket, "error", kvErr)
+			} else {
+				c.questLoopsBucket = bucket
+			}
+		}
 	}
 
 	// Configure HTML-to-text conversion and optional graph persistence for
@@ -246,6 +284,13 @@ func (c *Component) Stop(_ time.Duration) error {
 	}
 
 	c.running.Store(false)
+
+	// Wait for in-flight explore goroutines to drain before returning,
+	// so the NATS connection isn't torn down under them. The lifecycleCtx
+	// passed to startConsumer is cancelled by the service manager before
+	// Stop() is called, which cancels all in-flight explore contexts.
+	c.exploreWg.Wait()
+
 	c.logger.Info("questtools component stopped")
 	return nil
 }

@@ -16,6 +16,8 @@ import (
 
 // RegisterBuiltinFragments registers cross-domain fragments into the registry.
 // Currently registers:
+//   - Discovery-first directive (CategoryToolDirective, priority 5) — instructs
+//     solo agents with graph tools to gather context before writing code.
 //   - Party lead tool directive (CategoryToolDirective) — enforces decompose_quest
 //     calls for party lead agents on party-required quests. Includes quest scenarios
 //     when present so the lead can map them directly to sub-quests.
@@ -34,6 +36,7 @@ import (
 //
 // Call this once per registry, after RegisterDomainCatalog and RegisterProviderStyles.
 func RegisterBuiltinFragments(r *PromptRegistry) {
+	registerDiscoveryFirstDirective(r)
 	registerPartyLeadDirective(r)
 	registerPartyLeadProviderHints(r)
 	registerSubQuestExecutorDirective(r)
@@ -368,6 +371,49 @@ func registerResearchOutputDirective(r *PromptRegistry) {
 }
 
 // =============================================================================
+// DISCOVERY FIRST DIRECTIVE - Graph-aware discovery before implementation
+// =============================================================================
+
+// discoveryFirstDirective instructs agents with knowledge graph access to gather
+// context before writing code or making changes. Fires at priority 5 — before
+// the solo scenario directive (10) and archetype workflows (12) — so agents see
+// this orientation rule before their class-specific workflow steps.
+const discoveryFirstDirective = `DISCOVERY FIRST: Before writing code or making changes, gather context:
+1. Call graph_summary to see what data sources are indexed.
+2. Use graph_search (query_type 'nlq' or 'search') for project-specific lookups.
+3. If graph results are insufficient, use web_search for external information.
+4. Only after you understand the relevant code, patterns, and dependencies should you start implementation.
+Do NOT interleave discovery and implementation — investigate thoroughly, then act.`
+
+// isDiscoveryCandidate returns true for agents that are not a party lead, not
+// executing a sub-quest (those have explicit objectives and their own orient
+// step), and have at least one knowledge graph tool available.
+func isDiscoveryCandidate(ctx AssemblyContext) bool {
+	if ctx.PartyRequired && ctx.IsPartyLead {
+		return false
+	}
+	if ctx.IsSubQuest {
+		return false
+	}
+	for _, name := range ctx.AvailableToolNames {
+		if name == "graph_search" || name == "graph_summary" || name == "graph_multi_query" {
+			return true
+		}
+	}
+	return false
+}
+
+func registerDiscoveryFirstDirective(r *PromptRegistry) {
+	r.Register(&PromptFragment{
+		ID:        "builtin.discovery-first",
+		Category:  CategoryToolDirective,
+		Priority:  5,
+		Condition: isDiscoveryCandidate,
+		Content:   discoveryFirstDirective,
+	})
+}
+
+// =============================================================================
 // WORKSPACE PRIOR WORK - Tells retry agents to inspect existing files
 // =============================================================================
 
@@ -461,21 +507,26 @@ var toolGuidanceEntries = map[string]string{
 	// Knowledge tools
 	"graph_query":   "Game state (quests, agents, guilds, parties, battles). Fast.",
 	"graph_summary": "Overview of what's indexed in the knowledge graph — sources, entity types, counts, predicates. Call ONCE before graph_search to understand available data.",
-	"graph_search":  "Knowledge graph (code, docs, repos, prior tool results). Try this FIRST for project-specific lookups. Use query_type 'nlq' for natural language questions. If results are empty or unhelpful, FALL BACK to web_search — don't retry the same graph query.",
-	"web_search":    "External info AND fallback when graph search returns poor results. Use for third-party APIs, libraries, general knowledge, or when the knowledge graph didn't answer your question. Use BEFORE http_request to find the right URLs — never guess URLs.",
+	"graph_search":      "Knowledge graph (code, docs, repos, prior tool results). Try this FIRST for project-specific lookups. Use query_type 'nlq' for natural language questions. If results are empty or unhelpful, FALL BACK to web_search — don't retry the same graph query.",
+	"graph_multi_query": "Batch multiple graph queries in one call. Use when you need several lookups at once — saves iterations vs sequential graph_search calls.",
+	"web_search":        "External info AND fallback when graph search returns poor results. Use for third-party APIs, libraries, general knowledge, or when the knowledge graph didn't answer your question. Use BEFORE http_request to find the right URLs — never guess URLs.",
 	// Network tools
 	"http_request": "Fetch a URL with automatic HTML-to-text conversion. Use web_search first to find URLs — never guess.",
 	// Shell — universal command execution
 	"bash": "Universal tool for ALL operations: read files (cat), write files (cat <<'EOF' > file\\n...\\nEOF), " +
 		"search (grep -rn), list dirs (ls -la), tests (python3 -m pytest), builds, git, deps. " +
 		"For Python venv: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+	// Sub-agent spawning — most expensive, use last resort
+	"explore": "Spawn a research sub-agent for complex multi-step investigation. Use when you need several lookups across graph, web, and files. For single lookups, use graph_search directly.",
 }
 
 // toolGuidanceOrder controls the display order of tool guidance entries.
+// explore is last because it is the most expensive — use direct tools first.
 var toolGuidanceOrder = []string{
-	"graph_query", "graph_summary", "graph_search", "web_search",
+	"graph_query", "graph_summary", "graph_search", "graph_multi_query", "web_search",
 	"http_request",
 	"bash",
+	"explore",
 }
 
 // hasMultipleTools gates the tool guidance fragment — only included when the
