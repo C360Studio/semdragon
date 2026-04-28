@@ -18,6 +18,7 @@ import (
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
+	"github.com/c360studio/semstreams/payloadbuiltins"
 )
 
 // =============================================================================
@@ -35,7 +36,8 @@ func setupIntegrationComponent(t *testing.T, client *natsclient.Client, boardNam
 	t.Helper()
 
 	deps := component.Dependencies{
-		NATSClient: client,
+		NATSClient:      client,
+		PayloadRegistry: payloadbuiltins.NewTestRegistry(t),
 	}
 
 	config := DefaultConfig()
@@ -191,16 +193,16 @@ func TestComponent_DAGWatchAndTransition(t *testing.T) {
 	nodeRetries := map[string]int{"node-1": 2, "node-2": 2}
 
 	parentQuest := &domain.Quest{
-		ID:              domain.QuestID(parentQuestID),
-		Title:           "Parent Quest",
-		Status:          domain.QuestInProgress,
-		DAGExecutionID:  "exec-integration-1",
-		DAGDefinition:   dag,
-		DAGNodeQuestIDs: nodeQuestIDs,
-		DAGNodeStates:   nodeStates,
+		ID:               domain.QuestID(parentQuestID),
+		Title:            "Parent Quest",
+		Status:           domain.QuestInProgress,
+		DAGExecutionID:   "exec-integration-1",
+		DAGDefinition:    dag,
+		DAGNodeQuestIDs:  nodeQuestIDs,
+		DAGNodeStates:    nodeStates,
 		DAGNodeAssignees: map[string]string{},
-		DAGNodeRetries:  nodeRetries,
-		PartyID:         &partyEntityID,
+		DAGNodeRetries:   nodeRetries,
+		PartyID:          &partyEntityID,
 	}
 	if err := gc.EmitEntity(ctx, parentQuest, "quest.dag.decomposed"); err != nil {
 		t.Fatalf("emit parent quest with DAG state: %v", err)

@@ -22,6 +22,7 @@ import (
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
+	"github.com/c360studio/semstreams/payloadbuiltins"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -43,7 +44,8 @@ func TestComponentLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	deps := component.Dependencies{
-		NATSClient: client,
+		NATSClient:      client,
+		PayloadRegistry: payloadbuiltins.NewTestRegistry(t),
 	}
 
 	config := DefaultConfig()
@@ -217,9 +219,9 @@ func TestQuestStartedPublishesTaskMessage(t *testing.T) {
 	var taskMsg *agentic.TaskMessage
 	select {
 	case data := <-taskCh:
-		var baseMsg message.BaseMessage
-		if err := json.Unmarshal(data, &baseMsg); err != nil {
-			t.Fatalf("Failed to unmarshal BaseMessage: %v", err)
+		baseMsg, err := comp.decoder.Decode(data)
+		if err != nil {
+			t.Fatalf("Failed to decode BaseMessage: %v", err)
 		}
 		var ok bool
 		taskMsg, ok = baseMsg.Payload().(*agentic.TaskMessage)
@@ -296,9 +298,9 @@ func TestTaskMessageToolFiltering(t *testing.T) {
 	var taskMsg *agentic.TaskMessage
 	select {
 	case data := <-taskCh:
-		var baseMsg message.BaseMessage
-		if err := json.Unmarshal(data, &baseMsg); err != nil {
-			t.Fatalf("Failed to unmarshal BaseMessage: %v", err)
+		baseMsg, err := comp.decoder.Decode(data)
+		if err != nil {
+			t.Fatalf("Failed to decode BaseMessage: %v", err)
 		}
 		var ok bool
 		taskMsg, ok = baseMsg.Payload().(*agentic.TaskMessage)
@@ -312,7 +314,7 @@ func TestTaskMessageToolFiltering(t *testing.T) {
 	// Apprentice-tier (level 1-5) agents should receive terminal tools
 	// (submit_work, ask_clarification) but NOT Journeyman+ tools (bash, http_request).
 	apprenticeTools := map[string]bool{
-		"submit_work":     true,
+		"submit_work":       true,
 		"ask_clarification": true,
 	}
 	journeymanPlusTools := map[string]bool{
@@ -598,7 +600,8 @@ func TestBootstrapDoesNotRetriggerExistingQuests(t *testing.T) {
 
 	// Now start the component — bootstrap replay should hydrate cache only.
 	deps := component.Dependencies{
-		NATSClient: client,
+		NATSClient:      client,
+		PayloadRegistry: payloadbuiltins.NewTestRegistry(t),
 	}
 	comp, err := NewFromConfig(config, deps)
 	if err != nil {
@@ -640,7 +643,8 @@ func setupComponent(t *testing.T, client *natsclient.Client, board string) (*Com
 	config.DeleteConsumerOnStop = true
 
 	deps := component.Dependencies{
-		NATSClient: client,
+		NATSClient:      client,
+		PayloadRegistry: payloadbuiltins.NewTestRegistry(t),
 	}
 
 	comp, err := NewFromConfig(config, deps)

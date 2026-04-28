@@ -1431,6 +1431,9 @@ func (m *capabilityMockRegistry) GetFallbackChain(key string) []string {
 	return m.chains[key]
 }
 func (m *capabilityMockRegistry) GetMaxTokens(string) int   { return 0 }
+// GetCapability satisfies model.RegistryReader — resolveCapability only calls
+// GetFallbackChain, so per-capability config is not exercised here.
+func (m *capabilityMockRegistry) GetCapability(string) *model.CapabilityConfig { return nil }
 func (m *capabilityMockRegistry) GetDefault() string                  { return "" }
 func (m *capabilityMockRegistry) ListCapabilities() []string          { return nil }
 func (m *capabilityMockRegistry) ListEndpoints() []string             { return nil }

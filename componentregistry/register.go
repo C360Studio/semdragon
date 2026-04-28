@@ -6,19 +6,16 @@ package componentregistry
 import (
 	"github.com/c360studio/semstreams/component"
 	graphgateway "github.com/c360studio/semstreams/gateway/graph-gateway"
-	graphindex "github.com/c360studio/semstreams/processor/graph-index"
-	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
+	wsinput "github.com/c360studio/semstreams/input/websocket"
 	graphclustering "github.com/c360studio/semstreams/processor/graph-clustering"
 	graphembedding "github.com/c360studio/semstreams/processor/graph-embedding"
+	graphindex "github.com/c360studio/semstreams/processor/graph-index"
+	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 	graphquery "github.com/c360studio/semstreams/processor/graph-query"
-	wsinput "github.com/c360studio/semstreams/input/websocket"
 
 	// Semstreams agentic processors
 	agenticloop "github.com/c360studio/semstreams/processor/agentic-loop"
 	agenticmodel "github.com/c360studio/semstreams/processor/agentic-model"
-
-	// semsource payload registration — triggers init() to register the entity payload type
-	_ "github.com/c360studio/semdragons/semsource"
 
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
@@ -47,9 +44,9 @@ func RegisterAll(registry *component.Registry) error {
 	// These provide entity persistence, indexing, and query capabilities
 	// that semdragons components depend on.
 	graphProcessors := []func(*component.Registry) error{
-		wsinput.Register,      // WebSocket input for semsource entity streaming
-		graphingest.Register,  // Entity/triple ingestion and storage
-		graphindex.Register,   // Relationship and predicate indexes
+		wsinput.Register,         // WebSocket input for semsource entity streaming
+		graphingest.Register,     // Entity/triple ingestion and storage
+		graphindex.Register,      // Relationship and predicate indexes
 		graphquery.Register,      // Query coordination and PathRAG
 		graphembedding.Register,  // Vector embeddings (BM25 or HTTP)
 		graphclustering.Register, // Community detection and structural analysis

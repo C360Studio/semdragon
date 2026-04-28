@@ -14,6 +14,7 @@ import (
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/questbridge"
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/message"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -28,6 +29,11 @@ type Component struct {
 	toolRegistry *executor.ToolRegistry
 	logger       *slog.Logger
 	boardConfig  *domain.BoardConfig
+
+	// decoder unwraps BaseMessage envelopes wrapping ToolCalls and explore
+	// completion events. semstreams beta.18 retired the payloadregistry
+	// singleton, so each consumer holds its own decoder.
+	decoder *message.Decoder
 
 	// questLoopsBucket persists explore loop mappings for crash recovery.
 	// Shared with questbridge (same bucket name). Nil before Start.

@@ -26,6 +26,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/message"
 )
 
 // =============================================================================
@@ -85,6 +86,11 @@ type Component struct {
 	graph       *semdragons.GraphClient
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
+
+	// decoder unwraps BaseMessage envelopes for lead loop completion events
+	// consumed off the AGENT stream. semstreams beta.18 retired the
+	// payloadregistry singleton, so each consumer holds its own decoder.
+	decoder *message.Decoder
 
 	// questLoopsBucket is the QUEST_LOOPS KV bucket for writing review/clarify
 	// loop mappings that questbridge uses to track loop completion.

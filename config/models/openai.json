@@ -7,13 +7,16 @@
         "model": "gpt-4o-mini",
         "api_key_env": "OPENAI_API_KEY",
         "max_tokens": 128000,
-        "supports_tools": true
+        "supports_tools": true,
+        "requests_per_minute": 60,
+        "max_concurrent": 8
       },
       "semembed": {
         "provider": "openai",
         "url": "http://semembed:8081/v1",
         "model": "BAAI/bge-small-en-v1.5",
-        "max_tokens": 0
+        "max_tokens": 0,
+        "max_concurrent": 8
       }
     },
     "capabilities": {

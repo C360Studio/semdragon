@@ -100,9 +100,9 @@ type dagEvent struct {
 	KVRevision uint64
 
 	// Sub-quest transition fields.
-	EntityKey    string
-	NewStatus    string
-	Triples      []message.Triple
+	EntityKey     string
+	NewStatus     string
+	Triples       []message.Triple
 	Bootstrapping bool // true during historical KV replay — suppress DAG actions
 
 	// Review completion fields.
@@ -323,8 +323,8 @@ func (c *Component) produceReviewEvents(ctx context.Context, events chan<- dagEv
 // Takes *Component only for the logger — must not access any state maps.
 // State maps are owned exclusively by the event loop goroutine.
 func parseLeadLoopCompletion(c *Component, msg jetstream.Msg) (dagEvent, bool) {
-	var baseMsg message.BaseMessage
-	if err := json.Unmarshal(msg.Data(), &baseMsg); err != nil {
+	baseMsg, err := c.decoder.Decode(msg.Data())
+	if err != nil {
 		c.logger.Debug("lead loop producer: ignoring non-BaseMessage", "error", err)
 		return dagEvent{}, false
 	}

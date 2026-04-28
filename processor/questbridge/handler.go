@@ -513,9 +513,9 @@ func (c *Component) handleCompletionMessage(ctx context.Context, msg jetstream.M
 // handleLoopCompleted emits an executor completion event for the finished loop.
 func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 	// Completion events are published by agentic-loop wrapped in BaseMessage.
-	var baseMsg message.BaseMessage
-	if err := json.Unmarshal(data, &baseMsg); err != nil {
-		c.logger.Error("failed to unmarshal completion BaseMessage", "error", err)
+	baseMsg, err := c.decoder.Decode(data)
+	if err != nil {
+		c.logger.Error("failed to decode completion BaseMessage", "error", err)
 		c.errorsCount.Add(1)
 		return
 	}
@@ -564,8 +564,8 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 	} else {
 		c.completeQuest(ctx, questID, mapping, event.Result, loopMetrics{
 			TurnsUsed: event.Iterations,
-			TokensIn:   event.TokensIn,
-			TokensOut:   event.TokensOut,
+			TokensIn:  event.TokensIn,
+			TokensOut: event.TokensOut,
 		})
 		c.logger.Info("quest execution completed via agentic loop",
 			"quest_id", questID,
@@ -597,9 +597,9 @@ func (c *Component) handleLoopCompleted(ctx context.Context, data []byte) {
 // handleLoopFailed emits an executor failure event for the failed loop.
 func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 	// Failure events are published by agentic-loop wrapped in BaseMessage.
-	var baseMsg message.BaseMessage
-	if err := json.Unmarshal(data, &baseMsg); err != nil {
-		c.logger.Error("failed to unmarshal failure BaseMessage", "error", err)
+	baseMsg, err := c.decoder.Decode(data)
+	if err != nil {
+		c.logger.Error("failed to decode failure BaseMessage", "error", err)
 		c.errorsCount.Add(1)
 		return
 	}
@@ -642,8 +642,8 @@ func (c *Component) handleLoopFailed(ctx context.Context, data []byte) {
 	} else {
 		c.failQuest(ctx, questID, mapping, event.Error, loopMetrics{
 			TurnsUsed: event.Iterations,
-			TokensIn:   event.TokensIn,
-			TokensOut:   event.TokensOut,
+			TokensIn:  event.TokensIn,
+			TokensOut: event.TokensOut,
 		})
 		c.logger.Info("quest execution failed via agentic loop",
 			"quest_id", questID,
@@ -997,6 +997,7 @@ func parseToolOutput(output string) (outputType, content string, ok bool) {
 //     (injected by the prompt assembler's response format instruction).
 //  2. Heuristic fallback: majority of non-empty lines end with "?" — catches
 //     agents that ignore the format instruction.
+//
 // hasIntentClarification checks only for a structured [INTENT: clarification]
 // tag in the output. Unlike isOutputClarificationRequest, it does NOT use the
 // "?" heuristic. Use this when the agent explicitly called submit_work
@@ -2199,48 +2200,48 @@ func (c *Component) buildAssembledSystemPrompt(ctx context.Context, agent *agent
 	}
 
 	assemblyCtx := promptmanager.AssemblyContext{
-		AgentID:              agent.ID,
-		Tier:                 agent.Tier,
-		Level:                agent.Level,
-		Skills:               agent.SkillProficiencies,
-		Archetype:            agent.Archetype,
-		Guild:                agent.Guild,
-		SystemPrompt:         agent.Config.SystemPrompt,
-		PersonaPrompt:        personaPrompt,
-		QuestTitle:           quest.Title,
-		QuestDescription:     quest.Description,
-		QuestInput:           quest.Input,
-		RequiredSkills:       quest.RequiredSkills,
-		MaxDuration:          maxDuration,
-		MaxTokens:            quest.Constraints.MaxTokens,
-		Provider:             provider,
-		PeerFeedback:         loadPeerFeedback(agent),
-		PartyRequired:        quest.PartyRequired,
-		IsPartyLead:          quest.PartyRequired && agent.Tier >= domain.TierMaster,
-		IsSubQuest:           quest.ParentQuest != nil,
-		ClarificationAnswers: c.loadClarificationAnswers(quest),
-		ClarificationSource:  c.clarificationSource(quest),
-		DependencyOutputs:    c.resolveDependencyOutputs(ctx, quest),
-		DependencyContexts:   c.resolveDependencyContexts(ctx, quest),
-		StructuralChecklist:  checklist,
-		ReviewLevel:          reviewLevel,
-		ReviewCriteria:       reviewCriteria,
-		QuestGoal:            quest.Goal,
-		QuestRequirements:    quest.Requirements,
-		QuestScenarios:       quest.Scenarios,
-		DecomposabilityClass: quest.DecomposabilityClass,
-		AvailableToolNames:   toolNames,
-		MaxIterations:        maxIterationsForDifficulty(c.config.MaxIterations, quest.Difficulty),
+		AgentID:               agent.ID,
+		Tier:                  agent.Tier,
+		Level:                 agent.Level,
+		Skills:                agent.SkillProficiencies,
+		Archetype:             agent.Archetype,
+		Guild:                 agent.Guild,
+		SystemPrompt:          agent.Config.SystemPrompt,
+		PersonaPrompt:         personaPrompt,
+		QuestTitle:            quest.Title,
+		QuestDescription:      quest.Description,
+		QuestInput:            quest.Input,
+		RequiredSkills:        quest.RequiredSkills,
+		MaxDuration:           maxDuration,
+		MaxTokens:             quest.Constraints.MaxTokens,
+		Provider:              provider,
+		PeerFeedback:          loadPeerFeedback(agent),
+		PartyRequired:         quest.PartyRequired,
+		IsPartyLead:           quest.PartyRequired && agent.Tier >= domain.TierMaster,
+		IsSubQuest:            quest.ParentQuest != nil,
+		ClarificationAnswers:  c.loadClarificationAnswers(quest),
+		ClarificationSource:   c.clarificationSource(quest),
+		DependencyOutputs:     c.resolveDependencyOutputs(ctx, quest),
+		DependencyContexts:    c.resolveDependencyContexts(ctx, quest),
+		StructuralChecklist:   checklist,
+		ReviewLevel:           reviewLevel,
+		ReviewCriteria:        reviewCriteria,
+		QuestGoal:             quest.Goal,
+		QuestRequirements:     quest.Requirements,
+		QuestScenarios:        quest.Scenarios,
+		DecomposabilityClass:  quest.DecomposabilityClass,
+		AvailableToolNames:    toolNames,
+		MaxIterations:         maxIterationsForDifficulty(c.config.MaxIterations, quest.Difficulty),
 		QuestType:             quest.QuestType,
 		GuildLessons:          c.loadGuildLessons(ctx, agent, quest),
 		RedTeamTargetOutput:   nil, // Set below after single target load.
 		RedTeamTargetTitle:    "",
 		WorkspaceHasPriorWork: quest.Attempts > 1 && quest.ParentQuest == nil,
 		FailureHistory:        convertFailureHistory(quest.FailureHistory),
-		SalvagedOutput:       domain.AsString(quest.SalvagedOutput),
-		FailureAnalysis:      quest.FailureAnalysis,
-		RecoveryPath:         string(quest.RecoveryPath),
-		AntiPatterns:         quest.AntiPatterns,
+		SalvagedOutput:        domain.AsString(quest.SalvagedOutput),
+		FailureAnalysis:       quest.FailureAnalysis,
+		RecoveryPath:          string(quest.RecoveryPath),
+		AntiPatterns:          quest.AntiPatterns,
 	}
 
 	// Load red-team target in a single KV read (avoids double-read for output + title).
@@ -2379,6 +2380,7 @@ func buildUserPrompt(quest *domain.Quest) string {
 //  2. agent-work.{tier}.{skill}
 //  3. agent-work.{tier}
 //  4. agent-work
+//
 // waitForKnowledgeSources polls the semsource manifest until at least one source
 // is active or the configured timeout expires. This soft gate ensures agents get
 // graph knowledge context (source manifest + graph manifest) in their prompts.

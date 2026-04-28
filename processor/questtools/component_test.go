@@ -30,6 +30,7 @@ import (
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
+	"github.com/c360studio/semstreams/payloadbuiltins"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -77,7 +78,8 @@ func TestComponentLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	deps := component.Dependencies{
-		NATSClient: tc.Client,
+		NATSClient:      tc.Client,
+		PayloadRegistry: payloadbuiltins.NewTestRegistry(t),
 	}
 
 	cfg := DefaultConfig()
@@ -561,7 +563,10 @@ func TestSandboxEnforcement(t *testing.T) {
 	cfg.ConsumerNameSuffix = "sandbox"
 	cfg.DeleteConsumerOnStop = true
 
-	deps := component.Dependencies{NATSClient: tc.Client}
+	deps := component.Dependencies{
+		NATSClient:      tc.Client,
+		PayloadRegistry: payloadbuiltins.NewTestRegistry(t),
+	}
 	comp, err := NewFromConfig(cfg, deps)
 	if err != nil {
 		t.Fatalf("NewFromConfig: %v", err)
@@ -753,7 +758,10 @@ func setupComponent(t *testing.T, client *natsclient.Client, suffix string) *Com
 	cfg.ConsumerNameSuffix = suffix
 	cfg.DeleteConsumerOnStop = true
 
-	deps := component.Dependencies{NATSClient: client}
+	deps := component.Dependencies{
+		NATSClient:      client,
+		PayloadRegistry: payloadbuiltins.NewTestRegistry(t),
+	}
 
 	comp, err := NewFromConfig(cfg, deps)
 	if err != nil {
@@ -867,6 +875,7 @@ func pollForToolResult(t *testing.T, client *natsclient.Client, ctx context.Cont
 		t.Fatalf("JetStream(): %v", err)
 	}
 
+	decoder := payloadbuiltins.NewTestDecoder(t)
 	subject := fmt.Sprintf("tool.result.%s", callID)
 
 	// Create an ephemeral (no Durable) consumer filtered to the specific result
@@ -896,9 +905,9 @@ func pollForToolResult(t *testing.T, client *natsclient.Client, ctx context.Cont
 			}
 
 			// The component wraps ToolResult in a BaseMessage envelope.
-			var baseMsg message.BaseMessage
-			if err := json.Unmarshal(msg.Data(), &baseMsg); err != nil {
-				t.Fatalf("unmarshal ToolResult BaseMessage: %v", err)
+			baseMsg, err := decoder.Decode(msg.Data())
+			if err != nil {
+				t.Fatalf("decode ToolResult BaseMessage: %v", err)
 			}
 			resultPtr, ok := baseMsg.Payload().(*agentic.ToolResult)
 			if !ok {

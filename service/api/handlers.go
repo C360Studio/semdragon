@@ -1396,7 +1396,7 @@ func (s *Service) handleGetTrajectory(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, "trajectory service not deployed", http.StatusServiceUnavailable)
 			return
 		}
-		if isKeyNotFound(err) {
+		if isKeyNotFound(err) || errors.Is(err, errTrajectoryNotFound) {
 			s.writeError(w, "trajectory not found", http.StatusNotFound)
 			return
 		}

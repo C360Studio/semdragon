@@ -23,6 +23,7 @@ import (
 
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/message"
+	"github.com/c360studio/semstreams/payloadbuiltins"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -299,5 +300,6 @@ func gcComponent(t *testing.T) *Component {
 	return &Component{
 		logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		questLoopsBucket: stubKeyValue{},
+		decoder:          message.NewDecoder(payloadbuiltins.NewTestRegistry(t)),
 	}
 }

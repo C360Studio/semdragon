@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -492,17 +493,28 @@ func hasToolResults(msgs []requestMsg) bool {
 	return false
 }
 
-// systemMessage returns the content of the first system-role message,
-// or an empty string if none is present.
+// systemMessage returns the concatenated content of all system-role messages,
+// or an empty string if none are present. Concatenation is required because
+// semstreams agentic-loop emits multiple system messages per turn (iteration
+// budget, generic agent prompt, assembled context with persona / tool directive).
+// Matching only the first message would miss the party-lead directive that
+// lives in the assembled-context system message.
 func systemMessage(msgs []requestMsg) string {
+	var b strings.Builder
 	for _, m := range msgs {
-		if m.Role == "system" {
-			if s, ok := m.Content.(string); ok {
-				return s
-			}
+		if m.Role != "system" {
+			continue
 		}
+		s, ok := m.Content.(string)
+		if !ok {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(s)
 	}
-	return ""
+	return b.String()
 }
 
 // lastUserMessage returns the content string of the last user-role message,

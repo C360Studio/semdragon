@@ -1,10 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -211,6 +214,13 @@ type natsTrajectoryQuerier struct {
 	nats *natsclient.Client
 }
 
+// errTrajectoryNotFound matches the agentic-loop reply for unknown loop IDs.
+// natsclient.SubscribeForRequests encodes handler errors as plaintext bytes
+// "error: <msg>" — without this decoding, our HTTP handler can't tell apart
+// "not found" (404) from generic failure (500) and the raw error text leaks
+// to clients with content-type application/json.
+var errTrajectoryNotFound = errors.New("trajectory not found")
+
 func (q *natsTrajectoryQuerier) GetTrajectory(ctx context.Context, id string) ([]byte, error) {
 	req, err := json.Marshal(struct {
 		LoopID string `json:"loopId"`
@@ -222,5 +232,19 @@ func (q *natsTrajectoryQuerier) GetTrajectory(ctx context.Context, id string) ([
 	if err != nil {
 		return nil, err
 	}
+	if isNATSErrorReply(data) {
+		msg := strings.TrimPrefix(string(data), "error: ")
+		if strings.Contains(msg, "trajectory not found") {
+			return nil, fmt.Errorf("%w: %s", errTrajectoryNotFound, msg)
+		}
+		return nil, fmt.Errorf("trajectory query failed: %s", msg)
+	}
 	return data, nil
+}
+
+// isNATSErrorReply detects the natsclient error-reply convention: plaintext
+// bytes starting with "error: ". A successful trajectory reply is JSON, which
+// always begins with '{' — so the prefix check is unambiguous.
+func isNATSErrorReply(data []byte) bool {
+	return bytes.HasPrefix(data, []byte("error: "))
 }

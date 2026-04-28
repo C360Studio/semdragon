@@ -58,8 +58,8 @@ func (c *Component) handleExplore(ctx context.Context, call agentic.ToolCall, ag
 	// Prevent duplicate explores from the same parent loop.
 	if _, loaded := c.activeExplores.LoadOrStore(call.LoopID, struct{}{}); loaded {
 		return agentic.ToolResult{
-			CallID:  call.ID,
-			Error:   "explore: another explore is already running for this loop — wait for it to complete before starting a new one",
+			CallID: call.ID,
+			Error:  "explore: another explore is already running for this loop — wait for it to complete before starting a new one",
 		}
 	}
 	defer c.activeExplores.Delete(call.LoopID)
@@ -164,8 +164,8 @@ func (c *Component) waitForExploreResult(ctx context.Context, loopID, subjectSaf
 	js, err := c.deps.NATSClient.JetStream()
 	if err != nil {
 		return agentic.ToolResult{
-			CallID:  callID,
-			Error:   fmt.Sprintf("explore: failed to obtain JetStream handle: %v", err),
+			CallID: callID,
+			Error:  fmt.Sprintf("explore: failed to obtain JetStream handle: %v", err),
 		}
 	}
 
@@ -183,8 +183,8 @@ func (c *Component) waitForExploreResult(ctx context.Context, loopID, subjectSaf
 	})
 	if err != nil {
 		return agentic.ToolResult{
-			CallID:  callID,
-			Error:   fmt.Sprintf("explore: failed to create completion consumer: %v", err),
+			CallID: callID,
+			Error:  fmt.Sprintf("explore: failed to create completion consumer: %v", err),
 		}
 	}
 
@@ -238,9 +238,9 @@ func (c *Component) waitForExploreResult(ctx context.Context, loopID, subjectSaf
 // parseExploreCompletion unwraps a JetStream message from agent.complete.* or
 // agent.failed.* and converts it to a ToolResult.
 func (c *Component) parseExploreCompletion(msg jetstream.Msg, callID, loopID string) agentic.ToolResult {
-	var baseMsg message.BaseMessage
-	if err := json.Unmarshal(msg.Data(), &baseMsg); err != nil {
-		c.logger.Warn("failed to unmarshal explore completion BaseMessage",
+	baseMsg, err := c.decoder.Decode(msg.Data())
+	if err != nil {
+		c.logger.Warn("failed to decode explore completion BaseMessage",
 			"loop_id", loopID, "error", err)
 		return agentic.ToolResult{
 			CallID:  callID,

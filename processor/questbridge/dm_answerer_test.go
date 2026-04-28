@@ -29,6 +29,9 @@ func (m *mockRegistry) GetFallbackChain(_ string) []string { return nil }
 // GetMaxTokens satisfies model.RegistryReader — tests hardcode token limits on the endpoint directly,
 // so the name parameter is genuinely unused in this mock.
 func (m *mockRegistry) GetMaxTokens(_ string) int { return 0 }
+// GetCapability satisfies model.RegistryReader — tests don't exercise per-capability config,
+// so the name parameter is genuinely unused in this mock.
+func (m *mockRegistry) GetCapability(_ string) *model.CapabilityConfig { return nil }
 func (m *mockRegistry) GetDefault() string                  { return "" }
 func (m *mockRegistry) ListCapabilities() []string          { return nil }
 func (m *mockRegistry) ListEndpoints() []string             { return nil }

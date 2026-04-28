@@ -160,7 +160,10 @@ test.describe('Settings - WebSocket Controls', () => {
 		const initialText = await settingsPage.wsToggleBtn.textContent();
 		await settingsPage.wsToggleBtn.click();
 
-		// Wait for the toggle text to change
+		// Backend round-trip leaves the button in HTML disabled state until the
+		// settings update completes. Wait for it to re-enable before asserting
+		// text — otherwise we race the websocket-input restart under tier1 load.
+		await expect(settingsPage.wsToggleBtn).toBeEnabled();
 		if (initialText?.trim() === 'Enabled') {
 			await expect(settingsPage.wsToggleBtn).toHaveText('Disabled');
 		} else {
@@ -169,6 +172,7 @@ test.describe('Settings - WebSocket Controls', () => {
 
 		// Toggle back to restore original state
 		await settingsPage.wsToggleBtn.click();
+		await expect(settingsPage.wsToggleBtn).toBeEnabled();
 		await expect(settingsPage.wsToggleBtn).toHaveText(initialText!.trim());
 	});
 

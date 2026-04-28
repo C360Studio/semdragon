@@ -1,19 +1,20 @@
 // Package semsource registers the semsource entity payload type so that
 // graph-ingest can deserialize entities streamed from a semsource instance.
 //
-// Import this package with a blank import in componentregistry to trigger
-// payload registration before any components start consuming messages.
+// Call RegisterPayloads from the binary's bootstrap (alongside
+// payloadbuiltins.Register) to register the entity + status payloads with the
+// per-binary payload registry. semstreams beta.18 retired the package-level
+// payloadregistry singleton, so registration is now explicit and DI-driven.
 package semsource
 
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
-	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
+	"github.com/c360studio/semstreams/payloadregistry"
 )
 
 // Compile-time interface compliance checks.
@@ -22,8 +23,10 @@ var (
 	_ message.Payload  = (*EntityPayload)(nil)
 )
 
-func init() {
-	if err := component.RegisterPayload(&component.PayloadRegistration{
+// RegisterPayloads registers the semsource entity and status payload types
+// with the supplied registry. Called from the binary's bootstrap.
+func RegisterPayloads(reg *payloadregistry.Registry) error {
+	if err := reg.Register(&payloadregistry.Registration{
 		Domain:      "semsource",
 		Category:    "entity",
 		Version:     "v1",
@@ -37,12 +40,12 @@ func init() {
 			"updated_at": time.Now().UTC().Format(time.RFC3339),
 		},
 	}); err != nil {
-		panic(fmt.Sprintf("semsource: failed to register entity payload: %v", err))
+		return err
 	}
 
 	// Register semsource status heartbeat so message-logger can parse it.
 	// The payload is informational only — no component consumes it.
-	if err := component.RegisterPayload(&component.PayloadRegistration{
+	return reg.Register(&payloadregistry.Registration{
 		Domain:      "semsource",
 		Category:    "status",
 		Version:     "v1",
@@ -50,9 +53,7 @@ func init() {
 		Factory: func() any {
 			return &StatusPayload{}
 		},
-	}); err != nil {
-		panic(fmt.Sprintf("semsource: failed to register status payload: %v", err))
-	}
+	})
 }
 
 // EntityPayload carries a graph entity received from semsource.

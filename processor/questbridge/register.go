@@ -9,6 +9,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/domains"
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/pkg/errs"
 )
 
@@ -36,6 +37,9 @@ func Factory(rawConfig json.RawMessage, deps component.Dependencies) (component.
 	if deps.NATSClient == nil {
 		return nil, errors.New("NATS client required")
 	}
+	if deps.PayloadRegistry == nil {
+		return nil, errors.New("PayloadRegistry required (set via service.Dependencies.PayloadRegistry)")
+	}
 
 	logger := deps.GetLoggerWithComponent(ComponentName)
 	if logger == nil {
@@ -43,9 +47,10 @@ func Factory(rawConfig json.RawMessage, deps component.Dependencies) (component.
 	}
 
 	return &Component{
-		config: &config,
-		deps:   deps,
-		logger: logger,
+		config:  &config,
+		deps:    deps,
+		logger:  logger,
+		decoder: message.NewDecoder(deps.PayloadRegistry),
 	}, nil
 }
 
@@ -69,6 +74,9 @@ func NewFromConfig(config Config, deps component.Dependencies) (*Component, erro
 	if deps.NATSClient == nil {
 		return nil, errors.New("NATS client required")
 	}
+	if deps.PayloadRegistry == nil {
+		return nil, errors.New("PayloadRegistry required (set via service.Dependencies.PayloadRegistry)")
+	}
 
 	logger := deps.GetLoggerWithComponent(ComponentName)
 	if logger == nil {
@@ -76,8 +84,9 @@ func NewFromConfig(config Config, deps component.Dependencies) (*Component, erro
 	}
 
 	return &Component{
-		config: &config,
-		deps:   deps,
-		logger: logger,
+		config:  &config,
+		deps:    deps,
+		logger:  logger,
+		decoder: message.NewDecoder(deps.PayloadRegistry),
 	}, nil
 }

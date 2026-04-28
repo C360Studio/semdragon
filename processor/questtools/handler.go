@@ -49,14 +49,14 @@ func (c *Component) handleToolExecute(lifecycleCtx context.Context, msgCtx conte
 	defer func() { _ = msg.Ack() }()
 
 	// Unwrap the BaseMessage envelope that agentic-loop wraps around ToolCalls.
-	var baseMsg message.BaseMessage
-	if err := json.Unmarshal(msg.Data(), &baseMsg); err != nil {
-		c.logger.Error("failed to unmarshal ToolCall BaseMessage",
+	baseMsg, err := c.decoder.Decode(msg.Data())
+	if err != nil {
+		c.logger.Error("failed to decode ToolCall BaseMessage",
 			"subject", msg.Subject(),
 			"error", err)
 		c.errorsCount.Add(1)
 		if parts := strings.SplitN(msg.Subject(), ".", 3); len(parts) == 3 {
-			errMsg := fmt.Sprintf("failed to unmarshal ToolCall: %v", err)
+			errMsg := fmt.Sprintf("failed to decode ToolCall: %v", err)
 			_ = c.publishResult(msgCtx, parts[2], &agentic.ToolResult{
 				CallID:  parts[2],
 				Content: "Tool error: " + errMsg,

@@ -30,6 +30,7 @@ import (
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/message"
+	"github.com/c360studio/semstreams/payloadbuiltins"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -45,18 +46,18 @@ type mockJetMsg struct {
 	data []byte
 }
 
-func (m *mockJetMsg) Data() []byte                               { return m.data }
-func (m *mockJetMsg) Subject() string                            { return "" }
-func (m *mockJetMsg) Reply() string                              { return "" }
-func (m *mockJetMsg) Headers() natsgo.Header                     { return nil }
-func (m *mockJetMsg) Metadata() (*jetstream.MsgMetadata, error)  { return nil, nil }
-func (m *mockJetMsg) Ack() error                                 { return nil }
-func (m *mockJetMsg) DoubleAck(_ context.Context) error          { return nil }
-func (m *mockJetMsg) Nak() error                                 { return nil }
-func (m *mockJetMsg) NakWithDelay(_ time.Duration) error         { return nil }
-func (m *mockJetMsg) InProgress() error                          { return nil }
-func (m *mockJetMsg) Term() error                                { return nil }
-func (m *mockJetMsg) TermWithReason(_ string) error              { return nil }
+func (m *mockJetMsg) Data() []byte                              { return m.data }
+func (m *mockJetMsg) Subject() string                           { return "" }
+func (m *mockJetMsg) Reply() string                             { return "" }
+func (m *mockJetMsg) Headers() natsgo.Header                    { return nil }
+func (m *mockJetMsg) Metadata() (*jetstream.MsgMetadata, error) { return nil, nil }
+func (m *mockJetMsg) Ack() error                                { return nil }
+func (m *mockJetMsg) DoubleAck(_ context.Context) error         { return nil }
+func (m *mockJetMsg) Nak() error                                { return nil }
+func (m *mockJetMsg) NakWithDelay(_ time.Duration) error        { return nil }
+func (m *mockJetMsg) InProgress() error                         { return nil }
+func (m *mockJetMsg) Term() error                               { return nil }
+func (m *mockJetMsg) TermWithReason(_ string) error             { return nil }
 
 // marshalBaseMessage wraps payload in a BaseMessage and returns the JSON bytes.
 func marshalBaseMessage(t *testing.T, payload message.Payload) []byte {
@@ -178,29 +179,29 @@ func TestGCClassifyFailedEvent(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		loopID       string
-		errField     string
-		reasonField  string
-		wantType     dagEventType
-		wantReason   string
-		wantEmpty    bool
+		name        string
+		loopID      string
+		errField    string
+		reasonField string
+		wantType    dagEventType
+		wantReason  string
+		wantEmpty   bool
 	}{
 		{
-			name:       "review prefix — Error field preferred",
-			loopID:     "review-abc-nuid12345678901234567890",
-			errField:   "LLM timeout",
+			name:        "review prefix — Error field preferred",
+			loopID:      "review-abc-nuid12345678901234567890",
+			errField:    "LLM timeout",
 			reasonField: "timed out",
-			wantType:   dagEventReviewFailed,
-			wantReason: "LLM timeout",
+			wantType:    dagEventReviewFailed,
+			wantReason:  "LLM timeout",
 		},
 		{
-			name:       "review prefix — falls back to Reason when Error is empty",
-			loopID:     "review-abc-nuid12345678901234567890",
-			errField:   "",
+			name:        "review prefix — falls back to Reason when Error is empty",
+			loopID:      "review-abc-nuid12345678901234567890",
+			errField:    "",
 			reasonField: "max iterations reached",
-			wantType:   dagEventReviewFailed,
-			wantReason: "max iterations reached",
+			wantType:    dagEventReviewFailed,
+			wantReason:  "max iterations reached",
 		},
 		{
 			name:       "clarify prefix",
@@ -339,11 +340,12 @@ func TestGCClassifyCancelledEvent(t *testing.T) {
 func TestGCParseLeadLoopCompletion(t *testing.T) {
 	t.Parallel()
 
-	c := &Component{logger: newLoggerDiscard()}
+	c := &Component{
+		logger:  newLoggerDiscard(),
+		decoder: message.NewDecoder(payloadbuiltins.NewTestRegistry(t)),
+	}
 
-	// Ensure agentic payload types are registered before the test runs.
-	// The agentic package self-registers via init(), so importing it is enough —
-	// but we call a harmless method to guarantee the init has fired.
+	// Touch a payload schema so the test fails fast if registration is broken.
 	_ = (&agentic.LoopCompletedEvent{}).Schema()
 
 	t.Run("LoopCompletedEvent with review prefix", func(t *testing.T) {

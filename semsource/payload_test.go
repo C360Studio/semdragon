@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
+	"github.com/c360studio/semstreams/payloadregistry"
 )
 
 // Compile-time interface compliance — mirrors the checks in payload.go but lives
@@ -180,23 +180,21 @@ func TestEntityPayloadJSONRoundTrip(t *testing.T) {
 	}
 }
 
-// TestEntityPayloadInitRegistration verifies that the init() function registered
-// the semsource entity payload in the global payload registry without panicking.
-// The init() ran automatically when this test binary loaded the semsource package,
-// so we simply confirm the registration is present.
-func TestEntityPayloadInitRegistration(t *testing.T) {
+// TestEntityPayloadRegistration verifies that RegisterPayloads registers the
+// semsource entity payload (and its factory) with a fresh registry.
+func TestEntityPayloadRegistration(t *testing.T) {
 	t.Parallel()
 
-	reg := component.GlobalPayloadRegistry()
-	if reg == nil {
-		t.Fatal("GlobalPayloadRegistry() returned nil")
+	reg := payloadregistry.New()
+	if err := RegisterPayloads(reg); err != nil {
+		t.Fatalf("RegisterPayloads: %v", err)
 	}
 
 	// The registry key format used internally is "domain.category.version".
 	const expectedKey = "semsource.entity.v1"
 	registration, ok := reg.GetRegistration(expectedKey)
 	if !ok {
-		t.Fatalf("payload %q not found in global registry; init() may have failed", expectedKey)
+		t.Fatalf("payload %q not found after RegisterPayloads", expectedKey)
 	}
 
 	if registration.Domain != "semsource" {
@@ -209,13 +207,13 @@ func TestEntityPayloadInitRegistration(t *testing.T) {
 		t.Errorf("registration.Version = %q, want %q", registration.Version, "v1")
 	}
 	// GetRegistration intentionally strips the Factory field for safety.
-	// Use component.CreatePayload to verify the factory produces the correct type.
-	instance := component.CreatePayload("semsource", "entity", "v1")
+	// Use Registry.Create to verify the factory produces the correct type.
+	instance := reg.Create("semsource", "entity", "v1")
 	if instance == nil {
-		t.Fatal("component.CreatePayload returned nil; factory not registered correctly")
+		t.Fatal("Registry.Create returned nil; factory not registered correctly")
 	}
 	if _, ok := instance.(*EntityPayload); !ok {
-		t.Errorf("CreatePayload returned %T, want *EntityPayload", instance)
+		t.Errorf("Registry.Create returned %T, want *EntityPayload", instance)
 	}
 }
 

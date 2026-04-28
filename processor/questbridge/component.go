@@ -16,6 +16,7 @@ import (
 	"github.com/c360studio/semdragons/processor/tokenbudget"
 	"github.com/c360studio/semdragons/semsource"
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/model"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go"
@@ -84,10 +85,15 @@ type Component struct {
 	logger      *slog.Logger
 	boardConfig *domain.BoardConfig
 
+	// decoder unwraps BaseMessage envelopes published by agentic-loop on
+	// agent.complete.* / agent.failed.*. semstreams beta.18 retired the
+	// payloadregistry singleton, so each consumer holds its own decoder.
+	decoder *message.Decoder
+
 	// Execution infrastructure
-	registry            model.RegistryReader
-	toolRegistry        *executor.ToolRegistry
-	promptAssembler     *promptmanager.PromptAssembler
+	registry        model.RegistryReader
+	toolRegistry    *executor.ToolRegistry
+	promptAssembler *promptmanager.PromptAssembler
 
 	// QUEST_LOOPS KV bucket for crash recovery
 	questLoopsBucket jetstream.KeyValue

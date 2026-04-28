@@ -23,12 +23,15 @@ import (
 	"github.com/c360studio/semstreams/config"
 	"github.com/c360studio/semstreams/metric"
 	"github.com/c360studio/semstreams/natsclient"
+	"github.com/c360studio/semstreams/payloadbuiltins"
+	"github.com/c360studio/semstreams/payloadregistry"
 	"github.com/c360studio/semstreams/service"
 	"github.com/c360studio/semstreams/types"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
 	"github.com/c360studio/semdragons/processor/questbridge"
+	"github.com/c360studio/semdragons/semsource"
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
 
@@ -144,8 +147,17 @@ func run() error {
 		return err
 	}
 
+	// 8a. Build the payload registry (semstreams beta.18+ retired the package-level
+	// singleton). Builtins cover agentic/message/dispatch/rule/objectstore types;
+	// semsource adds entity + status payloads streamed from semsource instances.
+	payloadReg, err := buildPayloadRegistry()
+	if err != nil {
+		return err
+	}
+
 	// 9. Create service dependencies
 	svcDeps := createServiceDependencies(natsClient, metricsRegistry, logger, platform, configManager, componentRegistry)
+	svcDeps.PayloadRegistry = payloadReg
 
 	// 10. Configure and create services
 	if err := configureAndCreateServices(cfg, manager, svcDeps); err != nil {
@@ -371,6 +383,22 @@ func extractPlatformMeta(cfg *config.Config) types.PlatformMeta {
 	}
 }
 
+// buildPayloadRegistry constructs the per-binary payload registry and
+// registers all payload types semdragons consumes. semstreams beta.18 retired
+// the package-level singleton; each binary now owns its registry and injects
+// it via service.Dependencies.PayloadRegistry, which ComponentManager plumbs
+// to component.Dependencies.PayloadRegistry on every NewFromConfig call.
+func buildPayloadRegistry() (*payloadregistry.Registry, error) {
+	reg := payloadregistry.New()
+	if err := payloadbuiltins.Register(reg); err != nil {
+		return nil, fmt.Errorf("register builtin payloads: %w", err)
+	}
+	if err := semsource.RegisterPayloads(reg); err != nil {
+		return nil, fmt.Errorf("register semsource payloads: %w", err)
+	}
+	return reg, nil
+}
+
 // setupRegistriesAndManager creates registries and service manager.
 func setupRegistriesAndManager(cfg *config.Config) (*component.Registry, *service.Manager, error) {
 	// Register semdragons components (includes graph processors)
@@ -506,7 +534,6 @@ func runWithSignalHandling(ctx context.Context, manager *service.Manager, shutdo
 	slog.Info("Semdragons shutdown complete")
 	return nil
 }
-
 
 // startPProfServer starts a pprof HTTP server on the given port.
 // The blank import of net/http/pprof registers handlers on DefaultServeMux.
