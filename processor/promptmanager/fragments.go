@@ -170,19 +170,23 @@ func registerPartyLeadDirective(r *PromptRegistry) {
 }
 
 // buildSubQuestExecutorDirective guides party member agents working on sub-quests.
-// Injects an iteration budget when MaxIterations is set (same pattern as solo agents).
 //
 // When graph tools are available (semsource indexed the repo), rule 1 leads with
 // graph_summary → graph_search for project orientation instead of filesystem
 // exploration. This scales to real repos with thousands of files where
 // bash("ls -la") alone is overwhelming.
+//
+// Iteration budget is injected separately by semstreams agentic-loop's
+// BuildIterationBudgetMessage on every round (escalating tone at >50% and
+// >75% used). We deliberately do NOT inject our own static budget message
+// here — historically there was a one-shot "ITERATION BUDGET: N" line, but
+// it conflicted with the dynamic per-round message when the values
+// disagreed (semdragons used questbridge.MaxIterations; semstreams uses
+// agentic-loop.MaxIterations from its own config). Single source of truth
+// is cleaner.
 func buildSubQuestExecutorDirective(ctx AssemblyContext) string {
 	var b strings.Builder
 	b.WriteString("You are executing a SUB-QUEST assigned to you by a party lead.\n\n")
-
-	if ctx.MaxIterations > 0 {
-		b.WriteString(fmt.Sprintf("ITERATION BUDGET: %d tool-use rounds. Plan your work to finish well within this limit.\n\n", ctx.MaxIterations))
-	}
 
 	// Check if graph tools are available — determines orientation strategy.
 	hasGraph := false
@@ -309,15 +313,19 @@ func registerSoloAgentScenarioDirective(r *PromptRegistry) {
 // the solo-agent equivalent of subQuestExecutorDirective rule #4 and applies to
 // all solo agents regardless of whether they have scenarios.
 //
-// When MaxIterations is set, injects a tool-use budget so the agent plans its
-// work instead of exploring open-endedly.
-func buildSoloAgentWorkOutputDirective(ctx AssemblyContext) string {
+// Iteration budget is injected by semstreams agentic-loop on every round
+// (BuildIterationBudgetMessage with escalating tone at >50% and >75% used).
+// We do NOT inject a static budget message here — see comment on
+// buildSubQuestExecutorDirective for the rationale.
+//
+// The AssemblyContext parameter is unused because all gating happens at
+// registration time via the Condition predicate (isSoloAgent); the rules
+// emitted by this content function do not vary with ctx today. The
+// parameter stays in the signature to satisfy the ContentFunc interface
+// shared with branchier fragments.
+func buildSoloAgentWorkOutputDirective(_ AssemblyContext) string {
 	var b strings.Builder
 	b.WriteString("COMPLETION RULES:\n")
-
-	if ctx.MaxIterations > 0 {
-		b.WriteString(fmt.Sprintf("0. You have a budget of %d tool-use rounds. Plan your work to finish well within this budget. Do NOT explore open-endedly.\n", ctx.MaxIterations))
-	}
 
 	b.WriteString(`1. BEFORE submitting, explore the workspace with bash("ls -la") or bash("cat README.md") to understand what exists. Submissions without workspace exploration will be rejected.
 2. Use bash to read, write, and search files. Produce your deliverable from what you find.
