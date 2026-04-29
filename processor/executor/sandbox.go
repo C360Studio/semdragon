@@ -13,6 +13,7 @@ import (
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/executor/httpformat"
 	"github.com/c360studio/semstreams/agentic"
 )
 
@@ -412,10 +413,16 @@ func makeSandboxHTTPRequestHandler(client *SandboxClient) ToolHandler {
 			return agentic.ToolResult{CallID: call.ID, Error: "method must be GET or POST"}
 		}
 
+		formatArg, _ := call.Arguments["format"].(string)
+		format := httpformat.ParseFormat(formatArg)
+
 		// Build a curl command that mimics the local httpRequestHandler.
 		// -s: silent, -S: show errors, -L: follow redirects,
 		// -m: timeout matching httpRequestTimeout,
-		// -w '\n%{http_code}': append status code on its own line for parsing.
+		// -w 'STATUS\nCT': append status + content-type on a sentinel line
+		// for parsing. Both fields are needed: status for the response
+		// envelope, content-type so httpformat.Render can choose between
+		// markdown conversion and raw passthrough.
 		var cmdParts []string
 		cmdParts = append(cmdParts, "curl", "-s", "-S", "-L",
 			fmt.Sprintf("-m %d", int(httpRequestTimeout.Seconds())),
@@ -434,9 +441,15 @@ func makeSandboxHTTPRequestHandler(client *SandboxClient) ToolHandler {
 			cmdParts = append(cmdParts, "-H", fmt.Sprintf("Content-Type: %s", contentType))
 		}
 
+		// curlSentinel is a marker line we use to separate the response body
+		// from the status + content-type fields. Picked to be unlikely in any
+		// real HTML/JSON payload.
+		const curlSentinel = "\n__SEMDRAGONS_CURL_META__\n"
+		writeOut := curlSentinel + `%{http_code}` + "\n" + `%{content_type}`
+
 		cmdParts = append(cmdParts,
 			"-H", "User-Agent: semdragons-agent/1.0",
-			"-w", `'\n%{http_code}'`,
+			"-w", fmt.Sprintf("%q", writeOut),
 			fmt.Sprintf("%q", urlStr),
 		)
 
@@ -456,21 +469,21 @@ func makeSandboxHTTPRequestHandler(client *SandboxClient) ToolHandler {
 			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("http_request timed out after %s", httpRequestTimeout)}
 		}
 
-		// curl appends "\n<status_code>" via -w; split on the last newline.
-		output := strings.TrimRight(resp.Stdout, "\n")
-		lastNL := strings.LastIndex(output, "\n")
-		var body, statusCode string
-		if lastNL >= 0 {
-			body = output[:lastNL]
-			statusCode = strings.TrimSpace(output[lastNL+1:])
+		// Split body from the curl-write-out sentinel section. The sentinel
+		// MUST appear; if it doesn't, curl errored before the format string
+		// was emitted (e.g., DNS failure printed to stderr only).
+		output := resp.Stdout
+		var body, statusCode, contentType string
+		if idx := strings.LastIndex(output, curlSentinel); idx >= 0 {
+			body = output[:idx]
+			meta := strings.TrimSpace(output[idx+len(curlSentinel):])
+			lines := strings.SplitN(meta, "\n", 2)
+			statusCode = strings.TrimSpace(lines[0])
+			if len(lines) > 1 {
+				contentType = strings.TrimSpace(lines[1])
+			}
 		} else {
 			body = output
-			statusCode = strings.TrimSpace(output)
-		}
-
-		// Truncate oversized responses.
-		if len(body) > maxHTTPResponseSize {
-			body = body[:maxHTTPResponseSize] + "\n... (response truncated)"
 		}
 
 		if resp.ExitCode != 0 {
@@ -481,9 +494,14 @@ func makeSandboxHTTPRequestHandler(client *SandboxClient) ToolHandler {
 			return agentic.ToolResult{CallID: call.ID, Error: fmt.Sprintf("request failed: %s", errMsg)}
 		}
 
+		// Render via the same pipeline as the local handler so HTML responses
+		// fetched through the sandbox come back as markdown rather than raw
+		// HTML. Non-HTML responses pass through with a length cap only.
+		rendered := httpformat.Render([]byte(body), contentType, urlStr, format, httpTextMaxSize)
+
 		return agentic.ToolResult{
 			CallID:  call.ID,
-			Content: fmt.Sprintf("HTTP %s\n\n%s", statusCode, body),
+			Content: fmt.Sprintf("HTTP %s\n\n%s", statusCode, rendered),
 		}
 	}
 }

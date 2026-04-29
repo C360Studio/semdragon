@@ -20,6 +20,7 @@ import (
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/executor/httpformat"
 	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/graph"
@@ -44,8 +45,12 @@ const (
 	maxCommandOutput = 100000
 	// commandTimeout is the default timeout for shell commands.
 	commandTimeout = 60 * time.Second
-	// httpRequestTimeout is the timeout for HTTP requests.
-	httpRequestTimeout = 30 * time.Second
+	// httpRequestTimeout is the timeout for HTTP requests. Sized below the
+	// 30s questtools per-message context so a slow URL still leaves headroom
+	// for ToolResult publishing — without this, an exhausted msgCtx blocks
+	// publish and wedges the agent loop on a lost result. Also reused by
+	// web_search; both are bounded by the upstream consumer's 30s ceiling.
+	httpRequestTimeout = 25 * time.Second
 )
 
 // =============================================================================
@@ -155,8 +160,14 @@ var runCommandSpec = toolSpec{
 
 var httpRequestSpec = toolSpec{
 	Definition: agentic.ToolDefinition{
-		Name:        "http_request",
-		Description: "Make an HTTP request to fetch data from a URL. Use for downloading files, calling REST APIs, or fetching web content. The response body is returned as text. For binary downloads, pipe through run_command instead.",
+		Name: "http_request",
+		Description: "Fetch a URL and return its content. HTML pages run through Readability " +
+			"and are converted to markdown by default — agents see the main article without " +
+			"navigation/footer boilerplate. JSON, plain text, and other non-HTML responses " +
+			"pass through unchanged so APIs work as expected. " +
+			"Use format=raw to bypass markdown conversion, format=summary for a short " +
+			"title+excerpt+top-links view, format=links for just the URLs, or format=headings " +
+			"for an outline. For binary downloads, use bash with curl instead.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -176,6 +187,11 @@ var httpRequestSpec = toolSpec{
 				"content_type": map[string]any{
 					"type":        "string",
 					"description": "Content-Type header (for POST). Defaults to application/json.",
+				},
+				"format": map[string]any{
+					"type":        "string",
+					"description": "Response shape: markdown (default, HTML→Readability→markdown), summary, links, headings, or raw. Non-HTML responses ignore this and return as-is.",
+					"enum":        []any{"markdown", "summary", "links", "headings", "raw"},
 				},
 			},
 			"required": []any{"url"},
@@ -868,34 +884,31 @@ func httpRequestHandler(ctx context.Context, call agentic.ToolCall, _ *domain.Qu
 	}
 
 	contentType := resp.Header.Get("Content-Type")
-	isHTML := strings.Contains(contentType, "text/html")
+	formatArg, _ := call.Arguments["format"].(string)
+	format := httpformat.ParseFormat(formatArg)
 
-	var result string
-	var truncMsg string
+	// httpformat.Render handles HTML→Readability→markdown for text/html
+	// responses and passes everything else through untouched, capped at
+	// httpTextMaxSize. When the LLM agent passes format=raw or the
+	// content is non-HTML, the body is returned with only a length cap.
+	result := httpformat.Render(body, contentType, urlStr, format, httpTextMaxSize)
 
-	if isHTML {
+	// Knowledge-graph persistence path is preserved: only HTML responses
+	// are candidates, only when conversion produced enough text to warrant
+	// indexing. The persist payload is the markdown view (format=markdown)
+	// regardless of what view the agent requested for this call — the
+	// graph store is shared, the agent's per-call view is not.
+	if httpGraphPersist != nil && strings.Contains(strings.ToLower(contentType), "text/html") {
 		title := extractTitle(bytes.NewReader(body))
-		text, wasTruncated := htmlToText(bytes.NewReader(body), httpTextMaxSize)
-		result = text
-		if wasTruncated {
-			truncMsg = fmt.Sprintf("\n... (converted from HTML, truncated at %d chars)", httpTextMaxSize)
-		}
-
-		// Persist to the knowledge graph if the page meets the quality threshold.
-		if httpGraphPersist != nil && len(text) >= minHTTPPersistLength {
-			go persistWebContent(httpGraphPersist, urlStr, title, text, call)
-		}
-	} else {
-		result = string(body)
-		if len(body) > maxHTTPResponseSize {
-			result = result[:maxHTTPResponseSize]
-			truncMsg = "\n... (response truncated)"
+		persistText := httpformat.Render(body, contentType, urlStr, httpformat.FormatMarkdown, httpTextMaxSize)
+		if len(persistText) >= minHTTPPersistLength {
+			go persistWebContent(httpGraphPersist, urlStr, title, persistText, call)
 		}
 	}
 
 	return agentic.ToolResult{
 		CallID:  call.ID,
-		Content: fmt.Sprintf("HTTP %d %s\n\n%s%s", resp.StatusCode, resp.Status, result, truncMsg),
+		Content: fmt.Sprintf("HTTP %d %s\n\n%s", resp.StatusCode, resp.Status, result),
 	}
 }
 

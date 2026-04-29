@@ -436,7 +436,7 @@
         "board": "board1",
         "domain": "software",
         "auto_start_on_submit": true,
-        "max_concurrent": 10
+        "max_concurrent": 3
       }
     },
     "agent_progression": {
@@ -524,7 +524,7 @@
         "domain": "software",
         "stream_name": "AGENT",
         "quest_loops_bucket": "QUEST_LOOPS",
-        "max_iterations": 25,
+        "max_iterations": 15,
         "enable_builtins": true,
         "default_role": "general",
         "sandbox_dir": "/workspace",

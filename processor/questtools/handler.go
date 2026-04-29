@@ -57,7 +57,7 @@ func (c *Component) handleToolExecute(lifecycleCtx context.Context, msgCtx conte
 		c.errorsCount.Add(1)
 		if parts := strings.SplitN(msg.Subject(), ".", 3); len(parts) == 3 {
 			errMsg := fmt.Sprintf("failed to decode ToolCall: %v", err)
-			_ = c.publishResult(msgCtx, parts[2], &agentic.ToolResult{
+			_ = c.publishResultDetached(parts[2], &agentic.ToolResult{
 				CallID:  parts[2],
 				Content: "Tool error: " + errMsg,
 				Error:   errMsg,
@@ -81,7 +81,7 @@ func (c *Component) handleToolExecute(lifecycleCtx context.Context, msgCtx conte
 		c.errorsCount.Add(1)
 		if call.ID != "" {
 			errMsg := fmt.Sprintf("invalid tool call: %v", err)
-			_ = c.publishResult(msgCtx, call.ID, &agentic.ToolResult{
+			_ = c.publishResultDetached(call.ID, &agentic.ToolResult{
 				CallID:  call.ID,
 				Content: "Tool error: " + errMsg,
 				Error:   errMsg,
@@ -175,7 +175,11 @@ func (c *Component) handleToolExecute(lifecycleCtx context.Context, msgCtx conte
 	result.TraceID = call.TraceID
 
 	// Publish the result to tool.result.{callID} on the same AGENT stream.
-	if err := c.publishResult(msgCtx, call.ID, &result); err != nil {
+	// Use a detached context so the publish survives a slow tool that consumed
+	// most of the per-message context — without this, a tool that ran for ~30s
+	// (the msgCtx ceiling) leaves zero headroom and the publish fails with
+	// "context deadline exceeded", wedging the agent loop on a lost result.
+	if err := c.publishResultDetached(call.ID, &result); err != nil {
 		c.logger.Error("failed to publish ToolResult",
 			"call_id", call.ID,
 			"error", err)
@@ -212,6 +216,24 @@ func (c *Component) publishResult(ctx context.Context, callID string, result *ag
 		return fmt.Errorf("publish to %s: %w", subject, err)
 	}
 	return nil
+}
+
+// publishResultDetached publishes a ToolResult on a fresh 5s context derived
+// from lifecycleCtx, so a tool that consumed the entire per-message context
+// does not block its own result delivery and wedge the agent loop. Caller
+// must not pass the per-message NATS context here — the whole point is that
+// the publish must outlive a tool-execution timeout.
+//
+// Falls back to context.Background with a 5s timeout if lifecycleCtx is nil
+// (component never started), which should only happen in tests.
+func (c *Component) publishResultDetached(callID string, result *agentic.ToolResult) error {
+	parent := c.lifecycleCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	return c.publishResult(ctx, callID, result)
 }
 
 // buildContextFromMetadata constructs lightweight Agent and Quest stubs from the

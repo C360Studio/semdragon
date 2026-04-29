@@ -472,6 +472,47 @@ func TestHTTPRequestHandler(t *testing.T) {
 		assertNotContains(t, result.Error, "url argument is required")
 		assertNotContains(t, result.Error, "method must be")
 	})
+
+	t.Run("tool spec exposes format parameter with all view modes", func(t *testing.T) {
+		t.Parallel()
+		// Inspect the registered http_request tool's parameter schema to ensure
+		// the format argument is wired with the expected enum values. Agents
+		// rely on this enum to know which view modes are available; if it
+		// regresses we lose the markdown/summary/links/headings/raw API surface
+		// silently.
+		tool := reg.Get("http_request")
+		if tool == nil {
+			t.Fatal("http_request not registered")
+		}
+		props, ok := tool.Definition.Parameters["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("properties wrong shape: %T", tool.Definition.Parameters["properties"])
+		}
+		formatProp, ok := props["format"].(map[string]any)
+		if !ok {
+			t.Fatal("format parameter missing from http_request schema")
+		}
+		enum, ok := formatProp["enum"].([]any)
+		if !ok {
+			t.Fatalf("format.enum wrong shape: %T", formatProp["enum"])
+		}
+		want := map[string]bool{"markdown": true, "summary": true, "links": true, "headings": true, "raw": true}
+		got := map[string]bool{}
+		for _, v := range enum {
+			s, _ := v.(string)
+			got[s] = true
+		}
+		for k := range want {
+			if !got[k] {
+				t.Errorf("format enum missing %q; got %v", k, got)
+			}
+		}
+		for k := range got {
+			if !want[k] {
+				t.Errorf("format enum has unexpected %q", k)
+			}
+		}
+	})
 }
 
 // =============================================================================

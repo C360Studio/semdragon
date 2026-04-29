@@ -53,6 +53,13 @@ type Component struct {
 	startTime time.Time
 	mu        sync.RWMutex
 
+	// lifecycleCtx is the Start(ctx) context — alive until component shutdown.
+	// Used to derive fresh, short-lived contexts for ToolResult publishing so
+	// publish does not inherit the per-message NATS context's deadline (which
+	// can be exhausted by a slow tool execution, leaving zero headroom and
+	// wedging the agent loop on the lost result).
+	lifecycleCtx context.Context
+
 	// Metrics tracked with atomics to avoid locking on the hot path.
 	toolsExecuted atomic.Uint64
 	toolsFailed   atomic.Uint64
@@ -257,6 +264,7 @@ func (c *Component) Start(ctx context.Context) error {
 	c.startTime = time.Now()
 	c.running.Store(true)
 	c.lastActivity.Store(time.Now())
+	c.lifecycleCtx = ctx
 
 	if err := c.startConsumer(ctx); err != nil {
 		c.running.Store(false)

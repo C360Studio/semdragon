@@ -392,6 +392,34 @@ Also check: `ui/test-results/*/error-context.md` — page snapshots at failure t
 - **Abort early** if logs show stuck loops, repeated errors, or token burn
 - **Report with evidence** — quote log lines, trajectory data, model responses. Never guess.
 
+#### Active monitoring is mandatory for paid runs
+
+Real-LLM runs (`task e2e:gemini`, `task e2e:anthropic`, `task e2e:epic:*`,
+`task e2e:pros:*`) cost real money. Passive Monitor watching is not enough —
+you MUST also actively poll concrete state:
+
+1. **Sanity-check filter shapes before relying on a Monitor.** Backend logs
+   are JSON, so filters need `"level":"ERROR"` (not `level=ERROR`). Pipe
+   `docker compose logs backend | tail -50` through your grep first; if it
+   returns zero matches against healthy logs, the filter is wrong.
+   "Silence is not success" — a Monitor that pings on truncation WARNs but
+   misses ERROR events feels like coverage and is the opposite.
+2. **Poll `/game/world` every 30–60s** — quest statuses, claimed_by. A
+   quest stuck in `in_progress` for >2 minutes with no LLM activity in
+   backend logs is wedged (lost tool result; semstreams has no orphan-
+   tool-call watchdog as of beta.21).
+3. **Poll trajectory of any active loop**:
+   `curl -s http://localhost:8081/game/trajectories/<loop_id>`. The
+   `last_step.timestamp` vs wallclock tells you stall vs progress
+   instantly. >120s gap with `in_progress` status ≈ wedged.
+4. **Pull data, never guess.** When something looks off, the trajectory
+   has the ground truth: tool name, arguments, result size, duration. If
+   you find yourself writing "likely X", you owe one curl call before
+   sending that response.
+5. **Use ScheduleWakeup or a `until`-loop in a background Bash for
+   long runs.** Don't rely on Monitor events alone — they only fire when
+   the filter matches, which is exactly when the filter might be wrong.
+
 ### Test Categories
 
 Tests are separated using Go build tags for faster feedback loops:
