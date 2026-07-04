@@ -8,7 +8,7 @@
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [
-      { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "posted" },
+      { "field": "quest.status.state", "operator": "eq", "value": "posted" },
       { "field": "quest.command", "operator": "eq", "value": "claim" }
     ],
     "on_enter": [
@@ -34,7 +34,7 @@
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [
-      { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "claimed" },
+      { "field": "quest.status.state", "operator": "eq", "value": "claimed" },
       { "field": "quest.command", "operator": "eq", "value": "start" }
     ],
     "on_enter": [

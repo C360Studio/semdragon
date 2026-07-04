@@ -8,7 +8,7 @@
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [
-      { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
+      { "field": "quest.status.state", "operator": "eq", "value": "in_progress" },
       { "field": "quest.command", "operator": "eq", "value": "submit" },
       { "field": "quest.review.needs_review", "operator": "eq", "value": true }
     ],
@@ -31,7 +31,7 @@
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [
-      { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
+      { "field": "quest.status.state", "operator": "eq", "value": "in_progress" },
       { "field": "quest.command", "operator": "eq", "value": "submit" },
       { "field": "quest.review.needs_review", "operator": "eq", "value": false }
     ],
