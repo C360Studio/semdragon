@@ -1,0 +1,54 @@
+[
+  {
+    "id": "quest_fail_retry",
+    "type": "expression",
+    "name": "Quest fail -> retry",
+    "description": "in_progress + command=fail while attempts remain (< max) -> posted, freeing the agent. The attempt counter is incremented on claim (not here), so it already reflects the number of attempts made; the next claim increments again. Clears command and claimed_by atomically. NOTE: max is a literal (default MaxAttempts=3); rule conditions cannot reference the per-quest quest.attempts.max triple. failed stays terminal (spec) — fail routing goes straight to posted/pending_triage, never through failed.",
+    "enabled": true,
+    "logic": "and",
+    "rerun_on_recovery": true,
+    "conditions": [
+      { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
+      { "field": "quest.command", "operator": "eq", "value": "fail" },
+      { "field": "quest.attempts.current", "operator": "lt", "value": 3 }
+    ],
+    "on_enter": [
+      {
+        "type": "lifecycle_transition",
+        "workflow": "quest",
+        "phase": "posted",
+        "reason": "auto-retry (attempts < max)",
+        "set": {
+          "command": "consumed",
+          "claimed_by": ""
+        }
+      }
+    ]
+  },
+  {
+    "id": "quest_fail_triage",
+    "type": "expression",
+    "name": "Quest fail -> pending_triage",
+    "description": "in_progress + command=fail with the retry budget exhausted (attempts >= max) -> pending_triage for DM triage. Value-space partition with quest_fail_retry (lt vs gte) guarantees exactly one fires. Clears command and claimed_by atomically.",
+    "enabled": true,
+    "logic": "and",
+    "rerun_on_recovery": true,
+    "conditions": [
+      { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
+      { "field": "quest.command", "operator": "eq", "value": "fail" },
+      { "field": "quest.attempts.current", "operator": "gte", "value": 3 }
+    ],
+    "on_enter": [
+      {
+        "type": "lifecycle_transition",
+        "workflow": "quest",
+        "phase": "pending_triage",
+        "reason": "retries exhausted (attempts >= max)",
+        "set": {
+          "command": "consumed",
+          "claimed_by": ""
+        }
+      }
+    ]
+  }
+]

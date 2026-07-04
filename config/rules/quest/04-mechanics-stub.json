@@ -1,0 +1,23 @@
+[
+  {
+    "id": "quest_review_skip_mechanics_disabled",
+    "type": "expression",
+    "name": "Quest review stub (mechanics disabled)",
+    "description": "While game mechanics are disabled (this change), a quest that enters in_review auto-advances to completed with a review-skipped verdict, emitting no XP or battle entities (spec: 'Mechanics side effects are stubbed in this change'). Purely phase-triggered — on_enter fires once on entering in_review and the transition to terminal completed prevents re-entry, so no command to clear. Phase 2 re-enables real review by replacing this one rule. Tracked as task 4.2.",
+    "enabled": true,
+    "logic": "and",
+    "rerun_on_recovery": true,
+    "conditions": [
+      { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_review" }
+    ],
+    "on_enter": [
+      {
+        "type": "lifecycle_transition",
+        "workflow": "quest",
+        "phase": "completed",
+        "reason": "review skipped (mechanics disabled)",
+        "set": { "verdict": "review-skipped-mechanics-disabled" }
+      }
+    ]
+  }
+]

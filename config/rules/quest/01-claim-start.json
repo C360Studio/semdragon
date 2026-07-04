@@ -1,0 +1,50 @@
+[
+  {
+    "id": "quest_claim_on_command",
+    "type": "expression",
+    "name": "Quest claim on command",
+    "description": "posted + command=claim -> claimed. Sets claimed_by from the caller's quest.claim.requested_by arg triple, increments the attempt counter atomically with the claim (spec: attempt increment atomic with claim), and clears the command to a sentinel so it cannot re-fire when the quest re-enters posted on a fail-retry.",
+    "enabled": true,
+    "logic": "and",
+    "rerun_on_recovery": true,
+    "conditions": [
+      { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "posted" },
+      { "field": "quest.command", "operator": "eq", "value": "claim" }
+    ],
+    "on_enter": [
+      {
+        "type": "lifecycle_transition",
+        "workflow": "quest",
+        "phase": "claimed",
+        "reason": "command=claim",
+        "set": {
+          "claimed_by": "$entity.triple.quest.claim.requested_by",
+          "attempts": { "op": "increment" },
+          "command": "consumed"
+        }
+      }
+    ]
+  },
+  {
+    "id": "quest_start_on_command",
+    "type": "expression",
+    "name": "Quest start on command",
+    "description": "claimed + command=start -> in_progress. Clears the command atomically. questbridge dispatches the agentic loop on the in_progress phase.",
+    "enabled": true,
+    "logic": "and",
+    "rerun_on_recovery": true,
+    "conditions": [
+      { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "claimed" },
+      { "field": "quest.command", "operator": "eq", "value": "start" }
+    ],
+    "on_enter": [
+      {
+        "type": "lifecycle_transition",
+        "workflow": "quest",
+        "phase": "in_progress",
+        "reason": "command=start",
+        "set": { "command": "consumed" }
+      }
+    ]
+  }
+]

@@ -50,6 +50,7 @@ const (
 // or an operator patch may write atomically with a transition. Kept in one slice
 // so the Workflow declaration and the QuestState struct tags stay consistent.
 const (
+	predCommand         = "quest.command"
 	predAttemptsCurrent = "quest.attempts.current"
 	predAttemptsMax     = "quest.attempts.max"
 	predAssignmentAgent = "quest.assignment.agent"
@@ -94,6 +95,13 @@ var Transitions = lifecycle.Transitions{
 type QuestState struct {
 	EntityIDField string `json:"entity_id" lifecycle:"id"`
 	PhaseField    string `json:"phase" lifecycle:"phase,predicate=quest.status.state"`
+
+	// Command is the transition trigger. A caller stamps quest.command (via a
+	// graph-ingest delta) to request a transition; the matching rule fires the
+	// lifecycle_transition and clears it to a sentinel in the same atomic write so
+	// it cannot re-fire when the quest re-enters a matching phase (fail→posted
+	// retry). Must be operator_writable for the rule `set` to reach it.
+	Command string `json:"command,omitempty" lifecycle:"operator_writable,predicate=quest.command"`
 
 	// Retry budget. Attempts is operator_writable so the fail→requeue rule can
 	// atomically increment it inside the transition and the triage rule can branch
@@ -146,6 +154,7 @@ func WorkflowDeclaration() lifecycle.Workflow {
 		PhasePredicate: PhasePredicate,
 		Schema:         reflect.TypeOf(QuestState{}),
 		OperatorWritablePredicates: []string{
+			predCommand,
 			predAttemptsCurrent, predAttemptsMax,
 			predAssignmentAgent, predAssignmentParty,
 			predFailureReason, predVerdictFeedback,
