@@ -12,7 +12,7 @@
 
 ## 2. Stage B1 — quest lifecycle as declared workflow
 
-- [ ] 2.1 Define `QuestState` schema struct with `lifecycle` tags and register the quest `Workflow` (transition table per quest-lifecycle spec, terminal phases, `quest.status` as phase predicate)
+- [x] 2.1 Define `QuestState` schema struct with `lifecycle` tags and register the quest `Workflow` (transition table per quest-lifecycle spec, terminal phases, `quest.status` as phase predicate) — new `questlifecycle` pkg (`workflow.go`): `QuestState` projection, `Transitions` table (all questboard edges + spec), phase predicate `quest.status.state` (design D3), audit predicates, operator-writable retry/assignment/verdict fields. Phase consts = `domain.QuestStatus` (single source of truth). Unit tests + integration registration test green; `Manager` created + workflow registered in `cmd/semdragons/main.go`.
 - [ ] 2.2 Author `config/rules/quest/*.json`: claim/start edges, submission routing (review vs direct completion), failure retry-vs-triage routing
 - [ ] 2.3 Implement attempt-conditional routing via lifecycle Manager API where rule conditions cannot express it; attempts increment atomic with claim (`TransitionWith`)
 - [ ] 2.4 Port dependency gating (claim blocked until deps completed) and creation-time cycle rejection to the new seam

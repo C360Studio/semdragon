@@ -25,12 +25,14 @@ import (
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/payloadbuiltins"
 	"github.com/c360studio/semstreams/payloadregistry"
+	"github.com/c360studio/semstreams/pkg/lifecycle"
 	"github.com/c360studio/semstreams/service"
 	"github.com/c360studio/semstreams/types"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
 	"github.com/c360studio/semdragons/processor/questbridge"
+	"github.com/c360studio/semdragons/questlifecycle"
 	"github.com/c360studio/semdragons/semsource"
 	svcapi "github.com/c360studio/semdragons/service/api"
 )
@@ -158,6 +160,16 @@ func run() error {
 	// 9. Create service dependencies
 	svcDeps := createServiceDependencies(natsClient, metricsRegistry, logger, platform, configManager, componentRegistry)
 	svcDeps.PayloadRegistry = payloadReg
+
+	// 9a. Wire the shared lifecycle harness Manager and register the quest
+	// workflow (Stage B1). Components receive the same Manager instance via
+	// deps.LifecycleManager — the rule engine's lifecycle_* actions and the
+	// lifecycle-gateway both resolve "quest" transitions through it.
+	lifecycleManager := lifecycle.NewManager(natsClient, logger)
+	if err := lifecycleManager.Register(questlifecycle.WorkflowDeclaration()); err != nil {
+		return fmt.Errorf("register quest lifecycle workflow: %w", err)
+	}
+	svcDeps.LifecycleManager = lifecycleManager
 
 	// 10. Configure and create services
 	if err := configureAndCreateServices(cfg, manager, svcDeps); err != nil {
