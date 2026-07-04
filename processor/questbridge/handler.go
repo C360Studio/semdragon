@@ -16,6 +16,7 @@ import (
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/questdagexec"
+	"github.com/c360studio/semdragons/questlifecycle"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
@@ -756,6 +757,36 @@ type loopMetrics struct {
 	TokensOut int
 }
 
+// stampExecutionMetrics persists agentic-loop execution metrics (loop id, turn
+// count, token usage, duration) as additive graph-ingest deltas on a
+// lifecycle-managed quest. It must NOT use GraphClient.EmitEntityUpdate: that
+// does a full-object Put which would clobber the lifecycle Manager's phase,
+// audit, and command triples on the shared ENTITY_STATES entity. Metrics are
+// observability, not part of the UI-stability contract, so a stamp failure is
+// logged and does not block the submit/fail command that follows.
+func (c *Component) stampExecutionMetrics(ctx context.Context, questID, loopID string, metrics loopMetrics, dur time.Duration) {
+	stamp := func(pred string, obj any) {
+		if err := questlifecycle.StampTriple(ctx, c.deps.NATSClient, questID, pred, obj); err != nil {
+			c.logger.Warn("failed to stamp quest metric", "quest_id", questID, "predicate", pred, "error", err)
+		}
+	}
+	if loopID != "" {
+		stamp("quest.execution.loop_id", loopID)
+	}
+	if dur > 0 {
+		stamp("quest.duration", dur.String())
+	}
+	if metrics.TurnsUsed > 0 {
+		stamp(domain.PredicateQuestMetricsTurns, metrics.TurnsUsed)
+	}
+	if metrics.TokensIn > 0 {
+		stamp(domain.PredicateQuestMetricsTokensIn, metrics.TokensIn)
+	}
+	if metrics.TokensOut > 0 {
+		stamp(domain.PredicateQuestMetricsTokensOut, metrics.TokensOut)
+	}
+}
+
 func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, mapping *QuestLoopMapping, output string, metrics loopMetrics) {
 	questEntity, err := c.graph.GetQuest(ctx, questID)
 	if err != nil {
@@ -919,36 +950,25 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		return
 	}
 
-	// Quests with RequireReview=false (e.g., red-team review quests) skip
-	// boss battle entirely and complete directly. Without this, they get
-	// stuck at in_review because bossbattle correctly ignores them.
-	if !quest.Constraints.RequireReview {
-		quest.Status = domain.QuestCompleted
-		if err := c.graph.EmitEntityUpdate(ctx, quest, domain.PredicateQuestCompleted); err != nil {
-			c.logger.Error("failed to emit quest completion (no review required)",
-				"quest_id", questID, "error", err)
-			c.errorsCount.Add(1)
-			return
-		}
-		c.logger.Info("quest completed directly (no review required)",
-			"quest_id", questID)
-		return
-	}
+	// Submit the work product through the lifecycle command seam. questbridge no
+	// longer decides review-vs-complete here (design D2): it stamps the work
+	// product and a submit command as additive graph-ingest deltas, and the quest
+	// rules route on quest.review.needs_review (written at post time) — review
+	// required -> in_review (then the mechanics-stub rule auto-completes while
+	// mechanics are disabled), otherwise -> completed directly. Deltas (not a
+	// full-object EmitEntityUpdate) preserve the lifecycle Manager's phase, audit,
+	// and command triples on the shared ENTITY_STATES entity.
+	c.stampExecutionMetrics(ctx, string(questID), mapping.LoopID, metrics, quest.Duration)
 
-	// All other quests route through in_review. Bossbattle determines the outcome:
-	// auto-pass (trivial quests), LLM judge, or human review based on the
-	// domain catalog's ReviewConfig and the quest's review level.
-	// Sub-quests are skipped by bossbattle and reviewed by the party lead
-	// via questdagexec instead.
-	quest.Status = domain.QuestInReview
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.submitted"); err != nil {
-		c.logger.Error("failed to emit quest submission for review",
+	if err := questlifecycle.StampCommand(ctx, c.deps.NATSClient, string(questID), questlifecycle.CommandSubmit,
+		map[string]string{questlifecycle.PredDataOutput: output}); err != nil {
+		c.logger.Error("failed to stamp submit command",
 			"quest_id", questID, "error", err)
 		c.errorsCount.Add(1)
 		return
 	}
-	c.logger.Info("quest submitted for review",
-		"quest_id", questID, "review_level", quest.Constraints.ReviewLevel)
+	c.logger.Info("quest submitted via lifecycle command",
+		"quest_id", questID, "needs_review", quest.Constraints.RequireReview)
 }
 
 // parseToolOutput attempts to parse the loop output as a tool-based completion
@@ -1265,42 +1285,32 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 		return
 	}
 
-	// Persist execution metrics from agentic-loop (partial metrics for failed quests).
-	quest.TurnsUsed = metrics.TurnsUsed
-	quest.TokensPrompt = metrics.TokensIn
-	quest.TokensCompletion = metrics.TokensOut
-	quest.Duration = time.Since(mapping.StartedAt)
+	// Fail the quest through the lifecycle command seam. questbridge no longer
+	// delegates to questboard.FailQuest or does a direct terminal Put: it stamps
+	// execution metrics, the failure reason, and a fail command as additive
+	// graph-ingest deltas, and the quest rules route on quest.attempts.current —
+	// retries remaining (< max) -> posted (freeing claimed_by), otherwise ->
+	// pending_triage for DM triage. Deltas (not a full-object EmitEntityUpdate)
+	// preserve the lifecycle Manager's phase, audit, and command triples on the
+	// shared ENTITY_STATES entity. failed stays terminal per the lifecycle spec;
+	// the fail command routes to posted/pending_triage, never through failed.
+	c.stampExecutionMetrics(ctx, string(questID), mapping.LoopID, metrics, time.Since(mapping.StartedAt))
 
-	// Delegate to questboard when available — this routes through the triage
-	// gate which may hold the quest for DM evaluation instead of terminal failure.
-	// Questboard handles agent release internally.
-	if qf := c.resolveQuestFailer(); qf != nil {
-		// Ensure LoopID and metrics are set on the quest entity before delegating, so
-		// questboard's FailQuest can capture them in the FailureRecord.
-		quest.LoopID = mapping.LoopID
-		if writeErr := c.graph.EmitEntityUpdate(ctx, quest, "quest.execution.loop_id"); writeErr != nil {
-			c.logger.Error("failed to write loop_id before failQuest delegation", "error", writeErr)
-		}
-		if failErr := qf.FailQuest(ctx, questID, reason); failErr != nil {
-			c.logger.Error("questboard FailQuest failed, falling back to direct failure",
-				"quest_id", questID, "error", failErr)
-			// Fall through to direct failure below.
-		} else {
-			return
+	if reason != "" {
+		if err := questlifecycle.StampTriple(ctx, c.deps.NATSClient, string(questID),
+			"quest.failure.reason", reason); err != nil {
+			c.logger.Warn("failed to stamp failure reason", "quest_id", questID, "error", err)
 		}
 	}
 
-	// Legacy path: set QuestFailed directly when no questboard is wired.
-	quest.Status = domain.QuestFailed
-	quest.LoopID = mapping.LoopID
-	quest.FailureReason = reason
-
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.failed"); err != nil {
-		c.logger.Error("failed to emit quest failure", "quest_id", questID, "error", err)
+	if err := questlifecycle.StampCommand(ctx, c.deps.NATSClient, string(questID), questlifecycle.CommandFail, nil); err != nil {
+		c.logger.Error("failed to stamp fail command", "quest_id", questID, "error", err)
 		c.errorsCount.Add(1)
 		return
 	}
 
+	// The fail rule frees the quest's claimed_by; release the agent entity too so
+	// it returns to idle and can claim again. (The rule only touches the quest.)
 	c.releaseAgent(ctx, mapping.AgentID)
 }
 

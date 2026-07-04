@@ -32,12 +32,6 @@ type SubQuestPoster interface {
 	PostSubQuests(ctx context.Context, parentID domain.QuestID, subQuests []domain.Quest, decomposer domain.AgentID) ([]domain.Quest, error)
 }
 
-// QuestFailer is the narrow interface questbridge needs from questboard
-// to delegate failure transitions through the triage gate.
-type QuestFailer interface {
-	FailQuest(ctx context.Context, questID domain.QuestID, reason string) error
-}
-
 // ClarificationAnswerer abstracts LLM inference for auto-DM clarification answering.
 // The default implementation uses the model registry's "dm-chat" capability
 // with a simple OpenAI-compatible HTTP call.
@@ -445,25 +439,6 @@ func (c *Component) resolveQuestBoard() SubQuestPoster {
 	ref, ok := comp.(SubQuestPoster)
 	if !ok {
 		c.logger.Warn("questboard component does not implement SubQuestPoster",
-			"type", comp.Meta().Type)
-		return nil
-	}
-	return ref
-}
-
-// resolveQuestFailer resolves questboard's QuestFailer from the ComponentRegistry.
-// Returns nil when registry is unavailable or questboard doesn't implement the interface.
-func (c *Component) resolveQuestFailer() QuestFailer {
-	if c.deps.ComponentRegistry == nil {
-		return nil
-	}
-	comp := c.deps.ComponentRegistry.Component("questboard")
-	if comp == nil {
-		return nil
-	}
-	ref, ok := comp.(QuestFailer)
-	if !ok {
-		c.logger.Warn("questboard component does not implement QuestFailer",
 			"type", comp.Meta().Type)
 		return nil
 	}
