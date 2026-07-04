@@ -139,12 +139,35 @@ deleted in favor of the gateway.
 
 ## Open Questions
 
-- Does framework agentrun (upstream ADR-053) subsume the QUEST_LOOPS
-  quest→loop mapping, or do we keep the bucket? (Resolve in Stage A.)
+- ~~Does framework agentrun (upstream ADR-053) subsume the QUEST_LOOPS
+  quest→loop mapping, or do we keep the bucket?~~ **RESOLVED (Stage A, task 1.6):
+  keep QUEST_LOOPS; do not adopt agentrun in this change.** No subsumption —
+  `agentrun.AgentRun` is a per-*run* Lifecycle Participant keyed by a 6-part
+  chain-execution entity ID (carries `Phase`/`ParentRunEntityID`/milestones),
+  whereas QUEST_LOOPS is a per-*loop* correlation map carrying `AgentID`,
+  `TrustTier`, `SandboxDir`, `LoopType`, `StartedAt` and the quest↔loop reverse
+  lookup. Different key, cardinality, and payload. The beta.132 agentic wire is
+  additive-only (`TaskMessage.RunID` etc. are `omitempty`), so QUEST_LOOPS works
+  unchanged with no pressure from the bump; agentrun is opt-in and heavy (requires
+  wiring the ADR-047 `lifecycle.Manager` into `cmd/semdragons` + rule-engine
+  `RunScope`), and ADR-053 §Deferred explicitly lists "legacy migration of …
+  semdragon" as out of scope. Future coexistence path (separate change): set
+  `TaskMessage.RunID` on sub-quest spawns + run an `agentrun.MilestoneSubscriber`
+  while keeping QUEST_LOOPS for per-loop bookkeeping — the two are non-conflicting
+  because `RunID` is `omitempty`. (Evidence: `research/02-agentic-wire.md`.)
 - Is `partycoord` still needed as a component, or does party formation reduce
   to rules + the questdag layer? (Resolve in Stage B2; out of scope to
   redesign if it still works.)
-- Which predicates on the quest entity need explicit ownership claims under
-  ADR-056 so rules and questbridge don't fight? (Resolve in Stage A spike.)
+- ~~Which predicates on the quest entity need explicit ownership claims under
+  ADR-056 so rules and questbridge don't fight?~~ **RESOLVED (Stage A spike, task
+  1.3):** three prefix-disjoint owned groups — lifecycle owner claims
+  `quest.status.*`/`quest.lifecycle.*`/`quest.attempts.*`/`quest.failure.*`/
+  `quest.assignment.*`/`quest.verdict.*`/`quest.data.output` (phase = `quest.status.state`,
+  `cas-transition`); questbridge claims `quest.execution.*`/`quest.context.*`/
+  `quest.loop.*`/`quest.metrics.*` (`replace-owned`, must switch off full-object `Put` to
+  `update_with_triples`); questdag claims `quest.dag.*`. Creation-time predicates
+  (`quest.identity/spec/difficulty/...`) need no claim. beta.132 enforcement is observe-only
+  so the existing path is unaffected in Stage A. Full map + registration order in
+  `research/05-ownership-spike.md`.
 - `publish_agent` adoption timing for dispatch — revisit after Phase 2 when
   prompt assembly requirements are settled (deferred per D2).

@@ -2,13 +2,13 @@
 
 ## 1. Stage A — dependency bump and contract adaptation
 
-- [ ] 1.1 Read `semstreams/docs/operations/migration-*.md` for beta.21→beta.132; list every item touching semdragons (ownership ADR-054/055/056, agentrun ADR-053, payload registry, message shapes)
-- [ ] 1.2 Bump `go.mod` to semstreams v1.0.0-beta.132; fix compilation across all packages
-- [ ] 1.3 Ownership spike: write and read one quest entity under beta.132 ownership/projection rules; document which `quest.*` predicates need ownership claims for rules vs questbridge
-- [ ] 1.4 Adapt payload registry, BaseMessage wrapping, and graph-write call sites until `task test` is green with the existing architecture
-- [ ] 1.5 Add contract-level integration tests: questbridge↔agentic-loop TaskMessage round trip, questtools↔tool.execute/tool.result round trip
-- [ ] 1.6 Resolve the QUEST_LOOPS vs framework agentrun question; document the decision in design.md Open Questions
-- [ ] 1.7 `task test:integration` green with the existing architecture (Stage A gate)
+- [x] 1.1 Read `semstreams/docs/operations/migration-*.md` for beta.21→beta.132; list every item touching semdragons (ownership ADR-054/055/056, agentrun ADR-053, payload registry, message shapes) — findings in `research/00-stage-a-findings.md` (+ 01-04 cluster files). Verdict: near-zero compile risk; real work is Stage B + ownership partitioning.
+- [x] 1.2 Bump `go.mod` to semstreams v1.0.0-beta.132; fix compilation across all packages — `go build ./...` + `go vet ./...` clean, zero source changes needed. Note: beta.132 requires Go ≥ 1.26.3 (toolchain auto-switched to go1.26.4); Docker base image must be updated before e2e (Stage B3/gate).
+- [x] 1.3 Ownership spike: write and read one quest entity under beta.132 ownership/projection rules; document which `quest.*` predicates need ownership claims for rules vs questbridge — questboard integration PASS under beta.132 (ownership is observe-only; raw-KV-`Put` path unaffected). Predicate partition documented in `research/05-ownership-spike.md`: lifecycle owns `quest.status/lifecycle/attempts/failure/assignment/verdict/data.output`, questbridge owns `quest.execution/context/loop/metrics`, questdag owns `quest.dag.*`.
+- [x] 1.4 Adapt payload registry, BaseMessage wrapping, and graph-write call sites until `task test` is green with the existing architecture — `task test` green (EXIT=0) with **zero adaptation**; additive-only wire + unchanged payload registry confirmed empirically.
+- [x] 1.5 Add contract-level integration tests: questbridge↔agentic-loop TaskMessage round trip, questtools↔tool.execute/tool.result round trip — added `processor/questbridge/contract_test.go` (`TestContract_TaskMessageWireRoundTrip`) and `processor/questtools/contract_test.go` (`TestContract_ToolCallWireFidelity`); both decode through the production payload registry and pass under beta.132. Pre-existing behavioral round-trip tests (`TestQuestStartedPublishesTaskMessage`, `TestCorrelationIDPropagation`) also green.
+- [x] 1.6 Resolve the QUEST_LOOPS vs framework agentrun question; document the decision in design.md Open Questions — **KEEP QUEST_LOOPS, do not adopt agentrun** (per-loop vs per-run, additive wire, ADR-053 §Deferred excludes semdragon). Recorded in design.md Open Questions.
+- [x] 1.7 `task test:integration` green with the existing architecture (Stage A gate) — **30 packages OK, 0 failures** under beta.132. Stage A complete.
 
 ## 2. Stage B1 — quest lifecycle as declared workflow
 

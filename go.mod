@@ -1,16 +1,16 @@
 module github.com/c360studio/semdragons
 
-go 1.25.3
+go 1.26.3
 
 require (
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0
-	github.com/c360studio/semstreams v1.0.0-beta.21
+	github.com/c360studio/semstreams v1.0.0-beta.132
 	github.com/go-shiori/go-readability v0.0.0-20251205110129-5db1dc9836f0
 	github.com/joho/godotenv v1.5.1
 	github.com/nats-io/nats.go v1.48.0
 	github.com/nats-io/nuid v1.0.1
-	golang.org/x/net v0.49.0
-	golang.org/x/sync v0.19.0
+	golang.org/x/net v0.53.0
+	golang.org/x/sync v0.20.0
 )
 
 require (
@@ -58,7 +58,7 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
-	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nats-io/nkeys v0.4.11 // indirect
@@ -81,19 +81,18 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
-	go.opentelemetry.io/otel v1.39.0 // indirect
-	go.opentelemetry.io/otel/metric v1.39.0 // indirect
+	go.opentelemetry.io/otel v1.42.0 // indirect
+	go.opentelemetry.io/otel/metric v1.42.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.39.0 // indirect
-	go.opentelemetry.io/otel/trace v1.39.0 // indirect
-	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
-	golang.org/x/mod v0.32.0 // indirect
+	go.opentelemetry.io/otel/trace v1.42.0 // indirect
+	go.yaml.in/yaml/v2 v2.4.3 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
-	golang.org/x/tools v0.41.0 // indirect
-	google.golang.org/grpc v1.79.1 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/tools v0.43.0 // indirect
+	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
