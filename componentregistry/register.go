@@ -17,6 +17,11 @@ import (
 	agenticloop "github.com/c360studio/semstreams/processor/agentic-loop"
 	agenticmodel "github.com/c360studio/semstreams/processor/agentic-model"
 
+	// Semstreams rule engine — drives quest lifecycle transitions via
+	// lifecycle_transition/complete/fail actions against the shared
+	// deps.LifecycleManager (rebuild-quest-lifecycle-on-semstreams-rules).
+	rule "github.com/c360studio/semstreams/processor/rule"
+
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/autonomy"
@@ -67,6 +72,11 @@ func RegisterAll(registry *component.Registry) error {
 	}
 	// agenticmodel.Register takes RegistryInterface (satisfied by *component.Registry)
 	if err := agenticmodel.Register(registry); err != nil {
+		return err
+	}
+
+	// Register the semstreams rule engine (quest lifecycle transitions).
+	if err := rule.Register(registry); err != nil {
 		return err
 	}
 
@@ -125,6 +135,9 @@ func RegisterProcessors(registry *component.Registry) error {
 	if err := agenticmodel.Register(registry); err != nil {
 		return err
 	}
+	if err := rule.Register(registry); err != nil {
+		return err
+	}
 
 	// Register semdragons processors
 	processors := []func(*component.Registry) error{
@@ -171,6 +184,8 @@ func ComponentNames() []string {
 		// Semstreams agentic processors
 		"agentic-loop",
 		"agentic-model",
+		// Semstreams rule engine
+		"rule-processor",
 		// Semdragons processors
 		questboard.ComponentName,
 		agentprogression.ComponentName,
@@ -207,6 +222,8 @@ func ProcessorNames() []string {
 		// Semstreams agentic processors
 		"agentic-loop",
 		"agentic-model",
+		// Semstreams rule engine
+		"rule-processor",
 		// Semdragons processors
 		questboard.ComponentName,
 		agentprogression.ComponentName,
