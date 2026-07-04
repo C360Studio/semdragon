@@ -30,6 +30,12 @@ const (
 	EntityTypeBattle     = "battle"
 	EntityTypeStoreItem  = "storeitem"
 	EntityTypePeerReview = "peerreview"
+	// EntityTypeDagUnit is a party-DAG execution unit: a thin coordination
+	// entity minted per node per run and consumed by the semstreams gated-DAG
+	// executor. It carries gateddag.depends_on edges and questdag provenance
+	// (node id, parent quest, sub-quest) — distinct from the sub-quest entity it
+	// maps to. See the questdag package.
+	EntityTypeDagUnit = "dagunit"
 )
 
 // BoardConfig holds the configuration for a quest board instance.
@@ -151,6 +157,11 @@ func (c *BoardConfig) StoreItemEntityID(instance string) string {
 // PeerReviewEntityID generates a peer review entity ID.
 func (c *BoardConfig) PeerReviewEntityID(instance string) string {
 	return c.EntityID(EntityTypePeerReview, instance)
+}
+
+// DagUnitEntityID generates a party-DAG execution-unit entity ID.
+func (c *BoardConfig) DagUnitEntityID(instance string) string {
+	return c.EntityID(EntityTypeDagUnit, instance)
 }
 
 // BucketName returns the KV bucket name for entity state.
