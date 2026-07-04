@@ -7,13 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/c360studio/semstreams/natsclient"
+	"github.com/c360studio/semstreams/pkg/lifecycle"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semdragons/processor/guildformation"
+	"github.com/c360studio/semdragons/questlifecycle"
 )
 
 // errNoViableClaim is returned by executeClaimQuest when all suggestions were
@@ -98,9 +99,17 @@ func (c *Component) claimQuestAction() action {
 // to the next suggestion. CAS (Compare-And-Swap) on the quest KV entry ensures
 // only one agent wins the claim — losers get ErrKVRevisionMismatch and skip.
 func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogression.Agent, tracker *agentTracker) error {
+	mgr := c.deps.LifecycleManager
+	if mgr == nil {
+		// Claims are effected through the lifecycle Manager; without it wired we
+		// cannot transition a quest. Treat as "nothing viable" so the evaluator
+		// backs off rather than treating it as a hard error loop.
+		c.logger.Error("cannot claim quest: lifecycle manager not wired into autonomy deps")
+		return errNoViableClaim
+	}
 	for i, suggestion := range tracker.suggestions {
-		// Read quest from KV with revision for CAS
-		entity, revision, err := c.graph.GetQuestWithRevision(ctx, domain.QuestID(suggestion.QuestID))
+		// Read quest from KV.
+		entity, err := c.graph.GetQuest(ctx, domain.QuestID(suggestion.QuestID))
 		if err != nil {
 			c.logger.Debug("quest not found in KV, skipping suggestion",
 				"quest_id", suggestion.QuestID,
@@ -138,6 +147,17 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 			continue
 		}
 
+		// Dependency gating (quest-lifecycle spec): a quest with depends_on
+		// entries is not claimable until every dependency has reached completed.
+		// The old inline CAS path skipped this; the lifecycle Manager does not
+		// enforce it either, so the gate lives here at the claim seam.
+		if err := c.checkDependenciesMet(ctx, quest); err != nil {
+			c.logger.Debug("quest has unmet dependencies, skipping",
+				"quest_id", suggestion.QuestID,
+				"reason", err)
+			continue
+		}
+
 		// Pre-flight validation
 		if err := agentprogression.ValidateAgentCanClaim(agent, quest); err != nil {
 			c.logger.Debug("agent cannot claim quest, trying next",
@@ -158,48 +178,56 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 			return errNoViableClaim
 		}
 
-		// CAS write quest state: claimed. If another agent already wrote to this
-		// quest (changing the revision), EmitEntityCAS returns ErrKVRevisionMismatch
-		// and we skip to the next suggestion.
-		now := time.Now()
+		// Claim through the lifecycle Manager: posted → claimed, setting
+		// claimed_by and incrementing the attempt counter atomically with the
+		// phase write (quest-lifecycle spec). TransitionWith is CAS-guarded, so
+		// if another agent won the claim first the current phase is no longer
+		// posted and the transition returns ErrInvalidTransition — we skip to the
+		// next suggestion, exactly as the old EmitEntityCAS conflict path did.
+		// This replaces the direct full-object status Put (which would clobber the
+		// Manager's audit/command triples on the shared ENTITY_STATES entity).
 		agentID := domain.AgentID(agent.ID)
-		quest.Status = domain.QuestClaimed
-		quest.ClaimedBy = &agentID
-		quest.ClaimedAt = &now
-		quest.Attempts++
-
-		if err := c.graph.EmitEntityCAS(ctx, quest, "quest.claimed", revision); err != nil {
-			if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
-				c.logger.Debug("quest already claimed by another agent (CAS conflict), skipping",
+		claimErr := mgr.TransitionWith(ctx, questlifecycle.WorkflowName, string(quest.ID), questlifecycle.PhaseClaimed,
+			lifecycle.TransitionSourceComponent, "autonomous claim",
+			func(p lifecycle.Participant) error {
+				qs := p.(*questlifecycle.QuestState)
+				qs.ClaimedBy = string(agentID)
+				qs.Attempts++
+				return nil
+			})
+		if claimErr != nil {
+			if errors.Is(claimErr, lifecycle.ErrInvalidTransition) || errors.Is(claimErr, lifecycle.ErrTerminalPhase) {
+				c.logger.Debug("quest no longer claimable (won by another agent), skipping",
 					"quest_id", suggestion.QuestID,
 					"agent_id", agent.ID)
 				continue
 			}
 			c.errorsCount.Add(1)
-			c.logger.Error("failed to write quest claim",
+			c.logger.Error("failed to claim quest via lifecycle manager",
 				"quest_id", suggestion.QuestID,
-				"error", err)
+				"error", claimErr)
 			continue
 		}
 
-		// CAS succeeded — we own this quest. Transition to in_progress.
-		// Re-read revision after our claim write for the next CAS.
-		_, revision, err = c.graph.GetQuestWithRevision(ctx, domain.QuestID(quest.ID))
-		if err != nil {
-			c.errorsCount.Add(1)
-			c.logger.Error("failed to re-read quest after claim", "error", err)
-			// Quest is claimed but we can't transition — recoverable via manual StartQuest.
-		} else {
-			now1 := time.Now()
-			quest.Status = domain.QuestInProgress
-			quest.StartedAt = &now1
+		// Preserve claimed_at for UI stability — it is not a lifecycle projection
+		// field, so stamp it as an additive delta (never a full-object Put).
+		if err := questlifecycle.StampTriple(ctx, c.deps.NATSClient, string(quest.ID),
+			"quest.lifecycle.claimed_at", time.Now().Format(time.RFC3339)); err != nil {
+			c.logger.Warn("failed to stamp claimed_at", "quest_id", suggestion.QuestID, "error", err)
+		}
 
-			if err := c.graph.EmitEntityCAS(ctx, quest, "quest.started", revision); err != nil {
-				c.errorsCount.Add(1)
-				c.logger.Error("failed to start quest after claim",
-					"quest_id", suggestion.QuestID,
-					"error", err)
-			}
+		// We own this quest — start it: claimed → in_progress. questbridge
+		// dispatches the agentic loop on the in_progress phase.
+		if err := mgr.Transition(ctx, questlifecycle.WorkflowName, string(quest.ID), questlifecycle.PhaseInProgress,
+			lifecycle.TransitionSourceComponent, "autonomous start"); err != nil {
+			c.errorsCount.Add(1)
+			c.logger.Error("failed to start quest after claim",
+				"quest_id", suggestion.QuestID,
+				"error", err)
+			// Quest is claimed but not started — recoverable via an operator/manager start.
+		} else if err := questlifecycle.StampTriple(ctx, c.deps.NATSClient, string(quest.ID),
+			"quest.lifecycle.started_at", time.Now().Format(time.RFC3339)); err != nil {
+			c.logger.Warn("failed to stamp started_at", "quest_id", suggestion.QuestID, "error", err)
 		}
 
 		// Write agent state: on_quest (no CAS needed — only this agent's heartbeat writes its state)
@@ -255,6 +283,27 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 	c.trackersMu.Unlock()
 
 	return errNoViableClaim
+}
+
+// checkDependenciesMet reports an error when any quest in DependsOn has not yet
+// reached completed. It mirrors questboard's dependency gate at the new claim
+// seam (quest-lifecycle spec: "Dependency gating"). Cycle rejection is enforced
+// at creation time by domain.ValidateQuestChainBrief, not here.
+func (c *Component) checkDependenciesMet(ctx context.Context, quest *domain.Quest) error {
+	for _, depID := range quest.DependsOn {
+		entity, err := c.graph.GetQuest(ctx, depID)
+		if err != nil {
+			return fmt.Errorf("load dependency %s: %w", depID, err)
+		}
+		dep := domain.QuestFromEntityState(entity)
+		if dep == nil {
+			return fmt.Errorf("dependency %s could not be decoded", depID)
+		}
+		if dep.Status != domain.QuestCompleted {
+			return fmt.Errorf("dependency %s is %s (not completed)", depID, dep.Status)
+		}
+	}
+	return nil
 }
 
 // shopBudget returns the XP budget for autonomous shopping based on agent status.

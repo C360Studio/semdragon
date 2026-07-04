@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/natsclient"
+	"github.com/c360studio/semstreams/pkg/lifecycle"
+	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
@@ -22,6 +25,7 @@ import (
 	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semdragons/processor/dmapproval"
 	"github.com/c360studio/semdragons/processor/guildformation"
+	"github.com/c360studio/semdragons/questlifecycle"
 )
 
 // =============================================================================
@@ -32,7 +36,7 @@ import (
 // =============================================================================
 
 func TestComponent_Lifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 
 	comp := setupComponent(t, client, "lifecycle")
@@ -63,7 +67,7 @@ func TestComponent_Lifecycle(t *testing.T) {
 }
 
 func TestCooldownExpiryTransitionsToIdle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -122,7 +126,7 @@ func TestCooldownExpiryTransitionsToIdle(t *testing.T) {
 }
 
 func TestCooldownNotExpiredStaysCooldown(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -173,7 +177,7 @@ func TestCooldownNotExpiredStaysCooldown(t *testing.T) {
 }
 
 func TestBoidSuggestionCached(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -267,7 +271,7 @@ func TestBoidSuggestionCached(t *testing.T) {
 }
 
 func TestHeartbeatStartsOnAgentCreation(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -323,7 +327,7 @@ func TestHeartbeatStartsOnAgentCreation(t *testing.T) {
 }
 
 func TestHeartbeatCancelledOnRetire(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -386,7 +390,7 @@ func TestHeartbeatCancelledOnRetire(t *testing.T) {
 // =============================================================================
 
 func TestAutonomousQuestClaim(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -397,7 +401,8 @@ func TestAutonomousQuestClaim(t *testing.T) {
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
 
-	comp := setupComponentWithConfig(t, client, config)
+	mgr := startLifecycleStack(t, client)
+	comp := setupComponentWithConfig(t, client, config, mgr)
 	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
@@ -505,7 +510,7 @@ func TestAutonomousQuestClaim(t *testing.T) {
 // quest ready to claim. Boid suggestion published. Quest must be claimed
 // within 2 seconds (proving evaluation happened immediately, not after 30s).
 func TestBoidSuggestionTriggersImmediateEvaluation(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -518,7 +523,8 @@ func TestBoidSuggestionTriggersImmediateEvaluation(t *testing.T) {
 	// immediate-evaluation fix, the agent would wait 30s before claiming.
 	config.IdleIntervalMs = 30000
 
-	comp := setupComponentWithConfig(t, client, config)
+	mgr := startLifecycleStack(t, client)
+	comp := setupComponentWithConfig(t, client, config, mgr)
 	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
@@ -602,7 +608,7 @@ func TestBoidSuggestionTriggersImmediateEvaluation(t *testing.T) {
 }
 
 func TestAutonomousQuestClaim_FallsThrough(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -613,7 +619,8 @@ func TestAutonomousQuestClaim_FallsThrough(t *testing.T) {
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
 
-	comp := setupComponentWithConfig(t, client, config)
+	mgr := startLifecycleStack(t, client)
+	comp := setupComponentWithConfig(t, client, config, mgr)
 	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
@@ -703,7 +710,7 @@ func TestAutonomousQuestClaim_FallsThrough(t *testing.T) {
 }
 
 func TestAutonomousQuestClaim_AllStale(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -714,7 +721,8 @@ func TestAutonomousQuestClaim_AllStale(t *testing.T) {
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
 
-	comp := setupComponentWithConfig(t, client, config)
+	mgr := startLifecycleStack(t, client)
+	comp := setupComponentWithConfig(t, client, config, mgr)
 	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
@@ -786,7 +794,7 @@ func TestAutonomousQuestClaim_AllStale(t *testing.T) {
 
 func TestAutonomousIdleShopping(t *testing.T) {
 	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -849,7 +857,7 @@ func TestAutonomousIdleShopping(t *testing.T) {
 
 func TestAutonomousCooldownSkip(t *testing.T) {
 	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -918,7 +926,7 @@ func TestAutonomousCooldownSkip(t *testing.T) {
 
 func TestAutonomousConsumableUse_InBattle(t *testing.T) {
 	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -977,7 +985,7 @@ func TestAutonomousConsumableUse_InBattle(t *testing.T) {
 }
 
 func TestNoShoppingWhenNoSurplus(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1038,7 +1046,7 @@ func TestNoShoppingWhenNoSurplus(t *testing.T) {
 // =============================================================================
 
 func TestAutonomousGuildJoining(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1125,7 +1133,7 @@ func TestAutonomousGuildJoining(t *testing.T) {
 }
 
 func TestNoGuildJoiningBelowMinLevel(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1182,7 +1190,7 @@ func TestNoGuildJoiningBelowMinLevel(t *testing.T) {
 }
 
 func TestNoGuildJoiningWhenAlreadyGuilded(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1248,7 +1256,7 @@ func TestNoGuildJoiningWhenAlreadyGuilded(t *testing.T) {
 }
 
 func TestNoGuildJoiningWithoutComponent(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1294,7 +1302,7 @@ func TestNoGuildJoiningWithoutComponent(t *testing.T) {
 }
 
 func TestNoShoppingWithoutStore(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1352,7 +1360,7 @@ func TestNoShoppingWithoutStore(t *testing.T) {
 // =============================================================================
 
 func TestClaimIntentEmitted(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1363,7 +1371,8 @@ func TestClaimIntentEmitted(t *testing.T) {
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
 
-	comp := setupComponentWithConfig(t, client, config)
+	mgr := startLifecycleStack(t, client)
+	comp := setupComponentWithConfig(t, client, config, mgr)
 	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
@@ -1447,7 +1456,7 @@ func TestClaimIntentEmitted(t *testing.T) {
 
 func TestShopIntentEmitted(t *testing.T) {
 	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1525,7 +1534,7 @@ func TestShopIntentEmitted(t *testing.T) {
 }
 
 func TestGuildIntentEmitted(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1630,7 +1639,7 @@ func TestGuildIntentEmitted(t *testing.T) {
 
 func TestUseIntentEmitted(t *testing.T) {
 	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1799,7 +1808,7 @@ func waitForTracker(t *testing.T, comp *Component, instance string, timeout time
 // =============================================================================
 
 func TestClaimApprovalGate_FullAuto(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1811,7 +1820,8 @@ func TestClaimApprovalGate_FullAuto(t *testing.T) {
 	config.IdleIntervalMs = 200
 	config.DMMode = domain.DMFullAuto // default — no approval needed
 
-	comp := setupComponentWithConfig(t, client, config)
+	mgr := startLifecycleStack(t, client)
+	comp := setupComponentWithConfig(t, client, config, mgr)
 	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
@@ -1882,7 +1892,7 @@ func TestClaimApprovalGate_FullAuto(t *testing.T) {
 }
 
 func TestClaimApprovalGate_Supervised_Approved(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -1917,7 +1927,8 @@ func TestClaimApprovalGate_Supervised_Approved(t *testing.T) {
 	config.SessionID = "test.integration.game.approvesu.session.s1"
 	config.ApprovalTimeoutMs = 5000 // 5 second timeout
 
-	autonomyComp := setupComponentWithDeps(t, client, config, nil, nil, approvalComp)
+	mgr := startLifecycleStack(t, client)
+	autonomyComp := setupComponentWithDepsAndManager(t, client, config, nil, nil, mgr, approvalComp)
 	defer autonomyComp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, autonomyComp.BoardConfig())
@@ -1988,7 +1999,7 @@ func TestClaimApprovalGate_Supervised_Approved(t *testing.T) {
 }
 
 func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -2057,7 +2068,8 @@ func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
 	config.SessionID = sessionID
 	config.ApprovalTimeoutMs = 5000
 
-	autonomyComp := setupComponentWithDeps(t, client, config, nil, nil, approvalComp)
+	mgr := startLifecycleStack(t, client)
+	autonomyComp := setupComponentWithDepsAndManager(t, client, config, nil, nil, mgr, approvalComp)
 	defer autonomyComp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, autonomyComp.BoardConfig())
@@ -2142,7 +2154,7 @@ func TestClaimApprovalGate_Supervised_Denied(t *testing.T) {
 
 func TestStrategicShopping(t *testing.T) {
 	t.Skip("Store disabled for MVP — shopping actions removed from autonomy")
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -2230,7 +2242,7 @@ func TestStrategicShopping(t *testing.T) {
 }
 
 func TestFullLifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates), natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}))
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -2241,7 +2253,8 @@ func TestFullLifecycle(t *testing.T) {
 	config.InitialDelayMs = 100
 	config.IdleIntervalMs = 200
 
-	comp := setupComponentWithConfig(t, client, config)
+	mgr := startLifecycleStack(t, client)
+	comp := setupComponentWithConfig(t, client, config, mgr)
 	defer comp.Stop(5 * time.Second)
 
 	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
@@ -2400,6 +2413,14 @@ func setupComponent(t *testing.T, client *natsclient.Client, name string) *Compo
 // registered in a ComponentRegistry so the component resolves them lazily at call time.
 func setupComponentWithDeps(t *testing.T, client *natsclient.Client, config Config, store *agentstore.Component, guilds *guildformation.Component, approval ...*dmapproval.Component) *Component {
 	t.Helper()
+	return setupComponentWithDepsAndManager(t, client, config, store, guilds, nil, approval...)
+}
+
+// setupComponentWithDepsAndManager is setupComponentWithDeps plus a lifecycle
+// Manager wired into deps — used by claim-path tests that also need sibling
+// components (e.g. the DM approval gate).
+func setupComponentWithDepsAndManager(t *testing.T, client *natsclient.Client, config Config, store *agentstore.Component, guilds *guildformation.Component, mgr *lifecycle.Manager, approval ...*dmapproval.Component) *Component {
+	t.Helper()
 
 	// Build a registry with the sibling components so lazy resolvers find them.
 	reg := component.NewRegistry()
@@ -2422,6 +2443,7 @@ func setupComponentWithDeps(t *testing.T, client *natsclient.Client, config Conf
 	deps := component.Dependencies{
 		NATSClient:        client,
 		ComponentRegistry: reg,
+		LifecycleManager:  mgr,
 	}
 	ctx := context.Background()
 
@@ -2444,11 +2466,17 @@ func setupComponentWithDeps(t *testing.T, client *natsclient.Client, config Conf
 	return comp
 }
 
-func setupComponentWithConfig(t *testing.T, client *natsclient.Client, config Config) *Component {
+// setupComponentWithConfig builds and starts an autonomy component. Claim-path
+// tests pass a lifecycle Manager (see startLifecycleStack) so executeClaimQuest
+// can transition quests; other tests omit it.
+func setupComponentWithConfig(t *testing.T, client *natsclient.Client, config Config, mgr ...*lifecycle.Manager) *Component {
 	t.Helper()
 
 	deps := component.Dependencies{
 		NATSClient: client,
+	}
+	if len(mgr) > 0 {
+		deps.LifecycleManager = mgr[0]
 	}
 
 	ctx := context.Background()
@@ -2473,4 +2501,43 @@ func setupComponentWithConfig(t *testing.T, client *natsclient.Client, config Co
 	}
 
 	return comp
+}
+
+// startLifecycleStack starts the real graph-ingest processor and returns a
+// lifecycle Manager registered with the quest workflow — the stack autonomy's
+// claim path drives (Manager.TransitionWith persists through graph-ingest's
+// mutation handlers). The client MUST have the ENTITY stream and ENTITY_STATES
+// bucket (graph-ingest's config requires an input port on entity.>).
+func startLifecycleStack(t *testing.T, client *natsclient.Client) *lifecycle.Manager {
+	t.Helper()
+	ctx := context.Background()
+
+	mgr := lifecycle.NewManager(client, slog.Default())
+	if err := mgr.Register(questlifecycle.WorkflowDeclaration()); err != nil {
+		t.Fatalf("register quest workflow: %v", err)
+	}
+
+	cfg, err := json.Marshal(graphingest.DefaultConfig())
+	if err != nil {
+		t.Fatalf("marshal graph-ingest config: %v", err)
+	}
+	gi, err := graphingest.CreateGraphIngest(cfg, component.Dependencies{NATSClient: client})
+	if err != nil {
+		t.Fatalf("create graph-ingest: %v", err)
+	}
+	lc, ok := gi.(component.LifecycleComponent)
+	if !ok {
+		t.Fatalf("graph-ingest %T is not a LifecycleComponent", gi)
+	}
+	if err := lc.Initialize(); err != nil {
+		t.Fatalf("graph-ingest Initialize: %v", err)
+	}
+	if err := lc.Start(ctx); err != nil {
+		t.Fatalf("graph-ingest Start: %v", err)
+	}
+	t.Cleanup(func() { _ = lc.Stop(5 * time.Second) })
+
+	// Let graph-ingest's mutation handlers attach before callers transition.
+	time.Sleep(500 * time.Millisecond)
+	return mgr
 }
