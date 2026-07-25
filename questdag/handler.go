@@ -69,10 +69,16 @@ func (c *Component) handleDispatch(ctx context.Context, data []byte) error {
 		return fmt.Errorf("questdag: party %s not found for sub-quest %s", *subQuest.PartyID, subQuestID)
 	}
 
-	member, err := c.selectMember(ctx, party, subQuest.RequiredSkills)
+	member, err := c.reserveMember(ctx, party, subQuest.RequiredSkills, domain.QuestID(subQuestID))
 	if err != nil {
 		return err // nak: no member available right now, redeliver later
 	}
+	reservationCommitted := false
+	defer func() {
+		if !reservationCommitted {
+			c.releaseMemberReservation(member, domain.QuestID(subQuestID))
+		}
+	}()
 
 	qb := c.resolveQuestBoard()
 	if qb == nil {
@@ -88,6 +94,8 @@ func (c *Component) handleDispatch(ctx context.Context, data []byte) error {
 		c.errorsCount.Add(1)
 		return fmt.Errorf("questdag: claim-start sub-quest %s for %s: %w", subQuestID, member, err) // nak
 	}
+	c.commitMemberReservation(member, domain.QuestID(subQuestID))
+	reservationCommitted = true
 
 	c.claimStarts.Add(1)
 	c.logger.Info("questdag: dispatched sub-quest to party member",
@@ -100,12 +108,31 @@ func (c *Component) handleDispatch(ctx context.Context, data []byte) error {
 // idle is skipped (prevents double-booking across concurrent dispatches). Ties
 // and no-skill nodes fall back to any available non-lead member. Returns an
 // error when no member is currently available.
-func (c *Component) selectMember(ctx context.Context, party *partycoord.Party, required []domain.SkillTag) (domain.AgentID, error) {
+type memberReservation struct {
+	questID  domain.QuestID
+	claiming bool
+}
+
+// reserveMember selects and reserves a member as one atomic process-local
+// operation. Successful reservations remain until a later selection observes
+// the assigned quest outside claimed/in_progress; failed claim-starts release
+// immediately so redelivery can try the member again.
+func (c *Component) reserveMember(ctx context.Context, party *partycoord.Party, required []domain.SkillTag, questID domain.QuestID) (domain.AgentID, error) {
+	c.reservationMu.Lock()
+	defer c.reservationMu.Unlock()
+
+	if c.reservations == nil {
+		c.reservations = make(map[domain.AgentID]memberReservation)
+	}
+
 	var best *partycoord.PartyMember
 	bestScore := -1
 	for i := range party.Members {
 		m := &party.Members[i]
 		if m.Role == domain.RoleLead {
+			continue
+		}
+		if c.memberReserved(ctx, m.AgentID) {
 			continue
 		}
 		if !c.memberAvailable(ctx, m.AgentID) {
@@ -120,7 +147,48 @@ func (c *Component) selectMember(ctx context.Context, party *partycoord.Party, r
 	if best == nil {
 		return "", fmt.Errorf("questdag: no available non-lead party member for skills %v", required)
 	}
+	c.reservations[best.AgentID] = memberReservation{questID: questID, claiming: true}
 	return best.AgentID, nil
+}
+
+// memberReserved is called with reservationMu held. In-flight claim-starts are
+// always reserved. Once committed, the quest phase is authoritative: terminal,
+// retry, and triage phases free the member for a later unit.
+func (c *Component) memberReserved(ctx context.Context, agentID domain.AgentID) bool {
+	reservation, ok := c.reservations[agentID]
+	if !ok {
+		return false
+	}
+	if reservation.claiming {
+		return true
+	}
+	entity, err := c.graph.GetQuest(ctx, reservation.questID)
+	if err != nil {
+		return true // conservative: do not double-book on an uncertain read
+	}
+	quest := domain.QuestFromEntityState(entity)
+	if quest != nil && (quest.Status == domain.QuestClaimed || quest.Status == domain.QuestInProgress) {
+		return true
+	}
+	delete(c.reservations, agentID)
+	return false
+}
+
+func (c *Component) commitMemberReservation(agentID domain.AgentID, questID domain.QuestID) {
+	c.reservationMu.Lock()
+	defer c.reservationMu.Unlock()
+	if current, ok := c.reservations[agentID]; ok && current.questID == questID {
+		current.claiming = false
+		c.reservations[agentID] = current
+	}
+}
+
+func (c *Component) releaseMemberReservation(agentID domain.AgentID, questID domain.QuestID) {
+	c.reservationMu.Lock()
+	defer c.reservationMu.Unlock()
+	if current, ok := c.reservations[agentID]; ok && current.questID == questID {
+		delete(c.reservations, agentID)
+	}
 }
 
 // memberAvailable reports whether the member's agent is idle (available for a

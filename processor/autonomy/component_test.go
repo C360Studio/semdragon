@@ -5,6 +5,7 @@ package autonomy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"testing"
@@ -27,6 +28,31 @@ import (
 	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semdragons/questlifecycle"
 )
+
+type startFailingQuestLifecycle struct {
+	startErr error
+	claimed  bool
+	started  bool
+}
+
+func (f *startFailingQuestLifecycle) TransitionWith(_ context.Context, _, _, phase string, _ lifecycle.TransitionSource, _ string, mutator func(lifecycle.Participant) error) error {
+	if phase != questlifecycle.PhaseClaimed {
+		return fmt.Errorf("unexpected claim phase %q", phase)
+	}
+	f.claimed = true
+	if mutator != nil {
+		return mutator(&questlifecycle.QuestState{})
+	}
+	return nil
+}
+
+func (f *startFailingQuestLifecycle) Transition(_ context.Context, _, _, phase string, _ lifecycle.TransitionSource, _ string) error {
+	if phase != questlifecycle.PhaseInProgress {
+		return fmt.Errorf("unexpected start phase %q", phase)
+	}
+	f.started = true
+	return f.startErr
+}
 
 // =============================================================================
 // INTEGRATION TESTS - Autonomy Component
@@ -2395,6 +2421,94 @@ quest1Claimed:
 				return
 			}
 		}
+	}
+}
+
+func TestExecuteClaimQuest_StartFailureDoesNotAssignAgentOrSucceed(t *testing.T) {
+	testClient := natsclient.NewTestClient(t,
+		natsclient.WithKV(),
+		natsclient.WithFileStorage(),
+		natsclient.WithKVBuckets(graph.BucketEntityStates),
+		natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}),
+	)
+	client := testClient.Client
+	ctx := context.Background()
+	_ = startLifecycleStack(t, client)
+
+	cfg := DefaultConfig()
+	cfg.Org = "test"
+	cfg.Platform = "integration"
+	cfg.Board = "startfailure"
+	boardCfg := cfg.ToBoardConfig()
+	gc := semdragons.NewGraphClient(client, boardCfg)
+	if err := gc.EnsureBucket(ctx); err != nil {
+		t.Fatalf("EnsureBucket failed: %v", err)
+	}
+
+	questID := domain.QuestID(boardCfg.QuestEntityID(domain.GenerateInstance()))
+	quest := &domain.Quest{
+		ID:       questID,
+		Title:    "Claim succeeds but start fails",
+		Status:   domain.QuestPosted,
+		PostedAt: time.Now(),
+		MinTier:  domain.TierApprentice,
+		BaseXP:   100,
+	}
+	if err := gc.PutEntityState(ctx, quest, "quest.lifecycle.posted"); err != nil {
+		t.Fatalf("create quest: %v", err)
+	}
+
+	agentID := domain.AgentID(boardCfg.AgentEntityID(domain.GenerateInstance()))
+	agent := &agentprogression.Agent{
+		ID:        agentID,
+		Name:      "start-failure-agent",
+		Status:    domain.AgentIdle,
+		Level:     5,
+		Tier:      domain.TierApprentice,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := gc.PutEntityState(ctx, agent, "agent.identity.created"); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	comp := &Component{
+		config:      &cfg,
+		deps:        component.Dependencies{NATSClient: client},
+		graph:       gc,
+		logger:      slog.Default(),
+		boardConfig: boardCfg,
+		trackers:    make(map[string]*agentTracker),
+	}
+	tracker := &agentTracker{suggestions: []boidengine.SuggestedClaim{{
+		AgentID: agentID,
+		QuestID: questID,
+		Score:   10,
+	}}}
+	startErr := errors.New("injected claimed-to-in-progress failure")
+	lifecycleStub := &startFailingQuestLifecycle{startErr: startErr}
+
+	err := comp.executeClaimQuestWithLifecycle(ctx, agent, tracker, lifecycleStub)
+	if !errors.Is(err, startErr) {
+		t.Fatalf("executeClaimQuestWithLifecycle error = %v, want wrapped start error", err)
+	}
+	if !lifecycleStub.claimed || !lifecycleStub.started {
+		t.Fatalf("lifecycle calls = claimed:%t started:%t, want both attempted", lifecycleStub.claimed, lifecycleStub.started)
+	}
+	if agent.Status != domain.AgentIdle || agent.CurrentQuest != nil {
+		t.Fatalf("in-memory agent = status:%q current_quest:%v, want idle with no quest", agent.Status, agent.CurrentQuest)
+	}
+
+	entity, err := gc.GetAgent(ctx, agentID)
+	if err != nil {
+		t.Fatalf("GetAgent after start failure: %v", err)
+	}
+	stored := agentprogression.AgentFromEntityState(entity)
+	if stored == nil {
+		t.Fatal("reconstruct agent after start failure")
+	}
+	if stored.Status != domain.AgentIdle || stored.CurrentQuest != nil {
+		t.Fatalf("stored agent = status:%q current_quest:%v, want idle with no quest", stored.Status, stored.CurrentQuest)
 	}
 }
 

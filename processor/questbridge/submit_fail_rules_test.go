@@ -34,6 +34,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/questlifecycle"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/component"
@@ -43,6 +44,7 @@ import (
 	"github.com/c360studio/semstreams/pkg/lifecycle"
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 	rule "github.com/c360studio/semstreams/processor/rule"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // TestQuestBridgeSubmitCommandCompletesQuest drives a full loop-completion through
@@ -98,13 +100,20 @@ func TestQuestBridgeFailCommandRetriesQuest(t *testing.T) {
 	client := newLifecycleTestClient(t)
 	ctx := context.Background()
 
-	startQuestRulesStack(t, client)
+	mgr := startQuestGraphAndLifecycle(t, client)
 
 	comp, gc := setupComponent(t, client, "failrule")
 	defer comp.Stop(5 * time.Second)
 
 	agent := createTestAgent(t, gc, comp.boardConfig, "fail-agent", 7)
 	questID := createInProgressQuest(t, gc, comp.boardConfig, agent.ID, "Fail Rule Quest")
+	agent.Status = domain.AgentOnQuest
+	agent.CurrentQuest = &questID
+	agent.UpdatedAt = time.Now()
+	if err := gc.EmitEntityUpdate(ctx, agent, "agent.status.on_quest"); err != nil {
+		t.Fatalf("set agent on quest: %v", err)
+	}
+	waitForAgentAssignment(t, gc, ctx, agent.ID, domain.AgentOnQuest, &questID, 5*time.Second)
 
 	taskCh := subscribeToAgentTasks(t, client, ctx)
 	writeQuestInProgress(t, gc, comp.boardConfig, questID, agent.ID)
@@ -116,6 +125,11 @@ func TestQuestBridgeFailCommandRetriesQuest(t *testing.T) {
 	}
 
 	mapping := waitForQuestLoopsMapping(t, comp, ctx, string(questID), 5*time.Second)
+	questUpdates, err := gc.WatchEntity(ctx, string(questID))
+	if err != nil {
+		t.Fatalf("watch quest: %v", err)
+	}
+	defer questUpdates.Stop()
 
 	failed := agentic.LoopFailedEvent{
 		LoopID:     mapping.LoopID,
@@ -125,10 +139,85 @@ func TestQuestBridgeFailCommandRetriesQuest(t *testing.T) {
 	}
 	publishLoopEvent(t, client, ctx, "agent.failed."+mapping.LoopID, failed.Schema(), &failed)
 
+	// With only graph-ingest running, observe the fail command before any rule
+	// can authoritatively route the quest. The agent must remain assigned while
+	// the quest is still in_progress.
+	commandCtx, cancelCommand := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelCommand()
+	waitForQuestFailCommand(t, commandCtx, questUpdates.Updates(), questID)
+	waitForAgentAssignment(t, gc, ctx, agent.ID, domain.AgentOnQuest, &questID, 5*time.Second)
+
+	// Attach the real rule processor after the ordering assertion. Its initial
+	// entity scan sees the fail command and performs the retry transition.
+	startQuestRuleProcessor(t, client, mgr)
+
 	// attempts=1 (< max 3) -> the fail-retry rule reposts the quest.
 	final := waitForQuestStatus(t, gc, ctx, questID, domain.QuestPosted, 20*time.Second)
 	if final.ClaimedBy != nil && *final.ClaimedBy != "" {
 		t.Errorf("claimed_by = %v, want cleared by the fail-retry rule", *final.ClaimedBy)
+	}
+	waitForAgentAssignment(t, gc, ctx, agent.ID, domain.AgentIdle, nil, 5*time.Second)
+}
+
+func TestFailQuest_DoesNotReleaseAgentUntilAuthoritativePhaseTransition(t *testing.T) {
+	client := newLifecycleTestClient(t)
+	ctx := context.Background()
+
+	startLifecycleComponent(t, ctx, mustMarshal(t, graphingest.DefaultConfig()), func(cfg json.RawMessage) (component.Discoverable, error) {
+		return graphingest.CreateGraphIngest(cfg, component.Dependencies{NATSClient: client})
+	})
+
+	comp, gc := setupComponent(t, client, "failwait")
+	defer comp.Stop(5 * time.Second)
+
+	agent := createTestAgent(t, gc, comp.boardConfig, "waiting-agent", 7)
+	questID := createInProgressQuestDirect(t, gc, comp.boardConfig, agent.ID, "Await Rule Transition")
+	agent.Status = domain.AgentOnQuest
+	agent.CurrentQuest = &questID
+	agent.UpdatedAt = time.Now()
+	if err := gc.EmitEntityUpdate(ctx, agent, "agent.status.on_quest"); err != nil {
+		t.Fatalf("set agent on quest: %v", err)
+	}
+
+	questUpdates, err := gc.WatchEntity(ctx, string(questID))
+	if err != nil {
+		t.Fatalf("watch quest: %v", err)
+	}
+	defer questUpdates.Stop()
+
+	failCtx, cancelFail := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		comp.failQuest(failCtx, questID, &QuestLoopMapping{
+			QuestID:   questID,
+			AgentID:   agent.ID,
+			LoopID:    "loop-await-rule",
+			StartedAt: time.Now(),
+		}, "injected failure", loopMetrics{})
+	}()
+
+	commandCtx, cancelCommand := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelCommand()
+	waitForQuestFailCommand(t, commandCtx, questUpdates.Updates(), questID)
+
+	entity, err := gc.GetAgent(ctx, agent.ID)
+	if err != nil {
+		t.Fatalf("GetAgent after fail command ingestion: %v", err)
+	}
+	stored := agentprogression.AgentFromEntityState(entity)
+	if stored == nil {
+		t.Fatal("reconstruct agent after fail command ingestion")
+	}
+	if stored.Status != domain.AgentOnQuest || stored.CurrentQuest == nil || *stored.CurrentQuest != questID {
+		t.Fatalf("agent released before quest transitioned: status=%q current_quest=%v", stored.Status, stored.CurrentQuest)
+	}
+
+	cancelFail()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("failQuest did not stop after its bounded context was cancelled")
 	}
 }
 
@@ -164,8 +253,13 @@ func newLifecycleTestClient(t *testing.T) *natsclient.Client {
 // carry them out — no direct Manager calls on this path.
 func startQuestRulesStack(t *testing.T, client *natsclient.Client) {
 	t.Helper()
-	ctx := context.Background()
+	mgr := startQuestGraphAndLifecycle(t, client)
+	startQuestRuleProcessor(t, client, mgr)
+}
 
+func startQuestGraphAndLifecycle(t *testing.T, client *natsclient.Client) *lifecycle.Manager {
+	t.Helper()
+	ctx := context.Background()
 	mgr := lifecycle.NewManager(client, slog.Default())
 	if err := mgr.Register(questlifecycle.WorkflowDeclaration()); err != nil {
 		t.Fatalf("register quest workflow: %v", err)
@@ -174,7 +268,12 @@ func startQuestRulesStack(t *testing.T, client *natsclient.Client) {
 	startLifecycleComponent(t, ctx, mustMarshal(t, graphingest.DefaultConfig()), func(cfg json.RawMessage) (component.Discoverable, error) {
 		return graphingest.CreateGraphIngest(cfg, component.Dependencies{NATSClient: client})
 	})
+	return mgr
+}
 
+func startQuestRuleProcessor(t *testing.T, client *natsclient.Client, mgr *lifecycle.Manager) {
+	t.Helper()
+	ctx := context.Background()
 	ruleCfg := mustMarshal(t, map[string]any{
 		"rules_files":           questRuleFilePaths(t),
 		"entity_watch_patterns": []string{"*.*.game.*.quest.*"},
@@ -221,6 +320,36 @@ func publishLoopEvent(t *testing.T, client *natsclient.Client, ctx context.Conte
 	}
 }
 
+func waitForQuestFailCommand(t *testing.T, ctx context.Context, updates <-chan jetstream.KeyValueEntry, questID domain.QuestID) {
+	t.Helper()
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("quest %q did not ingest fail command: %v", questID, ctx.Err())
+		case entry, ok := <-updates:
+			if !ok {
+				t.Fatalf("quest %q watch closed before fail command ingestion", questID)
+			}
+			entity, err := semdragons.DecodeEntityState(entry)
+			if err != nil {
+				t.Fatalf("decode quest update: %v", err)
+			}
+			if entity == nil {
+				continue
+			}
+			quest := domain.QuestFromEntityState(entity)
+			if quest == nil || quest.Status != domain.QuestInProgress {
+				continue
+			}
+			for _, triple := range entity.Triples {
+				if triple.Predicate == "quest.command" && domain.AsString(triple.Object) == string(questlifecycle.CommandFail) {
+					return
+				}
+			}
+		}
+	}
+}
+
 // waitForQuestStatus polls the quest entity until it reaches want, then returns the
 // reconstructed quest; fails the test on timeout, reporting the last-seen status.
 func waitForQuestStatus(t *testing.T, gc *semdragons.GraphClient, ctx context.Context, questID domain.QuestID, want domain.QuestStatus, timeout time.Duration) *domain.Quest {
@@ -243,6 +372,34 @@ func waitForQuestStatus(t *testing.T, gc *semdragons.GraphClient, ctx context.Co
 
 	t.Fatalf("quest %q did not reach %q within %s; last status %q", questID, want, timeout, last)
 	return nil // unreachable
+}
+
+func waitForAgentAssignment(t *testing.T, gc *semdragons.GraphClient, ctx context.Context, agentID domain.AgentID, wantStatus domain.AgentStatus, wantQuest *domain.QuestID, timeout time.Duration) {
+	t.Helper()
+
+	var lastStatus domain.AgentStatus
+	var lastQuest *domain.QuestID
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		entity, err := gc.GetAgent(ctx, agentID)
+		if err == nil {
+			agent := agentprogression.AgentFromEntityState(entity)
+			if agent != nil {
+				lastStatus = agent.Status
+				lastQuest = agent.CurrentQuest
+				statusMatches := agent.Status == wantStatus
+				questMatches := (wantQuest == nil && agent.CurrentQuest == nil) ||
+					(wantQuest != nil && agent.CurrentQuest != nil && *wantQuest == *agent.CurrentQuest)
+				if statusMatches && questMatches {
+					return
+				}
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("agent %q did not reach status=%q current_quest=%v within %s; last status=%q current_quest=%v",
+		agentID, wantStatus, wantQuest, timeout, lastStatus, lastQuest)
 }
 
 // questRuleFilePaths returns the absolute paths to config/rules/quest/*.json,
