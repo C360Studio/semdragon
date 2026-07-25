@@ -10,7 +10,8 @@
  * - Relationships are triples where the object references another entity
  * - Properties are triples where the object is a literal value
  *
- * Semdragons entity types: quest, agent, party, guild, battle
+ * Semdragons entity types include quest, agent, party, guild, battle,
+ * peerreview, and dagunit.
  */
 
 // =============================================================================
@@ -276,7 +277,8 @@ export type GameEntityType =
   | 'party'
   | 'guild'
   | 'battle'
-  | 'peer_review'
+  | 'peerreview'
+  | 'dagunit'
   | 'unknown';
 
 /**
@@ -294,7 +296,15 @@ export function isGameEntity(entityId: string): boolean {
  */
 export function getGameEntityType(entity: GraphEntity): GameEntityType {
   const t = entity.idParts.type.toLowerCase();
-  const known: GameEntityType[] = ['quest', 'agent', 'party', 'guild', 'battle', 'peer_review'];
+  const known: GameEntityType[] = [
+    'quest',
+    'agent',
+    'party',
+    'guild',
+    'battle',
+    'peerreview',
+    'dagunit',
+  ];
   return (known.includes(t as GameEntityType) ? t : 'unknown') as GameEntityType;
 }
 

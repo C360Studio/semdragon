@@ -250,7 +250,7 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 		required_tools: [],
 		min_tier: num(m.get('quest.tier.minimum')) as TrustTier,
 		party_required: m.get('quest.party.required') === true,
-		min_party_size: num(m.get('quest.party.min_size')),
+		min_party_size: num(m.get('quest.party.min-size')),
 		base_xp: num(m.get('quest.xp.base'), 100),
 		bonus_xp: 0,
 		guild_xp: 0,
@@ -264,22 +264,21 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 			review_level: num(m.get('quest.review.level')) as ReviewLevel
 		},
 		claimed_by: claimedBy,
-		claimed_at: str(m.get('quest.lifecycle.claimed_at')) || undefined,
-		started_at: str(m.get('quest.lifecycle.started_at')) || undefined,
-		completed_at: str(m.get('quest.lifecycle.completed_at')) || undefined,
+		claimed_at: str(m.get('quest.lifecycle.claimed-at')) || undefined,
+		started_at: str(m.get('quest.lifecycle.started-at')) || undefined,
+		completed_at: str(m.get('quest.lifecycle.completed-at')) || undefined,
 		parent_quest: m.has('quest.parent.quest') ? questId(str(m.get('quest.parent.quest'))) : undefined,
 		sub_quests: [],
-		decomposed_by: m.has('quest.decomposed_by') ? agentId(str(m.get('quest.decomposed_by'))) : undefined,
 		party_id: m.has('quest.assignment.party') ? partyId(str(m.get('quest.assignment.party'))) : undefined,
-		posted_at: str(m.get('quest.lifecycle.posted_at')),
+		posted_at: str(m.get('quest.lifecycle.posted-at')),
 		attempts: num(m.get('quest.attempts.current')),
 		max_attempts: num(m.get('quest.attempts.max'), 3),
 		failure_reason: str(m.get('quest.failure.reason')) || undefined,
 		failure_type: (str(m.get('quest.failure.type')) || undefined) as Quest['failure_type'],
 		escalated: m.get('quest.failure.escalated') === true || m.get('quest.failure.escalated') === 'true',
-		loop_id: str(m.get('quest.execution.loop_id')),
-		context_token_count: m.has('quest.context.token_count')
-			? num(m.get('quest.context.token_count'))
+		loop_id: str(m.get('quest.execution.loop-id')),
+		context_token_count: m.has('quest.context.token-count')
+			? num(m.get('quest.context.token-count'))
 			: undefined,
 		context_sources: asStringArray(m.get('quest.context.sources')),
 		context_entities: asStringArray(m.get('quest.context.entities')),
@@ -287,7 +286,7 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 			? {
 					passed: m.get('quest.verdict.passed') === true || m.get('quest.verdict.passed') === 'true',
 					quality_score: num(m.get('quest.verdict.score')),
-					xp_awarded: num(m.get('quest.verdict.xp_awarded')),
+					xp_awarded: num(m.get('quest.verdict.xp-awarded')),
 					xp_penalty: 0,
 					level_change: 0,
 					feedback: str(m.get('quest.verdict.feedback'))
@@ -295,17 +294,19 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 			: undefined,
 		// Red-team classification
 		quest_type: (str(m.get('quest.classification.type')) || '') as QuestType,
-		red_team_target: m.has('quest.classification.red_team_target')
-			? questId(str(m.get('quest.classification.red_team_target')))
+		red_team_target: m.has('quest.classification.red-team-target')
+			? questId(str(m.get('quest.classification.red-team-target')))
 			: undefined,
-		red_team_quest_id: m.has('quest.classification.red_team_quest_id')
-			? questId(str(m.get('quest.classification.red_team_quest_id')))
+		red_team_quest_id: m.has('quest.classification.red-team-quest-id')
+			? questId(str(m.get('quest.classification.red-team-quest-id')))
 			: undefined,
 		// Execution metrics
-		turns_used: m.has('quest.metrics.turns_used') ? num(m.get('quest.metrics.turns_used')) : undefined,
-		tokens_prompt: m.has('quest.metrics.tokens_prompt') ? num(m.get('quest.metrics.tokens_prompt')) : undefined,
-		tokens_completion: m.has('quest.metrics.tokens_completion') ? num(m.get('quest.metrics.tokens_completion')) : undefined,
-		duration: str(m.get('quest.duration')) || undefined
+		turns_used: m.has('quest.metrics.turns-used') ? num(m.get('quest.metrics.turns-used')) : undefined,
+		tokens_prompt: m.has('quest.metrics.tokens-prompt') ? num(m.get('quest.metrics.tokens-prompt')) : undefined,
+		tokens_completion: m.has('quest.metrics.tokens-completion')
+			? num(m.get('quest.metrics.tokens-completion'))
+			: undefined,
+		duration: str(m.get('quest.metrics.duration')) || undefined
 	};
 }
 
@@ -316,7 +317,7 @@ function transformQuest(key: string, entity: GraphEntity): Quest {
 function transformGuild(key: string, entity: GraphEntity): Guild {
 	const m = tripleMap(entity.triples);
 
-	const questTypes = tripleValues(entity.triples, 'guild.routing.quest_type').map((v) => str(v));
+	const questTypes = tripleValues(entity.triples, 'guild.routing.quest-type').map((v) => str(v));
 	const sharedTools = tripleValues(entity.triples, 'guild.resource.tool').map((v) => str(v));
 
 	// Extract members from guild.membership.agent triples
@@ -334,20 +335,20 @@ function transformGuild(key: string, entity: GraphEntity): Guild {
 		description: str(m.get('guild.identity.description')),
 		status: str(m.get('guild.status.state'), 'active') as GuildStatus,
 		members,
-		max_members: num(m.get('guild.config.max_members'), 50),
-		min_level: num(m.get('guild.config.min_level'), 1),
+		max_members: num(m.get('guild.config.max-members'), 50),
+		min_level: num(m.get('guild.config.min-level'), 1),
 		founded: str(m.get('guild.founding.date')),
 		founded_by: agentId(str(m.get('guild.founding.agent'))) as unknown as AgentID,
 		culture: str(m.get('guild.identity.culture')),
 		motto: str(m.get('guild.identity.motto')),
 		reputation: num(m.get('guild.stats.reputation')),
-		quests_handled: num(m.get('guild.stats.quests_handled')),
-		success_rate: num(m.get('guild.stats.success_rate')),
-		quests_failed: num(m.get('guild.stats.quests_failed')),
+		quests_handled: num(m.get('guild.stats.quests-handled')),
+		success_rate: num(m.get('guild.stats.success-rate')),
+		quests_failed: num(m.get('guild.stats.quests-failed')),
 		shared_tools: sharedTools,
 		quest_types: questTypes.length > 0 ? questTypes : undefined,
-		quorum_size: num(m.get('guild.config.quorum_size'), 3),
-		created_at: str(m.get('guild.lifecycle.created_at')),
+		quorum_size: num(m.get('guild.quorum.size'), 3),
+		created_at: str(m.get('guild.lifecycle.created-at')),
 		lessons: (() => {
 			const raw = m.get('guild.knowledge.lessons');
 			if (!Array.isArray(raw)) return undefined;

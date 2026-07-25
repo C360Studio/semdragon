@@ -182,6 +182,11 @@ export const graphApi = {
   /**
    * Load entities matching a prefix — used for initial graph population.
    *
+   * Limitation: entitiesByPrefix does not expose explicit edges or triple
+   * datatypes, so its consumer can only infer relationships from six-part
+   * object shape. Track upstream SemStreams #669; keep fusion migration out of
+   * this compatibility path.
+   *
    * Typical prefixes for semdragons:
    *   "c360.prod.game.board1.quest.*"  — all quests
    *   "c360.prod.game.board1.agent.*"  — all agents

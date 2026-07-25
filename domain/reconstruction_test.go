@@ -93,7 +93,7 @@ func TestQuestRoundTrip_FullFields(t *testing.T) {
 		RequiredTools:  []string{"tool-a", "tool-b"},
 		MinTier:        TierJourneyman,
 		PartyRequired:  true,
-		LoopID: "quest-test-loop-abc",
+		LoopID:         "quest-test-loop-abc",
 		Constraints: QuestConstraints{
 			RequireReview: true,
 			ReviewLevel:   ReviewStrict,
@@ -469,7 +469,7 @@ func TestQuestRoundTrip_ScenariosPostKVRoundTrip(t *testing.T) {
 			{Predicate: "quest.routing.class", Object: "sequential"},
 			{Predicate: "quest.status.state", Object: "posted"},
 			{Predicate: "quest.identity.title", Object: "KV Round-Trip Quest"},
-			{Predicate: "quest.lifecycle.posted_at", Object: time.Now().Format(time.RFC3339)},
+			{Predicate: "quest.lifecycle.posted-at", Object: time.Now().Format(time.RFC3339)},
 		},
 	}
 
@@ -961,7 +961,7 @@ func TestQuestRoundTrip_FailureHistoryPostKVRoundTrip(t *testing.T) {
 		Triples: []message.Triple{
 			{Predicate: "quest.identity.title", Object: "KV Recovery Quest"},
 			{Predicate: "quest.status.state", Object: "failed"},
-			{Predicate: "quest.lifecycle.posted_at", Object: ts.UTC().Format(time.RFC3339)},
+			{Predicate: "quest.lifecycle.posted-at", Object: ts.UTC().Format(time.RFC3339)},
 			{Predicate: "quest.failure.history", Object: rawHistory},
 			{Predicate: "quest.recovery.path", Object: "tpk"},
 			{Predicate: "quest.recovery.analysis", Object: "Both attempts failed quality gate"},

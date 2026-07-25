@@ -162,12 +162,12 @@ func TestPeerReviewTriples_Pending(t *testing.T) {
 	triples := pr.Triples()
 
 	expected := map[string]bool{
-		"review.status.state":          false,
-		"review.assignment.quest":      false,
-		"review.assignment.leader":     false,
-		"review.assignment.member":     false,
-		"review.config.solo_task":      false,
-		"review.lifecycle.created_at":  false,
+		"review.status.state":         false,
+		"review.assignment.quest":     false,
+		"review.assignment.leader":    false,
+		"review.assignment.member":    false,
+		"review.config.solo-task":     false,
+		"review.lifecycle.created-at": false,
 	}
 
 	for _, triple := range triples {
@@ -184,7 +184,7 @@ func TestPeerReviewTriples_Pending(t *testing.T) {
 
 	// Verify no result triples for pending review.
 	for _, triple := range triples {
-		if triple.Predicate == "review.result.leader_avg" || triple.Predicate == "review.result.member_avg" {
+		if triple.Predicate == "review.result.leader-avg" || triple.Predicate == "review.result.member-avg" {
 			t.Errorf("pending review should not emit result triple %q", triple.Predicate)
 		}
 	}
@@ -196,10 +196,10 @@ func TestPeerReviewTriples_Completed(t *testing.T) {
 	partyID := PartyID("test.dev.game.board1.party.p1")
 
 	pr := &PeerReview{
-		ID:      PeerReviewID("test.dev.game.board1.peerreview.pr1"),
-		Status:  PeerReviewCompleted,
-		QuestID: QuestID("test.dev.game.board1.quest.q1"),
-		PartyID: &partyID,
+		ID:       PeerReviewID("test.dev.game.board1.peerreview.pr1"),
+		Status:   PeerReviewCompleted,
+		QuestID:  QuestID("test.dev.game.board1.quest.q1"),
+		PartyID:  &partyID,
 		LeaderID: AgentID("test.dev.game.board1.agent.leader"),
 		MemberID: AgentID("test.dev.game.board1.agent.member"),
 		LeaderReview: &ReviewSubmission{
@@ -221,25 +221,25 @@ func TestPeerReviewTriples_Completed(t *testing.T) {
 	triples := pr.Triples()
 
 	expected := map[string]bool{
-		"review.status.state":            false,
-		"review.assignment.quest":        false,
-		"review.assignment.leader":       false,
-		"review.assignment.member":       false,
-		"review.assignment.party":        false,
-		"review.config.solo_task":        false,
-		"review.lifecycle.created_at":    false,
-		"review.lifecycle.completed_at":  false,
-		"review.leader.q1":               false,
-		"review.leader.q2":               false,
-		"review.leader.q3":               false,
-		"review.leader.submitted_at":     false,
-		"review.leader.explanation":      false,
-		"review.member.q1":               false,
-		"review.member.q2":               false,
-		"review.member.q3":               false,
-		"review.member.submitted_at":     false,
-		"review.result.leader_avg":       false,
-		"review.result.member_avg":       false,
+		"review.status.state":           false,
+		"review.assignment.quest":       false,
+		"review.assignment.leader":      false,
+		"review.assignment.member":      false,
+		"review.assignment.party":       false,
+		"review.config.solo-task":       false,
+		"review.lifecycle.created-at":   false,
+		"review.lifecycle.completed-at": false,
+		"review.leader.q1":              false,
+		"review.leader.q2":              false,
+		"review.leader.q3":              false,
+		"review.leader.submitted-at":    false,
+		"review.leader.explanation":     false,
+		"review.member.q1":              false,
+		"review.member.q2":              false,
+		"review.member.q3":              false,
+		"review.member.submitted-at":    false,
+		"review.result.leader-avg":      false,
+		"review.result.member-avg":      false,
 	}
 
 	for _, triple := range triples {

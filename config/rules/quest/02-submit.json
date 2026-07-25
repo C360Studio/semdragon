@@ -3,14 +3,14 @@
     "id": "quest_submit_needs_review",
     "type": "expression",
     "name": "Quest submit (review required)",
-    "description": "in_progress + command=submit + quest.review.needs_review=true -> in_review. The caller (questbridge, on loop completion) writes the work product to quest.data.output before stamping the command. Mutually exclusive with quest_submit_no_review via the needs_review value.",
+    "description": "in_progress + command=submit + quest.review.needs-review=true -> in_review. The caller (questbridge, on loop completion) writes the work product to quest.data.output before stamping the command. Mutually exclusive with quest_submit_no_review via the needs_review value.",
     "enabled": true,
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [
       { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
-      { "field": "quest.command", "operator": "eq", "value": "submit" },
-      { "field": "quest.review.needs_review", "operator": "eq", "value": true }
+      { "field": "quest.lifecycle.command", "operator": "eq", "value": "submit" },
+      { "field": "quest.review.needs-review", "operator": "eq", "value": true }
     ],
     "on_enter": [
       {
@@ -26,14 +26,14 @@
     "id": "quest_submit_no_review",
     "type": "expression",
     "name": "Quest submit (no review)",
-    "description": "in_progress + command=submit + quest.review.needs_review=false -> completed. Mutually exclusive with quest_submit_needs_review.",
+    "description": "in_progress + command=submit + quest.review.needs-review=false -> completed. Mutually exclusive with quest_submit_needs_review.",
     "enabled": true,
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [
       { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
-      { "field": "quest.command", "operator": "eq", "value": "submit" },
-      { "field": "quest.review.needs_review", "operator": "eq", "value": false }
+      { "field": "quest.lifecycle.command", "operator": "eq", "value": "submit" },
+      { "field": "quest.review.needs-review", "operator": "eq", "value": false }
     ],
     "on_enter": [
       {

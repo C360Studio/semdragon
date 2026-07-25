@@ -48,7 +48,7 @@ func (q *Quest) Triples() []message.Triple {
 		// Requirements
 		{Subject: entityID, Predicate: "quest.tier.minimum", Object: int(q.MinTier), Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "quest.party.required", Object: q.PartyRequired, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "quest.party.min_size", Object: q.MinPartySize, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "quest.party.min-size", Object: q.MinPartySize, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Rewards
 		{Subject: entityID, Predicate: "quest.xp.base", Object: q.BaseXP, Source: source, Timestamp: now, Confidence: 1.0},
@@ -56,7 +56,7 @@ func (q *Quest) Triples() []message.Triple {
 		// Lifecycle
 		{Subject: entityID, Predicate: "quest.attempts.current", Object: q.Attempts, Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "quest.attempts.max", Object: q.MaxAttempts, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "quest.lifecycle.posted_at", Object: q.PostedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "quest.lifecycle.posted-at", Object: q.PostedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
 	// Add skills as separate triples
@@ -99,21 +99,21 @@ func (q *Quest) Triples() []message.Triple {
 
 	if q.RedTeamTarget != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.classification.red_team_target", Object: string(*q.RedTeamTarget),
+			Subject: entityID, Predicate: "quest.classification.red-team-target", Object: string(*q.RedTeamTarget),
 			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
 	if q.RedTeamStatus != "" {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.classification.red_team_status", Object: q.RedTeamStatus,
+			Subject: entityID, Predicate: "quest.classification.red-team-status", Object: q.RedTeamStatus,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 
 	if q.RedTeamQuestID != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.classification.red_team_quest_id", Object: string(*q.RedTeamQuestID),
+			Subject: entityID, Predicate: "quest.classification.red-team-quest-id", Object: string(*q.RedTeamQuestID),
 			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
@@ -141,21 +141,21 @@ func (q *Quest) Triples() []message.Triple {
 
 	if q.ClaimedAt != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.lifecycle.claimed_at", Object: q.ClaimedAt.Format(time.RFC3339),
+			Subject: entityID, Predicate: "quest.lifecycle.claimed-at", Object: q.ClaimedAt.Format(time.RFC3339),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 
 	if q.StartedAt != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.lifecycle.started_at", Object: q.StartedAt.Format(time.RFC3339),
+			Subject: entityID, Predicate: "quest.lifecycle.started-at", Object: q.StartedAt.Format(time.RFC3339),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 
 	if q.CompletedAt != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.lifecycle.completed_at", Object: q.CompletedAt.Format(time.RFC3339),
+			Subject: entityID, Predicate: "quest.lifecycle.completed-at", Object: q.CompletedAt.Format(time.RFC3339),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -176,7 +176,7 @@ func (q *Quest) Triples() []message.Triple {
 
 	if q.LoopID != "" {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.execution.loop_id", Object: q.LoopID,
+			Subject: entityID, Predicate: "quest.execution.loop-id", Object: q.LoopID,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -187,7 +187,7 @@ func (q *Quest) Triples() []message.Triple {
 		Source: source, Timestamp: now, Confidence: 1.0,
 	})
 	triples = append(triples, message.Triple{
-		Subject: entityID, Predicate: "quest.review.needs_review", Object: q.Constraints.RequireReview,
+		Subject: entityID, Predicate: "quest.review.needs-review", Object: q.Constraints.RequireReview,
 		Source: source, Timestamp: now, Confidence: 1.0,
 	})
 
@@ -196,7 +196,7 @@ func (q *Quest) Triples() []message.Triple {
 		triples = append(triples,
 			message.Triple{Subject: entityID, Predicate: "quest.verdict.passed", Object: q.Verdict.Passed, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "quest.verdict.score", Object: q.Verdict.QualityScore, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "quest.verdict.xp_awarded", Object: q.Verdict.XPAwarded, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "quest.verdict.xp-awarded", Object: q.Verdict.XPAwarded, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "quest.verdict.feedback", Object: q.Verdict.Feedback, Source: source, Timestamp: now, Confidence: 1.0},
 		)
 	}
@@ -258,7 +258,7 @@ func (q *Quest) Triples() []message.Triple {
 	// Duration
 	if q.Duration > 0 {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.duration", Object: q.Duration.String(),
+			Subject: entityID, Predicate: "quest.metrics.duration", Object: q.Duration.String(),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -286,7 +286,7 @@ func (q *Quest) Triples() []message.Triple {
 	// DAG execution state (parent quest fields)
 	if q.DAGExecutionID != "" {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.dag.execution_id", Object: q.DAGExecutionID,
+			Subject: entityID, Predicate: "quest.dag.execution-id", Object: q.DAGExecutionID,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -298,37 +298,37 @@ func (q *Quest) Triples() []message.Triple {
 	}
 	if q.DAGNodeQuestIDs != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.dag.node_quest_ids", Object: q.DAGNodeQuestIDs,
+			Subject: entityID, Predicate: "quest.dag.node-quest-ids", Object: q.DAGNodeQuestIDs,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 	if q.DAGNodeStates != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.dag.node_states", Object: q.DAGNodeStates,
+			Subject: entityID, Predicate: "quest.dag.node-states", Object: q.DAGNodeStates,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 	if q.DAGNodeAssignees != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.dag.node_assignees", Object: q.DAGNodeAssignees,
+			Subject: entityID, Predicate: "quest.dag.node-assignees", Object: q.DAGNodeAssignees,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 	if q.DAGCompletedNodes != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.dag.completed_nodes", Object: q.DAGCompletedNodes,
+			Subject: entityID, Predicate: "quest.dag.completed-nodes", Object: q.DAGCompletedNodes,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 	if q.DAGFailedNodes != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.dag.failed_nodes", Object: q.DAGFailedNodes,
+			Subject: entityID, Predicate: "quest.dag.failed-nodes", Object: q.DAGFailedNodes,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 	if q.DAGNodeRetries != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.dag.node_retries", Object: q.DAGNodeRetries,
+			Subject: entityID, Predicate: "quest.dag.node-retries", Object: q.DAGNodeRetries,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -336,7 +336,7 @@ func (q *Quest) Triples() []message.Triple {
 	// DAG sub-quest fields
 	if q.DAGNodeID != "" {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.dag.node_id", Object: q.DAGNodeID,
+			Subject: entityID, Predicate: "quest.dag.node-id", Object: q.DAGNodeID,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -356,7 +356,7 @@ func (q *Quest) Triples() []message.Triple {
 	// Context metadata — what went into the prompt for this quest execution.
 	if q.ContextTokenCount > 0 {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "quest.context.token_count", Object: q.ContextTokenCount,
+			Subject: entityID, Predicate: "quest.context.token-count", Object: q.ContextTokenCount,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -454,8 +454,8 @@ func (g *Guild) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "guild.status.state", Object: string(g.Status), Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Configuration
-		{Subject: entityID, Predicate: "guild.config.max_members", Object: g.MaxMembers, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "guild.config.min_level", Object: g.MinLevel, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "guild.config.max-members", Object: g.MaxMembers, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "guild.config.min-level", Object: g.MinLevel, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Founding
 		{Subject: entityID, Predicate: "guild.founding.date", Object: g.Founded.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
@@ -463,12 +463,12 @@ func (g *Guild) Triples() []message.Triple {
 
 		// Stats
 		{Subject: entityID, Predicate: "guild.stats.reputation", Object: g.Reputation, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "guild.stats.quests_handled", Object: g.QuestsHandled, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "guild.stats.quests_failed", Object: g.QuestsFailed, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "guild.stats.success_rate", Object: g.SuccessRate, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "guild.stats.quests-handled", Object: g.QuestsHandled, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "guild.stats.quests-failed", Object: g.QuestsFailed, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "guild.stats.success-rate", Object: g.SuccessRate, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Lifecycle
-		{Subject: entityID, Predicate: "guild.lifecycle.created_at", Object: g.CreatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "guild.lifecycle.created-at", Object: g.CreatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
 	// Culture and motto
@@ -513,7 +513,7 @@ func (g *Guild) Triples() []message.Triple {
 	// Quest types
 	for _, questType := range g.QuestTypes {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "guild.routing.quest_type", Object: questType,
+			Subject: entityID, Predicate: "guild.routing.quest-type", Object: questType,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -521,7 +521,7 @@ func (g *Guild) Triples() []message.Triple {
 	// Preferred clients
 	for _, client := range g.PreferredClients {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "guild.routing.preferred_client", Object: client,
+			Subject: entityID, Predicate: "guild.routing.preferred-client", Object: client,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -616,10 +616,10 @@ func (pr *PeerReview) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "review.assignment.quest", Object: string(pr.QuestID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "review.assignment.leader", Object: string(pr.LeaderID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "review.assignment.member", Object: string(pr.MemberID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
-		{Subject: entityID, Predicate: "review.config.solo_task", Object: pr.IsSoloTask, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "review.config.solo-task", Object: pr.IsSoloTask, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Lifecycle
-		{Subject: entityID, Predicate: "review.lifecycle.created_at", Object: pr.CreatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "review.lifecycle.created-at", Object: pr.CreatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
 	if pr.PartyID != nil {
@@ -635,7 +635,7 @@ func (pr *PeerReview) Triples() []message.Triple {
 			message.Triple{Subject: entityID, Predicate: "review.leader.q1", Object: pr.LeaderReview.Ratings.Q1, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "review.leader.q2", Object: pr.LeaderReview.Ratings.Q2, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "review.leader.q3", Object: pr.LeaderReview.Ratings.Q3, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "review.leader.submitted_at", Object: pr.LeaderReview.SubmittedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.leader.submitted-at", Object: pr.LeaderReview.SubmittedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 		)
 		if pr.LeaderReview.Explanation != "" {
 			triples = append(triples, message.Triple{
@@ -651,7 +651,7 @@ func (pr *PeerReview) Triples() []message.Triple {
 			message.Triple{Subject: entityID, Predicate: "review.member.q1", Object: pr.MemberReview.Ratings.Q1, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "review.member.q2", Object: pr.MemberReview.Ratings.Q2, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: "review.member.q3", Object: pr.MemberReview.Ratings.Q3, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "review.member.submitted_at", Object: pr.MemberReview.SubmittedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.member.submitted-at", Object: pr.MemberReview.SubmittedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 		)
 		if pr.MemberReview.Explanation != "" {
 			triples = append(triples, message.Triple{
@@ -664,14 +664,14 @@ func (pr *PeerReview) Triples() []message.Triple {
 	// Computed averages (when completed)
 	if pr.Status == PeerReviewCompleted {
 		triples = append(triples,
-			message.Triple{Subject: entityID, Predicate: "review.result.leader_avg", Object: pr.LeaderAvgRating, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "review.result.member_avg", Object: pr.MemberAvgRating, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.result.leader-avg", Object: pr.LeaderAvgRating, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "review.result.member-avg", Object: pr.MemberAvgRating, Source: source, Timestamp: now, Confidence: 1.0},
 		)
 	}
 
 	if pr.CompletedAt != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "review.lifecycle.completed_at", Object: pr.CompletedAt.Format(time.RFC3339),
+			Subject: entityID, Predicate: "review.lifecycle.completed-at", Object: pr.CompletedAt.Format(time.RFC3339),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}

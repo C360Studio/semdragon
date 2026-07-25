@@ -33,16 +33,16 @@ func TestTransitions_TerminalPhases(t *testing.T) {
 // spec scenarios require.
 func TestTransitions_SpecEdges(t *testing.T) {
 	valid := [][2]string{
-		{PhasePosted, PhaseClaimed},          // claim
-		{PhaseClaimed, PhaseInProgress},      // start
-		{PhaseInProgress, PhaseInReview},     // submission with review
-		{PhaseInProgress, PhaseCompleted},    // submission without review
-		{PhaseInReview, PhaseCompleted},      // verdict pass
-		{PhaseInReview, PhaseFailed},         // verdict defeat
-		{PhaseInProgress, PhasePosted},       // fail-retry / abandon
-		{PhaseInProgress, PhasePendingTriage},// fail-triage
-		{PhasePendingTriage, PhasePosted},    // triage repost
-		{PhaseClaimed, PhaseEscalated},       // operator escalate
+		{PhasePosted, PhaseClaimed},           // claim
+		{PhaseClaimed, PhaseInProgress},       // start
+		{PhaseInProgress, PhaseInReview},      // submission with review
+		{PhaseInProgress, PhaseCompleted},     // submission without review
+		{PhaseInReview, PhaseCompleted},       // verdict pass
+		{PhaseInReview, PhaseFailed},          // verdict defeat
+		{PhaseInProgress, PhasePosted},        // fail-retry / abandon
+		{PhaseInProgress, PhasePendingTriage}, // fail-triage
+		{PhasePendingTriage, PhasePosted},     // triage repost
+		{PhaseClaimed, PhaseEscalated},        // operator escalate
 	}
 	for _, e := range valid {
 		if !Transitions.IsValidTransition(e[0], e[1]) {
@@ -117,8 +117,31 @@ func TestWorkflowDeclaration_Fields(t *testing.T) {
 	if len(wf.OperatorWritablePredicates) == 0 {
 		t.Error("expected operator-writable predicates (retry counter must be rule-settable)")
 	}
+	if predCommand != "quest.lifecycle.command" {
+		t.Errorf("command predicate = %q, want quest.lifecycle.command", predCommand)
+	}
+	if PredClaimRequestedBy != "quest.assignment.requested-by" {
+		t.Errorf(
+			"claim requester predicate = %q, want quest.assignment.requested-by",
+			PredClaimRequestedBy,
+		)
+	}
 	// Audit predicates must be declared for a truthful, source-attributed history.
-	if wf.AuditPredicates.Source == "" || wf.AuditPredicates.At == "" {
-		t.Error("AuditPredicates must be declared for transition history")
+	wantAuditPredicates := map[string]string{
+		"source": "quest.transition.source",
+		"at":     "quest.transition.at",
+		"from":   "quest.transition.from",
+		"note":   "quest.transition.note",
+	}
+	gotAuditPredicates := map[string]string{
+		"source": wf.AuditPredicates.Source,
+		"at":     wf.AuditPredicates.At,
+		"from":   wf.AuditPredicates.From,
+		"note":   wf.AuditPredicates.Note,
+	}
+	for name, wantPredicate := range wantAuditPredicates {
+		if gotPredicate := gotAuditPredicates[name]; gotPredicate != wantPredicate {
+			t.Errorf("%s audit predicate = %q, want %q", name, gotPredicate, wantPredicate)
+		}
 	}
 }

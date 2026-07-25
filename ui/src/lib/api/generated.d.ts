@@ -1875,6 +1875,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/game/graph/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get graph summary
+         * @description Returns the knowledge graph summary — the same data agents see when they call the graph_summary tool. Includes a human-readable text field and structured per-source data for UI rendering. Returns an empty summary when no graph sources are configured.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Graph summary with text and structured source data */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/game/guilds": {
         parameters: {
             query?: never;
@@ -5487,14 +5524,26 @@ export interface components {
             steps: {
                 capability?: string;
                 duration: number;
+                error_category?: string;
+                error_message?: string;
                 messages?: {
                     content?: string;
                     is_error?: boolean;
                     name?: string;
                     reasoning_content?: string;
+                    reasoning_records?: {
+                        carrier_kind: string;
+                        item_id?: string;
+                        /** Format: byte */
+                        opaque?: string;
+                        provider: string;
+                        summary_text?: string;
+                        tool_call_id?: string;
+                    }[];
                     role: string;
                     tool_call_id?: string;
                     tool_calls?: {
+                        approved_by?: string;
                         arguments?: {
                             [key: string]: unknown;
                         };
@@ -5522,6 +5571,7 @@ export interface components {
                     [key: string]: unknown;
                 };
                 tool_calls?: {
+                    approved_by?: string;
                     arguments?: {
                         [key: string]: unknown;
                     };
@@ -5535,6 +5585,8 @@ export interface components {
                 }[];
                 tool_name?: string;
                 tool_result?: string;
+                tool_status?: string;
+                url_fetched?: string[];
                 utilization?: number;
             }[];
             total_tokens_in: number;
@@ -5543,14 +5595,26 @@ export interface components {
         TrajectoryStep: {
             capability?: string;
             duration: number;
+            error_category?: string;
+            error_message?: string;
             messages?: {
                 content?: string;
                 is_error?: boolean;
                 name?: string;
                 reasoning_content?: string;
+                reasoning_records?: {
+                    carrier_kind: string;
+                    item_id?: string;
+                    /** Format: byte */
+                    opaque?: string;
+                    provider: string;
+                    summary_text?: string;
+                    tool_call_id?: string;
+                }[];
                 role: string;
                 tool_call_id?: string;
                 tool_calls?: {
+                    approved_by?: string;
                     arguments?: {
                         [key: string]: unknown;
                     };
@@ -5578,6 +5642,7 @@ export interface components {
                 [key: string]: unknown;
             };
             tool_calls?: {
+                approved_by?: string;
                 arguments?: {
                     [key: string]: unknown;
                 };
@@ -5591,6 +5656,8 @@ export interface components {
             }[];
             tool_name?: string;
             tool_result?: string;
+            tool_status?: string;
+            url_fetched?: string[];
             utilization?: number;
         };
         TriageDecision: {

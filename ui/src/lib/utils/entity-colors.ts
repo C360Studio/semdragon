@@ -26,7 +26,8 @@ export const ENTITY_TYPE_COLORS: Record<string, string> = {
 	party: '#22c55e', // Green — temporary groups
 	guild: '#eab308', // Gold — specialized collectives
 	battle: '#ef4444', // Red — boss battle reviews
-	peer_review: '#f97316', // Orange — peer evaluations
+	peerreview: '#f97316', // Orange — peer evaluations
+	dagunit: '#84cc16', // Lime — gated-DAG execution units
 	storeitem: '#fb923c', // Orange-light — store catalog items
 	execution: '#a78bfa', // Violet-light — execution records
 	endpoint: '#38bdf8', // Sky — API endpoints

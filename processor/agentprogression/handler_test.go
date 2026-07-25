@@ -3,10 +3,16 @@ package agentprogression
 import (
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
+)
+
+const (
+	reviewCreatedAt   = "2025-01-01T00:00:00Z"
+	reviewCompletedAt = "2025-01-01T01:00:00Z"
 )
 
 // =============================================================================
@@ -22,7 +28,6 @@ import (
 // makeReviewEntityState builds a minimal graph.EntityState for a PeerReview
 // entity with the given member ID, leader avg rating, and lifecycle status.
 func makeReviewEntityState(id, memberID string, leaderAvgRating float64, status string) *graph.EntityState {
-	const ts = "2025-01-01T00:00:00Z"
 	return &graph.EntityState{
 		ID: id,
 		Triples: []message.Triple{
@@ -30,9 +35,9 @@ func makeReviewEntityState(id, memberID string, leaderAvgRating float64, status 
 			{Subject: id, Predicate: "review.assignment.member", Object: memberID},
 			{Subject: id, Predicate: "review.assignment.leader", Object: "leader-agent"},
 			{Subject: id, Predicate: "review.assignment.quest", Object: "quest-abc"},
-			{Subject: id, Predicate: "review.result.leader_avg", Object: leaderAvgRating},
-			{Subject: id, Predicate: "review.lifecycle.created_at", Object: ts},
-			{Subject: id, Predicate: "review.lifecycle.completed_at", Object: ts},
+			{Subject: id, Predicate: "review.result.leader-avg", Object: leaderAvgRating},
+			{Subject: id, Predicate: "review.lifecycle.created-at", Object: reviewCreatedAt},
+			{Subject: id, Predicate: "review.lifecycle.completed-at", Object: reviewCompletedAt},
 		},
 	}
 }
@@ -57,6 +62,23 @@ func TestPeerReviewEntityReconstruction(t *testing.T) {
 	}
 	if pr.Status != domain.PeerReviewCompleted {
 		t.Errorf("Status = %q; want %q", pr.Status, domain.PeerReviewCompleted)
+	}
+	wantCreatedAt, err := time.Parse(time.RFC3339, reviewCreatedAt)
+	if err != nil {
+		t.Fatalf("parse fixture created time: %v", err)
+	}
+	if !pr.CreatedAt.Equal(wantCreatedAt) {
+		t.Errorf("CreatedAt = %s; want %s", pr.CreatedAt.Format(time.RFC3339), reviewCreatedAt)
+	}
+	wantCompletedAt, err := time.Parse(time.RFC3339, reviewCompletedAt)
+	if err != nil {
+		t.Fatalf("parse fixture completed time: %v", err)
+	}
+	if pr.CompletedAt == nil {
+		t.Fatal("CompletedAt = nil; want populated timestamp")
+	}
+	if !pr.CompletedAt.Equal(wantCompletedAt) {
+		t.Errorf("CompletedAt = %s; want %s", pr.CompletedAt.Format(time.RFC3339), reviewCompletedAt)
 	}
 }
 

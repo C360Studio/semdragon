@@ -12,7 +12,7 @@ import (
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 )
 
-// Command trigger values stamped on quest.command to request a lifecycle
+// Command trigger values stamped on quest.lifecycle.command to request a lifecycle
 // transition. A caller writes one of these (plus any argument triples the
 // matching rule reads) as a graph-ingest triple delta; the rule in
 // config/rules/quest/*.json fires the lifecycle_transition and clears the
@@ -24,7 +24,7 @@ const (
 	// CommandStart requests claimed → in_progress.
 	CommandStart = "start"
 	// CommandSubmit requests in_progress → in_review or completed, routed by
-	// the quest.review.needs_review predicate (written at post time).
+	// the quest.review.needs-review predicate (written at post time).
 	CommandSubmit = "submit"
 	// CommandFail requests in_progress → posted (retry) or pending_triage,
 	// routed by the quest.attempts.current predicate.
@@ -41,7 +41,7 @@ const (
 const (
 	// PredClaimRequestedBy carries the agent id the claim rule copies into
 	// quest.assignment.agent (claimed_by).
-	PredClaimRequestedBy = "quest.claim.requested_by"
+	PredClaimRequestedBy = "quest.assignment.requested-by"
 	// PredDataOutput carries the submitted work product the submit rules leave
 	// on the entity as quest.data.output.
 	PredDataOutput = "quest.data.output"
@@ -73,7 +73,7 @@ func StampTriple(ctx context.Context, client *natsclient.Client, questID, predic
 	return nil
 }
 
-// StampCommand writes any argument triples, then the quest.command trigger, so
+// StampCommand writes any argument triples, then the quest.lifecycle.command trigger, so
 // each argument is durably present when the rule fires. args maps predicate →
 // object; the command is always written last.
 func StampCommand(ctx context.Context, client *natsclient.Client, questID, command string, args map[string]string) error {

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-22T10:21:44Z",
+  "generated_at": "2026-07-25T14:54:30Z",
   "entities": {
     "agent": {
       "static": [
@@ -59,17 +59,17 @@
     },
     "guild": {
       "static": [
-        "guild.config.max_members",
-        "guild.config.min_level",
+        "guild.config.max-members",
+        "guild.config.min-level",
         "guild.founding.agent",
         "guild.founding.date",
         "guild.identity.description",
         "guild.identity.name",
-        "guild.lifecycle.created_at",
-        "guild.stats.quests_failed",
-        "guild.stats.quests_handled",
+        "guild.lifecycle.created-at",
+        "guild.stats.quests-failed",
+        "guild.stats.quests-handled",
         "guild.stats.reputation",
-        "guild.stats.success_rate",
+        "guild.stats.success-rate",
         "guild.status.state"
       ],
       "dynamic": [
@@ -78,13 +78,14 @@
       ],
       "optional": [
         "guild.identity.culture",
-        "guild.identity.motto"
+        "guild.identity.motto",
+        "guild.quorum.size"
       ],
       "multi_value": [
         "guild.membership.agent",
         "guild.resource.tool",
-        "guild.routing.preferred_client",
-        "guild.routing.quest_type"
+        "guild.routing.preferred-client",
+        "guild.routing.quest-type"
       ]
     },
     "party": {
@@ -119,11 +120,11 @@
         "quest.identity.description",
         "quest.identity.name",
         "quest.identity.title",
-        "quest.lifecycle.posted_at",
-        "quest.party.min_size",
+        "quest.lifecycle.posted-at",
+        "quest.party.min-size",
         "quest.party.required",
         "quest.review.level",
-        "quest.review.needs_review",
+        "quest.review.needs-review",
         "quest.status.state",
         "quest.tier.minimum",
         "quest.xp.base"
@@ -132,10 +133,13 @@
       "optional": [
         "quest.assignment.agent",
         "quest.assignment.party",
-        "quest.execution.loop_id",
-        "quest.lifecycle.claimed_at",
-        "quest.lifecycle.completed_at",
-        "quest.lifecycle.started_at",
+        "quest.execution.loop-id",
+        "quest.lifecycle.claimed-at",
+        "quest.lifecycle.completed-at",
+        "quest.lifecycle.started-at",
+        "quest.metrics.tokens-completion",
+        "quest.metrics.tokens-prompt",
+        "quest.metrics.turns-used",
         "quest.parent.quest",
         "quest.priority.guild"
       ],

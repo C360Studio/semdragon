@@ -23,16 +23,16 @@ import (
 
 // EntityType constants for the type part of entity IDs.
 const (
-	EntityTypeQuest     = "quest"
-	EntityTypeAgent     = "agent"
-	EntityTypeParty     = "party"
-	EntityTypeGuild     = "guild"
+	EntityTypeQuest      = "quest"
+	EntityTypeAgent      = "agent"
+	EntityTypeParty      = "party"
+	EntityTypeGuild      = "guild"
 	EntityTypeBattle     = "battle"
 	EntityTypeStoreItem  = "storeitem"
 	EntityTypePeerReview = "peerreview"
 	// EntityTypeDagUnit is a party-DAG execution unit: a thin coordination
 	// entity minted per node per run and consumed by the semstreams gated-DAG
-	// executor. It carries gateddag.depends_on edges and questdag provenance
+	// executor. It carries gateddag.unit.depends-on edges and questdag provenance
 	// (node id, parent quest, sub-quest) — distinct from the sub-quest entity it
 	// maps to. See the questdag package.
 	EntityTypeDagUnit = "dagunit"

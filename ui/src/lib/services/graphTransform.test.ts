@@ -38,6 +38,9 @@ const AGENT_ID = 'c360.prod.game.board1.agent.dragon';
 const QUEST_ID = 'c360.prod.game.board1.quest.fetch-data';
 const GUILD_ID = 'c360.prod.game.board1.guild.wranglers';
 const PARTY_ID = 'c360.prod.game.board1.party.alpha';
+const REVIEW_ID = 'c360.prod.game.board1.peerreview.review-1';
+const DAG_UNIT_ID = 'c360.prod.game.board1.dagunit.unit-b';
+const DEPENDENCY_UNIT_ID = 'c360.prod.game.board1.dagunit.unit-a';
 
 // =============================================================================
 // transformPathSearchResult — entities with triples
@@ -102,6 +105,25 @@ describe('transformPathSearchResult', () => {
 			expect(result[0].outgoing).toHaveLength(0);
 			expect(result[0].incoming).toHaveLength(0);
 		});
+
+		it('preserves canonical peer-review predicate names as properties', () => {
+			const result = transformPathSearchResult({
+				entities: [
+					backendEntity(REVIEW_ID, [
+						triple(REVIEW_ID, 'review.config.solo-task', true),
+						triple(REVIEW_ID, 'review.lifecycle.created-at', '2026-01-15T10:00:00Z'),
+						triple(REVIEW_ID, 'review.result.leader-avg', 4.5)
+					])
+				],
+				edges: []
+			});
+
+			expect(result[0].properties.map((property) => property.predicate)).toEqual([
+				'review.config.solo-task',
+				'review.lifecycle.created-at',
+				'review.result.leader-avg'
+			]);
+		});
 	});
 
 	describe('with entity-reference triples (relationships)', () => {
@@ -155,6 +177,37 @@ describe('transformPathSearchResult', () => {
 			const guildEntity = result.find((e) => e.id === GUILD_ID)!;
 			// No explicit edge was supplied — incoming list stays empty
 			expect(guildEntity.incoming).toHaveLength(0);
+		});
+
+		it.each([
+			['gateddag.unit.depends-on', DEPENDENCY_UNIT_ID],
+			['questdag.unit.parent-quest', QUEST_ID],
+			['questdag.unit.sub-quest', 'c360.prod.game.board1.quest.sub-quest']
+		])('preserves canonical DAG relationship %s', (predicate, targetId) => {
+			const result = transformPathSearchResult({
+				entities: [
+					backendEntity(DAG_UNIT_ID),
+					backendEntity(targetId)
+				],
+				edges: [edge(DAG_UNIT_ID, predicate, targetId)]
+			});
+
+			const source = result.find((entity) => entity.id === DAG_UNIT_ID)!;
+			const target = result.find((entity) => entity.id === targetId)!;
+			expect(source.outgoing).toEqual([
+				expect.objectContaining({
+					sourceId: DAG_UNIT_ID,
+					targetId,
+					predicate
+				})
+			]);
+			expect(target.incoming).toEqual([
+				expect.objectContaining({
+					sourceId: DAG_UNIT_ID,
+					targetId,
+					predicate
+				})
+			]);
 		});
 	});
 
@@ -216,6 +269,23 @@ describe('transformPathSearchResult', () => {
 	});
 
 	describe('mixed triples and explicit edges', () => {
+		it('deduplicates the same relationship returned as both a triple and an edge', () => {
+			const predicate = 'agent.membership.guild';
+			const result = transformPathSearchResult({
+				entities: [
+					backendEntity(AGENT_ID, [triple(AGENT_ID, predicate, GUILD_ID)]),
+					backendEntity(GUILD_ID)
+				],
+				edges: [edge(AGENT_ID, predicate, GUILD_ID)]
+			});
+
+			const agent = result.find((entity) => entity.id === AGENT_ID)!;
+			const guild = result.find((entity) => entity.id === GUILD_ID)!;
+			expect(agent.outgoing).toHaveLength(1);
+			expect(guild.incoming).toHaveLength(1);
+			expect(agent.outgoing[0].id).toBe(guild.incoming[0].id);
+		});
+
 		it('combines property triples, relationship triples, and explicit edges correctly', () => {
 			const result = transformPathSearchResult({
 				entities: [

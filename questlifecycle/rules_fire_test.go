@@ -8,7 +8,7 @@ package questlifecycle
 // Stands up the REAL stack the pure-rules design depends on: graph-ingest
 // (persists mutations into ENTITY_STATES), the semstreams rule-processor loading
 // config/rules/quest/*.json, and the lifecycle Manager with the quest workflow.
-// A posted quest is created via Manager.Create, a quest.command=claim triple is
+// A posted quest is created via Manager.Create, a quest.lifecycle.command=claim triple is
 // stamped through graph-ingest, and the claim rule must fire a lifecycle_transition
 // to claimed — setting claimed_by from the arg triple, incrementing attempts, and
 // clearing the command to the sentinel. This proves the whole mechanism BEFORE any
@@ -74,7 +74,7 @@ func TestRulesFire_ClaimCommandTransitionsPostedToClaimed(t *testing.T) {
 	}
 
 	// Stamp the claimant arg triple, then the command trigger — both as graph-ingest deltas.
-	addTriple(t, ctx, tc.Client, questID, "quest.claim.requested_by", agentID)
+	addTriple(t, ctx, tc.Client, questID, "quest.assignment.requested-by", agentID)
 	addTriple(t, ctx, tc.Client, questID, predCommand, "claim")
 
 	// The claim rule should fire posted → claimed within the poll window.
@@ -97,7 +97,7 @@ func TestRulesFire_ClaimCommandTransitionsPostedToClaimed(t *testing.T) {
 	}
 
 	if got.ClaimedBy != agentID {
-		t.Errorf("claimed_by = %q, want %q (set from quest.claim.requested_by)", got.ClaimedBy, agentID)
+		t.Errorf("claimed_by = %q, want %q (set from quest.assignment.requested-by)", got.ClaimedBy, agentID)
 	}
 	if got.Attempts != 1 {
 		t.Errorf("attempts = %d, want 1 (incremented atomically with claim)", got.Attempts)

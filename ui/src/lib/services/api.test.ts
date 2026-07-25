@@ -480,7 +480,7 @@ describe('API Service', () => {
 						name: 'test-source',
 						type: 'semsource',
 						ready: true,
-						entity_prefix: 'test.',
+						entity_prefix: 'test',
 						total_entities: 42,
 						domains: [
 							{
@@ -503,6 +503,7 @@ describe('API Service', () => {
 			expect(result.text).toBe('--- Graph Contents ---');
 			expect(result.sources).toHaveLength(1);
 			expect(result.sources[0].type).toBe('semsource');
+			expect(result.sources[0].entity_prefix).toBe('test');
 			expect(result.sources[0].total_entities).toBe(42);
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://test-api.local/game/graph/summary',

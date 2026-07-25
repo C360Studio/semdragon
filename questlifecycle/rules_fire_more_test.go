@@ -19,8 +19,8 @@ package questlifecycle
 //
 //   2. TestRulesFire_SubmitRouting / TestRulesFire_FailRouting — the submit and
 //      fail rules (02-submit.json, 03-fail.json) actually fire end-to-end when a
-//      caller stamps quest.command via a graph-ingest delta, routing on
-//      quest.review.needs_review (submit) and quest.attempts.current (fail).
+//      caller stamps quest.lifecycle.command via a graph-ingest delta, routing on
+//      quest.review.needs-review (submit) and quest.attempts.current (fail).
 //      This is the seam questbridge moves onto. The existing
 //      rules_fire_test.go only proved the claim rule.
 //
@@ -180,7 +180,7 @@ func TestRulesFire_SubmitRouting(t *testing.T) {
 		}
 		// needs_review is a non-projection predicate the submit rules read; write
 		// it directly, as domain.Quest.Triples does at post time.
-		if err := StampTriple(ctx, tc.Client, questID, "quest.review.needs_review", needsReview); err != nil {
+		if err := StampTriple(ctx, tc.Client, questID, "quest.review.needs-review", needsReview); err != nil {
 			t.Fatalf("stamp needs_review: %v", err)
 		}
 		return questID

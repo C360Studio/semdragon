@@ -30,11 +30,13 @@ import {
  * Transform a PathSearchResult into an array of GraphEntity.
  *
  * Triple processing:
- * - object is a 6-part entity reference → outgoing GraphRelationship
+ * - object shaped like a 6-part entity reference → outgoing GraphRelationship
  * - otherwise → TripleProperty (literal value)
  *
- * Explicit edges from the `edges` field are processed after triples and
- * wired bidirectionally (outgoing on source, incoming on target).
+ * Explicit edges from the `edges` field are authoritative and are processed
+ * after triples, wired bidirectionally (outgoing on source, incoming on target).
+ * Six-part object inference is only a compatibility fallback because the
+ * GraphQL triple shape omits datatype; it does not prove an `@id` relationship.
  */
 export function transformPathSearchResult(
   result: PathSearchResult,
@@ -52,22 +54,38 @@ export function transformPathSearchResult(
     });
   }
 
-  // Process triples to extract properties and outgoing relationships
+  const outgoingIds = new Map<string, Set<string>>();
+  const incomingIds = new Map<string, Set<string>>();
+  for (const id of entityMap.keys()) {
+    outgoingIds.set(id, new Set<string>());
+    incomingIds.set(id, new Set<string>());
+  }
+
+  // Process triples to extract properties and inferred outgoing relationships.
   for (const backendEntity of result.entities) {
     const entity = entityMap.get(backendEntity.id);
     if (!entity) continue;
 
     for (const triple of backendEntity.triples) {
       if (isEntityReference(triple.object)) {
+        const relationshipId = createRelationshipId(
+          triple.subject,
+          triple.predicate,
+          triple.object,
+        );
         const relationship: GraphRelationship = {
-          id: createRelationshipId(triple.subject, triple.predicate, triple.object),
+          id: relationshipId,
           sourceId: triple.subject,
           targetId: triple.object,
           predicate: triple.predicate,
           confidence: 1.0,
           timestamp: 0,
         };
-        entity.outgoing.push(relationship);
+        const seen = outgoingIds.get(entity.id);
+        if (seen && !seen.has(relationshipId)) {
+          seen.add(relationshipId);
+          entity.outgoing.push(relationship);
+        }
       } else {
         const property: TripleProperty = {
           predicate: triple.predicate,
@@ -93,12 +111,16 @@ export function transformPathSearchResult(
     };
 
     const sourceEntity = entityMap.get(edge.subject);
-    if (sourceEntity) {
+    const sourceSeen = outgoingIds.get(edge.subject);
+    if (sourceEntity && sourceSeen && !sourceSeen.has(relationship.id)) {
+      sourceSeen.add(relationship.id);
       sourceEntity.outgoing.push(relationship);
     }
 
     const targetEntity = entityMap.get(edge.object);
-    if (targetEntity) {
+    const targetSeen = incomingIds.get(edge.object);
+    if (targetEntity && targetSeen && !targetSeen.has(relationship.id)) {
+      targetSeen.add(relationship.id);
       targetEntity.incoming.push(relationship);
     }
   }

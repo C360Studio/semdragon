@@ -463,11 +463,26 @@ describe('transformQuest', () => {
 			triple('quest.difficulty.level', 3),
 			triple('quest.tier.minimum', 1),
 			triple('quest.party.required', true),
+			triple('quest.party.min-size', 3),
 			triple('quest.xp.base', 500),
 			triple('quest.review.level', 2),
-			triple('quest.lifecycle.posted_at', '2026-01-10T08:00:00Z'),
+			triple('quest.lifecycle.posted-at', '2026-01-10T08:00:00Z'),
+			triple('quest.lifecycle.claimed-at', '2026-01-10T09:00:00Z'),
+			triple('quest.lifecycle.started-at', '2026-01-10T09:05:00Z'),
+			triple('quest.lifecycle.completed-at', '2026-01-10T10:00:00Z'),
 			triple('quest.attempts.current', 1),
-			triple('quest.attempts.max', 5)
+			triple('quest.attempts.max', 5),
+			triple('quest.execution.loop-id', 'loop-42'),
+			triple('quest.context.token-count', 4096),
+			triple('quest.verdict.passed', true),
+			triple('quest.verdict.score', 0.95),
+			triple('quest.verdict.xp-awarded', 475),
+			triple('quest.classification.red-team-target', 'c360.prod.game.board1.quest.target'),
+			triple('quest.classification.red-team-quest-id', 'c360.prod.game.board1.quest.red-team'),
+			triple('quest.metrics.turns-used', 7),
+			triple('quest.metrics.tokens-prompt', 1000),
+			triple('quest.metrics.tokens-completion', 500),
+			triple('quest.metrics.duration', '55m')
 		];
 	}
 
@@ -482,11 +497,24 @@ describe('transformQuest', () => {
 		expect(quest.difficulty).toBe(3);
 		expect(quest.min_tier).toBe(1);
 		expect(quest.party_required).toBe(true);
+		expect(quest.min_party_size).toBe(3);
 		expect(quest.base_xp).toBe(500);
 		expect(quest.constraints.review_level).toBe(2);
 		expect(quest.posted_at).toBe('2026-01-10T08:00:00Z');
+		expect(quest.claimed_at).toBe('2026-01-10T09:00:00Z');
+		expect(quest.started_at).toBe('2026-01-10T09:05:00Z');
+		expect(quest.completed_at).toBe('2026-01-10T10:00:00Z');
 		expect(quest.attempts).toBe(1);
 		expect(quest.max_attempts).toBe(5);
+		expect(quest.loop_id).toBe('loop-42');
+		expect(quest.context_token_count).toBe(4096);
+		expect(quest.verdict?.xp_awarded).toBe(475);
+		expect(quest.red_team_target).toBe(questId('c360.prod.game.board1.quest.target'));
+		expect(quest.red_team_quest_id).toBe(questId('c360.prod.game.board1.quest.red-team'));
+		expect(quest.turns_used).toBe(7);
+		expect(quest.tokens_prompt).toBe(1000);
+		expect(quest.tokens_completion).toBe(500);
+		expect(quest.duration).toBe('55m');
 	});
 
 	it('uses correct defaults when all predicates are missing', () => {
@@ -553,18 +581,19 @@ describe('transformGuild', () => {
 			triple('guild.identity.culture', 'Data-driven excellence'),
 			triple('guild.identity.motto', 'In data we trust'),
 			triple('guild.status.state', 'active'),
-			triple('guild.config.max_members', 50),
-			triple('guild.config.min_level', 3),
+			triple('guild.config.max-members', 50),
+			triple('guild.config.min-level', 3),
 			triple('guild.founding.date', '2026-01-01T00:00:00Z'),
 			triple('guild.founding.agent', 'c360.prod.game.board1.agent.founder'),
 			triple('guild.stats.reputation', 0.92),
-			triple('guild.stats.quests_handled', 150),
-			triple('guild.stats.success_rate', 0.87),
-			triple('guild.stats.quests_failed', 20),
-			triple('guild.routing.quest_type', 'analysis'),
-			triple('guild.routing.quest_type', 'data_transformation'),
-			triple('guild.routing.quest_type', 'research'),
-			triple('guild.lifecycle.created_at', '2026-01-01T00:00:00Z')
+			triple('guild.stats.quests-handled', 150),
+			triple('guild.stats.success-rate', 0.87),
+			triple('guild.stats.quests-failed', 20),
+			triple('guild.routing.quest-type', 'analysis'),
+			triple('guild.routing.quest-type', 'data_transformation'),
+			triple('guild.routing.quest-type', 'research'),
+			triple('guild.lifecycle.created-at', '2026-01-01T00:00:00Z'),
+			triple('guild.quorum.size', 7)
 		];
 	}
 
@@ -586,6 +615,7 @@ describe('transformGuild', () => {
 		expect(guild.success_rate).toBe(0.87);
 		expect(guild.quests_failed).toBe(20);
 		expect(guild.created_at).toBe('2026-01-01T00:00:00Z');
+		expect(guild.quorum_size).toBe(7);
 	});
 
 	it('collects multiple quest types from repeated predicates', () => {
@@ -812,7 +842,7 @@ describe('type coercion', () => {
 	it('num() handles float values from Go', () => {
 		const entity = graphEntity(GUILD_KEY, [
 			triple('guild.stats.reputation', 0.92),
-			triple('guild.stats.success_rate', 0.87)
+			triple('guild.stats.success-rate', 0.87)
 		]);
 		const guild = transformEntity('guild', GUILD_KEY, entity) as Guild;
 
@@ -838,9 +868,9 @@ describe('duplicate predicates', () => {
 
 	it('tripleValues collects all matching predicates for multi-value fields', () => {
 		const entity = graphEntity(GUILD_KEY, [
-			triple('guild.routing.quest_type', 'analysis'),
-			triple('guild.routing.quest_type', 'code_review'),
-			triple('guild.routing.quest_type', 'research')
+			triple('guild.routing.quest-type', 'analysis'),
+			triple('guild.routing.quest-type', 'code_review'),
+			triple('guild.routing.quest-type', 'research')
 		]);
 		const guild = transformEntity('guild', GUILD_KEY, entity) as Guild;
 
@@ -956,25 +986,28 @@ describe('schema contract validation', () => {
 		'quest.difficulty.level': 'difficulty',
 		'quest.tier.minimum': 'min_tier',
 		'quest.party.required': 'party_required',
-		'quest.party.min_size': 'min_party_size',
+		'quest.party.min-size': 'min_party_size',
 		'quest.xp.base': 'base_xp',
 		'quest.review.level': 'constraints.review_level',
-		'quest.lifecycle.posted_at': 'posted_at',
+		'quest.lifecycle.posted-at': 'posted_at',
 		'quest.attempts.current': 'attempts',
 		'quest.attempts.max': 'max_attempts',
-		'quest.execution.loop_id': 'loop_id',
+		'quest.execution.loop-id': 'loop_id',
+		'quest.metrics.turns-used': 'turns_used',
+		'quest.metrics.tokens-prompt': 'tokens_prompt',
+		'quest.metrics.tokens-completion': 'tokens_completion',
 		'quest.classification.type': 'quest_type'
 	};
 
 	const QUEST_IGNORED: Record<string, string> = {
 		'quest.assignment.agent': 'claimed_by not shown in quest card',
 		'quest.assignment.party': 'party assignment not shown in quest card',
-		'quest.lifecycle.claimed_at': 'lifecycle timestamps not displayed',
-		'quest.lifecycle.started_at': 'lifecycle timestamps not displayed',
-		'quest.lifecycle.completed_at': 'lifecycle timestamps not displayed',
+		'quest.lifecycle.claimed-at': 'lifecycle timestamps not displayed',
+		'quest.lifecycle.started-at': 'lifecycle timestamps not displayed',
+		'quest.lifecycle.completed-at': 'lifecycle timestamps not displayed',
 		'quest.parent.quest': 'quest hierarchy not yet displayed',
 		'quest.priority.guild': 'guild priority not displayed',
-		'quest.review.needs_review': 'backend constraint not displayed in quest card',
+		'quest.review.needs-review': 'backend constraint not displayed in quest card',
 		'quest.skill.required': 'required_skills populated from separate source',
 		'quest.tool.required': 'required_tools populated from separate source'
 	};
@@ -989,16 +1022,17 @@ describe('schema contract validation', () => {
 		'guild.identity.culture': 'culture',
 		'guild.identity.motto': 'motto',
 		'guild.status.state': 'status',
-		'guild.config.max_members': 'max_members',
-		'guild.config.min_level': 'min_level',
+		'guild.config.max-members': 'max_members',
+		'guild.config.min-level': 'min_level',
 		'guild.founding.date': 'founded',
 		'guild.founding.agent': 'founded_by',
 		'guild.stats.reputation': 'reputation',
-		'guild.stats.quests_handled': 'quests_handled',
-		'guild.stats.success_rate': 'success_rate',
-		'guild.stats.quests_failed': 'quests_failed',
-		'guild.lifecycle.created_at': 'created_at',
-		'guild.routing.quest_type': 'quest_types[]'
+		'guild.stats.quests-handled': 'quests_handled',
+		'guild.stats.success-rate': 'success_rate',
+		'guild.stats.quests-failed': 'quests_failed',
+		'guild.lifecycle.created-at': 'created_at',
+		'guild.quorum.size': 'quorum_size',
+		'guild.routing.quest-type': 'quest_types[]'
 	};
 
 	const GUILD_IGNORED: Record<string, string> = {
@@ -1006,7 +1040,7 @@ describe('schema contract validation', () => {
 		'guild.member.{id}.rank': 'member details not in guild card',
 		'guild.member.{id}.contribution': 'member details not in guild card',
 		'guild.resource.tool': 'shared_tools not displayed in guild card',
-		'guild.routing.preferred_client': 'client routing not displayed'
+		'guild.routing.preferred-client': 'client routing not displayed'
 	};
 
 	// -------------------------------------------------------------------------

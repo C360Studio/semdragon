@@ -64,7 +64,7 @@ describe('parseEntityId', () => {
 	});
 
 	it('parses all semdragons entity types', () => {
-		const types = ['quest', 'agent', 'party', 'guild', 'battle', 'peer_review'];
+		const types = ['quest', 'agent', 'party', 'guild', 'battle', 'peerreview', 'dagunit'];
 		for (const t of types) {
 			const id = `c360.prod.game.board1.${t}.instance-1`;
 			const result = parseEntityId(id);
@@ -309,7 +309,8 @@ describe('getGameEntityType', () => {
 		['party', 'party'],
 		['guild', 'guild'],
 		['battle', 'battle'],
-		['peer_review', 'peer_review']
+		['peerreview', 'peerreview'],
+		['dagunit', 'dagunit']
 	];
 
 	for (const [entityType, expected] of cases) {
@@ -359,7 +360,7 @@ describe('isGameEntity', () => {
 	});
 
 	it('returns true for all semdragons entity types in the game domain', () => {
-		const types = ['quest', 'agent', 'party', 'guild', 'battle'];
+		const types = ['quest', 'agent', 'party', 'guild', 'battle', 'dagunit'];
 		for (const t of types) {
 			expect(isGameEntity(`c360.prod.game.board1.${t}.id-1`)).toBe(true);
 		}

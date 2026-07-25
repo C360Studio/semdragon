@@ -56,13 +56,13 @@ func TestQuestTriples_ReviewPredicates(t *testing.T) {
 			var foundNeedsReview, foundLevel bool
 			for _, triple := range triples {
 				switch triple.Predicate {
-				case "quest.review.needs_review":
+				case "quest.review.needs-review":
 					foundNeedsReview = true
 					got, ok := triple.Object.(bool)
 					if !ok {
-						t.Errorf("quest.review.needs_review: expected bool, got %T", triple.Object)
+						t.Errorf("quest.review.needs-review: expected bool, got %T", triple.Object)
 					} else if got != tt.wantNeedsReview {
-						t.Errorf("quest.review.needs_review = %v, want %v", got, tt.wantNeedsReview)
+						t.Errorf("quest.review.needs-review = %v, want %v", got, tt.wantNeedsReview)
 					}
 				case "quest.review.level":
 					foundLevel = true
@@ -76,7 +76,7 @@ func TestQuestTriples_ReviewPredicates(t *testing.T) {
 			}
 
 			if !foundNeedsReview {
-				t.Error("quest.review.needs_review triple not found")
+				t.Error("quest.review.needs-review triple not found")
 			}
 			if !foundLevel {
 				t.Error("quest.review.level triple not found")

@@ -1129,6 +1129,20 @@
         }
       }
     },
+    "/game/graph/summary": {
+      "get": {
+        "summary": "Get graph summary",
+        "description": "Returns the knowledge graph summary — the same data agents see when they call the graph_summary tool. Includes a human-readable text field and structured per-source data for UI rendering. Returns an empty summary when no graph sources are configured.",
+        "tags": [
+          "Graph"
+        ],
+        "responses": {
+          "200": {
+            "description": "Graph summary with text and structured source data"
+          }
+        }
+      }
+    },
     "/game/guilds": {
       "get": {
         "summary": "List guilds",
@@ -8956,6 +8970,12 @@
                 "duration": {
                   "type": "integer"
                 },
+                "error_category": {
+                  "type": "string"
+                },
+                "error_message": {
+                  "type": "string"
+                },
                 "messages": {
                   "items": {
                     "properties": {
@@ -8971,6 +8991,37 @@
                       "reasoning_content": {
                         "type": "string"
                       },
+                      "reasoning_records": {
+                        "items": {
+                          "properties": {
+                            "carrier_kind": {
+                              "type": "string"
+                            },
+                            "item_id": {
+                              "type": "string"
+                            },
+                            "opaque": {
+                              "format": "byte",
+                              "type": "string"
+                            },
+                            "provider": {
+                              "type": "string"
+                            },
+                            "summary_text": {
+                              "type": "string"
+                            },
+                            "tool_call_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "provider",
+                            "carrier_kind"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
                       "role": {
                         "type": "string"
                       },
@@ -8980,6 +9031,9 @@
                       "tool_calls": {
                         "items": {
                           "properties": {
+                            "approved_by": {
+                              "type": "string"
+                            },
                             "arguments": {
                               "additionalProperties": {},
                               "type": "object"
@@ -9055,6 +9109,9 @@
                 "tool_calls": {
                   "items": {
                     "properties": {
+                      "approved_by": {
+                        "type": "string"
+                      },
                       "arguments": {
                         "additionalProperties": {},
                         "type": "object"
@@ -9089,6 +9146,15 @@
                 },
                 "tool_result": {
                   "type": "string"
+                },
+                "tool_status": {
+                  "type": "string"
+                },
+                "url_fetched": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 "utilization": {
                   "type": "number"
@@ -9128,6 +9194,12 @@
           "duration": {
             "type": "integer"
           },
+          "error_category": {
+            "type": "string"
+          },
+          "error_message": {
+            "type": "string"
+          },
           "messages": {
             "items": {
               "properties": {
@@ -9143,6 +9215,37 @@
                 "reasoning_content": {
                   "type": "string"
                 },
+                "reasoning_records": {
+                  "items": {
+                    "properties": {
+                      "carrier_kind": {
+                        "type": "string"
+                      },
+                      "item_id": {
+                        "type": "string"
+                      },
+                      "opaque": {
+                        "format": "byte",
+                        "type": "string"
+                      },
+                      "provider": {
+                        "type": "string"
+                      },
+                      "summary_text": {
+                        "type": "string"
+                      },
+                      "tool_call_id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "carrier_kind"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
                 "role": {
                   "type": "string"
                 },
@@ -9152,6 +9255,9 @@
                 "tool_calls": {
                   "items": {
                     "properties": {
+                      "approved_by": {
+                        "type": "string"
+                      },
                       "arguments": {
                         "additionalProperties": {},
                         "type": "object"
@@ -9227,6 +9333,9 @@
           "tool_calls": {
             "items": {
               "properties": {
+                "approved_by": {
+                  "type": "string"
+                },
                 "arguments": {
                   "additionalProperties": {},
                   "type": "object"
@@ -9261,6 +9370,15 @@
           },
           "tool_result": {
             "type": "string"
+          },
+          "tool_status": {
+            "type": "string"
+          },
+          "url_fetched": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "utilization": {
             "type": "number"

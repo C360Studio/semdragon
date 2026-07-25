@@ -9,7 +9,7 @@
     "rerun_on_recovery": true,
     "conditions": [
       { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
-      { "field": "quest.command", "operator": "eq", "value": "fail" },
+      { "field": "quest.lifecycle.command", "operator": "eq", "value": "fail" },
       { "field": "quest.attempts.current", "operator": "lt", "value": 3 }
     ],
     "on_enter": [
@@ -35,7 +35,7 @@
     "rerun_on_recovery": true,
     "conditions": [
       { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
-      { "field": "quest.command", "operator": "eq", "value": "fail" },
+      { "field": "quest.lifecycle.command", "operator": "eq", "value": "fail" },
       { "field": "quest.attempts.current", "operator": "gte", "value": 3 }
     ],
     "on_enter": [

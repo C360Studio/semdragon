@@ -33,7 +33,7 @@ const (
 	PredicateQuestFailed = "quest.lifecycle.failed"
 
 	// PredicateQuestPendingTriage - Quest awaiting DM triage after exhausting retries.
-	PredicateQuestPendingTriage = "quest.lifecycle.pending_triage"
+	PredicateQuestPendingTriage = "quest.lifecycle.pending-triage"
 
 	// PredicateQuestTriaged - DM triage decision applied to quest.
 	PredicateQuestTriaged = "quest.lifecycle.triaged"
@@ -59,13 +59,13 @@ const (
 
 const (
 	// PredicateQuestMetricsTurns - Number of agentic-loop turns used during execution.
-	PredicateQuestMetricsTurns = "quest.metrics.turns_used"
+	PredicateQuestMetricsTurns = "quest.metrics.turns-used"
 
 	// PredicateQuestMetricsTokensIn - Prompt tokens consumed during execution.
-	PredicateQuestMetricsTokensIn = "quest.metrics.tokens_prompt"
+	PredicateQuestMetricsTokensIn = "quest.metrics.tokens-prompt"
 
 	// PredicateQuestMetricsTokensOut - Completion tokens consumed during execution.
-	PredicateQuestMetricsTokensOut = "quest.metrics.tokens_completion"
+	PredicateQuestMetricsTokensOut = "quest.metrics.tokens-completion"
 )
 
 // --- Quest Artifact Predicates ---

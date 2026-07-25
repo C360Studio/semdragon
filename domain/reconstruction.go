@@ -51,7 +51,7 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.MinTier = TrustTier(AsInt(triple.Object))
 		case "quest.party.required":
 			q.PartyRequired = AsBool(triple.Object)
-		case "quest.party.min_size":
+		case "quest.party.min-size":
 			q.MinPartySize = AsInt(triple.Object)
 
 		// Rewards
@@ -65,15 +65,15 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.MaxAttempts = AsInt(triple.Object)
 		case "quest.failure.escalated":
 			q.Escalated = AsBool(triple.Object)
-		case "quest.lifecycle.posted_at":
+		case "quest.lifecycle.posted-at":
 			q.PostedAt = AsTime(triple.Object)
-		case "quest.lifecycle.claimed_at":
+		case "quest.lifecycle.claimed-at":
 			t := AsTime(triple.Object)
 			q.ClaimedAt = &t
-		case "quest.lifecycle.started_at":
+		case "quest.lifecycle.started-at":
 			t := AsTime(triple.Object)
 			q.StartedAt = &t
-		case "quest.lifecycle.completed_at":
+		case "quest.lifecycle.completed-at":
 			t := AsTime(triple.Object)
 			q.CompletedAt = &t
 
@@ -114,11 +114,11 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 		// Review
 		case "quest.review.level":
 			q.Constraints.ReviewLevel = ReviewLevel(AsInt(triple.Object))
-		case "quest.review.needs_review":
+		case "quest.review.needs-review":
 			q.Constraints.RequireReview = AsBool(triple.Object)
 
 		// Observability
-		case "quest.execution.loop_id":
+		case "quest.execution.loop-id":
 			q.LoopID = AsString(triple.Object)
 
 		// Verdict (from boss battle)
@@ -132,7 +132,7 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 				q.Verdict = &BattleVerdict{}
 			}
 			q.Verdict.QualityScore = AsFloat64(triple.Object)
-		case "quest.verdict.xp_awarded":
+		case "quest.verdict.xp-awarded":
 			if q.Verdict == nil {
 				q.Verdict = &BattleVerdict{}
 			}
@@ -162,7 +162,7 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.AntiPatterns = AsStringSlice(triple.Object)
 
 		// Duration
-		case "quest.duration":
+		case "quest.metrics.duration":
 			if d, err := time.ParseDuration(AsString(triple.Object)); err == nil {
 				q.Duration = d
 			}
@@ -176,25 +176,25 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.TokensCompletion = AsInt(triple.Object)
 
 		// DAG execution state (parent quest)
-		case "quest.dag.execution_id":
+		case "quest.dag.execution-id":
 			q.DAGExecutionID = AsString(triple.Object)
 		case "quest.dag.definition":
 			q.DAGDefinition = triple.Object
-		case "quest.dag.node_quest_ids":
+		case "quest.dag.node-quest-ids":
 			q.DAGNodeQuestIDs = triple.Object
-		case "quest.dag.node_states":
+		case "quest.dag.node-states":
 			q.DAGNodeStates = triple.Object
-		case "quest.dag.node_assignees":
+		case "quest.dag.node-assignees":
 			q.DAGNodeAssignees = triple.Object
-		case "quest.dag.completed_nodes":
+		case "quest.dag.completed-nodes":
 			q.DAGCompletedNodes = triple.Object
-		case "quest.dag.failed_nodes":
+		case "quest.dag.failed-nodes":
 			q.DAGFailedNodes = triple.Object
-		case "quest.dag.node_retries":
+		case "quest.dag.node-retries":
 			q.DAGNodeRetries = triple.Object
 
 		// DAG sub-quest fields
-		case "quest.dag.node_id":
+		case "quest.dag.node-id":
 			q.DAGNodeID = AsString(triple.Object)
 		case "quest.dag.clarifications":
 			q.DAGClarifications = triple.Object
@@ -204,7 +204,7 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 			q.DMClarifications = triple.Object
 
 		// Context metadata
-		case "quest.context.token_count":
+		case "quest.context.token-count":
 			q.ContextTokenCount = AsInt(triple.Object)
 		case "quest.context.sources":
 			q.ContextSources = AsStringSlice(triple.Object)
@@ -228,12 +228,12 @@ func QuestFromEntityState(entity *graph.EntityState) *Quest {
 		// Quest classification
 		case "quest.classification.type":
 			q.QuestType = QuestType(AsString(triple.Object))
-		case "quest.classification.red_team_target":
+		case "quest.classification.red-team-target":
 			targetID := QuestID(AsString(triple.Object))
 			q.RedTeamTarget = &targetID
-		case "quest.classification.red_team_status":
+		case "quest.classification.red-team-status":
 			q.RedTeamStatus = AsString(triple.Object)
-		case "quest.classification.red_team_quest_id":
+		case "quest.classification.red-team-quest-id":
 			rtQuestID := QuestID(AsString(triple.Object))
 			q.RedTeamQuestID = &rtQuestID
 
@@ -373,9 +373,9 @@ func GuildFromEntityState(entity *graph.EntityState) *Guild {
 			g.Status = GuildStatus(AsString(triple.Object))
 
 		// Configuration
-		case "guild.config.max_members":
+		case "guild.config.max-members":
 			g.MaxMembers = AsInt(triple.Object)
-		case "guild.config.min_level":
+		case "guild.config.min-level":
 			g.MinLevel = AsInt(triple.Object)
 
 		// Founding
@@ -394,15 +394,15 @@ func GuildFromEntityState(entity *graph.EntityState) *Guild {
 		// Stats
 		case "guild.stats.reputation":
 			g.Reputation = AsFloat64(triple.Object)
-		case "guild.stats.quests_handled":
+		case "guild.stats.quests-handled":
 			g.QuestsHandled = AsInt(triple.Object)
-		case "guild.stats.quests_failed":
+		case "guild.stats.quests-failed":
 			g.QuestsFailed = AsInt(triple.Object)
-		case "guild.stats.success_rate":
+		case "guild.stats.success-rate":
 			g.SuccessRate = AsFloat64(triple.Object)
 
 		// Lifecycle
-		case "guild.lifecycle.created_at":
+		case "guild.lifecycle.created-at":
 			g.CreatedAt = AsTime(triple.Object)
 
 		// Membership
@@ -421,9 +421,9 @@ func GuildFromEntityState(entity *graph.EntityState) *Guild {
 			g.Lessons = asLessonsSlice(triple.Object)
 
 		// Routing
-		case "guild.routing.quest_type":
+		case "guild.routing.quest-type":
 			g.QuestTypes = append(g.QuestTypes, AsString(triple.Object))
-		case "guild.routing.preferred_client":
+		case "guild.routing.preferred-client":
 			g.PreferredClients = append(g.PreferredClients, AsString(triple.Object))
 		}
 
@@ -533,16 +533,16 @@ func PeerReviewFromEntityState(entity *graph.EntityState) *PeerReview {
 		case "review.assignment.party":
 			partyID := PartyID(AsString(triple.Object))
 			pr.PartyID = &partyID
-		case "review.config.solo_task":
+		case "review.config.solo-task":
 			pr.IsSoloTask = AsBool(triple.Object)
-		case "review.lifecycle.created_at":
+		case "review.lifecycle.created-at":
 			pr.CreatedAt = AsTime(triple.Object)
-		case "review.lifecycle.completed_at":
+		case "review.lifecycle.completed-at":
 			t := AsTime(triple.Object)
 			pr.CompletedAt = &t
-		case "review.result.leader_avg":
+		case "review.result.leader-avg":
 			pr.LeaderAvgRating = AsFloat64(triple.Object)
-		case "review.result.member_avg":
+		case "review.result.member-avg":
 			pr.MemberAvgRating = AsFloat64(triple.Object)
 
 		// Leader review fields
@@ -558,7 +558,7 @@ func PeerReviewFromEntityState(entity *graph.EntityState) *PeerReview {
 		case "review.leader.explanation":
 			ensureLeaderReview(pr)
 			pr.LeaderReview.Explanation = AsString(triple.Object)
-		case "review.leader.submitted_at":
+		case "review.leader.submitted-at":
 			ensureLeaderReview(pr)
 			pr.LeaderReview.SubmittedAt = AsTime(triple.Object)
 
@@ -575,7 +575,7 @@ func PeerReviewFromEntityState(entity *graph.EntityState) *PeerReview {
 		case "review.member.explanation":
 			ensureMemberReview(pr)
 			pr.MemberReview.Explanation = AsString(triple.Object)
-		case "review.member.submitted_at":
+		case "review.member.submitted-at":
 			ensureMemberReview(pr)
 			pr.MemberReview.SubmittedAt = AsTime(triple.Object)
 		}

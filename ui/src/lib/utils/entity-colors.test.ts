@@ -43,7 +43,8 @@ describe('getEntityColor', () => {
 		expect(getEntityColor(idParts('party'))).toBe(ENTITY_TYPE_COLORS.party);
 		expect(getEntityColor(idParts('guild'))).toBe(ENTITY_TYPE_COLORS.guild);
 		expect(getEntityColor(idParts('battle'))).toBe(ENTITY_TYPE_COLORS.battle);
-		expect(getEntityColor(idParts('peer_review'))).toBe(ENTITY_TYPE_COLORS.peer_review);
+		expect(getEntityColor(idParts('peerreview'))).toBe(ENTITY_TYPE_COLORS.peerreview);
+		expect(getEntityColor(idParts('dagunit'))).toBe(ENTITY_TYPE_COLORS.dagunit);
 	});
 
 	it('returns the specific hex values for quest and agent', () => {

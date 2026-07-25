@@ -13,7 +13,7 @@
  * Ported from semstreams-ui graphStore and adapted for semdragons:
  * - Default prefix filters to game entities (.game. in entity ID)
  * - Default limit of 200 nodes
- * - Entity type filter for quest/agent/party/guild/battle/peer_review
+ * - Entity type filter for quest/agent/party/guild/battle/peerreview/dagunit
  * - Imports from $lib/services/graphApi (to be created separately)
  */
 

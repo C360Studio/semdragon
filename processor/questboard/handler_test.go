@@ -315,9 +315,9 @@ func TestQuest_Triples_MinimalQuest(t *testing.T) {
 		"quest.xp.base",
 		"quest.attempts.current",
 		"quest.attempts.max",
-		"quest.lifecycle.posted_at",
+		"quest.lifecycle.posted-at",
 		"quest.review.level",
-		"quest.review.needs_review",
+		"quest.review.needs-review",
 	}
 	for _, pred := range mandatory {
 		if _, ok := idx[pred]; !ok {
@@ -381,8 +381,8 @@ func TestQuest_Triples_FullQuest(t *testing.T) {
 		CompletedAt:   &completedAt,
 		Attempts:      1,
 		MaxAttempts:   3,
-		LoopID:  "quest-test-loop-abc123",
-		Verdict: verdict,
+		LoopID:        "quest-test-loop-abc123",
+		Verdict:       verdict,
 		Duration:      45 * time.Minute,
 	}
 
@@ -433,13 +433,13 @@ func TestQuest_Triples_FullQuest(t *testing.T) {
 	}
 
 	// Observability.
-	if v, _ := idx["quest.execution.loop_id"].Object.(string); v != "quest-test-loop-abc123" {
-		t.Errorf("quest.execution.loop_id = %q, want %q", v, "quest-test-loop-abc123")
+	if v, _ := idx["quest.execution.loop-id"].Object.(string); v != "quest-test-loop-abc123" {
+		t.Errorf("quest.execution.loop-id = %q, want %q", v, "quest-test-loop-abc123")
 	}
 
 	// Review constraints.
-	if v, _ := idx["quest.review.needs_review"].Object.(bool); !v {
-		t.Error("quest.review.needs_review should be true")
+	if v, _ := idx["quest.review.needs-review"].Object.(bool); !v {
+		t.Error("quest.review.needs-review should be true")
 	}
 	if v, _ := idx["quest.review.level"].Object.(int); v != int(domain.ReviewStandard) {
 		t.Errorf("quest.review.level = %d, want %d", v, domain.ReviewStandard)
@@ -452,27 +452,27 @@ func TestQuest_Triples_FullQuest(t *testing.T) {
 	if v, _ := idx["quest.verdict.score"].Object.(float64); v != 0.92 {
 		t.Errorf("quest.verdict.score = %v, want 0.92", v)
 	}
-	if v, _ := idx["quest.verdict.xp_awarded"].Object.(int64); v != 250 {
-		t.Errorf("quest.verdict.xp_awarded = %d, want 250", v)
+	if v, _ := idx["quest.verdict.xp-awarded"].Object.(int64); v != 250 {
+		t.Errorf("quest.verdict.xp-awarded = %d, want 250", v)
 	}
 	if v, _ := idx["quest.verdict.feedback"].Object.(string); v != "Excellent work" {
 		t.Errorf("quest.verdict.feedback = %q, want %q", v, "Excellent work")
 	}
 
 	// Duration.
-	if v, _ := idx["quest.duration"].Object.(string); !strings.Contains(v, "m") {
-		t.Errorf("quest.duration = %q, want a duration string containing 'm'", v)
+	if v, _ := idx["quest.metrics.duration"].Object.(string); !strings.Contains(v, "m") {
+		t.Errorf("quest.metrics.duration = %q, want a duration string containing 'm'", v)
 	}
 
 	// Lifecycle timestamps.
-	if _, ok := idx["quest.lifecycle.claimed_at"]; !ok {
-		t.Error("quest.lifecycle.claimed_at predicate not found")
+	if _, ok := idx["quest.lifecycle.claimed-at"]; !ok {
+		t.Error("quest.lifecycle.claimed-at predicate not found")
 	}
-	if _, ok := idx["quest.lifecycle.started_at"]; !ok {
-		t.Error("quest.lifecycle.started_at predicate not found")
+	if _, ok := idx["quest.lifecycle.started-at"]; !ok {
+		t.Error("quest.lifecycle.started-at predicate not found")
 	}
-	if _, ok := idx["quest.lifecycle.completed_at"]; !ok {
-		t.Error("quest.lifecycle.completed_at predicate not found")
+	if _, ok := idx["quest.lifecycle.completed-at"]; !ok {
+		t.Error("quest.lifecycle.completed-at predicate not found")
 	}
 
 	// Skills — repeated predicates.
@@ -530,11 +530,11 @@ func TestQuest_Triples_EscalatedAndFailureInfo(t *testing.T) {
 
 func TestQuest_Triples_NoEscalationWhenNotEscalated(t *testing.T) {
 	q := &domain.Quest{
-		ID:       domain.QuestID("c360.dev.game.board1.quest.normal"),
-		Title:    "Normal Quest",
-		Status:   domain.QuestPosted,
+		ID:        domain.QuestID("c360.dev.game.board1.quest.normal"),
+		Title:     "Normal Quest",
+		Status:    domain.QuestPosted,
 		Escalated: false,
-		PostedAt: time.Now(),
+		PostedAt:  time.Now(),
 	}
 
 	triples := q.Triples()
@@ -558,14 +558,14 @@ func TestQuest_Triples_NoOptionalTimestampsWhenNil(t *testing.T) {
 	triples := q.Triples()
 	idx := triplesByPredicate(triples)
 
-	if _, ok := idx["quest.lifecycle.claimed_at"]; ok {
-		t.Error("quest.lifecycle.claimed_at should not appear when ClaimedAt is nil")
+	if _, ok := idx["quest.lifecycle.claimed-at"]; ok {
+		t.Error("quest.lifecycle.claimed-at should not appear when ClaimedAt is nil")
 	}
-	if _, ok := idx["quest.lifecycle.started_at"]; ok {
-		t.Error("quest.lifecycle.started_at should not appear when StartedAt is nil")
+	if _, ok := idx["quest.lifecycle.started-at"]; ok {
+		t.Error("quest.lifecycle.started-at should not appear when StartedAt is nil")
 	}
-	if _, ok := idx["quest.lifecycle.completed_at"]; ok {
-		t.Error("quest.lifecycle.completed_at should not appear when CompletedAt is nil")
+	if _, ok := idx["quest.lifecycle.completed-at"]; ok {
+		t.Error("quest.lifecycle.completed-at should not appear when CompletedAt is nil")
 	}
 }
 
@@ -606,7 +606,7 @@ func TestQuest_Triples_NoOptionalRelationshipsWhenNil(t *testing.T) {
 		"quest.assignment.party",
 		"quest.priority.guild",
 		"quest.parent.quest",
-		"quest.execution.loop_id",
+		"quest.execution.loop-id",
 	}
 	for _, pred := range optionalPreds {
 		if _, ok := idx[pred]; ok {
@@ -627,8 +627,8 @@ func TestQuest_Triples_NoDurationWhenZero(t *testing.T) {
 	triples := q.Triples()
 	idx := triplesByPredicate(triples)
 
-	if _, ok := idx["quest.duration"]; ok {
-		t.Error("quest.duration should not appear when Duration is zero")
+	if _, ok := idx["quest.metrics.duration"]; ok {
+		t.Error("quest.metrics.duration should not appear when Duration is zero")
 	}
 }
 
@@ -776,10 +776,10 @@ func TestQuest_Triples_TimestampsAreRFC3339(t *testing.T) {
 	idx := triplesByPredicate(triples)
 
 	tsPredicates := map[string]time.Time{
-		"quest.lifecycle.posted_at":    postedAt,
-		"quest.lifecycle.claimed_at":   claimedAt,
-		"quest.lifecycle.started_at":   startedAt,
-		"quest.lifecycle.completed_at": completedAt,
+		"quest.lifecycle.posted-at":    postedAt,
+		"quest.lifecycle.claimed-at":   claimedAt,
+		"quest.lifecycle.started-at":   startedAt,
+		"quest.lifecycle.completed-at": completedAt,
 	}
 
 	for pred, wantTime := range tsPredicates {

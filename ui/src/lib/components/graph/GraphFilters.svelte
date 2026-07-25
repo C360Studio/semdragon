@@ -3,7 +3,7 @@
 	 * GraphFilters - Horizontal filter toolbar for the graph visualization
 	 *
 	 * Provides:
-	 * - Entity type checkboxes (quest/agent/party/guild/battle/peer_review)
+	 * - Entity type checkboxes (quest/agent/party/guild/battle/peerreview/dagunit)
 	 *   that map to graphStore.toggleEntityType
 	 * - Text search input for filtering by entity ID substring
 	 * - "All / None" quick-select buttons
