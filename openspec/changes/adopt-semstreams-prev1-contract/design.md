@@ -149,6 +149,47 @@ Semdragon does not turn temporary product seams into local framework code:
   beta.158 dependency adoption, decoded-entity validation, and registry
   wiring.
 
+### D9: Dead projections are deleted, not assigned phantom owners
+
+Issue
+[#12](https://github.com/C360Studio/semdragon/issues/12) initially proposed
+canonicalizing and binding `PromptAssembledPayload`. Source and history review
+found no production publisher, no payload-registry registration, and no
+promptmanager lifecycle component. The type and typed subject have been
+definition-only since introduction; their only downstream use is a graph
+relationship fixture and vocabulary metadata.
+
+Issue #12 therefore deletes the dead `Graphable`, typed subject, vocabulary
+entry, and fixture. It does not create a component, `projection.Contract`,
+owner registration, or heartbeat. A library package that assembles values is
+not a graph writer merely because several real components call it.
+
+`TestPromptAssemblyHasNoGraphProjectionSurface` in
+`prompt_projection_inventory_contract_test.go` stale-checks the production
+source inventory and rejects reintroduction of this exact dead surface or
+external promptmanager registration hooks. It does not ban SemStreams
+projection contracts, ownership services, heartbeats, or lifecycle timers for
+real publishers.
+
+If prompt-assembly evidence is introduced later, the actual publishing
+component declares and binds the framework contract through the SemStreams
+ownership lifecycle. The contract uses:
+
+- message type and contract name
+  `semdragons.prompt.assembly.completed.v1`;
+- entity pattern `*.*.game.*.quest.*`;
+- one `append-evidence` group containing
+  `prompt.assembly.completed`, `prompt.assembly.agent-id`,
+  `prompt.assembly.domain`, `prompt.assembly.tier`,
+  `prompt.assembly.provider`, and `prompt.assembly.fragment-count`; and
+- no `ForeignEdgeClaim`.
+
+The agent relationship is a typed `@id` object on a triple whose subject is the
+payload's quest entity. It is ordinary same-subject projection data, not a
+foreign edge. `projection.Contract` has no source field, and triple `Source`
+metadata does not establish ownership. The binding owner ID must name the
+actual publisher, not the promptmanager library.
+
 ### Approved core-wave verification
 
 The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:
@@ -164,14 +205,26 @@ The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:
 The repository-wide predicate and entity-ID audits, relationship coverage,
 fresh-volume/replay runbook, and beta.158 handoff remain open.
 
+### Approved issue #12 verification
+
+The 2026-07-25 evidence closes only task 2.9:
+
+- the prompt projection inventory absence guard passes;
+- the promptmanager race suite and full Go suite pass;
+- the pinned beta.158 promptmanager predicate audit reports zero findings;
+- strict OpenSpec validation passes; and
+- Go review approved the implementation.
+
 ## Delivery Order
 
 1. Inventory and approve predicate/reference and writer-owner ledgers.
 2. Add failing contract tests and canonical validators.
 3. Update producers and Go readers.
-4. Update rules, configuration, UI projections, fixtures, and generated files.
-5. Reach zero audit findings and green beta.135 tests.
-6. Hand off beta.158 adoption to the follow-up change tracked in
+4. Delete definition-only graph surfaces whose production writer cannot be
+   proved; do not register phantom owners.
+5. Update rules, configuration, UI projections, fixtures, and generated files.
+6. Reach zero audit findings and green beta.135 tests.
+7. Hand off beta.158 adoption to the follow-up change tracked in
    [semdragon#4](https://github.com/C360Studio/semdragon/issues/4), then run its
    fresh-volume/replay gates.
 
@@ -183,6 +236,9 @@ fresh-volume/replay runbook, and beta.158 handoff remain open.
   domain `Graphable`.
 - **Cross-owner clobbering**: review the writer-owner matrix before beta.158 and
   add overlap rejection tests in the dependent adoption slice.
+- **Phantom ownership**: require proof of a production publisher before
+  declaring or binding a projection contract; delete definition-only graph
+  surfaces instead.
 - **Premature DAG dispatch**: atomically birth each unit with complete edges,
   hold every work unit behind the deterministic activation latch, and prove
   interruption-point replay before enabling the new executor.

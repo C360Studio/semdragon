@@ -31,6 +31,36 @@ composition adapters in those areas.
 - **AND** any temporary downstream adapter is minimal, isolated, and linked to
   the upstream issue
 
+### Requirement: Projection ownership follows a real publisher
+
+The system SHALL declare and bind a SemStreams `projection.Contract` only when
+a production graph publisher for that projection is identified. A library,
+payload definition, vocabulary entry, or test fixture alone SHALL NOT be
+registered as a projection owner.
+
+#### Scenario: Definition-only prompt projection
+
+- **GIVEN** the prompt-assembly `Graphable` has no production publisher
+- **AND** it has no payload-registry registration or lifecycle component
+- **WHEN** issue #12 removes its beta.158 predicate findings
+- **THEN** the dead `Graphable`, typed subject, vocabulary entry, and
+  relationship fixture are deleted
+- **AND** no promptmanager component, projection contract, owner bind, or
+  heartbeat is added
+- **AND** a stale-checked source inventory guard rejects reintroduction of that
+  exact prompt projection surface and external registration hooks
+- **AND** the guard does not prohibit framework projection contracts,
+  ownership services, heartbeats, or lifecycle timers for real publishers
+
+#### Scenario: A prompt publisher is introduced later
+
+- **WHEN** a production component begins publishing prompt-assembly graph
+  evidence
+- **THEN** that component declares and binds the projection through SemStreams
+- **AND** all six prompt-assembly predicates use `append-evidence`
+- **AND** `prompt.assembly.agent-id` remains a typed same-subject `@id`
+  relationship with no `ForeignEdgeClaim`
+
 ### Requirement: PR-gated SDD delivery
 
 Each migration slice SHALL have an OpenSpec task boundary, a linked GitHub

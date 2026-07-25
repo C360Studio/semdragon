@@ -13,7 +13,6 @@ import (
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semdragons/processor/partycoord"
-	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/seeding"
 )
 
@@ -260,13 +259,6 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 				GuildID: guild, GuildName: "Guild", Timestamp: now,
 			},
 			wantNoReferences: true,
-		},
-		{
-			name: "prompt assembled event",
-			entity: &promptmanager.PromptAssembledPayload{
-				QuestID: quest1, AgentID: agent1, Timestamp: now,
-			},
-			wantReferences: map[string]int{"prompt.assembly.agent_id": 1},
 		},
 		{
 			name: "execution started event",

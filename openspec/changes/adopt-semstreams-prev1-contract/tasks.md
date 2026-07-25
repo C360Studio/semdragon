@@ -37,6 +37,13 @@
   `gateddag.unit.completed`. Use owner-scoped classified
   update-with-triples replacement, confirm ambiguous outcomes by authoritative
   read-back, and prohibit production append-style completion writes.
+- [x] 2.9 Resolve
+  [semdragon #12](https://github.com/C360Studio/semdragon/issues/12) by
+  deleting the unproduced prompt-assembly `Graphable`, typed subject,
+  vocabulary entry, and relationship fixture. Prove there is no production
+  publisher or payload-registry registration. Do not invent a promptmanager
+  component, projection owner, bind, or heartbeat for a writer that does not
+  exist.
 
 ## 3. Verification and handoff to beta.158
 
@@ -82,3 +89,19 @@ This evidence closes only tasks 2.7, 2.8, and 3.7. Tasks 2.1 through 2.6 and
 The core predicate audit is not the repository-wide zero-findings gate in
 task 3.1. Processor, service, entity-ID, relationship, full UI acceptance,
 fresh-volume, and beta.158 adoption gates remain independently open.
+
+## Completed issue #12 evidence
+
+This evidence closes only task 2.9:
+
+- `TestPromptAssemblyHasNoGraphProjectionSurface` in
+  `prompt_projection_inventory_contract_test.go` stale-checks the relevant Go,
+  configuration, relationship-fixture, and UI source inventory. It rejects the
+  deleted prompt projection surface and external promptmanager registration
+  hooks without banning framework projection contracts, ownership services,
+  heartbeats, or timers for real publishers.
+- `go test -race ./processor/promptmanager` and `go test ./...` pass.
+- The pinned beta.158 predicate audit for `./processor/promptmanager` reports
+  zero findings.
+- Strict OpenSpec validation passes.
+- Go review approved the implementation.

@@ -496,6 +496,20 @@ Implementing `Graphable` or supplying triples to a graph-emitting client makes
 a payload graph-bound. Message/event use does not make its predicates
 non-graph. The production payload families are classified as follows:
 
+The current prompt-assembly `Graphable` is not a production payload family.
+Source and history review found no publisher, payload-registry registration, or
+lifecycle component. Issue #12 deletes its type, typed subject, vocabulary
+entry, and relationship fixture rather than assigning a phantom owner or
+heartbeat. The historical predicate-audit findings remain in
+`baseline-audit.md`.
+
+The automated absence guard is
+`TestPromptAssemblyHasNoGraphProjectionSurface` in
+`prompt_projection_inventory_contract_test.go`. It stale-checks the relevant
+production source inventory and forbids only the deleted prompt surface and
+external promptmanager registration hooks. It does not ban general framework
+projection contracts, ownership services, heartbeats, or lifecycle timers.
+
 - Agentprogression current state uses its exact owner claim. XP delta, quest,
   award, and penalty observations use append evidence.
 - Agentstore current inventory totals use its exact owner claim. Purchase,
@@ -508,10 +522,9 @@ non-graph. The production payload families are classified as follows:
   review payloads either call the owner workflow, create the classified
   first-class entity, or append their documented evidence. Their former
   cross-owner projections are removed, not silently exempted.
-- Prompt assembly, executor execution/tool observations, DM-session counters,
-  guild events, and seeding statistics use append evidence. Web document state
-  uses the executor web-fetch owner claim; seed entity birth facts are
-  create-only.
+- Executor execution/tool observations, DM-session counters, guild events, and
+  seeding statistics use append evidence. Web document state uses the executor
+  web-fetch owner claim; seed entity birth facts are create-only.
 - `quest.failed` is proved non-graph only at the two questboard and one service
   expressions recorded in the rename ledger: there it is
   `EntityState.MessageType.Category`, never `Triple.Predicate`.
@@ -521,6 +534,14 @@ Legacy payload projections `agent.guild.member`,
 predicates are removed when the corresponding first-class entities are
 created. A producer may not keep both representations merely because both are
 graph-bound.
+
+If prompt-assembly evidence is introduced later, the actual publishing
+component binds the SemStreams contract under its own owner ID. All six
+prompt-assembly predicates use append evidence on
+`*.*.game.*.quest.*`. The typed `prompt.assembly.agent-id` relationship is
+same-subject data because its triple subject equals the payload quest entity;
+it is not a `ForeignEdgeClaim`. A triple's `Source` metadata does not establish
+the contract owner.
 
 ## Foreign-edge claims
 

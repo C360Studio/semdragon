@@ -274,7 +274,7 @@ graph edges.
   `battle.verdict.{quality-score,xp-awarded,xp-penalty,level-change}`.
 - `battle.outcome` becomes `battle.review.outcome`.
 
-### dmsession, executor, guildformation, promptmanager, and seeding
+### dmsession, executor, guildformation, and seeding
 
 - `dm.session.{quests_completed,quests_failed}` becomes
   `dm.session.{quests-completed,quests-failed}`.
@@ -287,14 +287,44 @@ graph edges.
   `source.doc.{mime-type,fetched-by,quest-id}`.
 - `guild.event.created_by` becomes `guild.event.created-by`.
 - `guild.lifecycle.disbanded_at` becomes `guild.lifecycle.disbanded-at`.
-- `prompt.assembly.{agent_id,fragment_count}` becomes
-  `prompt.assembly.{agent-id,fragment-count}`.
 - `seeding.mode` becomes `seeding.config.mode`.
 - `seeding.stats.{agents_created,guilds_created}` becomes
   `seeding.stats.{agents-created,guilds-created}`.
 - `guild.specialization` becomes `guild.identity.specialization`.
 
 `source.doc.fetched-by` and `source.doc.quest-id` are `@id`.
+
+### promptmanager: delete the definition-only projection
+
+The baseline audit recorded two findings from five candidates:
+`prompt.assembly.agent_id` and `prompt.assembly.fragment_count`. Issue #12 does
+not rename them. Source and history review proves that
+`PromptAssembledPayload` and `SubjectPromptAssembled` have no production
+publisher, no payload-registry registration, and no lifecycle component. Their
+only downstream use is the graph relationship fixture and vocabulary metadata.
+
+Issue #12 therefore deletes the dead `Graphable`, typed subject, vocabulary
+entry, and relationship fixture. It must not create a promptmanager component,
+projection contract, owner bind, or heartbeat. The historical finding remains
+recorded in `baseline-audit.md`; the target corpus contains no prompt-assembly
+graph predicates.
+
+`TestPromptAssemblyHasNoGraphProjectionSurface` in
+`prompt_projection_inventory_contract_test.go` stale-checks the relevant
+production source inventory and rejects the deleted surface and external
+promptmanager registration hooks. Its rules are identifier-specific; they do
+not prohibit SemStreams projection contracts, ownership services, heartbeats,
+or lifecycle timers for real publishers.
+
+If an actual publisher is added later, that publishing component owns the
+declaration and lifecycle binding. Its contract uses entity pattern
+`*.*.game.*.quest.*` and one append-evidence group containing
+`prompt.assembly.completed`, `prompt.assembly.agent-id`,
+`prompt.assembly.domain`, `prompt.assembly.tier`,
+`prompt.assembly.provider`, and `prompt.assembly.fragment-count`. The typed
+agent relationship is ordinary same-subject data because the triple subject is
+the quest returned by `EntityID()`; it does not require a
+`ForeignEdgeClaim`.
 
 ### partycoord: 14 findings
 
@@ -480,9 +510,12 @@ also enumerate:
   party decomposition/assignment/submission, guild application, and review
   assignment.
 - Additional payload projections:
-  `prompt.assembly.agent-id`, `execution.agent.id`,
-  `agent.guild.member`, `guild.event.created-by`,
+  `execution.agent.id`, `agent.guild.member`, `guild.event.created-by`,
   `guild.membership.member`, and store purchase/consumable item references.
+
+The deleted prompt-assembly fixture is not relationship coverage. If a real
+publisher is introduced later, its typed `prompt.assembly.agent-id` edge must
+be added back to this inventory with evidence from that publisher.
 
 Issue #3 uses one centralized compatibility marker,
 `internal/semcompat.EntityReferenceDatatype = "@id"`, across all packages.
