@@ -58,4 +58,7 @@ after the lifecycle/gated-DAG foundation in draft PR
   [#382](https://github.com/C360Studio/semstreams/issues/382); predicate-audit
   and gated-DAG documentation defects found here are tracked in
   [#667](https://github.com/C360Studio/semstreams/issues/667) and
-  [#668](https://github.com/C360Studio/semstreams/issues/668).
+  [#668](https://github.com/C360Studio/semstreams/issues/668). Staged fan-out
+  admission and occurrence-exact audit classification gaps are tracked in
+  [#670](https://github.com/C360Studio/semstreams/issues/670) and
+  [#671](https://github.com/C360Studio/semstreams/issues/671).

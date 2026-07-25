@@ -123,11 +123,64 @@ Product provenance becomes:
 - `dagunit.parent_quest` becomes `questdag.unit.parent-quest` with `@id`.
 - `dagunit.execution_id` becomes `questdag.unit.execution-id`.
 - `dagunit.sub_quest` becomes `questdag.unit.sub-quest` with `@id`.
+- `questdag.unit.plan-digest` is a new create-only scalar on the activation
+  latch. It binds one execution ID to one canonical DAG manifest and makes a
+  changed manifest under the same idempotency key a collision, not a replay.
 
 `gateddag.unit.depends-on` is an ordinary questdag-owned predicate on the
-dagunit subject. Seeding is two-phase: create every real unit with its
-create-only facts first, then add typed dependency edges between those existing
-units. It is neither a `ForeignEdgeClaim` nor a missing-target/birth-stub case.
+dagunit subject. The previously proposed two-phase
+create-then-add-dependencies protocol is rejected: the beta.158 executor watches
+the unit prefix continuously and derives a real dependency-free phase-one unit
+as Ready, so it can dispatch before the topology is complete.
+
+Issue #3 uses this temporary product admission bridge while remaining pinned to
+beta.135:
+
+1. Canonicalize the validated DAG and calculate an order-independent plan
+   digest.
+2. Derive validator-safe stable unit IDs from board identity, execution ID, and
+   node ID. Derive one stable activation-latch ID from board identity,
+   execution ID, and the literal role `activation`. Execution ID is the replay
+   idempotency key.
+3. Atomically create the real activation unit with its provenance,
+   `questdag.unit.plan-digest`, and a typed
+   `gateddag.unit.depends-on` self-edge. Graph-ingest does not create a
+   referential stub for a self-target, and the self-edge keeps the real latch
+   non-dispatchable.
+4. Create work units in prerequisite-first order. Each unit is born through one
+   create-with-triples mutation containing all provenance, every declared
+   dependency, and an additional typed dependency on the activation latch.
+   Every referenced prerequisite therefore already exists; no birth stub or
+   dependency-update phase is allowed.
+5. Authoritatively reconcile the complete manifest before activation. Every
+   expected unit must be real and must have the exact execution, node,
+   provenance, datatype, and complete dependency set. A changed digest or
+   immutable triple under the same stable ID is a collision. An activated plan
+   with a missing or mismatched unit is graph corruption and is never silently
+   repaired.
+6. Release the plan through the private `questdag` completion seam. That seam
+   owns `gateddag.unit.completed`, uses the classified idempotent
+   update-with-triples lane with token
+   `questdag-completion#<incarnation>`, and atomically replaces the latch's
+   completion marker. It does not use append-style `triple.add`.
+7. While pinned to beta.135, confirm every completion attempt with an
+   authoritative entity read. Beta.135 cannot validate its decoded success
+   echo, so that echo is never authoritative. Issue #4 may trust a
+   non-degraded echo only after beta.158 validation. A lost mutation reply
+   converges when read-back proves the marker; an absent marker remains a
+   classified transient failure.
+
+The executor owns only `gateddag.unit.claim`. SemStreams explicitly assigns
+completed, failed, and reset markers to the consumer. Semdragon consequently
+owns its narrow completion/failure/reset seams; it does not introduce a
+general-purpose gated-DAG library. The activation bridge is retired when
+[SemStreams #670](https://github.com/C360Studio/semstreams/issues/670) supplies
+framework-owned staged fan-out admission with one plan activation commit.
+
+Stable replay may observe work units that are already claimed or terminal.
+Reconciliation compares their immutable seed contract and does not erase
+framework or completion state. The final unit corpus contains no
+`graph.StubMessageType` entities.
 
 Issue #3 temporarily sources the five framework strings from one compatibility
 definition because beta.135 does not export beta.158 defaults. Issue #4 deletes
@@ -264,8 +317,13 @@ The two questboard occurrences and one service occurrence of `quest.failed`
 are passed as `eventType` to `GraphClient.EmitEntityUpdate`. They populate
 `EntityState.MessageType.Category`, not `Triple.Predicate`. They remain
 classified audit findings until the scanner supports that data flow, but they
-do not receive a stored-predicate rename. The classification must be attached
-to those three expressions only, never to a file or directory.
+do not receive a stored-predicate rename.
+[SemStreams #671](https://github.com/C360Studio/semstreams/issues/671) tracks
+the required occurrence-exact, stale-checked classifications. The
+classification must be attached to those three expressions only, never to a
+file, value, package, or directory. This upstream tooling gap does not block
+the completed questdag core wave, but task 3.1 remains open until the final
+predicate audit has exact evidence.
 
 ## Approved replacement for dynamic predicate families
 

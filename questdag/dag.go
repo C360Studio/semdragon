@@ -1,7 +1,7 @@
 // Package questdag is the semdragons domain layer over the semstreams gated-DAG
 // executor (processor/gated-dag). It extracts and validates a party lead's
 // decomposition into a DAG, mints per-run unit entity IDs, and seeds unit
-// entities carrying gateddag.depends_on edges so the framework executor
+// entities carrying gateddag.unit.depends-on edges so the framework executor
 // dispatches sub-quests in dependency order, exactly once, with restart
 // recovery and stall detection.
 //

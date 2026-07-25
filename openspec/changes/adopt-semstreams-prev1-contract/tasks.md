@@ -29,6 +29,14 @@
   canonical default vocabulary.
 - [ ] 2.6 Update UI predicate projections and graph relationship consumers;
   regenerate entity schema, OpenAPI, and TypeScript types.
+- [x] 2.7 Replace two-phase/random-ID DAG seeding with the deterministic
+  activation-latch protocol: canonical manifest digest, stable IDs,
+  prerequisite-first atomic create-with-triples births, complete typed
+  dependency sets, and no referential stubs.
+- [x] 2.8 Add the private `questdag-completion` seam for
+  `gateddag.unit.completed`. Use owner-scoped classified
+  update-with-triples replacement, confirm ambiguous outcomes by authoritative
+  read-back, and prohibit production append-style completion writes.
 
 ## 3. Verification and handoff to beta.158
 
@@ -42,3 +50,35 @@
 - [ ] 3.6 Record the approved dependency handoff to
   [semdragon#4](https://github.com/C360Studio/semdragon/issues/4); do not bump
   to beta.158 in this change.
+- [x] 3.7 Prove DAG admission at every interruption point: zero early
+  dispatch, stable replay convergence without duplicate units, manifest
+  collision rejection, activated-plan corruption rejection, root-only release
+  after one activation commit, and a final corpus containing no
+  `graph.StubMessageType` units. Link retirement to SemStreams #670.
+
+## Completed core-wave evidence
+
+This evidence closes only tasks 2.7, 2.8, and 3.7. Tasks 2.1 through 2.6 and
+3.1 through 3.6 remain open.
+
+- `go test ./...` and `go test -race ./questdag` pass.
+- Focused live graph-ingest/gated-DAG integration proves completion read-back,
+  zero early dispatch at every create boundary, replay convergence, corruption
+  rejection, and prerequisite-first release:
+
+  ```sh
+  go test -tags=integration ./questdag \
+    -run 'Test(NATSUnitCompletionWriter_ReplacesAndConfirmsOneMarker|'\
+  'SeedUnits_ExecutorSeesNoPartialManifestAtEveryCreateBoundary|'\
+  'SeedUnits_LiveActivatedManifestCorruption|'\
+  'SeedUnits_DispatchesInDependencyOrder)$' -count=1
+  ```
+
+- `task ui:test` and `task schema:check` pass.
+- `task contract:predicates-core` passes for the currently declared
+  `domain`, `questdag`, `questlifecycle`, and `config` roots.
+- `openspec validate adopt-semstreams-prev1-contract --strict` passes.
+
+The core predicate audit is not the repository-wide zero-findings gate in
+task 3.1. Processor, service, entity-ID, relationship, full UI acceptance,
+fresh-volume, and beta.158 adoption gates remain independently open.

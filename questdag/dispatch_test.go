@@ -83,7 +83,7 @@ func TestDispatchHandler_ClaimStartsBestSkillMember(t *testing.T) {
 	createPostedSubQuest(t, gc, subPy, partyID, []domain.SkillTag{"python"})
 
 	// Seed two independent units mapping to the two sub-quests.
-	_, err := SeedUnits(ctx, client, board, SeedInput{
+	_, err := SeedUnits(ctx, client, newIntegrationCompletionWriter(t, client), board, SeedInput{
 		DAG: DAG{Nodes: []Node{
 			{ID: "go-node", Objective: "do go work", Skills: []string{"go"}},
 			{ID: "py-node", Objective: "do python work", Skills: []string{"python"}},
@@ -179,7 +179,7 @@ func TestDispatchHandler_ConcurrentCallbacksReservePartyMember(t *testing.T) {
 	subB := domain.QuestID(board.QuestEntityID("sub-b"))
 	createPostedSubQuest(t, gc, subA, partyID, []domain.SkillTag{"go"})
 	createPostedSubQuest(t, gc, subB, partyID, []domain.SkillTag{"go"})
-	seeded, err := SeedUnits(ctx, client, board, SeedInput{
+	seeded, err := SeedUnits(ctx, client, newIntegrationCompletionWriter(t, client), board, SeedInput{
 		DAG: DAG{Nodes: []Node{
 			{ID: "a", Objective: "first", Skills: []string{"go"}},
 			{ID: "b", Objective: "second", Skills: []string{"go"}},
@@ -257,7 +257,7 @@ func TestDispatchHandler_FailedClaimStartReleasesReservation(t *testing.T) {
 	subB := domain.QuestID(board.QuestEntityID("sub-b"))
 	createPostedSubQuest(t, gc, subA, partyID, nil)
 	createPostedSubQuest(t, gc, subB, partyID, nil)
-	seeded, err := SeedUnits(ctx, client, board, SeedInput{
+	seeded, err := SeedUnits(ctx, client, newIntegrationCompletionWriter(t, client), board, SeedInput{
 		DAG: DAG{Nodes: []Node{
 			{ID: "a", Objective: "first"},
 			{ID: "b", Objective: "second"},
@@ -317,7 +317,7 @@ func TestDispatchHandler_CommittedReservationFollowsQuestPhase(t *testing.T) {
 	subB := domain.QuestID(board.QuestEntityID("sub-b"))
 	createPostedSubQuest(t, gc, subA, partyID, nil)
 	createPostedSubQuest(t, gc, subB, partyID, nil)
-	seeded, err := SeedUnits(ctx, client, board, SeedInput{
+	seeded, err := SeedUnits(ctx, client, newIntegrationCompletionWriter(t, client), board, SeedInput{
 		DAG: DAG{Nodes: []Node{
 			{ID: "a", Objective: "first"},
 			{ID: "b", Objective: "second"},

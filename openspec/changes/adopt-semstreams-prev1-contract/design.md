@@ -65,8 +65,11 @@ The writer-owner matrix is partitioned by predicate group:
 
 - lifecycle owns quest phase, attempts, assignment, failure, and verdict;
 - questbridge owns execution, context, loop, metrics, and work output;
-- questdag owns product DAG projection and unit provenance;
-- gated-DAG owns its canonical `gateddag.unit.*` markers and edges;
+- questdag owns product DAG projection, immutable unit provenance, dependency
+  edges, and the temporary activation-latch admission protocol;
+- gated-DAG owns `gateddag.unit.claim`;
+- private Semdragon consumer seams own the exact completed, failed, and reset
+  marker predicates that beta.158 explicitly delegates to the consumer;
 - partycoord owns party formation, membership, matching, and disband facts.
 
 Creation-time identity/specification facts remain source-owned. No full-object
@@ -87,6 +90,80 @@ buckets, restarts the exact pinned binary, and reseeds canonical source data.
 Wildcard deletion is forbidden. Restart-without-write must reproduce query and
 projection results.
 
+### D7: Deterministic activation-latch admission
+
+SemStreams beta.158 has no generic staged fan-out admission primitive. Its
+executor continuously reads every real unit under the configured prefix, so
+creating real units before installing their dependencies can dispatch an
+incomplete plan. Graph mutation batches are not atomic across entities, and
+`FanOutInstanceID` does not gate unit evaluation.
+
+Issue #3 therefore uses a narrow product bridge while still pinned to beta.135:
+
+- execution ID is the idempotency key, and validator-safe unit IDs are
+  deterministically derived from execution and node identity;
+- a canonical plan digest binds the execution ID to one immutable manifest;
+- a real, deterministic activation unit is born atomically with a self
+  dependency;
+- every work unit is created prerequisite-first with its complete dependency
+  set and an additional activation-unit dependency in the same atomic entity
+  birth;
+- the complete manifest is authoritatively reconciled before activation; and
+- a private `questdag-completion` writer releases the latch with one
+  idempotent, classified replace-by-predicate completion mutation.
+
+While issue #3 remains pinned to beta.135, every completion attempt is
+confirmed by an authoritative entity read-back. Beta.135 cannot validate a
+decoded success echo, so the writer does not treat that echo as authoritative.
+After issue #4 adopts beta.158, the writer may trust a non-degraded echo only
+after the framework's decoded-entity validator accepts it. Lost or degraded
+replies still require authoritative read-back.
+
+No work unit can dispatch before activation, no dependency target is born as a
+stub, and a partial seed remains held. A replay reuses the same IDs, accepts
+only matching immutable seed contracts, and converges after a lost create or
+activation reply. An already activated plan with missing or conflicting units
+is corruption, not a repair opportunity.
+
+This bridge is product composition, not a reusable local framework.
+[SemStreams #670](https://github.com/C360Studio/semstreams/issues/670) owns the
+generic staged-admission primitive and retires the latch after dependency
+adoption. Issue #3 does not bump SemStreams to beta.158.
+
+### D8: Upstream framework boundaries stay explicit
+
+Semdragon does not turn temporary product seams into local framework code:
+
+- [SemStreams #313](https://github.com/C360Studio/semstreams/issues/313) is the
+  existing public ask for a reusable owned-write helper. Its
+  [Semdragon evidence comment](https://github.com/C360Studio/semstreams/issues/313#issuecomment-5078996034)
+  records this repository as a second consumer. The narrow private completion
+  seam is sufficient for this core wave, so #313 is not a blocker.
+- [SemStreams #671](https://github.com/C360Studio/semstreams/issues/671) tracks
+  occurrence-exact, stale-checked classifications for the three non-predicate
+  `quest.failed` audit findings. It does not block the DAG admission wave, but
+  task 3.1 remains open until the full predicate audit has exact evidence.
+- [SemStreams #670](https://github.com/C360Studio/semstreams/issues/670) owns
+  generic staged fan-out admission and retires the activation latch.
+- [semdragon #4](https://github.com/C360Studio/semdragon/issues/4) owns the
+  beta.158 dependency adoption, decoded-entity validation, and registry
+  wiring.
+
+### Approved core-wave verification
+
+The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:
+
+- the full Go suite and focused `questdag` race suite pass;
+- focused live graph-ingest/gated-DAG integration passes completion read-back,
+  every create-boundary interruption, replay, activated-corruption, and
+  dependency-order scenarios;
+- UI tests and schema freshness pass;
+- strict OpenSpec validation passes; and
+- the declared-root core predicate audit passes.
+
+The repository-wide predicate and entity-ID audits, relationship coverage,
+fresh-volume/replay runbook, and beta.158 handoff remain open.
+
 ## Delivery Order
 
 1. Inventory and approve predicate/reference and writer-owner ledgers.
@@ -106,6 +183,11 @@ projection results.
   domain `Graphable`.
 - **Cross-owner clobbering**: review the writer-owner matrix before beta.158 and
   add overlap rejection tests in the dependent adoption slice.
+- **Premature DAG dispatch**: atomically birth each unit with complete edges,
+  hold every work unit behind the deterministic activation latch, and prove
+  interruption-point replay before enabling the new executor.
+- **Ambiguous mutation result**: use classified idempotent mutations and
+  authoritative read-back; never retry append-style completion writes.
 - **Incomplete audit**: use scoped audit roots while SemStreams
   [#667](https://github.com/C360Studio/semstreams/issues/667) is open, then make
   whole-repository audit mandatory when fixed.

@@ -1,62 +1,35 @@
 package questdag
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/c360studio/semdragons/domain"
-)
-
-func TestBuildUnitTriplesTypesGraphEdges(t *testing.T) {
-	board := &domain.BoardConfig{Org: "c360", Platform: "local", Board: "board"}
-	unitID := board.DagUnitEntityID("unit-b")
-	dependencyID := board.DagUnitEntityID("unit-a")
-	parentID := board.QuestEntityID("parent")
-	subQuestID := board.QuestEntityID("sub-b")
-	node := Node{ID: "b", DependsOn: []string{"a"}}
-	triples := buildUnitTriples(
-		unitID,
-		node,
-		map[string]string{"a": dependencyID, "b": unitID},
-		SeedInput{
-			ParentQuestID: parentID,
-			ExecutionID:   "execution-1",
-			NodeSubQuests: map[string]string{
-				"b": subQuestID,
-			},
-		},
-	)
-
-	wantReferences := map[string]string{
-		PredUnitParentQuest: parentID,
-		PredUnitSubQuest:    subQuestID,
-		PredDependsOn:       dependencyID,
+func TestUnitPredicatesMatchSemStreamsBeta158Contract(t *testing.T) {
+	want := map[string]string{
+		"claim":        "gateddag.unit.claim",
+		"completed":    "gateddag.unit.completed",
+		"failed":       "gateddag.unit.failed",
+		"dirtied":      "gateddag.unit.dirtied",
+		"depends-on":   "gateddag.unit.depends-on",
+		"node-id":      "questdag.unit.node-id",
+		"parent-quest": "questdag.unit.parent-quest",
+		"execution-id": "questdag.unit.execution-id",
+		"sub-quest":    "questdag.unit.sub-quest",
+		"plan-digest":  "questdag.unit.plan-digest",
 	}
-	seen := make(map[string]int, len(wantReferences))
-	for _, triple := range triples {
-		object, scalarString := triple.Object.(string)
-		if scalarString && domain.IsValidEntityID(object) && triple.Datatype != "@id" {
-			t.Errorf("entity-ID-shaped scalar %q on %s lacks @id", object, triple.Predicate)
-		}
-		if triple.Datatype == "@id" && (!scalarString || !domain.IsValidEntityID(object)) {
-			t.Errorf("typed relationship %s has non-entity object %#v", triple.Predicate, triple.Object)
-		}
-		if want, ok := wantReferences[triple.Predicate]; ok {
-			seen[triple.Predicate]++
-			if triple.Object != want {
-				t.Errorf("%s object = %#v, want %q", triple.Predicate, triple.Object, want)
-			}
-			if triple.Datatype != "@id" {
-				t.Errorf("%s datatype = %q, want @id", triple.Predicate, triple.Datatype)
-			}
-			continue
-		}
-		if triple.Datatype == "@id" {
-			t.Errorf("non-edge %s unexpectedly carries @id", triple.Predicate)
-		}
+	got := map[string]string{
+		"claim":        PredClaim,
+		"completed":    PredCompleted,
+		"failed":       PredFailed,
+		"dirtied":      PredDirtied,
+		"depends-on":   PredDependsOn,
+		"node-id":      PredUnitNodeID,
+		"parent-quest": PredUnitParentQuest,
+		"execution-id": PredUnitExecutionID,
+		"sub-quest":    PredUnitSubQuest,
+		"plan-digest":  PredUnitPlanDigest,
 	}
-	for predicate := range wantReferences {
-		if seen[predicate] != 1 {
-			t.Errorf("%s cardinality = %d, want 1", predicate, seen[predicate])
+	for name, wantPredicate := range want {
+		if gotPredicate := got[name]; gotPredicate != wantPredicate {
+			t.Errorf("%s predicate = %q, want %q", name, gotPredicate, wantPredicate)
 		}
 	}
 }

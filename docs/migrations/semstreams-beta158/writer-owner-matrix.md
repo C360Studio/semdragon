@@ -21,7 +21,9 @@ Framework mutation paths are:
 
 - lifecycle Manager create/transition/operator update;
 - graph-ingest triple mutation used by lifecycle command stamps;
-- graph-ingest entity creation used by questdag seeding; and
+- graph-ingest atomic create-with-triples used by questdag seeding;
+- graph-ingest classified replace-by-predicate mutation used by the private
+  questdag completion seam; and
 - gated-DAG claim mutation.
 
 ## Owner-claim notation
@@ -165,30 +167,61 @@ The framework owns only the claim marker.
 ### Questdag seeder
 
 - Owner: `questdag`; token `questdag#<incarnation>`.
-- Mode: `replace-owned` for the dependency set.
+- Mode: create only; no replace-owned registration after birth.
 - Producer: `questdag.SeedUnits`.
-- Exact mutable predicate:
-  `gateddag.unit.depends-on`.
 - Create-only facts, excluded from `OwnerClaim.Predicates`:
-  `questdag.unit.node-id`, `questdag.unit.parent-quest`,
-  `questdag.unit.execution-id`, and `questdag.unit.sub-quest`.
+  `gateddag.unit.depends-on`, `questdag.unit.node-id`,
+  `questdag.unit.parent-quest`, `questdag.unit.execution-id`,
+  `questdag.unit.sub-quest`, and `questdag.unit.plan-digest`.
 
-All five are ordinary predicates on the seeder-owned unit subject, not
-`ForeignEdgeClaim`s. The seeder first creates every real dagunit with the four
-birth facts, then uses its exact claim to write each
-`gateddag.unit.depends-on` relationship with `@id` between existing units. The
-dependency set is immutable after that initial owner-scoped write. No
-missing-target or birth-stub lane is used. The seeder does not own the
-framework marker group.
+All six are ordinary predicates on the seeder-owned unit subject, not
+`ForeignEdgeClaim`s; `questdag.unit.plan-digest` appears only on the activation
+latch. Execution ID is the idempotency key. Validator-safe unit IDs are stable
+functions of board, execution, and node identity, and the activation latch
+stores the canonical plan digest so a different manifest under the same
+execution ID is a collision.
 
-### Completion handler
+The random-ID/two-phase protocol is rejected. The seeder atomically creates a
+real deterministic activation unit with its provenance, plan digest, and typed
+self-dependency. It then creates work units in prerequisite-first order. Each
+work unit's single create-with-triples birth contains its complete immutable
+provenance, every declared dependency, and the activation-latch dependency.
+Every referenced target already exists, so the corpus contains no
+`graph.StubMessageType` unit and no dependency-update phase.
+
+Before release, the seeder authoritatively reconciles the complete manifest.
+Matching stable entities are accepted on replay; a mismatched immutable fact or
+digest fails as a collision. If the latch is already complete, a missing or
+mismatched unit is graph corruption and is not repaired. The seeder does not
+own any terminal or framework claim marker.
+
+### Private completion seam
 
 - Owner: `questdag-completion`; token
   `questdag-completion#<incarnation>`.
 - Mode: `replace-owned`.
-- Producer: questdag dispatch/completion handling.
-- Exact predicates:
-  `gateddag.unit.completed` and `gateddag.unit.failed`.
+- Producer: private questdag completion writer used by work completion and
+  activation-latch release.
+- Exact predicate:
+  `gateddag.unit.completed`.
+
+This is the exclusive product writer for the completion predicate. It uses the
+classified update-with-triples lane to atomically remove and replace the
+single-valued marker with its owner token; production append-style
+`triple.add` is prohibited. While issue #3 remains on beta.135, which lacks the
+beta.158 decoded-entity validator, every mutation response is confirmed by
+authoritative entity read-back. Issue #4 may trust a non-degraded echo only
+after beta.158 validation. A degraded or lost reply also requires read-back;
+marker presence converges to success, while marker absence preserves the
+classified transient failure.
+
+### Failure handler
+
+- Owner: `questdag-failure`; token `questdag-failure#<incarnation>`.
+- Mode: `replace-owned`.
+- Producer: questdag dispatch/failure handling.
+- Exact predicate:
+  `gateddag.unit.failed`.
 
 ### Reset controller
 
@@ -523,7 +556,9 @@ subject, so they are ordinary owned relationship triples, not foreign-edge
 claims. Their target-birth rule is `strict`.
 
 `gateddag.unit.depends-on` is one of those ordinary questdag-owned predicates.
-The two-phase seeder creates all real units before it adds dependency edges, so
+The activation unit is atomically born with its self-edge, for which
+graph-ingest creates no referential stub. Work units are born
+prerequisite-first with their complete edge set and activation dependency, so
 the target-birth rule remains strict. Every relationship uses
 `internal/semcompat.EntityReferenceDatatype`.
 
@@ -532,8 +567,8 @@ the target-birth rule remains strict. Every relationship uses
 - questboard and status-mutating service API handlers: temporary; delete after
   lifecycle callers migrate.
 - questbridge: keep only its exact owner-scoped mutations.
-- questdagexec: temporary; delete after questdag completion/reset controllers
-  own their exact marker sets.
+- questdagexec: temporary; delete after the private questdag completion,
+  failure, and reset controllers own their exact marker sets.
 - autonomy, bossbattle, redteam, guildformation, and partycoord: replace
   cross-entity full-object writes with owner APIs or first-class child creates.
 - agentprogression and agentstore: replace full-object writes with exact
@@ -560,10 +595,52 @@ Zero matches and multiple matches both fail. The same test registers all
 owner and foreign-edge claims against the beta.158 registry contract and fails
 on pattern/predicate overlap, invalid six-position patterns, wildcard
 predicates, unregistrable modes, or an owner token outside
-`<owner>#<incarnation>`. It also asserts that the store/guild/party/battle and
-first-class-child create-only sets never enter their mutable claims.
+`<owner>#<incarnation>`. It also asserts that the DAG seed,
+store/guild/party/battle, and first-class-child create-only sets never enter
+their mutable claims.
 
 The three `quest.failed` expressions are the only initial non-graph rows.
 Directory-, package-, and filename-wide exemptions are forbidden. This gate,
 the pinned predicate audit, relationship coverage, and generated-schema/UI
 contract tests must all pass before any writer starts.
+
+The deterministic activation latch is a narrow issue #3 product bridge, not a
+local gated-DAG framework. It is retired when
+[SemStreams #670](https://github.com/C360Studio/semstreams/issues/670) supplies
+framework-owned staged fan-out admission and the beta.158 adoption slice
+consumes that primitive.
+
+## Upstream framework boundaries
+
+- [SemStreams #313](https://github.com/C360Studio/semstreams/issues/313) is the
+  existing public ask for a reusable owned-write helper. The
+  [Semdragon evidence comment](https://github.com/C360Studio/semstreams/issues/313#issuecomment-5078996034)
+  records this repository's store, inventory, effect, guild, party, and DAG
+  mutation needs. It does not block the completed questdag core wave because
+  that wave retains only the narrow private completion adapter.
+- [SemStreams #671](https://github.com/C360Studio/semstreams/issues/671) owns
+  occurrence-exact, stale-checked predicate-audit classifications for the
+  three non-predicate `quest.failed` expressions. It does not block the DAG
+  wave; the broader zero-findings predicate-audit gate remains open.
+- [SemStreams #670](https://github.com/C360Studio/semstreams/issues/670) owns
+  generic staged fan-out admission and retires the activation latch.
+- [semdragon #4](https://github.com/C360Studio/semdragon/issues/4) owns
+  beta.158 adoption, decoded-entity validation, and registry wiring.
+
+## Approved questdag core-wave evidence
+
+The 2026-07-25 live verification closes only OpenSpec tasks 2.7, 2.8, and 3.7:
+
+- `go test ./...` and `go test -race ./questdag` pass.
+- Focused live graph-ingest/gated-DAG integration proves completion read-back,
+  zero early dispatch at every create boundary, replay convergence, activated
+  manifest corruption rejection, root-only activation release, and a final
+  corpus without `graph.StubMessageType` units.
+- `task ui:test` and `task schema:check` pass.
+- `task contract:predicates-core` passes for `domain`, `questdag`,
+  `questlifecycle`, and `config`.
+- `openspec validate adopt-semstreams-prev1-contract --strict` passes.
+
+This evidence does not close the processor/service predicate corpus,
+repository-wide entity-ID and relationship gates, fresh-volume runbook, or
+beta.158 adoption.
