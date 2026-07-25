@@ -144,8 +144,7 @@ semdragons/
 │   ├── dmapproval/         # DM approval gate via NATS request/reply
 │   ├── dmpartyformation/   # DM-initiated party formation
 │   ├── dmworldstate/       # Aggregated world state snapshot for /api/game/world
-│   ├── executor/           # Synchronous LLM execution (superseded by questbridge for new work)
-│   └── seeding/            # Environment bootstrapping for dev/test
+│   └── executor/           # Synchronous LLM execution (superseded by questbridge for new work)
 ├── service/api/            # REST API handlers + Swagger UI at /docs + /openapi.json
 ├── componentregistry/      # Single file that imports and wires all processors
 ├── config/

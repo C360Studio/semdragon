@@ -12,7 +12,6 @@ import (
 	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/partycoord"
-	"github.com/c360studio/semdragons/processor/seeding"
 )
 
 type graphProjection interface {
@@ -194,30 +193,6 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 			name:           "agent XP event",
 			entity:         &agentprogression.AgentXPPayload{AgentID: agent1, QuestID: quest1, Timestamp: now},
 			wantReferences: map[string]int{"agent.progression.xp.quest": 1},
-		},
-		{
-			name: "agent seeded event",
-			entity: &seeding.AgentSeededPayload{
-				AgentID: agent1, GuildID: guild, Timestamp: now,
-			},
-			wantReferences: map[string]int{"agent.guild.member": 1},
-		},
-		{
-			name:             "seeding started event",
-			entity:           &seeding.StartedPayload{SessionID: "session-1", Timestamp: now},
-			wantNoReferences: true,
-		},
-		{
-			name:             "seeding completed event",
-			entity:           &seeding.CompletedPayload{SessionID: "session-1", Timestamp: now},
-			wantNoReferences: true,
-		},
-		{
-			name: "guild seeded event",
-			entity: &seeding.GuildSeededPayload{
-				GuildID: guild, GuildName: "Guild", Timestamp: now,
-			},
-			wantNoReferences: true,
 		},
 		{
 			name: "execution started event",

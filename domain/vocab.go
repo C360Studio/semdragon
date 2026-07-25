@@ -144,31 +144,6 @@ const (
 	PredicateMentorBonus = "skill.progression.mentorbonus"
 )
 
-// --- Seeding Predicates ---
-
-const (
-	// PredicateSeedingStarted - Environment seeding began.
-	PredicateSeedingStarted = "seeding.lifecycle.started"
-
-	// PredicateSeedingCompleted - Environment seeding finished.
-	PredicateSeedingCompleted = "seeding.lifecycle.completed"
-
-	// PredicateArenaRoundStarted - Training arena round began.
-	PredicateArenaRoundStarted = "seeding.arena.roundstarted"
-
-	// PredicateArenaRoundCompleted - Training arena round finished.
-	PredicateArenaRoundCompleted = "seeding.arena.roundcompleted"
-
-	// PredicateRosterAgentCreated - Roster seeding created an agent.
-	PredicateRosterAgentCreated = "seeding.roster.agentcreated"
-
-	// PredicateNPCSpawned - Bootstrap NPC spawned for training.
-	PredicateNPCSpawned = "seeding.npc.spawned"
-
-	// PredicateNPCRetired - Bootstrap NPC retired (replaced by real mentor).
-	PredicateNPCRetired = "seeding.npc.retired"
-)
-
 // --- Party Predicates ---
 
 const (
@@ -608,36 +583,6 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateMentorBonus,
 		vocabulary.WithDescription("Mentor earned XP for trainee improvement"),
 		vocabulary.WithDataType("MentorBonusPayload"),
-	)
-
-	// Seeding predicates
-	vocabulary.Register(PredicateSeedingStarted,
-		vocabulary.WithDescription("Environment seeding began"),
-		vocabulary.WithDataType("seeding.StartedPayload"),
-	)
-	vocabulary.Register(PredicateSeedingCompleted,
-		vocabulary.WithDescription("Environment seeding finished"),
-		vocabulary.WithDataType("seeding.CompletedPayload"),
-	)
-	vocabulary.Register(PredicateArenaRoundStarted,
-		vocabulary.WithDescription("Training arena round began"),
-		vocabulary.WithDataType("ArenaRoundPayload"),
-	)
-	vocabulary.Register(PredicateArenaRoundCompleted,
-		vocabulary.WithDescription("Training arena round finished"),
-		vocabulary.WithDataType("ArenaRoundPayload"),
-	)
-	vocabulary.Register(PredicateRosterAgentCreated,
-		vocabulary.WithDescription("Roster seeding created an agent"),
-		vocabulary.WithDataType("RosterAgentPayload"),
-	)
-	vocabulary.Register(PredicateNPCSpawned,
-		vocabulary.WithDescription("Bootstrap NPC spawned for training"),
-		vocabulary.WithDataType("NPCLifecyclePayload"),
-	)
-	vocabulary.Register(PredicateNPCRetired,
-		vocabulary.WithDescription("Bootstrap NPC retired, replaced by real mentor"),
-		vocabulary.WithDataType("NPCLifecyclePayload"),
 	)
 
 	// Party predicates

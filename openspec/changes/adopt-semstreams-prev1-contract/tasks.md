@@ -101,6 +101,18 @@
   `guild.founding.agent`, and the latter has no authoritative Guild field.
   Hand the real multiwriter full-object guild state, dynamic membership and
   application children, and pending-timeout lifecycle migration to issue #4.
+- [x] 2.15 Resolve
+  [semdragon #24](https://github.com/C360Studio/semdragon/issues/24) by
+  deleting all five `processor/seeding` files; its import, two registration
+  callbacks, and two component-name entries; all seven dead seeding vocabulary
+  constants and registrations; all four root relationship fixtures; and stale
+  processor documentation. Delete the four DTOs, subjects, validation,
+  publisher calls, JSON fields, `Graphable` assertions, and graph methods
+  without a raw-wire compatibility promise. Preserve the separate
+  `cmd/semdragons` startup/E2E Agent seeder. Hand its direct shared-state birth
+  to issue #4 or a dedicated packet for graph-ingest create-with-triples and
+  the agentprogression ownership boundary. Add no projection owner, heartbeat,
+  replacement event route, private framework, or upstream SemStreams issue.
 
 ## 3. Verification and handoff to beta.158
 
@@ -282,5 +294,37 @@ This evidence closes only task 2.14:
 - Focused race, Docker integration, `go test ./...`, `go build ./...`, strict
   OpenSpec validation, and `git diff --check` pass.
 - Architect and final Go reviewer approved the implementation.
+
+Tasks 3.1 through 3.6 remain open.
+
+## Completed issue #24 evidence
+
+This evidence closes only task 2.15:
+
+- The TDD RED inventory caught exactly five package files, four `Graphable`
+  assertions, twelve graph-only methods, four DTO/subject/publish families,
+  four relationship fixtures, seven vocabulary constants plus seven
+  registrations, and five component-registry references.
+- The entire `processor/seeding` package and its registry, vocabulary, fixture,
+  and documentation surfaces are deleted without preserving a raw DTO
+  contract.
+- Startup environment selection, the binary invocation, and authoritative
+  Agent birth remain separate and tested.
+- AST, shipped-config, historical thirteen-literal, and replacement-route
+  mutation guards reject reintroduction while allowing shared framework owner
+  and authoritative Agent surfaces.
+- Deterministic sentinel Docker integration observes zero `seeding.>` events
+  and reconstructs the retained Agent from stored `EntityState`.
+- The provider-arena proposal now composes SemStreams lifecycle, rules,
+  bounded dispatch, first-class entities, graph-ingest, and classified
+  projection ownership rather than the deleted processor.
+- The pinned beta.158 retained-root audit reports
+  `predicate audit passed: 260 structured candidates across 3 roots`.
+- Focused race, Docker integration, `go test ./...`, `go build ./...`, strict
+  OpenSpec validation, and `git diff --check` pass.
+- The README, predicate ledger, and writer-owner matrix are corrected.
+  Owner-safe Agent birth remains an issue #4 or dedicated-packet handoff, and
+  deletion exposes no upstream framework gap.
+- Architect and final Go reviewer recorded **APPROVE**.
 
 Tasks 3.1 through 3.6 remain open.

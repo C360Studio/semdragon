@@ -433,12 +433,52 @@ children and migrates the multiwriter full-object state path. SemStreams
 already supplies the primitives needed to delete the event projections, so
 issue #22 creates no upstream framework ask.
 
-### seeding
+### seeding: delete the unactivated component
 
-- `seeding.mode` becomes `seeding.config.mode`.
-- `seeding.stats.{agents_created,guilds_created}` becomes
-  `seeding.stats.{agents-created,guilds-created}`.
-- `guild.specialization` becomes `guild.identity.specialization`.
+The historical baseline remains four findings from thirteen predicate
+occurrences:
+
+- `seeding.mode`;
+- `seeding.stats.agents_created`;
+- `seeding.stats.guilds_created`; and
+- `guild.specialization`.
+
+Issue #24 does not rename these predicates. All five `processor/seeding` files
+were introduced together as an event-driven replacement, but no consumer was
+ever added. The component is registered but absent from all three shipped
+configurations. Its declared `seeding.request` input port has no subscription,
+and no code outside the package calls `Seed`.
+
+The four `StartedPayload`, `CompletedPayload`, `AgentSeededPayload`, and
+`GuildSeededPayload` families are therefore definition-only runtime-dead
+surfaces. No payload-registry factory, `BaseMessage`, graph-ingest route,
+projection contract, owner bind, heartbeat, graph reader, API reader, or UI
+reader exists. Issue #24 deletes the entire package, its four typed subjects,
+DTOs, `Validate` methods, publisher calls, JSON fields, four `Graphable`
+assertions, twelve graph-only methods, and all thirteen predicate occurrences.
+There is no raw DTO compatibility contract and no canonical alias.
+
+The package import, both registration callbacks, both component-name list
+entries, seven otherwise-unused seeding vocabulary constants and
+registrations, and all four root relationship-fixture rows are also deleted.
+The `AgentSeededPayload` fixture's `agent.guild.member` edge does not replace
+the authoritative Agent relationship `agent.membership.guild`.
+
+Startup fixture seeding remains separate. `cmd/semdragons/seed_e2e.go` is
+invoked for `SEED_AGENTS`, `SEED_E2E`, and `SEED_PROS` and creates
+authoritative `agentprogression.Agent` state. Issue #4 or a dedicated
+startup-birth packet moves its direct full-Agent `GraphClient.EmitEntity`
+write through SemStreams graph-ingest `create_with_triples` and the
+agentprogression owner boundary. Create-only Agent birth facts remain outside
+mutable claims; initial mutable status, progression, statistics, and skills
+cross the real owner API.
+
+SemStreams already provides classified request/reply,
+`create_with_triples`, lifecycle, rules, bounded dispatch, projection
+contracts, and ownership. Deletion creates no upstream framework ask. The
+parked provider-arena work now defines a future post-Phase-1 product
+composition over those primitives rather than preserving the retired
+processor.
 
 ### promptmanager: delete the definition-only projection
 
@@ -659,12 +699,12 @@ also enumerate:
   application applicant/reviewer relationships. Issue #4 replaces membership
   and application facts with first-class child entities.
 - Additional payload projections:
-  `execution.agent.id`, `agent.guild.member`, and store
-  purchase/consumable item references.
+  `execution.agent.id` and store purchase/consumable item references.
 
-The deleted prompt-assembly and guild event fixtures are not relationship
-coverage. If a real publisher is introduced later, its typed relationship
-must be added back to this inventory with evidence from that publisher.
+The deleted prompt-assembly, guild-event, and four seeding DTO fixtures are not
+relationship coverage. If a real publisher is introduced later, its typed
+relationship must be added back to this inventory with evidence from that
+publisher.
 
 Issue #3 uses one centralized compatibility marker,
 `internal/semcompat.EntityReferenceDatatype = "@id"`, across all packages.

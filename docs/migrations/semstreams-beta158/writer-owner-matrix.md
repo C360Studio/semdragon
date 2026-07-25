@@ -668,11 +668,12 @@ projection contracts, ownership services, heartbeats, or lifecycle timers.
 - Guildformation's five raw event DTOs remain active wire contracts, but their
   latent Graphables are deleted in issue #22. Guild events are not append
   evidence, and no event projection owner is registered.
-- Executor execution observations and seeding statistics use append evidence.
-  The definition-only DM-session event Graphables and their counters are
-  deleted; the separate raw session-state write is the downstream misuse
-  described above. Web document state uses the executor web-fetch owner claim;
-  seed entity birth facts are create-only.
+- Executor execution observations use append evidence. The entire unactivated
+  and unconsumed seeding processor is deleted in issue #24; its statistics are
+  not append evidence, and no raw DTO or graph contract remains. The
+  definition-only DM-session event Graphables and their counters are deleted;
+  the separate raw session-state write is the downstream misuse described
+  above. Web document state uses the executor web-fetch owner claim.
 - `quest.failed` is proved non-graph only at the two questboard and one service
   expressions recorded in the rename ledger: there it is
   `EntityState.MessageType.Category`, never `Triple.Predicate`.
@@ -681,9 +682,35 @@ The guild event projections `guild.event.created_by`,
 `guild.membership.member`, `guild.membership.left`, and dynamic event rank facts
 are deleted in issue #22. Authoritative `guild.membership.agent` remains until
 issue #4 creates first-class membership children. Legacy payload projections
-`agent.guild.member` and party membership/assignment/submission predicates are
-removed when their corresponding first-class entities are created. A producer
-may not keep both representations merely because both are graph-bound.
+for party membership/assignment/submission are removed when their
+corresponding first-class entities are created. The seeding-event
+`agent.guild.member` projection and all four seeding fixture rows are deleted
+outright in issue #24. A producer may not keep both representations merely
+because both are graph-bound.
+
+### Startup/E2E Agent birth
+
+The retained `cmd/semdragons/seed_e2e.go` path is not the deleted seeding
+processor. It runs only for `SEED_AGENTS`, `SEED_E2E`, or `SEED_PROS` and
+currently calls `GraphClient.EmitEntity` with a complete
+`agentprogression.Agent` snapshot.
+
+- Current scope: create only against an empty fresh corpus.
+- Create-only facts:
+  Agent identity, archetype, NPC flag, and creation time remain outside
+  `OwnerClaim.Predicates`.
+- Handoff:
+  issue #4 or a dedicated startup-birth packet uses graph-ingest
+  `create_with_triples` and the agentprogression owner API for initial mutable
+  status, progression, statistics, and skills.
+- Prohibition:
+  startup code does not borrow or hand-compose the agentprogression owner token
+  and does not write full Agent state directly into shared KV after adoption.
+
+The future provider arena is a separate post-Phase-1 product composition using
+SemStreams lifecycle Manager/Participant, rules, bounded fan-out or dispatcher,
+first-class run/attempt entities, graph-ingest creation, and classified
+projection ownership. The deleted processor exposes no upstream framework gap.
 
 If prompt-assembly evidence is introduced later, the actual publishing
 component binds the SemStreams contract under its own owner ID. All six
@@ -744,7 +771,8 @@ the target-birth rule remains strict. Every relationship uses
   cross-entity full-object writes with owner APIs or first-class child creates.
 - agentprogression and agentstore: replace full-object writes with exact
   owner-scoped mutation.
-- startup/e2e seed: create only against an empty fresh corpus.
+- startup/e2e seed: retain the empty-corpus create-only workflow, then migrate
+  its mutable Agent birth state through the agentprogression owner boundary.
 
 ## Exhaustive coverage and registration gate
 

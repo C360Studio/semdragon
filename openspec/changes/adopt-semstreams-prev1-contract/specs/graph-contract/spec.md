@@ -279,6 +279,65 @@ treating their DTOs as a second graph projection.
 - **AND** issue #22 opens no upstream framework issue merely to delete the
   latent event Graphables
 
+### Requirement: Unactivated seeding processor is retired
+
+The system SHALL remove the unactivated and unconsumed seeding processor
+without preserving its DTOs as product wire or graph contracts.
+
+#### Scenario: Definition-only processor is deleted as one surface
+
+- **GIVEN** all five `processor/seeding` files were introduced as one
+  event-driven component
+- **AND** its input port has no subscription, no external caller invokes
+  `Seed`, and no shipped configuration activates the component
+- **AND** no payload factory, `BaseMessage`, graph-ingest route, projection
+  bind, heartbeat, graph reader, API reader, or UI reader exists
+- **WHEN** issue #24 resolves the seeding beta.158 findings
+- **THEN** all five package files are absent
+- **AND** the package import, both registration callbacks, and both
+  component-name entries are absent
+- **AND** no replacement event route, projection owner, bind, or heartbeat is
+  introduced
+
+#### Scenario: Dead wire, vocabulary, and fixture surfaces are not retained
+
+- **GIVEN** the four DTO families publish only behind the unreachable
+  component entrypoint
+- **AND** their thirteen predicate occurrences include the four beta.158
+  findings
+- **WHEN** the processor is retired
+- **THEN** its four DTOs, subjects, validation, publishers, JSON fields,
+  `Graphable` assertions, and twelve graph-only methods are absent
+- **AND** the seven seeding-only vocabulary constants and registrations are
+  absent
+- **AND** all four root relationship fixtures and the seeding import are
+  absent
+- **AND** no deleted predicate is renamed or assigned a compatibility alias
+- **AND** no raw DTO JSON compatibility promise remains
+
+#### Scenario: Authoritative startup Agent birth remains a framework handoff
+
+- **GIVEN** `cmd/semdragons/seed_e2e.go` is a separate startup path selected by
+  `SEED_AGENTS`, `SEED_E2E`, or `SEED_PROS`
+- **AND** it creates authoritative `agentprogression.Agent` state rather than
+  consuming the deleted event subjects
+- **WHEN** issue #24 retires the processor
+- **THEN** the startup/E2E seeder and its binary invocation remain
+- **AND** issue #4 or a dedicated packet moves the direct shared-state birth
+  through graph-ingest create-with-triples
+- **AND** mutable Agent state crosses the agentprogression ownership boundary
+- **AND** create-only Agent birth facts remain outside mutable owner claims
+
+#### Scenario: Framework coverage requires no upstream issue
+
+- **GIVEN** SemStreams provides classified request/reply,
+  create-with-triples, lifecycle, rules, bounded dispatch, projection
+  contracts, and ownership
+- **WHEN** the unused processor and event Graphables are removed
+- **THEN** issue #24 opens no upstream SemStreams issue
+- **AND** it adds no private lifecycle engine, goroutine pool, shared-KV
+  writer, or replacement event-Graphable state projection
+
 ### Requirement: Disjoint authoritative writers
 
 Every mutable predicate group SHALL have one declared owner and write mode.

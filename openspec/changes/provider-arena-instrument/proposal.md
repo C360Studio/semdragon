@@ -21,31 +21,30 @@ per-provider, under controlled conditions. This is a novel, defensible research
 contribution — provider-level Goodhart susceptibility under executed ground
 truth — and a far better answer to "what is this game for" than cosmetics.
 
-**Why now:** the seams already exist, so this is a small lift with outsized
-payoff. The model registry already abstracts capability→provider with
+**Why now:** the model registry already abstracts capability→provider with
 preferred/fallback chains; the agent entity already carries `Provider`/`Model`
-fields; questbridge already partially honors a per-agent provider override
-(`handler.go:2179`); and the seeding processor already has a `ModeTrainingArena`
-seam (today a simplified grinding harness). Smart model routing is the industry
-obsession right now, but a good router needs *earned* data — provider×task
-outcomes under ground truth. This instrument generates exactly that data, so the
-router (a later change) is built on measured reality instead of a published
-benchmark. Building the instrument first is the correct sequence.
+fields; and questbridge partially honors a per-agent provider override
+(`handler.go:2179`). Smart model routing needs *earned* provider×task outcomes
+under ground truth rather than a published benchmark.
+
+The former `processor/seeding` package is not an arena foundation. It was never
+activated by shipped configuration, subscribed to its declared request port,
+called outside its package, or connected to consumers. Issue #24 retires it.
+This change therefore creates a new post-Phase-1 product arena by composing
+SemStreams primitives instead of preserving or extending that dead seam.
 
 ## What Changes
 
 - **Per-agent provider binding becomes first-class.** A provider/model binding
-  is declarable at roster seeding, populated onto the agent entity, and honored
-  consistently as the driver of model-endpoint resolution (capability keys
-  remain the fallback). A roster or party can then be composed of different
-  providers — "a Claude adventurer, a GPT adventurer, a Gemini adventurer."
+  is declared through authoritative Agent birth and mutation contracts, then
+  honored consistently as the driver of model-endpoint resolution. Capability
+  keys remain the fallback. Startup fixtures may request bindings through that
+  boundary; they do not own a second Agent representation.
 
-- **The arena gains a comparison program.** The existing arena seam runs a
-  *progression* program (grind agents to a level distribution). This adds a
-  *comparison* program that fans **one** fixed quest spec (identical tools,
-  prompt, tier) out to N provider-bound agents × R repetitions, isolating the
-  confounds the emergent free-play game introduces. R>1 is a knob because
-  sampling variance is real.
+- **A new product arena runs a comparison program.** It fans **one** fixed
+  quest specification with identical tools, prompt, and tier out to N
+  provider-bound agents × R repetitions, isolating the confounds of emergent
+  free play. R>1 remains a knob because sampling variance is real.
 
 - **Attempts are captured as provider-tagged graph entities.** Each attempt
   records provider, the **soft** signal (peer/LLM review score, normalized), the
@@ -70,8 +69,9 @@ doing.
 ### New Capabilities
 
 - `provider-binding`: A model provider/model is a first-class, declarable
-  property of an agent, populated at seeding and honored as the primary driver
-  of model-endpoint resolution (with capability-key resolution as the fallback).
+  property of an authoritative Agent, set through its birth/ownership boundary
+  and honored as the primary driver of model-endpoint resolution, with
+  capability-key resolution as the fallback.
 - `evaluation-arena`: A controlled comparison harness that fans one fixed quest
   across N provider-bound agents × R repetitions and captures each attempt as a
   provider-tagged graph entity carrying soft signal, hard signal (via a pluggable
@@ -80,16 +80,24 @@ doing.
 
 ### Modified Capabilities
 
-<!-- None. The model registry and seeding areas this touches have no seeded specs
+<!-- None. The model registry and arena areas this touches have no seeded specs
      yet (specs/ is empty); per the lazy-spec convention they are introduced as
      the new capabilities above rather than modifications. -->
 
 ## Impact
 
 - **Code**
-  - `processor/seeding`: add a provider/model binding to `AgentSpec`; populate
-    `Agent.Provider`/`Agent.Model` on seed; add the arena *comparison* program
-    alongside the existing progression program.
+  - New product arena component: model each arena run as a SemStreams lifecycle
+    `Participant` managed by the shared `Manager`; use rules for triggers and
+    phase transitions.
+  - Fan out bounded N×R work with rule `for_each` when orchestration owns the
+    collection, or `pkg/dispatch.BoundedDispatcher` when the component owns
+    internal parallel work.
+  - Create first-class arena-run and arena-attempt graph entities through
+    graph-ingest create-with-triples. Bind exact projection contracts and use
+    owner-classified mutation for mutable result predicates.
+  - Extend authoritative Agent birth/agentprogression APIs for provider/model
+    binding; do not recreate a seeding-only Agent model.
   - `processor/questbridge`: make the per-agent provider binding the consistent
     driver of model-endpoint resolution (today the override at `handler.go:2179`
     is partial; capability keys `agent-work.{tier}.{skill}` stay as fallback).
@@ -100,15 +108,24 @@ doing.
     store), and a readout/query surface over them.
 - **Config**
   - `model_registry`: real multi-provider endpoints (anthropic/openai/gemini/…).
-  - seeding config: provider on `AgentSpec`; arena comparison-program config
-    (quest spec, providers, repetitions).
+  - New arena config: quest specification, providers, repetitions, and bounded
+    concurrency. Startup fixture bindings use the authoritative Agent birth
+    request.
 - **Dependencies**
+  - Issue #4 or its dedicated Agent-birth packet must land first so the arena
+    does not write full Agent snapshots or borrow another owner's token.
   - Pluggable hard-signal adapter — starts weak, strengthens with the
     dev-substrate hermetic verification (per the product boundary, semdragon
     *consumes* verification; it must not re-grow a private sandbox). Not gated on
     the substrate.
   - Real-LLM arena runs cost money (N providers × R repetitions × quests) — the
     active-monitoring protocol applies.
+- **Framework boundary**
+  - The arena must not add a private lifecycle engine, private goroutine pool,
+    direct shared-KV state, or event-`Graphable` state projection.
+  - Lifecycle Manager/Participant, rules, bounded `for_each` or dispatcher,
+    first-class entities, graph-ingest create-with-triples, and classified
+    projection ownership are required composition points.
 - **Coordination & sequencing** (assessed against the in-progress
   `rebuild-quest-lifecycle-on-semstreams-rules` change; this change must not
   touch it)
@@ -120,7 +137,9 @@ doing.
     different functions — rebuild-quest-lifecycle the lifecycle (submit/fail)
     seam, this the model-resolution seam. Sequence to avoid a merge collision;
     no design conflict.
-  - **This change is DOWNSTREAM of Phase 1.** The arena's *soft* signal is a real
+  - **This change is DOWNSTREAM of issue #4 and Phase 1.** Issue #4 establishes
+    owner-safe Agent birth and the beta.158 primitives used above. The arena's
+    *soft* signal is a real
     review score, but rebuild-quest-lifecycle (Phase 1) disables the mechanics
     that produce it — its quest-lifecycle spec stubs review as
     `in_review → completed` with a "review-skipped-mechanics-disabled" verdict
@@ -129,4 +148,5 @@ doing.
     3-question average score and *survives* mechanics-disable (it is exactly what
     rebuild-quest-lifecycle Stage B2 task 3.3 ports into `questdag`). Candidate
     soft-signal source to settle in design. The *hard* signal is independent
-    (pluggable verification adapter). ⇒ start this change after Phase 1 lands.
+    (pluggable verification adapter). Start this change only after issue #4,
+    Phase 1, and the selected review/hard-signal dependencies land.

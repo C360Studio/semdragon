@@ -39,7 +39,6 @@ import (
 	"github.com/c360studio/semdragons/processor/questdagexec"
 	"github.com/c360studio/semdragons/processor/questtools"
 	"github.com/c360studio/semdragons/processor/redteam"
-	"github.com/c360studio/semdragons/processor/seeding"
 )
 
 // RegisterAll registers all semdragons components with the given registry.
@@ -91,7 +90,6 @@ func RegisterAll(registry *component.Registry) error {
 		executor.Register,
 		guildformation.Register,
 		partycoord.Register,
-		seeding.Register,
 		dmsession.Register,
 		dmapproval.Register,
 		dmworldstate.Register,
@@ -150,7 +148,6 @@ func RegisterProcessors(registry *component.Registry) error {
 		executor.Register,
 		guildformation.Register,
 		partycoord.Register,
-		seeding.Register,
 		dmsession.Register,
 		dmapproval.Register,
 		dmworldstate.Register,
@@ -196,7 +193,6 @@ func ComponentNames() []string {
 		executor.ComponentName,
 		guildformation.ComponentName,
 		partycoord.ComponentName,
-		seeding.ComponentName,
 		dmsession.ComponentName,
 		dmapproval.ComponentName,
 		dmworldstate.ComponentName,
@@ -234,7 +230,6 @@ func ProcessorNames() []string {
 		executor.ComponentName,
 		guildformation.ComponentName,
 		partycoord.ComponentName,
-		seeding.ComponentName,
 		dmsession.ComponentName,
 		dmapproval.ComponentName,
 		dmworldstate.ComponentName,

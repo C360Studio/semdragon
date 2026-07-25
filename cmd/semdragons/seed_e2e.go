@@ -18,33 +18,26 @@ import (
 	"github.com/c360studio/semdragons/processor/agentstore"
 )
 
-// maybeSeedE2E checks SEED_E2E and SEED_AGENTS to determine what data to
-// write into the ENTITY_STATES KV bucket on startup.
+// maybeSeedE2E checks the startup seed switches to determine which
+// authoritative Agent births to write into the ENTITY_STATES KV bucket.
 //
-//   - SEED_E2E=true  → Full E2E dataset: agents, quests, store (guilds form organically)
+//   - SEED_PROS=true → Pre-leveled Expert+ roster for lab use
+//   - SEED_E2E=true → Full E2E agent dataset (guilds form organically)
 //   - SEED_AGENTS=true → Agents only (no quests or store) — good for first-time use
 //
-// We write directly via GraphClient.EmitEntity (the same path the questboard
-// processor uses) rather than going through the seeding component's pub/sub
-// path, because other processors that would consume those events may not be
-// started yet and the KV writes must be synchronous before the UI connects.
+// Each birth is synchronously persisted as the authoritative
+// agentprogression.Agent Graphable before the UI connects. Startup seeding
+// intentionally emits no parallel lifecycle or entity-created event stream.
 func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclient.Client) error {
-	prosSeed := os.Getenv("SEED_PROS") == "true"
-	fullSeed := os.Getenv("SEED_E2E") == "true"
-	agentsOnly := os.Getenv("SEED_AGENTS") == "true"
-
-	if !prosSeed && !fullSeed && !agentsOnly {
+	mode := startupSeedMode(os.Getenv)
+	if mode == "" {
 		return nil
 	}
+	prosSeed := mode == "pros"
 
 	boardCfg, err := extractBoardConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("seed: resolve board config: %w", err)
-	}
-
-	mode := seedMode(fullSeed)
-	if prosSeed {
-		mode = "pros"
 	}
 
 	slog.Info("Seeding into board",
@@ -81,6 +74,19 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 
 	slog.Info("Seed data written successfully", "mode", mode)
 	return nil
+}
+
+func startupSeedMode(getenv func(string) string) string {
+	prosSeed := getenv("SEED_PROS") == "true"
+	fullSeed := getenv("SEED_E2E") == "true"
+	agentsOnly := getenv("SEED_AGENTS") == "true"
+	if !prosSeed && !fullSeed && !agentsOnly {
+		return ""
+	}
+	if prosSeed {
+		return "pros"
+	}
+	return seedMode(fullSeed)
 }
 
 func seedMode(full bool) string {

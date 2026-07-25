@@ -446,6 +446,55 @@ pending-timeout loop with rules/lifecycle composition. Any adoption of
 SemStreams graph clustering must account for existing upstream clustering
 issues rather than copying another local clustering framework.
 
+### D15: Retire the unactivated seeding processor
+
+Issue [#24](https://github.com/C360Studio/semdragon/issues/24) deletes the
+entire `processor/seeding` package rather than canonicalizing four predicates
+or retaining only its raw DTO layer. The five package files were introduced
+together as an event-driven replacement, but no consumer was ever added.
+`Component.Start` subscribes to nothing, no code outside the package calls
+`Seed`, and none of the three shipped configurations activates the registered
+component.
+
+All four event families are therefore definition-only runtime-dead surfaces.
+The package has no payload-registry factory, `BaseMessage`, graph-ingest route,
+projection contract, owner bind, heartbeat, graph reader, API reader, or UI
+reader. Issue #24 deletes:
+
+- all five files under `processor/seeding`;
+- the package import, two `seeding.Register` callbacks, and two
+  `seeding.ComponentName` list entries in `componentregistry/register.go`;
+- the seven otherwise-unused seeding vocabulary constants and their
+  registrations: `PredicateSeedingStarted`, `PredicateSeedingCompleted`,
+  `PredicateArenaRoundStarted`, `PredicateArenaRoundCompleted`,
+  `PredicateRosterAgentCreated`, `PredicateNPCSpawned`, and
+  `PredicateNPCRetired`;
+- the four root relationship-fixture rows and seeding import; and
+- the stale processor documentation.
+
+The deleted DTOs have no compatibility promise. Their four typed subjects,
+`Validate` methods, publisher calls, JSON fields, four `Graphable` assertions,
+and twelve graph-only methods disappear with the package. The thirteen
+predicate occurrences are deleted rather than renamed. The
+`agent.guild.member` fixture is removed with `AgentSeededPayload`; authoritative
+Agent and Guild relationships remain unchanged.
+
+Startup fixture seeding is a separate path. `cmd/semdragons/seed_e2e.go` is
+called from the binary for `SEED_AGENTS`, `SEED_E2E`, and `SEED_PROS`; it
+creates authoritative `agentprogression.Agent` state and is retained. Issue
+[#4](https://github.com/C360Studio/semdragon/issues/4) or a dedicated
+startup-birth packet moves that direct shared-KV full-object write through
+SemStreams graph-ingest create-with-triples and the agentprogression ownership
+boundary. Create-only Agent birth facts remain outside mutable owner claims;
+initial status, progression, statistics, and skills cross the real owner API.
+
+SemStreams beta.158 already provides classified request/reply,
+create-with-triples, lifecycle, rules, bounded dispatch, projection contracts,
+and ownership. Deleting the unused processor exposes no framework gap and
+creates no upstream issue. Any future evaluation arena is a new product
+composition over those primitives, not a reason to preserve or resurrect the
+seeding event Graphables.
+
 ### Approved core-wave verification
 
 The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:
@@ -535,6 +584,35 @@ The 2026-07-25 evidence closes only task 2.14:
 - focused race, Docker integration, full Go test, build, strict OpenSpec, and
   diff gates pass; and
 - architect and final Go reviewer approved the implementation.
+
+The repository-wide task 3.x gates remain independently open.
+
+### Approved issue #24 verification
+
+The 2026-07-25 evidence closes only task 2.15:
+
+- the TDD RED inventory caught exactly five package files, four `Graphable`
+  assertions, twelve graph-only methods, four DTO/subject/publish families,
+  four relationship fixtures, seven vocabulary constants plus seven
+  registrations, and five component-registry references;
+- the entire unactivated processor surface is deleted while startup
+  environment selection, the binary invocation, and authoritative Agent birth
+  remain;
+- AST, shipped-config, historical thirteen-literal, and replacement-route
+  mutation guards reject reintroduction while allowing shared framework owner
+  and authoritative Agent surfaces;
+- deterministic sentinel Docker integration proves zero `seeding.>` events
+  and reconstructs the retained Agent from stored `EntityState`;
+- the provider-arena proposal now requires SemStreams lifecycle, rules,
+  bounded dispatch, first-class entities, graph-ingest, and classified
+  projection ownership rather than the deleted processor;
+- the pinned beta.158 retained-root audit reports
+  `predicate audit passed: 260 structured candidates across 3 roots`;
+- focused race, Docker integration, full Go test, build, strict OpenSpec, and
+  diff gates pass;
+- the predicate ledger, writer-owner matrix, and README are corrected, with
+  owner-safe Agent birth handed to issue #4 and no upstream framework gap; and
+- architect and final Go reviewer recorded **APPROVE**.
 
 The repository-wide task 3.x gates remain independently open.
 
