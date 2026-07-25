@@ -46,6 +46,37 @@ an empty or trailing-dot segment.
 - **WHEN** a configuration declares `local.semsource.` as an entity prefix
 - **THEN** validation fails and names the offending configuration field
 
+#### Scenario: Canonical graph-source prefixes preserve routing boundaries
+
+- **GIVEN** a graph source declares canonical prefix `osh`
+- **WHEN** the registry routes entity ID or query prefix `osh` or `osh.asset`
+- **THEN** it selects the OSH source
+- **AND** `oshx` and `oshx.asset` do not match that source
+- **AND** the canonical no-dot prefix is forwarded to `entitiesByPrefix`
+- **AND** every shipped graph-source prefix passes the beta.158 entity-ID audit
+
+#### Scenario: Unready ownership does not leak to fallback sources
+
+- **GIVEN** an unready external source owns canonical prefix `osh`
+- **WHEN** the registry routes entity ID or query prefix `osh.asset`
+- **THEN** it returns no query target
+- **AND** it does not query the local or another ready source
+- **AND** local fallback remains available for a prefix with no configured
+  owner
+
+#### Scenario: Beta adoption replaces the temporary prefix comparison
+
+- **GIVEN** issue #18 remains pinned to SemStreams beta.135
+- **WHEN** issue #4 adopts beta.158
+- **THEN** runtime prefixes are validated with `types.ValidateEntityIDPrefix`
+- **AND** concrete six-part entity routing uses `graph.MatchesAnyIDPrefix`
+- **AND** partial prefix routing does not misuse that full-ID matcher
+- **AND** the minimal validated prefix-to-prefix comparison is deleted when a
+  tagged SemStreams release contains the primitive from
+  [SemStreams #675](https://github.com/C360Studio/semstreams/issues/675)
+- **AND** until then, the comparison remains isolated and linked to #675 rather
+  than becoming a product-local generic prefix library
+
 ### Requirement: Explicit relationship typing
 
 Every triple that represents a graph edge SHALL use

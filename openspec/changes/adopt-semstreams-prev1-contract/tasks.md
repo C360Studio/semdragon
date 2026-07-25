@@ -61,6 +61,20 @@
   payload registration, graph-ingest route, projection bind, or heartbeat.
   Hand graph routing to issue #4, generic tool telemetry to issue #7, and the
   temporary `dc.terms.modified` compatibility declaration to SemStreams #673.
+- [x] 2.12 Resolve
+  [semdragon #18](https://github.com/C360Studio/semdragon/issues/18) by
+  replacing the four shipped trailing-dot graph-source prefixes with canonical
+  one- or two-segment values. Preserve routing through exact-or-dot-descendant
+  matching so `osh` matches `osh` and `osh.asset`, but never `oshx`. While
+  pinned to beta.135, keep that comparison isolated. Issue #4 validates runtime
+  configuration with `types.ValidateEntityIDPrefix` and uses
+  `graph.MatchesAnyIDPrefix` only for concrete six-part entity IDs.
+  [SemStreams #675](https://github.com/C360Studio/semstreams/issues/675) owns
+  canonical prefix-to-prefix containment; do not misuse the full-ID matcher for
+  partial query prefixes. Treat a matching but unready source as authoritative
+  and return no query targets; use local fallback only when no source owns the
+  prefix. Delete the isolated comparison when a tagged SemStreams release
+  contains #675.
 
 ## 3. Verification and handoff to beta.158
 
@@ -140,6 +154,30 @@ This evidence closes only task 2.10:
 - Source review confirms that no projection contract, owner bind, payload
   registration, or graph-ingest route was added.
 - Strict OpenSpec validation and `git diff --check` pass.
+- Architect and Go reviewer approved the implementation.
+
+## Completed issue #18 evidence
+
+This evidence closes only task 2.12:
+
+- The initial TDD RED cases exposed one- and two-segment lexical collisions,
+  the owned-but-unready fallback leak, and all four shipped trailing empty
+  segments.
+- The three shipped configs now use canonical `local.semsource` and `osh`
+  values. Tri-state routing distinguishes a ready owner, an unready owner, and
+  an unowned prefix; only the last may use local fallback.
+- The minimal beta.135 exact-or-dot-descendant comparison remains isolated and
+  linked to
+  [SemStreams #675](https://github.com/C360Studio/semstreams/issues/675).
+  Issue #4 uses beta.158 validation/full-ID matching and deletes the comparison
+  when a tagged SemStreams release contains #675.
+- `go test -race ./processor/questbridge -count=1`, the root shipped-config
+  contract test, and `go test ./...` pass.
+- The UI suite passes all 342 tests.
+- The pinned beta.158 entity-ID audit reports
+  `passed: 20 structured candidates across 1 roots`.
+- Strict OpenSpec validation, exact legacy-prefix search, shipped JSON parsing,
+  and `git diff --check` pass.
 - Architect and Go reviewer approved the implementation.
 
 ## Completed issue #16 evidence

@@ -55,7 +55,7 @@ type GraphSource struct {
 	// Type is "local" (our graph) or "semsource" (external knowledge source).
 	Type string `json:"type"`
 
-	// EntityPrefix is the entity ID prefix owned by this source (e.g., "osh.").
+	// EntityPrefix is the canonical entity ID prefix owned by this source (e.g., "osh").
 	// Used for prefix-based routing of entity/relationship queries.
 	EntityPrefix string `json:"entity_prefix,omitempty"`
 
@@ -98,10 +98,10 @@ type summCacheEntry struct {
 
 // sourceSummary mirrors the semsource /summary response JSON.
 type sourceSummary struct {
-	Namespace      string         `json:"namespace"`
-	Phase          string         `json:"phase"`
-	EntityIDFormat string         `json:"entity_id_format"`
-	TotalEntities  int            `json:"total_entities"`
+	Namespace      string          `json:"namespace"`
+	Phase          string          `json:"phase"`
+	EntityIDFormat string          `json:"entity_id_format"`
+	TotalEntities  int             `json:"total_entities"`
 	Domains        []SummaryDomain `json:"domains"`
 }
 
@@ -151,9 +151,7 @@ func (r *GraphSourceRegistry) SourcesForQuery(queryType, entityID, prefix string
 	case "entity", "relationships":
 		// Route to the source that owns this entity ID.
 		if entityID != "" {
-			if src := r.resolveByPrefix(entityID); src != nil {
-				return []*GraphSource{src}
-			}
+			return r.sourcesForRoutedPrefix(entityID)
 		}
 		// Fallback: query all ready sources.
 		return r.readySources()
@@ -161,9 +159,7 @@ func (r *GraphSourceRegistry) SourcesForQuery(queryType, entityID, prefix string
 	case "prefix":
 		// Route to the source matching the prefix.
 		if prefix != "" {
-			if src := r.resolveByPrefix(prefix); src != nil {
-				return []*GraphSource{src}
-			}
+			return r.sourcesForRoutedPrefix(prefix)
 		}
 		return r.readySources()
 
@@ -182,7 +178,11 @@ func (r *GraphSourceRegistry) SourcesForQuery(queryType, entityID, prefix string
 
 // ResolveEntity returns the source that owns a given entity ID, or nil.
 func (r *GraphSourceRegistry) ResolveEntity(entityID string) *GraphSource {
-	return r.resolveByPrefix(entityID)
+	src, _ := r.resolveByPrefix(entityID)
+	if src == nil || !src.ready.Load() {
+		return nil
+	}
+	return src
 }
 
 // GraphQLURLsForQuery implements executor.GraphSearchRouter.
@@ -420,22 +420,42 @@ func (r *GraphSourceRegistry) readySources() []*GraphSource {
 	return result
 }
 
-// resolveByPrefix finds the source whose EntityPrefix matches the given ID.
-// Falls back to the first local source if no prefix matches.
-func (r *GraphSourceRegistry) resolveByPrefix(id string) *GraphSource {
+// sourcesForRoutedPrefix preserves the distinction between an unavailable
+// owner and an unowned prefix. Only the latter may use the local fallback.
+func (r *GraphSourceRegistry) sourcesForRoutedPrefix(value string) []*GraphSource {
+	src, ownerMatched := r.resolveByPrefix(value)
+	if src == nil {
+		return nil
+	}
+	if ownerMatched && !src.ready.Load() {
+		return nil
+	}
+	if !src.ready.Load() {
+		return nil
+	}
+	return []*GraphSource{src}
+}
+
+// resolveByPrefix returns the matching owner, or the configured local fallback
+// when no owner matches. ownerMatched distinguishes those two outcomes.
+func (r *GraphSourceRegistry) resolveByPrefix(id string) (*GraphSource, bool) {
 	var localFallback *GraphSource
 	for _, src := range r.sources {
-		if src.EntityPrefix != "" && strings.HasPrefix(id, src.EntityPrefix) {
-			if src.ready.Load() {
-				return src
-			}
-			return nil // Source owns this prefix but isn't ready.
+		if src.EntityPrefix != "" && matchesGraphSourcePrefix(id, src.EntityPrefix) {
+			return src, true
 		}
 		if src.Type == "local" && localFallback == nil {
 			localFallback = src
 		}
 	}
-	return localFallback
+	return localFallback, false
+}
+
+// matchesGraphSourcePrefix is the minimal beta.135 prefix-containment
+// compatibility required until SemStreams #675 supplies the framework
+// primitive: https://github.com/C360Studio/semstreams/issues/675
+func matchesGraphSourcePrefix(value, prefix string) bool {
+	return value == prefix || strings.HasPrefix(value, prefix+".")
 }
 
 // FormatSummaryForPrompt fetches and formats aggregated graph summary data
@@ -511,10 +531,6 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 	// Per-source section showing name, prefix, and domain breakdown with examples.
 	for _, f := range fetched {
 		prefix := f.src.EntityPrefix
-		if prefix != "" && strings.HasSuffix(prefix, ".") {
-			// Strip trailing dot for display; shown as "prefix: local.semsource"
-			prefix = strings.TrimSuffix(prefix, ".")
-		}
 		if prefix != "" {
 			sb.WriteString(fmt.Sprintf("%s (prefix: %s):\n", f.src.Name, prefix))
 		} else {
@@ -542,7 +558,7 @@ func (r *GraphSourceRegistry) FormatSummaryForPrompt(ctx context.Context) string
 	var prefixExample string
 	for _, f := range fetched {
 		if f.src.EntityPrefix != "" {
-			prefixExample = strings.TrimSuffix(f.src.EntityPrefix, ".")
+			prefixExample = f.src.EntityPrefix
 			// Append the first domain name if available.
 			if len(f.summary.Domains) > 0 {
 				prefixExample = prefixExample + "." + f.summary.Domains[0].Domain
@@ -592,10 +608,8 @@ func (r *GraphSourceRegistry) fetchExampleIDs(ctx context.Context, src *GraphSou
 		return nil
 	}
 
-	// Query up to 50 entities under this source prefix in a single request.
-	// Strip trailing dot from prefix — GraphQL prefix matching is substring-based.
-	prefix := strings.TrimSuffix(src.EntityPrefix, ".")
-	query := fmt.Sprintf(`{ entitiesByPrefix(prefix: %q, limit: 50) { id } }`, prefix)
+	// Query up to 50 entities under this canonical source prefix in a single request.
+	query := fmt.Sprintf(`{ entitiesByPrefix(prefix: %q, limit: 50) { id } }`, src.EntityPrefix)
 	payload, err := json.Marshal(map[string]string{"query": query})
 	if err != nil {
 		return nil
@@ -643,7 +657,7 @@ func (r *GraphSourceRegistry) fetchExampleIDs(ctx context.Context, src *GraphSou
 		if len(parts) < 6 {
 			continue
 		}
-		domain := parts[2]   // org.platform.domain.system.type.instance
+		domain := parts[2] // org.platform.domain.system.type.instance
 		entityType := parts[4]
 		instance := parts[5]
 		if clusteringNames[entityType] || clusteringNames[instance] {

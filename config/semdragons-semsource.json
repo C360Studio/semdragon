@@ -22,7 +22,7 @@
       "graphql_url": "http://local-semsource:8080/graph-gateway/graphql",
       "status_url": "http://local-semsource:8080/source-manifest/status",
       "type": "semsource",
-      "entity_prefix": "local.semsource.",
+      "entity_prefix": "local.semsource",
       "always_query": false
     },
     {
@@ -30,7 +30,7 @@
       "graphql_url": "http://semsource:8082/graphql",
       "status_url": "http://semsource:8080/source-manifest/status",
       "type": "semsource",
-      "entity_prefix": "osh.",
+      "entity_prefix": "osh",
       "always_query": false
     }
   ],

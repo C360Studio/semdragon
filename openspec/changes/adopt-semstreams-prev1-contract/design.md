@@ -295,6 +295,60 @@ predicates include the seven `source.doc.*` values plus `dc.terms.title` and
 `dc.terms.modified`; its two typed relationships require no
 `ForeignEdgeClaim`.
 
+### D12: Graph-source query prefixes are segment-bound routing keys
+
+Issue [#18](https://github.com/C360Studio/semdragon/issues/18) replaces three
+`local.semsource.` values and one `osh.` value with canonical
+`local.semsource` and `osh` query prefixes. `GraphSource.EntityPrefix` is a
+one-to-six-segment entity-ID namespace used to route entity, relationship, and
+prefix queries; it is not a NATS subject prefix and does not carry a delimiter
+sentinel.
+
+The existing registry uses lexical `strings.HasPrefix` and historically relied
+on the configured trailing dot to prevent adjacent-prefix matches. Removing
+only the dots would make `osh` match `oshx` and `local.semsource` match
+`local.semsourcex`. Issue #18 therefore changes routing atomically to:
+
+```go
+id == prefix || strings.HasPrefix(id, prefix+".")
+```
+
+Exact prefixes and dot-delimited descendants route to the owning source.
+Lexically adjacent prefixes do not. The canonical value is forwarded directly
+to `entitiesByPrefix`; legacy trimming is not retained as a compatibility
+reader. API and UI source metadata expose the same canonical value, and the
+example cache remains in-process and non-persistent.
+
+Prefix resolution has three outcomes, not a nullable two-state result:
+
+1. a matching ready owner routes only to that source;
+2. a matching unready owner routes to no source; and
+3. no matching owner uses the configured local fallback.
+
+The current nullable lookup collapses outcomes 2 and 3, causing
+`SourcesForQuery` to fan out after an external owner matches but is unready.
+That can leak an externally owned entity or prefix query to local or unrelated
+ready sources. Issue #18 preserves source ownership while unavailable and
+limits fallback to genuinely unowned prefixes.
+
+SemStreams beta.158 provides only part of the final boundary.
+`types.ValidateEntityIDPrefix` validates a one-to-six-segment query prefix.
+`graph.MatchesAnyIDPrefix` implements exact-or-dot-descendant matching only
+when its first argument is a complete six-part entity ID; it calls
+`ValidateEntityID` and therefore rejects partial query prefixes such as `osh`
+and `osh.asset`.
+
+Issue [#4](https://github.com/C360Studio/semdragon/issues/4) uses
+`graph.MatchesAnyIDPrefix` for concrete entity routing and
+`types.ValidateEntityIDPrefix` at the configuration/query boundary. The
+prefix-to-prefix branch still needs the isolated equality-or-dot-descendant
+comparison.
+[SemStreams #675](https://github.com/C360Studio/semstreams/issues/675) owns the
+reusable validated prefix-containment matcher. If the adopted tag supplies that
+helper, issue #4 deletes the local comparison; otherwise the minimal comparison
+remains linked to #675 until the first tagged release containing it. It must
+not be expanded into a generic local prefix library.
+
 ### Approved core-wave verification
 
 The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:
