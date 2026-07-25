@@ -3,6 +3,8 @@ package autonomy
 import (
 	"context"
 	"log/slog"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +15,9 @@ import (
 	"github.com/c360studio/semdragons/processor/dmapproval"
 	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
+	"github.com/c360studio/semstreams/pkg/types"
 )
 
 // =============================================================================
@@ -235,8 +239,8 @@ func newTestComponentWithStore(t *testing.T) *Component {
 	store := &agentstore.Component{}
 	reg := newTestRegistry(t, store, nil, nil)
 	c := &Component{
-		config: &cfg,
-		deps:   component.Dependencies{ComponentRegistry: reg},
+		config:   &cfg,
+		deps:     component.Dependencies{ComponentRegistry: reg},
 		trackers: make(map[string]*agentTracker),
 	}
 	return c
@@ -992,349 +996,241 @@ func TestComponent_ConfigSchema(t *testing.T) {
 // PAYLOAD GRAPHABLE TESTS
 // =============================================================================
 
-func TestEvaluatedPayload_Graphable(t *testing.T) {
-	now := time.Now()
-	p := &EvaluatedPayload{
-		AgentID:     "test.local.game.board1.agent.eval1",
-		AgentStatus: "idle",
-		ActionTaken: "none",
-		Interval:    5 * time.Second,
-		Timestamp:   now,
+type autonomyGraphPayload interface {
+	EntityID() string
+	Triples() []message.Triple
+	Schema() types.Type
+	Validate() error
+}
+
+type expectedAutonomyTriple struct {
+	predicate string
+	object    any
+	datatype  string
+}
+
+func TestAutonomyPayloadGraphContract(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	agentID := domain.AgentID("test.local.game.board1.agent.agent-1")
+	questID := domain.QuestID("test.local.game.board1.quest.quest-1")
+	guildID := "test.local.game.board1.guild.guild-1"
+
+	tests := []struct {
+		name     string
+		payload  autonomyGraphPayload
+		category string
+		want     []expectedAutonomyTriple
+	}{
+		{
+			name: "evaluated",
+			payload: &EvaluatedPayload{
+				AgentID: agentID, AgentStatus: domain.AgentIdle, ActionTaken: "none",
+				Interval: 5 * time.Second, Timestamp: now,
+			},
+			category: "autonomy.evaluated",
+			want: []expectedAutonomyTriple{
+				{predicate: "agent.autonomy.status", object: string(domain.AgentIdle)},
+				{predicate: "agent.autonomy.action", object: "none"},
+				{predicate: "agent.autonomy.interval-ms", object: int64(5000)},
+			},
+		},
+		{
+			name: "idle",
+			payload: &IdlePayload{
+				AgentID: agentID, IdleDuration: 30 * time.Second,
+				HasSuggestion: false, BackoffMs: 7500, Timestamp: now,
+			},
+			category: "autonomy.idle",
+			want: []expectedAutonomyTriple{
+				{predicate: "agent.autonomy.idle-duration-ms", object: int64(30000)},
+				{predicate: "agent.autonomy.has-suggestion", object: false},
+				{predicate: "agent.autonomy.backoff-ms", object: int64(7500)},
+			},
+		},
+		{
+			name: "claim",
+			payload: &ClaimIntentPayload{
+				AgentID: agentID, QuestID: questID, Score: 0.85,
+				SuggestionRank: 1, Timestamp: now,
+			},
+			category: "autonomy.claimintent",
+			want: []expectedAutonomyTriple{
+				{predicate: "agent.autonomy.claim-quest", object: string(questID), datatype: "@id"},
+				{predicate: "agent.autonomy.claim-score", object: 0.85},
+				{predicate: "agent.autonomy.claim-rank", object: 1},
+			},
+		},
+		{
+			name: "shop",
+			payload: &ShopIntentPayload{
+				AgentID: agentID, ItemID: "quality_shield", XPCost: 100,
+				Budget: 500, Strategic: true, Timestamp: now,
+			},
+			category: "autonomy.shopintent",
+			want: []expectedAutonomyTriple{
+				{predicate: "agent.autonomy.shop-item", object: "quality_shield"},
+				{predicate: "agent.autonomy.shop-cost", object: int64(100)},
+				{predicate: "agent.autonomy.shop-budget", object: int64(500)},
+				{predicate: "agent.autonomy.shop-strategic", object: true},
+			},
+		},
+		{
+			name: "guild join",
+			payload: &GuildIntentPayload{
+				AgentID: agentID, GuildID: guildID, Score: 0.72,
+				ChoicesEvaluated: 5, Timestamp: now,
+			},
+			category: "autonomy.guildintent",
+			want: []expectedAutonomyTriple{
+				{predicate: "agent.autonomy.guild-join", object: guildID, datatype: "@id"},
+				{predicate: "agent.autonomy.guild-score", object: 0.72},
+				{predicate: "agent.autonomy.guild-choices", object: 5},
+			},
+		},
+		{
+			name: "use",
+			payload: &UseIntentPayload{
+				AgentID: agentID, ConsumableID: "xp_boost",
+				AgentStatus: domain.AgentOnQuest, QuestID: &questID, Timestamp: now,
+			},
+			category: "autonomy.useintent",
+			want: []expectedAutonomyTriple{
+				{predicate: "agent.autonomy.use-consumable", object: "xp_boost"},
+				{predicate: "agent.autonomy.use-status", object: string(domain.AgentOnQuest)},
+				{predicate: "agent.autonomy.use-quest", object: string(questID), datatype: "@id"},
+			},
+		},
+		{
+			name: "guild create",
+			payload: &GuildCreateIntentPayload{
+				AgentID: agentID, GuildName: "Builders",
+				CandidateIDs: []domain.AgentID{
+					"test.local.game.board1.agent.agent-2",
+					"test.local.game.board1.agent.agent-3",
+				},
+				Timestamp: now,
+			},
+			category: "autonomy.guildcreateintent",
+			want: []expectedAutonomyTriple{
+				{predicate: "agent.autonomy.guild-create", object: "Builders"},
+				{predicate: "agent.autonomy.guild-create-candidates", object: 2},
+			},
+		},
 	}
 
-	// EntityID returns the agent ID string.
-	if got := p.EntityID(); got != "test.local.game.board1.agent.eval1" {
-		t.Errorf("EntityID() = %q, want agent ID", got)
+	totalPredicates := 0
+	relationshipPredicates := make(map[string]int)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			triples := test.payload.Triples()
+			totalPredicates += len(triples)
+			if len(triples) != len(test.want) {
+				t.Fatalf("Triples() returned %d triples, want %d", len(triples), len(test.want))
+			}
+			for i, want := range test.want {
+				triple := triples[i]
+				if triple.Subject != string(agentID) || triple.Subject != test.payload.EntityID() {
+					t.Errorf("triple[%d].Subject = %q, want payload agent %q", i, triple.Subject, agentID)
+				}
+				if triple.Predicate != want.predicate {
+					t.Errorf("triple[%d].Predicate = %q, want %q", i, triple.Predicate, want.predicate)
+				}
+				if !reflect.DeepEqual(triple.Object, want.object) {
+					t.Errorf("triple[%d].Object = %#v, want %#v", i, triple.Object, want.object)
+				}
+				if triple.Datatype != want.datatype {
+					t.Errorf("triple[%d].Datatype = %q, want %q", i, triple.Datatype, want.datatype)
+				}
+				parts := strings.Split(triple.Predicate, ".")
+				if len(parts) != 3 || strings.Contains(triple.Predicate, "_") {
+					t.Errorf("triple[%d] predicate %q is not canonical lower-kebab", i, triple.Predicate)
+				}
+				if triple.Datatype == "@id" {
+					relationshipPredicates[triple.Predicate]++
+				}
+			}
+			schema := test.payload.Schema()
+			if schema.Domain != "semdragons" || schema.Category != test.category || schema.Version != "v1" {
+				t.Errorf(
+					"Schema() = {%q %q %q}, want {semdragons %q v1}",
+					schema.Domain,
+					schema.Category,
+					schema.Version,
+					test.category,
+				)
+			}
+			if err := test.payload.Validate(); err != nil {
+				t.Errorf("Validate() unexpected error: %v", err)
+			}
+		})
+	}
+	if totalPredicates != 21 {
+		t.Errorf("seven autonomy payloads emitted %d predicates, want exactly 21", totalPredicates)
+	}
+	wantRelationships := map[string]int{
+		"agent.autonomy.claim-quest": 1,
+		"agent.autonomy.guild-join":  1,
+		"agent.autonomy.use-quest":   1,
+	}
+	if !reflect.DeepEqual(relationshipPredicates, wantRelationships) {
+		t.Errorf("typed relationships = %#v, want exactly %#v", relationshipPredicates, wantRelationships)
 	}
 
-	// Triples returns exactly 3 triples.
-	triples := p.Triples()
-	if len(triples) != 3 {
-		t.Fatalf("Triples() returned %d triples, want 3", len(triples))
+	withoutQuest := (&UseIntentPayload{
+		AgentID: agentID, ConsumableID: "cooldown_skip",
+		AgentStatus: domain.AgentCooldown, Timestamp: now,
+	}).Triples()
+	if len(withoutQuest) != 2 {
+		t.Fatalf("quest-free use emitted %d triples, want 2", len(withoutQuest))
 	}
-
-	// Every triple must reference the agent as subject.
-	for i, tr := range triples {
-		if tr.Subject != "test.local.game.board1.agent.eval1" {
-			t.Errorf("triple[%d].Subject = %q, want agent ID", i, tr.Subject)
+	for _, triple := range withoutQuest {
+		if triple.Predicate == "agent.autonomy.use-quest" || triple.Datatype == "@id" {
+			t.Errorf("quest-free use emitted optional relationship %#v", triple)
 		}
-	}
-
-	// All three expected predicates must be present.
-	predicates := make(map[string]bool, len(triples))
-	for _, tr := range triples {
-		predicates[tr.Predicate] = true
-	}
-	for _, want := range []string{
-		"agent.autonomy.status",
-		"agent.autonomy.action",
-		"agent.autonomy.interval_ms",
-	} {
-		if !predicates[want] {
-			t.Errorf("missing triple predicate %q", want)
-		}
-	}
-
-	// Schema returns the correct domain and category.
-	s := p.Schema()
-	if s.Domain != "semdragons" || s.Category != "autonomy.evaluated" {
-		t.Errorf("Schema() = {Domain:%q Category:%q}, want semdragons/autonomy.evaluated", s.Domain, s.Category)
-	}
-
-	// Validate succeeds for a fully populated payload.
-	if err := p.Validate(); err != nil {
-		t.Errorf("Validate() unexpected error: %v", err)
-	}
-
-	// Validate fails when AgentID is absent.
-	missingID := &EvaluatedPayload{Timestamp: now}
-	if err := missingID.Validate(); err == nil {
-		t.Error("Validate() should fail with empty AgentID")
-	}
-
-	// Validate fails when Timestamp is the zero value.
-	missingTS := &EvaluatedPayload{AgentID: "test.local.game.board1.agent.eval1"}
-	if err := missingTS.Validate(); err == nil {
-		t.Error("Validate() should fail with zero Timestamp")
 	}
 }
 
-func TestIdlePayload_Graphable(t *testing.T) {
-	now := time.Now()
-	p := &IdlePayload{
-		AgentID:       "test.local.game.board1.agent.idle1",
-		IdleDuration:  30 * time.Second,
-		HasSuggestion: false,
-		BackoffMs:     7500,
-		Timestamp:     now,
+func TestAutonomyPayloadValidationContract(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	tests := []struct {
+		name    string
+		payload interface{ Validate() error }
+	}{
+		{name: "evaluated missing agent", payload: &EvaluatedPayload{Timestamp: now}},
+		{name: "evaluated missing timestamp", payload: &EvaluatedPayload{AgentID: "agent"}},
+		{name: "idle missing agent", payload: &IdlePayload{Timestamp: now}},
+		{name: "idle missing timestamp", payload: &IdlePayload{AgentID: "agent"}},
+		{name: "claim missing agent", payload: &ClaimIntentPayload{Timestamp: now}},
+		{name: "claim missing timestamp", payload: &ClaimIntentPayload{AgentID: "agent"}},
+		{name: "shop missing agent", payload: &ShopIntentPayload{Timestamp: now}},
+		{name: "shop missing timestamp", payload: &ShopIntentPayload{AgentID: "agent"}},
+		{name: "guild join missing agent", payload: &GuildIntentPayload{Timestamp: now}},
+		{name: "guild join missing timestamp", payload: &GuildIntentPayload{AgentID: "agent"}},
+		{name: "use missing agent", payload: &UseIntentPayload{Timestamp: now}},
+		{name: "use missing timestamp", payload: &UseIntentPayload{AgentID: "agent"}},
+		{
+			name: "guild create missing agent",
+			payload: &GuildCreateIntentPayload{
+				GuildName: "Builders", Timestamp: now,
+			},
+		},
+		{
+			name:    "guild create missing name",
+			payload: &GuildCreateIntentPayload{AgentID: "agent", Timestamp: now},
+		},
+		{
+			name: "guild create missing timestamp",
+			payload: &GuildCreateIntentPayload{
+				AgentID: "agent", GuildName: "Builders",
+			},
+		},
 	}
-
-	// EntityID returns the agent ID string.
-	if got := p.EntityID(); got != "test.local.game.board1.agent.idle1" {
-		t.Errorf("EntityID() = %q, want agent ID", got)
-	}
-
-	// Triples returns exactly 3 triples.
-	triples := p.Triples()
-	if len(triples) != 3 {
-		t.Fatalf("Triples() returned %d triples, want 3", len(triples))
-	}
-
-	// Every triple must reference the agent as subject.
-	for i, tr := range triples {
-		if tr.Subject != "test.local.game.board1.agent.idle1" {
-			t.Errorf("triple[%d].Subject = %q, want agent ID", i, tr.Subject)
-		}
-	}
-
-	// All three expected predicates must be present.
-	predicates := make(map[string]bool, len(triples))
-	for _, tr := range triples {
-		predicates[tr.Predicate] = true
-	}
-	for _, want := range []string{
-		"agent.autonomy.idle_duration_ms",
-		"agent.autonomy.has_suggestion",
-		"agent.autonomy.backoff_ms",
-	} {
-		if !predicates[want] {
-			t.Errorf("missing triple predicate %q", want)
-		}
-	}
-
-	// Schema returns the correct domain and category.
-	s := p.Schema()
-	if s.Domain != "semdragons" || s.Category != "autonomy.idle" {
-		t.Errorf("Schema() = {Domain:%q Category:%q}, want semdragons/autonomy.idle", s.Domain, s.Category)
-	}
-
-	// Validate succeeds for a fully populated payload.
-	if err := p.Validate(); err != nil {
-		t.Errorf("Validate() unexpected error: %v", err)
-	}
-
-	// Validate fails when AgentID is absent.
-	missingID := &IdlePayload{Timestamp: now}
-	if err := missingID.Validate(); err == nil {
-		t.Error("Validate() should fail with empty AgentID")
-	}
-
-	// Validate fails when Timestamp is the zero value.
-	missingTS := &IdlePayload{AgentID: "test.local.game.board1.agent.idle1"}
-	if err := missingTS.Validate(); err == nil {
-		t.Error("Validate() should fail with zero Timestamp")
-	}
-}
-
-func TestClaimIntentPayload_Graphable(t *testing.T) {
-	now := time.Now()
-	p := &ClaimIntentPayload{
-		AgentID:        "test.local.game.board1.agent.claim1",
-		QuestID:        "test.local.game.board1.quest.q1",
-		Score:          0.85,
-		SuggestionRank: 1,
-		Timestamp:      now,
-	}
-
-	if got := p.EntityID(); got != "test.local.game.board1.agent.claim1" {
-		t.Errorf("EntityID() = %q, want agent ID", got)
-	}
-
-	triples := p.Triples()
-	if len(triples) != 3 {
-		t.Fatalf("Triples() returned %d triples, want 3", len(triples))
-	}
-	predicates := make(map[string]bool, len(triples))
-	for _, tr := range triples {
-		if tr.Subject != "test.local.game.board1.agent.claim1" {
-			t.Errorf("triple Subject = %q, want agent ID", tr.Subject)
-		}
-		predicates[tr.Predicate] = true
-	}
-	for _, want := range []string{
-		"agent.autonomy.claim_quest",
-		"agent.autonomy.claim_score",
-		"agent.autonomy.claim_rank",
-	} {
-		if !predicates[want] {
-			t.Errorf("missing triple predicate %q", want)
-		}
-	}
-
-	s := p.Schema()
-	if s.Domain != "semdragons" || s.Category != "autonomy.claimintent" {
-		t.Errorf("Schema() = {Domain:%q Category:%q}, want semdragons/autonomy.claimintent", s.Domain, s.Category)
-	}
-
-	if err := p.Validate(); err != nil {
-		t.Errorf("Validate() unexpected error: %v", err)
-	}
-	if err := (&ClaimIntentPayload{Timestamp: now}).Validate(); err == nil {
-		t.Error("Validate() should fail with empty AgentID")
-	}
-	if err := (&ClaimIntentPayload{AgentID: "x"}).Validate(); err == nil {
-		t.Error("Validate() should fail with zero Timestamp")
-	}
-}
-
-func TestShopIntentPayload_Graphable(t *testing.T) {
-	now := time.Now()
-	p := &ShopIntentPayload{
-		AgentID:   "test.local.game.board1.agent.shop1",
-		ItemID:    "quality_shield",
-		ItemName:  "Quality Shield",
-		XPCost:    100,
-		Budget:    500,
-		Strategic: true,
-		Timestamp: now,
-	}
-
-	if got := p.EntityID(); got != "test.local.game.board1.agent.shop1" {
-		t.Errorf("EntityID() = %q, want agent ID", got)
-	}
-
-	triples := p.Triples()
-	if len(triples) != 4 {
-		t.Fatalf("Triples() returned %d triples, want 4", len(triples))
-	}
-	predicates := make(map[string]bool, len(triples))
-	for _, tr := range triples {
-		predicates[tr.Predicate] = true
-	}
-	for _, want := range []string{
-		"agent.autonomy.shop_item",
-		"agent.autonomy.shop_cost",
-		"agent.autonomy.shop_budget",
-		"agent.autonomy.shop_strategic",
-	} {
-		if !predicates[want] {
-			t.Errorf("missing triple predicate %q", want)
-		}
-	}
-
-	s := p.Schema()
-	if s.Domain != "semdragons" || s.Category != "autonomy.shopintent" {
-		t.Errorf("Schema() = {Domain:%q Category:%q}, want semdragons/autonomy.shopintent", s.Domain, s.Category)
-	}
-
-	if err := p.Validate(); err != nil {
-		t.Errorf("Validate() unexpected error: %v", err)
-	}
-	if err := (&ShopIntentPayload{Timestamp: now}).Validate(); err == nil {
-		t.Error("Validate() should fail with empty AgentID")
-	}
-	if err := (&ShopIntentPayload{AgentID: "x"}).Validate(); err == nil {
-		t.Error("Validate() should fail with zero Timestamp")
-	}
-}
-
-func TestGuildIntentPayload_Graphable(t *testing.T) {
-	now := time.Now()
-	p := &GuildIntentPayload{
-		AgentID:          "test.local.game.board1.agent.gjoin1",
-		GuildID:          "guild.warriors",
-		GuildName:        "Warriors",
-		Score:            0.72,
-		ChoicesEvaluated: 5,
-		Timestamp:        now,
-	}
-
-	if got := p.EntityID(); got != "test.local.game.board1.agent.gjoin1" {
-		t.Errorf("EntityID() = %q, want agent ID", got)
-	}
-
-	triples := p.Triples()
-	if len(triples) != 3 {
-		t.Fatalf("Triples() returned %d triples, want 3", len(triples))
-	}
-	predicates := make(map[string]bool, len(triples))
-	for _, tr := range triples {
-		predicates[tr.Predicate] = true
-	}
-	for _, want := range []string{
-		"agent.autonomy.guild_join",
-		"agent.autonomy.guild_score",
-		"agent.autonomy.guild_choices",
-	} {
-		if !predicates[want] {
-			t.Errorf("missing triple predicate %q", want)
-		}
-	}
-
-	s := p.Schema()
-	if s.Domain != "semdragons" || s.Category != "autonomy.guildintent" {
-		t.Errorf("Schema() = {Domain:%q Category:%q}, want semdragons/autonomy.guildintent", s.Domain, s.Category)
-	}
-
-	if err := p.Validate(); err != nil {
-		t.Errorf("Validate() unexpected error: %v", err)
-	}
-	if err := (&GuildIntentPayload{Timestamp: now}).Validate(); err == nil {
-		t.Error("Validate() should fail with empty AgentID")
-	}
-	if err := (&GuildIntentPayload{AgentID: "x"}).Validate(); err == nil {
-		t.Error("Validate() should fail with zero Timestamp")
-	}
-}
-
-func TestUseIntentPayload_Graphable(t *testing.T) {
-	now := time.Now()
-	questID := domain.QuestID("test.local.game.board1.quest.q1")
-	p := &UseIntentPayload{
-		AgentID:      "test.local.game.board1.agent.use1",
-		ConsumableID: "xp_boost",
-		AgentStatus:  "on_quest",
-		QuestID:      &questID,
-		Timestamp:    now,
-	}
-
-	if got := p.EntityID(); got != "test.local.game.board1.agent.use1" {
-		t.Errorf("EntityID() = %q, want agent ID", got)
-	}
-
-	// With QuestID set, should produce 3 triples
-	triples := p.Triples()
-	if len(triples) != 3 {
-		t.Fatalf("Triples() returned %d triples, want 3 (with QuestID)", len(triples))
-	}
-	predicates := make(map[string]bool, len(triples))
-	for _, tr := range triples {
-		predicates[tr.Predicate] = true
-	}
-	for _, want := range []string{
-		"agent.autonomy.use_consumable",
-		"agent.autonomy.use_status",
-		"agent.autonomy.use_quest",
-	} {
-		if !predicates[want] {
-			t.Errorf("missing triple predicate %q", want)
-		}
-	}
-
-	// Without QuestID, should produce 2 triples
-	pNoQuest := &UseIntentPayload{
-		AgentID:      "test.local.game.board1.agent.use2",
-		ConsumableID: "cooldown_skip",
-		AgentStatus:  "cooldown",
-		Timestamp:    now,
-	}
-	if len(pNoQuest.Triples()) != 2 {
-		t.Errorf("Triples() without QuestID returned %d triples, want 2", len(pNoQuest.Triples()))
-	}
-
-	s := p.Schema()
-	if s.Domain != "semdragons" || s.Category != "autonomy.useintent" {
-		t.Errorf("Schema() = {Domain:%q Category:%q}, want semdragons/autonomy.useintent", s.Domain, s.Category)
-	}
-
-	if err := p.Validate(); err != nil {
-		t.Errorf("Validate() unexpected error: %v", err)
-	}
-	if err := (&UseIntentPayload{Timestamp: now}).Validate(); err == nil {
-		t.Error("Validate() should fail with empty AgentID")
-	}
-	if err := (&UseIntentPayload{AgentID: "x"}).Validate(); err == nil {
-		t.Error("Validate() should fail with zero Timestamp")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.payload.Validate(); err == nil {
+				t.Error("Validate() succeeded, want required-field error")
+			}
+		})
 	}
 }
 
@@ -1477,8 +1373,8 @@ func newTestComponentWithGuilds(t *testing.T) *Component {
 	guilds := &guildformation.Component{}
 	reg := newTestRegistry(t, nil, guilds, nil)
 	c := &Component{
-		config: &cfg,
-		deps:   component.Dependencies{ComponentRegistry: reg},
+		config:   &cfg,
+		deps:     component.Dependencies{ComponentRegistry: reg},
 		trackers: make(map[string]*agentTracker),
 	}
 	return c
@@ -1737,4 +1633,3 @@ func TestConfigSchema_ApprovalProperties(t *testing.T) {
 		}
 	}
 }
-

@@ -58,6 +58,48 @@ relationships merely because they resemble an entity ID.
 - **THEN** every approved relationship predicate has an `@id` object
 - **AND** no unapproved scalar-to-edge inference is required
 
+### Requirement: Autonomy graph-event vocabulary is explicit
+
+The system SHALL declare and emit the canonical autonomy graph-event
+vocabulary without changing the live raw typed-subject event contract. A raw
+typed-subject publish SHALL NOT be treated as proof that graph-ingest persists
+the payload.
+
+#### Scenario: All autonomy predicates are declared
+
+- **WHEN** contract tests enumerate the seven autonomy payload Graphables
+- **THEN** they emit exactly 21 declared canonical predicates
+- **AND** every predicate has exactly three lower-kebab segments
+- **AND** no legacy underscore-segment autonomy predicate remains
+
+#### Scenario: Autonomy relationships are same-subject edges
+
+- **WHEN** claim, guild-join, and quest-scoped consumable events emit triples
+- **THEN** exactly `agent.autonomy.claim-quest`,
+  `agent.autonomy.guild-join`, and `agent.autonomy.use-quest` use `@id`
+- **AND** each triple subject equals the payload's agent `EntityID()`
+- **AND** none requires a `ForeignEdgeClaim`
+
+#### Scenario: Autonomy catalog aliases and counts remain scalar
+
+- **WHEN** shop, consumable-use, guild-join, or guild-create evidence is emitted
+- **THEN** `agent.autonomy.shop-item` and
+  `agent.autonomy.use-consumable` remain scalar catalog aliases
+- **AND** `agent.autonomy.guild-choices` and
+  `agent.autonomy.guild-create-candidates` remain scalar counts
+- **AND** no scalar value is inferred to be a graph relationship
+
+#### Scenario: Autonomy graph route is absent before beta.158 adoption
+
+- **GIVEN** autonomy payloads are published as raw typed-subject JSON
+- **AND** no autonomy payload factory or graph-ingest route is registered
+- **WHEN** issue #14 canonicalizes the payload Graphables
+- **THEN** no autonomy projection contract, owner bind, or heartbeat is added
+- **AND** issue #4 either wires the framework graph route and seven
+  append-evidence contracts or deletes the latent Graphable surfaces
+- **AND** a wired route uses no foreign-edge claim and binds static owner
+  `autonomy` with `projection.BindAndHeartbeat`
+
 ### Requirement: Disjoint authoritative writers
 
 Every mutable predicate group SHALL have one declared owner and write mode.

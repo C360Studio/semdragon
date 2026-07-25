@@ -73,9 +73,9 @@ func (p *EvaluatedPayload) Triples() []message.Triple {
 	entityID := string(p.AgentID)
 
 	return []message.Triple{
-		{Subject: entityID, Predicate: "agent.autonomy.status", Object: string(p.AgentStatus), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.action", Object: p.ActionTaken, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.interval_ms", Object: p.Interval.Milliseconds(), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyStatus, Object: string(p.AgentStatus), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyAction, Object: p.ActionTaken, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyIntervalMS, Object: p.Interval.Milliseconds(), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
 }
 
@@ -118,9 +118,9 @@ func (p *IdlePayload) Triples() []message.Triple {
 	entityID := string(p.AgentID)
 
 	return []message.Triple{
-		{Subject: entityID, Predicate: "agent.autonomy.idle_duration_ms", Object: p.IdleDuration.Milliseconds(), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.has_suggestion", Object: p.HasSuggestion, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.backoff_ms", Object: p.BackoffMs, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyIdleDurationMS, Object: p.IdleDuration.Milliseconds(), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyHasSuggestion, Object: p.HasSuggestion, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyBackoffMS, Object: p.BackoffMs, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
 }
 
@@ -171,9 +171,9 @@ func (p *ClaimIntentPayload) Triples() []message.Triple {
 	source := "autonomy"
 	entityID := string(p.AgentID)
 	return []message.Triple{
-		{Subject: entityID, Predicate: "agent.autonomy.claim_quest", Object: string(p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
-		{Subject: entityID, Predicate: "agent.autonomy.claim_score", Object: p.Score, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.claim_rank", Object: p.SuggestionRank, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyClaimQuest, Object: string(p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyClaimScore, Object: p.Score, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyClaimRank, Object: p.SuggestionRank, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
 }
 
@@ -217,10 +217,10 @@ func (p *ShopIntentPayload) Triples() []message.Triple {
 	source := "autonomy"
 	entityID := string(p.AgentID)
 	return []message.Triple{
-		{Subject: entityID, Predicate: "agent.autonomy.shop_item", Object: p.ItemID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.shop_cost", Object: p.XPCost, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.shop_budget", Object: p.Budget, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.shop_strategic", Object: p.Strategic, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyShopItem, Object: p.ItemID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyShopCost, Object: p.XPCost, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyShopBudget, Object: p.Budget, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyShopStrategic, Object: p.Strategic, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
 }
 
@@ -263,9 +263,9 @@ func (p *GuildIntentPayload) Triples() []message.Triple {
 	source := "autonomy"
 	entityID := string(p.AgentID)
 	return []message.Triple{
-		{Subject: entityID, Predicate: "agent.autonomy.guild_join", Object: p.GuildID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
-		{Subject: entityID, Predicate: "agent.autonomy.guild_score", Object: p.Score, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.guild_choices", Object: p.ChoicesEvaluated, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyGuildJoin, Object: p.GuildID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyGuildScore, Object: p.Score, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyGuildChoices, Object: p.ChoicesEvaluated, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
 }
 
@@ -307,12 +307,12 @@ func (p *UseIntentPayload) Triples() []message.Triple {
 	source := "autonomy"
 	entityID := string(p.AgentID)
 	triples := []message.Triple{
-		{Subject: entityID, Predicate: "agent.autonomy.use_consumable", Object: p.ConsumableID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.use_status", Object: string(p.AgentStatus), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyUseConsumable, Object: p.ConsumableID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyUseStatus, Object: string(p.AgentStatus), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
 	if p.QuestID != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.autonomy.use_quest", Object: string(*p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
+			Subject: entityID, Predicate: domain.PredicateAutonomyUseQuest, Object: string(*p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 	return triples
@@ -356,8 +356,8 @@ func (p *GuildCreateIntentPayload) Triples() []message.Triple {
 	source := "autonomy"
 	entityID := string(p.AgentID)
 	return []message.Triple{
-		{Subject: entityID, Predicate: "agent.autonomy.guild_create", Object: p.GuildName, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.autonomy.guild_create_candidates", Object: len(p.CandidateIDs), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyGuildCreate, Object: p.GuildName, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyGuildCreateCandidates, Object: len(p.CandidateIDs), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
 }
 

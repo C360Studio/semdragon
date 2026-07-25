@@ -93,17 +93,17 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 		{
 			name:           "autonomy claim event",
 			entity:         &autonomy.ClaimIntentPayload{AgentID: agent1, QuestID: quest1, Timestamp: now},
-			wantReferences: map[string]int{"agent.autonomy.claim_quest": 1},
+			wantReferences: map[string]int{"agent.autonomy.claim-quest": 1},
 		},
 		{
 			name:           "autonomy guild event",
 			entity:         &autonomy.GuildIntentPayload{AgentID: agent1, GuildID: string(guild), Timestamp: now},
-			wantReferences: map[string]int{"agent.autonomy.guild_join": 1},
+			wantReferences: map[string]int{"agent.autonomy.guild-join": 1},
 		},
 		{
 			name:           "autonomy use event",
 			entity:         &autonomy.UseIntentPayload{AgentID: agent1, QuestID: &quest1, Timestamp: now},
-			wantReferences: map[string]int{"agent.autonomy.use_quest": 1},
+			wantReferences: map[string]int{"agent.autonomy.use-quest": 1},
 		},
 		{
 			name:             "autonomy shop event",

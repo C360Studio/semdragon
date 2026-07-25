@@ -245,6 +245,10 @@ and entity references.”
 
 ### autonomy: 19 findings
 
+The auditor extracts 21 stored-predicate candidates from the seven autonomy
+payload Graphables. `agent.autonomy.status` and `agent.autonomy.action` are
+already canonical; the other 19 candidates require these renames:
+
 - `agent.autonomy.{interval_ms,idle_duration_ms,has_suggestion,backoff_ms}` becomes
   `agent.autonomy.{interval-ms,idle-duration-ms,has-suggestion,backoff-ms}`.
 - `agent.autonomy.{claim_quest,claim_score,claim_rank}` becomes
@@ -258,12 +262,25 @@ and entity references.”
 - `agent.autonomy.{guild_create,guild_create_candidates}` becomes
   `agent.autonomy.{guild-create,guild-create-candidates}`.
 
-`claim-quest`, `guild-join`, and `use-quest` are `@id`. `shop-item` is a scalar
-catalog alias unless the producer first converts it with
-`BoardConfig.StoreItemEntityID`; see “Catalog aliases and entity references.”
-Collections such as `guild-choices` and `guild-create-candidates` remain
-bounded observability values unless a later product requirement makes them
-graph edges.
+Issue #14 declares all 21 canonical names in the product vocabulary, including
+the two names that did not need a lexical change. `claim-quest`, `guild-join`,
+and `use-quest` are the only `@id` values. Each is written on the payload's
+agent subject, so none is a `ForeignEdgeClaim`.
+
+`shop-item` and `use-consumable` remain scalar catalog aliases.
+`guild-choices` is the number of choices evaluated, and
+`guild-create-candidates` is the candidate count; both remain scalar bounded
+observability values. A future product change may convert an item alias with
+`BoardConfig.StoreItemEntityID`, but issue #14 does not change the current
+value contract.
+
+The production autonomy component publishes these payloads as raw JSON through
+typed NATS subjects. The binary does not register autonomy payload factories
+or route them through `graph.ingest.entity`, so the Graphable projection is not
+currently persisted by graph-ingest. Issue #14 changes no event subjects and
+adds no projection binding. Issue #4 must either wire the real framework
+`BaseMessage`/payload-registry/graph-ingest route or delete the seven latent
+Graphable surfaces and their graph-only tests.
 
 ### bossbattle: eight findings
 

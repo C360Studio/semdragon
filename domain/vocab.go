@@ -360,6 +360,33 @@ const (
 	PredicateAutonomyUseIntent = "agent.autonomy.useintent"
 )
 
+// Agent autonomy graph predicates. These describe the latent Graphable
+// projection emitted by the seven raw typed-subject payloads; the event
+// subjects above remain unchanged.
+const (
+	PredicateAutonomyStatus                = "agent.autonomy.status"
+	PredicateAutonomyAction                = "agent.autonomy.action"
+	PredicateAutonomyIntervalMS            = "agent.autonomy.interval-ms"
+	PredicateAutonomyIdleDurationMS        = "agent.autonomy.idle-duration-ms"
+	PredicateAutonomyHasSuggestion         = "agent.autonomy.has-suggestion"
+	PredicateAutonomyBackoffMS             = "agent.autonomy.backoff-ms"
+	PredicateAutonomyClaimQuest            = "agent.autonomy.claim-quest"
+	PredicateAutonomyClaimScore            = "agent.autonomy.claim-score"
+	PredicateAutonomyClaimRank             = "agent.autonomy.claim-rank"
+	PredicateAutonomyShopItem              = "agent.autonomy.shop-item"
+	PredicateAutonomyShopCost              = "agent.autonomy.shop-cost"
+	PredicateAutonomyShopBudget            = "agent.autonomy.shop-budget"
+	PredicateAutonomyShopStrategic         = "agent.autonomy.shop-strategic"
+	PredicateAutonomyGuildJoin             = "agent.autonomy.guild-join"
+	PredicateAutonomyGuildScore            = "agent.autonomy.guild-score"
+	PredicateAutonomyGuildChoices          = "agent.autonomy.guild-choices"
+	PredicateAutonomyUseConsumable         = "agent.autonomy.use-consumable"
+	PredicateAutonomyUseStatus             = "agent.autonomy.use-status"
+	PredicateAutonomyUseQuest              = "agent.autonomy.use-quest"
+	PredicateAutonomyGuildCreate           = "agent.autonomy.guild-create"
+	PredicateAutonomyGuildCreateCandidates = "agent.autonomy.guild-create-candidates"
+)
+
 // --- Peer Review Predicates ---
 
 const (
@@ -760,6 +787,69 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateAutonomyUseIntent,
 		vocabulary.WithDescription("Agent intends to use a consumable"),
 		vocabulary.WithDataType("UseIntentPayload"),
+	)
+	vocabulary.Register(PredicateAutonomyStatus,
+		vocabulary.WithDescription("Agent status observed during autonomy evaluation"),
+	)
+	vocabulary.Register(PredicateAutonomyAction,
+		vocabulary.WithDescription("Action selected during autonomy evaluation"),
+	)
+	vocabulary.Register(PredicateAutonomyIntervalMS,
+		vocabulary.WithDescription("Autonomy heartbeat interval in milliseconds"),
+	)
+	vocabulary.Register(PredicateAutonomyIdleDurationMS,
+		vocabulary.WithDescription("Agent idle duration in milliseconds"),
+	)
+	vocabulary.Register(PredicateAutonomyHasSuggestion,
+		vocabulary.WithDescription("Whether the idle agent had an actionable suggestion"),
+	)
+	vocabulary.Register(PredicateAutonomyBackoffMS,
+		vocabulary.WithDescription("Next autonomy backoff interval in milliseconds"),
+	)
+	vocabulary.Register(PredicateAutonomyClaimQuest,
+		vocabulary.WithDescription("Quest selected by an autonomous claim action"),
+	)
+	vocabulary.Register(PredicateAutonomyClaimScore,
+		vocabulary.WithDescription("Suggestion score for an autonomous quest claim"),
+	)
+	vocabulary.Register(PredicateAutonomyClaimRank,
+		vocabulary.WithDescription("Suggestion rank for an autonomous quest claim"),
+	)
+	vocabulary.Register(PredicateAutonomyShopItem,
+		vocabulary.WithDescription("Scalar store catalog alias selected for purchase"),
+	)
+	vocabulary.Register(PredicateAutonomyShopCost,
+		vocabulary.WithDescription("XP cost of an autonomous purchase"),
+	)
+	vocabulary.Register(PredicateAutonomyShopBudget,
+		vocabulary.WithDescription("XP budget available for an autonomous purchase"),
+	)
+	vocabulary.Register(PredicateAutonomyShopStrategic,
+		vocabulary.WithDescription("Whether an autonomous purchase was strategic"),
+	)
+	vocabulary.Register(PredicateAutonomyGuildJoin,
+		vocabulary.WithDescription("Guild selected by an autonomous join action"),
+	)
+	vocabulary.Register(PredicateAutonomyGuildScore,
+		vocabulary.WithDescription("Score of the selected guild"),
+	)
+	vocabulary.Register(PredicateAutonomyGuildChoices,
+		vocabulary.WithDescription("Number of guild choices evaluated"),
+	)
+	vocabulary.Register(PredicateAutonomyUseConsumable,
+		vocabulary.WithDescription("Scalar consumable catalog alias selected for use"),
+	)
+	vocabulary.Register(PredicateAutonomyUseStatus,
+		vocabulary.WithDescription("Agent status when a consumable was used"),
+	)
+	vocabulary.Register(PredicateAutonomyUseQuest,
+		vocabulary.WithDescription("Quest active when a consumable was used"),
+	)
+	vocabulary.Register(PredicateAutonomyGuildCreate,
+		vocabulary.WithDescription("Name proposed for an autonomous guild creation"),
+	)
+	vocabulary.Register(PredicateAutonomyGuildCreateCandidates,
+		vocabulary.WithDescription("Number of candidates considered for guild creation"),
 	)
 
 	// Store predicates

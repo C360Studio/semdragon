@@ -262,7 +262,16 @@ Guild/party membership and quest assignment move to the first-class membership
 and assignment entities. Agentprogression does not claim their legacy
 agent-entity projection predicates.
 
-Autonomy observability predicates are append evidence, not owned current state:
+### Autonomy observation events
+
+The autonomy component publishes seven live raw typed-subject event payloads.
+Those publishes are not SemStreams `BaseMessage` graph-ingest writes: the
+binary has no autonomy payload-registry factories and no route from the event
+subjects to `graph.ingest.entity`. Issue #14 canonicalizes their declared
+Graphable corpus while pinned to beta.135, but does not register an owner or
+claim graph persistence.
+
+The future graph contract contains append evidence, not owned current state:
 `agent.autonomy.status`, `agent.autonomy.action`,
 `agent.autonomy.interval-ms`, `agent.autonomy.idle-duration-ms`,
 `agent.autonomy.has-suggestion`, `agent.autonomy.backoff-ms`,
@@ -275,10 +284,35 @@ Autonomy observability predicates are append evidence, not owned current state:
 `agent.autonomy.use-quest`, `agent.autonomy.guild-create`, and
 `agent.autonomy.guild-create-candidates`.
 
-Bare local catalog values in `agent.autonomy.shop-item` are scalar. The
-predicate is typed `@id` only when the producer has converted the alias through
-`BoardConfig.StoreItemEntityID`; the conversion and evidence contract are in
-the rename ledger.
+Exactly `agent.autonomy.claim-quest`, `agent.autonomy.guild-join`, and
+`agent.autonomy.use-quest` are typed `@id`. They are edges on the payload's
+agent subject, not writes to a foreign subject, so no `ForeignEdgeClaim` is
+declared. Bare catalog values in `agent.autonomy.shop-item` and
+`agent.autonomy.use-consumable` are scalar. `agent.autonomy.guild-choices` and
+`agent.autonomy.guild-create-candidates` are scalar counts.
+
+If issue #4 wires a real framework graph route, it binds these seven contracts
+under static owner `autonomy`, pattern `*.*.game.*.agent.*`:
+
+- `semdragons.autonomy.evaluated.v1`;
+- `semdragons.autonomy.idle.v1`;
+- `semdragons.autonomy.claimintent.v1`;
+- `semdragons.autonomy.shopintent.v1`;
+- `semdragons.autonomy.guildintent.v1`;
+- `semdragons.autonomy.useintent.v1`; and
+- `semdragons.autonomy.guildcreateintent.v1`.
+
+Each contract contains one `append-evidence` group for the predicates emitted
+by that payload, no foreign edges, and no indexing profile. Issue #4 uses
+`projection.BindAndHeartbeat` with one process-lifetime static heartbeater,
+bound once at the composition root after ownership initialization and before
+the autonomy component starts. Although append evidence is overlap-exempt, it
+is represented by an `OwnerClaim`; beta.158 liveness compaction exempts only
+foreign-edge-only registrations.
+
+If issue #4 does not add the real `BaseMessage`, payload-registry, and
+graph-ingest route, it deletes the seven Graphable projections rather than
+binding a phantom graph writer.
 
 ### Agent store aggregates and evidence
 

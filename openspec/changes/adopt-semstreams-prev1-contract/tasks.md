@@ -44,6 +44,13 @@
   publisher or payload-registry registration. Do not invent a promptmanager
   component, projection owner, bind, or heartbeat for a writer that does not
   exist.
+- [x] 2.10 Resolve
+  [semdragon #14](https://github.com/C360Studio/semdragon/issues/14) by
+  declaring and emitting all 21 canonical autonomy observability predicates,
+  including exactly three same-subject `@id` relationships. Preserve the live
+  raw typed-subject events, but do not bind a projection owner while no
+  autonomy payload is registered or routed through graph-ingest. Hand issue #4
+  an explicit wire-or-delete decision for the seven latent Graphables.
 
 ## 3. Verification and handoff to beta.158
 
@@ -105,3 +112,22 @@ This evidence closes only task 2.9:
   zero findings.
 - Strict OpenSpec validation passes.
 - Go review approved the implementation.
+
+## Completed issue #14 evidence
+
+This evidence closes only task 2.10:
+
+- Product vocabulary and payload contract tests cover all 21 canonical
+  autonomy predicates, exactly three same-subject `@id` relationships, and
+  the approved scalar catalog aliases and counts.
+- The vocabulary test restores the SemStreams registry with
+  `vocabulary.SnapshotRegistry`, so it is isolated from other packages.
+- `go test -race . ./domain ./processor/autonomy -count=1` and
+  `go test ./...` pass.
+- The pinned beta.158 predicate audit for `./processor/autonomy` reports zero
+  findings, and the exact legacy underscore-predicate search reports zero
+  occurrences.
+- Source review confirms that no projection contract, owner bind, payload
+  registration, or graph-ingest route was added.
+- Strict OpenSpec validation and `git diff --check` pass.
+- Architect and Go reviewer approved the implementation.

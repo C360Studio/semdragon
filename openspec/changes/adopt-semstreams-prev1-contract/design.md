@@ -190,6 +190,44 @@ foreign edge. `projection.Contract` has no source field, and triple `Source`
 metadata does not establish ownership. The binding owner ID must name the
 actual publisher, not the promptmanager library.
 
+### D10: Autonomy event and graph publication remain separate contracts
+
+Issue [#14](https://github.com/C360Studio/semdragon/issues/14) canonicalizes
+the seven autonomy event payload Graphables while Semdragon remains pinned to
+beta.135. The autonomy component is a real production event publisher:
+`natsclient.Subject[T]` serializes each payload as raw JSON on its typed event
+subject. That publish path is not a SemStreams `BaseMessage`, is not registered
+in the binary payload registry, and is not routed through `graph.ingest.entity`.
+The existing `Graphable` methods therefore declare a prospective graph shape;
+they do not prove current graph persistence.
+
+Issue #14 declares and emits exactly 21 canonical autonomy predicates. The
+`claim-quest`, `guild-join`, and `use-quest` objects are typed `@id`
+relationships. Their triple subject is the payload's agent `EntityID()`, so
+they are ordinary same-subject projection data and require no
+`ForeignEdgeClaim`. `shop-item` and `use-consumable` remain scalar catalog
+aliases. `guild-create-candidates` remains a scalar count, and
+`guild-choices` remains the scalar number of choices evaluated.
+
+Issue #14 does not add a payload-registry factory, graph-ingest route,
+`projection.Contract`, owner registration, or heartbeat. Issue
+[#4](https://github.com/C360Studio/semdragon/issues/4) must make one explicit
+choice after beta.158 is adopted:
+
+1. wire the autonomy component through the framework `BaseMessage`,
+   payload-registry, and graph-ingest primitives; or
+2. delete the seven latent Graphable surfaces and their graph-only tests if
+   persisted autonomy evidence is not a product requirement.
+
+If issue #4 wires the real graph route, owner `autonomy` binds seven contracts,
+one per payload message type, over entity pattern `*.*.game.*.agent.*`. Each
+contract has one `append-evidence` predicate group, no foreign edges, and no
+indexing profile. Because beta.158 liveness compaction exempts only
+foreign-edge-only registrations, the static owner uses
+`projection.BindAndHeartbeat` with a process-lifetime heartbeater. Binding
+occurs once at the composition root after ownership initialization and before
+the autonomy component starts, never inside `Component.Start`.
+
 ### Approved core-wave verification
 
 The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:
@@ -214,6 +252,26 @@ The 2026-07-25 evidence closes only task 2.9:
 - the pinned beta.158 promptmanager predicate audit reports zero findings;
 - strict OpenSpec validation passes; and
 - Go review approved the implementation.
+
+### Approved issue #14 verification
+
+The 2026-07-25 evidence closes only task 2.10:
+
+- vocabulary and payload contract tests cover all 21 canonical predicates,
+  exactly three same-subject `@id` relationships, and the approved scalars;
+- the vocabulary test uses `vocabulary.SnapshotRegistry` for registry
+  isolation;
+- the focused root/domain/autonomy race suite and full Go suite pass;
+- the pinned beta.158 autonomy predicate audit and exact legacy underscore
+  search both report zero findings;
+- source review confirms that no projection contract, owner bind, payload
+  registration, or graph-ingest route was added;
+- strict OpenSpec validation and the diff check pass; and
+- architect and Go reviewer approved the implementation after the registry
+  isolation fix.
+
+The raw typed-subject events remain separate from graph persistence. Issue #4
+still owns the documented wire-or-delete decision for the seven Graphables.
 
 ## Delivery Order
 
