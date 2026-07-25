@@ -5,11 +5,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
-	"github.com/c360studio/semstreams/graph"
-	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
-	"github.com/c360studio/semstreams/pkg/types"
 )
 
 // =============================================================================
@@ -17,15 +13,6 @@ import (
 // =============================================================================
 // Event payloads for guild lifecycle and membership events.
 // =============================================================================
-
-// Ensure Graphable implementations
-var (
-	_ graph.Graphable = (*GuildCreatedPayload)(nil)
-	_ graph.Graphable = (*GuildJoinedPayload)(nil)
-	_ graph.Graphable = (*GuildLeftPayload)(nil)
-	_ graph.Graphable = (*GuildPromotedPayload)(nil)
-	_ graph.Graphable = (*GuildDisbandedPayload)(nil)
-)
 
 // Typed subjects for guild formation and membership events.
 var (
@@ -57,31 +44,6 @@ type GuildCreatedPayload struct {
 	Trace     TraceInfo      `json:"trace,omitempty"`
 }
 
-// EntityID returns the entity ID for this event.
-func (p *GuildCreatedPayload) EntityID() string {
-	return string(p.Guild.ID)
-}
-
-// Triples returns semantic facts about this event.
-func (p *GuildCreatedPayload) Triples() []message.Triple {
-	triples := p.Guild.Triples()
-	triples = append(triples, message.Triple{
-		Subject:    p.EntityID(),
-		Predicate:  "guild.event.created_by",
-		Object:     string(p.FounderID),
-		Datatype:   semcompat.EntityReferenceDatatype,
-		Source:     "guildformation",
-		Timestamp:  p.Timestamp,
-		Confidence: 1.0,
-	})
-	return triples
-}
-
-// Schema returns the type schema for this payload.
-func (p *GuildCreatedPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "guild.created", Version: "v1"}
-}
-
 // Validate checks the payload for required fields.
 func (p *GuildCreatedPayload) Validate() error {
 	if p.Guild.ID == "" {
@@ -110,39 +72,6 @@ type GuildJoinedPayload struct {
 	Trace     TraceInfo        `json:"trace,omitempty"`
 }
 
-// EntityID returns the entity ID for this event.
-func (p *GuildJoinedPayload) EntityID() string {
-	return string(p.GuildID)
-}
-
-// Triples returns semantic facts about this event.
-func (p *GuildJoinedPayload) Triples() []message.Triple {
-	return []message.Triple{
-		{
-			Subject:    string(p.GuildID),
-			Predicate:  "guild.membership.member",
-			Object:     string(p.AgentID),
-			Datatype:   semcompat.EntityReferenceDatatype,
-			Source:     "guildformation",
-			Timestamp:  p.Timestamp,
-			Confidence: 1.0,
-		},
-		{
-			Subject:    string(p.GuildID),
-			Predicate:  "guild.member." + string(p.AgentID) + ".rank",
-			Object:     string(p.Rank),
-			Source:     "guildformation",
-			Timestamp:  p.Timestamp,
-			Confidence: 1.0,
-		},
-	}
-}
-
-// Schema returns the type schema for this payload.
-func (p *GuildJoinedPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "guild.joined", Version: "v1"}
-}
-
 // Validate checks the payload for required fields.
 func (p *GuildJoinedPayload) Validate() error {
 	if p.GuildID == "" {
@@ -166,31 +95,6 @@ type GuildLeftPayload struct {
 	Reason    string         `json:"reason"`
 	Timestamp time.Time      `json:"timestamp"`
 	Trace     TraceInfo      `json:"trace,omitempty"`
-}
-
-// EntityID returns the entity ID for this event.
-func (p *GuildLeftPayload) EntityID() string {
-	return string(p.GuildID)
-}
-
-// Triples returns semantic facts about this event.
-func (p *GuildLeftPayload) Triples() []message.Triple {
-	return []message.Triple{
-		{
-			Subject:    string(p.GuildID),
-			Predicate:  "guild.membership.left",
-			Object:     string(p.AgentID),
-			Datatype:   semcompat.EntityReferenceDatatype,
-			Source:     "guildformation",
-			Timestamp:  p.Timestamp,
-			Confidence: 1.0,
-		},
-	}
-}
-
-// Schema returns the type schema for this payload.
-func (p *GuildLeftPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "guild.left", Version: "v1"}
 }
 
 // Validate checks the payload for required fields.
@@ -219,30 +123,6 @@ type GuildPromotedPayload struct {
 	Trace     TraceInfo        `json:"trace,omitempty"`
 }
 
-// EntityID returns the entity ID for this event.
-func (p *GuildPromotedPayload) EntityID() string {
-	return string(p.GuildID)
-}
-
-// Triples returns semantic facts about this event.
-func (p *GuildPromotedPayload) Triples() []message.Triple {
-	return []message.Triple{
-		{
-			Subject:    string(p.GuildID),
-			Predicate:  "guild.member." + string(p.AgentID) + ".rank",
-			Object:     string(p.NewRank),
-			Source:     "guildformation",
-			Timestamp:  p.Timestamp,
-			Confidence: 1.0,
-		},
-	}
-}
-
-// Schema returns the type schema for this payload.
-func (p *GuildPromotedPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "guild.promoted", Version: "v1"}
-}
-
 // Validate checks the payload for required fields.
 func (p *GuildPromotedPayload) Validate() error {
 	if p.GuildID == "" {
@@ -266,38 +146,6 @@ type GuildDisbandedPayload struct {
 	FinalMemberCount int            `json:"final_member_count"`
 	Timestamp        time.Time      `json:"timestamp"`
 	Trace            TraceInfo      `json:"trace,omitempty"`
-}
-
-// EntityID returns the entity ID for this event.
-func (p *GuildDisbandedPayload) EntityID() string {
-	return string(p.GuildID)
-}
-
-// Triples returns semantic facts about this event.
-func (p *GuildDisbandedPayload) Triples() []message.Triple {
-	return []message.Triple{
-		{
-			Subject:    string(p.GuildID),
-			Predicate:  "guild.status.state",
-			Object:     string(domain.GuildInactive),
-			Source:     "guildformation",
-			Timestamp:  p.Timestamp,
-			Confidence: 1.0,
-		},
-		{
-			Subject:    string(p.GuildID),
-			Predicate:  "guild.lifecycle.disbanded_at",
-			Object:     p.Timestamp.Format(time.RFC3339),
-			Source:     "guildformation",
-			Timestamp:  p.Timestamp,
-			Confidence: 1.0,
-		},
-	}
-}
-
-// Schema returns the type schema for this payload.
-func (p *GuildDisbandedPayload) Schema() types.Type {
-	return types.Type{Domain: "semdragons", Category: "guild.disbanded", Version: "v1"}
 }
 
 // Validate checks the payload for required fields.

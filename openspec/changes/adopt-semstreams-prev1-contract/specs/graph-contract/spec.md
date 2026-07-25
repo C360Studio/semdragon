@@ -231,6 +231,54 @@ a graph writer without a production route and owner.
 - **AND** it does not create a second event-derived writer or local framework
   substitute
 
+### Requirement: Guild raw events do not duplicate authoritative state
+
+The system SHALL preserve active guildformation raw event contracts without
+treating their DTOs as a second graph projection.
+
+#### Scenario: Active guild events retain only their wire contract
+
+- **GIVEN** guildformation is enabled in all shipped configurations
+- **AND** its create, join, leave, promote, and disband operations publish five
+  raw DTOs through typed NATS subjects
+- **AND** no guild event payload factory, `BaseMessage`, graph-ingest route,
+  projection bind, heartbeat, or graph reader exists
+- **WHEN** issue #22 resolves the guildformation beta.158 findings
+- **THEN** the five DTOs, typed subjects, validation, publisher calls, and JSON
+  wire fields remain unchanged
+- **AND** all five `Graphable` assertions and all fifteen graph-only methods are
+  absent
+- **AND** no event projection owner or replacement graph route is introduced
+
+#### Scenario: Duplicate and dynamic guild event facts are deleted
+
+- **GIVEN** `guild.event.created_by` duplicates the authoritative typed
+  `guild.founding.agent` relationship
+- **AND** the joined and promoted event shapes embed agent IDs in dynamic rank
+  predicates
+- **AND** `guild.lifecycle.disbanded_at` has no authoritative Guild field or
+  graph reader
+- **WHEN** the latent event projection is removed
+- **THEN** neither audit finding is renamed or registered
+- **AND** the event relationship fixtures are removed
+- **AND** raw `founder_id`, `agent_id`, and timestamp JSON fields remain wire
+  data rather than graph aliases
+
+#### Scenario: Authoritative guild state remains a framework handoff
+
+- **GIVEN** guildformation, agentprogression, and redteam can each replace a
+  full Guild snapshot
+- **AND** current membership and application data use dynamic predicates
+- **AND** pending-guild expiry uses a component-local ticker
+- **WHEN** authoritative guild state is migrated
+- **THEN** issue #4 or a dedicated packet uses SemStreams lifecycle, rules,
+  ownership, and classified mutation primitives
+- **AND** it models membership and application records as first-class children
+- **AND** it removes cross-owner full-object replacement and local framework
+  substitutes
+- **AND** issue #22 opens no upstream framework issue merely to delete the
+  latent event Graphables
+
 ### Requirement: Disjoint authoritative writers
 
 Every mutable predicate group SHALL have one declared owner and write mode.

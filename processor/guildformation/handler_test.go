@@ -1,11 +1,12 @@
 package guildformation
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semstreams/message"
 )
 
 // =============================================================================
@@ -248,362 +249,177 @@ func TestGuildDisbandedPayload_Validate_EmptyReasonOK(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Triples — GuildCreatedPayload
-// =============================================================================
-
-func TestGuildCreatedPayload_Triples(t *testing.T) {
-	now := time.Now()
+func TestGuildEventPayload_JSONWireContracts(t *testing.T) {
+	eventTime := time.Date(2026, 7, 25, 15, 0, 0, 0, time.UTC)
+	foundedAt := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	joinedAt := time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)
+	createdAt := time.Date(2025, 3, 4, 5, 6, 7, 0, time.UTC)
+	guildID := domain.GuildID("c360.prod.game.board1.guild.guild-1")
+	agentID := domain.AgentID("c360.prod.game.board1.agent.agent-1")
 	guild := domain.Guild{
-		ID:     "guild-abc",
-		Name:   "Ironclad's Guild",
-		Status: domain.GuildActive,
-	}
-	p := &GuildCreatedPayload{
-		Guild:     guild,
-		FounderID: "agent-founder",
-		Timestamp: now,
+		ID:          guildID,
+		Name:        "Wire Guild",
+		Description: "guild JSON contract",
+		Status:      domain.GuildActive,
+		Members: []domain.GuildMember{{
+			AgentID: agentID, Rank: domain.GuildRankVeteran, JoinedAt: joinedAt, Contribution: 3.5,
+		}},
+		MaxMembers:       12,
+		MinLevel:         4,
+		Founded:          foundedAt,
+		FoundedBy:        agentID,
+		QuorumSize:       3,
+		Culture:          "ship carefully",
+		Motto:            "contracts endure",
+		Reputation:       0.75,
+		QuestsHandled:    10,
+		SuccessRate:      0.8,
+		QuestsFailed:     2,
+		SharedTools:      []string{"lint"},
+		QuestTypes:       []string{"code"},
+		PreferredClients: []string{"c360"},
+		CreatedAt:        createdAt,
 	}
 
-	triples := p.Triples()
-
-	if len(triples) == 0 {
-		t.Fatal("Triples() returned empty slice")
+	wantGuild := map[string]any{
+		"id":          string(guildID),
+		"name":        "Wire Guild",
+		"description": "guild JSON contract",
+		"status":      string(domain.GuildActive),
+		"members": []any{map[string]any{
+			"agent_id": string(agentID), "rank": string(domain.GuildRankVeteran),
+			"joined_at": joinedAt.Format(time.RFC3339), "contribution": 3.5,
+		}},
+		"max_members":       12,
+		"min_level":         4,
+		"founded":           foundedAt.Format(time.RFC3339),
+		"founded_by":        string(agentID),
+		"quorum_size":       3,
+		"culture":           "ship carefully",
+		"motto":             "contracts endure",
+		"reputation":        0.75,
+		"quests_handled":    10,
+		"success_rate":      0.8,
+		"quests_failed":     2,
+		"shared_tools":      []any{"lint"},
+		"quest_types":       []any{"code"},
+		"preferred_clients": []any{"c360"},
+		"created_at":        createdAt.Format(time.RFC3339),
 	}
-
-	// Verify the "created_by" triple is included.
-	var foundCreatedBy bool
-	for _, tr := range triples {
-		if tr.Predicate == "guild.event.created_by" {
-			foundCreatedBy = true
-			if tr.Subject != "guild-abc" {
-				t.Errorf("created_by triple subject = %q; want %q", tr.Subject, "guild-abc")
-			}
-			if tr.Object != "agent-founder" {
-				t.Errorf("created_by triple object = %q; want %q", tr.Object, "agent-founder")
-			}
-			if tr.Source != "guildformation" {
-				t.Errorf("created_by triple source = %q; want %q", tr.Source, "guildformation")
-			}
+	trace := func(suffix string) TraceInfo {
+		return TraceInfo{
+			TrajectoryID: "trajectory-" + suffix,
+			SpanID:       "span-" + suffix,
+			ParentSpanID: "parent-" + suffix,
 		}
 	}
-	if !foundCreatedBy {
-		t.Error("Triples() missing guild.event.created_by triple")
-	}
-}
-
-func TestGuildCreatedPayload_EntityID(t *testing.T) {
-	p := &GuildCreatedPayload{
-		Guild: domain.Guild{ID: "guild-xyz"},
-	}
-	if got := p.EntityID(); got != "guild-xyz" {
-		t.Errorf("EntityID() = %q; want %q", got, "guild-xyz")
-	}
-}
-
-// =============================================================================
-// Triples — GuildJoinedPayload
-// =============================================================================
-
-func TestGuildJoinedPayload_Triples(t *testing.T) {
-	now := time.Now()
-	p := &GuildJoinedPayload{
-		GuildID:   "guild-1",
-		GuildName: "Ironclad's Guild",
-		AgentID:   "agent-42",
-		Rank:      domain.GuildRankInitiate,
-		Timestamp: now,
+	wantTrace := func(suffix string) map[string]any {
+		return map[string]any{
+			"trajectory_id":  "trajectory-" + suffix,
+			"span_id":        "span-" + suffix,
+			"parent_span_id": "parent-" + suffix,
+		}
 	}
 
-	triples := p.Triples()
-
-	if len(triples) != 2 {
-		t.Fatalf("Triples() returned %d triples; want 2", len(triples))
-	}
-
-	// First triple: membership fact.
-	memberTriple := findTriple(triples, "guild.membership.member")
-	if memberTriple == nil {
-		t.Fatal("missing guild.membership.member triple")
-	}
-	if memberTriple.Object != "agent-42" {
-		t.Errorf("member triple object = %q; want %q", memberTriple.Object, "agent-42")
-	}
-
-	// Second triple: rank fact.
-	rankPredicate := "guild.member.agent-42.rank"
-	rankTriple := findTriple(triples, rankPredicate)
-	if rankTriple == nil {
-		t.Fatalf("missing rank triple with predicate %q", rankPredicate)
-	}
-	if rankTriple.Object != string(domain.GuildRankInitiate) {
-		t.Errorf("rank triple object = %q; want %q", rankTriple.Object, domain.GuildRankInitiate)
-	}
-}
-
-func TestGuildJoinedPayload_EntityID(t *testing.T) {
-	p := &GuildJoinedPayload{GuildID: "guild-9"}
-	if got := p.EntityID(); got != "guild-9" {
-		t.Errorf("EntityID() = %q; want %q", got, "guild-9")
-	}
-}
-
-// =============================================================================
-// Triples — GuildLeftPayload
-// =============================================================================
-
-func TestGuildLeftPayload_Triples(t *testing.T) {
-	now := time.Now()
-	p := &GuildLeftPayload{
-		GuildID:   "guild-1",
-		GuildName: "Ironclad's Guild",
-		AgentID:   "agent-99",
-		Reason:    "retired",
-		Timestamp: now,
-	}
-
-	triples := p.Triples()
-
-	if len(triples) != 1 {
-		t.Fatalf("Triples() returned %d triples; want 1", len(triples))
-	}
-
-	tr := triples[0]
-	if tr.Predicate != "guild.membership.left" {
-		t.Errorf("Predicate = %q; want %q", tr.Predicate, "guild.membership.left")
-	}
-	if tr.Subject != "guild-1" {
-		t.Errorf("Subject = %q; want %q", tr.Subject, "guild-1")
-	}
-	if tr.Object != "agent-99" {
-		t.Errorf("Object = %q; want %q", tr.Object, "agent-99")
-	}
-}
-
-func TestGuildLeftPayload_EntityID(t *testing.T) {
-	p := &GuildLeftPayload{GuildID: "guild-left-1"}
-	if got := p.EntityID(); got != "guild-left-1" {
-		t.Errorf("EntityID() = %q; want %q", got, "guild-left-1")
-	}
-}
-
-// =============================================================================
-// Triples — GuildPromotedPayload
-// =============================================================================
-
-func TestGuildPromotedPayload_Triples(t *testing.T) {
-	now := time.Now()
-	p := &GuildPromotedPayload{
-		GuildID:   "guild-2",
-		GuildName: "Silver Swords",
-		AgentID:   "agent-7",
-		OldRank:   domain.GuildRankInitiate,
-		NewRank:   domain.GuildRankVeteran,
-		Timestamp: now,
-	}
-
-	triples := p.Triples()
-
-	if len(triples) != 1 {
-		t.Fatalf("Triples() returned %d triples; want 1", len(triples))
-	}
-
-	tr := triples[0]
-	expectedPredicate := "guild.member.agent-7.rank"
-	if tr.Predicate != expectedPredicate {
-		t.Errorf("Predicate = %q; want %q", tr.Predicate, expectedPredicate)
-	}
-	if tr.Object != string(domain.GuildRankVeteran) {
-		t.Errorf("Object = %q; want %q", tr.Object, domain.GuildRankVeteran)
-	}
-	if tr.Subject != "guild-2" {
-		t.Errorf("Subject = %q; want %q", tr.Subject, "guild-2")
-	}
-}
-
-func TestGuildPromotedPayload_EntityID(t *testing.T) {
-	p := &GuildPromotedPayload{GuildID: "guild-promo"}
-	if got := p.EntityID(); got != "guild-promo" {
-		t.Errorf("EntityID() = %q; want %q", got, "guild-promo")
-	}
-}
-
-// =============================================================================
-// Triples — GuildDisbandedPayload
-// =============================================================================
-
-func TestGuildDisbandedPayload_Triples(t *testing.T) {
-	now := time.Now()
-	p := &GuildDisbandedPayload{
-		GuildID:          "guild-3",
-		GuildName:        "Fallen Order",
-		Reason:           "leadership vacuum",
-		FinalMemberCount: 5,
-		Timestamp:        now,
-	}
-
-	triples := p.Triples()
-
-	if len(triples) != 2 {
-		t.Fatalf("Triples() returned %d triples; want 2", len(triples))
-	}
-
-	// State triple: guild.status.state -> inactive.
-	stateTriple := findTriple(triples, "guild.status.state")
-	if stateTriple == nil {
-		t.Fatal("missing guild.status.state triple")
-	}
-	if stateTriple.Object != string(domain.GuildInactive) {
-		t.Errorf("state triple object = %q; want %q", stateTriple.Object, domain.GuildInactive)
-	}
-
-	// Disbanded-at triple.
-	disbandedTriple := findTriple(triples, "guild.lifecycle.disbanded_at")
-	if disbandedTriple == nil {
-		t.Fatal("missing guild.lifecycle.disbanded_at triple")
-	}
-	// The value should be the RFC3339 formatted timestamp.
-	wantTime := now.Format(time.RFC3339)
-	if disbandedTriple.Object != wantTime {
-		t.Errorf("disbanded_at object = %q; want %q", disbandedTriple.Object, wantTime)
-	}
-}
-
-func TestGuildDisbandedPayload_EntityID(t *testing.T) {
-	p := &GuildDisbandedPayload{GuildID: "guild-disband"}
-	if got := p.EntityID(); got != "guild-disband" {
-		t.Errorf("EntityID() = %q; want %q", got, "guild-disband")
-	}
-}
-
-// =============================================================================
-// Payload Schema methods — sanity check domain/category/version
-// =============================================================================
-
-func TestPayload_Schema(t *testing.T) {
 	tests := []struct {
-		name   string
-		schema func() interface {
-			Schema() interface{ GetDomain() string }
-		}
-		wantDomain   string
-		wantCategory string
-		wantVersion  string
+		name    string
+		payload any
+		want    map[string]any
 	}{
-		// We test Schema() values directly through the concrete types.
-	}
-	_ = tests // reserved for future expansion via table-driven schema check
-
-	t.Run("GuildCreatedPayload schema", func(t *testing.T) {
-		p := &GuildCreatedPayload{}
-		s := p.Schema()
-		if s.Domain != "semdragons" {
-			t.Errorf("Domain = %q; want semdragons", s.Domain)
-		}
-		if s.Category != "guild.created" {
-			t.Errorf("Category = %q; want guild.created", s.Category)
-		}
-		if s.Version != "v1" {
-			t.Errorf("Version = %q; want v1", s.Version)
-		}
-	})
-
-	t.Run("GuildJoinedPayload schema", func(t *testing.T) {
-		p := &GuildJoinedPayload{}
-		s := p.Schema()
-		if s.Domain != "semdragons" {
-			t.Errorf("Domain = %q; want semdragons", s.Domain)
-		}
-		if s.Category != "guild.joined" {
-			t.Errorf("Category = %q; want guild.joined", s.Category)
-		}
-	})
-
-	t.Run("GuildLeftPayload schema", func(t *testing.T) {
-		p := &GuildLeftPayload{}
-		s := p.Schema()
-		if s.Category != "guild.left" {
-			t.Errorf("Category = %q; want guild.left", s.Category)
-		}
-	})
-
-	t.Run("GuildPromotedPayload schema", func(t *testing.T) {
-		p := &GuildPromotedPayload{}
-		s := p.Schema()
-		if s.Category != "guild.promoted" {
-			t.Errorf("Category = %q; want guild.promoted", s.Category)
-		}
-	})
-
-	t.Run("GuildDisbandedPayload schema", func(t *testing.T) {
-		p := &GuildDisbandedPayload{}
-		s := p.Schema()
-		if s.Category != "guild.disbanded" {
-			t.Errorf("Category = %q; want guild.disbanded", s.Category)
-		}
-	})
-}
-
-// =============================================================================
-// Triples source field verification
-// =============================================================================
-
-func TestTriples_SourceIsGuildformation(t *testing.T) {
-	now := time.Now()
-
-	payloads := []interface {
-		Triples() []message.Triple
-	}{
-		&GuildJoinedPayload{
-			GuildID: "g1", AgentID: "a1", Rank: domain.GuildRankInitiate, Timestamp: now,
+		{
+			name: "created",
+			payload: GuildCreatedPayload{
+				Guild: guild, FounderID: agentID, Timestamp: eventTime, Trace: trace("created"),
+			},
+			want: map[string]any{
+				"guild": wantGuild, "founder_id": string(agentID),
+				"timestamp": eventTime.Format(time.RFC3339), "trace": wantTrace("created"),
+			},
 		},
-		&GuildLeftPayload{
-			GuildID: "g1", AgentID: "a1", Timestamp: now,
+		{
+			name: "joined",
+			payload: GuildJoinedPayload{
+				GuildID: guildID, GuildName: guild.Name, AgentID: agentID,
+				Rank: domain.GuildRankVeteran, Timestamp: eventTime, Trace: trace("joined"),
+			},
+			want: map[string]any{
+				"guild_id": string(guildID), "guild_name": guild.Name, "agent_id": string(agentID),
+				"rank": string(domain.GuildRankVeteran), "timestamp": eventTime.Format(time.RFC3339),
+				"trace": wantTrace("joined"),
+			},
 		},
-		&GuildPromotedPayload{
-			GuildID: "g1", AgentID: "a1", NewRank: domain.GuildRankMember, Timestamp: now,
+		{
+			name: "left",
+			payload: GuildLeftPayload{
+				GuildID: guildID, GuildName: guild.Name, AgentID: agentID,
+				Reason: "retired", Timestamp: eventTime, Trace: trace("left"),
+			},
+			want: map[string]any{
+				"guild_id": string(guildID), "guild_name": guild.Name, "agent_id": string(agentID),
+				"reason": "retired", "timestamp": eventTime.Format(time.RFC3339),
+				"trace": wantTrace("left"),
+			},
 		},
-		&GuildDisbandedPayload{
-			GuildID: "g1", Timestamp: now,
+		{
+			name: "promoted",
+			payload: GuildPromotedPayload{
+				GuildID: guildID, GuildName: guild.Name, AgentID: agentID,
+				OldRank: domain.GuildRankInitiate, NewRank: domain.GuildRankVeteran,
+				Timestamp: eventTime, Trace: trace("promoted"),
+			},
+			want: map[string]any{
+				"guild_id": string(guildID), "guild_name": guild.Name, "agent_id": string(agentID),
+				"old_rank": string(domain.GuildRankInitiate), "new_rank": string(domain.GuildRankVeteran),
+				"timestamp": eventTime.Format(time.RFC3339), "trace": wantTrace("promoted"),
+			},
+		},
+		{
+			name: "disbanded",
+			payload: GuildDisbandedPayload{
+				GuildID: guildID, GuildName: guild.Name, Reason: "mission complete",
+				FinalMemberCount: 4, Timestamp: eventTime, Trace: trace("disbanded"),
+			},
+			want: map[string]any{
+				"guild_id": string(guildID), "guild_name": guild.Name, "reason": "mission complete",
+				"final_member_count": 4, "timestamp": eventTime.Format(time.RFC3339),
+				"trace": wantTrace("disbanded"),
+			},
 		},
 	}
 
-	for _, p := range payloads {
-		for _, tr := range p.Triples() {
-			if tr.Source != "guildformation" {
-				t.Errorf("triple source = %q; want guildformation (predicate: %s)", tr.Source, tr.Predicate)
-			}
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertExactGuildEventJSON(t, tt.payload, tt.want)
+		})
 	}
 }
 
-func TestTriples_ConfidenceIsOne(t *testing.T) {
-	now := time.Now()
-
-	payloads := []interface {
-		Triples() []message.Triple
-	}{
-		&GuildJoinedPayload{
-			GuildID: "g1", AgentID: "a1", Rank: domain.GuildRankInitiate, Timestamp: now,
-		},
-		&GuildLeftPayload{
-			GuildID: "g1", AgentID: "a1", Timestamp: now,
-		},
-		&GuildPromotedPayload{
-			GuildID: "g1", AgentID: "a1", NewRank: domain.GuildRankMember, Timestamp: now,
-		},
-		&GuildDisbandedPayload{
-			GuildID: "g1", Timestamp: now,
-		},
+func assertExactGuildEventJSON(t *testing.T, payload any, want map[string]any) {
+	t.Helper()
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal guild event payload: %v", err)
 	}
-
-	for _, p := range payloads {
-		for _, tr := range p.Triples() {
-			if tr.Confidence != 1.0 {
-				t.Errorf("triple confidence = %v; want 1.0 (predicate: %s)", tr.Confidence, tr.Predicate)
-			}
-		}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("decode guild event JSON object: %v", err)
 	}
+	if !reflect.DeepEqual(got, normalizeGuildJSON(t, want)) {
+		t.Errorf("guild event JSON = %#v, want exact wire object %#v", got, want)
+	}
+}
+
+func normalizeGuildJSON(t *testing.T, value any) any {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal expected guild JSON: %v", err)
+	}
+	var normalized any
+	if err := json.Unmarshal(data, &normalized); err != nil {
+		t.Fatalf("normalize expected guild JSON: %v", err)
+	}
+	return normalized
 }
 
 // =============================================================================
@@ -664,18 +480,4 @@ func TestGetMember_NilForAbsentAgent(t *testing.T) {
 	if m != nil {
 		t.Errorf("getMember: expected nil for absent agent, got %+v", m)
 	}
-}
-
-// =============================================================================
-// Test helper
-// =============================================================================
-
-// findTriple returns the first triple whose Predicate matches, or nil.
-func findTriple(triples []message.Triple, predicate string) *message.Triple {
-	for i := range triples {
-		if triples[i].Predicate == predicate {
-			return &triples[i]
-		}
-	}
-	return nil
 }

@@ -88,6 +88,19 @@
   survive. Correct the writer-owner matrix for dmsession's raw `Session` JSON
   write into the shared board entity-state bucket, and hand authoritative
   lifecycle/owned-state migration to issue #4.
+- [x] 2.14 Resolve
+  [semdragon #22](https://github.com/C360Studio/semdragon/issues/22) by
+  deleting the graph-only `EntityID`, `Triples`, and `Schema` methods and
+  `Graphable` assertions from all five guild event DTOs. Preserve the active
+  raw DTOs, typed subjects, validation, publisher calls, and JSON wire fields.
+  Add an inventory guard proving shipped activation and raw publication remain
+  while no guild event payload registry, `BaseMessage`, graph-ingest route,
+  projection bind, heartbeat, graph reader, or relationship fixture survives.
+  Do not rename `guild.event.created_by` or
+  `guild.lifecycle.disbanded_at`; the former duplicates authoritative
+  `guild.founding.agent`, and the latter has no authoritative Guild field.
+  Hand the real multiwriter full-object guild state, dynamic membership and
+  application children, and pending-timeout lifecycle migration to issue #4.
 
 ## 3. Verification and handoff to beta.158
 
@@ -246,3 +259,28 @@ This evidence closes only task 2.13:
 - Strict OpenSpec validation and `git diff --check` pass. The historical
   baseline remains unchanged.
 - Architect and Go reviewer approved the implementation.
+
+## Completed issue #22 evidence
+
+This evidence closes only task 2.14:
+
+- The TDD RED inventory caught all five `Graphable` assertions, fifteen
+  graph-only methods, and five relationship fixtures.
+- The graph-only surface is deleted. All five raw DTOs, typed subjects,
+  `Validate` methods, live publisher calls, and exact JSON wire contracts
+  remain.
+- The AST inventory rejects receiver and assertion mutations, proves both
+  processor registry functions and all three shipped configurations, and
+  permits raw consumers and the authoritative `domain.Guild` projection.
+- Deterministic Docker integration covers all five typed NATS contracts using
+  flushed subscriptions, a NATS RTT, and channel-based delivery.
+- The absolute `processor/guildformation` beta.158 audit reports
+  `predicate audit passed: 0 structured candidates across 1 roots`.
+- The corrected predicate ledger and writer-owner matrix hand multiwriter
+  state, dynamic membership/application children, and the pending ticker to
+  issue #4 or a dedicated packet. Deletion needs no upstream framework issue.
+- Focused race, Docker integration, `go test ./...`, `go build ./...`, strict
+  OpenSpec validation, and `git diff --check` pass.
+- Architect and final Go reviewer approved the implementation.
+
+Tasks 3.1 through 3.6 remain open.

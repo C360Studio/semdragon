@@ -11,7 +11,6 @@ import (
 	"github.com/c360studio/semdragons/processor/autonomy"
 	"github.com/c360studio/semdragons/processor/bossbattle"
 	"github.com/c360studio/semdragons/processor/executor"
-	"github.com/c360studio/semdragons/processor/guildformation"
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semdragons/processor/seeding"
 )
@@ -188,46 +187,6 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 			name: "party rollup-completed event",
 			entity: &partycoord.PartyRollupCompletedPayload{
 				PartyID: party, LeadID: agent1, ParentQuestID: quest1, Timestamp: now,
-			},
-			wantNoReferences: true,
-		},
-		{
-			name: "guild created event",
-			entity: &guildformation.GuildCreatedPayload{
-				Guild:     domain.Guild{ID: guild, FoundedBy: agent1},
-				FounderID: agent1,
-				Timestamp: now,
-			},
-			wantReferences: map[string]int{
-				"guild.founding.agent":   1,
-				"guild.event.created_by": 1,
-			},
-		},
-		{
-			name: "guild joined event",
-			entity: &guildformation.GuildJoinedPayload{
-				GuildID: guild, AgentID: agent1, Timestamp: now,
-			},
-			wantReferences: map[string]int{"guild.membership.member": 1},
-		},
-		{
-			name: "guild left event",
-			entity: &guildformation.GuildLeftPayload{
-				GuildID: guild, AgentID: agent1, Timestamp: now,
-			},
-			wantReferences: map[string]int{"guild.membership.left": 1},
-		},
-		{
-			name: "guild promoted event",
-			entity: &guildformation.GuildPromotedPayload{
-				GuildID: guild, AgentID: agent1, Timestamp: now,
-			},
-			wantNoReferences: true,
-		},
-		{
-			name: "guild disbanded event",
-			entity: &guildformation.GuildDisbandedPayload{
-				GuildID: guild, Timestamp: now,
 			},
 			wantNoReferences: true,
 		},

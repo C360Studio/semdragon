@@ -385,10 +385,56 @@ or owned-state writer. Issue #4 owns that design together with removal of the
 raw `Session` JSON write into the shared board entity-state bucket. Issue #20
 does not invent a projection owner, binding, heartbeat, or replacement writer.
 
-### guildformation and seeding
+### guildformation: delete the five latent event projections
 
-- `guild.event.created_by` becomes `guild.event.created-by`.
-- `guild.lifecycle.disbanded_at` becomes `guild.lifecycle.disbanded-at`.
+The baseline audit recorded two findings from five candidates:
+`guild.event.created_by` and `guild.lifecycle.disbanded_at`. Issue #22 does not
+rename them. Guildformation is enabled in all three shipped configurations,
+and its create, join, leave, promote, and disband operations publish five raw
+DTOs through typed NATS subjects. Those raw event contracts are active.
+
+The same DTOs are not graph publishers. The binary has no guild event
+payload-registry factory, `BaseMessage` wrapper, route through
+`graph.ingest.entity`, projection bind, heartbeat, or graph reader. Issue #22
+therefore deletes all five `Graphable` assertions, their fifteen `EntityID`,
+`Triples`, and `Schema` methods, their graph-only tests, and their relationship
+fixtures.
+
+The deleted graph shapes include:
+
+- `GuildCreatedPayload`, which repeats `domain.Guild.Triples` and adds
+  `guild.event.created_by`;
+- `GuildJoinedPayload`, which emits `guild.membership.member` and dynamic
+  `guild.member.<agent-id>.rank`;
+- `GuildLeftPayload`, which emits `guild.membership.left`;
+- `GuildPromotedPayload`, which emits dynamic
+  `guild.member.<agent-id>.rank`; and
+- `GuildDisbandedPayload`, which emits `guild.status.state` and
+  `guild.lifecycle.disbanded_at`.
+
+`guild.event.created_by` duplicates the authoritative typed
+`guild.founding.agent` relationship. `guild.lifecycle.disbanded_at` has no
+field in `domain.Guild`, reconstruction, API, or UI state. Neither finding
+receives a canonical replacement. The historical findings remain unchanged in
+`baseline-audit.md`; the target event DTO corpus contains no guild graph
+predicates.
+
+The raw subjects `guild.management.created`, `guild.membership.joined`,
+`guild.membership.left`, `guild.membership.promoted`, and
+`guild.lifecycle.disbanded` remain unchanged. Their DTO fields, including
+`founder_id`, `agent_id`, `timestamp`, and rank/reason/count values, remain JSON
+wire data rather than graph vocabulary.
+
+Authoritative `domain.Guild` graph relationships remain in scope:
+`guild.founding.agent`, `guild.membership.agent`, and the current application
+applicant/reviewer relationships stay typed `@id`. Issue #4 or a dedicated
+guild-state packet replaces dynamic member/application facts with first-class
+children and migrates the multiwriter full-object state path. SemStreams
+already supplies the primitives needed to delete the event projections, so
+issue #22 creates no upstream framework ask.
+
+### seeding
+
 - `seeding.mode` becomes `seeding.config.mode`.
 - `seeding.stats.{agents_created,guilds_created}` becomes
   `seeding.stats.{agents-created,guilds-created}`.
@@ -607,15 +653,18 @@ also enumerate:
   `source.doc.fetched-by` and `source.doc.quest-id`.
 - Event payload projections:
   agent XP quest, autonomy quest/item/guild relations, store item relations,
-  party decomposition/assignment/submission, guild application, and review
-  assignment.
+  party decomposition/assignment/submission, and review assignment.
+- Authoritative Guild:
+  `guild.founding.agent`, `guild.membership.agent`, and the current dynamic
+  application applicant/reviewer relationships. Issue #4 replaces membership
+  and application facts with first-class child entities.
 - Additional payload projections:
-  `execution.agent.id`, `agent.guild.member`, `guild.event.created-by`,
-  `guild.membership.member`, and store purchase/consumable item references.
+  `execution.agent.id`, `agent.guild.member`, and store
+  purchase/consumable item references.
 
-The deleted prompt-assembly fixture is not relationship coverage. If a real
-publisher is introduced later, its typed `prompt.assembly.agent-id` edge must
-be added back to this inventory with evidence from that publisher.
+The deleted prompt-assembly and guild event fixtures are not relationship
+coverage. If a real publisher is introduced later, its typed relationship
+must be added back to this inventory with evidence from that publisher.
 
 Issue #3 uses one centralized compatibility marker,
 `internal/semcompat.EntityReferenceDatatype = "@id"`, across all packages.

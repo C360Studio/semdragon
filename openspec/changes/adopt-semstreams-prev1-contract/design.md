@@ -395,6 +395,57 @@ it must not add a local lifecycle engine or resurrect event Graphables by
 default. If an owner claim is needed, its real composition root supplies the
 framework binding and heartbeat. Issue #20 defines no projection writer.
 
+### D14: Active raw guild events do not become a second state projection
+
+Issue [#22](https://github.com/C360Studio/semdragon/issues/22) separates five
+active guildformation raw event contracts from their latent graph methods. The
+component is factory-registered and enabled in all three shipped
+configurations. `CreateGuild`, `JoinGuild`, `LeaveGuild`, `PromoteMember`, and
+`DisbandGuild` publish the created, joined, left, promoted, and disbanded DTOs
+through their typed NATS subjects. Those DTOs, subjects, `Validate` methods,
+publisher calls, and JSON wire fields remain unchanged.
+
+Raw publication is not graph persistence. The binary has no guild event
+payload-registry factory, does not wrap the DTOs in SemStreams `BaseMessage`,
+does not route their subjects through `graph.ingest.entity`, and binds no
+projection owner or heartbeat. No production graph or UI reader consumes the
+event triples. The five `Graphable` assertions and all fifteen `EntityID`,
+`Triples`, and `Schema` methods are therefore deleted rather than assigned a
+second owner.
+
+The deleted shapes are also not a coherent authoritative model.
+`GuildCreatedPayload` repeats the complete `domain.Guild` projection and adds
+`guild.event.created_by`, even though the authoritative Guild shape already
+uses the typed `guild.founding.agent` relationship. The joined and promoted
+payloads construct dynamic `guild.member.<agent-id>.rank` predicates, while the
+approved target uses first-class membership entities. The left-event
+relationship is event evidence, not current membership state.
+`guild.lifecycle.disbanded_at` has no field in `domain.Guild`, reconstruction,
+API, or UI state, so issue #22 deletes it instead of inventing a stored
+timestamp. The raw `founder_id`, `agent_id`, `timestamp`, and other JSON fields
+are wire data, not graph aliases.
+
+The actual guild-state boundary remains separate and unsafe.
+Guildformation writes full `domain.Guild` snapshots for creation, membership,
+promotion, applications, activation, and dissolution. Agentprogression also
+writes full Guild snapshots for performance statistics and contribution, while
+redteam writes Guild snapshots for lessons. Guildformation additionally keeps
+restart-fragile in-memory guild/member maps and implements pending-guild expiry
+with a local ticker. Issue #22 neither blesses those writers nor adds a
+projection contract.
+
+SemStreams already provides lifecycle Manager transitions, rule actions and
+scheduling, projection ownership, owner-classified graph mutation, and graph
+clustering primitives. No missing framework primitive blocks deletion of the
+event Graphables, so issue #22 creates no new upstream ask. Issue
+[#4](https://github.com/C360Studio/semdragon/issues/4) or a dedicated
+guild-state packet must move status transitions to the lifecycle substrate,
+replace full-object multiwriter mutation with exact ownership, model
+memberships and applications as first-class children, and replace the local
+pending-timeout loop with rules/lifecycle composition. Any adoption of
+SemStreams graph clustering must account for existing upstream clustering
+issues rather than copying another local clustering framework.
+
 ### Approved core-wave verification
 
 The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:
@@ -462,6 +513,30 @@ The 2026-07-25 evidence closes only task 2.11:
 
 The two real raw-event publishers remain distinct, issue #4 still owns their
 graph route or deletion, and the owner-safe web mutation remains deferred.
+
+### Approved issue #22 verification
+
+The 2026-07-25 evidence closes only task 2.14:
+
+- the TDD RED inventory caught all five `Graphable` assertions, fifteen
+  graph-only methods, and five relationship fixtures;
+- deletion preserves the five raw DTOs, typed subjects, `Validate` methods,
+  live publisher calls, and exact JSON wire contracts;
+- the AST mutation guard rejects receiver and assertion mutations, proves both
+  processor registry functions and all three shipped configurations, and
+  permits raw consumers and the authoritative `domain.Guild` projection;
+- deterministic Docker integration proves all five typed NATS contracts using
+  flushed subscriptions, a NATS RTT, and channel-based delivery;
+- the absolute `processor/guildformation` beta.158 audit reports
+  `predicate audit passed: 0 structured candidates across 1 roots`;
+- the corrected predicate ledger and writer-owner matrix hand multiwriter
+  state, dynamic membership/application children, and the pending ticker to
+  issue #4 or a dedicated packet without inventing an upstream gap;
+- focused race, Docker integration, full Go test, build, strict OpenSpec, and
+  diff gates pass; and
+- architect and final Go reviewer approved the implementation.
+
+The repository-wide task 3.x gates remain independently open.
 
 ## Delivery Order
 

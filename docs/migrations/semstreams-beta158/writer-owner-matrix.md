@@ -365,19 +365,43 @@ The legacy three-part StoreItem entity-ID fallback is deleted. Catalog aliases
 such as `quality_shield` remain scalar until converted by
 `BoardConfig.StoreItemEntityID`.
 
-### Guild
+### Guild target claims
+
+The claims below are the approved target, not implemented ownership. Current
+production has three full-object writers:
+
+- guildformation calls `GraphClient.EmitEntity` for guild creation,
+  membership, promotion, application review, activation, disband, and
+  dissolution;
+- agentprogression reconstructs and replaces the Guild for performance
+  statistics and member contribution; and
+- redteam reconstructs and replaces the Guild when appending lessons.
+
+Guildformation also writes the Agent's embedded Guild field through
+`EmitEntityUpdate`. None of these paths binds an owner claim, and any stale
+snapshot can erase another writer's predicates.
+
+Guild phase uses the SemStreams lifecycle substrate:
+
+- Owner: Guild lifecycle Manager; framework-minted token.
+- Pattern: `*.*.game.*.guild.*`.
+- Mode: `cas-transition`.
+- Producer: guildformation and rules request lifecycle transitions.
+- Exact predicate: `guild.status.state`.
+
+The remaining current Guild state uses the following approved target claim:
 
 - Owner: `guildformation`; token `guildformation#<incarnation>`.
 - Pattern: `*.*.game.*.guild.*`.
 - Mode: `replace-owned`.
-- Producer: `processor/guildformation`.
+- Producer: guildformation; agentprogression and redteam submit inputs through
+  the owner boundary rather than replacing Guild snapshots.
 - Exact mutable predicates:
-  `guild.status.state`, `guild.quorum.size`, `guild.quorum.deadline`,
+  `guild.quorum.size`, `guild.quorum.deadline`,
   `guild.stats.reputation`, `guild.stats.quests-handled`,
   `guild.stats.quests-failed`, `guild.stats.success-rate`,
-  `guild.lifecycle.disbanded-at`, `guild.resource.tool`,
-  `guild.routing.preferred-client`, `guild.routing.quest-type`,
-  and `guild.knowledge.lessons`.
+  `guild.resource.tool`, `guild.routing.preferred-client`,
+  `guild.routing.quest-type`, and `guild.knowledge.lessons`.
 - Create-only facts, excluded from `OwnerClaim.Predicates`:
   `guild.identity.name`, `guild.identity.description`,
   `guild.identity.culture`, `guild.identity.motto`,
@@ -388,7 +412,18 @@ such as `quality_shield` remain scalar until converted by
 
 The quorum predicates are exactly `guild.quorum.size` and
 `guild.quorum.deadline`; `guild.config.quorum-size` is not a registered
-predicate.
+predicate. `guild.lifecycle.disbanded-at` is not a target predicate: it exists
+only in the deleted `GuildDisbandedPayload` graph projection and has no
+authoritative Guild field or reader.
+
+Dynamic `guild.member.<agent-id>.*` and
+`guild.application.<application-id>.*` predicates do not enter either claim.
+Issue #4 or a dedicated guild-state packet replaces them with the first-class
+guild-membership and guild-application children declared below. The same
+packet replaces the component-local pending-guild ticker with SemStreams rule
+scheduling and lifecycle transitions. Ownership, classified mutation,
+lifecycle, rules, and first-class children already cover this migration; issue
+#22 needs no new upstream framework issue to delete the event Graphables.
 
 ### Party
 
@@ -626,24 +661,29 @@ projection contracts, ownership services, heartbeats, or lifecycle timers.
   sent through the agentprogression owner API.
 - Autonomy action/decision predicates listed above use append evidence.
   Relationship datatypes still obey the catalog-alias conversion boundary.
-- Questboard/questbridge/questdag, partycoord, guildformation, bossbattle, and
+- Questboard/questbridge/questdag, partycoord, bossbattle, and
   review payloads either call the owner workflow, create the classified
   first-class entity, or append their documented evidence. Their former
   cross-owner projections are removed, not silently exempted.
-- Executor execution observations, guild events, and seeding statistics use
-  append evidence. The definition-only DM-session event Graphables and their
-  counters are deleted; the separate raw session-state write is the downstream
-  misuse described above. Web document state uses the executor web-fetch owner
-  claim; seed entity birth facts are create-only.
+- Guildformation's five raw event DTOs remain active wire contracts, but their
+  latent Graphables are deleted in issue #22. Guild events are not append
+  evidence, and no event projection owner is registered.
+- Executor execution observations and seeding statistics use append evidence.
+  The definition-only DM-session event Graphables and their counters are
+  deleted; the separate raw session-state write is the downstream misuse
+  described above. Web document state uses the executor web-fetch owner claim;
+  seed entity birth facts are create-only.
 - `quest.failed` is proved non-graph only at the two questboard and one service
   expressions recorded in the rename ledger: there it is
   `EntityState.MessageType.Category`, never `Triple.Predicate`.
 
-Legacy payload projections `agent.guild.member`,
-`guild.membership.member`, and party membership/assignment/submission
-predicates are removed when the corresponding first-class entities are
-created. A producer may not keep both representations merely because both are
-graph-bound.
+The guild event projections `guild.event.created_by`,
+`guild.membership.member`, `guild.membership.left`, and dynamic event rank facts
+are deleted in issue #22. Authoritative `guild.membership.agent` remains until
+issue #4 creates first-class membership children. Legacy payload projections
+`agent.guild.member` and party membership/assignment/submission predicates are
+removed when their corresponding first-class entities are created. A producer
+may not keep both representations merely because both are graph-bound.
 
 If prompt-assembly evidence is introduced later, the actual publishing
 component binds the SemStreams contract under its own owner ID. All six

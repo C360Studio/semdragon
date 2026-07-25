@@ -4,6 +4,7 @@ package guildformation
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -102,6 +103,70 @@ func TestComponent_Lifecycle(t *testing.T) {
 	if err := comp.Stop(5 * time.Second); err != nil {
 		t.Errorf("Second Stop should not error: %v", err)
 	}
+}
+
+func TestGuildLifecycleTypedSubjectsPreserveRawDTOs(t *testing.T) {
+	testClient := natsclient.NewTestClient(t)
+	client := testClient.Client
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+
+	createdEvents := subscribeGuildSubject(t, ctx, client, SubjectGuildCreated)
+	joinedEvents := subscribeGuildSubject(t, ctx, client, SubjectGuildJoined)
+	leftEvents := subscribeGuildSubject(t, ctx, client, SubjectGuildLeft)
+	promotedEvents := subscribeGuildSubject(t, ctx, client, SubjectGuildPromoted)
+	disbandedEvents := subscribeGuildSubject(t, ctx, client, SubjectGuildDisbanded)
+
+	// RTT performs a NATS round trip, flushing every subscription before the
+	// direct raw DTO publishes below.
+	if _, err := client.RTT(); err != nil {
+		t.Fatalf("flush guild typed subscriptions with RTT: %v", err)
+	}
+
+	now := time.Date(2026, 7, 25, 15, 0, 0, 0, time.UTC)
+	guildID := domain.GuildID("test.integration.game.raw.guild.guild-1")
+	agentID := domain.AgentID("test.integration.game.raw.agent.agent-1")
+	created := GuildCreatedPayload{
+		Guild: domain.Guild{
+			ID: guildID, Name: "Raw Guild", Status: domain.GuildActive, FoundedBy: agentID,
+		},
+		FounderID: agentID,
+		Timestamp: now,
+		Trace:     TraceInfo{TrajectoryID: "trajectory-created"},
+	}
+	joined := GuildJoinedPayload{
+		GuildID: guildID, GuildName: "Raw Guild", AgentID: agentID,
+		Rank: domain.GuildRankInitiate, Timestamp: now,
+		Trace: TraceInfo{TrajectoryID: "trajectory-joined"},
+	}
+	left := GuildLeftPayload{
+		GuildID: guildID, GuildName: "Raw Guild", AgentID: agentID,
+		Reason: "retired", Timestamp: now,
+		Trace: TraceInfo{TrajectoryID: "trajectory-left"},
+	}
+	promoted := GuildPromotedPayload{
+		GuildID: guildID, GuildName: "Raw Guild", AgentID: agentID,
+		OldRank: domain.GuildRankInitiate, NewRank: domain.GuildRankVeteran,
+		Timestamp: now,
+		Trace:     TraceInfo{TrajectoryID: "trajectory-promoted"},
+	}
+	disbanded := GuildDisbandedPayload{
+		GuildID: guildID, GuildName: "Raw Guild", Reason: "complete",
+		FinalMemberCount: 4, Timestamp: now,
+		Trace: TraceInfo{TrajectoryID: "trajectory-disbanded"},
+	}
+
+	publishGuildDTO(t, ctx, client, SubjectGuildCreated, created)
+	publishGuildDTO(t, ctx, client, SubjectGuildJoined, joined)
+	publishGuildDTO(t, ctx, client, SubjectGuildLeft, left)
+	publishGuildDTO(t, ctx, client, SubjectGuildPromoted, promoted)
+	publishGuildDTO(t, ctx, client, SubjectGuildDisbanded, disbanded)
+
+	assertGuildDTOReceived(t, ctx, createdEvents, created)
+	assertGuildDTOReceived(t, ctx, joinedEvents, joined)
+	assertGuildDTOReceived(t, ctx, leftEvents, left)
+	assertGuildDTOReceived(t, ctx, promotedEvents, promoted)
+	assertGuildDTOReceived(t, ctx, disbandedEvents, disbanded)
 }
 
 func TestComponent_InputOutputPorts(t *testing.T) {
@@ -798,6 +863,58 @@ func setupGuildComponent(t *testing.T, client *natsclient.Client, board string) 
 	}
 
 	return comp
+}
+
+func subscribeGuildSubject[T any](
+	t *testing.T,
+	ctx context.Context,
+	client *natsclient.Client,
+	subject natsclient.Subject[T],
+) <-chan T {
+	t.Helper()
+	events := make(chan T, 1)
+	subscription, err := subject.Subscribe(ctx, client, func(msgCtx context.Context, payload T) error {
+		select {
+		case events <- payload:
+			return nil
+		case <-msgCtx.Done():
+			return msgCtx.Err()
+		}
+	})
+	if err != nil {
+		t.Fatalf("subscribe %q: %v", subject.Pattern, err)
+	}
+	t.Cleanup(func() {
+		if err := subscription.Unsubscribe(); err != nil {
+			t.Errorf("unsubscribe %q: %v", subject.Pattern, err)
+		}
+	})
+	return events
+}
+
+func publishGuildDTO[T any](
+	t *testing.T,
+	ctx context.Context,
+	client *natsclient.Client,
+	subject natsclient.Subject[T],
+	payload T,
+) {
+	t.Helper()
+	if err := subject.Publish(ctx, client, payload); err != nil {
+		t.Fatalf("publish %q: %v", subject.Pattern, err)
+	}
+}
+
+func assertGuildDTOReceived[T any](t *testing.T, ctx context.Context, events <-chan T, want T) {
+	t.Helper()
+	select {
+	case got := <-events:
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("decoded guild DTO = %#v, want %#v", got, want)
+		}
+	case <-ctx.Done():
+		t.Fatalf("wait for guild DTO: %v", ctx.Err())
+	}
 }
 
 // makeAgentID constructs a fully-qualified agent entity ID for tests.
