@@ -1,0 +1,67 @@
+version: "3"
+
+vars:
+  SEMSTREAMS_CONTRACT_VERSION: v1.0.0-beta.158
+
+tasks:
+  default:
+    desc: Run all SemStreams pre-v1 static contract audits
+    cmds:
+      - |
+        status=0
+        task contract:predicates || status=1
+        task contract:entity-ids || status=1
+        exit "$status"
+
+  predicates:
+    desc: Audit all bounded graph-contract root groups with SemStreams beta.158
+    cmds:
+      - |
+        status=0
+        task contract:predicates-core || status=1
+        task contract:predicates-processor || status=1
+        task contract:predicates-service || status=1
+        task contract:predicates-ui || status=1
+        exit "$status"
+
+  predicates-core:
+    desc: Audit core graph-contract roots with SemStreams beta.158
+    cmds:
+      # Keep these roots bounded until SemStreams #667 removes the scanner
+      # token limit that prevents a safe repository-wide predicate audit.
+      - >-
+        go run
+        github.com/c360studio/semstreams/cmd/predicate-audit@{{.SEMSTREAMS_CONTRACT_VERSION}}
+        ./domain ./questdag ./questlifecycle ./config
+
+  predicates-processor:
+    desc: Audit processor graph-contract roots with SemStreams beta.158
+    cmds:
+      - >-
+        go run
+        github.com/c360studio/semstreams/cmd/predicate-audit@{{.SEMSTREAMS_CONTRACT_VERSION}}
+        ./processor
+
+  predicates-service:
+    desc: Audit service graph-contract roots with SemStreams beta.158
+    cmds:
+      - >-
+        go run
+        github.com/c360studio/semstreams/cmd/predicate-audit@{{.SEMSTREAMS_CONTRACT_VERSION}}
+        ./service
+
+  predicates-ui:
+    desc: Audit UI graph-contract consumers with SemStreams beta.158
+    cmds:
+      - >-
+        go run
+        github.com/c360studio/semstreams/cmd/predicate-audit@{{.SEMSTREAMS_CONTRACT_VERSION}}
+        ./ui/src
+
+  entity-ids:
+    desc: Audit entity IDs and query prefixes with SemStreams beta.158
+    cmds:
+      - >-
+        go run
+        github.com/c360studio/semstreams/cmd/entity-id-audit@{{.SEMSTREAMS_CONTRACT_VERSION}}
+        --include-untracked .

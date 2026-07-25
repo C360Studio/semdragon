@@ -14,6 +14,8 @@ includes:
     aliases: [l]
   schema:
     taskfile: ./taskfiles/schema.yml
+  contract:
+    taskfile: ./taskfiles/contract.yml
   ui:
     taskfile: ./taskfiles/ui.yml
   docker:

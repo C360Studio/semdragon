@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
@@ -43,7 +44,7 @@ func (p *PromptAssembledPayload) Triples() []message.Triple {
 
 	return []message.Triple{
 		{Subject: entityID, Predicate: domain.PredicatePromptAssembled, Object: true, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "prompt.assembly.agent_id", Object: string(p.AgentID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: "prompt.assembly.agent_id", Object: string(p.AgentID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "prompt.assembly.domain", Object: p.DomainID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 		{Subject: entityID, Predicate: "prompt.assembly.tier", Object: p.TierApplied, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 		{Subject: entityID, Predicate: "prompt.assembly.provider", Object: p.Provider, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
@@ -73,7 +74,7 @@ func (p *ExecutionStartedPayload) Triples() []message.Triple {
 
 	return []message.Triple{
 		{Subject: entityID, Predicate: "execution.lifecycle.started", Object: true, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "execution.agent.id", Object: string(p.AgentID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: "execution.agent.id", Object: string(p.AgentID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "execution.loop.id", Object: p.LoopID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 		{Subject: entityID, Predicate: "execution.config.max_turns", Object: p.MaxTurns, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 		{Subject: entityID, Predicate: "execution.config.max_tokens", Object: p.MaxTokens, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},

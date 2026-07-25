@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
@@ -31,12 +32,12 @@ var (
 
 // Typed subjects for autonomy events.
 var (
-	SubjectAutonomyEvaluated        = natsclient.NewSubject[EvaluatedPayload](domain.PredicateAutonomyEvaluated)
-	SubjectAutonomyIdle             = natsclient.NewSubject[IdlePayload](domain.PredicateAutonomyIdle)
-	SubjectAutonomyClaimIntent      = natsclient.NewSubject[ClaimIntentPayload](domain.PredicateAutonomyClaimIntent)
-	SubjectAutonomyShopIntent       = natsclient.NewSubject[ShopIntentPayload](domain.PredicateAutonomyShopIntent)
-	SubjectAutonomyGuildIntent      = natsclient.NewSubject[GuildIntentPayload](domain.PredicateAutonomyGuildIntent)
-	SubjectAutonomyUseIntent        = natsclient.NewSubject[UseIntentPayload](domain.PredicateAutonomyUseIntent)
+	SubjectAutonomyEvaluated         = natsclient.NewSubject[EvaluatedPayload](domain.PredicateAutonomyEvaluated)
+	SubjectAutonomyIdle              = natsclient.NewSubject[IdlePayload](domain.PredicateAutonomyIdle)
+	SubjectAutonomyClaimIntent       = natsclient.NewSubject[ClaimIntentPayload](domain.PredicateAutonomyClaimIntent)
+	SubjectAutonomyShopIntent        = natsclient.NewSubject[ShopIntentPayload](domain.PredicateAutonomyShopIntent)
+	SubjectAutonomyGuildIntent       = natsclient.NewSubject[GuildIntentPayload](domain.PredicateAutonomyGuildIntent)
+	SubjectAutonomyUseIntent         = natsclient.NewSubject[UseIntentPayload](domain.PredicateAutonomyUseIntent)
 	SubjectAutonomyGuildCreateIntent = natsclient.NewSubject[GuildCreateIntentPayload](domain.PredicateGuildProposed)
 )
 
@@ -170,7 +171,7 @@ func (p *ClaimIntentPayload) Triples() []message.Triple {
 	source := "autonomy"
 	entityID := string(p.AgentID)
 	return []message.Triple{
-		{Subject: entityID, Predicate: "agent.autonomy.claim_quest", Object: string(p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.autonomy.claim_quest", Object: string(p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "agent.autonomy.claim_score", Object: p.Score, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 		{Subject: entityID, Predicate: "agent.autonomy.claim_rank", Object: p.SuggestionRank, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
@@ -262,7 +263,7 @@ func (p *GuildIntentPayload) Triples() []message.Triple {
 	source := "autonomy"
 	entityID := string(p.AgentID)
 	return []message.Triple{
-		{Subject: entityID, Predicate: "agent.autonomy.guild_join", Object: p.GuildID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.autonomy.guild_join", Object: p.GuildID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "agent.autonomy.guild_score", Object: p.Score, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 		{Subject: entityID, Predicate: "agent.autonomy.guild_choices", Object: p.ChoicesEvaluated, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
@@ -290,12 +291,12 @@ func (p *GuildIntentPayload) Validate() error {
 
 // UseIntentPayload is emitted when an agent uses a consumable.
 type UseIntentPayload struct {
-	AgentID      domain.AgentID      `json:"agent_id"`
-	ConsumableID string              `json:"consumable_id"`
-	AgentStatus  domain.AgentStatus  `json:"agent_status"`
-	QuestID      *domain.QuestID     `json:"quest_id,omitempty"` // Set when used during a quest
-	Timestamp    time.Time           `json:"timestamp"`
-	Trace        TraceInfo           `json:"trace,omitempty"`
+	AgentID      domain.AgentID     `json:"agent_id"`
+	ConsumableID string             `json:"consumable_id"`
+	AgentStatus  domain.AgentStatus `json:"agent_status"`
+	QuestID      *domain.QuestID    `json:"quest_id,omitempty"` // Set when used during a quest
+	Timestamp    time.Time          `json:"timestamp"`
+	Trace        TraceInfo          `json:"trace,omitempty"`
 }
 
 // EntityID returns the entity ID for this event.
@@ -311,7 +312,7 @@ func (p *UseIntentPayload) Triples() []message.Triple {
 	}
 	if p.QuestID != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.autonomy.use_quest", Object: string(*p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0,
+			Subject: entityID, Predicate: "agent.autonomy.use_quest", Object: string(*p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 	return triples

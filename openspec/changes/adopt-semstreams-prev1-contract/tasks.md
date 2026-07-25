@@ -2,16 +2,16 @@
 
 ## 1. Contract inventory and TDD gates
 
-- [ ] 1.1 Create the reviewed predicate rename ledger, including producer,
+- [x] 1.1 Create the reviewed predicate rename ledger, including producer,
   consumers, cardinality, owner, write mode, UI mapping, and test evidence.
-- [ ] 1.2 Create the reviewed writer-owner matrix for every
+- [x] 1.2 Create the reviewed writer-owner matrix for every
   `ENTITY_STATES` mutation path; classify framework, product, and temporary
   migration writers.
-- [ ] 1.3 Inventory relationship-valued triples and add a failing contract test
+- [x] 1.3 Inventory relationship-valued triples and add a failing contract test
   requiring `message.EntityReferenceDatatype` for graph edges.
-- [ ] 1.4 Add beta.158-compatible predicate and entity-ID audit tasks. Use
+- [x] 1.4 Add beta.158-compatible predicate and entity-ID audit tasks. Use
   scoped roots until upstream SemStreams #667 is fixed.
-- [ ] 1.5 Capture the baseline findings and classify intentional negative
+- [x] 1.5 Capture the baseline findings and classify intentional negative
   fixtures without broad file/directory exemptions.
 
 ## 2. Canonical graph corpus

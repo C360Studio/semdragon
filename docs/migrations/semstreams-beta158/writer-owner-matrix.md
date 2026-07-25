@@ -1,0 +1,569 @@
+# SemStreams beta.158 writer-owner matrix
+
+Status: architect-reviewed target for semdragon issue #3.
+
+## Raw mutation inventory
+
+Only two product statements mutate `ENTITY_STATES` directly:
+
+- `graphclient.go:123`: `KVStore.Put`, reached through `EmitEntity`,
+  `EmitEntityUpdate`, and `PutEntityState`. This is last-writer-wins
+  full-object replacement.
+- `graphclient.go:153`: `KVStore.Update`, reached through `EmitEntityCAS`.
+  This is CAS full-object replacement; CAS prevents a stale revision but not
+  cross-owner predicate loss.
+
+Non-test callers are grouped below. Raw KV writes in boardcontrol, dmapproval,
+dmsession, tokenbudget, and API DM sessions target other named buckets. That is
+a bucket-specific classification, not a package exemption.
+
+Framework mutation paths are:
+
+- lifecycle Manager create/transition/operator update;
+- graph-ingest triple mutation used by lifecycle command stamps;
+- graph-ingest entity creation used by questdag seeding; and
+- gated-DAG claim mutation.
+
+## Owner-claim notation
+
+- Patterns are canonical six-position globs:
+  `org.platform.domain.system.type.instance`.
+- Predicates are exact strings. No predicate prefix or wildcard is an owner
+  claim.
+- Tokens use SemStreams wire form `<owner>#<incarnation>`.
+- Issue #3 defines registrations while pinned to beta.135. Issue #4 wires the
+  beta.158 registry and stamps the tokens.
+- `strict` foreign edges require the independently produced target to exist
+  before the edge is written.
+- Create-only predicates are birth facts, not `OwnerClaim.Predicates`.
+- Append-evidence predicates use the framework append lane and have no
+  replace-owned token.
+
+## Quest entity claims
+
+### Lifecycle
+
+- Owner: `quest`; token `quest#<incarnation>`.
+- Pattern: `*.*.game.*.quest.*`.
+- Mode: `cas-transition`.
+- Producer: `questlifecycle.Workflow` and lifecycle rule/operator actions.
+- Exact predicates:
+  `quest.status.state`, `quest.lifecycle.command`,
+  `quest.assignment.requested-by`,
+  `quest.attempts.current`, `quest.attempts.max`,
+  `quest.assignment.agent`, `quest.assignment.party`,
+  `quest.lifecycle.pending-triage`, `quest.lifecycle.claimed-at`,
+  `quest.lifecycle.started-at`, `quest.lifecycle.completed-at`,
+  `quest.failure.escalated`, `quest.failure.reason`,
+  `quest.failure.type`, `quest.failure.history`,
+  `quest.recovery.path`, `quest.recovery.analysis`,
+  `quest.recovery.salvaged`, `quest.recovery.antipatterns`,
+  `quest.verdict.passed`, `quest.verdict.score`,
+  `quest.verdict.feedback`, `quest.verdict.xp-awarded`,
+  `quest.transition.source`, `quest.transition.at`,
+  `quest.transition.from`, and `quest.transition.note`.
+
+Lifecycle is the sole owner of `quest.verdict.xp-awarded`. Bossbattle supplies
+the transition input; it does not write that predicate directly.
+The four transition predicates replace
+`quest.lifecycle.last_transition_{source,at,from,note}`; the old namespace is
+not registered as an alias.
+
+### Quest creation
+
+- Owner: `quest-create`; token `quest-create#<incarnation>`.
+- Pattern: `*.*.game.*.quest.*`.
+- Mode: create only; no replace-owned registration after birth.
+- Producer: questboard/API creation.
+- Exact predicates:
+  `quest.identity.name`, `quest.identity.title`,
+  `quest.identity.description`, `quest.difficulty.level`,
+  `quest.classification.type`, `quest.tier.minimum`,
+  `quest.party.required`, `quest.party.min-size`, `quest.xp.base`,
+  `quest.skill.required`, `quest.tool.required`,
+  `quest.acceptance.criterion`, `quest.data.input`,
+  `quest.review.level`, `quest.review.needs-review`,
+  `quest.lifecycle.posted-at`, `quest.parent.quest`,
+  `quest.dependency.quest`, `quest.priority.guild`,
+  `quest.classification.red-team-target`,
+  `quest.classification.red-team-quest-id`,
+  `quest.spec.goal`, `quest.spec.requirements`,
+  `quest.spec.scenarios`, `quest.routing.class`, and
+  `quest.context.repo`.
+
+Red-team identity is create-only. Mutable red-team status is deliberately not
+in this claim.
+
+### Red-team status
+
+- Owner: `redteam`; token `redteam#<incarnation>`.
+- Pattern: `*.*.game.*.quest.*`.
+- Mode: `replace-owned`.
+- Producer: `processor/redteam`.
+- Exact predicate: `quest.classification.red-team-status`.
+
+### Questbridge
+
+- Owner: `questbridge`; token `questbridge#<incarnation>`.
+- Pattern: `*.*.game.*.quest.*`.
+- Mode: `replace-owned`.
+- Producer: `processor/questbridge`.
+- Exact predicates:
+  `quest.execution.loop-id`, `quest.context.token-count`,
+  `quest.context.sources`, `quest.context.entities`,
+  `quest.metrics.turns-used`, `quest.metrics.tokens-prompt`,
+  `quest.metrics.tokens-completion`, `quest.metrics.duration`,
+  `quest.data.output`, and `quest.dm.clarifications`.
+
+Questbridge requests transitions through lifecycle. It does not claim
+`quest.lifecycle.command`, phase, assignment, failure, or verdict.
+Service/API clarification writes route through questbridge; they do not form a
+second owner for `quest.dm.clarifications`.
+
+### Quest DAG projection
+
+- Owner: `questdag`; token `questdag#<incarnation>`.
+- Pattern: `*.*.game.*.quest.*`.
+- Mode: `replace-owned`.
+- Producer: questdag projection controller.
+- Exact predicates:
+  `quest.dag.execution-id`, `quest.dag.definition`,
+  `quest.dag.node-quest-ids`, `quest.dag.node-states`,
+  `quest.dag.node-assignees`, `quest.dag.completed-nodes`,
+  `quest.dag.failed-nodes`, `quest.dag.node-retries`,
+  `quest.dag.node-id`, and `quest.dag.clarifications`.
+
+### Quest artifacts
+
+- Owner: `quest-artifacts`; token `quest-artifacts#<incarnation>`.
+- Pattern: `*.*.game.*.quest.*`.
+- Mode: `replace-owned`.
+- Producer: bossbattle artifact merge/index controller.
+- Exact mutable predicates:
+  `quest.artifacts.merged` and `quest.artifacts.indexed`.
+- Append evidence:
+  `quest.relationship.produced`.
+
+The artifact controller never replaces lifecycle, assignment, verdict, or
+questbridge predicates. Produced-relationship entries are typed `@id` and are
+append evidence so concurrent results cannot erase one another.
+
+## DAG-unit claims
+
+All rows use pattern `*.*.game.*.dagunit.*`. They intentionally overlap on the
+entity pattern but not on predicates.
+
+### Framework claimer
+
+- Owner: gated-DAG framework; framework-minted token.
+- Mode: `replace-owned`.
+- Producer: beta.158 `processor/gated-dag`.
+- Exact predicate: `gateddag.unit.claim`.
+
+The framework owns only the claim marker.
+
+### Questdag seeder
+
+- Owner: `questdag`; token `questdag#<incarnation>`.
+- Mode: `replace-owned` for the dependency set.
+- Producer: `questdag.SeedUnits`.
+- Exact mutable predicate:
+  `gateddag.unit.depends-on`.
+- Create-only facts, excluded from `OwnerClaim.Predicates`:
+  `questdag.unit.node-id`, `questdag.unit.parent-quest`,
+  `questdag.unit.execution-id`, and `questdag.unit.sub-quest`.
+
+All five are ordinary predicates on the seeder-owned unit subject, not
+`ForeignEdgeClaim`s. The seeder first creates every real dagunit with the four
+birth facts, then uses its exact claim to write each
+`gateddag.unit.depends-on` relationship with `@id` between existing units. The
+dependency set is immutable after that initial owner-scoped write. No
+missing-target or birth-stub lane is used. The seeder does not own the
+framework marker group.
+
+### Completion handler
+
+- Owner: `questdag-completion`; token
+  `questdag-completion#<incarnation>`.
+- Mode: `replace-owned`.
+- Producer: questdag dispatch/completion handling.
+- Exact predicates:
+  `gateddag.unit.completed` and `gateddag.unit.failed`.
+
+### Reset controller
+
+- Owner: `questdag-reset`; token `questdag-reset#<incarnation>`.
+- Mode: `replace-owned`.
+- Producer: retry/reset controller.
+- Exact predicate: `gateddag.unit.dirtied`.
+- Dependency: SemStreams #382 supplies the supported mutator; issue #3 records
+  the claim but does not copy an internal framework mutator.
+
+## Agent and game entity claims
+
+### Agent identity and progression
+
+- Owner: `agentprogression`; token `agentprogression#<incarnation>`.
+- Pattern: `*.*.game.*.agent.*`.
+- Mode: `replace-owned`.
+- Producer: `processor/agentprogression`.
+- Exact mutable predicates:
+  `agent.status.state`, `agent.status.cooldown-until`,
+  `agent.progression.level`, `agent.progression.tier`,
+  `agent.progression.xp-current`, `agent.progression.xp-to-level`,
+  `agent.progression.death-count`, `agent.stats.quests-completed`,
+  `agent.stats.quests-failed`, `agent.stats.bosses-defeated`,
+  `agent.stats.total-xp-earned`, `agent.lifecycle.updated-at`,
+  `agent.reputation.peer-avg`, `agent.reputation.peer-q1-avg`,
+  `agent.reputation.peer-q2-avg`, `agent.reputation.peer-q3-avg`,
+  `agent.reputation.peer-count`, and `agent.skill.proficiency`.
+- Create-only facts, excluded from `OwnerClaim.Predicates`:
+  `agent.identity.name`, `agent.identity.display-name`,
+  `agent.identity.archetype`, `agent.npc.flag`,
+  and `agent.lifecycle.created-at`.
+- Append evidence:
+  `agent.progression.xp-delta`, `agent.progression.xp-quest`,
+  `agent.progression.xp-awarded`, and `agent.progression.xp-penalty`.
+
+Guild/party membership and quest assignment move to the first-class membership
+and assignment entities. Agentprogression does not claim their legacy
+agent-entity projection predicates.
+
+Autonomy observability predicates are append evidence, not owned current state:
+`agent.autonomy.status`, `agent.autonomy.action`,
+`agent.autonomy.interval-ms`, `agent.autonomy.idle-duration-ms`,
+`agent.autonomy.has-suggestion`, `agent.autonomy.backoff-ms`,
+`agent.autonomy.claim-quest`, `agent.autonomy.claim-score`,
+`agent.autonomy.claim-rank`, `agent.autonomy.shop-item`,
+`agent.autonomy.shop-cost`, `agent.autonomy.shop-budget`,
+`agent.autonomy.shop-strategic`, `agent.autonomy.guild-join`,
+`agent.autonomy.guild-score`, `agent.autonomy.guild-choices`,
+`agent.autonomy.use-consumable`, `agent.autonomy.use-status`,
+`agent.autonomy.use-quest`, `agent.autonomy.guild-create`, and
+`agent.autonomy.guild-create-candidates`.
+
+Bare local catalog values in `agent.autonomy.shop-item` are scalar. The
+predicate is typed `@id` only when the producer has converted the alias through
+`BoardConfig.StoreItemEntityID`; the conversion and evidence contract are in
+the rename ledger.
+
+### Agent store aggregates and evidence
+
+- Owner: `agentstore`; token `agentstore#<incarnation>`.
+- Pattern: `*.*.game.*.agent.*`.
+- Mode: `replace-owned`.
+- Exact mutable predicates:
+  `agent.inventory.total-spent`, `agent.inventory.tools-count`, and
+  `agent.inventory.consumables-count`.
+- Append evidence:
+  `agent.purchase.item-id`, `agent.purchase.xp-spent`,
+  `agent.consumable.effect-type`, `agent.consumable.expired-reason`,
+  `agent.inventory.change-type`, `agent.inventory.item-id`, and
+  `agent.inventory.quantity-change`.
+
+The agentstore XP payload is graph-bound, not exempt. Its
+`agent.progression.xp-current` projection is prohibited because
+agentprogression owns that predicate. Agentstore requests the XP mutation
+through the agentprogression owner API and removes the cross-owner triple.
+Catalog item aliases in the evidence predicates above remain scalar.
+
+### Store item
+
+- Owner: `agentstore`; token `agentstore#<incarnation>`.
+- Pattern: `*.*.game.*.storeitem.*`.
+- Mode: `replace-owned`.
+- Producer: `processor/agentstore`.
+- Exact mutable predicate:
+  `store.item.in-stock`.
+- Create-only facts, excluded from `OwnerClaim.Predicates`:
+  `store.item.name`, `store.item.description`, `store.item.type`,
+  `store.item.purchase-type`, `store.item.xp-cost`,
+  `store.item.min-tier`, `store.item.rental-uses`, `store.item.min-level`,
+  `store.item.guild-discount`, `store.item.tool-id`,
+  `store.item.effect-type`, `store.item.effect-magnitude`, and
+  `store.item.effect-duration`.
+
+The legacy three-part StoreItem entity-ID fallback is deleted. Catalog aliases
+such as `quality_shield` remain scalar until converted by
+`BoardConfig.StoreItemEntityID`.
+
+### Guild
+
+- Owner: `guildformation`; token `guildformation#<incarnation>`.
+- Pattern: `*.*.game.*.guild.*`.
+- Mode: `replace-owned`.
+- Producer: `processor/guildformation`.
+- Exact mutable predicates:
+  `guild.status.state`, `guild.quorum.size`, `guild.quorum.deadline`,
+  `guild.stats.reputation`, `guild.stats.quests-handled`,
+  `guild.stats.quests-failed`, `guild.stats.success-rate`,
+  `guild.lifecycle.disbanded-at`, `guild.resource.tool`,
+  `guild.routing.preferred-client`, `guild.routing.quest-type`,
+  and `guild.knowledge.lessons`.
+- Create-only facts, excluded from `OwnerClaim.Predicates`:
+  `guild.identity.name`, `guild.identity.description`,
+  `guild.identity.culture`, `guild.identity.motto`,
+  `guild.identity.specialization`,
+  `guild.config.max-members`, `guild.config.min-level`,
+  `guild.founding.date`, `guild.founding.agent`, and
+  `guild.lifecycle.created-at`.
+
+The quorum predicates are exactly `guild.quorum.size` and
+`guild.quorum.deadline`; `guild.config.quorum-size` is not a registered
+predicate.
+
+### Party
+
+- Owner: `partycoord`; token `partycoord#<incarnation>`.
+- Pattern: `*.*.game.*.party.*`.
+- Mode: `replace-owned`.
+- Producer: `processor/partycoord`.
+- Exact mutable predicates:
+  `party.status.state`, `party.membership.count`,
+  `party.lifecycle.disbanded-at`, `party.coordination.strategy`,
+  `party.coordination.decomposed-by`,
+  `party.coordination.parent-quest`,
+  `party.coordination.sub-quest-count`,
+  `party.coordination.sub-quest`, `party.context.count`,
+  `party.results.count`, `party.disband.reason`,
+  `party.rollup.started-at`, `party.rollup.sub-results-count`,
+  `party.rollup.completed-at`, and `party.rollup.status`.
+- Create-only facts, excluded from `OwnerClaim.Predicates`:
+  `party.identity.name`, `party.assignment.quest`,
+  `party.membership.lead`, and `party.lifecycle.formed-at`.
+
+Dynamic members, assignments, and submissions move to their first-class
+patterns below and are not included in the party claim.
+
+### Boss battle
+
+- Owner: `bossbattle`; token `bossbattle#<incarnation>`.
+- Pattern: `*.*.game.*.battle.*`.
+- Mode: `replace-owned`.
+- Producer: `processor/bossbattle`.
+- Exact mutable predicates:
+  `battle.status.state`, `battle.review.outcome`,
+  `battle.review.results`, `battle.lifecycle.completed-at`,
+  `battle.verdict.passed`, `battle.verdict.quality-score`,
+  `battle.verdict.xp-awarded`, `battle.verdict.xp-penalty`,
+  `battle.verdict.level-change`, `battle.verdict.feedback`,
+  `battle.results.count`, and `battle.results.passed`.
+- Create-only facts, excluded from `OwnerClaim.Predicates`:
+  `battle.identity.name`, `battle.assignment.quest`,
+  `battle.assignment.agent`, `battle.review.level`,
+  `battle.review.criteria`, `battle.review.judges`,
+  `battle.lifecycle.started-at`, and `battle.execution.loop-id`.
+
+Bossbattle does not claim any quest predicate.
+
+## Peer-review ownership
+
+### Review creation
+
+- Owner: `review-create`; token `review-create#<incarnation>`.
+- Pattern: `*.*.game.*.peerreview.*`.
+- Mode: create only.
+- Producers: bossbattle, questdag review creation, and review API creation.
+- Exact predicates:
+  `review.assignment.quest`, `review.assignment.leader`,
+  `review.assignment.member`, `review.assignment.party`,
+  `review.config.solo-task`, and `review.lifecycle.created-at`.
+
+### Dedicated review workflow
+
+- Owner: `review`; token `review#<incarnation>`.
+- Pattern: `*.*.game.*.peerreview.*`.
+- Mode: `cas-transition`.
+- Producer: dedicated review lifecycle workflow.
+- Exact predicates:
+  `review.status.state`, `review.leader.q1`, `review.leader.q2`,
+  `review.leader.q3`, `review.leader.explanation`,
+  `review.leader.submitted-at`, `review.member.q1`,
+  `review.member.q2`, `review.member.q3`,
+  `review.member.explanation`, `review.member.submitted-at`,
+  `review.result.leader-avg`, `review.result.member-avg`, and
+  `review.lifecycle.completed-at`.
+
+API, bossbattle, and questdag submit review transitions through this workflow;
+they do not replace the review entity.
+
+## First-class child entity claims
+
+All use `<owner>#<incarnation>`. Each registration contains only the exact
+mutable set; the listed birth facts are excluded from
+`OwnerClaim.Predicates`.
+
+- `agentstore`, pattern `*.*.game.*.inventory-entry.*`.
+  Mutable: `inventory.state.quantity` and
+  `inventory.state.uses-remaining`.
+  Create-only: `inventory.assignment.agent`,
+  `inventory.assignment.item`, `inventory.state.purchase-type`,
+  `inventory.state.xp-spent`, and `inventory.lifecycle.purchased-at`.
+  `inventory.state.quantity` is the consumable quantity/count.
+- `agentstore`, pattern `*.*.game.*.active-effect.*`.
+  Mutable: `effect.state.remaining`.
+  Create-only: `effect.assignment.agent`,
+  `effect.assignment.consumable`, `effect.assignment.quest`,
+  `effect.state.type`, `effect.state.magnitude`, and
+  `effect.lifecycle.activated-at`.
+- `guildformation`, pattern `*.*.game.*.guild-membership.*`.
+  Mutable: `membership.state.rank` and
+  `membership.metrics.contribution`.
+  Create-only: `membership.assignment.guild`,
+  `membership.assignment.agent`, and `membership.lifecycle.joined-at`.
+- `guildformation`, pattern `*.*.game.*.guild-application.*`.
+  Mutable: `application.assignment.reviewer`, `application.state.status`,
+  and `application.lifecycle.reviewed-at`.
+  Create-only: `application.assignment.guild`,
+  `application.assignment.applicant`, `application.spec.level`,
+  `application.spec.tier`, `application.spec.reason`,
+  `application.spec.message`, repeated `application.spec.skills`, and
+  `application.lifecycle.created-at`.
+- `partycoord`, pattern `*.*.game.*.party-membership.*`.
+  Mutable: `membership.state.role`.
+  Create-only: `membership.assignment.party`,
+  `membership.assignment.agent`, and `membership.lifecycle.joined-at`.
+- `partycoord`, pattern `*.*.game.*.party-assignment.*`.
+  Mutable: `assignment.state.rationale`.
+  Create-only: `assignment.relationship.party`,
+  `assignment.relationship.quest`, `assignment.relationship.agent`, and
+  `assignment.lifecycle.assigned-at`.
+- `partycoord`, pattern `*.*.game.*.party-submission.*`.
+  Mutable: none after creation.
+  Create-only: `submission.relationship.party`,
+  `submission.relationship.quest`, `submission.relationship.member`,
+  `submission.result.output`, `submission.result.quality`, and
+  `submission.lifecycle.submitted-at`.
+
+No parent-entity reconcile includes predicates from these child entities.
+Bare store catalog aliases are scalar. `inventory.assignment.item` and
+`effect.assignment.consumable` carry `@id` only after
+`BoardConfig.StoreItemEntityID` conversion and the table-driven validator,
+datatype, and round-trip evidence specified in the rename ledger.
+
+## Executor web-fetch claim
+
+- Owner: `executor-web-fetch`; token
+  `executor-web-fetch#<incarnation>`.
+- Pattern: `*.*.web.agent.doc.*`.
+- Mode: `replace-owned`.
+- Producer: `processor/executor.persistWebContent`.
+- Exact predicates:
+  `source.doc.content`, `source.doc.summary`, `source.doc.url`,
+  `source.doc.mime-type`, `source.doc.scope`,
+  `source.doc.fetched-by`, `source.doc.quest-id`,
+  `dc.terms.title`, and `dc.terms.modified`.
+
+This resolves the previously ambiguous executor/semsource ownership: the
+executor web-fetch producer owns this exact source-document pattern and set.
+
+## Graph-bound payload classification
+
+Implementing `Graphable` or supplying triples to a graph-emitting client makes
+a payload graph-bound. Message/event use does not make its predicates
+non-graph. The production payload families are classified as follows:
+
+- Agentprogression current state uses its exact owner claim. XP delta, quest,
+  award, and penalty observations use append evidence.
+- Agentstore current inventory totals use its exact owner claim. Purchase,
+  consumable, and inventory-change observations use append evidence.
+  `agent.progression.xp-current` is removed from agentstore `Triples` and is
+  sent through the agentprogression owner API.
+- Autonomy action/decision predicates listed above use append evidence.
+  Relationship datatypes still obey the catalog-alias conversion boundary.
+- Questboard/questbridge/questdag, partycoord, guildformation, bossbattle, and
+  review payloads either call the owner workflow, create the classified
+  first-class entity, or append their documented evidence. Their former
+  cross-owner projections are removed, not silently exempted.
+- Prompt assembly, executor execution/tool observations, DM-session counters,
+  guild events, and seeding statistics use append evidence. Web document state
+  uses the executor web-fetch owner claim; seed entity birth facts are
+  create-only.
+- `quest.failed` is proved non-graph only at the two questboard and one service
+  expressions recorded in the rename ledger: there it is
+  `EntityState.MessageType.Category`, never `Triple.Predicate`.
+
+Legacy payload projections `agent.guild.member`,
+`guild.membership.member`, and party membership/assignment/submission
+predicates are removed when the corresponding first-class entities are
+created. A producer may not keep both representations merely because both are
+graph-bound.
+
+## Foreign-edge claims
+
+A SemStreams `ForeignEdgeClaim` is not every `@id` relationship. It applies
+when a Graphable emits a triple whose subject differs from its own entity ID.
+The source sweep finds exactly three such production projections, all in
+`processor/partycoord/payloads.go`.
+
+### Allowed during issue #3
+
+- Owner: `partycoord`; token `partycoord#<incarnation>`.
+- Producer: `semdragons.party.joined.v1`.
+- Predicate: `agent.membership.party`.
+- Target pattern: `*.*.game.*.agent.*`.
+- Edge mode: `strict`; the agent has independent birth.
+
+This projection is deleted when party membership becomes first-class. Until
+then, agentprogression must not include `agent.membership.party` in a
+replace-owned claim.
+
+### Prohibited overlap
+
+`semdragons.party.assigned.v1` currently emits
+`quest.assignment.agent` and `quest.assignment.party` on a sub-quest subject.
+Both exact predicates belong to the quest lifecycle `cas-transition` claim.
+Registering partycoord foreign-edge claims would create an owner/foreign-edge
+overlap, so issue #3 removes those two payload projections. Partycoord creates
+the first-class party-assignment entity and requests the quest transition
+through lifecycle.
+
+All other `@id` predicates in this matrix have the owner entity as their
+subject, so they are ordinary owned relationship triples, not foreign-edge
+claims. Their target-birth rule is `strict`.
+
+`gateddag.unit.depends-on` is one of those ordinary questdag-owned predicates.
+The two-phase seeder creates all real units before it adds dependency edges, so
+the target-birth rule remains strict. Every relationship uses
+`internal/semcompat.EntityReferenceDatatype`.
+
+## Legacy caller disposition
+
+- questboard and status-mutating service API handlers: temporary; delete after
+  lifecycle callers migrate.
+- questbridge: keep only its exact owner-scoped mutations.
+- questdagexec: temporary; delete after questdag completion/reset controllers
+  own their exact marker sets.
+- autonomy, bossbattle, redteam, guildformation, and partycoord: replace
+  cross-entity full-object writes with owner APIs or first-class child creates.
+- agentprogression and agentstore: replace full-object writes with exact
+  owner-scoped mutation.
+- startup/e2e seed: create only against an empty fresh corpus.
+
+## Exhaustive coverage and registration gate
+
+The gate builds a production-emission inventory from every `Graphable.Triples`
+implementation and every direct graph-client triple construction. Its key is
+the concrete `(subject pattern, predicate, producer expression)`; dynamic
+predicate construction fails before classification.
+
+Each inventory row must resolve to exactly one of:
+
+1. an exact predicate in one registrable `OwnerClaim`;
+2. a create-only birth fact, absent from every `OwnerClaim.Predicates`;
+3. append evidence using the framework append mode;
+4. one registrable `ForeignEdgeClaim`, with a demonstrably foreign subject; or
+5. a proved non-graph expression-level annotation backed by a test of the
+   actual destination field.
+
+Zero matches and multiple matches both fail. The same test registers all
+owner and foreign-edge claims against the beta.158 registry contract and fails
+on pattern/predicate overlap, invalid six-position patterns, wildcard
+predicates, unregistrable modes, or an owner token outside
+`<owner>#<incarnation>`. It also asserts that the store/guild/party/battle and
+first-class-child create-only sets never enter their mutable claims.
+
+The three `quest.failed` expressions are the only initial non-graph rows.
+Directory-, package-, and filename-wide exemptions are forbidden. This gate,
+the pinned predicate audit, relationship coverage, and generated-schema/UI
+contract tests must all pass before any writer starts.

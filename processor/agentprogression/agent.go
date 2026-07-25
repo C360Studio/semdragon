@@ -9,6 +9,7 @@ import (
 	"github.com/c360studio/semstreams/message"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 // =============================================================================
@@ -116,9 +117,9 @@ type OwnedTool struct {
 
 // AgentEffect tracks a consumable effect currently active on an agent.
 type AgentEffect struct {
-	EffectType      string            `json:"effect_type"`        // xp_boost, quality_shield, etc.
-	QuestsRemaining int               `json:"quests_remaining"`   // Quests until effect expires
-	QuestID         *domain.QuestID   `json:"quest_id,omitempty"` // Quest that triggered the effect
+	EffectType      string          `json:"effect_type"`        // xp_boost, quality_shield, etc.
+	QuestsRemaining int             `json:"quests_remaining"`   // Quests until effect expires
+	QuestID         *domain.QuestID `json:"quest_id,omitempty"` // Quest that triggered the effect
 }
 
 // =============================================================================
@@ -232,7 +233,7 @@ func (a *Agent) Triples() []message.Triple {
 	if a.Guild != "" {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "agent.membership.guild", Object: string(a.Guild),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
@@ -252,14 +253,14 @@ func (a *Agent) Triples() []message.Triple {
 	if a.CurrentQuest != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "agent.assignment.quest", Object: string(*a.CurrentQuest),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
 	if a.CurrentParty != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "agent.membership.party", Object: string(*a.CurrentParty),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
@@ -274,7 +275,7 @@ func (a *Agent) Triples() []message.Triple {
 	for itemID, tool := range a.OwnedTools {
 		prefix := fmt.Sprintf("agent.inventory.tool.%s", itemID)
 		triples = append(triples,
-			message.Triple{Subject: entityID, Predicate: prefix, Object: tool.StoreItemID, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix, Object: tool.StoreItemID, Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 			message.Triple{Subject: entityID, Predicate: prefix + ".xp_spent", Object: tool.XPSpent, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: prefix + ".uses", Object: tool.UsesRemaining, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: prefix + ".purchased_at", Object: tool.PurchasedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
@@ -307,7 +308,7 @@ func (a *Agent) Triples() []message.Triple {
 		if eff.QuestID != nil {
 			triples = append(triples, message.Triple{
 				Subject: entityID, Predicate: prefix + ".quest", Object: string(*eff.QuestID),
-				Source: source, Timestamp: now, Confidence: 1.0,
+				Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 			})
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
@@ -68,6 +69,7 @@ func (p *GuildCreatedPayload) Triples() []message.Triple {
 		Subject:    p.EntityID(),
 		Predicate:  "guild.event.created_by",
 		Object:     string(p.FounderID),
+		Datatype:   semcompat.EntityReferenceDatatype,
 		Source:     "guildformation",
 		Timestamp:  p.Timestamp,
 		Confidence: 1.0,
@@ -120,6 +122,7 @@ func (p *GuildJoinedPayload) Triples() []message.Triple {
 			Subject:    string(p.GuildID),
 			Predicate:  "guild.membership.member",
 			Object:     string(p.AgentID),
+			Datatype:   semcompat.EntityReferenceDatatype,
 			Source:     "guildformation",
 			Timestamp:  p.Timestamp,
 			Confidence: 1.0,
@@ -177,6 +180,7 @@ func (p *GuildLeftPayload) Triples() []message.Triple {
 			Subject:    string(p.GuildID),
 			Predicate:  "guild.membership.left",
 			Object:     string(p.AgentID),
+			Datatype:   semcompat.EntityReferenceDatatype,
 			Source:     "guildformation",
 			Timestamp:  p.Timestamp,
 			Confidence: 1.0,

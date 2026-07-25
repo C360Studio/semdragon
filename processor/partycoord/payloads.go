@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
@@ -155,9 +156,9 @@ func (p *PartyJoinedPayload) Triples() []message.Triple {
 	entityID := string(p.PartyID)
 
 	return []message.Triple{
-		{Subject: entityID, Predicate: "party.membership.member", Object: string(p.AgentID), Source: source, Timestamp: p.JoinedAt, Confidence: 1.0},
+		{Subject: entityID, Predicate: "party.membership.member", Object: string(p.AgentID), Source: source, Timestamp: p.JoinedAt, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "party.member." + string(p.AgentID) + ".role", Object: string(p.Role), Source: source, Timestamp: p.JoinedAt, Confidence: 1.0},
-		{Subject: string(p.AgentID), Predicate: "agent.membership.party", Object: string(p.PartyID), Source: source, Timestamp: p.JoinedAt, Confidence: 1.0},
+		{Subject: string(p.AgentID), Predicate: "agent.membership.party", Object: string(p.PartyID), Source: source, Timestamp: p.JoinedAt, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 	}
 }
 
@@ -205,8 +206,8 @@ func (p *PartyQuestDecomposedPayload) Triples() []message.Triple {
 	entityID := string(p.PartyID)
 
 	triples := []message.Triple{
-		{Subject: entityID, Predicate: "party.coordination.decomposed_by", Object: string(p.LeadID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: entityID, Predicate: "party.coordination.parent_quest", Object: string(p.ParentQuest), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: "party.coordination.decomposed_by", Object: string(p.LeadID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "party.coordination.parent_quest", Object: string(p.ParentQuest), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "party.coordination.sub_quest_count", Object: len(p.SubQuests), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 		{Subject: entityID, Predicate: "party.strategy", Object: p.Strategy, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
@@ -214,7 +215,7 @@ func (p *PartyQuestDecomposedPayload) Triples() []message.Triple {
 	for _, sq := range p.SubQuests {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "party.coordination.sub_quest", Object: string(sq),
-			Source: source, Timestamp: p.Timestamp, Confidence: 1.0,
+			Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
@@ -273,9 +274,9 @@ func (p *PartyTaskAssignedPayload) Triples() []message.Triple {
 	entityID := string(p.PartyID)
 
 	triples := []message.Triple{
-		{Subject: entityID, Predicate: "party.assignment." + string(p.SubQuestID), Object: string(p.AssignedTo), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: string(p.SubQuestID), Predicate: "quest.assignment.agent", Object: string(p.AssignedTo), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
-		{Subject: string(p.SubQuestID), Predicate: "quest.assignment.party", Object: string(p.PartyID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: "party.assignment." + string(p.SubQuestID), Object: string(p.AssignedTo), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: string(p.SubQuestID), Predicate: "quest.assignment.agent", Object: string(p.AssignedTo), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: string(p.SubQuestID), Predicate: "quest.assignment.party", Object: string(p.PartyID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 	}
 
 	return triples
@@ -331,7 +332,7 @@ func (p *PartyResultSubmittedPayload) Triples() []message.Triple {
 	entityID := string(p.PartyID)
 
 	return []message.Triple{
-		{Subject: entityID, Predicate: "party.result." + string(p.SubQuestID) + ".submitted_by", Object: string(p.MemberID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
+		{Subject: entityID, Predicate: "party.result." + string(p.SubQuestID) + ".submitted_by", Object: string(p.MemberID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "party.result." + string(p.SubQuestID) + ".quality", Object: p.QualityScore, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
 }

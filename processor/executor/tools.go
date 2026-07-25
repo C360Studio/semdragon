@@ -19,6 +19,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semdragons/processor/executor/httpformat"
 	"github.com/c360studio/semdragons/processor/questdagexec"
@@ -923,10 +924,13 @@ type webContentEntity struct {
 func (e *webContentEntity) EntityID() string          { return e.id }
 func (e *webContentEntity) Triples() []message.Triple { return e.triples }
 
-// persistWebContent writes a fetched web page to the knowledge graph as a
-// source.doc entity. This runs in a goroutine; failures are logged and ignored
-// so they never block or surface to the agent.
-func persistWebContent(p *graphPersister, rawURL, title, content string, call agentic.ToolCall) {
+func buildWebContentEntity(
+	config *domain.BoardConfig,
+	rawURL string,
+	title string,
+	content string,
+	call agentic.ToolCall,
+) *webContentEntity {
 	urlHash := fmt.Sprintf("%x", sha256.Sum256([]byte(rawURL)))[:6]
 
 	effectiveTitle := title
@@ -942,7 +946,7 @@ func persistWebContent(p *graphPersister, rawURL, title, content string, call ag
 	instance := slug + "-" + urlHash
 
 	entityID := fmt.Sprintf("%s.%s.web.agent.doc.%s",
-		p.config.Org, p.config.Platform, instance)
+		config.Org, config.Platform, instance)
 
 	summary := content
 	if len(summary) > 200 {
@@ -962,20 +966,27 @@ func persistWebContent(p *graphPersister, rawURL, title, content string, call ag
 		{Subject: entityID, Predicate: "dc.terms.modified", Object: time.Now().Format(time.RFC3339)},
 	}
 	if agentID != "" {
-		triples = append(triples, message.Triple{Subject: entityID, Predicate: "source.doc.fetched_by", Object: agentID})
+		triples = append(triples, message.Triple{Subject: entityID, Predicate: "source.doc.fetched_by", Object: agentID, Datatype: semcompat.EntityReferenceDatatype})
 	}
 	if questID != "" {
-		triples = append(triples, message.Triple{Subject: entityID, Predicate: "source.doc.quest_id", Object: questID})
+		triples = append(triples, message.Triple{Subject: entityID, Predicate: "source.doc.quest_id", Object: questID, Datatype: semcompat.EntityReferenceDatatype})
 	}
 
-	entity := &webContentEntity{id: entityID, triples: triples}
+	return &webContentEntity{id: entityID, triples: triples}
+}
+
+// persistWebContent writes a fetched web page to the knowledge graph as a
+// source.doc entity. This runs in a goroutine; failures are logged and ignored
+// so they never block or surface to the agent.
+func persistWebContent(p *graphPersister, rawURL, title, content string, call agentic.ToolCall) {
+	entity := buildWebContentEntity(p.config, rawURL, title, content, call)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := p.graph.EmitEntity(ctx, entity, "web.content.fetched"); err != nil {
 		slog.Debug("failed to persist web content to graph",
-			"url", rawURL, "entity_id", entityID, "error", err)
+			"url", rawURL, "entity_id", entity.EntityID(), "error", err)
 	}
 }
 
@@ -1737,11 +1748,11 @@ func formatGraphSearchResult(data map[string]json.RawMessage) string {
 				Relevance float64 `json:"relevance"`
 			} `json:"entity_digests"`
 			CommunitySummaries []struct {
-				CommunityID string  `json:"communityId"`
-				Summary     string  `json:"summary"`
+				CommunityID string   `json:"communityId"`
+				Summary     string   `json:"summary"`
 				Keywords    []string `json:"keywords"`
-				Relevance   float64 `json:"relevance"`
-				MemberCount int     `json:"member_count"`
+				Relevance   float64  `json:"relevance"`
+				MemberCount int      `json:"member_count"`
 				Entities    []struct {
 					ID        string  `json:"id"`
 					Type      string  `json:"type"`
@@ -1885,7 +1896,6 @@ func graphQueryHandler(queryFn EntityQueryFunc) ToolHandler {
 		return agentic.ToolResult{CallID: call.ID, Content: result}
 	}
 }
-
 
 // =============================================================================
 // GRAPH SUMMARY TOOL - semsource source discovery

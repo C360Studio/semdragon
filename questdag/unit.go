@@ -12,6 +12,7 @@ import (
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 // Framework gated-DAG marker predicates (processor/gated-dag config defaults).
@@ -116,28 +117,33 @@ func SeedUnits(ctx context.Context, client *natsclient.Client, board *domain.Boa
 	// Create each unit entity with provenance + edges.
 	for _, node := range in.DAG.Nodes {
 		unitID := nodeUnits[node.ID]
-		triples := []message.Triple{
-			{Subject: unitID, Predicate: PredUnitNodeID, Object: node.ID, Confidence: 1.0},
-			{Subject: unitID, Predicate: PredUnitParentQuest, Object: in.ParentQuestID, Confidence: 1.0},
-			{Subject: unitID, Predicate: PredUnitExecutionID, Object: in.ExecutionID, Confidence: 1.0},
-		}
-		if sub := in.NodeSubQuests[node.ID]; sub != "" {
-			triples = append(triples, message.Triple{
-				Subject: unitID, Predicate: PredUnitSubQuest, Object: sub, Confidence: 1.0,
-			})
-		}
-		for _, dep := range node.DependsOn {
-			depUnit := nodeUnits[dep] // present: Validate() ensured dep is a known node
-			triples = append(triples, message.Triple{
-				Subject: unitID, Predicate: PredDependsOn, Object: depUnit, Confidence: 1.0,
-			})
-		}
+		triples := buildUnitTriples(unitID, node, nodeUnits, in)
 		if err := createUnitEntity(ctx, client, unitID, triples); err != nil {
 			return nil, fmt.Errorf("questdag: seed unit for node %q: %w", node.ID, err)
 		}
 	}
 
 	return &SeedResult{NodeUnits: nodeUnits}, nil
+}
+
+func buildUnitTriples(unitID string, node Node, nodeUnits map[string]string, in SeedInput) []message.Triple {
+	triples := []message.Triple{
+		{Subject: unitID, Predicate: PredUnitNodeID, Object: node.ID, Confidence: 1.0},
+		{Subject: unitID, Predicate: PredUnitParentQuest, Object: in.ParentQuestID, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: unitID, Predicate: PredUnitExecutionID, Object: in.ExecutionID, Confidence: 1.0},
+	}
+	if sub := in.NodeSubQuests[node.ID]; sub != "" {
+		triples = append(triples, message.Triple{
+			Subject: unitID, Predicate: PredUnitSubQuest, Object: sub, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
+		})
+	}
+	for _, dep := range node.DependsOn {
+		depUnit := nodeUnits[dep]
+		triples = append(triples, message.Triple{
+			Subject: unitID, Predicate: PredDependsOn, Object: depUnit, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
+		})
+	}
+	return triples
 }
 
 // createUnitEntity upserts a unit entity with its triples via graph-ingest's

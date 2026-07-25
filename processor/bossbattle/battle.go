@@ -10,6 +10,7 @@ import (
 	"github.com/c360studio/semstreams/message"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 // =============================================================================
@@ -32,7 +33,7 @@ type BossBattle struct {
 	Criteria    []domain.ReviewCriterion `json:"criteria"`
 	Results     []domain.ReviewResult    `json:"results,omitempty"`
 	Verdict     *domain.BattleVerdict    `json:"verdict,omitempty"`
-	Judges      []domain.Judge            `json:"judges"`
+	Judges      []domain.Judge           `json:"judges"`
 	StartedAt   time.Time                `json:"started_at"`
 	CompletedAt *time.Time               `json:"completed_at,omitempty"`
 }
@@ -57,8 +58,8 @@ func (b *BossBattle) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "battle.identity.name", Object: b.Name, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Relationships — must match reconstruction predicates in BattleFromEntityState
-		{Subject: entityID, Predicate: "battle.assignment.quest", Object: string(b.QuestID), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "battle.assignment.agent", Object: string(b.AgentID), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "battle.assignment.quest", Object: string(b.QuestID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "battle.assignment.agent", Object: string(b.AgentID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 
 		// Status
 		{Subject: entityID, Predicate: "battle.status.state", Object: string(b.Status), Source: source, Timestamp: now, Confidence: 1.0},

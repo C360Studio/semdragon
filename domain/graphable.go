@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/message"
+
+	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 // =============================================================================
@@ -77,28 +79,28 @@ func (q *Quest) Triples() []message.Triple {
 	if q.ClaimedBy != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.assignment.agent", Object: string(*q.ClaimedBy),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
 	if q.PartyID != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.assignment.party", Object: string(*q.PartyID),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
 	if q.GuildPriority != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.priority.guild", Object: string(*q.GuildPriority),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
 	if q.RedTeamTarget != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.classification.red_team_target", Object: string(*q.RedTeamTarget),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
@@ -112,21 +114,21 @@ func (q *Quest) Triples() []message.Triple {
 	if q.RedTeamQuestID != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.classification.red_team_quest_id", Object: string(*q.RedTeamQuestID),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
 	if q.ParentQuest != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.parent.quest", Object: string(*q.ParentQuest),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
 	for _, depID := range q.DependsOn {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "quest.dependency.quest", Object: string(depID),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
@@ -395,7 +397,7 @@ func (q *Quest) Triples() []message.Triple {
 	for _, producedID := range q.ProducedEntities {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: PredicateQuestProduced, Object: producedID,
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 
@@ -457,7 +459,7 @@ func (g *Guild) Triples() []message.Triple {
 
 		// Founding
 		{Subject: entityID, Predicate: "guild.founding.date", Object: g.Founded.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "guild.founding.agent", Object: string(g.FoundedBy), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "guild.founding.agent", Object: string(g.FoundedBy), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 
 		// Stats
 		{Subject: entityID, Predicate: "guild.stats.reputation", Object: g.Reputation, Source: source, Timestamp: now, Confidence: 1.0},
@@ -488,7 +490,7 @@ func (g *Guild) Triples() []message.Triple {
 	for _, member := range g.Members {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "guild.membership.agent", Object: string(member.AgentID),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: fmt.Sprintf("guild.member.%s.rank", member.AgentID), Object: string(member.Rank),
@@ -542,7 +544,7 @@ func (g *Guild) Triples() []message.Triple {
 	for _, app := range g.Applications {
 		prefix := fmt.Sprintf("guild.application.%s", app.ID)
 		triples = append(triples,
-			message.Triple{Subject: entityID, Predicate: prefix + ".applicant", Object: string(app.ApplicantID), Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: prefix + ".applicant", Object: string(app.ApplicantID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 			message.Triple{Subject: entityID, Predicate: prefix + ".status", Object: string(app.Status), Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: prefix + ".level", Object: app.Level, Source: source, Timestamp: now, Confidence: 1.0},
 			message.Triple{Subject: entityID, Predicate: prefix + ".tier", Object: int(app.Tier), Source: source, Timestamp: now, Confidence: 1.0},
@@ -563,7 +565,7 @@ func (g *Guild) Triples() []message.Triple {
 		if app.ReviewedBy != nil {
 			triples = append(triples, message.Triple{
 				Subject: entityID, Predicate: prefix + ".reviewed_by", Object: string(*app.ReviewedBy),
-				Source: source, Timestamp: now, Confidence: 1.0,
+				Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 			})
 		}
 		if app.Reason != "" {
@@ -611,9 +613,9 @@ func (pr *PeerReview) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "review.status.state", Object: string(pr.Status), Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Assignment
-		{Subject: entityID, Predicate: "review.assignment.quest", Object: string(pr.QuestID), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "review.assignment.leader", Object: string(pr.LeaderID), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "review.assignment.member", Object: string(pr.MemberID), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "review.assignment.quest", Object: string(pr.QuestID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "review.assignment.leader", Object: string(pr.LeaderID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "review.assignment.member", Object: string(pr.MemberID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: "review.config.solo_task", Object: pr.IsSoloTask, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Lifecycle
@@ -623,7 +625,7 @@ func (pr *PeerReview) Triples() []message.Triple {
 	if pr.PartyID != nil {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "review.assignment.party", Object: string(*pr.PartyID),
-			Source: source, Timestamp: now, Confidence: 1.0,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 

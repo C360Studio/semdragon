@@ -1,0 +1,355 @@
+package semdragons_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/c360studio/semstreams/message"
+
+	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/autonomy"
+	"github.com/c360studio/semdragons/processor/bossbattle"
+	"github.com/c360studio/semdragons/processor/executor"
+	"github.com/c360studio/semdragons/processor/guildformation"
+	"github.com/c360studio/semdragons/processor/partycoord"
+	"github.com/c360studio/semdragons/processor/promptmanager"
+	"github.com/c360studio/semdragons/processor/seeding"
+)
+
+type graphProjection interface {
+	Triples() []message.Triple
+}
+
+func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	agent1 := domain.AgentID("c360.local.game.board.agent.agent-1")
+	agent2 := domain.AgentID("c360.local.game.board.agent.agent-2")
+	quest1 := domain.QuestID("c360.local.game.board.quest.quest-1")
+	quest2 := domain.QuestID("c360.local.game.board.quest.quest-2")
+	party := domain.PartyID("c360.local.game.board.party.party-1")
+	guild := domain.GuildID("c360.local.game.board.guild.guild-1")
+	storeItem := "c360.local.game.board.storeitem.item-1"
+
+	tests := []struct {
+		name             string
+		entity           graphProjection
+		wantReferences   map[string]int
+		wantNoReferences bool
+	}{
+		{
+			name: "persisted agent",
+			entity: &agentprogression.Agent{
+				ID:           agent1,
+				Guild:        guild,
+				CurrentQuest: &quest1,
+				CurrentParty: &party,
+				OwnedTools: map[string]agentprogression.OwnedTool{
+					"item-1": {StoreItemID: storeItem, PurchasedAt: now},
+				},
+				ActiveEffects: []agentprogression.AgentEffect{{EffectType: "boost", QuestID: &quest2}},
+				CreatedAt:     now,
+				UpdatedAt:     now,
+			},
+			wantReferences: map[string]int{
+				"agent.membership.guild":      1,
+				"agent.assignment.quest":      1,
+				"agent.membership.party":      1,
+				"agent.inventory.tool.item-1": 1,
+				"agent.effects.boost.quest":   1,
+			},
+		},
+		{
+			name: "persisted party",
+			entity: &partycoord.Party{
+				ID:      party,
+				QuestID: quest1,
+				Lead:    agent1,
+				Members: []partycoord.PartyMember{{AgentID: agent1}, {AgentID: agent2}},
+				SubQuestMap: map[domain.QuestID]domain.AgentID{
+					quest2: agent2,
+				},
+				FormedAt: now,
+			},
+			wantReferences: map[string]int{
+				"party.quest":                        1,
+				"party.lead":                         1,
+				"party.membership.member":            2,
+				"party.assignment." + string(quest2): 1,
+			},
+		},
+		{
+			name: "persisted boss battle",
+			entity: &bossbattle.BossBattle{
+				ID:        domain.BattleID("c360.local.game.board.battle.battle-1"),
+				QuestID:   quest1,
+				AgentID:   agent1,
+				StartedAt: now,
+			},
+			wantReferences: map[string]int{
+				"battle.assignment.quest": 1,
+				"battle.assignment.agent": 1,
+			},
+		},
+		{
+			name:           "autonomy claim event",
+			entity:         &autonomy.ClaimIntentPayload{AgentID: agent1, QuestID: quest1, Timestamp: now},
+			wantReferences: map[string]int{"agent.autonomy.claim_quest": 1},
+		},
+		{
+			name:           "autonomy guild event",
+			entity:         &autonomy.GuildIntentPayload{AgentID: agent1, GuildID: string(guild), Timestamp: now},
+			wantReferences: map[string]int{"agent.autonomy.guild_join": 1},
+		},
+		{
+			name:           "autonomy use event",
+			entity:         &autonomy.UseIntentPayload{AgentID: agent1, QuestID: &quest1, Timestamp: now},
+			wantReferences: map[string]int{"agent.autonomy.use_quest": 1},
+		},
+		{
+			name:             "autonomy shop event",
+			entity:           &autonomy.ShopIntentPayload{AgentID: agent1, ItemID: "item-1", Timestamp: now},
+			wantNoReferences: true,
+		},
+		{
+			name: "autonomy guild-create event",
+			entity: &autonomy.GuildCreateIntentPayload{
+				AgentID: agent1, CandidateIDs: []domain.AgentID{agent2}, Timestamp: now,
+			},
+			wantNoReferences: true,
+		},
+		{
+			name: "party formed event",
+			entity: &partycoord.PartyFormedPayload{
+				Party: partycoord.Party{
+					ID:      party,
+					QuestID: quest1,
+					Lead:    agent1,
+					Members: []partycoord.PartyMember{{AgentID: agent2}},
+				},
+				FormedAt: now,
+			},
+			wantReferences: map[string]int{
+				"party.quest":             1,
+				"party.lead":              1,
+				"party.membership.member": 1,
+			},
+		},
+		{
+			name: "party joined event",
+			entity: &partycoord.PartyJoinedPayload{
+				PartyID: party, AgentID: agent1, JoinedAt: now,
+			},
+			wantReferences: map[string]int{
+				"party.membership.member": 1,
+				"agent.membership.party":  1,
+			},
+		},
+		{
+			name: "party decomposed event",
+			entity: &partycoord.PartyQuestDecomposedPayload{
+				PartyID: party, LeadID: agent1, ParentQuest: quest1,
+				SubQuests: []domain.QuestID{quest2}, Timestamp: now,
+			},
+			wantReferences: map[string]int{
+				"party.coordination.decomposed_by": 1,
+				"party.coordination.parent_quest":  1,
+				"party.coordination.sub_quest":     1,
+			},
+		},
+		{
+			name: "party assignment event",
+			entity: &partycoord.PartyTaskAssignedPayload{
+				PartyID: party, LeadID: agent1, AssignedTo: agent2,
+				SubQuestID: quest2, Timestamp: now,
+			},
+			wantReferences: map[string]int{
+				"party.assignment." + string(quest2): 1,
+				"quest.assignment.agent":             1,
+				"quest.assignment.party":             1,
+			},
+		},
+		{
+			name: "party result event",
+			entity: &partycoord.PartyResultSubmittedPayload{
+				PartyID: party, MemberID: agent2, SubQuestID: quest2, Timestamp: now,
+			},
+			wantReferences: map[string]int{
+				"party.result." + string(quest2) + ".submitted_by": 1,
+			},
+		},
+		{
+			name: "party rollup-started event",
+			entity: &partycoord.PartyRollupStartedPayload{
+				PartyID: party, LeadID: agent1, ParentQuestID: quest1, Timestamp: now,
+			},
+			wantNoReferences: true,
+		},
+		{
+			name: "party rollup-completed event",
+			entity: &partycoord.PartyRollupCompletedPayload{
+				PartyID: party, LeadID: agent1, ParentQuestID: quest1, Timestamp: now,
+			},
+			wantNoReferences: true,
+		},
+		{
+			name: "guild created event",
+			entity: &guildformation.GuildCreatedPayload{
+				Guild:     domain.Guild{ID: guild, FoundedBy: agent1},
+				FounderID: agent1,
+				Timestamp: now,
+			},
+			wantReferences: map[string]int{
+				"guild.founding.agent":   1,
+				"guild.event.created_by": 1,
+			},
+		},
+		{
+			name: "guild joined event",
+			entity: &guildformation.GuildJoinedPayload{
+				GuildID: guild, AgentID: agent1, Timestamp: now,
+			},
+			wantReferences: map[string]int{"guild.membership.member": 1},
+		},
+		{
+			name: "guild left event",
+			entity: &guildformation.GuildLeftPayload{
+				GuildID: guild, AgentID: agent1, Timestamp: now,
+			},
+			wantReferences: map[string]int{"guild.membership.left": 1},
+		},
+		{
+			name: "guild promoted event",
+			entity: &guildformation.GuildPromotedPayload{
+				GuildID: guild, AgentID: agent1, Timestamp: now,
+			},
+			wantNoReferences: true,
+		},
+		{
+			name: "guild disbanded event",
+			entity: &guildformation.GuildDisbandedPayload{
+				GuildID: guild, Timestamp: now,
+			},
+			wantNoReferences: true,
+		},
+		{
+			name:           "agent XP event",
+			entity:         &agentprogression.AgentXPPayload{AgentID: agent1, QuestID: quest1, Timestamp: now},
+			wantReferences: map[string]int{"agent.progression.xp.quest": 1},
+		},
+		{
+			name: "agent seeded event",
+			entity: &seeding.AgentSeededPayload{
+				AgentID: agent1, GuildID: guild, Timestamp: now,
+			},
+			wantReferences: map[string]int{"agent.guild.member": 1},
+		},
+		{
+			name:             "seeding started event",
+			entity:           &seeding.StartedPayload{SessionID: "session-1", Timestamp: now},
+			wantNoReferences: true,
+		},
+		{
+			name:             "seeding completed event",
+			entity:           &seeding.CompletedPayload{SessionID: "session-1", Timestamp: now},
+			wantNoReferences: true,
+		},
+		{
+			name: "guild seeded event",
+			entity: &seeding.GuildSeededPayload{
+				GuildID: guild, GuildName: "Guild", Timestamp: now,
+			},
+			wantNoReferences: true,
+		},
+		{
+			name: "prompt assembled event",
+			entity: &promptmanager.PromptAssembledPayload{
+				QuestID: quest1, AgentID: agent1, Timestamp: now,
+			},
+			wantReferences: map[string]int{"prompt.assembly.agent_id": 1},
+		},
+		{
+			name: "execution started event",
+			entity: &executor.ExecutionStartedPayload{
+				QuestID: quest1, AgentID: agent1, Timestamp: now,
+			},
+			wantReferences: map[string]int{"execution.agent.id": 1},
+		},
+		{
+			name: "executor tool-call event",
+			entity: &executor.ToolCallPayload{
+				QuestID: quest1, AgentID: agent1, ToolName: "search", Timestamp: now,
+			},
+			wantNoReferences: true,
+		},
+		{
+			name: "executor tool-result event",
+			entity: &executor.ToolResultPayload{
+				QuestID: quest1, AgentID: agent1, ToolName: "search", Timestamp: now,
+			},
+			wantNoReferences: true,
+		},
+		// These graph-bound event projections intentionally emit no references.
+		{name: "autonomy evaluated event", entity: &autonomy.EvaluatedPayload{AgentID: agent1, Timestamp: now}, wantNoReferences: true},
+		{name: "autonomy idle event", entity: &autonomy.IdlePayload{AgentID: agent1, Timestamp: now}, wantNoReferences: true},
+		{name: "execution completed event", entity: &executor.ExecutionCompletedPayload{QuestID: quest1, AgentID: agent1, Timestamp: now}, wantNoReferences: true},
+		{name: "execution failed event", entity: &executor.ExecutionFailedPayload{QuestID: quest1, AgentID: agent1, Timestamp: now}, wantNoReferences: true},
+		{name: "party disbanded event", entity: &partycoord.PartyDisbandedPayload{PartyID: party, QuestID: quest1, DisbandedAt: now}, wantNoReferences: true},
+		{
+			name: "battle retreat event",
+			entity: &bossbattle.BattleRetreatPayload{
+				Battle: bossbattle.BossBattle{
+					ID:      domain.BattleID("c360.local.game.board.battle.battle-1"),
+					QuestID: quest1,
+					AgentID: agent1,
+				},
+				RetreatedAt: now,
+			},
+			wantReferences: map[string]int{
+				"battle.assignment.quest": 1,
+				"battle.assignment.agent": 1,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			references := 0
+			seen := make(map[string]int, len(tt.wantReferences))
+			for _, triple := range tt.entity.Triples() {
+				object, scalarString := triple.Object.(string)
+				if scalarString && domain.IsValidEntityID(object) {
+					references++
+					seen[triple.Predicate]++
+					if triple.Datatype != "@id" {
+						t.Errorf("entity reference %q on %q lacks @id", object, triple.Predicate)
+					}
+				}
+				if triple.Datatype == "@id" && (!scalarString || !domain.IsValidEntityID(object)) {
+					t.Errorf("typed relationship %q has non-entity object %#v", triple.Predicate, triple.Object)
+				}
+			}
+			if references == 0 && !tt.wantNoReferences {
+				t.Errorf("fixture emitted no entity references; add an explicit no-reference classification")
+			}
+			if references != 0 && tt.wantNoReferences {
+				t.Errorf("projection emitted %d entity references, want none", references)
+			}
+			for predicate, wantCount := range tt.wantReferences {
+				if seen[predicate] != wantCount {
+					t.Errorf(
+						"relationship %q cardinality = %d, want %d",
+						predicate,
+						seen[predicate],
+						wantCount,
+					)
+				}
+			}
+			for predicate := range seen {
+				if _, reviewed := tt.wantReferences[predicate]; !reviewed {
+					t.Errorf("relationship %q is missing from the projection inventory", predicate)
+				}
+			}
+		})
+	}
+}

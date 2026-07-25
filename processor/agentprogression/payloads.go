@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/pkg/types"
@@ -109,7 +110,7 @@ func (p *AgentXPPayload) Triples() []message.Triple {
 	if p.QuestID != "" {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "agent.progression.xp.quest", Object: string(p.QuestID),
-			Source: source, Timestamp: p.Timestamp, Confidence: 1.0,
+			Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
 		})
 	}
 

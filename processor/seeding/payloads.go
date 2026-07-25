@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
+	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
@@ -229,6 +230,7 @@ func (p *AgentSeededPayload) Triples() []message.Triple {
 			Subject:    p.EntityID(),
 			Predicate:  "agent.guild.member",
 			Object:     string(p.GuildID),
+			Datatype:   semcompat.EntityReferenceDatatype,
 			Source:     "seeding",
 			Timestamp:  p.Timestamp,
 			Confidence: 1.0,
