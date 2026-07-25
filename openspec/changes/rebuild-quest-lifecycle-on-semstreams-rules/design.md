@@ -115,6 +115,22 @@ fresh-graph review-skipped transition, and absence of battle/mechanics side
 effects. This closes only the bossbattle portion of Stage B3. The other four
 mechanics processors and the global lifecycle gates remain open.
 
+Issue #30 applies the same quarantine boundary to agentprogression. All three
+profiles retain the registered `agent_progression` entry with `enabled:
+false`; the complete rule pack and mechanics stub remain unchanged. The
+no-publisher `AgentXPPayload`, false `agent-xp`/`AGENT_EVENTS` output, and six
+event-only vocabulary entries are deleted. The Agent model and reconstruction,
+XP engine and validation, component registration/configuration, handlers, and
+watchers remain dormant for Phase 2.
+
+Issue #30 deliberately performs no agentstore, dependency, predicate rename,
+owner, lifecycle, or watcher migration. The historical beta.158 audit baseline
+is 22 invalid candidates from 32 extracted. The pinned post-change audit is 17
+invalid from 26 extracted, exactly five fewer invalid and six fewer extracted
+candidates. The retained authoritative writer cannot reactivate until
+beta.158 and SemStreams #313 provide the approved owner-token mutation
+boundary.
+
 ### D7: Adopt lifecycle-gateway for workflow operations only
 Enable the framework `lifecycle-gateway` for quest workflow inspect/history/
 transition (satisfies the operator-surface requirement). Product endpoints

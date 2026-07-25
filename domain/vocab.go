@@ -90,28 +90,6 @@ const (
 	PredicateAgentArchetype = "agent.identity.archetype"
 )
 
-// --- Agent Progression Predicates ---
-
-const (
-	// PredicateAgentXP - XP earned or lost.
-	PredicateAgentXP = "agent.progression.xp"
-
-	// PredicateAgentLevelUp - Agent leveled up.
-	PredicateAgentLevelUp = "agent.progression.levelup"
-
-	// PredicateAgentLevelDown - Agent leveled down.
-	PredicateAgentLevelDown = "agent.progression.leveldown"
-
-	// PredicateAgentDeath - Agent permadeath (catastrophic failure).
-	PredicateAgentDeath = "agent.progression.death"
-
-	// PredicateAgentCooldown - Agent entered cooldown.
-	PredicateAgentCooldown = "agent.progression.cooldown"
-
-	// PredicateAgentReady - Agent cooldown ended, ready for quests.
-	PredicateAgentReady = "agent.progression.ready"
-)
-
 // --- Skill Progression Predicates ---
 
 const (
@@ -463,27 +441,6 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateAgentArchetype,
 		vocabulary.WithDescription("Agent class identity (scholar, engineer, scribe, strategist) — fixed at creation"),
 		vocabulary.WithDataType("string"),
-	)
-
-	// Agent progression predicates
-	vocabulary.Register(PredicateAgentXP,
-		vocabulary.WithDescription("XP earned or lost by agent"),
-		vocabulary.WithDataType("AgentXPPayload"),
-	)
-	vocabulary.Register(PredicateAgentLevelUp,
-		vocabulary.WithDescription("Agent leveled up"),
-	)
-	vocabulary.Register(PredicateAgentLevelDown,
-		vocabulary.WithDescription("Agent leveled down due to poor performance"),
-	)
-	vocabulary.Register(PredicateAgentDeath,
-		vocabulary.WithDescription("Agent permadeath from catastrophic failure"),
-	)
-	vocabulary.Register(PredicateAgentCooldown,
-		vocabulary.WithDescription("Agent entered cooldown after failure"),
-	)
-	vocabulary.Register(PredicateAgentReady,
-		vocabulary.WithDescription("Agent cooldown ended, ready for quests"),
 	)
 
 	// Skill progression predicates

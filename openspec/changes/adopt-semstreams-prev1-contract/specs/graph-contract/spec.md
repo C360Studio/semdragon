@@ -460,6 +460,61 @@ No writer SHALL replace a full shared entity or another owner's predicates.
 - **THEN** startup or contract validation fails before either writer mutates
   authoritative state
 
+### Requirement: Agentprogression is quarantined without a partial migration
+
+Phase 1 SHALL retain the registered agentprogression product implementation
+while disabling it in every shipped profile. It SHALL delete only the
+unproduced XP projection facade and SHALL NOT present retained full-object
+Agent writes as beta.158-compatible.
+
+#### Scenario: Every shipped profile disables agentprogression
+
+- **WHEN** contract tests parse the default, semsource, and tier-1 E2E
+  configurations
+- **THEN** each retains `components.agent_progression`
+- **AND** each sets that component's `enabled` field to `false`
+- **AND** each retains the complete quest rule pack and mechanics-stub rule
+- **AND** Phase 1 produces no XP, level, cooldown, death, or ready mutation
+
+#### Scenario: The dead XP projection facade is deleted
+
+- **GIVEN** `AgentXPPayload` has no production publisher, subscriber,
+  payload-registry factory, `BaseMessage` route, graph-ingest route, API
+  reader, or UI reader
+- **WHEN** issue #30 removes the facade
+- **THEN** the payload, Graphable/schema/validation/trace surface, and
+  `processor/agentprogression/payloads.go` are absent
+- **AND** the false `agent-xp` output, `AGENT_EVENTS` stream declaration, and
+  `agent.progression.>` subject declaration are absent
+- **AND** the six event-only progression vocabulary constants and
+  registrations are absent
+- **AND** no replacement raw subject, payload route, projection owner, or
+  compatibility predicate is added
+
+#### Scenario: Product policy survives for Phase 2
+
+- **WHEN** the Phase-1 quarantine is complete
+- **THEN** the Agent model, triples, reconstruction, and validation remain
+- **AND** the XP engine, award/penalty/failure types, and calculation policy
+  remain
+- **AND** component registration, configuration, handlers, and watchers remain
+  dormant
+- **AND** agentstore and the SemStreams dependency are unchanged
+- **AND** no retained predicate is renamed and no owner or lifecycle contract
+  is bound
+- **AND** reactivation remains blocked on beta.158 and SemStreams #313
+
+#### Scenario: Audit evidence measures rather than predicts
+
+- **GIVEN** the historical package baseline is 22 invalid candidates from 32
+  extracted
+- **AND** exactly five invalid occurrences belong to the deleted payload
+- **WHEN** the pinned beta.158 audit is rerun after implementation
+- **THEN** it reports 17 invalid candidates from 26 extracted
+- **AND** the measured delta is exactly five fewer invalid and six fewer
+  extracted candidates
+- **AND** the historical baseline audit remains unchanged
+
 ### Requirement: Dead party events and DAG shadows are deleted
 
 The system SHALL retain partycoord only as the current Party formation,

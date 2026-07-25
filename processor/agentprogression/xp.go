@@ -55,6 +55,42 @@ type LevelEvent struct {
 	NewTier   domain.TrustTier `json:"new_tier"`
 }
 
+// XPAward holds the breakdown of XP earned from a quest completion.
+type XPAward struct {
+	BaseXP          int64  `json:"base_xp"`
+	QualityBonus    int64  `json:"quality_bonus"`
+	SpeedBonus      int64  `json:"speed_bonus"`
+	StreakBonus     int64  `json:"streak_bonus"`
+	GuildBonus      int64  `json:"guild_bonus"`
+	AttemptPenalty  int64  `json:"attempt_penalty"`
+	PeerReviewBonus int64  `json:"peer_review_bonus"`
+	TotalXP         int64  `json:"total_xp"`
+	Breakdown       string `json:"breakdown"`
+}
+
+// XPPenalty holds the consequences of a quest failure.
+type XPPenalty struct {
+	XPLost      int64         `json:"xp_lost"`
+	CooldownDur time.Duration `json:"cooldown_duration"`
+	LevelLoss   bool          `json:"level_loss"`
+	Permadeath  bool          `json:"permadeath"`
+	Reason      string        `json:"reason"`
+}
+
+// FailureType categorizes quest failures for penalty calculation.
+type FailureType string
+
+const (
+	// FailureSoft indicates bad output that can be retried.
+	FailureSoft FailureType = "soft"
+	// FailureTimeout indicates the quest took too long.
+	FailureTimeout FailureType = "timeout"
+	// FailureAbandon indicates the agent gave up.
+	FailureAbandon FailureType = "abandon"
+	// FailureCatastrophic indicates data loss, security breach, etc.
+	FailureCatastrophic FailureType = "catastrophic"
+)
+
 // =============================================================================
 // DEFAULT XP ENGINE
 // =============================================================================

@@ -44,6 +44,11 @@ against the mock LLM (zero paid tokens).
   reputation, inventory, or store side effects. The processors are rebuilt
   against the two-loop principle in a subsequent change; no incentive-mechanic
   behavior is in scope here.
+- Resolve the agentprogression slice through issue #30: keep
+  `agent_progression` registered but disabled in all three shipped profiles;
+  delete its no-publisher `AgentXPPayload`, false output port, and six dead
+  vocabulary entries; and retain the Agent/reconstruction, XP engine,
+  validation, rules, and dormant Phase-2 implementation.
 - Adopt the framework `lifecycle-gateway` operator REST surface for quest
   workflow CRUD/history where it can replace bespoke `service/api` handlers;
   keep product endpoints (world state, DM chat, workspace) as-is.
@@ -76,10 +81,11 @@ against the mock LLM (zero paid tokens).
   Issue #28 also narrows `processor/partycoord`, `processor/dmpartyformation`,
   party event vocabulary/DM filters, and shadow-field API/UI consumers while
   retaining Party KV readers and writes.
-  Mechanics processors (`agentprogression`, `bossbattle`, `agentstore`,
-  `boidengine`, `redteam`) are config-gated off. Issue #26 also removes
-  bossbattle's unproduced raw-event and retreat surfaces while retaining its
-  dormant authoritative model for Phase 2.
+  Issue #26 config-gates bossbattle and removes its unproduced raw-event and
+  retreat surfaces while retaining its dormant authoritative model for Phase
+  2. Issue #30 config-gates agentprogression without changing agentstore,
+  SemStreams, predicates, ownership, lifecycle, or watcher behavior.
+  Agentstore, boidengine, and redteam remain open under Stage B3.
 - **Dependencies**: the beta.21 → beta.135 foundation is implemented on this
   branch. The beta.158 pre-v1 clean break is a separate prerequisite change:
   `adopt-semstreams-prev1-contract`. No dependency-only bump is permitted.

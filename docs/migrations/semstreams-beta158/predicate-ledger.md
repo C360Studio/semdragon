@@ -191,6 +191,16 @@ runtime alias survives.
 
 ### agentprogression: 22 findings
 
+This is the historical beta.158 baseline: 22 invalid candidates from 32
+extracted. Issue #30 quarantines the component during Phase 1 and deletes the
+unproduced `AgentXPPayload` rather than renaming its graph-only predicates.
+Exactly five invalid occurrences belong to that dead payload:
+`agent.progression.xp.delta`, `agent.progression.xp.current`,
+`agent.progression.xp.quest`, `agent.progression.xp.awarded`, and
+`agent.progression.xp.penalty`. The pinned post-change audit measures 17
+invalid candidates from 26 extracted, exactly five fewer invalid and six fewer
+extracted candidates. The historical baseline audit remains unchanged.
+
 - `agent.identity.display_name` becomes `agent.identity.display-name`.
 - `agent.progression.xp.{current,to_level,delta,quest,awarded,penalty}` becomes
   `agent.progression.{xp-current,xp-to-level,xp-delta,xp-quest,xp-awarded,xp-penalty}`.

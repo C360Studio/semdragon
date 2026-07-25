@@ -154,6 +154,27 @@
   342/342; `npm run check` reports 0 errors and 15 pre-existing warnings;
   `npm run build` and `task schema:check` pass. No owner or replacement raw
   Party event plane was added, and retained SSE activity remains KV-backed.
+- [x] 2.18 Resolve
+  [semdragon #30](https://github.com/C360Studio/semdragon/issues/30) by
+  retaining `agent_progression` registration but disabling it in all three
+  shipped profiles. Delete the unproduced `AgentXPPayload`, its graph/schema
+  surface, the false `agent-xp`/`AGENT_EVENTS` output, and the six event-only
+  progression vocabulary entries. Preserve the Agent model, reconstruction,
+  XP engine and calculation types, validation, configuration, handlers,
+  watchers, and dormant Phase-2 tests. Starting from the historical 22/32
+  beta.158 baseline, retain the measured post-change audit evidence of 17/26:
+  exactly five fewer invalid and six fewer extracted candidates. Make no
+  agentstore, dependency, predicate rename, owner, lifecycle, or watcher
+  change. Keep reactivation blocked on issue #4 and SemStreams #313.
+
+  Completed evidence (2026-07-25): all three shipped profiles disable
+  `agent_progression`. Completion through the shipped mechanics stub and a
+  direct valid lifecycle transition to terminal `failed` both preserve the
+  seeded Agent and Guild KV revisions and bytes and produce no mechanics side
+  effects. The pinned beta.158 audit moves from 22/32 to 17/26. Focused unit,
+  race, and integration tests; the full Go test and build; schema freshness;
+  strict OpenSpec validation; and diff checks pass. Architect and independent
+  Go reviewer approve the slice.
 
 ## 3. Verification and handoff to beta.158
 

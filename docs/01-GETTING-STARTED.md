@@ -300,10 +300,12 @@ Replace endpoint URLs and models to switch providers. See [07-MODEL-REGISTRY.md]
 ### Components
 
 The `components` section enables or disables each reactive processor. The default config includes
-`questboard`, the complete quest `rule-processor` pack, `agent_progression`, `agent_store`,
-`guildformation`, `boidengine`, `agentic-loop`, `agentic-model`, `questbridge`, `questtools`,
-`questdagexec`, `autonomy`, and `partycoord`. Bossbattle is intentionally absent from every
-shipped profile during Phase 1.
+`questboard`, the complete quest `rule-processor` pack, `guildformation`, `boidengine`,
+`agentic-loop`, `agentic-model`, `questbridge`, `questtools`, `questdagexec`, `autonomy`, and
+`partycoord`. The registered `agent_progression` component remains disabled, and bossbattle
+remains absent, in every shipped profile during Phase 1. `agent_store` is registered and
+default-disabled, but the semsource and tier-1 E2E profiles still enable it pending a separate
+Stage B3 packet.
 
 ### Key env vars
 

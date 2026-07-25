@@ -519,9 +519,6 @@ categories, tier gates, parameter schemas, and the `explore` sub-agent tool.
 Components enabled in the default config (`config/semdragons.json`):
 - `graph-ingest`, `graph-index`, `graph-query` — semstreams entity persistence and indexing
 - `questboard` — quest lifecycle state machine
-- `bossbattle` — automated review evaluation
-- `agent_progression` — XP calculation and leveling
-- `agent_store` — XP marketplace (tools, consumables)
 - `guildformation` — auto guild clustering
 - `boidengine` — emergent quest-claiming suggestions
 - `agentic-loop`, `agentic-model` — semstreams event-driven LLM loop orchestration
@@ -531,7 +528,12 @@ Components enabled in the default config (`config/semdragons.json`):
   assignment bridge
 
 Processors registered but excluded from the default config (opt-in):
-- `redteam` — guild red-team adversarial review before boss battle, extracts lessons to guild knowledge (also requires `bossbattle.red_team_enabled: true`)
+- `bossbattle` — dormant Phase-2 automated review evaluator
+- `agent_progression` — dormant Phase-2 Agent model and XP policy
+- `agent_store` — XP marketplace; default-disabled, but still enabled by the semsource and
+  tier-1 E2E profiles pending a separate Stage B3 packet
+- `redteam` — guild red-team adversarial review before boss battle; extracts lessons to guild
+  knowledge (also requires `bossbattle.red_team_enabled: true`)
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)
 - `autonomy` — depends on executor; DM approval gate is implemented but untested with real LLM calls
 - `seeding` — requires explicit config; `ModeTrainingArena` needs LLM, `ModeTieredRoster` works without

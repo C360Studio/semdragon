@@ -115,9 +115,23 @@ are disabled.
 - **WHEN** contract tests parse the default, semsource, and tier-1 E2E
   Semdragons configurations
 - **THEN** none activates bossbattle
+- **AND** each retains `agent_progression` with `enabled: false`
 - **AND** each loads the complete quest lifecycle rule pack for quest entities
 - **AND** the mechanics-stub rule is the only automatic resolver of
   `in_review` during Phase 1
+
+#### Scenario: Agentprogression is a dormant product implementation
+
+- **WHEN** issue #30 completes the agentprogression quarantine
+- **THEN** no shipped profile produces XP, penalty, level, cooldown, death, or
+  ready side effects
+- **AND** the unproduced XP payload, false event output, and event-only
+  vocabulary are absent
+- **AND** the Agent model, reconstruction, XP engine, validation, handlers,
+  and watchers remain for Phase 2
+- **AND** no agentstore, dependency, predicate, owner, lifecycle, or watcher
+  migration is included
+- **AND** reactivation remains blocked on beta.158 and SemStreams #313
 
 ### Requirement: UI-facing predicate stability
 The quest entity predicates consumed by the dashboard world store SHALL remain

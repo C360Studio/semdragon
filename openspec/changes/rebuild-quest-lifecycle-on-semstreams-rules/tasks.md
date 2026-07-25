@@ -77,6 +77,25 @@
 - [ ] 4.2 Add the stub rule: on transition into `in_review`, fire `lifecycle_transition` to `completed` with `verdict: review-skipped-mechanics-disabled` set atomically
 - [ ] 4.3 Enable `lifecycle-gateway` scoped to the quest workflow; verify inspect/history/operator-transition against the running stack
 - [ ] 4.4 Delete `service/api` handlers superseded by the gateway (status mutation only; keep world/DM/workspace/creation endpoints)
+- [x] 4.5 Resolve
+  [semdragon #30](https://github.com/C360Studio/semdragon/issues/30): retain
+  `agent_progression` registration but disable it in all three shipped
+  profiles; preserve the complete mechanics-stub rule pack; delete only the
+  no-publisher `AgentXPPayload`, false event output, and six dead vocabulary
+  entries; and preserve the Agent/reconstruction, XP engine, validation, and
+  dormant Phase-2 implementation. Retain the measured beta.158 audit delta
+  from 22/32 to 17/26: five fewer invalid and six fewer extracted candidates.
+  Make no agentstore, dependency, predicate rename, owner, lifecycle, or
+  watcher change; keep reactivation blocked on SemStreams #313.
+
+  Completed evidence (2026-07-25): all three shipped profiles disable
+  `agent_progression`. Completion through the shipped mechanics stub and a
+  direct valid lifecycle transition to terminal `failed` both preserve the
+  seeded Agent and Guild KV revisions and bytes and produce no mechanics side
+  effects. The pinned beta.158 audit moves from 22/32 to 17/26. Focused unit,
+  race, and integration tests; the full Go test and build; schema freshness;
+  strict OpenSpec validation; and diff checks pass. Architect and independent
+  Go reviewer approve the slice.
 
 ### Issue #26 partial Stage B3 evidence
 

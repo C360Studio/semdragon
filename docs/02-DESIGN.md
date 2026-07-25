@@ -30,8 +30,9 @@ Coordination emerges from Boid-like flocking behavior over a structured quest bo
 
 > **Runtime boundary:** Boss battles, XP mechanics, and the battle event examples in this
 > document describe retained product history and the Phase-2 target. Shipped Phase-1 profiles
-> do not activate bossbattle; review-required quests complete through the mechanics-stub rule.
-> The former raw `battle.review.*` event subjects are not production contracts.
+> do not activate bossbattle or agentprogression; review-required quests complete through the
+> mechanics-stub rule. The former raw `battle.review.*` event subjects and agent XP payload
+> facade are not production contracts.
 
 ---
 

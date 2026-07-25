@@ -23,8 +23,7 @@ import (
 // =============================================================================
 
 // TestXPPreservesAgentData verifies that XP updates via read-modify-write
-// preserve all agent fields (name, skills, guilds, status). This is the
-// regression test for the AgentXPPayload overwrite bug.
+// preserve all agent fields (name, skills, guilds, status).
 func TestXPPreservesAgentData(t *testing.T) {
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client

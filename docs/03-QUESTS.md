@@ -331,10 +331,11 @@ explicitly post).
 
 ## Dormant Phase-2 Boss Battle Evaluation
 
-No shipped Phase-1 profile activates `bossbattle`. Review-required quests currently complete
-through the mechanics-stub rule with `review-skipped-mechanics-disabled`. The battle factory,
-evaluator, REST/dmworldstate readers, battle UI, and battle-state KV port remain as a dormant
-Phase-2 surface.
+No shipped Phase-1 profile activates `bossbattle` or `agent_progression`. Review-required
+quests currently complete through the mechanics-stub rule with
+`review-skipped-mechanics-disabled`, without battle or XP side effects. The battle factory,
+evaluator, REST/dmworldstate readers, battle UI, battle-state KV port, Agent model, and XP
+policy remain as dormant Phase-2 surfaces.
 
 The retained evaluator describes the intended Phase-2 flow:
 

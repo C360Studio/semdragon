@@ -692,6 +692,53 @@ processor's internal mutator, hand-build a reusable local ownership framework,
 or bind an owner around the retained full-object writer. Those changes belong
 to the beta.158/#313 canonical projection gate.
 
+### D18: Quarantine agentprogression without performing its Phase-2 migration
+
+Issue [#30](https://github.com/C360Studio/semdragon/issues/30) completes only
+the agentprogression slice of the Phase-1 mechanics cut. It keeps the
+`agent_progression` component registered but sets `enabled: false` in
+`config/semdragons.json`, `config/semdragons-semsource.json`, and
+`config/semdragons-e2e-tier1.json`. The complete quest rule pack and mechanics
+stub remain the sole Phase-1 completion path, so no XP award, penalty, level
+change, cooldown, death, or ready transition is produced.
+
+The dormant product implementation remains for Phase 2:
+
+- the authoritative `Agent` model, triples, reconstruction, and validation;
+- `XPEngine`, `XPAward`, `XPPenalty`, `FailureType`, and their calculation
+  policy;
+- component registration, configuration, handlers, and current watchers; and
+- tests that protect the retained model and XP policy.
+
+Issue #30 deletes only a false projection facade. `AgentXPPayload` has no
+production publisher, subscriber, payload-registry factory, `BaseMessage`
+route, graph-ingest route, API reader, or UI reader. Its `Graphable`,
+validation, trace fields, and schema therefore disappear with
+`processor/agentprogression/payloads.go`. XP calculation types move to the
+retained XP policy file rather than being deleted with the dead DTO.
+
+The component's `agent-xp` output advertises an `AGENT_EVENTS` stream and
+`agent.progression.>` subjects that the component never publishes. That port
+is deleted. The six event-only vocabulary constants and registrations are
+also deleted: `PredicateAgentXP`, `PredicateAgentLevelUp`,
+`PredicateAgentLevelDown`, `PredicateAgentDeath`,
+`PredicateAgentCooldown`, and `PredicateAgentReady`.
+
+The historical beta.158 package baseline remains 22 invalid candidates from
+32 extracted. Exactly five invalid occurrences belong to the dead payload:
+`agent.progression.xp.delta`, `agent.progression.xp.current`,
+`agent.progression.xp.quest`, `agent.progression.xp.awarded`, and
+`agent.progression.xp.penalty`. The pinned post-change audit measures 17
+invalid candidates from 26 extracted: exactly five fewer invalid and six fewer
+extracted candidates. The historical baseline audit remains unchanged.
+
+This packet does not change agentstore, the SemStreams dependency, any
+retained predicate, entity ID, owner claim, lifecycle workflow, handler, or
+watcher. It does not bind a projection around the current full-object Agent
+writer. Phase-2 reactivation remains blocked on beta.158 adoption and the
+public owner-token create/replace path tracked by
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313).
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

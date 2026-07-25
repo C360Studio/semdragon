@@ -32,6 +32,11 @@ after the lifecycle/gated-DAG foundation in draft PR
   families and its test-only decomposition/result/rollup shadow, while
   retaining authoritative Party KV form/join/disband behavior and the
   temporary assignment advisory used by both DAG implementations.
+- Resolve issue #30 by quarantining agentprogression in all three shipped
+  profiles and deleting only its unproduced `AgentXPPayload`, false event
+  output, and dead progression vocabulary. Retain its Agent model, XP policy,
+  validation, and registered Phase-2 implementation without migrating its
+  predicates or writers in this packet.
 - Cut over by wiping and reseeding development/test graph state. No aliases,
   dual writes, permissive mode, or beta-state rewriter will be added.
 - Establish zero-finding predicate, entity-ID, relationship, build, and UI
@@ -57,6 +62,9 @@ after the lifecycle/gated-DAG foundation in draft PR
   OpenAPI, and TypeScript types must change in the same gate.
 - **Party coordination**: issue #28 narrows partycoord before the canonical
   beta.158 owner migration; it does not bind an owner or activate questdag.
+- **Agent progression**: issue #30 removes runtime activation and a dead
+  projection facade while preserving the dormant product implementation.
+  Canonical predicates, ownership, lifecycle, and watchers remain deferred.
 - **Data**: incompatible beta graph/index state is deleted and reseeded from
   source; no production deployment or retained beta data requires migration.
 - **Upstream coordination**: reuse SemStreams issues

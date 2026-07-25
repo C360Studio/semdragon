@@ -116,11 +116,6 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 			wantNoReferences: true,
 		},
 		{
-			name:           "agent XP event",
-			entity:         &agentprogression.AgentXPPayload{AgentID: agent1, QuestID: quest1, Timestamp: now},
-			wantReferences: map[string]int{"agent.progression.xp.quest": 1},
-		},
-		{
 			name: "execution started event",
 			entity: &executor.ExecutionStartedPayload{
 				QuestID: quest1, AgentID: agent1, Timestamp: now,

@@ -429,7 +429,7 @@
     "agent_progression": {
       "type": "processor",
       "name": "agent_progression",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",

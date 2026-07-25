@@ -56,6 +56,106 @@ func TestPhase1MechanicsDisabledInEveryShippedProfile(t *testing.T) {
 	}
 }
 
+func TestPhase1AgentProgressionQuarantinedInEveryShippedProfile(t *testing.T) {
+	for _, path := range shippedRuntimeProfiles {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+
+			var profile runtimeProfileContract
+			if err := json.Unmarshal(data, &profile); err != nil {
+				t.Fatalf("decode %s: %v", path, err)
+			}
+
+			progression, exists := profile.Components["agent_progression"]
+			if !exists {
+				t.Fatal("components.agent_progression must remain registered but disabled for Phase 1")
+			}
+			if progression.Enabled {
+				t.Error("components.agent_progression.enabled = true, want false")
+			}
+			for _, violation := range runtimeProfileViolations(profile) {
+				t.Error(violation)
+			}
+		})
+	}
+}
+
+var removedAgentProgressionProjectionSymbols = []string{
+	"AgentXPPayload",
+	"PredicateAgentXP",
+	"PredicateAgentLevelUp",
+	"PredicateAgentLevelDown",
+	"PredicateAgentDeath",
+	"PredicateAgentCooldown",
+	"PredicateAgentReady",
+}
+
+var removedAgentProgressionProjectionLiterals = []string{
+	"agent.progression.>",
+	"AGENT_EVENTS",
+	"agent-xp",
+	"agent.progression.xp.delta",
+	"agent.progression.xp.quest",
+	"agent.progression.xp.awarded",
+	"agent.progression.xp.penalty",
+}
+
+func TestPhase1AgentProgressionProjectionFacadeRemovedWhileSharedPolicyRemains(t *testing.T) {
+	productionGo := readProductionGoFiles(t)
+	for _, violation := range agentProgressionProjectionViolations(productionGo) {
+		t.Error(violation)
+	}
+
+	if _, err := os.Stat("processor/agentprogression/payloads.go"); !os.IsNotExist(err) {
+		t.Errorf("processor/agentprogression/payloads.go must be deleted; stat error = %v", err)
+	}
+
+	assertFileContains(t, "processor/agentprogression/agent.go",
+		"type Agent struct",
+		"func AgentFromEntityState(",
+		`"agent.progression.xp.current"`,
+	)
+	assertFileContains(t, "processor/agentprogression/xp.go",
+		"type XPEngine interface",
+		"type XPAward struct",
+		"type XPPenalty struct",
+		"type FailureType string",
+	)
+	assertFileContains(t, "processor/agentprogression/register.go",
+		`const ComponentName = "agent_progression"`,
+		"func Register(",
+	)
+	assertFileExcludes(t, "processor/agentprogression/component.go",
+		`Name:        "agent-xp"`,
+		`StreamName:      "AGENT_EVENTS"`,
+		`Subjects:        []string{"agent.progression.>"}`,
+	)
+	assertFileExcludes(t, "graph_relationship_contract_test.go", "AgentXPPayload")
+}
+
+func agentProgressionProjectionViolations(files map[string][]byte) []string {
+	var violations []string
+	for path, data := range files {
+		for _, symbol := range removedAgentProgressionProjectionSymbols {
+			if strings.Contains(string(data), symbol) {
+				violations = append(violations,
+					path+" retains removed agent progression projection symbol "+symbol)
+			}
+		}
+		for _, literal := range removedAgentProgressionProjectionLiterals {
+			if strings.Contains(string(data), `"`+literal+`"`) ||
+				strings.Contains(string(data), "`"+literal+"`") {
+				violations = append(violations,
+					path+" retains removed agent progression projection literal "+literal)
+			}
+		}
+	}
+	return violations
+}
+
 func runtimeProfileViolations(profile runtimeProfileContract) []string {
 	var violations []string
 	if _, exists := profile.Components["bossbattle"]; exists {

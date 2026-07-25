@@ -248,6 +248,18 @@ classified transient failure.
 
 ### Agent identity and progression
 
+Current Phase-1 state: quarantined by issue #30. All shipped profiles retain
+the registered `agent_progression` component with `enabled: false`, while the
+complete quest mechanics-stub rule pack remains active. The no-publisher
+`AgentXPPayload`, false output declaration, and event-only vocabulary are
+deleted. The Agent/reconstruction and XP policy implementation remain dormant.
+Issue #30 does not rename retained predicates, bind this future claim, change a
+watcher, or modify agentstore or the SemStreams dependency.
+
+The declaration below is the future beta.158 target. Reactivation remains
+blocked on beta.158 adoption and the public owner-token mutation path in
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313).
+
 - Owner: `agentprogression`; token `agentprogression#<incarnation>`.
 - Pattern: `*.*.game.*.agent.*`.
 - Mode: `replace-owned`.

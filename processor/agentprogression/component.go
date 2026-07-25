@@ -36,7 +36,6 @@ import (
 // - register.go: Factory and registry registration
 // - xp.go: XP calculation logic
 // - agent.go: Agent type definition
-// - payloads.go: XP payload types (Graphable entities)
 // =============================================================================
 
 // Component implements the agent progression processor as a semstreams component.
@@ -115,22 +114,7 @@ func (c *Component) InputPorts() []component.Port {
 
 // OutputPorts returns the ports this component produces data on.
 func (c *Component) OutputPorts() []component.Port {
-	return []component.Port{
-		{
-			Name:        "agent-xp",
-			Direction:   component.DirectionOutput,
-			Required:    true,
-			Description: "XP change events",
-			Config: &component.JetStreamPort{
-				StreamName:      "AGENT_EVENTS",
-				Subjects:        []string{"agent.progression.>"},
-				Storage:         "file",
-				RetentionPolicy: "limits",
-				RetentionDays:   30,
-				Replicas:        1,
-			},
-		},
-	}
+	return nil
 }
 
 // ConfigSchema returns the configuration schema for this component.
