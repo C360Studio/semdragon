@@ -349,10 +349,44 @@ bind the actual publisher or publishers, not infer one owner from the payload
 package. The web writer remains a direct full-object graph mutation; a later
 web-document packet owns its replace-owned migration.
 
-### dmsession, guildformation, and seeding
+### dmsession: delete the definition-only graph surface
 
-- `dm.session.{quests_completed,quests_failed}` becomes
-  `dm.session.{quests-completed,quests-failed}`.
+The baseline audit recorded two findings from four candidates:
+`dm.session.quests_completed` and `dm.session.quests_failed`. Issue #20 does
+not rename them. `SessionManager.StartSession` and `SessionManager.EndSession`
+contain raw typed-subject publisher methods, and production methods in
+`processor/dmsession/component.go` call them internally. No shipped
+configuration activates the factory-registered component, no production code
+outside `processor/dmsession` calls its component entrypoints, and no
+payload-registry factory or route to `graph.ingest.entity` exists.
+
+The raw event DTO and graph projection are separate contracts. Issue #20
+retains the `SessionStartPayload` and `SessionEndPayload` DTOs, their
+`dm.session.start` and `dm.session.end` typed subjects, validation, JSON fields,
+and internal publisher methods. It deletes their graph-only `EntityID`,
+`Triples`, and `Schema` methods, `Graphable` assertions, graph-only tests, and
+all four latent graph predicates:
+
+- `dm.session.mode`;
+- `dm.session.name`;
+- `dm.session.quests_completed`; and
+- `dm.session.quests_failed`.
+
+The historical findings remain recorded in `baseline-audit.md`; the target
+corpus contains no dmsession event graph predicates. The numeric
+`quests_completed` and `quests_failed` fields in `domain.SessionSummary`,
+OpenAPI, and generated UI types remain unchanged because they are JSON
+properties, not graph vocabulary or compatibility aliases.
+
+If authoritative session graph state is approved later, it introduces
+canonical `dm.session.quests-completed` and
+`dm.session.quests-failed` predicates only through a real SemStreams lifecycle
+or owned-state writer. Issue #4 owns that design together with removal of the
+raw `Session` JSON write into the shared board entity-state bucket. Issue #20
+does not invent a projection owner, binding, heartbeat, or replacement writer.
+
+### guildformation and seeding
+
 - `guild.event.created_by` becomes `guild.event.created-by`.
 - `guild.lifecycle.disbanded_at` becomes `guild.lifecycle.disbanded-at`.
 - `seeding.mode` becomes `seeding.config.mode`.

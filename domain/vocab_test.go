@@ -182,3 +182,34 @@ func TestExecutorPredicateVocabularyContract(t *testing.T) {
 		t.Errorf("dc.terms.modified description = %q, want explicit SemStreams #673 linkage", modified.Description)
 	}
 }
+
+func TestDMSessionRawEventVocabularyContract(t *testing.T) {
+	restore := vocabulary.SnapshotRegistry()
+	t.Cleanup(restore)
+	vocabulary.ClearRegistry()
+	RegisterVocabulary()
+
+	tests := []struct {
+		name      string
+		predicate string
+		dataType  string
+	}{
+		{"start", PredicateSessionStart, "SessionStartPayload"},
+		{"end", PredicateSessionEnd, "SessionEndPayload"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := "dm.session." + tt.name
+			if tt.predicate != want {
+				t.Errorf("predicate constant = %q, want %q", tt.predicate, want)
+			}
+			metadata := vocabulary.GetPredicateMetadata(tt.predicate)
+			if metadata == nil {
+				t.Fatalf("raw event predicate %q is not registered", tt.predicate)
+			}
+			if metadata.Name != tt.predicate || metadata.DataType != tt.dataType {
+				t.Errorf("metadata = %#v, want name %q datatype %q", metadata, tt.predicate, tt.dataType)
+			}
+		})
+	}
+}

@@ -4,7 +4,8 @@ Status: architect-reviewed target for semdragon issue #3.
 
 ## Raw mutation inventory
 
-Only two product statements mutate `ENTITY_STATES` directly:
+GraphClient centralizes two product statements that mutate `ENTITY_STATES`
+directly:
 
 - `graphclient.go:123`: `KVStore.Put`, reached through `EmitEntity`,
   `EmitEntityUpdate`, and `PutEntityState`. This is last-writer-wins
@@ -13,9 +14,19 @@ Only two product statements mutate `ENTITY_STATES` directly:
   This is CAS full-object replacement; CAS prevents a stale revision but not
   cross-owner predicate loss.
 
-Non-test callers are grouped below. Raw KV writes in boardcontrol, dmapproval,
-dmsession, tokenbudget, and API DM sessions target other named buckets. That is
-a bucket-specific classification, not a package exemption.
+A third direct statement bypasses GraphClient:
+
+- `processor/dmsession/session.go:183`: `KVStore.Put` serializes
+  `domain.Session` and writes it under `session.<instance>` in
+  `BoardConfig.BucketName()`. That method returns the shared `ENTITY_STATES`
+  board bucket, not a separate dmsession bucket. The value is not
+  `graph.EntityState`, and the key is not the canonical six-part session entity
+  ID.
+
+Non-test GraphClient callers are grouped below. Raw KV writes in boardcontrol,
+dmapproval, tokenbudget, and API DM sessions target their separately classified
+named buckets. That is a bucket-specific classification, not a package
+exemption. Dmsession is explicitly excluded from that statement.
 
 Framework mutation paths are:
 
@@ -561,6 +572,32 @@ relationships and require no `ForeignEdgeClaim`. SemStreams supplies
 compatibility surface linked to SemStreams #673, not product-owned vocabulary,
 and is deleted on adoption of a tagged upstream implementation.
 
+## DM-session raw-state misuse
+
+The dmsession event DTOs are not graph writers. Their internal typed-subject
+publisher methods emit raw JSON, and production methods in
+`processor/dmsession/component.go` call the manager methods internally. No
+shipped configuration activates the factory-registered component, no
+production code outside `processor/dmsession` calls its component entrypoints,
+and no payload-registry factory, `BaseMessage` route, graph-ingest route,
+projection contract, or graph reader exists. Issue #20 deletes their graph-only
+methods, assertions, tests, and latent predicates while preserving the raw
+event subjects and JSON contract.
+
+`SessionManager.putSession` is a different boundary. It stores raw
+`domain.Session` JSON under `session.<instance>` directly in the shared board
+`ENTITY_STATES` bucket. This bypasses the canonical `graph.EntityState` value
+shape, six-part entity key, graph-ingest mutation lane, and owner
+classification. It is downstream misuse of framework-owned state, not an
+event projection and not evidence for a dmsession owner claim.
+
+Issue #20 does not invent a replacement writer. Issue #4 or a dedicated packet
+must decide whether session state is still required, then use SemStreams
+lifecycle and ownership primitives for canonical birth and classified
+mutation. Any static owner binds and heartbeats at the real composition root.
+If lifecycle Manager owns the workflow, it supplies that framework lifecycle.
+No event-derived writer may coexist with the authoritative state writer.
+
 ## Graph-bound payload classification
 
 Implementing `Graphable` or supplying triples to a graph-emitting client makes
@@ -593,9 +630,11 @@ projection contracts, ownership services, heartbeats, or lifecycle timers.
   review payloads either call the owner workflow, create the classified
   first-class entity, or append their documented evidence. Their former
   cross-owner projections are removed, not silently exempted.
-- Executor execution/tool observations, DM-session counters, guild events, and
-  seeding statistics use append evidence. Web document state uses the executor
-  web-fetch owner claim; seed entity birth facts are create-only.
+- Executor execution observations, guild events, and seeding statistics use
+  append evidence. The definition-only DM-session event Graphables and their
+  counters are deleted; the separate raw session-state write is the downstream
+  misuse described above. Web document state uses the executor web-fetch owner
+  claim; seed entity birth facts are create-only.
 - `quest.failed` is proved non-graph only at the two questboard and one service
   expressions recorded in the rename ledger: there it is
   `EntityState.MessageType.Category`, never `Triple.Predicate`.

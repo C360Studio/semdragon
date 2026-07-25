@@ -75,6 +75,19 @@
   and return no query targets; use local fallback only when no source owns the
   prefix. Delete the isolated comparison when a tagged SemStreams release
   contains #675.
+- [x] 2.13 Resolve
+  [semdragon #20](https://github.com/C360Studio/semdragon/issues/20) by
+  deleting the graph-only `EntityID`, `Triples`, and `Schema` methods and
+  `Graphable` assertions from the session start/end event DTOs. Preserve the
+  raw typed subjects, JSON fields, validation, and internal publisher methods,
+  but do not treat factory registration and internal component-to-manager calls
+  as active deployment: no shipped configuration activates dmsession, and no
+  production code outside `processor/dmsession` calls its component entrypoints.
+  Add an inventory guard proving the raw event contract remains while no
+  payload registry, graph-ingest route, projection bind, or graph predicates
+  survive. Correct the writer-owner matrix for dmsession's raw `Session` JSON
+  write into the shared board entity-state bucket, and hand authoritative
+  lifecycle/owned-state migration to issue #4.
 
 ## 3. Verification and handoff to beta.158
 
@@ -202,4 +215,34 @@ This evidence closes only task 2.11:
 - Source review confirms that no payload registration, graph-ingest route,
   projection contract, owner bind, or heartbeat was added.
 - Strict OpenSpec validation and `git diff --check` pass.
+- Architect and Go reviewer approved the implementation.
+
+## Completed issue #20 evidence
+
+This evidence closes only task 2.13:
+
+- The initial TDD RED inventory identified both `Graphable` assertions, all
+  six graph-only methods, and the four latent predicates
+  `dm.session.mode`, `dm.session.name`, `dm.session.quests_completed`, and
+  `dm.session.quests_failed`.
+- The graph-only surface is deleted. The raw start/end DTOs, typed subjects,
+  `Validate` methods, and internal publisher wire contract remain, including
+  the numeric `quests_completed` and `quests_failed` JSON fields.
+- The deterministic Docker integration test establishes both typed
+  subscriptions, flushes them with a NATS RTT, and uses channels for delivery.
+  It passes under the race detector for ten repetitions and in the full tagged
+  dmsession integration suite.
+- The stale-checked inventory mutation guard passes under the race detector for
+  100 repetitions. Isolated vocabulary tests prove that only the retained raw
+  event subjects remain registered.
+- The pinned beta.158 predicate audit for `./processor/dmsession` reports
+  `passed: 0 structured candidates across 1 roots`.
+- The writer-owner matrix now records that dmsession writes raw `Session` JSON
+  under `session.<instance>` into the shared `ENTITY_STATES` bucket. It
+  classifies that path as downstream misuse and hands authoritative
+  lifecycle/owned-state migration to issue #4 without inventing a projection
+  writer.
+- `go test ./...` and `go build ./...` pass.
+- Strict OpenSpec validation and `git diff --check` pass. The historical
+  baseline remains unchanged.
 - Architect and Go reviewer approved the implementation.

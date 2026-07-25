@@ -349,6 +349,52 @@ helper, issue #4 deletes the local comparison; otherwise the minimal comparison
 remains linked to #675 until the first tagged release containing it. It must
 not be expanded into a generic local prefix library.
 
+### D13: A raw event DTO does not imply a graph projection
+
+Issue [#20](https://github.com/C360Studio/semdragon/issues/20) separates the
+dmsession event contract from its definition-only graph surface.
+`SessionManager.StartSession` and `SessionManager.EndSession` contain raw JSON
+publishes through the typed `dm.session.start` and `dm.session.end` subjects.
+Production methods in `processor/dmsession/component.go` call those manager
+methods internally. However, no shipped configuration activates the
+factory-registered dmsession component, and no production code outside
+`processor/dmsession` calls its component entrypoints. The retained event DTOs
+and publisher methods are therefore available product contracts, not evidence
+of active runtime publication.
+
+The binary does not register either payload in the SemStreams payload registry,
+wrap it in a `BaseMessage`, route its subject to `graph.ingest.entity`, or bind
+a projection owner. No graph or UI reader consumes the emitted triples. The
+DTOs' `EntityID`, `Triples`, and `Schema` methods and `Graphable` assertions are
+definition-only and are deleted with the latent `dm.session.mode`,
+`dm.session.name`, `dm.session.quests_completed`, and
+`dm.session.quests_failed` graph predicates. Issue #20 does not rename those
+predicates, invent an owner, or add a graph route.
+
+The raw JSON contract remains separate. Its typed subjects
+`dm.session.start` and `dm.session.end` stay registered, and the
+`quests_completed` and `quests_failed` fields remain numeric JSON properties
+in `domain.SessionSummary`, OpenAPI, and generated UI types. They are not graph
+predicate aliases. If a later real projection needs those facts, it introduces
+canonical `dm.session.quests-completed` and
+`dm.session.quests-failed` predicates only with an authoritative session-state
+route and owner.
+
+The actual state mutation is not the event Graphable.
+`SessionManager.putSession` serializes `domain.Session` directly and writes it
+under `session.<instance>` in `BoardConfig.BucketName()`, the shared
+`ENTITY_STATES` board bucket. The value is not `graph.EntityState`, and the key
+is not the canonical six-part session entity ID. This is downstream misuse,
+not a missing SemStreams primitive and not a reason to bind the event DTOs.
+
+Issue [#4](https://github.com/C360Studio/semdragon/issues/4) or a dedicated
+packet replaces that raw write with the authoritative SemStreams model. It
+must evaluate the framework lifecycle manager for an `active` to `ended`
+workflow and use canonical entity birth and owner-classified state mutation;
+it must not add a local lifecycle engine or resurrect event Graphables by
+default. If an owner claim is needed, its real composition root supplies the
+framework binding and heartbeat. Issue #20 defines no projection writer.
+
 ### Approved core-wave verification
 
 The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:

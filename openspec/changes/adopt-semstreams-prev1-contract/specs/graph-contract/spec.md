@@ -197,6 +197,40 @@ graph-ingest persistence.
 - **AND** it is deleted on adoption of the first SemStreams tag containing
   the upstream primitive
 
+### Requirement: DM-session events do not claim graph persistence
+
+The system SHALL keep the dmsession raw event contract separate from graph
+persistence. An event DTO or internal raw publisher method SHALL NOT establish
+a graph writer without a production route and owner.
+
+#### Scenario: Raw session events have no graph projection
+
+- **GIVEN** `SessionManager` retains raw session start and end publisher
+  methods on their typed subjects
+- **AND** the dmsession component calls those manager methods internally
+- **AND** no shipped configuration or production caller outside
+  `processor/dmsession` activates the component entrypoints
+- **AND** no payload factory or graph-ingest route activates those DTOs as
+  graph publishers
+- **WHEN** issue #20 resolves their beta.158 findings
+- **THEN** the raw DTOs, typed subjects, JSON fields, validation, and publisher
+  methods remain unchanged
+- **AND** graph-only methods, assertions, predicates, and tests are absent
+- **AND** no projection contract, owner bind, or heartbeat is introduced
+
+#### Scenario: Authoritative session state requires framework migration
+
+- **GIVEN** dmsession writes raw `domain.Session` JSON under
+  `session.<instance>` in the shared board entity-state bucket
+- **AND** the value and key do not satisfy the canonical graph entity-state
+  contract
+- **WHEN** session graph persistence is designed
+- **THEN** issue #4 or a dedicated packet uses SemStreams lifecycle and
+  ownership primitives with a canonical session entity key
+- **AND** it removes the raw non-`graph.EntityState` write
+- **AND** it does not create a second event-derived writer or local framework
+  substitute
+
 ### Requirement: Disjoint authoritative writers
 
 Every mutable predicate group SHALL have one declared owner and write mode.

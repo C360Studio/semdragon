@@ -311,6 +311,108 @@ func TestEndSession_ProduceSummary(t *testing.T) {
 	}
 }
 
+func TestSessionLifecyclePublishesTypedRawEvents(t *testing.T) {
+	testClient := natsclient.NewTestClient(t,
+		natsclient.WithKV(),
+		natsclient.WithFileStorage(),
+		natsclient.WithKVBuckets(graph.BucketEntityStates),
+	)
+	client := testClient.Client
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+
+	comp := setupSessionComponent(t, client, "raw-events")
+	t.Cleanup(func() {
+		if err := comp.Stop(5 * time.Second); err != nil {
+			t.Errorf("Stop failed: %v", err)
+		}
+	})
+
+	startEvents := make(chan SessionStartPayload, 1)
+	endEvents := make(chan SessionEndPayload, 1)
+	startSub, err := SubjectSessionStart.Subscribe(ctx, client, func(msgCtx context.Context, payload SessionStartPayload) error {
+		select {
+		case startEvents <- payload:
+			return nil
+		case <-msgCtx.Done():
+			return msgCtx.Err()
+		}
+	})
+	if err != nil {
+		t.Fatalf("subscribe session start: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := startSub.Unsubscribe(); err != nil {
+			t.Errorf("unsubscribe session start: %v", err)
+		}
+	})
+	endSub, err := SubjectSessionEnd.Subscribe(ctx, client, func(msgCtx context.Context, payload SessionEndPayload) error {
+		select {
+		case endEvents <- payload:
+			return nil
+		case <-msgCtx.Done():
+			return msgCtx.Err()
+		}
+	})
+	if err != nil {
+		t.Fatalf("subscribe session end: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := endSub.Unsubscribe(); err != nil {
+			t.Errorf("unsubscribe session end: %v", err)
+		}
+	})
+
+	// RTT performs a NATS round trip, which flushes both subscriptions before
+	// either lifecycle method publishes its raw event.
+	if _, err := client.RTT(); err != nil {
+		t.Fatalf("flush typed subscriptions with RTT: %v", err)
+	}
+
+	config := domain.SessionConfig{
+		Mode: domain.DMManual,
+		Name: "Raw Event Session",
+	}
+	session, err := comp.StartSession(ctx, config)
+	if err != nil {
+		t.Fatalf("StartSession failed: %v", err)
+	}
+	var startEvent SessionStartPayload
+	select {
+	case startEvent = <-startEvents:
+	case <-ctx.Done():
+		t.Fatalf("wait for session start event: %v", ctx.Err())
+	}
+	if startEvent.SessionID != session.ID || startEvent.Config.Mode != config.Mode ||
+		startEvent.Config.Name != config.Name || startEvent.StartedAt.IsZero() {
+		t.Errorf("decoded start event = %#v, session = %#v config = %#v", startEvent, session, config)
+	}
+
+	summary, err := comp.EndSession(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("EndSession failed: %v", err)
+	}
+	var endEvent SessionEndPayload
+	select {
+	case endEvent = <-endEvents:
+	case <-ctx.Done():
+		t.Fatalf("wait for session end event: %v", ctx.Err())
+	}
+	if endEvent.SessionID != session.ID || endEvent.EndedAt.IsZero() {
+		t.Errorf("decoded end event identity/timestamp = %#v, want session %q", endEvent, session.ID)
+	}
+	if endEvent.Summary.QuestsCompleted != summary.QuestsCompleted ||
+		endEvent.Summary.QuestsFailed != summary.QuestsFailed {
+		t.Errorf(
+			"decoded summary counters = completed %d failed %d, want completed %d failed %d",
+			endEvent.Summary.QuestsCompleted,
+			endEvent.Summary.QuestsFailed,
+			summary.QuestsCompleted,
+			summary.QuestsFailed,
+		)
+	}
+}
+
 func TestEndSession_UnknownID_Errors(t *testing.T) {
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client

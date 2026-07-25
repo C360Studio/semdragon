@@ -1,6 +1,8 @@
 package dmsession
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -382,213 +384,103 @@ func TestSessionEndPayload_Validate_BothFieldsMissing(t *testing.T) {
 }
 
 // =============================================================================
-// PAYLOAD TRIPLES TESTS
+// PAYLOAD JSON WIRE TESTS
 // =============================================================================
 
-func TestSessionStartPayload_Triples_ContainsExpectedPredicates(t *testing.T) {
-	now := time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)
-	p := &SessionStartPayload{
+func TestSessionStartPayload_JSONWireContract(t *testing.T) {
+	startedAt := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+	payload := SessionStartPayload{
 		SessionID: "c360.prod.game.board1.session.abc123",
 		Config: domain.SessionConfig{
 			Mode: domain.DMManual,
-			Name: "My Session",
+			Name: "Adventure Session",
 		},
-		StartedAt: now,
+		StartedAt: startedAt,
 	}
 
-	triples := p.Triples()
-
-	if len(triples) == 0 {
-		t.Fatal("Triples() returned empty slice")
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal SessionStartPayload: %v", err)
 	}
+	assertExactJSONKeys(t, data, "session_id", "config", "started_at")
 
-	// Build a lookup by predicate for assertion convenience.
-	// Object is any, so we store it as-is and cast to string where needed.
-	byPredicate := make(map[string]any, len(triples))
-	for _, tr := range triples {
-		byPredicate[tr.Predicate] = tr.Object
+	var decoded SessionStartPayload
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal SessionStartPayload: %v", err)
 	}
-
-	// Every triple must carry the correct subject.
-	for _, tr := range triples {
-		if tr.Subject != p.SessionID {
-			t.Errorf("triple subject = %q, want %q (predicate: %q)", tr.Subject, p.SessionID, tr.Predicate)
-		}
-	}
-
-	// Verify the mode triple.
-	if raw, ok := byPredicate["dm.session.mode"]; !ok {
-		t.Error("missing dm.session.mode triple")
-	} else if got, _ := raw.(string); got != string(domain.DMManual) {
-		t.Errorf("dm.session.mode = %q, want %q", got, string(domain.DMManual))
-	}
-
-	// Verify the name triple.
-	if raw, ok := byPredicate["dm.session.name"]; !ok {
-		t.Error("missing dm.session.name triple")
-	} else if got, _ := raw.(string); got != "My Session" {
-		t.Errorf("dm.session.name = %q, want %q", got, "My Session")
-	}
-
-	// Verify the start timestamp triple uses the session-start predicate.
-	if _, ok := byPredicate[domain.PredicateSessionStart]; !ok {
-		t.Errorf("missing %q triple", domain.PredicateSessionStart)
+	if decoded.SessionID != payload.SessionID || !reflect.DeepEqual(decoded.Config, payload.Config) ||
+		!decoded.StartedAt.Equal(payload.StartedAt) {
+		t.Errorf("decoded start payload = %#v, want %#v", decoded, payload)
 	}
 }
 
-func TestSessionStartPayload_Triples_TimestampFormat(t *testing.T) {
-	fixedTime := time.Date(2026, 3, 2, 15, 30, 0, 0, time.UTC)
-	p := &SessionStartPayload{
-		SessionID: "session-ts-test",
-		StartedAt: fixedTime,
-	}
-
-	triples := p.Triples()
-
-	for _, tr := range triples {
-		if tr.Predicate == domain.PredicateSessionStart {
-			want := fixedTime.Format(time.RFC3339)
-			got, _ := tr.Object.(string)
-			if got != want {
-				t.Errorf("start timestamp triple = %q, want %q", got, want)
-			}
-			return
-		}
-	}
-
-	t.Errorf("no triple with predicate %q found", domain.PredicateSessionStart)
-}
-
-func TestSessionStartPayload_EntityID(t *testing.T) {
-	p := &SessionStartPayload{
-		SessionID: "c360.prod.game.board1.session.myid",
-	}
-
-	if got := p.EntityID(); got != p.SessionID {
-		t.Errorf("EntityID() = %q, want %q", got, p.SessionID)
-	}
-}
-
-func TestSessionStartPayload_Schema(t *testing.T) {
-	p := &SessionStartPayload{}
-
-	if got := p.Schema(); got != "session.start" {
-		t.Errorf("Schema() = %q, want %q", got, "session.start")
-	}
-}
-
-func TestSessionEndPayload_Triples_ContainsExpectedPredicates(t *testing.T) {
-	now := time.Date(2026, 3, 2, 18, 0, 0, 0, time.UTC)
-	p := &SessionEndPayload{
-		SessionID: "c360.prod.game.board1.session.xyz789",
+func TestSessionEndPayload_JSONWireContractPreservesSummaryCounters(t *testing.T) {
+	endedAt := time.Date(2026, 7, 25, 13, 0, 0, 0, time.UTC)
+	payload := SessionEndPayload{
+		SessionID: "c360.prod.game.board1.session.abc123",
 		Summary: domain.SessionSummary{
-			SessionID:       "c360.prod.game.board1.session.xyz789",
+			SessionID:       "c360.prod.game.board1.session.abc123",
 			QuestsCompleted: 7,
 			QuestsFailed:    2,
 		},
-		EndedAt: now,
+		EndedAt: endedAt,
 	}
 
-	triples := p.Triples()
-
-	if len(triples) == 0 {
-		t.Fatal("Triples() returned empty slice")
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal SessionEndPayload: %v", err)
 	}
+	assertExactJSONKeys(t, data, "session_id", "summary", "ended_at")
 
-	// Build a lookup by predicate.
-	// Object is any, so we store it as-is and cast to string where needed.
-	byPredicate := make(map[string]any, len(triples))
-	for _, tr := range triples {
-		byPredicate[tr.Predicate] = tr.Object
+	var envelope struct {
+		Summary json.RawMessage `json:"summary"`
 	}
-
-	// Every triple must carry the correct subject.
-	for _, tr := range triples {
-		if tr.Subject != p.SessionID {
-			t.Errorf("triple subject = %q, want %q (predicate: %q)", tr.Subject, p.SessionID, tr.Predicate)
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		t.Fatalf("unmarshal end envelope: %v", err)
+	}
+	var summary map[string]json.RawMessage
+	if err := json.Unmarshal(envelope.Summary, &summary); err != nil {
+		t.Fatalf("unmarshal end summary: %v", err)
+	}
+	for key, want := range map[string]int{"quests_completed": 7, "quests_failed": 2} {
+		raw, ok := summary[key]
+		if !ok {
+			t.Errorf("summary JSON missing wire property %q", key)
+			continue
+		}
+		var got int
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Errorf("decode summary property %q: %v", key, err)
+		} else if got != want {
+			t.Errorf("summary property %q = %d, want %d", key, got, want)
 		}
 	}
 
-	// Verify the end timestamp triple.
-	if _, ok := byPredicate[domain.PredicateSessionEnd]; !ok {
-		t.Errorf("missing %q triple", domain.PredicateSessionEnd)
+	var decoded SessionEndPayload
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal SessionEndPayload: %v", err)
 	}
-
-	// Verify quests_completed triple.
-	if raw, ok := byPredicate["dm.session.quests_completed"]; !ok {
-		t.Error("missing dm.session.quests_completed triple")
-	} else if got, _ := raw.(string); got != "7" {
-		t.Errorf("dm.session.quests_completed = %q, want %q", got, "7")
-	}
-
-	// Verify quests_failed triple.
-	if raw, ok := byPredicate["dm.session.quests_failed"]; !ok {
-		t.Error("missing dm.session.quests_failed triple")
-	} else if got, _ := raw.(string); got != "2" {
-		t.Errorf("dm.session.quests_failed = %q, want %q", got, "2")
+	if decoded.SessionID != payload.SessionID || !reflect.DeepEqual(decoded.Summary, payload.Summary) ||
+		!decoded.EndedAt.Equal(payload.EndedAt) {
+		t.Errorf("decoded end payload = %#v, want %#v", decoded, payload)
 	}
 }
 
-func TestSessionEndPayload_Triples_TimestampFormat(t *testing.T) {
-	fixedTime := time.Date(2026, 3, 2, 20, 45, 0, 0, time.UTC)
-	p := &SessionEndPayload{
-		SessionID: "session-end-ts-test",
-		EndedAt:   fixedTime,
+func assertExactJSONKeys(t *testing.T, data []byte, want ...string) {
+	t.Helper()
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil {
+		t.Fatalf("decode JSON object: %v", err)
 	}
-
-	triples := p.Triples()
-
-	for _, tr := range triples {
-		if tr.Predicate == domain.PredicateSessionEnd {
-			want := fixedTime.Format(time.RFC3339)
-			got, _ := tr.Object.(string)
-			if got != want {
-				t.Errorf("end timestamp triple object = %q, want %q", got, want)
-			}
-			return
-		}
+	got := make(map[string]struct{}, len(object))
+	for key := range object {
+		got[key] = struct{}{}
 	}
-
-	t.Errorf("no triple with predicate %q found", domain.PredicateSessionEnd)
-}
-
-func TestSessionEndPayload_Triples_ZeroSummary(t *testing.T) {
-	// A zero-value summary must still produce valid triples with "0" as the counts.
-	p := &SessionEndPayload{
-		SessionID: "session-zero",
-		Summary:   domain.SessionSummary{},
-		EndedAt:   time.Now(),
+	expected := make(map[string]struct{}, len(want))
+	for _, key := range want {
+		expected[key] = struct{}{}
 	}
-
-	triples := p.Triples()
-
-	byPredicate := make(map[string]any, len(triples))
-	for _, tr := range triples {
-		byPredicate[tr.Predicate] = tr.Object
-	}
-
-	if got, _ := byPredicate["dm.session.quests_completed"].(string); got != "0" {
-		t.Errorf("dm.session.quests_completed = %q, want %q", got, "0")
-	}
-	if got, _ := byPredicate["dm.session.quests_failed"].(string); got != "0" {
-		t.Errorf("dm.session.quests_failed = %q, want %q", got, "0")
-	}
-}
-
-func TestSessionEndPayload_EntityID(t *testing.T) {
-	p := &SessionEndPayload{
-		SessionID: "c360.prod.game.board1.session.myid",
-	}
-
-	if got := p.EntityID(); got != p.SessionID {
-		t.Errorf("EntityID() = %q, want %q", got, p.SessionID)
-	}
-}
-
-func TestSessionEndPayload_Schema(t *testing.T) {
-	p := &SessionEndPayload{}
-
-	if got := p.Schema(); got != "session.end" {
-		t.Errorf("Schema() = %q, want %q", got, "session.end")
+	if !reflect.DeepEqual(got, expected) {
+		t.Errorf("JSON keys = %v, want exactly %v", got, expected)
 	}
 }
