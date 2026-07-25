@@ -30,9 +30,9 @@ Semdragons is an agentic workflow coordination framework modeled as a tabletop R
 ```
 
 **Key design choices**:
-- Pull-based (not push-based) work distribution - agents claim quests based on capability
+- Phase-2 Boids policy is pull-based; shipped Phase 1 uses explicit claim then start
 - Trust tiers derived from level (earned through XP, not declared)
-- Boids engine provides emergent quest-claiming without central assignment
+- The retained Boids policy is Phase 2 only; shipped Phase 1 uses explicit REST API/test-fixture claims
 - All events map to semstreams trajectories for full observability
 
 ## Critical: Semstreams Integration
@@ -308,7 +308,7 @@ Documentation in `/docs/`:
 - `02-DESIGN.md` — Architecture, concept map, trust tiers, example flows, death mechanics
 - `03-QUESTS.md` — Quest creation, lifecycle state machine, difficulty/XP, boss battles, chains
 - `04-PARTIES.md` — Party formation, roles, peer reviews, feedback loop into prompts
-- `05-BOIDS.md` — Emergent quest-claiming, six rules, guild/reputation integration, tuning guide
+- `05-BOIDS.md` — Dormant opt-in Phase-2 Boids policy, rules, guild integration, tuning guide
 - `06-DOMAINS.md` — Domain system, prompt catalogs, skill taxonomies
 - `07-MODEL-REGISTRY.md` — LLM provider configuration, capabilities, fallback chains
 - `08-SANDBOX-REPOS.md` — Sandbox-owned git repos, worktree-per-quest model, merge-to-main quality gate, semsource integration
@@ -448,7 +448,7 @@ Core interfaces are defined inline in domain packages and satisfied by processor
 - **`processor/questboard.Component`** — Quest lifecycle (post, claim, start, submit, complete, fail, abandon)
 - **`processor/bossbattle.Component`** — Review evaluation triggered by quest submission
 - **`processor/autonomy.Component`** — Heartbeat-driven agent decision loop with DM approval gate
-- **`processor/boidengine.Component`** — Periodic boid attraction computation, publishes suggestions per agent
+- **`processor/boidengine.Component`** — Dormant Phase-2 attraction policy and suggestion producer
 
 ## Processor Architecture Patterns
 
@@ -520,7 +520,6 @@ Components enabled in the default config (`config/semdragons.json`):
 - `graph-ingest`, `graph-index`, `graph-query` — semstreams entity persistence and indexing
 - `questboard` — quest lifecycle state machine
 - `guildformation` — auto guild clustering
-- `boidengine` — emergent quest-claiming suggestions
 - `agentic-loop`, `agentic-model` — semstreams event-driven LLM loop orchestration
 - `questbridge`, `questtools` — quest-to-LLM bridge (requires model_registry and AGENT stream)
 - `questdagexec` — party quest DAG execution (requires questbridge, questtools)
@@ -532,6 +531,8 @@ Processors registered but excluded from the default config (opt-in or dormant):
 - `agent_progression` — dormant Phase-2 Agent model and XP policy
 - `agent_store` — dormant Phase-2 XP marketplace policy, models, and API; disabled in every
   shipped profile
+- `boidengine` — dormant Phase-2 attraction/scoring policy and suggestion producer; disabled
+  in every shipped profile, so Phase 1 requires explicit claim/start
 - `redteam` — guild red-team adversarial review before boss battle; extracts lessons to guild
   knowledge (also requires `bossbattle.red_team_enabled: true`)
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)

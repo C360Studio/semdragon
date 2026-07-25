@@ -84,9 +84,10 @@ automatically set to `lead` at formation time.
 
 Parties can form in two ways:
 
-**Auto-formation** (default, `auto_form_parties: true`): When a `party_required` quest
-transitions to `claimed` status, the `partycoord` processor's KV watcher detects the
-transition and automatically creates a party with the claiming agent as lead.
+**Auto-formation** (default, `auto_form_parties: true`): After a `party_required` quest
+is explicitly claimed through the shipped REST API or a test fixture, the `partycoord`
+processor's KV watcher detects the `claimed` transition and creates a party with the
+selected agent as lead. Boidengine does not choose that agent in shipped Phase 1.
 
 **Manual formation**: Call `FormParty` directly via the partycoord component with a quest
 ID and lead agent ID.
@@ -133,17 +134,19 @@ than inventing a breakdown from prose. Scenario `depends_on` references become s
 dependency edges.
 
 The tool response is a DAG proposal — nodes with dependencies, skill requirements, and
-acceptance criteria. `questdagexec` validates and persists the proposal as `quest.dag.*`
-predicates on the parent quest entity, then drives execution to completion autonomously.
+acceptance criteria. After the parent quest has been explicitly claimed and started,
+`questdagexec` validates and persists the proposal as `quest.dag.*` predicates on the
+parent quest entity, then drives the internal execution to completion.
 
 See [DAG Execution Lifecycle](#dag-execution-lifecycle) below for the full flow.
 
 ## DAG Execution Lifecycle
 
-When the parent quest is `party_required`, the lead does not hand-assign sub-quests
-one by one. Instead, they propose a **directed acyclic graph (DAG)** that the
-`questdagexec` processor drives to completion autonomously. This is the primary path
-for complex, multi-step party work.
+After a `party_required` parent quest is explicitly claimed and started, the lead does not
+hand-assign sub-quests one by one. Instead, they propose a **directed acyclic graph (DAG)**
+that the `questdagexec` processor drives to completion. This is the primary execution path
+for complex, multi-step party work; it does not make the initial Phase-1 claim or start
+autonomous.
 
 ### Why a DAG, Not a Simple List
 
@@ -313,7 +316,7 @@ manual instrumentation.
 
 After a shared quest completes, agents involved in the quest exchange bidirectional
 feedback. Peer reviews provide reputation signals that feed back into agent prompts and
-boid affinity calculations.
+the retained Phase-2 boid affinity policy. Shipped Phase 1 does not run the recommender.
 
 ### How It Works
 
@@ -403,6 +406,6 @@ behaviors get explicit reminders to improve, and improvement shows up in future 
 ## Further Reading
 
 - [03-QUESTS.md](03-QUESTS.md) — Quest lifecycle, sub-quest visibility, and dependency gates
-- [05-BOIDS.md](05-BOIDS.md) — How boid affinity uses peer review ratings
+- [05-BOIDS.md](05-BOIDS.md) — Retained Phase-2 boid affinity and peer review policy
 - [02-DESIGN.md](02-DESIGN.md) — Architecture and death mechanics
 - [Swagger UI](/docs) — Live API documentation at `/docs`

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"strings"
@@ -13,19 +14,90 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
+	semconfig "github.com/c360studio/semstreams/config"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/lifecycle"
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 	rule "github.com/c360studio/semstreams/processor/rule"
+	semservice "github.com/c360studio/semstreams/service"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/boidengine"
 	"github.com/c360studio/semdragons/questlifecycle"
 )
+
+func TestPhase1DisabledBoidEngineCreatesNoRuntimeOrSuggestionBucket(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+
+	data, err := os.ReadFile("config/semdragons.json")
+	if err != nil {
+		t.Fatalf("read shipped default profile: %v", err)
+	}
+	var profile semconfig.Config
+	if err := json.Unmarshal(data, &profile); err != nil {
+		t.Fatalf("decode shipped default profile: %v", err)
+	}
+	boidConfig, exists := profile.Components[boidengine.ComponentName]
+	if !exists {
+		t.Fatal("components.boidengine is missing")
+	}
+
+	testClient := natsclient.NewTestClient(t, natsclient.WithKV())
+	registry := component.NewRegistry()
+	if err := boidengine.Register(registry); err != nil {
+		t.Fatalf("register dormant boidengine factory: %v", err)
+	}
+	managerService, err := semservice.NewComponentManager(
+		nil,
+		&semservice.Dependencies{
+			ComponentRegistry: registry,
+			NATSClient:        testClient.Client,
+		},
+	)
+	if err != nil {
+		t.Fatalf("construct component manager: %v", err)
+	}
+	manager, ok := managerService.(*semservice.ComponentManager)
+	if !ok {
+		t.Fatalf("component manager type = %T", managerService)
+	}
+	t.Cleanup(func() {
+		if err := manager.Stop(5 * time.Second); err != nil {
+			t.Errorf("stop component manager: %v", err)
+		}
+	})
+
+	filtered := &semconfig.Config{
+		Components: semconfig.ComponentConfigs{
+			boidengine.ComponentName: boidConfig,
+		},
+	}
+	if err := manager.CreateComponentsFromConfig(ctx, filtered); err != nil {
+		t.Fatalf("create components from disabled config: %v", err)
+	}
+	if err := manager.Start(ctx); err != nil {
+		t.Fatalf("start component manager: %v", err)
+	}
+	if components := manager.ListComponents(); len(components) != 0 {
+		t.Errorf("disabled profile created %d component instances, want 0", len(components))
+	}
+	if instance := registry.Component(boidengine.ComponentName); instance != nil {
+		t.Errorf("disabled profile registered live boidengine instance %T", instance)
+	}
+
+	if _, err := testClient.Client.GetKeyValueBucket(ctx, "BOID_SUGGESTIONS"); !errors.Is(
+		err,
+		jetstream.ErrBucketNotFound,
+	) {
+		t.Errorf("BOID_SUGGESTIONS lookup error = %v, want jetstream.ErrBucketNotFound", err)
+	}
+}
 
 func TestMechanicsDisabledReviewCompletesWithoutBattleOrMechanicsSideEffects(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

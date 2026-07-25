@@ -206,6 +206,46 @@
   OpenAPI schema freshness, `npm run check` with 0 errors and 15 unrelated
   existing warnings, both strict OpenSpec validations, and diff checks pass.
   Architect, independent Go reviewer, and Svelte reviewer approve the slice.
+- [x] 2.20 Resolve
+  [semdragon #34](https://github.com/C360Studio/semdragon/issues/34) by
+  retaining boidengine registration/configuration and disabling it in all
+  three shipped profiles. Preserve `DefaultBoidEngine`, rules,
+  attraction/scoring policy, DTOs, dormant `boid.suggestions.>` /
+  `boid.guild.>` contracts, `BOID_SUGGESTIONS`, and dmpartyformation's direct
+  policy reuse. Remove only the unproduced shipped `agent.boid.>` stream
+  entries. Prove no live component or bucket is created, autonomy produces no
+  claim/join/form mutation, and seeded Agent, Quest, and Guild state remains
+  bit-for-bit unchanged until an explicit claim. Prove REST API or test-fixture
+  claim/start reaches questbridge and mechanics-stub completion without
+  mechanics side effects; the lifecycle operator joins this path only when
+  separately enabled under task 4.3. Reclassify positive boid E2E coverage as
+  dormant/opt-in and keep the pinned beta.158 audit at zero structured
+  candidates. Record the future
+  `pkg/graphview`-backed reads and durable KV/stigmergic projection without
+  implementing them. Add no fallback recommender, local framework, graphview,
+  owner, dependency, API/schema, subject/KV migration, or upstream issue;
+  SemStreams #587 already covers message-logger per-client KV-watch migration.
+
+  Completed 2026-07-25 evidence, closing only task 2.20:
+
+  - All three shipped configurations retain boidengine with `enabled: false`
+    and remove the stale `agent.boid.>` stream subject.
+  - Real ComponentManager coverage proves no boidengine instance is created
+    and startup creates no `BOID_SUGGESTIONS` bucket.
+  - No-producer integration coverage proves exact seeded Agent, Quest, and
+    Guild KV stability before an explicit claim.
+  - The positive shipped path explicitly calls
+    `POST /game/quests/{id}/claim`, then
+    `POST /game/quests/{id}/start`, and reaches lifecycle rules, questbridge
+    execution, and mechanics-stub completion without mechanics side effects.
+  - Contract coverage preserves `DefaultBoidEngine`, rules, scoring policy,
+    DTOs, dormant suggestion subjects/KV, and dmpartyformation policy reuse.
+  - The pinned beta.158 boidengine predicate audit reports zero structured
+    candidates.
+  - Focused integration and race gates, the full Go suite and build, schema
+    gates, Svelte checks/tests/build, Playwright coverage, both strict OpenSpec
+    validations, and diff checks pass.
+  - Architect, independent Go reviewer, and Svelte reviewer approve the slice.
 
 ## 3. Verification and handoff to beta.158
 

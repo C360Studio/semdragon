@@ -1,4 +1,13 @@
-import { test, expect, hasBackend, hasLLM, isMockLLM, extractInstance, retry } from '../../fixtures/test-base';
+import {
+	test,
+	expect,
+	hasBackend,
+	hasLLM,
+	isMockLLM,
+	isComponentEnabled,
+	extractInstance,
+	retry
+} from '../../fixtures/test-base';
 
 /**
  * Dependency Chain — Tier 2 Scenario
@@ -17,10 +26,14 @@ import { test, expect, hasBackend, hasLLM, isMockLLM, extractInstance, retry } f
  * @scenario @tier2
  */
 test.describe.serial('Dependency Chain', () => {
-	test.beforeEach(() => {
+	test.beforeEach(async () => {
 		test.skip(
 			!hasBackend() || !hasLLM() || !isMockLLM(),
 			'Requires running backend with mock LLM (prompts too generic for real LLMs)'
+		);
+		test.skip(
+			!(await isComponentEnabled('boidengine')),
+			'Requires opt-in boidengine component enabled'
 		);
 	});
 

@@ -37,13 +37,13 @@ against the mock LLM (zero paid tokens).
   evaluate (in design) whether dispatch-on-`in_progress` moves to a rule-engine
   `publish_agent` action or stays in `questbridge`.
 - Disable game mechanics for the duration of this change: `agentprogression`,
-  `bossbattle`, `agentstore`, `boidengine`, and `redteam` are removed from
-  every shipped runtime profile or stubbed to pass-through. Every shipped
-  profile loads the complete quest lifecycle rule pack, including the
-  mechanics-stub rule, so quests complete without XP, review, battle,
-  reputation, inventory, or store side effects. The processors are rebuilt
-  against the two-loop principle in a subsequent change; no incentive-mechanic
-  behavior is in scope here.
+  `bossbattle`, `agentstore`, `boidengine`, and `redteam` are inactive in every
+  shipped runtime profile. Every shipped profile loads the complete quest
+  lifecycle rule pack, including the mechanics-stub rule, so explicitly
+  claimed and started quests complete without XP, review, battle, reputation,
+  inventory, or store side effects. The processors are rebuilt against the
+  two-loop principle in a subsequent change; no incentive-mechanic behavior is
+  in scope here.
 - Resolve the agentprogression slice through issue #30: keep
   `agent_progression` registered but disabled in all three shipped profiles;
   delete its no-publisher `AgentXPPayload`, false output port, and six dead
@@ -54,6 +54,13 @@ against the mock LLM (zero paid tokens).
   publisher-only raw payload/subject/publisher families, seven event-only
   vocabulary entries, and false output; and retain store policy, models,
   REST/OpenAPI, and the dormant Phase-2 implementation.
+- Resolve the boidengine slice through issue #34: keep `boidengine` registered
+  and configured but disabled in all three shipped profiles. Preserve the
+  scoring policy, DTOs, `boid.suggestions.>` / `boid.guild.>` contracts,
+  `BOID_SUGGESTIONS`, and direct dmpartyformation policy reuse. Shipped Phase 1
+  has no autonomous claim or guild selection; REST API and test-fixture
+  claim/start are the supported shipped paths. The lifecycle operator joins
+  that path only when separately enabled under task 4.3.
 - Adopt the framework `lifecycle-gateway` operator REST surface for quest
   workflow CRUD/history where it can replace bespoke `service/api` handlers;
   keep product endpoints (world state, DM chat, workspace) as-is.
@@ -91,7 +98,9 @@ against the mock LLM (zero paid tokens).
   2. Issue #30 config-gates agentprogression without changing agentstore,
   SemStreams, predicates, ownership, lifecycle, or watcher behavior.
   Issue #32 config-gates agentstore and removes only its no-consumer raw event
-  plane. Boidengine and redteam remain open under Stage B3.
+  plane. Issue #34 config-gates boidengine while retaining its live dormant
+  contracts and making explicit claim/start the supported Phase-1 path.
+  Redteam remains open under Stage B3.
 - **Dependencies**: the beta.21 → beta.135 foundation is implemented on this
   branch. The beta.158 pre-v1 clean break is a separate prerequisite change:
   `adopt-semstreams-prev1-contract`. No dependency-only bump is permitted.

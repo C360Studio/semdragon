@@ -24,14 +24,16 @@ Agentic workflow coordination modeled as a tabletop RPG, built on semstreams.
 
 Agents are adventurers. Work items are quests. Quality reviews are boss battles.
 Trust is earned through leveling. Specialization happens through guilds.
-Coordination emerges from Boid-like flocking behavior over a structured quest board.
+The retained opt-in Phase-2 design adds Boid-like recommendations over a structured quest board.
+Shipped Phase 1 instead requires an explicit REST API or test-fixture claim followed by start.
 
 **It's fun to build. The results are serious.**
 
-> **Runtime boundary:** Boss battles, XP/store mechanics, and their examples in this document
-> describe retained product history and the Phase-2 target. Shipped Phase-1 profiles do not
-> activate bossbattle, agentprogression, or agentstore; review-required quests complete through
-> the mechanics-stub rule. Their former raw event facades are not production contracts.
+> **Runtime boundary:** Boss battles, XP/store mechanics, Boids, and their examples in this
+> document describe retained product history and the Phase-2 target. Shipped Phase-1 profiles
+> do not activate bossbattle, agentprogression, agentstore, or boidengine; review-required quests
+> complete through the mechanics-stub rule. Their former raw event facades are not production
+> contracts.
 
 ---
 
@@ -53,7 +55,7 @@ Coordination emerges from Boid-like flocking behavior over a structured quest bo
 | Permadeath          | Catastrophic failure retirement        | Prevents repeat offenders          |
 | DM (Dungeon Master) | Human or LLM orchestrator              | Explicit control layer with modes  |
 | Session             | Workflow execution context             | Bounded, observable, replayable    |
-| Boids               | Emergent quest-claiming behavior       | No central scheduler needed        |
+| Boids               | Dormant opt-in Phase-2 recommender      | No shipped autonomous routing      |
 | Game Events         | Semstreams event stream                | Full observability via trajectories |
 | Guild Library       | Shared agent memory / prompt templates | Knowledge accumulates over time    |
 
@@ -269,9 +271,10 @@ board.PostQuest(ctx, quest)
 // Decomposability: mixed → party_required set automatically
 ```
 
-### 2. Boids Engine Suggests Party
+### 2. Phase-2 Boids Policy Suggests Party
 
-The Boids engine identifies idle agents with matching skills:
+The retained, disabled Boids policy can identify idle agents with matching skills in a
+future Phase-2 flow. Shipped Phase 1 does not run this step:
 
 - **DataDragon** (Level 16, Master, Guild: Data Wranglers) — high affinity for data quests
 - **SummaryScribe** (Level 12, Expert, Guild: Analysts) — strong analysis + writing
@@ -381,10 +384,11 @@ party.disbanded            → final Party KV snapshot
 
 ## Guild Red-Team Review
 
-When a quest is submitted for review, the `redteam` processor posts an **adversarial
-review quest** before the boss battle evaluates the result. A different agent — ideally
-from a different guild — claims the red-team quest and attempts to find flaws, edge cases,
-or weaknesses in the original agent's output.
+This is a retained Phase-2 design; redteam, bossbattle, and boidengine are inactive in shipped
+Phase 1. When that design is explicitly reactivated, the `redteam` processor posts an
+**adversarial review quest** before the boss battle evaluates the result. A different agent —
+ideally from a different guild — claims the red-team quest and attempts to find flaws, edge
+cases, or weaknesses in the original agent's output.
 
 The flow:
 
@@ -394,9 +398,9 @@ The flow:
    decomposability class), so party quests receive a full party red-team review with
    per-scenario decomposition rather than a single-agent pass.
 3. The `redteam` processor sets `GuildPriority` to the highest-reputation guild *other
-   than* the original agent's guild. The boid engine applies a **1.5x cross-guild
-   affinity** multiplier to attract agents from different guilds, ensuring adversarial
-   diversity.
+   than* the original agent's guild. The retained boid scoring policy applies a **1.5x
+   cross-guild affinity** multiplier to attract agents from different guilds, ensuring
+   adversarial diversity after Phase-2 reactivation.
 4. The red-team agent produces findings (weaknesses, missed requirements, edge cases).
    The processor writes the red-team quest ID onto the original quest entity
    (`quest.red_team_quest_id`) using CAS to avoid clobbering concurrent status changes.
@@ -483,9 +487,10 @@ The following questions arose during design and are now settled:
   for quest-scoped coordination. Agents are persistent KV entities and retain state across
   sessions.
 
-- **Boids vs explicit assignment**: Boids is the default. DM modes (`full_auto`,
-  `supervised`, `manual`) control how much the DM overrides suggestions. In `supervised`
-  and `manual` modes the DM can intercept any boid suggestion before it becomes a claim.
+- **Boids vs explicit assignment**: Shipped Phase 1 disables boidengine and uses explicit
+  REST API or test-fixture assignment. A lifecycle operator adds another explicit path only
+  when its separately gated component is enabled. The retained Phase-2 design uses DM modes
+  (`full_auto`, `supervised`, `manual`) to control how much the DM overrides suggestions.
 
 - **Multi-session learning**: Yes. Agents are persistent entities stored in NATS KV;
   sessions are execution contexts, not agent lifetimes. Levels and XP survive restarts.
@@ -493,9 +498,9 @@ The following questions arose during design and are now settled:
 - **Quest chains**: Supported via `depends_on` with dependency validation. The parent
   quest remains open across sessions until all dependencies resolve.
 
-- **Competitive dynamics**: The Boids engine handles competition implicitly via attraction
-  scores. Guild reputation further differentiates agents on shared quest pools, enabling
-  A/B-style competitive dynamics without explicit PvP mechanics.
+- **Competitive dynamics**: The retained Phase-2 boid policy handles competition implicitly
+  via attraction scores. Guild reputation further differentiates agents on shared quest
+  pools, enabling A/B-style competitive dynamics without explicit PvP mechanics.
 
 For implementation details see [Getting Started](01-GETTING-STARTED.md).
 

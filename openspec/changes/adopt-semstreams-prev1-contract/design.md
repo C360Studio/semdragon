@@ -804,6 +804,52 @@ replaces the full Agent entity. Agent lifecycle and status, including
 cooldown-to-idle behavior, remain outside agentstore authority and cross the
 progression or lifecycle owner boundary.
 
+### D20: Quarantine boidengine without deleting live suggestion contracts
+
+Issue [#34](https://github.com/C360Studio/semdragon/issues/34) completes only
+the boidengine slice of the Phase-1 mechanics cut. All three shipped profiles
+retain the registered component and its complete configuration but set
+`enabled: false`. A real ComponentManager must therefore create no boidengine
+instance, startup must create no `BOID_SUGGESTIONS` bucket, and autonomy must
+produce no claim, guild join, or guild formation mutation without a suggestion
+producer.
+
+This quarantine is not behavior-neutral. Boidengine is the sole live producer
+of `boid.suggestions.>` and `boid.guild.>`, and autonomy's corresponding
+actions require cached suggestions. Shipped Phase 1 therefore offers no
+autonomous quest claim or guild selection. Posting a quest leaves it posted
+until an explicit REST API or test-fixture claim and start. The lifecycle
+operator joins that path only when separately enabled under task 4.3. The
+explicit path remains supported through questbridge execution and
+mechanics-stub completion without battle, XP, store, or redteam side effects.
+
+The retained surface is product behavior, not a retired framework subsystem:
+
+- `DefaultBoidEngine`, configurable rules, attraction/scoring policy, and
+  policy tests;
+- suggestion DTOs and the dormant live `boid.suggestions.>` /
+  `boid.guild.>` contracts;
+- the `BOID_SUGGESTIONS` implementation; and
+- dmpartyformation's direct reuse of the scoring policy.
+
+The unproduced shipped `agent.boid.>` stream entries belong to the unrelated
+SemStreams boid design that upstream intentionally retired, so issue #34
+removes only those stale subjects. Positive boid E2E coverage becomes explicit
+opt-in/dormant coverage rather than a shipped-runtime assertion. The pinned
+beta.158 predicate audit remains zero structured candidates; the historical
+baseline is unchanged.
+
+Before reactivation, boidengine replaces its three raw ENTITY_STATES watchers
+and process-local caches with SemStreams `pkg/graphview`. Suggestions become a
+durable KV/stigmergic projection, and consumers migrate to that state before
+the duplicate core-NATS advisory plane can be retired. Issue #34 implements no
+graphview, ownership, dependency, API/OpenAPI, schema, subject, or KV migration
+and adds no fallback recommender, rules-based scorer, or local projection
+framework. SemStreams
+[#587](https://github.com/C360Studio/semstreams/issues/587) covers only
+message-logger per-client KV-watch migration; no new upstream issue is
+required for this quarantine.
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

@@ -83,7 +83,8 @@ Example: \`/quest Write a hello world function in Go\`
 **Tips:**
 - Pin entities (agents, quests) as context chips for targeted questions.
 - Quest previews include a "Post Quest" button to add them to the board.
-- Agents autonomously claim quests based on their skills and trust tier.`;
+- Phase 1: after posting, use the quest REST/API controls to claim the quest for an agent and start execution.
+- Phase 2 (opt-in): when boidengine is enabled, agents can autonomously route and claim quests based on their skills and trust tier.`;
 
 // =============================================================================
 // LOCALSTORAGE PERSISTENCE

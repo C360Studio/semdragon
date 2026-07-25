@@ -68,13 +68,14 @@
 
 ## 4. Stage B3 — mechanics disablement and operator surface
 
-- [~] 4.1 PARTIAL: remove `agentprogression`, `bossbattle`, `agentstore`,
-  `boidengine`, and `redteam` from all three shipped runtime profiles; enable
-  the complete quest lifecycle rule pack in each profile; and verify clean
+- [~] 4.1 PARTIAL: make `agentprogression`, `bossbattle`, `agentstore`,
+  `boidengine`, and `redteam` inactive in all three shipped runtime profiles;
+  registered components may remain configured with `enabled: false`. Enable
+  the complete quest lifecycle rule pack in each profile and verify clean
   boot and quest flow without mechanics. Issue #26 owns the bossbattle slice,
-  issue #30 owns agentprogression, and issue #32 owns agentstore. Keep this
-  five-component task partial until boidengine and redteam are also disabled
-  in every shipped profile.
+  issue #30 owns agentprogression, issue #32 owns agentstore, and issue #34
+  owns boidengine. Keep this five-component task partial until redteam is also
+  disabled in every shipped profile.
 - [ ] 4.2 Add the stub rule: on transition into `in_review`, fire `lifecycle_transition` to `completed` with `verdict: review-skipped-mechanics-disabled` set atomically
 - [ ] 4.3 Enable `lifecycle-gateway` scoped to the quest workflow; verify inspect/history/operator-transition against the running stack
 - [ ] 4.4 Delete `service/api` handlers superseded by the gateway (status mutation only; keep world/DM/workspace/creation endpoints)
@@ -125,6 +126,46 @@
   OpenAPI schema freshness, `npm run check` with 0 errors and 15 unrelated
   existing warnings, both strict OpenSpec validations, and diff checks pass.
   Architect, independent Go reviewer, and Svelte reviewer approve the slice.
+- [x] 4.7 Resolve
+  [semdragon #34](https://github.com/C360Studio/semdragon/issues/34): retain
+  boidengine registration and configuration but disable it in all three
+  shipped profiles. Preserve `DefaultBoidEngine`, rules, attraction/scoring
+  policy, DTOs, dormant `boid.suggestions.>` / `boid.guild.>` contracts,
+  `BOID_SUGGESTIONS`, and dmpartyformation's direct policy reuse. Remove only
+  the unproduced shipped `agent.boid.>` stream entries. Prove ComponentManager
+  creates no boidengine instance or suggestion bucket, autonomy causes no
+  claim/join/form mutation without the producer, and seeded Agent, Quest, and
+  Guild state remains bit-for-bit unchanged until an explicit claim. Prove
+  REST API or test-fixture claim/start reaches questbridge and mechanics-stub
+  completion without mechanics side effects; the lifecycle operator joins
+  this path only when separately enabled under task 4.3. Keep the pinned
+  beta.158 audit at zero structured candidates. Reclassify positive boid E2E
+  coverage as dormant/opt-in. Record, but do not implement, the future
+  `pkg/graphview`-backed reads and durable KV/stigmergic suggestion projection.
+  Add no fallback recommender, local projection framework, dependency bump,
+  ownership, API/schema change, subject/KV redesign, or upstream issue;
+  SemStreams #587 already owns message-logger per-client KV-watch migration.
+
+  Completed 2026-07-25 evidence, closing only task 4.7:
+
+  - All three shipped configurations retain boidengine with `enabled: false`
+    and remove the stale `agent.boid.>` stream subject.
+  - Real ComponentManager coverage proves no boidengine instance is created
+    and startup creates no `BOID_SUGGESTIONS` bucket.
+  - No-producer integration coverage proves exact seeded Agent, Quest, and
+    Guild KV stability before an explicit claim.
+  - The positive shipped path explicitly calls
+    `POST /game/quests/{id}/claim`, then
+    `POST /game/quests/{id}/start`, and reaches lifecycle rules, questbridge
+    execution, and mechanics-stub completion without mechanics side effects.
+  - Contract coverage preserves `DefaultBoidEngine`, rules, scoring policy,
+    DTOs, dormant suggestion subjects/KV, and dmpartyformation policy reuse.
+  - The pinned beta.158 boidengine predicate audit reports zero structured
+    candidates.
+  - Focused integration and race gates, the full Go suite and build, schema
+    gates, Svelte checks/tests/build, Playwright coverage, both strict OpenSpec
+    validations, and diff checks pass.
+  - Architect, independent Go reviewer, and Svelte reviewer approve the slice.
 
 ### Issue #26 partial Stage B3 evidence
 
@@ -139,8 +180,8 @@
   Go, and Svelte review.
 
 This evidence completes only the bossbattle slice. Task 4.1 remains partial
-until boidengine and redteam are also disabled in every shipped profile. Task
-4.2 and the remaining lifecycle gates remain unchecked.
+until redteam is also disabled in every shipped profile. Task 4.2 and the
+remaining lifecycle gates remain unchecked.
 
 ## 5. Verification gate
 

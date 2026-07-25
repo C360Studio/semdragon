@@ -375,8 +375,9 @@ tier or above) who decomposes the quest into a DAG of sub-quests before any work
 
 ### How Party Quest Execution Works
 
-1. **Party formation** — The DM or boids engine assembles a party for the quest. The
-   lead agent is the highest-level member with `CanDecomposeQuest` permission (Master+).
+1. **Party formation** — In shipped Phase 1, the DM/API explicitly assembles and starts the
+   party. The retained Phase-2 boid policy may later recommend a roster. The lead agent is the
+   highest-level member with `CanDecomposeQuest` permission (Master+).
 
 2. **Lead receives decompose tool** — When the parent quest transitions to `in_progress`,
    `questbridge` dispatches it to the lead's agentic loop with the `decompose_quest` tool
@@ -519,7 +520,7 @@ Example (sequential → solo, each scenario depends on the previous):
 - [01-GETTING-STARTED.md](01-GETTING-STARTED.md) — Setup, walkthrough, debugging
 - [02-DESIGN.md](02-DESIGN.md) — Architecture, concept map, agentic execution path
 - [04-PARTIES.md](04-PARTIES.md) — Party formation and peer reviews
-- [05-BOIDS.md](05-BOIDS.md) — Emergent quest-claiming behavior
+- [05-BOIDS.md](05-BOIDS.md) — Dormant opt-in Phase-2 quest-recommendation policy
 - [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) — Capability routing including `quest-execution-sequential`
 - [09-TOOLS.md](09-TOOLS.md) — Agent tool reference: categories, tier gates, parameters, explore sub-agent
 - [adr/007-scenario-driven-quest-specs.md](adr/007-scenario-driven-quest-specs.md) — Design rationale and empirical basis

@@ -4,6 +4,7 @@ import {
 	hasBackend,
 	hasLLM,
 	isMockLLM,
+	isComponentEnabled,
 	extractInstance,
 	retry,
 	waitForHydration
@@ -18,8 +19,9 @@ import {
  *
  * Exercises the full quest pipeline end-to-end by acting like a human at the
  * dashboard. The seeded E2E roster (21 agents across all tiers) is already
- * running; autonomy, partycoord, guildformation, bossbattle, and agent
- * progression all run without intervention.
+ * running. This opt-in Phase 2 suite enables boidengine so autonomy can route
+ * quests; partycoord, guildformation, bossbattle, and agent progression then
+ * run without intervention.
  *
  * Test order:
  *   1. Easy quest     — post via DM chat, watch autonomy claim and complete it
@@ -44,10 +46,14 @@ import {
  */
 
 test.describe.serial('Quest Pipeline', () => {
-	test.beforeEach(() => {
+	test.beforeEach(async () => {
 		test.skip(
 			!hasBackend() || !hasLLM(),
 			'Requires running backend with LLM (E2E_LLM_MODE=mock|gemini|openai|...)'
+		);
+		test.skip(
+			!(await isComponentEnabled('boidengine')),
+			'Requires opt-in boidengine component enabled'
 		);
 	});
 
@@ -406,10 +412,7 @@ test.describe.serial('Quest Pipeline', () => {
 			await expect(page.locator('[data-testid="agent-level"]')).toBeVisible();
 		});
 
-		// Boid guild suggestions: after quests with peer reviews, the boid engine
-		// should compute guild formation/join suggestions on subsequent ticks.
-		// If all quests ran solo (no peer reviews), guild suggestions may not appear —
-		// this is a soft check for real LLMs, hard check for mock.
+		// This opt-in suite requires BOID, so verify its suggestion plane directly.
 		await test.step('boid engine produces guild suggestions', async () => {
 			const backendPort = process.env.BACKEND_PORT || '8081';
 

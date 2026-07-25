@@ -3,6 +3,7 @@
 package autonomy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1378,6 +1379,164 @@ func TestNoShoppingWithoutStore(t *testing.T) {
 	}
 	if updated.TotalSpent != 0 {
 		t.Errorf("TotalSpent = %d, want 0 (store is nil)", updated.TotalSpent)
+	}
+}
+
+func TestNoBoidProducerLeavesAgentQuestAndGuildStable(t *testing.T) {
+	testClient := natsclient.NewTestClient(
+		t,
+		natsclient.WithKV(),
+		natsclient.WithFileStorage(),
+		natsclient.WithKVBuckets(graph.BucketEntityStates),
+		natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}),
+	)
+	client := testClient.Client
+	ctx := context.Background()
+
+	config := DefaultConfig()
+	config.Org = "test"
+	config.Platform = "integration"
+	config.Board = "noboidproducer"
+	config.InitialDelayMs = 60_000
+	config.IdleIntervalMs = 60_000
+
+	comp := setupComponentWithConfig(t, client, config)
+	defer comp.Stop(5 * time.Second)
+	gc := semdragons.NewGraphClient(client, comp.BoardConfig())
+
+	intentSubjects := []string{
+		domain.PredicateAutonomyClaimIntent,
+		domain.PredicateAutonomyGuildIntent,
+		domain.PredicateGuildProposed,
+	}
+	intents := make(chan string, len(intentSubjects))
+	for _, subject := range intentSubjects {
+		subscription, err := client.Subscribe(ctx, subject, func(_ context.Context, msg *nats.Msg) {
+			intents <- msg.Subject
+		})
+		if err != nil {
+			t.Fatalf("subscribe %s: %v", subject, err)
+		}
+		t.Cleanup(func() {
+			if err := subscription.Unsubscribe(); err != nil {
+				t.Errorf("unsubscribe %s: %v", subject, err)
+			}
+		})
+	}
+	if _, err := client.RTT(); err != nil {
+		t.Fatalf("establish intent subscription readiness: %v", err)
+	}
+
+	seededAt := time.Unix(1_700_000_000, 0).UTC()
+	agentInstance := domain.GenerateInstance()
+	agentID := domain.AgentID(comp.BoardConfig().AgentEntityID(agentInstance))
+	questID := domain.QuestID(comp.BoardConfig().QuestEntityID(domain.GenerateInstance()))
+	guildID := domain.GuildID(comp.BoardConfig().GuildEntityID(domain.GenerateInstance()))
+
+	agent := &agentprogression.Agent{
+		ID:        agentID,
+		Name:      "explicit-claim-only",
+		Status:    domain.AgentIdle,
+		Level:     12,
+		XP:        999,
+		XPToLevel: 1_000,
+		Tier:      domain.TierExpert,
+		CreatedAt: seededAt,
+		UpdatedAt: seededAt,
+	}
+	quest := &domain.Quest{
+		ID:       questID,
+		Title:    "Wait for explicit claim",
+		Status:   domain.QuestPosted,
+		PostedAt: seededAt,
+		MinTier:  domain.TierApprentice,
+		BaseXP:   100,
+	}
+	guild := &domain.Guild{
+		ID:         guildID,
+		Name:       "Unchanged Guild",
+		Status:     domain.GuildActive,
+		MaxMembers: 10,
+		MinLevel:   1,
+		Founded:    seededAt,
+		FoundedBy:  domain.AgentID(comp.BoardConfig().AgentEntityID("founder")),
+		CreatedAt:  seededAt,
+	}
+	for name, entity := range map[string]graph.Graphable{
+		"agent": agent,
+		"quest": quest,
+		"guild": guild,
+	} {
+		if err := gc.PutEntityState(ctx, entity, name+".seeded"); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+
+	waitForTracker(t, comp, agentInstance, 3*time.Second)
+	comp.trackersMu.RLock()
+	tracker := comp.trackers[agentInstance]
+	if tracker == nil {
+		comp.trackersMu.RUnlock()
+		t.Fatal("agent tracker is missing")
+	}
+	if len(tracker.suggestions) != 0 || tracker.guildSuggestion != nil {
+		comp.trackersMu.RUnlock()
+		t.Fatalf(
+			"tracker unexpectedly has boid input: claims=%d guild=%v",
+			len(tracker.suggestions),
+			tracker.guildSuggestion,
+		)
+	}
+	comp.trackersMu.RUnlock()
+
+	entityStates, err := testClient.GetKVBucket(ctx, graph.BucketEntityStates)
+	if err != nil {
+		t.Fatalf("get %s: %v", graph.BucketEntityStates, err)
+	}
+	type snapshot struct {
+		revision uint64
+		value    []byte
+	}
+	before := make(map[string]snapshot, 3)
+	for _, id := range []string{string(agentID), string(questID), string(guildID)} {
+		entry, err := entityStates.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("read seeded entity %s: %v", id, err)
+		}
+		before[id] = snapshot{
+			revision: entry.Revision(),
+			value:    append([]byte(nil), entry.Value()...),
+		}
+	}
+
+	for range 3 {
+		comp.evaluateAutonomy(agentInstance)
+	}
+	if _, err := client.RTT(); err != nil {
+		t.Fatalf("flush autonomy evaluation events: %v", err)
+	}
+
+	for id, want := range before {
+		entry, err := entityStates.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("read entity %s after no-producer evaluation: %v", id, err)
+		}
+		if entry.Revision() != want.revision {
+			t.Errorf(
+				"entity %s revision = %d, want unchanged %d",
+				id,
+				entry.Revision(),
+				want.revision,
+			)
+		}
+		if !bytes.Equal(entry.Value(), want.value) {
+			t.Errorf("entity %s bytes changed without a boid producer", id)
+		}
+	}
+	select {
+	case subject := <-intents:
+		t.Errorf("autonomy emitted forbidden no-producer intent %q", subject)
+	default:
 	}
 }
 

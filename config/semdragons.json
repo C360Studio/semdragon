@@ -160,7 +160,6 @@
         "agent.created.*",
         "agent.signal.*",
         "agent.context.compaction.*",
-        "agent.boid.>",
         "tool.execute.*",
         "tool.result.>"
       ],
@@ -395,7 +394,7 @@
     "boidengine": {
       "type": "processor",
       "name": "boidengine",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",

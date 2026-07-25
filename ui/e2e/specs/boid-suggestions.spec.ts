@@ -1,23 +1,27 @@
-import { test, expect, hasBackend, retry } from '../fixtures/test-base';
+import { test, expect, hasBackend, retry, isComponentEnabled } from '../fixtures/test-base';
 
 /**
  * Boid Suggestions Observability
  *
- * Verifies that the boid engine produces quest-claiming suggestions and that
- * they are observable via the message-logger KV SSE endpoint. The boid engine
+ * Verifies that an enabled boid engine produces quest-claiming suggestions and
+ * that they are observable via the message-logger KV SSE endpoint. The engine
  * runs on a periodic tick and writes suggestions to the BOID_SUGGESTIONS KV
  * bucket, which the message-logger exposes as a Server-Sent Events stream.
  *
  * This test does not assert on the UI — it verifies the backend pipeline:
  *   boidengine tick -> BOID_SUGGESTIONS KV put -> message-logger SSE
  *
- * Requires agents and quests to exist so the engine has data to compute
- * attraction scores against.
+ * Requires an opt-in backend with boidengine enabled, plus agents and quests
+ * so the engine has data to compute attraction scores against.
  */
 
 test.describe('Boid Suggestions Observability', () => {
 	test.beforeEach(async () => {
-		if (!hasBackend()) test.skip();
+		test.skip(!hasBackend(), 'Requires running backend');
+		test.skip(
+			!(await isComponentEnabled('boidengine')),
+			'Requires opt-in boidengine component enabled'
+		);
 	});
 
 	test('boid suggestions appear in KV bucket after agents and quests exist', async ({

@@ -87,10 +87,12 @@ projection, re-derived from the gated-dag unit model.
 
 ### D6: Mechanics disablement is config + one stub rule
 Mechanics processors (`agentprogression`, `bossbattle`, `agentstore`,
-`boidengine`, `redteam`) are removed from every shipped
-`config/semdragons*.json` runtime profile. Each profile enables the complete
-quest lifecycle rule pack and watches quest entities. One stub rule handles
-the review path: on transition into `in_review`, fire
+`boidengine`, `redteam`) are inactive in every shipped
+`config/semdragons*.json` runtime profile. Components may remain registered
+and configured with `enabled: false`; registration and dormant configuration
+do not instantiate them. Each profile enables the complete quest lifecycle
+rule pack and watches quest entities. One stub rule handles the review path:
+on transition into `in_review`, fire
 `lifecycle_transition` to `completed` with a
 `verdict: review-skipped-mechanics-disabled` field set atomically. This keeps
 the `in_review` phase reachable (so Phase 2 re-enables review by replacing one
@@ -157,6 +159,33 @@ command/request to the agentprogression owner after #313 instead of directly
 debiting XP or replacing Agent. Agent lifecycle and status remain outside
 agentstore authority. These are Phase-2 handoffs, not issue #32 production
 changes.
+
+Issue #34 applies the quarantine boundary to boidengine. All three shipped
+profiles retain its registration and complete configuration but set
+`enabled: false`. This is an explicit behavior change: boidengine is the sole
+producer of `boid.suggestions.>` and `boid.guild.>`, so shipped Phase 1 has no
+autonomous quest claim, guild join, or guild formation recommendation.
+Posting a quest does not advance it. The supported shipped Phase-1 path is
+explicit REST API or test-fixture claim and start, followed by questbridge
+execution and mechanics-stub completion. The lifecycle operator joins that
+path only when separately enabled under task 4.3.
+
+The product surface remains dormant rather than being deleted:
+`DefaultBoidEngine`, configurable rules, attraction/scoring policy, suggestion
+DTOs, the two live advisory subject contracts, `BOID_SUGGESTIONS`, and direct
+policy reuse by dmpartyformation. Positive boid E2E coverage becomes opt-in
+Phase-2 coverage instead of a shipped-runtime assertion. The shipped
+`agent.boid.>` stream entries are removed because no producer exists and they
+belong to the retired SemStreams boid design.
+
+Reactivation first replaces boidengine's three raw ENTITY_STATES watchers and
+process-local caches with SemStreams `pkg/graphview`. Suggestions become a
+durable KV/stigmergic projection, and consumers migrate to that state before
+the duplicate core-NATS advisory plane can be retired. This quarantine adds no
+fallback scorer, rules-based recommender, local projection framework,
+ownership change, dependency bump, or API/schema change. SemStreams #587
+already covers message-logger per-client KV-watch migration; issue #34 opens
+no duplicate upstream issue.
 
 ### D7: Adopt lifecycle-gateway for workflow operations only
 Enable the framework `lifecycle-gateway` for quest workflow inspect/history/

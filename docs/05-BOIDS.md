@@ -1,8 +1,14 @@
-# Boid Engine: Emergent Quest-Claiming
+# Boid Engine: Opt-In Phase-2 Quest Recommendations
 
 There is no central scheduler. Agents flock toward quests using attraction scores computed
 from six rules inspired by Craig Reynolds' boid flocking algorithm. The highest-scoring
 agent-quest pairs become claim suggestions.
+
+> **Phase-2 design:** `boidengine` is registered but disabled in every shipped Phase-1
+> profile. Autonomous quest claim, guild join, and guild formation suggestions are therefore
+> unavailable. Phase 1 uses explicit REST API or test-fixture claim and start; a lifecycle
+> operator is an additional path only when its separately gated component is enabled. This
+> document preserves the dormant product policy and its opt-in behavior.
 
 ## Contents
 
@@ -20,12 +26,18 @@ agent-quest pairs become claim suggestions.
 
 ## Overview
 
-Every `update_interval_ms` (default 1000ms), the `boidengine` processor:
+When explicitly enabled in an opt-in or future Phase-2 profile, the `boidengine` processor runs
+every `update_interval_ms` (default 1000ms) and:
 
 1. Loads all idle agents and posted quests from KV.
 2. Computes attraction scores for every agent-quest pair.
 3. Produces suggestions via greedy assignment or ranked top-N.
 4. Publishes suggestions so agents (or the autonomy loop) can act on them.
+
+The dormant implementation retains the `boid.suggestions.>` and `boid.guild.>` advisory
+contracts and the `BOID_SUGGESTIONS` KV projection. Before shipped reactivation, its raw
+ENTITY_STATES watchers and process-local caches move to SemStreams `pkg/graphview`, and
+suggestions become a durable KV/stigmergic projection.
 
 The engine considers six weighted rules. Each rule contributes a score (positive = pull,
 negative = push). The total score determines how strongly an agent is attracted to a quest.
@@ -187,8 +199,8 @@ high-attraction pairs into candidate guilds.
 
 ## Peer Review Feedback
 
-The boid engine uses `Agent.Stats.PeerReviewAvg` (1-5 scale) to adjust affinity scores.
-This creates a virtuous cycle:
+The retained Phase-2 boid scoring policy uses `Agent.Stats.PeerReviewAvg` (1-5 scale)
+to adjust affinity scores. If that future flow is enabled, this creates a virtuous cycle:
 
 1. Agent does good work on quests.
 2. Peers rate them highly.
@@ -231,7 +243,8 @@ Use when you want agents to have fallback options.
 
 ## Configuration
 
-All weights and timing are configurable in the component config:
+All weights and timing remain configurable in the retained component config. Shipped Phase-1
+profiles keep that configuration with `enabled: false`:
 
 | Setting | Default | Description |
 |---------|---------|-------------|

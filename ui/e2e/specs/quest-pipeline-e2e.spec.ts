@@ -1,4 +1,11 @@
-import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/test-base';
+import {
+	test,
+	expect,
+	hasBackend,
+	isComponentEnabled,
+	extractInstance,
+	retry
+} from '../fixtures/test-base';
 import type {
 	QuestResponse,
 	AgentResponse,
@@ -19,6 +26,7 @@ import type {
  *   - E2E_OLLAMA=true (gate variable)
  *   - Ollama running on host with qwen2.5-coder:7b pulled
  *   - Backend running with autonomy enabled
+ *   - Opt-in boidengine component enabled for autonomous quest routing
  *   - SEED_E2E=true for seeded agents
  *
  * @integration @ollama
@@ -51,10 +59,14 @@ const API_URL = process.env.API_URL || `http://localhost:${process.env.BACKEND_P
 // =============================================================================
 
 test.describe('Autonomous Quest Pipeline @integration @ollama', () => {
-	test.beforeEach(() => {
+	test.beforeEach(async () => {
 		test.skip(
 			!hasBackend() || !hasOllama(),
 			'Requires running backend (E2E_BACKEND_AVAILABLE=true) and Ollama (E2E_OLLAMA=true)'
+		);
+		test.skip(
+			!(await isComponentEnabled('boidengine')),
+			'Requires opt-in boidengine component enabled'
 		);
 	});
 
@@ -190,11 +202,15 @@ test.describe('Autonomous Quest Pipeline @integration @ollama', () => {
 // GROUP B: Dashboard Reactivity
 // =============================================================================
 
-test.describe('Dashboard Reactivity @integration @ollama', () => {
-	test.beforeEach(() => {
+test.describe('Autonomous Dashboard Completion @integration @ollama', () => {
+	test.beforeEach(async () => {
 		test.skip(
 			!hasBackend() || !hasOllama(),
 			'Requires running backend and Ollama'
+		);
+		test.skip(
+			!(await isComponentEnabled('boidengine')),
+			'Requires opt-in boidengine component enabled'
 		);
 	});
 
@@ -253,6 +269,15 @@ test.describe('Dashboard Reactivity @integration @ollama', () => {
 			}).toPass({ timeout: POLL.uiUpdate.timeout });
 			console.log('[Reactivity] Activity feed populated');
 		}
+	});
+});
+
+test.describe('Dashboard Event Reactivity @integration @ollama', () => {
+	test.beforeEach(() => {
+		test.skip(
+			!hasBackend() || !hasOllama(),
+			'Requires running backend and Ollama'
+		);
 	});
 
 	test('B2: activity feed shows events on non-dashboard routes', async ({ page }) => {

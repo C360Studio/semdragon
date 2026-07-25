@@ -3,16 +3,18 @@
 Semdragons is an agentic workflow coordination framework built on
 [semstreams](https://github.com/c360studio/semstreams). It models work as a tabletop RPG:
 agents are adventurers who earn XP and level up through demonstrated competence, work items
-are quests pulled from a shared board, quality gates are boss battles, and large tasks
+are quests on a shared board, quality gates are boss battles, and large tasks
 decompose into party quests with a lead agent coordinating a DAG of sub-quests. The RPG
 framing is genuine — trust tiers are earned, not declared, and emergent Boid-like behavior
-handles quest distribution without central scheduling.
+is retained as an opt-in Phase-2 recommender design. Shipped Phase 1 does not route work
+autonomously.
 
 > **Current Phase-1 runtime:** The shipped profiles do not activate bossbattle,
-> agentprogression, or agentstore. Review-required quests pass through `in_review` and are
-> completed by the mechanics-stub rule with `review-skipped-mechanics-disabled`. Battle,
-> Agent/XP, and store product models remain for Phase 2, but a fresh Phase-1 run creates no
-> battle, progression, store, or inventory side effect.
+> agentprogression, agentstore, or boidengine. Posting leaves a quest in `posted`; explicitly
+> claim it for an agent through the REST API or a test fixture, then explicitly start it.
+> Review-required quests pass through `in_review` and are completed by the mechanics-stub rule
+> with `review-skipped-mechanics-disabled`. Battle, Agent/XP, store, and Boids product policy
+> remain for Phase 2, but a fresh Phase-1 run creates none of their side effects.
 
 ## Quick Start
 
@@ -38,9 +40,12 @@ without spending tokens. Once the stack is up:
 - Swagger UI: `http://localhost/docs`
 
 1. Open the DM Chat panel and type: `Post a quest to write a hello world function`
-2. Watch the Quests view — agents claim the quest and begin executing within seconds
-3. Review-required work completes through the Phase-1 review-skipped stub; no battle is created
-4. Trajectories show the full tool call audit trail for each quest execution
+2. In Swagger UI, select the quest and an idle agent, call
+   `POST /game/quests/{id}/claim` with that `agent_id`, then call
+   `POST /game/quests/{id}/start`
+3. Watch the Quests view as the explicitly started execution proceeds
+4. Review-required work completes through the Phase-1 review-skipped stub; no battle is created
+5. Trajectories show the full tool call audit trail for each quest execution
 
 To use a real LLM instead, copy `.env.example` to `.env`, add your key, and pick a provider:
 
@@ -67,7 +72,7 @@ task docker:up:ollama      # local Ollama, no key needed
 │  dmsession · dmapproval · dmworldstate          │
 │  dmpartyformation · autonomy                    │
 ├─────────────────────────────────────────────────┤
-│   GUILDS          PARTIES          BOIDS        │
+│   GUILDS          PARTIES          BOIDS (P2)   │
 │   guildformation  partycoord       boidengine   │
 ├─────────────────────────────────────────────────┤
 │           QUEST BOARD + EXECUTION               │
@@ -101,7 +106,7 @@ event bus is needed.
 | **Guild** | A specialization cluster agents join based on demonstrated performance patterns |
 | **Party** | A temporary ensemble assembled for a complex quest that decomposes into a DAG |
 | **Boss Battle** | Dormant Phase-2 quality gate; its API/read/UI model remains, but shipped profiles do not run it |
-| **Boids** | Emergent quest-claiming: agents attract toward quests matching their skills, no scheduler needed |
+| **Boids** | Dormant opt-in Phase-2 recommender policy; shipped Phase 1 does not route or claim autonomously |
 | **Trust Tier** | Permission boundary (Apprentice through Grandmaster) derived from level, not declared |
 | **Trajectory** | A semstreams trace linking every event, tool call, and state transition for a quest |
 | **Dungeon Master** | The human or hybrid controller: posts quests, sets policy, intervenes via chat |
@@ -139,7 +144,7 @@ semdragons/
 │   ├── agentprogression/   # Dormant Phase-2 Agent model and XP policy
 │   ├── agentstore/         # Dormant Phase-2 XP marketplace policy and models
 │   ├── autonomy/           # Heartbeat-driven agent decision loop
-│   ├── boidengine/         # Periodic boid attraction computation, publishes per-agent suggestions
+│   ├── boidengine/         # Dormant Phase-2 attraction policy and suggestion implementation
 │   ├── guildformation/     # Auto guild clustering from shared performance patterns
 │   ├── redteam/            # Retained adversarial review implementation; Phase-1 gated
 │   ├── partycoord/         # Party KV lifecycle/roster authority; temporary assignment bridge
@@ -232,8 +237,8 @@ Key endpoint groups under `/game/`:
 
 | Group | Endpoints |
 |-------|-----------|
-| Quests | `GET /quests`, `POST /quests`, `POST /quests/{id}/claim`, `/start`, `/submit`, `/complete`, `/fail`, `/abandon` |
-| Artifacts | `GET /quests/{id}/artifacts`, `/artifacts/list`, `/artifacts/{path...}` |
+| Quests | `GET /game/quests`, `POST /game/quests`, `POST /game/quests/{id}/claim`, `POST /game/quests/{id}/start`, and other lifecycle actions |
+| Artifacts | `GET /game/quests/{id}/artifacts`, `/game/quests/{id}/artifacts/list`, `/game/quests/{id}/artifacts/{path...}` |
 | Agents | `GET /agents`, `GET /agents/{id}`, `POST /agents`, `POST /agents/{id}/retire` |
 | Battles | `GET /battles`, `GET /battles/{id}` |
 | Parties | `GET /parties`, `GET /parties/{id}` |
@@ -255,7 +260,7 @@ Key endpoint groups under `/game/`:
 | [Design](docs/02-DESIGN.md) | Architecture, concept map, trust tiers, red-team review, DM attention, death mechanics |
 | [Quests](docs/03-QUESTS.md) | Quest lifecycle state machine, difficulty/XP table, boss battles, chains |
 | [Parties](docs/04-PARTIES.md) | Party formation, DAG decomposition, peer reviews, feedback loop |
-| [Boids](docs/05-BOIDS.md) | Emergent quest-claiming rules, guild/reputation integration, tuning guide |
+| [Boids](docs/05-BOIDS.md) | Dormant opt-in Phase-2 scoring policy, guild/reputation integration, tuning guide |
 | [Domains](docs/06-DOMAINS.md) | Domain configs, agent archetypes, skill taxonomies, prompt catalogs |
 | [Model Registry](docs/07-MODEL-REGISTRY.md) | LLM provider config, capability routing, fallback chains |
 | [Sandbox Repos](docs/08-SANDBOX-REPOS.md) | Git-backed artifact storage: worktree lifecycle, quality gate via merge, semsource integration |

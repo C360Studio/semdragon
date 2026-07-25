@@ -42,6 +42,11 @@ after the lifecycle/gated-DAG foundation in draft PR
   event-only vocabulary entries, and false output port. Retain the registered
   store implementation, product policy, REST/OpenAPI/models, and later
   authoritative migration target.
+- Resolve issue #34 by retaining boidengine registration, configuration,
+  scoring policy, live dormant suggestion contracts, KV implementation, and
+  dmpartyformation policy reuse while disabling it in every shipped profile.
+  Document that shipped Phase 1 requires explicit claim/start and provides no
+  autonomous quest or guild selection.
 - Cut over by wiping and reseeding development/test graph state. No aliases,
   dual writes, permissive mode, or beta-state rewriter will be added.
 - Establish zero-finding predicate, entity-ID, relationship, build, and UI
@@ -73,6 +78,11 @@ after the lifecycle/gated-DAG foundation in draft PR
 - **Agent store**: issue #32 completes the Phase-1 configuration quarantine
   and removes a raw event plane with no repository consumer. Store routes,
   models, policy, and dormant implementation remain for Phase 2.
+- **Boidengine**: issue #34 disables the recommender without deleting its live
+  dormant subjects, DTOs, KV implementation, scoring policy, or
+  dmpartyformation reuse. REST API and test-fixture claim/start are the
+  supported shipped Phase-1 path; the lifecycle operator joins that path only
+  when separately enabled under task 4.3.
 - **Data**: incompatible beta graph/index state is deleted and reseeded from
   source; no production deployment or retained beta data requires migration.
 - **Upstream coordination**: reuse SemStreams issues
@@ -83,4 +93,6 @@ after the lifecycle/gated-DAG foundation in draft PR
   [#668](https://github.com/C360Studio/semstreams/issues/668). Staged fan-out
   admission and occurrence-exact audit classification gaps are tracked in
   [#670](https://github.com/C360Studio/semstreams/issues/670) and
-  [#671](https://github.com/C360Studio/semstreams/issues/671).
+  [#671](https://github.com/C360Studio/semstreams/issues/671). Existing issue
+  [#587](https://github.com/C360Studio/semstreams/issues/587) covers only
+  message-logger per-client KV-watch migration; issue #34 opens no duplicate.

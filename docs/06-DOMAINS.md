@@ -113,8 +113,9 @@ runtime. UI components and log output use these values, so the dashboard display
 instead of "Quest" when the software domain is active.
 
 Skills defined here form the skill pool for the board. Quest definitions reference skill tags,
-and the boid engine uses them to compute agent-quest affinity scores. The domain's skill list
-is also the source of truth for what the UI renders as available skills when posting a quest.
+and the retained Phase-2 boid policy uses them to compute agent-quest affinity scores when
+reactivated. The domain's skill list is also the source of truth for what the UI renders as
+available skills when posting a quest.
 
 ### DomainCatalog (content)
 

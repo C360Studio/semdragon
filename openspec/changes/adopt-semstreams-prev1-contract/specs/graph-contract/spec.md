@@ -587,6 +587,70 @@ state writers as beta.158-compatible.
 - **AND** Agent lifecycle and status predicates remain outside agentstore
   authority
 
+### Requirement: Boidengine is quarantined without deleting live contracts
+
+Phase 1 SHALL retain boidengine product policy and its live dormant suggestion
+contracts while disabling the component in every shipped profile. The
+supported shipped path SHALL use explicit claim and start rather than implying
+that posted quests still advance autonomously.
+
+#### Scenario: Every shipped profile disables boidengine
+
+- **WHEN** contract tests parse the default, semsource, and tier-1 E2E
+  configurations
+- **THEN** each retains `components.boidengine`
+- **AND** each sets that component's `enabled` field to `false`
+- **AND** ComponentManager creates no boidengine instance
+- **AND** startup creates no `BOID_SUGGESTIONS` bucket
+- **AND** the complete quest rule pack and mechanics-stub rule remain enabled
+
+#### Scenario: Supported Phase-1 quest flow is explicit
+
+- **GIVEN** boidengine is the sole producer of `boid.suggestions.>` and
+  `boid.guild.>`
+- **AND** autonomy requires cached suggestions for claim, join, and form
+  actions
+- **WHEN** shipped Phase 1 starts without boidengine
+- **THEN** autonomy causes no claim, guild join, or guild formation mutation
+- **AND** seeded Agent, Quest, and Guild state remains bit-for-bit unchanged
+  until an explicit claim
+- **AND** REST API and test-fixture claim/start are the supported shipped paths
+- **AND** the lifecycle operator joins that path only when separately enabled
+  under task 4.3
+- **AND** explicit claim/start can reach questbridge and mechanics-stub
+  completion without battle, XP, store, or redteam side effects
+- **AND** the documentation does not describe this quarantine as
+  behavior-neutral
+
+#### Scenario: Product policy and live dormant contracts remain
+
+- **WHEN** issue #34 completes
+- **THEN** registration, configuration, `DefaultBoidEngine`, rules,
+  attraction/scoring policy, DTOs, and policy tests remain
+- **AND** the dormant `boid.suggestions.>` / `boid.guild.>` contracts and
+  `BOID_SUGGESTIONS` implementation remain
+- **AND** dmpartyformation retains direct policy reuse
+- **AND** positive boid E2E coverage is classified as opt-in/dormant
+- **AND** only the unproduced shipped `agent.boid.>` stream entries are removed
+- **AND** the pinned beta.158 boidengine audit remains zero structured
+  candidates
+- **AND** the historical baseline audit remains unchanged
+
+#### Scenario: Future framework handoff remains deferred
+
+- **WHEN** issue #34 completes
+- **THEN** no fallback recommender, rules-based scorer, local projection
+  framework, graphview, ownership, dependency, API/OpenAPI, schema, subject,
+  or KV migration is added
+- **AND** reactivation replaces raw ENTITY_STATES watchers and process-local
+  caches with SemStreams `pkg/graphview`
+- **AND** suggestions become a durable KV/stigmergic projection
+- **AND** consumers migrate to that state before the duplicate core-NATS
+  advisory plane is retired
+- **AND** SemStreams #587 remains scoped to message-logger per-client KV-watch
+  migration
+- **AND** no duplicate upstream issue is opened
+
 ### Requirement: Dead party events and DAG shadows are deleted
 
 The system SHALL retain partycoord only as the current Party formation,

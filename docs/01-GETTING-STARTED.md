@@ -2,13 +2,15 @@
 
 Semdragons is an agentic workflow coordination framework built around a tabletop RPG metaphor.
 Work items are *quests*, autonomous LLM processes are *adventurers* (agents) who earn XP and level
-up, and quality reviews are *boss battles*. The system is reactive: post a quest and watch the
-processors claim and execute it without manual intervention.
+up, and quality reviews are *boss battles*. Shipped Phase 1 is reactive only after assignment:
+post a quest, explicitly claim it for an agent through the REST API or a test fixture, and
+explicitly start it. The processors then execute it.
 
-> **Phase-1 runtime status:** Bossbattle, agentprogression, and agentstore are not activated by
-> any shipped profile. A review-required quest enters `in_review`, then the mechanics-stub rule
-> completes it with `review-skipped-mechanics-disabled`. Their retained product and API
-> surfaces remain dormant until the Phase-2 authoritative projections are implemented.
+> **Phase-1 runtime status:** Bossbattle, agentprogression, agentstore, and boidengine are not
+> activated by any shipped profile. There is no autonomous Boid claim or guild selection. A
+> review-required quest enters `in_review`, then the mechanics-stub rule completes it with
+> `review-skipped-mechanics-disabled`. Their retained product and API surfaces remain dormant
+> until the Phase-2 authoritative projections are implemented.
 
 This guide gets you from zero to your first completed quest.
 
@@ -34,8 +36,9 @@ provider — see [Using Real LLM Providers](#using-real-llm-providers) below.
 
 ## Quick Start with Mock LLM
 
-The mock LLM returns deterministic, canned responses. It exercises the current Phase-1 quest
-pipeline (claim, execute, lifecycle-rule completion) without any API keys or costs.
+The mock LLM returns deterministic, canned responses. After an explicit REST API or test-fixture
+claim and start, it exercises the current Phase-1 execution and lifecycle-rule completion path
+without any API keys or costs.
 
 ### Step 1: Start the stack
 
@@ -106,24 +109,29 @@ curl -s -X POST http://localhost/game/quests \
   }' | jq .
 ```
 
-### Step 4: Watch the pipeline
+### Step 4: Explicitly claim, start, and watch the pipeline
 
-After the quest is posted, the reactive processors take over. You will see state transitions in
-the dashboard event feed:
+After the quest is posted, use Swagger UI or the REST API to call
+`POST /game/quests/{id}/claim` with the selected `agent_id`, then
+`POST /game/quests/{id}/start`. A test fixture may drive the same two transitions. Only after
+those explicit actions do the reactive processors execute the quest. You will see these state
+transitions in the dashboard event feed:
 
-1. **`posted`** — Quest appears on the board. The boid engine (emergent quest-claiming algorithm)
-   starts computing agent attractions.
-2. **`claimed`** — An agent with matching skills claims the quest. The agent's status changes to
-   `on_quest`.
+1. **`posted`** — Quest appears on the board. Shipped Phase 1 keeps `boidengine` disabled, so the
+   quest remains posted until it is explicitly claimed.
+2. **`claimed`** — Claim the quest and select an agent through the REST API or a test fixture.
+   Autonomous boid-driven claim and guild selection are unavailable. The lifecycle operator is
+   an additional path only when its separately gated component is enabled.
 3. **`in_progress`** — The questbridge processor detects the transition and dispatches the quest
-   to the LLM via the AGENT JetStream stream. The mock LLM calls a tool, receives a result, then
-   emits a completion message.
+   after the same API or fixture explicitly starts it. The mock LLM calls a tool, receives a
+   result, then emits a completion message.
 4. **`in_review`** — The agent submits review-required work. The mechanics-stub rule records
    that review is skipped while mechanics are disabled.
 5. **`completed`** — The lifecycle rule completes the quest without creating a battle, peer
    review, XP award, reputation change, artifact merge/index mutation, or store mutation.
 
-The full loop with the mock LLM typically completes in under 30 seconds.
+After explicit claim and start, the full loop with the mock LLM typically completes in under
+30 seconds.
 
 ### Step 5: See the results
 
@@ -300,12 +308,13 @@ Replace endpoint URLs and models to switch providers. See [07-MODEL-REGISTRY.md]
 ### Components
 
 The `components` section enables or disables each reactive processor. The default config includes
-`questboard`, the complete quest `rule-processor` pack, `guildformation`, `boidengine`,
-`agentic-loop`, `agentic-model`, `questbridge`, `questtools`, `questdagexec`, `autonomy`, and
-`partycoord`. The registered `agent_progression` component remains disabled, and bossbattle
-remains absent, in every shipped profile during Phase 1. The registered `agent_store`
-component is also disabled in every shipped profile; its routes and product models remain for
-Phase 2.
+`questboard`, the complete quest `rule-processor` pack, `guildformation`, `agentic-loop`,
+`agentic-model`, `questbridge`, `questtools`, `questdagexec`, `autonomy`, and `partycoord`.
+The registered `agent_progression`, `agent_store`, and `boidengine` components are disabled in
+every shipped profile, and bossbattle remains absent, during Phase 1. Their product policy and
+models remain for Phase 2. Without boidengine, posting alone does not select an agent; use the
+REST API or a test fixture to claim and start. A lifecycle operator is available only when its
+separately gated component is enabled.
 
 ### Key env vars
 
@@ -392,7 +401,7 @@ which makes E2E tests reliable without relying on any live LLM service.
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Quest stuck in `posted` | `autonomy` or `boidengine` not running | Confirm both are `enabled: true` in config |
+| Quest remains `posted` | Expected before assignment | Claim/start explicitly; leave `boidengine` disabled |
 | Quest stuck in `in_progress` | LLM unreachable or misconfigured | Check `docker logs semdragon-backend`; verify model endpoint |
 | No agents visible on dashboard | `SEED_AGENTS` not set | Default is `true`; verify the backend env var |
 | NATS connection refused | NATS not running on port 4222 | Run `docker compose -f docker/compose.yml up nats -d` |

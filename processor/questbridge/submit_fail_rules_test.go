@@ -24,11 +24,13 @@ package questbridge
 // =============================================================================
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +48,135 @@ import (
 	rule "github.com/c360studio/semstreams/processor/rule"
 	"github.com/nats-io/nats.go/jetstream"
 )
+
+// TestPhase1ExplicitLifecycleClaimCompletesThroughQuestBridge proves the complete
+// Phase-1 positive path without a boid producer: a posted quest stays dormant,
+// explicit lifecycle claim/start dispatches questbridge, loop completion stamps
+// submit, and the shipped mechanics-stub rule completes review without creating
+// battle, progression, store, or red-team side effects.
+func TestPhase1ExplicitLifecycleClaimCompletesThroughQuestBridge(t *testing.T) {
+	client := newLifecycleTestClient(t)
+	ctx := context.Background()
+
+	mgr := startQuestGraphAndLifecycle(t, client)
+	startQuestRuleProcessor(t, client, mgr)
+
+	comp, gc := setupComponent(t, client, "phase1explicit")
+	taskCh := subscribeToAgentTasks(t, client, ctx)
+
+	agent := createTestAgent(t, gc, comp.boardConfig, "explicit-agent", 12)
+	questID := domain.QuestID(comp.boardConfig.QuestEntityID(domain.GenerateInstance()))
+	guildID := domain.GuildID(comp.boardConfig.GuildEntityID(domain.GenerateInstance()))
+	seededAt := time.Unix(1_700_000_000, 0).UTC()
+	quest := &domain.Quest{
+		ID:          questID,
+		Title:       "Explicit Phase-1 Claim",
+		Description: "Must remain posted until an explicit lifecycle claim",
+		Status:      domain.QuestPosted,
+		Difficulty:  domain.DifficultyTrivial,
+		BaseXP:      100,
+		MaxAttempts: 3,
+		PostedAt:    seededAt,
+		Constraints: domain.QuestConstraints{RequireReview: true},
+	}
+	guild := &domain.Guild{
+		ID:         guildID,
+		Name:       "Stable Phase-1 Guild",
+		Status:     domain.GuildActive,
+		MaxMembers: 10,
+		MinLevel:   1,
+		Founded:    seededAt,
+		FoundedBy:  agent.ID,
+		CreatedAt:  seededAt,
+	}
+	if err := gc.PutEntityState(ctx, quest, "quest.posted"); err != nil {
+		t.Fatalf("seed posted quest: %v", err)
+	}
+	if err := gc.PutEntityState(ctx, guild, "guild.created"); err != nil {
+		t.Fatalf("seed guild: %v", err)
+	}
+
+	waitForQuestCacheStatus(t, comp, string(questID), string(domain.QuestPosted), 5*time.Second)
+	entityStates, err := client.GetKeyValueBucket(ctx, graph.BucketEntityStates)
+	if err != nil {
+		t.Fatalf("get authoritative entity states: %v", err)
+	}
+	before := snapshotEntityStates(t, ctx, entityStates, string(agent.ID), string(questID), string(guildID))
+	assertEntityStatesEqual(t, ctx, entityStates, before)
+	select {
+	case <-taskCh:
+		t.Fatal("posted quest dispatched before explicit lifecycle claim/start")
+	default:
+	}
+
+	if err := questlifecycle.StampCommand(
+		ctx,
+		client,
+		string(questID),
+		questlifecycle.CommandClaim,
+		map[string]string{questlifecycle.PredClaimRequestedBy: string(agent.ID)},
+	); err != nil {
+		t.Fatalf("stamp explicit lifecycle claim command: %v", err)
+	}
+	claimed := waitForQuestStatus(t, gc, ctx, questID, domain.QuestClaimed, 20*time.Second)
+	if claimed.ClaimedBy == nil || *claimed.ClaimedBy != agent.ID {
+		t.Fatalf("claimed_by = %v, want %q", claimed.ClaimedBy, agent.ID)
+	}
+	if claimed.Attempts != 1 {
+		t.Fatalf("attempts = %d, want atomic claim increment to 1", claimed.Attempts)
+	}
+	waitForQuestCacheStatus(t, comp, string(questID), string(domain.QuestClaimed), 5*time.Second)
+	if err := mgr.Transition(
+		ctx,
+		questlifecycle.WorkflowName,
+		string(questID),
+		questlifecycle.PhaseInProgress,
+		lifecycle.TransitionSourceOperator,
+		"explicit Phase-1 start",
+	); err != nil {
+		t.Fatalf("explicit lifecycle start: %v", err)
+	}
+	waitForQuestStatus(t, gc, ctx, questID, domain.QuestInProgress, 20*time.Second)
+
+	select {
+	case <-taskCh:
+	case <-time.After(8 * time.Second):
+		t.Fatal("timed out waiting for questbridge task after explicit lifecycle start")
+	}
+	mapping := waitForQuestLoopsMapping(t, comp, ctx, string(questID), 5*time.Second)
+	completed := agentic.LoopCompletedEvent{
+		LoopID:     mapping.LoopID,
+		TaskID:     string(questID),
+		Iterations: 2,
+		TokensIn:   80,
+		TokensOut:  40,
+		Result:     "explicit lifecycle deliverable",
+	}
+	publishLoopEvent(t, client, ctx, "agent.complete."+mapping.LoopID, completed.Schema(), &completed)
+
+	final := waitForQuestStatus(t, gc, ctx, questID, domain.QuestCompleted, 20*time.Second)
+	if got := domain.AsString(final.Output); got != "explicit lifecycle deliverable" {
+		t.Errorf("quest output = %q, want explicit lifecycle deliverable", got)
+	}
+	if final.Verdict == nil || final.Verdict.Feedback != "review-skipped-mechanics-disabled" {
+		t.Fatalf("quest verdict = %#v, want mechanics-disabled review marker", final.Verdict)
+	}
+	if final.Verdict.XPAwarded != 0 || final.Verdict.XPPenalty != 0 {
+		t.Errorf("mechanics-disabled verdict awarded XP: %#v", final.Verdict)
+	}
+	assertEntityStatesEqual(t, ctx, entityStates, map[string]entityStateSnapshot{
+		string(agent.ID): before[string(agent.ID)],
+		string(guildID):  before[string(guildID)],
+	})
+	assertNoPhase1MechanicsSideEffects(
+		t,
+		ctx,
+		entityStates,
+		string(questID),
+		string(agent.ID),
+		string(guildID),
+	)
+}
 
 // TestQuestBridgeSubmitCommandCompletesQuest drives a full loop-completion through
 // the rewired seam: writeQuestInProgress -> questbridge dispatches -> loop completes
@@ -400,6 +531,119 @@ func waitForAgentAssignment(t *testing.T, gc *semdragons.GraphClient, ctx contex
 
 	t.Fatalf("agent %q did not reach status=%q current_quest=%v within %s; last status=%q current_quest=%v",
 		agentID, wantStatus, wantQuest, timeout, lastStatus, lastQuest)
+}
+
+type entityStateSnapshot struct {
+	revision uint64
+	value    []byte
+}
+
+func snapshotEntityStates(
+	t *testing.T,
+	ctx context.Context,
+	bucket jetstream.KeyValue,
+	entityIDs ...string,
+) map[string]entityStateSnapshot {
+	t.Helper()
+	snapshots := make(map[string]entityStateSnapshot, len(entityIDs))
+	for _, entityID := range entityIDs {
+		entry, err := bucket.Get(ctx, entityID)
+		if err != nil {
+			t.Fatalf("read authoritative entity %q: %v", entityID, err)
+		}
+		snapshots[entityID] = entityStateSnapshot{
+			revision: entry.Revision(),
+			value:    append([]byte(nil), entry.Value()...),
+		}
+	}
+	return snapshots
+}
+
+func assertEntityStatesEqual(
+	t *testing.T,
+	ctx context.Context,
+	bucket jetstream.KeyValue,
+	want map[string]entityStateSnapshot,
+) {
+	t.Helper()
+	for entityID, snapshot := range want {
+		entry, err := bucket.Get(ctx, entityID)
+		if err != nil {
+			t.Fatalf("read authoritative entity %q: %v", entityID, err)
+		}
+		if entry.Revision() != snapshot.revision || !bytes.Equal(entry.Value(), snapshot.value) {
+			t.Errorf("authoritative entity %q changed unexpectedly", entityID)
+		}
+	}
+}
+
+func waitForQuestCacheStatus(
+	t *testing.T,
+	comp *Component,
+	questID string,
+	want string,
+	timeout time.Duration,
+) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		status, ok := comp.questCache.Load(questID)
+		if ok && status == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("questbridge cache did not observe quest %q status %q", questID, want)
+}
+
+func assertNoPhase1MechanicsSideEffects(
+	t *testing.T,
+	ctx context.Context,
+	bucket jetstream.KeyValue,
+	questID string,
+	expectedEntityIDs ...string,
+) {
+	t.Helper()
+	expected := make(map[string]struct{}, len(expectedEntityIDs)+1)
+	expected[questID] = struct{}{}
+	for _, entityID := range expectedEntityIDs {
+		expected[entityID] = struct{}{}
+	}
+	keys, err := bucket.Keys(ctx)
+	if err != nil {
+		t.Fatalf("list authoritative entity states: %v", err)
+	}
+	for _, key := range keys {
+		if _, ok := expected[key]; !ok {
+			t.Errorf("Phase-1 completion created unexpected side-effect entity %q", key)
+		}
+		if domain.IsBattleID(key) ||
+			domain.ExtractType(key) == domain.EntityTypeStoreItem ||
+			domain.ExtractType(key) == domain.EntityTypePeerReview {
+			t.Errorf("Phase-1 completion created forbidden mechanics entity %q", key)
+		}
+		entry, getErr := bucket.Get(ctx, key)
+		if getErr != nil {
+			t.Fatalf("read authoritative entity %q: %v", key, getErr)
+		}
+		state, decodeErr := semdragons.DecodeEntityState(entry)
+		if decodeErr != nil {
+			t.Fatalf("decode authoritative entity %q: %v", key, decodeErr)
+		}
+		if key != questID {
+			continue
+		}
+		for _, triple := range state.Triples {
+			predicate := triple.Predicate
+			if strings.HasPrefix(predicate, "agent.progression.xp") ||
+				strings.HasPrefix(predicate, "agent.inventory.") ||
+				strings.HasPrefix(predicate, "redteam.") ||
+				strings.HasPrefix(predicate, "battle.") ||
+				predicate == "quest.verdict.xp-awarded" {
+				t.Errorf("Phase-1 completion wrote forbidden mechanics predicate %q on %q", predicate, key)
+			}
+		}
+	}
 }
 
 // questRuleFilePaths returns the absolute paths to config/rules/quest/*.json,
