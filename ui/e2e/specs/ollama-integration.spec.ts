@@ -1,4 +1,11 @@
-import { test, expect, hasBackend, extractInstance, retry } from '../fixtures/test-base';
+import {
+	test,
+	expect,
+	hasBackend,
+	isComponentEnabled,
+	extractInstance,
+	retry
+} from '../fixtures/test-base';
 import type {
 	QuestResponse,
 	AgentResponse,
@@ -998,17 +1005,21 @@ test.describe('Agent XP Validation @integration @ollama', () => {
 // =============================================================================
 
 test.describe('Boss Battle Review Pipeline @integration @ollama', () => {
-	test.beforeEach(() => {
+	test.beforeEach(async () => {
 		test.skip(
 			!hasBackend() || !hasOllama(),
 			'Requires running backend (E2E_BACKEND_AVAILABLE=true) and Ollama (E2E_OLLAMA=true)'
+		);
+		test.skip(
+			!(await isComponentEnabled('bossbattle')),
+			'Requires bossbattle component enabled'
 		);
 	});
 
 	test('quest with review triggers boss battle after agentic completion', async ({
 		lifecycleApi
 	}) => {
-		// Full adversarial review pipeline:
+		// Full boss-battle review pipeline (independent of opt-in redteam):
 		//   agentic loop completes → questbridge sets in_review (not completed)
 		//   → bossbattle detects in_review transition → starts battle
 		//   → evaluator runs judges → verdict → quest completed/failed

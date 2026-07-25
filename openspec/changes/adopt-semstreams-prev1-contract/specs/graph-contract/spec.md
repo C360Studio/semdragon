@@ -651,6 +651,67 @@ that posted quests still advance autonomously.
   migration
 - **AND** no duplicate upstream issue is opened
 
+### Requirement: Redteam is quarantined without deleting product contracts
+
+Phase 1 SHALL retain redteam product policy, model/API/UI fields, and dormant
+message-category taxonomy while disabling the component in every shipped
+profile. The quarantine SHALL remove false publication metadata without
+pulling its deferred watcher, writer, lifecycle, or deadline migration into
+this change.
+
+#### Scenario: Every shipped profile disables redteam
+
+- **WHEN** contract tests parse the default, semsource, and tier-1 E2E
+  configurations
+- **THEN** each retains `components.redteam`
+- **AND** each sets that component's `enabled` field to `false`
+- **AND** ComponentManager creates no redteam instance
+- **AND** startup creates no redteam watcher, pending review, or deadline
+- **AND** the complete quest rule pack and mechanics-stub rule remain enabled
+
+#### Scenario: False OutputPorts are removed and dormant contracts remain
+
+- **GIVEN** redteam has no NATS publisher, raw event DTO, or shipped stream
+  subject
+- **WHEN** issue #36 completes
+- **THEN** the `redteam.lifecycle.posted` and
+  `redteam.lifecycle.completed` OutputPorts are absent
+- **AND** no replacement subject, payload, publisher, stream, or compatibility
+  alias is added
+- **AND** the `redteam.lifecycle.*` category/vocabulary taxonomy remains for
+  EntityState message categories and product/UI event types
+- **AND** registration, configuration, Quest graph/model fields,
+  finding/lesson policy, prompt context, API/UI surfaces, and positive opt-in
+  E2E remain dormant Phase-2 contracts
+- **AND** the historical predicate-audit baseline remains unchanged
+
+#### Scenario: Supported Phase-1 review flow has no redteam side effects
+
+- **WHEN** a review-required Quest is explicitly claimed and started in a
+  shipped Phase-1 profile
+- **THEN** questbridge executes it and mechanics-stub completes it with
+  `review-skipped-mechanics-disabled`
+- **AND** no red-team Quest, red-team status mutation, Guild lesson, watcher,
+  deadline, or redteam event is produced
+- **AND** positive red-team E2E remains opt-in rather than shipped-runtime
+  coverage
+
+#### Scenario: Retained implementation repairs remain deferred
+
+- **WHEN** issue #36 completes
+- **THEN** the raw watcher still reads legacy
+  `quest.classification.red_team_target` rather than canonical
+  `quest.classification.red-team-target`
+- **AND** transition and pending-review state remains in process-local caches
+- **AND** full-Quest update/CAS and full-Guild lesson writers remain inactive
+  and are not treated as ownership-safe
+- **AND** `ClaimTimeoutSec` remains inert
+- **AND** execution deadlines remain restart-fragile local goroutines
+- **AND** reactivation remains blocked on Semdragon #4, #5, and #22 plus
+  SemStreams #313 and #676
+- **AND** no dependency, graphview, ownership, writer, lifecycle, rule,
+  API/UI/schema, or durable-deadline migration is included
+
 ### Requirement: Dead party events and DAG shadows are deleted
 
 The system SHALL retain partycoord only as the current Party formation,

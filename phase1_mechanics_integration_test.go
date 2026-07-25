@@ -141,6 +141,28 @@ func TestMechanicsDisabledReviewCompletesWithoutBattleOrMechanicsSideEffects(t *
 		t.Fatalf("establish raw battle subscription readiness: %v", err)
 	}
 
+	const redTeamBarrierSubject = "redteam.__phase1_barrier"
+	rawRedTeamSubjects := make(chan string, 16)
+	redTeamBarrier := make(chan struct{}, 1)
+	redTeamSubscription, err := client.Subscribe(ctx, "redteam.>", func(_ context.Context, msg *nats.Msg) {
+		if msg.Subject == redTeamBarrierSubject {
+			redTeamBarrier <- struct{}{}
+			return
+		}
+		rawRedTeamSubjects <- msg.Subject
+	})
+	if err != nil {
+		t.Fatalf("subscribe to dormant redteam message category: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := redTeamSubscription.Unsubscribe(); err != nil {
+			t.Errorf("unsubscribe from dormant redteam message category: %v", err)
+		}
+	})
+	if _, err := client.RTT(); err != nil {
+		t.Fatalf("establish redteam subscription readiness: %v", err)
+	}
+
 	ruleConfig := shippedQuestRuleConfig(t)
 	startPhase1Component(t, ctx, mustPhase1JSON(t, ruleConfig),
 		func(raw json.RawMessage) (component.Discoverable, error) {
@@ -157,6 +179,25 @@ func TestMechanicsDisabledReviewCompletesWithoutBattleOrMechanicsSideEffects(t *
 
 	const questID = "local.integration.game.phase1.quest.review-required"
 	proof := seedProgressionProofEntities(t, ctx, client, entityStates, questID, "completion")
+	graphClient := semdragons.NewGraphClient(
+		client,
+		&domain.BoardConfig{Org: "local", Platform: "integration", Board: "phase1"},
+	)
+	guildID := domain.GuildID(proof.guildID)
+	if err := graphClient.PutEntityState(ctx, &domain.Quest{
+		ID:            domain.QuestID(questID),
+		Title:         "Explicit Phase-1 review",
+		Status:        domain.QuestPosted,
+		Difficulty:    domain.DifficultyModerate,
+		MaxAttempts:   3,
+		PostedAt:      time.Unix(1_700_000_000, 0).UTC(),
+		GuildPriority: &guildID,
+		Constraints: domain.QuestConstraints{
+			RequireReview: true,
+		},
+	}, "quest.posted"); err != nil {
+		t.Fatalf("seed explicit posted quest: %v", err)
+	}
 
 	questWatcher, err := entityStates.Watch(ctx, questID)
 	if err != nil {
@@ -169,25 +210,34 @@ func TestMechanicsDisabledReviewCompletesWithoutBattleOrMechanicsSideEffects(t *
 	})
 	awaitInitialKVSnapshot(t, ctx, questWatcher.Updates())
 
-	if err := manager.Create(ctx, &questlifecycle.QuestState{
-		EntityIDField: questID,
-		PhaseField:    questlifecycle.PhaseInProgress,
-		Attempts:      1,
-		MaxAttempts:   3,
-		ClaimedBy:     proof.agentID,
-	}); err != nil {
-		t.Fatalf("create review-required in-progress quest: %v", err)
-	}
-	if err := questlifecycle.StampTriple(
-		ctx, client, questID, "quest.priority.guild", proof.guildID,
+	if err := manager.TransitionWith(
+		ctx,
+		questlifecycle.WorkflowName,
+		questID,
+		questlifecycle.PhaseClaimed,
+		lifecycle.TransitionSourceOperator,
+		"explicit Phase-1 claim",
+		func(participant lifecycle.Participant) error {
+			state := participant.(*questlifecycle.QuestState)
+			state.ClaimedBy = proof.agentID
+			state.Attempts++
+			return nil
+		},
 	); err != nil {
-		t.Fatalf("mark quest guild-priority: %v", err)
+		t.Fatalf("explicitly claim review-required quest: %v", err)
 	}
-	if err := questlifecycle.StampTriple(
-		ctx, client, questID, "quest.review.needs-review", true,
+	awaitQuestPhase(t, ctx, questWatcher.Updates(), questID, questlifecycle.PhaseClaimed)
+	if err := manager.Transition(
+		ctx,
+		questlifecycle.WorkflowName,
+		questID,
+		questlifecycle.PhaseInProgress,
+		lifecycle.TransitionSourceOperator,
+		"explicit Phase-1 start",
 	); err != nil {
-		t.Fatalf("mark quest review-required: %v", err)
+		t.Fatalf("explicitly start review-required quest: %v", err)
 	}
+	awaitQuestPhase(t, ctx, questWatcher.Updates(), questID, questlifecycle.PhaseInProgress)
 	if err := questlifecycle.StampCommand(
 		ctx,
 		client,
@@ -203,6 +253,22 @@ func TestMechanicsDisabledReviewCompletesWithoutBattleOrMechanicsSideEffects(t *
 		got != "review-skipped-mechanics-disabled" {
 		t.Fatalf("quest verdict = %v (present=%v), want review-skipped-mechanics-disabled", got, ok)
 	}
+	finalQuest := domain.QuestFromEntityState(completed)
+	if finalQuest == nil {
+		t.Fatal("reconstruct completed Phase-1 quest")
+	}
+	if finalQuest.QuestType != domain.QuestTypeNormal ||
+		finalQuest.RedTeamTarget != nil ||
+		finalQuest.RedTeamQuestID != nil ||
+		finalQuest.RedTeamStatus != "" {
+		t.Errorf("completed quest contains forbidden redteam classification: %#v", finalQuest)
+	}
+	for _, triple := range completed.Triples {
+		if strings.HasPrefix(triple.Predicate, "redteam.") ||
+			strings.HasPrefix(triple.Predicate, "quest.classification.red-team") {
+			t.Errorf("completed quest contains forbidden redteam predicate %q", triple.Predicate)
+		}
+	}
 
 	if err := client.Publish(ctx, barrierSubject, nil); err != nil {
 		t.Fatalf("publish raw battle wildcard barrier: %v", err)
@@ -215,6 +281,19 @@ func TestMechanicsDisabledReviewCompletesWithoutBattleOrMechanicsSideEffects(t *
 	select {
 	case subject := <-rawBattleSubjects:
 		t.Fatalf("mechanics-disabled review published forbidden raw battle subject %q", subject)
+	default:
+	}
+	if err := client.Publish(ctx, redTeamBarrierSubject, nil); err != nil {
+		t.Fatalf("publish redteam wildcard barrier: %v", err)
+	}
+	select {
+	case <-redTeamBarrier:
+	case <-ctx.Done():
+		t.Fatalf("wait for redteam wildcard barrier: %v", ctx.Err())
+	}
+	select {
+	case subject := <-rawRedTeamSubjects:
+		t.Fatalf("mechanics-disabled review published forbidden redteam subject %q", subject)
 	default:
 	}
 

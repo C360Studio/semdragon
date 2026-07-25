@@ -246,6 +246,47 @@
     gates, Svelte checks/tests/build, Playwright coverage, both strict OpenSpec
     validations, and diff checks pass.
   - Architect, independent Go reviewer, and Svelte reviewer approve the slice.
+- [x] 2.21 Resolve
+  [semdragon #36](https://github.com/C360Studio/semdragon/issues/36) by
+  retaining redteam registration/configuration and disabling it in all three
+  shipped profiles. Remove only the false `redteam.lifecycle.posted` and
+  `redteam.lifecycle.completed` OutputPorts; retain the
+  `redteam.lifecycle.*` category/vocabulary taxonomy, Quest graph/model
+  fields, findings/lesson policy, prompts, API/UI surfaces, and opt-in E2E.
+  Prove a real ComponentManager creates no redteam instance, watcher, pending
+  review, or deadline and that explicit claim/start reaches questbridge and
+  mechanics-stub completion without a red-team Quest, status mutation, Guild
+  lesson, or event side effect. Record without fixing the legacy underscore
+  target watcher, raw process-local caches, unsafe full-Quest/full-Guild
+  writers, inert claim timeout, and restart-fragile local deadlines.
+  Reactivation remains blocked on Semdragon #4/#5/#22 and SemStreams
+  #313/#676. Make no dependency, graphview, ownership, writer, lifecycle,
+  rule, API/UI/schema, or deadline migration; leave historical audit
+  baselines unchanged.
+
+  Completed 2026-07-25 evidence, closing only task 2.21:
+
+  - The default, semsource, and tier-1 E2E configurations retain redteam with
+    `enabled: false`; a real ComponentManager creates no redteam component,
+    watcher, pending-review cache, or deadline.
+  - Redteam exposes no OutputPorts, and no replacement subject, payload,
+    publisher, stream, or compatibility alias is introduced.
+  - Explicit REST claim/start reaches questbridge and mechanics-stub
+    completion with `review-skipped-mechanics-disabled`. The fresh-state
+    integration proof creates no red-team Quest/artifact, message category,
+    classification mutation, Guild revision, or other mechanics side effect.
+  - Contract coverage retains the `redteam.lifecycle.*` category/vocabulary
+    taxonomy, Quest graph/model fields, findings/lesson policy, prompts,
+    API/UI surfaces, and dormant implementation.
+  - The pinned beta.158 redteam audit reports zero structured candidates.
+    Playwright red-team coverage is explicitly opt-in and guarded by both
+    redteam and bossbattle activation.
+  - Focused unit/integration/race gates, the full Go test and build, schema
+    freshness, Svelte checks/tests/build, Playwright, both strict OpenSpec
+    validations, and diff checks pass.
+  - Architect, independent Go reviewer, Svelte reviewer, and technical writer
+    approve the slice. SemStreams #676 records the durable entity-deadline
+    blocker; no duplicate upstream issue was opened.
 
 ## 3. Verification and handoff to beta.158
 

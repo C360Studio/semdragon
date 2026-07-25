@@ -850,6 +850,51 @@ framework. SemStreams
 message-logger per-client KV-watch migration; no new upstream issue is
 required for this quarantine.
 
+### D21: Quarantine redteam without repairing its deferred mechanics
+
+Issue [#36](https://github.com/C360Studio/semdragon/issues/36) completes only
+the redteam slice of the Phase-1 mechanics cut. All three shipped profiles
+retain its registration and configuration but set `enabled: false`. A real
+ComponentManager must therefore create no redteam instance, watcher, pending
+review, or deadline. The supported shipped path remains explicit REST API or
+test-fixture claim/start, questbridge execution, and mechanics-stub completion
+without a red-team Quest, status mutation, Guild lesson, or redteam event.
+
+The component advertises `redteam.lifecycle.posted` and
+`redteam.lifecycle.completed` as OutputPorts even though it has no NATS
+publisher, raw event DTO, or shipped stream subject. Issue #36 removes those
+two false ports. It retains the `redteam.lifecycle.*` category/vocabulary
+taxonomy because those values are used as EntityState message categories and
+product/UI event types, not as evidence of a raw NATS publication contract.
+Registration, configuration, Quest red-team fields, graph projection and
+reconstruction, findings/lesson policy, prompt context, API/UI models, and
+positive opt-in E2E remain dormant Phase-2 contracts.
+
+This quarantine does not repair the retained runtime implementation. Its raw
+watch path still reads legacy
+`quest.classification.red_team_target` rather than canonical
+`quest.classification.red-team-target`; transition detection and pending
+reviews remain process-local caches. Full-Quest update/CAS writes and the
+full-Guild lesson replacement remain unsafe across predicate owners. CAS only
+rejects a stale revision; it does not make a full-object replacement
+ownership-safe. `ClaimTimeoutSec` remains inert, and execution deadlines
+remain process-local goroutines whose state is lost on restart.
+
+Reactivation is blocked on the beta.158 graph-view and owner-safe mutation
+work in [Semdragon #4](https://github.com/C360Studio/semdragon/issues/4), the
+single quest lifecycle seam in
+[Semdragon #5](https://github.com/C360Studio/semdragon/issues/5), the Guild
+lesson ownership boundary in
+[Semdragon #22](https://github.com/C360Studio/semdragon/issues/22), the
+reusable owned-write helper in
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313), and
+durable entity-scoped deadlines in
+[SemStreams #676](https://github.com/C360Studio/semstreams/issues/676).
+Issue #36 performs no dependency bump, graphview adoption, predicate-owner
+binding, writer/lifecycle/rule migration, API/UI/schema redesign, or deadline
+implementation and opens no duplicate upstream issue. Historical audit
+baselines remain unchanged.
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

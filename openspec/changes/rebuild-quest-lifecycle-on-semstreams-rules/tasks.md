@@ -68,14 +68,22 @@
 
 ## 4. Stage B3 — mechanics disablement and operator surface
 
-- [~] 4.1 PARTIAL: make `agentprogression`, `bossbattle`, `agentstore`,
+- [x] 4.1 Make `agentprogression`, `bossbattle`, `agentstore`,
   `boidengine`, and `redteam` inactive in all three shipped runtime profiles;
   registered components may remain configured with `enabled: false`. Enable
   the complete quest lifecycle rule pack in each profile and verify clean
   boot and quest flow without mechanics. Issue #26 owns the bossbattle slice,
   issue #30 owns agentprogression, issue #32 owns agentstore, and issue #34
-  owns boidengine. Keep this five-component task partial until redteam is also
-  disabled in every shipped profile.
+  owns boidengine; issue #36 owns redteam.
+
+  Completed 2026-07-25 evidence: all five mechanics components are inactive in
+  the default, semsource, and tier-1 E2E profiles. The complete rule pack and
+  mechanics-stub remain enabled, and explicit claim/start reaches
+  `review-skipped-mechanics-disabled` completion without battle, progression,
+  store, boid, redteam, Guild, or other mechanics side effects. The
+  per-component evidence remains recorded in tasks 4.5 through 4.8 and the
+  issue #26 evidence below. Reactivation migrations remain separate tasks and
+  blockers; completing Stage B3 does not activate or migrate any mechanic.
 - [ ] 4.2 Add the stub rule: on transition into `in_review`, fire `lifecycle_transition` to `completed` with `verdict: review-skipped-mechanics-disabled` set atomically
 - [ ] 4.3 Enable `lifecycle-gateway` scoped to the quest workflow; verify inspect/history/operator-transition against the running stack
 - [ ] 4.4 Delete `service/api` handlers superseded by the gateway (status mutation only; keep world/DM/workspace/creation endpoints)
@@ -166,8 +174,46 @@
     gates, Svelte checks/tests/build, Playwright coverage, both strict OpenSpec
     validations, and diff checks pass.
   - Architect, independent Go reviewer, and Svelte reviewer approve the slice.
+- [x] 4.8 Resolve
+  [semdragon #36](https://github.com/C360Studio/semdragon/issues/36): retain
+  redteam registration/configuration with `enabled: false` in all three
+  shipped profiles; remove only its two false OutputPorts; and retain its
+  category/vocabulary taxonomy, Quest/API/UI fields, findings/lesson policy,
+  prompts, and opt-in E2E. Prove ComponentManager creates no redteam instance,
+  watcher, pending review, or deadline and that explicit claim/start reaches
+  questbridge and mechanics-stub completion with no red-team Quest, status,
+  Guild lesson, or event side effect. Document without fixing the legacy
+  underscore watcher, raw caches, unsafe full-object writers, inert claim
+  timeout, and local deadlines. Keep reactivation blocked on Semdragon
+  #4/#5/#22 and SemStreams #313/#676; make no dependency, graphview,
+  ownership, writer, lifecycle, rule, API/UI/schema, or durable-deadline
+  migration.
 
-### Issue #26 partial Stage B3 evidence
+  Completed 2026-07-25 evidence, closing only task 4.8:
+
+  - The default, semsource, and tier-1 E2E configurations retain redteam with
+    `enabled: false`; a real ComponentManager creates no redteam component,
+    watcher, pending-review cache, or deadline.
+  - Redteam exposes no OutputPorts, and no replacement subject, payload,
+    publisher, stream, or compatibility alias is introduced.
+  - Explicit REST claim/start reaches questbridge and mechanics-stub
+    completion with `review-skipped-mechanics-disabled`. The fresh-state
+    integration proof creates no red-team Quest/artifact, message category,
+    classification mutation, Guild revision, or other mechanics side effect.
+  - Contract coverage retains the `redteam.lifecycle.*` category/vocabulary
+    taxonomy, Quest graph/model fields, findings/lesson policy, prompts,
+    API/UI surfaces, and dormant implementation.
+  - The pinned beta.158 redteam audit reports zero structured candidates.
+    Playwright red-team coverage is explicitly opt-in and guarded by both
+    redteam and bossbattle activation.
+  - Focused unit/integration/race gates, the full Go test and build, schema
+    freshness, Svelte checks/tests/build, Playwright, both strict OpenSpec
+    validations, and diff checks pass.
+  - Architect, independent Go reviewer, Svelte reviewer, and technical writer
+    approve the slice. SemStreams #676 records the durable entity-deadline
+    blocker; no duplicate upstream issue was opened.
+
+### Issue #26 Stage B3 slice evidence
 
 - Every shipped profile omits bossbattle and uses the exact enabled
   `rule-processor`, ordered four-file quest pack, and quest entity watch.
@@ -179,9 +225,10 @@
 - Go, UI, generated-schema, and strict OpenSpec checks pass under architect,
   Go, and Svelte review.
 
-This evidence completes only the bossbattle slice. Task 4.1 remains partial
-until redteam is also disabled in every shipped profile. Task 4.2 and the
-remaining lifecycle gates remain unchecked.
+This evidence completes only the bossbattle slice. Task 4.1 is now complete on
+the accumulated issue #26/#30/#32/#34/#36 evidence that all five mechanics
+components are inactive in every shipped profile. Task 4.2 and the remaining
+lifecycle gates remain unchecked.
 
 ## 5. Verification gate
 

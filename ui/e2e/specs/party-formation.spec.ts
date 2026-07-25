@@ -64,7 +64,8 @@ test.describe('Party Formation', () => {
 		expect(party.quest_id).toContain(questId);
 
 		// Verify the quest progressed past posted (partycoord auto-claims).
-		// With red-team enabled, quests may reach in_review before battle starts.
+		// In opt-in Phase 2 profiles with redteam enabled, quests may reach
+		// in_review before battle starts.
 		const questAfter = await lifecycleApi.getQuest(questId);
 		expect(['claimed', 'in_progress', 'in_review', 'completed']).toContain(questAfter.status);
 	});

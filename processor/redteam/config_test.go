@@ -6,6 +6,22 @@ import (
 	"github.com/c360studio/semdragons/domain"
 )
 
+func TestPhase1OutputPortsEmptyWhileRedTeamPolicyRemains(t *testing.T) {
+	component := &Component{}
+	if ports := component.OutputPorts(); len(ports) != 0 {
+		t.Fatalf("OutputPorts() = %v, want empty while redteam is dormant", ports)
+	}
+	if ports := component.InputPorts(); len(ports) != 1 {
+		t.Fatalf("InputPorts() = %v, want retained quest-state policy input", ports)
+	}
+	if component.Meta().Name != ComponentName {
+		t.Errorf("Meta().Name = %q, want %q", component.Meta().Name, ComponentName)
+	}
+	if DefaultConfig().MinDifficulty != domain.DifficultyModerate {
+		t.Error("redteam product eligibility policy was not preserved")
+	}
+}
+
 // =============================================================================
 // DefaultConfig tests
 // =============================================================================
@@ -102,10 +118,10 @@ func TestValidate_RequiresPositiveExecutionTimeout(t *testing.T) {
 
 func TestValidate_ExecutionTimeoutMustExceedClaimTimeout(t *testing.T) {
 	tests := []struct {
-		name        string
-		claimSec    int
-		execSec     int
-		wantErr     bool
+		name     string
+		claimSec int
+		execSec  int
+		wantErr  bool
 	}{
 		{"execution equals claim", 120, 120, true},
 		{"execution less than claim", 300, 120, true},

@@ -449,6 +449,7 @@ Core interfaces are defined inline in domain packages and satisfied by processor
 - **`processor/bossbattle.Component`** — Review evaluation triggered by quest submission
 - **`processor/autonomy.Component`** — Heartbeat-driven agent decision loop with DM approval gate
 - **`processor/boidengine.Component`** — Dormant Phase-2 attraction policy and suggestion producer
+- **`processor/redteam.Component`** — Dormant Phase-2 adversarial review and guild-lesson policy
 
 ## Processor Architecture Patterns
 
@@ -533,8 +534,9 @@ Processors registered but excluded from the default config (opt-in or dormant):
   shipped profile
 - `boidengine` — dormant Phase-2 attraction/scoring policy and suggestion producer; disabled
   in every shipped profile, so Phase 1 requires explicit claim/start
-- `redteam` — guild red-team adversarial review before boss battle; extracts lessons to guild
-  knowledge (also requires `bossbattle.red_team_enabled: true`)
+- `redteam` — dormant guild adversarial review and lesson extraction; disabled in every
+  shipped profile. Phase 1 resolves `in_review` through mechanics-stub and creates no red-team
+  quest, status, lesson, watcher, or deadline
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)
 - `autonomy` — depends on executor; DM approval gate is implemented but untested with real LLM calls
 - `seeding` — requires explicit config; `ModeTrainingArena` needs LLM, `ModeTieredRoster` works without

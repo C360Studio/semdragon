@@ -10,11 +10,12 @@ is retained as an opt-in Phase-2 recommender design. Shipped Phase 1 does not ro
 autonomously.
 
 > **Current Phase-1 runtime:** The shipped profiles do not activate bossbattle,
-> agentprogression, agentstore, or boidengine. Posting leaves a quest in `posted`; explicitly
-> claim it for an agent through the REST API or a test fixture, then explicitly start it.
-> Review-required quests pass through `in_review` and are completed by the mechanics-stub rule
-> with `review-skipped-mechanics-disabled`. Battle, Agent/XP, store, and Boids product policy
-> remain for Phase 2, but a fresh Phase-1 run creates none of their side effects.
+> agentprogression, agentstore, boidengine, or redteam. Posting leaves a quest in `posted`;
+> explicitly claim it for an agent through the REST API or a test fixture, then explicitly
+> start it. Review-required quests pass through `in_review` and are completed by the
+> mechanics-stub rule with `review-skipped-mechanics-disabled`. Battle, Agent/XP, store,
+> Boids, and red-team review policy remain for Phase 2, but a fresh Phase-1 run creates none
+> of their side effects.
 
 ## Quick Start
 
@@ -76,7 +77,7 @@ task docker:up:ollama      # local Ollama, no key needed
 │   guildformation  partycoord       boidengine   │
 ├─────────────────────────────────────────────────┤
 │           QUEST BOARD + EXECUTION               │
-│  questboard · rules · bossbattle (Phase 2)      │
+│  questboard · rules · bossbattle/redteam (P2)   │
 │  agentprogression (Phase 2) · agentstore (P2)   │
 │  questbridge · questtools · questdagexec        │
 │  promptmanager                                  │
@@ -146,7 +147,7 @@ semdragons/
 │   ├── autonomy/           # Heartbeat-driven agent decision loop
 │   ├── boidengine/         # Dormant Phase-2 attraction policy and suggestion implementation
 │   ├── guildformation/     # Auto guild clustering from shared performance patterns
-│   ├── redteam/            # Retained adversarial review implementation; Phase-1 gated
+│   ├── redteam/            # Dormant Phase-2 adversarial review implementation
 │   ├── partycoord/         # Party KV lifecycle/roster authority; temporary assignment bridge
 │   ├── promptmanager/      # Fragment-based domain-aware prompt assembly (library, not standalone)
 │   ├── boardcontrol/       # Board state management (pause/resume)

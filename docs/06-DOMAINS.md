@@ -5,9 +5,10 @@ mechanics designs are domain-independent whether agents are "developers" complet
 "tasks" or "adventurers" completing "quests." Domains provide the vocabulary and
 behavioral instructions that make the framework feel native to a specific context.
 
-> **Phase-1 runtime status:** Domain catalogs still retain bossbattle judge prompts and
-> progression vocabulary for Phase 2, but shipped profiles do not activate bossbattle.
-> Review-required quests currently use the mechanics-stub lifecycle rule.
+> **Phase-1 runtime status:** Domain catalogs still retain bossbattle judge prompts,
+> progression vocabulary, and red-team mission instructions for Phase 2, but shipped
+> profiles do not activate bossbattle or redteam. Review-required quests currently use the
+> mechanics-stub lifecycle rule without adversarial-review or guild-lesson side effects.
 
 ## Why Domains Matter
 

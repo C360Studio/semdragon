@@ -2,8 +2,9 @@
 
 Quests are the fundamental unit of work in semdragons. Quest transitions are moving to the
 SemStreams lifecycle and rules engine, with execution driven by `questbridge` + `questtools`.
-In shipped Phase-1 profiles, bossbattle is dormant and the mechanics-stub rule completes
-review-required work without creating a battle or mechanics side effects.
+In shipped Phase-1 profiles, bossbattle and redteam are dormant and the mechanics-stub rule
+completes review-required work without creating a battle, red-team quest, guild lesson, or
+other mechanics side effect.
 
 ## Contents
 

@@ -384,11 +384,13 @@ party.disbanded            → final Party KV snapshot
 
 ## Guild Red-Team Review
 
-This is a retained Phase-2 design; redteam, bossbattle, and boidengine are inactive in shipped
-Phase 1. When that design is explicitly reactivated, the `redteam` processor posts an
-**adversarial review quest** before the boss battle evaluates the result. A different agent —
-ideally from a different guild — claims the red-team quest and attempts to find flaws, edge
-cases, or weaknesses in the original agent's output.
+This is a retained Phase-2 design; redteam, bossbattle, and boidengine are inactive in every
+shipped Phase-1 profile. Review-required work instead follows explicit claim/start,
+questbridge execution, and mechanics-stub completion without a red-team quest, status, guild
+lesson, watcher, deadline, or event publication. When the design is explicitly reactivated,
+the `redteam` processor posts an **adversarial review quest** before the boss battle evaluates
+the result. A different agent — ideally from a different guild — claims the red-team quest
+and attempts to find flaws, edge cases, or weaknesses in the original agent's output.
 
 The flow:
 
@@ -403,7 +405,9 @@ The flow:
    adversarial diversity after Phase-2 reactivation.
 4. The red-team agent produces findings (weaknesses, missed requirements, edge cases).
    The processor writes the red-team quest ID onto the original quest entity
-   (`quest.red_team_quest_id`) using CAS to avoid clobbering concurrent status changes.
+   (`quest.classification.red-team-quest-id`). The retained implementation uses a
+   full-Quest CAS write: CAS rejects a stale revision, but it does not provide predicate-owner
+   isolation or make the full-object replacement safe.
 5. On completion, the `redteam` processor sets `RedTeamStatus: "completed"` on the
    original quest entity. The boss battle judge reads this field and incorporates the
    red-team critique alongside the agent's output.
@@ -415,16 +419,36 @@ The flow:
 by the party lead via `questdagexec`. Red-team quests themselves are also excluded to
 prevent recursion.
 
-**Non-blocking with timeouts:** If no agent claims the red-team quest within
-`claim_timeout` (default: 2 minutes), or if execution exceeds `execution_timeout`
-(default: 5 minutes), the processor emits a `skipped` signal and the boss battle proceeds
-without red-team input. The timed-out quest is explicitly failed so sub-quests are not
-left orphaned. The system never blocks on red-team availability.
+**Deferred timeout design:** The retained configuration exposes `claim_timeout`, but the
+current implementation does not enforce it. Execution deadlines are process-local goroutines
+backed by an in-memory pending-review map; restart loses that state. Reactivation requires the
+durable, entity-scoped, cancel-on-terminal deadline boundary tracked by
+[SemStreams #676](https://github.com/C360Studio/semstreams/issues/676). The local timers and
+inert claim timeout are retained historical implementation details, not a Phase-1 guarantee.
+
+**Deferred watcher and writer design:** The retained raw watcher still reads the legacy
+`quest.classification.red_team_target` spelling and keeps transition state in a process-local
+cache. Its full-Quest updates/CAS writes and full-Guild lesson replacement cross predicate
+ownership boundaries. Issue #36 does not repair or activate those paths. Reactivation first
+requires the graph-view and owner-safe mutation work in
+[Semdragon #4](https://github.com/C360Studio/semdragon/issues/4), the lifecycle seam in
+[Semdragon #5](https://github.com/C360Studio/semdragon/issues/5), the Guild lesson ownership
+boundary in [Semdragon #22](https://github.com/C360Studio/semdragon/issues/22), and the
+reusable owned-write helper in
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313).
+
+**Dormant contracts:** Issue #36 removes the two false component OutputPorts because redteam
+has no NATS publisher, raw event DTO, or shipped stream subject. The retained
+`redteam.lifecycle.*` category/vocabulary strings are EntityState message categories and
+product/UI taxonomy, not evidence of a raw NATS event plane. Registration, configuration,
+Quest red-team fields, findings/lessons policy, prompt context, API/UI models, and opt-in
+red-team E2E remain dormant for Phase 2.
 
 **Phase-2 configuration history:** The former flow required both the `redteam`
 component and `bossbattle.red_team_enabled: true`. Redteam remains disabled and
 bossbattle is absent from shipped Phase-1 profiles; operators must not reactivate this
-pair until the authoritative battle projection and owner handoffs are complete.
+pair until the authoritative battle projection, owner handoffs, lifecycle seam, and durable
+deadline are complete.
 
 ---
 

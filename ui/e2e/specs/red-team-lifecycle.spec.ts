@@ -10,7 +10,7 @@ import {
 // Note: hasBackend is used in beforeEach hooks below alongside isComponentEnabled.
 
 /**
- * Red-Team Review Lifecycle — Integration Tests (Tier 1)
+ * Red-Team Review Lifecycle — Phase 2 Opt-In Integration Tests (Tier 1)
  *
  * Exercises the red-team review processor via API calls:
  *   1. Quest with review → submitted → red-team quest auto-posted
@@ -20,7 +20,7 @@ import {
  *   5. Skip path: quests below min difficulty bypass red-team
  *
  * Prerequisites:
- *   - Backend running with redteam processor enabled
+ *   - Backend running with the Phase 2 redteam processor explicitly enabled
  *   - bossbattle.red_team_enabled: true
  *   - No LLM required (manual state transitions via API)
  *
@@ -29,10 +29,13 @@ import {
  * its lifecycle and then verify the red-team quest appeared.
  */
 
-test.describe('Red-Team Review - Lifecycle', () => {
+test.describe('Red-Team Review - Lifecycle @phase2-opt-in', () => {
 	test.beforeEach(async () => {
 		test.skip(!hasBackend(), 'Requires running backend');
-		test.skip(!(await isComponentEnabled('redteam')), 'Requires redteam component enabled');
+		test.skip(
+			!(await isComponentEnabled('redteam')),
+			'Requires opt-in redteam component enabled'
+		);
 	});
 
 	test('submitted quest with review triggers red-team quest', async ({ lifecycleApi }) => {
@@ -160,10 +163,17 @@ test.describe('Red-Team Review - Lifecycle', () => {
 	});
 });
 
-test.describe('Red-Team Review - Boss Battle Coordination', () => {
+test.describe('Red-Team Review - Boss Battle Coordination @phase2-opt-in', () => {
 	test.beforeEach(async () => {
 		test.skip(!hasBackend(), 'Requires running backend');
-		test.skip(!(await isComponentEnabled('redteam')), 'Requires redteam component enabled');
+		test.skip(
+			!(await isComponentEnabled('redteam')),
+			'Requires opt-in redteam component enabled'
+		);
+		test.skip(
+			!(await isComponentEnabled('bossbattle')),
+			'Requires bossbattle component enabled'
+		);
 	});
 
 	test('boss battle starts after red-team completes', async ({ lifecycleApi }) => {
@@ -216,6 +226,37 @@ test.describe('Red-Team Review - Boss Battle Coordination', () => {
 		const rtStartRes = await lifecycleApi.startQuest(rtInstance);
 		expect(rtStartRes.ok, `RT start failed: ${rtStartRes.status}`).toBeTruthy();
 
+		// The original must remain pending while the red-team child is active.
+		// This distinguishes real red-team coordination from a boss battle that
+		// started immediately because bossbattle.red_team_enabled is false.
+		const pendingOriginal = await retry(
+			async () => {
+				const q = await lifecycleApi.getQuest(questInstance);
+				if (q.status !== 'in_review') {
+					throw new Error(`Original quest left in_review early: ${q.status}`);
+				}
+				if (extractInstance(q.red_team_quest_id ?? '') !== rtInstance) {
+					throw new Error('Original quest does not reference the active red-team quest');
+				}
+				return q;
+			},
+			{
+				timeout: 5_000,
+				interval: 250,
+				message: 'Original quest did not remain pending on its red-team review'
+			}
+		);
+		expect(pendingOriginal.status).toBe('in_review');
+		expect(pendingOriginal.red_team_status ?? '').toBe('');
+
+		const prematureBattle = (await lifecycleApi.listBattles()).find(
+			(battle) => extractInstance(battle.quest_id ?? '') === questInstance
+		);
+		expect(
+			prematureBattle,
+			'boss battle must not start before the red-team quest completes'
+		).toBeUndefined();
+
 		// Complete the red-team quest directly (it has RequireReview=false).
 		const rtCompleteRes = await lifecycleApi.completeQuest(rtInstance);
 		expect(rtCompleteRes.ok, `RT complete failed: ${rtCompleteRes.status}`).toBeTruthy();
@@ -236,10 +277,13 @@ test.describe('Red-Team Review - Boss Battle Coordination', () => {
 	});
 });
 
-test.describe('Red-Team Review - Quest Board Display', () => {
+test.describe('Red-Team Review - Quest Board Display @phase2-opt-in', () => {
 	test.beforeEach(async () => {
 		test.skip(!hasBackend(), 'Requires running backend');
-		test.skip(!(await isComponentEnabled('redteam')), 'Requires redteam component enabled');
+		test.skip(
+			!(await isComponentEnabled('redteam')),
+			'Requires opt-in redteam component enabled'
+		);
 	});
 
 	test('red-team quests visible in quest list with correct type', async ({

@@ -234,6 +234,32 @@ owner contract, and uses the public owner-token mutation path tracked by
 SemStreams #313. Issue #28 binds no owner, copies no framework mutator,
 activates no questdag replacement, and adds no compatibility event plane.
 
+### D9: Redteam is disabled; its Phase-2 repair is not pulled forward
+
+Issue [#36](https://github.com/C360Studio/semdragon/issues/36) closes the
+redteam portion of Stage B3 by retaining registration/configuration with
+`enabled: false` in all three shipped profiles. No ComponentManager instance,
+watcher, pending-review cache, or local deadline is created. Explicit REST API
+or test-fixture claim/start continues through questbridge and mechanics-stub
+completion with no red-team Quest, status, Guild lesson, or event side effect.
+Positive red-team E2E remains opt-in Phase-2 coverage, not a shipped-runtime
+assertion.
+
+The two advertised redteam OutputPorts are false because the component has no
+NATS publisher, raw event DTO, or shipped stream subject, so issue #36 removes
+only those ports. The `redteam.lifecycle.*` category/vocabulary values and
+Quest/API/UI/finding/lesson/prompt contracts remain dormant product surfaces.
+
+This slice deliberately leaves the retained implementation defects inactive:
+the watcher still reads legacy
+`quest.classification.red_team_target`, transition and pending state remain
+in process-local caches, full-Quest and full-Guild writers remain unsafe
+across predicate owners, `ClaimTimeoutSec` remains unenforced, and execution
+deadlines remain restart-fragile local goroutines. Reactivation is blocked on
+Semdragon #4, #5, and #22 plus SemStreams #313 and #676. No dependency,
+graphview, ownership, writer, lifecycle, rule, schema, API/UI, or durable
+deadline migration belongs to issue #36.
+
 ## Risks / Trade-offs
 
 - [Graph-write/ownership semantics changed upstream (ADR-054/055/056)] →

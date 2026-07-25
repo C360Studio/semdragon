@@ -6,11 +6,12 @@ up, and quality reviews are *boss battles*. Shipped Phase 1 is reactive only aft
 post a quest, explicitly claim it for an agent through the REST API or a test fixture, and
 explicitly start it. The processors then execute it.
 
-> **Phase-1 runtime status:** Bossbattle, agentprogression, agentstore, and boidengine are not
-> activated by any shipped profile. There is no autonomous Boid claim or guild selection. A
-> review-required quest enters `in_review`, then the mechanics-stub rule completes it with
-> `review-skipped-mechanics-disabled`. Their retained product and API surfaces remain dormant
-> until the Phase-2 authoritative projections are implemented.
+> **Phase-1 runtime status:** Bossbattle, agentprogression, agentstore, boidengine, and redteam
+> are not activated by any shipped profile. There is no autonomous Boid claim, guild
+> selection, or adversarial review. A review-required quest enters `in_review`, then the
+> mechanics-stub rule completes it with `review-skipped-mechanics-disabled`. Their retained
+> product and API surfaces remain dormant until the Phase-2 authoritative projections and
+> owner handoffs are implemented.
 
 This guide gets you from zero to your first completed quest.
 
@@ -128,7 +129,8 @@ transitions in the dashboard event feed:
 4. **`in_review`** — The agent submits review-required work. The mechanics-stub rule records
    that review is skipped while mechanics are disabled.
 5. **`completed`** — The lifecycle rule completes the quest without creating a battle, peer
-   review, XP award, reputation change, artifact merge/index mutation, or store mutation.
+   review, red-team quest, guild lesson, XP award, reputation change, artifact merge/index
+   mutation, or store mutation.
 
 After explicit claim and start, the full loop with the mock LLM typically completes in under
 30 seconds.
@@ -310,11 +312,12 @@ Replace endpoint URLs and models to switch providers. See [07-MODEL-REGISTRY.md]
 The `components` section enables or disables each reactive processor. The default config includes
 `questboard`, the complete quest `rule-processor` pack, `guildformation`, `agentic-loop`,
 `agentic-model`, `questbridge`, `questtools`, `questdagexec`, `autonomy`, and `partycoord`.
-The registered `agent_progression`, `agent_store`, and `boidengine` components are disabled in
-every shipped profile, and bossbattle remains absent, during Phase 1. Their product policy and
-models remain for Phase 2. Without boidengine, posting alone does not select an agent; use the
-REST API or a test fixture to claim and start. A lifecycle operator is available only when its
-separately gated component is enabled.
+The registered `agent_progression`, `agent_store`, `boidengine`, and `redteam` components are
+disabled in every shipped profile, and bossbattle remains absent, during Phase 1. Their product
+policy and models remain for Phase 2. Without boidengine, posting alone does not select an
+agent; use the REST API or a test fixture to claim and start. Without redteam, review-required
+work is resolved only by mechanics-stub and creates no adversarial-review or guild-lesson side
+effect. A lifecycle operator is available only when its separately gated component is enabled.
 
 ### Key env vars
 
@@ -379,6 +382,9 @@ them in by accident.
 
 Playwright tests drive the full stack: dashboard UI, REST API, and the agentic loop. The mock
 LLM makes these deterministic.
+
+Positive red-team lifecycle specs are opt-in Phase-2 coverage. They remain skipped against
+shipped Phase-1 profiles and are not evidence that redteam is active.
 
 ```bash
 task e2e               # Full suite (installs Playwright browsers on first run)

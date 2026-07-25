@@ -425,6 +425,20 @@
         "enable_evaluation": true
       }
     },
+    "redteam": {
+      "type": "processor",
+      "name": "redteam",
+      "enabled": false,
+      "config": {
+        "org": "local",
+        "platform": "dev",
+        "board": "board1",
+        "min_difficulty": 1,
+        "claim_timeout_seconds": 120,
+        "execution_timeout_seconds": 300,
+        "prefer_cross_guild": true
+      }
+    },
     "agent_progression": {
       "type": "processor",
       "name": "agent_progression",

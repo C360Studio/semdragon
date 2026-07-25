@@ -47,6 +47,13 @@ after the lifecycle/gated-DAG foundation in draft PR
   dmpartyformation policy reuse while disabling it in every shipped profile.
   Document that shipped Phase 1 requires explicit claim/start and provides no
   autonomous quest or guild selection.
+- Resolve issue #36 by retaining redteam registration, configuration,
+  category/vocabulary taxonomy, Quest/API/UI fields, findings/lesson policy,
+  prompts, and opt-in E2E while disabling it in every shipped profile. Remove
+  only its two false OutputPorts and prove the explicit claim/start →
+  questbridge → mechanics-stub path creates no red-team side effect. Record
+  the legacy watcher spelling, raw cache, unsafe full-object writers, inert
+  claim timeout, and local deadlines as deferred reactivation work.
 - Cut over by wiping and reseeding development/test graph state. No aliases,
   dual writes, permissive mode, or beta-state rewriter will be added.
 - Establish zero-finding predicate, entity-ID, relationship, build, and UI
@@ -83,6 +90,11 @@ after the lifecycle/gated-DAG foundation in draft PR
   dmpartyformation reuse. REST API and test-fixture claim/start are the
   supported shipped Phase-1 path; the lifecycle operator joins that path only
   when separately enabled under task 4.3.
+- **Redteam**: issue #36 explicitly disables the retained component in all
+  shipped profiles and removes two false OutputPorts without deleting its
+  category/vocabulary or product contracts. Its raw watcher/cache,
+  full-Quest/full-Guild writers, and process-local timeout design remain
+  dormant and deferred to Semdragon #4/#5/#22 and SemStreams #313/#676.
 - **Data**: incompatible beta graph/index state is deleted and reseeded from
   source; no production deployment or retained beta data requires migration.
 - **Upstream coordination**: reuse SemStreams issues

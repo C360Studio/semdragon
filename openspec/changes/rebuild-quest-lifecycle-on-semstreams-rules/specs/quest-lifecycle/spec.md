@@ -155,6 +155,38 @@ are disabled.
   agentprogression owner rather than a direct Agent replacement
 - **AND** Agent lifecycle and status remain outside agentstore authority
 
+### Requirement: Redteam is inactive during Phase-1 review completion
+
+Every shipped runtime profile SHALL retain redteam configuration with
+`enabled: false`. Review-required work SHALL complete through the supported
+explicit claim/start, questbridge, and mechanics-stub path without creating
+redteam runtime state or side effects.
+
+#### Scenario: Mechanics-stub remains the shipped review resolver
+
+- **WHEN** a review-required Quest is explicitly claimed and started in the
+  default, semsource, or tier-1 E2E profile
+- **THEN** no redteam ComponentManager instance, watcher, pending review, or
+  local deadline exists
+- **AND** mechanics-stub completes the Quest with
+  `review-skipped-mechanics-disabled`
+- **AND** no red-team Quest, status mutation, Guild lesson, or redteam event is
+  produced
+
+#### Scenario: Quarantine preserves the dormant Phase-2 boundary
+
+- **WHEN** issue #36 completes
+- **THEN** only the two false redteam OutputPorts are removed
+- **AND** category/vocabulary, Quest/API/UI, finding/lesson, prompt, and opt-in
+  E2E contracts remain
+- **AND** the legacy underscore watcher, raw caches, unsafe full-object
+  writers, inert claim timeout, and local deadlines remain inactive and
+  deferred
+- **AND** reactivation remains blocked on Semdragon #4, #5, and #22 plus
+  SemStreams #313 and #676
+- **AND** no dependency, graphview, ownership, writer, lifecycle, rule,
+  schema, API/UI, or durable-deadline migration is included
+
 ### Requirement: UI-facing predicate stability
 The quest entity predicates consumed by the dashboard world store SHALL remain
 stable across the migration, and any predicate change SHALL ship with an

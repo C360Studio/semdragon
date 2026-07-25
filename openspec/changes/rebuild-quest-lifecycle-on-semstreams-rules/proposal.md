@@ -61,6 +61,12 @@ against the mock LLM (zero paid tokens).
   has no autonomous claim or guild selection; REST API and test-fixture
   claim/start are the supported shipped paths. The lifecycle operator joins
   that path only when separately enabled under task 4.3.
+- Resolve the redteam slice through issue #36: keep `redteam` registered and
+  configured but disabled in all three shipped profiles. Remove its two false
+  OutputPorts while retaining category/vocabulary taxonomy, Quest/API/UI
+  fields, findings/lesson policy, prompts, and opt-in E2E. The shipped path is
+  explicit claim/start through questbridge and mechanics-stub with no
+  red-team side effect.
 - Adopt the framework `lifecycle-gateway` operator REST surface for quest
   workflow CRUD/history where it can replace bespoke `service/api` handlers;
   keep product endpoints (world state, DM chat, workspace) as-is.
@@ -100,7 +106,9 @@ against the mock LLM (zero paid tokens).
   Issue #32 config-gates agentstore and removes only its no-consumer raw event
   plane. Issue #34 config-gates boidengine while retaining its live dormant
   contracts and making explicit claim/start the supported Phase-1 path.
-  Redteam remains open under Stage B3.
+  Issue #36 config-gates redteam and removes only its false OutputPorts while
+  retaining its dormant category/vocabulary and product contracts. Its
+  watcher/cache, writers, and timeout redesign remain deferred.
 - **Dependencies**: the beta.21 → beta.135 foundation is implemented on this
   branch. The beta.158 pre-v1 clean break is a separate prerequisite change:
   `adopt-semstreams-prev1-contract`. No dependency-only bump is permitted.

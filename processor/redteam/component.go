@@ -3,9 +3,9 @@
 // is attracted to the red-team quest via the boid engine. The red-team's findings
 // are attached to the original quest before the boss battle evaluates it.
 //
-// Non-blocking: if no agent claims the red-team quest within the claim timeout,
-// or if execution exceeds the execution timeout, the processor emits a "skipped"
-// signal and the boss battle proceeds without red-team findings.
+// Claim timeout remains configured product policy but is not currently enforced
+// by this component. The implemented execution timeout fails an overdue red-team
+// quest and emits a "skipped" signal so review can proceed without its findings.
 package redteam
 
 import (
@@ -122,38 +122,19 @@ func (c *Component) InputPorts() []component.Port {
 
 // OutputPorts returns the ports this component produces data on.
 func (c *Component) OutputPorts() []component.Port {
-	return []component.Port{
-		{
-			Name:        "redteam-posted",
-			Direction:   component.DirectionOutput,
-			Required:    false,
-			Description: "Red-team quest posted events",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateRedTeamPosted,
-			},
-		},
-		{
-			Name:        "redteam-completed",
-			Direction:   component.DirectionOutput,
-			Required:    false,
-			Description: "Red-team review completed events",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateRedTeamCompleted,
-			},
-		},
-	}
+	return nil
 }
 
 // ConfigSchema returns the configuration schema for this component.
 func (c *Component) ConfigSchema() component.ConfigSchema {
 	return component.ConfigSchema{
 		Properties: map[string]component.PropertySchema{
-			"org":               {Type: "string", Description: "Organization namespace", Default: "default", Category: "basic"},
-			"platform":          {Type: "string", Description: "Platform/environment name", Default: "local", Category: "basic"},
-			"board":             {Type: "string", Description: "Quest board name", Default: "main", Category: "basic"},
-			"min_difficulty":    {Type: "int", Description: "Minimum quest difficulty for red-team review", Default: 2, Category: "basic"},
-			"claim_timeout":     {Type: "duration", Description: "Max wait for claim before skip", Default: "2m", Category: "advanced"},
-			"execution_timeout": {Type: "duration", Description: "Total time for red-team lifecycle", Default: "5m", Category: "advanced"},
+			"org":                {Type: "string", Description: "Organization namespace", Default: "default", Category: "basic"},
+			"platform":           {Type: "string", Description: "Platform/environment name", Default: "local", Category: "basic"},
+			"board":              {Type: "string", Description: "Quest board name", Default: "main", Category: "basic"},
+			"min_difficulty":     {Type: "int", Description: "Minimum quest difficulty for red-team review", Default: 2, Category: "basic"},
+			"claim_timeout":      {Type: "duration", Description: "Max wait for claim before skip", Default: "2m", Category: "advanced"},
+			"execution_timeout":  {Type: "duration", Description: "Total time for red-team lifecycle", Default: "5m", Category: "advanced"},
 			"prefer_cross_guild": {Type: "bool", Description: "Prefer cross-guild reviewers", Default: true, Category: "basic"},
 		},
 		Required: []string{"org", "platform", "board"},
@@ -294,4 +275,3 @@ func (c *Component) Stop(timeout time.Duration) error {
 
 	return nil
 }
-
