@@ -30,6 +30,8 @@ import (
 // queries. Timeout is short — these calls must never block quest dispatch.
 var depGraphHTTPClient = &http.Client{Timeout: 600 * time.Millisecond}
 
+const questFailureTransitionTimeout = 10 * time.Second
+
 // =============================================================================
 // KV TWOFER BOOTSTRAP PROTOCOL
 // =============================================================================
@@ -1261,7 +1263,8 @@ func dagNodesToQuests(nodes []questdagexec.QuestNode, parent *domain.Quest) []do
 	return quests
 }
 
-// failQuest transitions the quest to failed and releases the agent.
+// failQuest requests rule-driven failure routing and releases the agent only
+// after the authoritative quest entity leaves in_progress.
 func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mapping *QuestLoopMapping, reason string, metrics loopMetrics) {
 	questEntity, err := c.graph.GetQuest(ctx, questID)
 	if err != nil {
@@ -1303,15 +1306,57 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 		}
 	}
 
+	phaseWatcher, err := c.graph.WatchEntity(ctx, string(questID))
+	if err != nil {
+		c.logger.Error("failed to watch quest failure transition", "quest_id", questID, "error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+	defer phaseWatcher.Stop()
+
 	if err := questlifecycle.StampCommand(ctx, c.deps.NATSClient, string(questID), questlifecycle.CommandFail, nil); err != nil {
 		c.logger.Error("failed to stamp fail command", "quest_id", questID, "error", err)
 		c.errorsCount.Add(1)
 		return
 	}
 
-	// The fail rule frees the quest's claimed_by; release the agent entity too so
-	// it returns to idle and can claim again. (The rule only touches the quest.)
+	waitCtx, cancel := context.WithTimeout(ctx, questFailureTransitionTimeout)
+	defer cancel()
+	if err := c.waitForQuestFailureTransition(waitCtx, questID, phaseWatcher.Updates()); err != nil {
+		c.logger.Error("fail command did not produce an authoritative quest transition; agent remains assigned",
+			"quest_id", questID, "agent_id", mapping.AgentID, "error", err)
+		c.errorsCount.Add(1)
+		return
+	}
+
+	// The fail rule has now authoritatively routed the quest to posted or
+	// pending_triage and freed claimed_by. Release the agent entity too.
 	c.releaseAgent(ctx, mapping.AgentID)
+}
+
+func (c *Component) waitForQuestFailureTransition(ctx context.Context, questID domain.QuestID, updates <-chan jetstream.KeyValueEntry) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for quest %s to leave in_progress: %w", questID, ctx.Err())
+		case entry, ok := <-updates:
+			if !ok {
+				return fmt.Errorf("wait for quest %s to leave in_progress: entity watch closed", questID)
+			}
+			entity, err := semdragons.DecodeEntityState(entry)
+			if err != nil {
+				c.logger.Warn("failed to decode quest failure transition update", "quest_id", questID, "error", err)
+				continue
+			}
+			if entity == nil {
+				continue
+			}
+			quest := domain.QuestFromEntityState(entity)
+			if quest != nil && quest.Status != domain.QuestInProgress {
+				return nil
+			}
+		}
+	}
 }
 
 // releaseAgent sets the agent back to idle and clears its current quest.

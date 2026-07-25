@@ -23,6 +23,11 @@ import (
 // the backoff path instead of treating it as a successful action.
 var errNoViableClaim = errors.New("no viable quest to claim")
 
+type questLifecycleTransitions interface {
+	Transition(context.Context, string, string, string, lifecycle.TransitionSource, string) error
+	TransitionWith(context.Context, string, string, string, lifecycle.TransitionSource, string, func(lifecycle.Participant) error) error
+}
+
 // =============================================================================
 // APPROVAL GATE
 // =============================================================================
@@ -107,6 +112,10 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 		c.logger.Error("cannot claim quest: lifecycle manager not wired into autonomy deps")
 		return errNoViableClaim
 	}
+	return c.executeClaimQuestWithLifecycle(ctx, agent, tracker, mgr)
+}
+
+func (c *Component) executeClaimQuestWithLifecycle(ctx context.Context, agent *agentprogression.Agent, tracker *agentTracker, mgr questLifecycleTransitions) error {
 	for i, suggestion := range tracker.suggestions {
 		// Read quest from KV.
 		entity, err := c.graph.GetQuest(ctx, domain.QuestID(suggestion.QuestID))
@@ -224,7 +233,10 @@ func (c *Component) executeClaimQuest(ctx context.Context, agent *agentprogressi
 			c.logger.Error("failed to start quest after claim",
 				"quest_id", suggestion.QuestID,
 				"error", err)
-			// Quest is claimed but not started — recoverable via an operator/manager start.
+			// The quest is authoritatively claimed but not running. Do not report a
+			// successful autonomous action or bind the agent to work that was never
+			// started; an operator/manager can recover the claimed quest.
+			return fmt.Errorf("start autonomously claimed quest %s: %w", suggestion.QuestID, err)
 		} else if err := questlifecycle.StampTriple(ctx, c.deps.NATSClient, string(quest.ID),
 			"quest.lifecycle.started_at", time.Now().Format(time.RFC3339)); err != nil {
 			c.logger.Warn("failed to stamp started_at", "quest_id", suggestion.QuestID, "error", err)

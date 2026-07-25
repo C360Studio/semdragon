@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -49,6 +50,11 @@ type PartyCoordRef interface {
 // on each dispatched unit it claim-starts the unit's sub-quest on the best-skill
 // party member (lead excluded). It is the reactive half of the questdag layer,
 // superseding the questdagexec event loop.
+//
+// The member reservation table serializes callbacks within this process. The
+// durable consumer provides at-least-once delivery and redelivery, but it does
+// not provide a distributed reservation across component replicas. Until agent
+// assignment has a cross-process CAS seam, deploy one questdag replica per board.
 type Component struct {
 	config      *Config
 	deps        component.Dependencies
@@ -67,6 +73,11 @@ type Component struct {
 
 	running       atomic.Bool
 	consumeCancel context.CancelFunc
+
+	// reservationMu makes member selection + reservation atomic across concurrent
+	// durable-consumer callbacks in this component instance.
+	reservationMu sync.Mutex
+	reservations  map[domain.AgentID]memberReservation
 
 	// Metrics.
 	dispatchesHandled atomic.Uint64
@@ -314,6 +325,9 @@ func (c *Component) Stop(timeout time.Duration) error {
 	if c.executor != nil {
 		if err := c.executor.Stop(timeout); err != nil {
 			c.logger.Warn("questdag: executor stop error", "error", err)
+			c.logger.Info("questdag stopped",
+				"dispatches_handled", c.dispatchesHandled.Load(), "claim_starts", c.claimStarts.Load())
+			return fmt.Errorf("questdag: stop executor: %w", err)
 		}
 	}
 	c.logger.Info("questdag stopped",

@@ -19,6 +19,7 @@ package questdag
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -146,9 +147,303 @@ func TestDispatchHandler_ClaimStartsBestSkillMember(t *testing.T) {
 	}
 }
 
+func TestDispatchHandler_ConcurrentCallbacksReservePartyMember(t *testing.T) {
+	ctx := context.Background()
+	board := &domain.BoardConfig{Org: "test", Platform: "integration", Board: "dagreserve"}
+	tc := natsclient.NewTestClient(t,
+		natsclient.WithKV(), natsclient.WithFileStorage(),
+		natsclient.WithKVBuckets(graph.BucketEntityStates),
+		natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}),
+	)
+	client := tc.Client
+	startGraphIngest(t, ctx, client)
+	gc := semdragons.NewGraphClient(client, board)
+	if err := gc.EnsureBucket(ctx); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+
+	leadID := domain.AgentID(board.AgentEntityID("lead"))
+	memberID := domain.AgentID(board.AgentEntityID("member"))
+	partyID := domain.PartyID(board.PartyEntityID("p1"))
+	createIdleAgent(t, gc, leadID)
+	createIdleAgent(t, gc, memberID)
+	party := &partycoord.Party{
+		ID: partyID, Lead: leadID,
+		Members: []partycoord.PartyMember{
+			{AgentID: leadID, Role: domain.RoleLead},
+			{AgentID: memberID, Role: domain.RoleExecutor, Skills: []domain.SkillTag{"go"}},
+		},
+	}
+
+	subA := domain.QuestID(board.QuestEntityID("sub-a"))
+	subB := domain.QuestID(board.QuestEntityID("sub-b"))
+	createPostedSubQuest(t, gc, subA, partyID, []domain.SkillTag{"go"})
+	createPostedSubQuest(t, gc, subB, partyID, []domain.SkillTag{"go"})
+	seeded, err := SeedUnits(ctx, client, board, SeedInput{
+		DAG: DAG{Nodes: []Node{
+			{ID: "a", Objective: "first", Skills: []string{"go"}},
+			{ID: "b", Objective: "second", Skills: []string{"go"}},
+		}},
+		ParentQuestID: board.QuestEntityID("parent"),
+		ExecutionID:   "reserve-exec",
+		NodeSubQuests: map[string]string{"a": string(subA), "b": string(subB)},
+	})
+	if err != nil {
+		t.Fatalf("SeedUnits: %v", err)
+	}
+
+	qb := newBlockingQuestBoard()
+	comp := &Component{
+		graph:              gc,
+		logger:             slog.Default(),
+		decodeUnit:         func(data []byte) (string, bool) { return string(data), true },
+		questBoardOverride: qb,
+		partyOverride:      &mockParty{party: party},
+	}
+
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- comp.handleDispatch(ctx, []byte(seeded.NodeUnits["a"])) }()
+	select {
+	case <-qb.firstEntered:
+	case <-ctxDeadline(t, 5*time.Second):
+		t.Fatal("first dispatch did not reach claim-start")
+	}
+
+	secondDone := make(chan error, 1)
+	go func() { secondDone <- comp.handleDispatch(ctx, []byte(seeded.NodeUnits["b"])) }()
+	select {
+	case <-qb.secondEntered:
+		t.Fatal("concurrent dispatch double-booked the reserved party member")
+	case err := <-secondDone:
+		if err == nil {
+			t.Fatal("second dispatch succeeded while the only member was reserved")
+		}
+	case <-ctxDeadline(t, 5*time.Second):
+		t.Fatal("second dispatch did not resolve while first claim-start was blocked")
+	}
+
+	close(qb.releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first dispatch: %v", err)
+	}
+}
+
+func TestDispatchHandler_FailedClaimStartReleasesReservation(t *testing.T) {
+	ctx := context.Background()
+	board := &domain.BoardConfig{Org: "test", Platform: "integration", Board: "dagrelease"}
+	tc := natsclient.NewTestClient(t,
+		natsclient.WithKV(), natsclient.WithFileStorage(),
+		natsclient.WithKVBuckets(graph.BucketEntityStates),
+		natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}),
+	)
+	client := tc.Client
+	startGraphIngest(t, ctx, client)
+	gc := semdragons.NewGraphClient(client, board)
+	if err := gc.EnsureBucket(ctx); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+
+	leadID := domain.AgentID(board.AgentEntityID("lead"))
+	memberID := domain.AgentID(board.AgentEntityID("member"))
+	partyID := domain.PartyID(board.PartyEntityID("p1"))
+	createIdleAgent(t, gc, leadID)
+	createIdleAgent(t, gc, memberID)
+	party := &partycoord.Party{ID: partyID, Lead: leadID, Members: []partycoord.PartyMember{
+		{AgentID: leadID, Role: domain.RoleLead},
+		{AgentID: memberID, Role: domain.RoleExecutor},
+	}}
+
+	subA := domain.QuestID(board.QuestEntityID("sub-a"))
+	subB := domain.QuestID(board.QuestEntityID("sub-b"))
+	createPostedSubQuest(t, gc, subA, partyID, nil)
+	createPostedSubQuest(t, gc, subB, partyID, nil)
+	seeded, err := SeedUnits(ctx, client, board, SeedInput{
+		DAG: DAG{Nodes: []Node{
+			{ID: "a", Objective: "first"},
+			{ID: "b", Objective: "second"},
+		}},
+		ParentQuestID: board.QuestEntityID("parent"),
+		ExecutionID:   "release-exec",
+		NodeSubQuests: map[string]string{"a": string(subA), "b": string(subB)},
+	})
+	if err != nil {
+		t.Fatalf("SeedUnits: %v", err)
+	}
+
+	qb := &failOnceQuestBoard{err: errors.New("claim-start failed")}
+	comp := &Component{
+		graph: gc, logger: slog.Default(),
+		decodeUnit:         func(data []byte) (string, bool) { return string(data), true },
+		questBoardOverride: qb,
+		partyOverride:      &mockParty{party: party},
+	}
+	if err := comp.handleDispatch(ctx, []byte(seeded.NodeUnits["a"])); err == nil {
+		t.Fatal("first dispatch unexpectedly succeeded")
+	}
+	if err := comp.handleDispatch(ctx, []byte(seeded.NodeUnits["b"])); err != nil {
+		t.Fatalf("second dispatch could not reuse reservation after failed claim-start: %v", err)
+	}
+	if qb.calls != 2 {
+		t.Fatalf("claim-start calls = %d, want 2", qb.calls)
+	}
+}
+
+func TestDispatchHandler_CommittedReservationFollowsQuestPhase(t *testing.T) {
+	ctx := context.Background()
+	board := &domain.BoardConfig{Org: "test", Platform: "integration", Board: "dagcommit"}
+	tc := natsclient.NewTestClient(t,
+		natsclient.WithKV(), natsclient.WithFileStorage(),
+		natsclient.WithKVBuckets(graph.BucketEntityStates),
+		natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}),
+	)
+	client := tc.Client
+	startGraphIngest(t, ctx, client)
+	gc := semdragons.NewGraphClient(client, board)
+	if err := gc.EnsureBucket(ctx); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+
+	leadID := domain.AgentID(board.AgentEntityID("lead"))
+	memberID := domain.AgentID(board.AgentEntityID("member"))
+	partyID := domain.PartyID(board.PartyEntityID("p1"))
+	createIdleAgent(t, gc, leadID)
+	createIdleAgent(t, gc, memberID)
+	party := &partycoord.Party{ID: partyID, Lead: leadID, Members: []partycoord.PartyMember{
+		{AgentID: leadID, Role: domain.RoleLead},
+		{AgentID: memberID, Role: domain.RoleExecutor},
+	}}
+
+	subA := domain.QuestID(board.QuestEntityID("sub-a"))
+	subB := domain.QuestID(board.QuestEntityID("sub-b"))
+	createPostedSubQuest(t, gc, subA, partyID, nil)
+	createPostedSubQuest(t, gc, subB, partyID, nil)
+	seeded, err := SeedUnits(ctx, client, board, SeedInput{
+		DAG: DAG{Nodes: []Node{
+			{ID: "a", Objective: "first"},
+			{ID: "b", Objective: "second"},
+		}},
+		ParentQuestID: board.QuestEntityID("parent"),
+		ExecutionID:   "commit-exec",
+		NodeSubQuests: map[string]string{"a": string(subA), "b": string(subB)},
+	})
+	if err != nil {
+		t.Fatalf("SeedUnits: %v", err)
+	}
+
+	qb := &phaseWritingQuestBoard{graph: gc}
+	comp := &Component{
+		graph: gc, logger: slog.Default(),
+		decodeUnit:         func(data []byte) (string, bool) { return string(data), true },
+		questBoardOverride: qb,
+		partyOverride:      &mockParty{party: party},
+	}
+
+	if err := comp.handleDispatch(ctx, []byte(seeded.NodeUnits["a"])); err != nil {
+		t.Fatalf("first dispatch: %v", err)
+	}
+	if qb.calls != 1 {
+		t.Fatalf("claim-start calls after first dispatch = %d, want 1", qb.calls)
+	}
+
+	// The claim-start mock leaves the authoritative quest in claimed. A
+	// committed reservation must keep the still-idle graph agent unavailable.
+	if err := comp.handleDispatch(ctx, []byte(seeded.NodeUnits["b"])); err == nil {
+		t.Fatal("second dispatch succeeded while first quest remained claimed")
+	}
+	if qb.calls != 1 {
+		t.Fatalf("claimed reservation reached claim-start again: calls=%d, want 1", qb.calls)
+	}
+
+	writePartySubQuestPhase(t, gc, subA, partyID, &memberID, domain.QuestInProgress)
+	if err := comp.handleDispatch(ctx, []byte(seeded.NodeUnits["b"])); err == nil {
+		t.Fatal("second dispatch succeeded while first quest remained in_progress")
+	}
+	if qb.calls != 1 {
+		t.Fatalf("in_progress reservation reached claim-start again: calls=%d, want 1", qb.calls)
+	}
+
+	// Once the authoritative quest leaves claimed/in_progress, selection must
+	// retire the committed reservation and permit the member to be reused.
+	writePartySubQuestPhase(t, gc, subA, partyID, nil, domain.QuestCompleted)
+	if err := comp.handleDispatch(ctx, []byte(seeded.NodeUnits["b"])); err != nil {
+		t.Fatalf("second dispatch could not reuse member after first quest completed: %v", err)
+	}
+	if qb.calls != 2 {
+		t.Fatalf("claim-start calls after reservation retirement = %d, want 2", qb.calls)
+	}
+}
+
 // =============================================================================
 // TEST DOUBLES + FIXTURES
 // =============================================================================
+
+func ctxDeadline(t *testing.T, timeout time.Duration) <-chan time.Time {
+	t.Helper()
+	return time.After(timeout)
+}
+
+type blockingQuestBoard struct {
+	mu            sync.Mutex
+	calls         int
+	firstEntered  chan struct{}
+	secondEntered chan struct{}
+	releaseFirst  chan struct{}
+}
+
+func newBlockingQuestBoard() *blockingQuestBoard {
+	return &blockingQuestBoard{
+		firstEntered:  make(chan struct{}),
+		secondEntered: make(chan struct{}),
+		releaseFirst:  make(chan struct{}),
+	}
+}
+
+func (m *blockingQuestBoard) ClaimAndStartForParty(_ context.Context, _ domain.QuestID, _ domain.PartyID, _ domain.AgentID) error {
+	m.mu.Lock()
+	m.calls++
+	call := m.calls
+	m.mu.Unlock()
+	if call == 1 {
+		close(m.firstEntered)
+		<-m.releaseFirst
+	} else {
+		close(m.secondEntered)
+	}
+	return nil
+}
+
+type failOnceQuestBoard struct {
+	calls int
+	err   error
+}
+
+func (m *failOnceQuestBoard) ClaimAndStartForParty(_ context.Context, _ domain.QuestID, _ domain.PartyID, _ domain.AgentID) error {
+	m.calls++
+	if m.calls == 1 {
+		return m.err
+	}
+	return nil
+}
+
+type phaseWritingQuestBoard struct {
+	graph *semdragons.GraphClient
+	calls int
+}
+
+func (m *phaseWritingQuestBoard) ClaimAndStartForParty(ctx context.Context, questID domain.QuestID, partyID domain.PartyID, assignedTo domain.AgentID) error {
+	m.calls++
+	quest := &domain.Quest{
+		ID:          questID,
+		Title:       "claimed sub-quest " + string(questID),
+		Description: "claimed by deterministic questboard test double",
+		Status:      domain.QuestClaimed,
+		Difficulty:  domain.DifficultyTrivial,
+		MaxAttempts: 3,
+		PartyID:     &partyID,
+		ClaimedBy:   &assignedTo,
+	}
+	return m.graph.PutEntityState(ctx, quest, "quest.claimed")
+}
 
 type claimRecord struct {
 	quest domain.QuestID
@@ -227,5 +522,22 @@ func createPostedSubQuest(t *testing.T, gc *semdragons.GraphClient, id domain.Qu
 	}
 	if err := gc.PutEntityState(context.Background(), quest, "quest.posted"); err != nil {
 		t.Fatalf("create posted sub-quest %s: %v", id, err)
+	}
+}
+
+func writePartySubQuestPhase(t *testing.T, gc *semdragons.GraphClient, id domain.QuestID, partyID domain.PartyID, claimedBy *domain.AgentID, status domain.QuestStatus) {
+	t.Helper()
+	quest := &domain.Quest{
+		ID:          id,
+		Title:       "sub-quest " + string(id),
+		Description: "party sub-quest",
+		Status:      status,
+		Difficulty:  domain.DifficultyTrivial,
+		MaxAttempts: 3,
+		PartyID:     &partyID,
+		ClaimedBy:   claimedBy,
+	}
+	if err := gc.PutEntityState(context.Background(), quest, "quest.phase.test"); err != nil {
+		t.Fatalf("write sub-quest %s phase %s: %v", id, status, err)
 	}
 }
