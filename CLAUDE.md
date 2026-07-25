@@ -527,11 +527,11 @@ Components enabled in the default config (`config/semdragons.json`):
 - `partycoord` — Party KV form/join/disband/read lifecycle, roster policy, and temporary
   assignment bridge
 
-Processors registered but excluded from the default config (opt-in):
+Processors registered but excluded from the default config (opt-in or dormant):
 - `bossbattle` — dormant Phase-2 automated review evaluator
 - `agent_progression` — dormant Phase-2 Agent model and XP policy
-- `agent_store` — XP marketplace; default-disabled, but still enabled by the semsource and
-  tier-1 E2E profiles pending a separate Stage B3 packet
+- `agent_store` — dormant Phase-2 XP marketplace policy, models, and API; disabled in every
+  shipped profile
 - `redteam` — guild red-team adversarial review before boss battle; extracts lessons to guild
   knowledge (also requires `bossbattle.red_team_enabled: true`)
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)

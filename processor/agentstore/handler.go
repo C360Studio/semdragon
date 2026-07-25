@@ -279,15 +279,6 @@ func (c *Component) AddItem(ctx context.Context, item StoreItem) error {
 		c.logger.Warn("failed to write store item to KV", "item_id", item.ID, "error", err)
 	}
 
-	// Publish event - downstream graph-ingest will persist if configured
-	if err := SubjectStoreItemListed.Publish(ctx, c.deps.NATSClient, StoreItemListedPayload{
-		Item:     item,
-		ListedAt: now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return errs.Wrap(err, "AgentStore", "AddItem", "publish item listed")
-	}
-
 	c.itemsListed.Add(1)
 	c.lastActivity.Store(now)
 
@@ -394,8 +385,6 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 	}
 
 	now := time.Now()
-	newXP := currentXP - effectiveCost
-
 	// Create owned item
 	owned := &OwnedItem{
 		ItemID:       itemID,
@@ -418,7 +407,6 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 		inv.Consumables[itemID]++
 	}
 	inv.TotalSpent += effectiveCost
-	totalSpent := inv.TotalSpent // capture under lock for event payload
 	inv.mu.Unlock()
 
 	// Read-modify-write agent entity to KV (source of truth)
@@ -461,36 +449,6 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 				c.logger.Error("failed to write agent entity after purchase", "error", writeErr)
 			}
 		}
-	}
-
-	// Publish purchase event
-	if err := SubjectStoreItemPurchased.Publish(ctx, c.deps.NATSClient, StorePurchasePayload{
-		AgentID:     agentID,
-		ItemID:      itemID,
-		ItemName:    item.Name,
-		ItemType:    item.ItemType,
-		XPSpent:     effectiveCost,
-		XPBefore:    currentXP,
-		XPAfter:     newXP,
-		LevelBefore: currentLevel,
-		Timestamp:   now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return nil, errs.Wrap(err, "AgentStore", "Purchase", "publish purchase")
-	}
-
-	// Publish inventory update
-	if err := SubjectInventoryUpdated.Publish(ctx, c.deps.NATSClient, InventoryUpdatedPayload{
-		AgentID:    agentID,
-		ChangeType: "purchase",
-		ItemID:     itemID,
-		ItemName:   item.Name,
-		Quantity:   1,
-		TotalSpent: totalSpent,
-		Timestamp:  now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		// Don't fail the purchase for inventory event failure
 	}
 
 	c.purchasesComplete.Add(1)
@@ -566,7 +524,6 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 		return errors.New("consumable not owned")
 	}
 	inv.Consumables[consumableID]--
-	remaining := inv.Consumables[consumableID]
 	inv.mu.Unlock()
 
 	// Get consumable item for effect info
@@ -628,19 +585,6 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 		}
 	}
 
-	// Publish consumable used event
-	if err := SubjectConsumableUsed.Publish(ctx, c.deps.NATSClient, ConsumableUsedPayload{
-		AgentID:      agentID,
-		ConsumableID: consumableID,
-		Effect:       *item.Effect,
-		Remaining:    remaining,
-		QuestID:      questID,
-		Timestamp:    now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return errs.Wrap(err, "AgentStore", "UseConsumable", "publish consumable used")
-	}
-
 	c.consumablesUsed.Add(1)
 	c.lastActivity.Store(now)
 
@@ -676,18 +620,6 @@ func (c *Component) ConsumeEffect(ctx context.Context, agentID domain.AgentID, e
 			effect.QuestsRemaining--
 			if effect.QuestsRemaining > 0 {
 				remaining = append(remaining, effect)
-			} else {
-				// Effect expired
-				if err := SubjectConsumableExpired.Publish(ctx, c.deps.NATSClient, ConsumableExpiredPayload{
-					AgentID:      agentID,
-					ConsumableID: effect.ConsumableID,
-					Effect:       effect.Effect,
-					Reason:       "quests_exhausted",
-					Timestamp:    time.Now(),
-				}); err != nil {
-					c.errorsCount.Add(1)
-					// Don't fail for event failure
-				}
 			}
 		} else {
 			remaining = append(remaining, effect)

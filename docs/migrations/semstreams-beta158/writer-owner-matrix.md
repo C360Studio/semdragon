@@ -338,7 +338,33 @@ If issue #4 does not add the real `BaseMessage`, payload-registry, and
 graph-ingest route, it deletes the seven Graphable projections rather than
 binding a phantom graph writer.
 
-### Agent store aggregates and evidence
+### Agent store aggregates
+
+Current Phase-1 state: quarantined by issue #32. All shipped profiles retain
+the registered `agent_store` component with `enabled: false`. REST/OpenAPI,
+models, product policy, and dormant implementation remain; unavailable API
+calls return 503 and autonomy treats the missing component as a no-op. The five
+publisher-only raw event families, seven event vocabulary entries, and false
+output are deleted. EntityState KV message categories are a separate retained
+surface.
+
+The declaration below is the future beta.158 target. Issue #32 binds no owner,
+changes no retained predicate, and leaves the retained store.go 14/18 corpus
+for the later canonical migration.
+
+Phase 2 also removes the current in-memory authority ambiguity. Agentstore's
+catalog, inventory, active-effect, and XP `sync.Map` caches become
+SemStreams graphview-derived read projections; REST and autonomy read those
+views rather than treating process-local state as authoritative.
+
+Purchasing never gives agentstore authority over progression or lifecycle
+state. Agentstore sends an idempotent, durable XP-debit command/request to the
+agentprogression owner after SemStreams #313 supplies the owner-safe mutation
+path. Agentprogression performs and confirms the debit; agentstore neither
+directly changes XP nor replaces the full Agent entity. Agent status,
+cooldown, death, readiness, and every other lifecycle predicate remain outside
+the agentstore claim and cross their existing progression/lifecycle owner
+boundary.
 
 - Owner: `agentstore`; token `agentstore#<incarnation>`.
 - Pattern: `*.*.game.*.agent.*`.
@@ -346,17 +372,11 @@ binding a phantom graph writer.
 - Exact mutable predicates:
   `agent.inventory.total-spent`, `agent.inventory.tools-count`, and
   `agent.inventory.consumables-count`.
-- Append evidence:
-  `agent.purchase.item-id`, `agent.purchase.xp-spent`,
-  `agent.consumable.effect-type`, `agent.consumable.expired-reason`,
-  `agent.inventory.change-type`, `agent.inventory.item-id`, and
-  `agent.inventory.quantity-change`.
 
-The agentstore XP payload is graph-bound, not exempt. Its
-`agent.progression.xp-current` projection is prohibited because
-agentprogression owns that predicate. Agentstore requests the XP mutation
-through the agentprogression owner API and removes the cross-owner triple.
-Catalog item aliases in the evidence predicates above remain scalar.
+The deleted raw purchase, consumable, inventory-change, and cross-owner XP
+payload predicates receive no claim. If Phase 2 requires durable transaction
+receipts, it defines a new first-class product contract rather than restoring
+the removed Graphables.
 
 ### Store item
 
@@ -699,10 +719,11 @@ projection contracts, ownership services, heartbeats, or lifecycle timers.
 
 - Agentprogression current state uses its exact owner claim. XP delta, quest,
   award, and penalty observations use append evidence.
-- Agentstore current inventory totals use its exact owner claim. Purchase,
-  consumable, and inventory-change observations use append evidence.
-  `agent.progression.xp-current` is removed from agentstore `Triples` and is
-  sent through the agentprogression owner API.
+- Agentstore's five publisher-only raw event Graphables are deleted in issue
+  #32; their purchase, consumable, inventory-change, and cross-owner XP
+  predicates are not append evidence. Retained StoreItem and AgentInventory
+  Graphables remain deferred to the canonical owner and first-class-child
+  migration.
 - Autonomy action/decision predicates listed above use append evidence.
   Relationship datatypes still obey the catalog-alias conversion boundary.
 - Questboard/questbridge/questdag and review payloads either call the owner
@@ -851,6 +872,9 @@ consumes that primitive.
   records this repository's store, inventory, effect, guild, party, and DAG
   mutation needs. It does not block the completed questdag core wave because
   that wave retains only the narrow private completion adapter.
+  Issue #32 opens no duplicate. If the delivered helper lacks the owned-create
+  operation later required for inventory-entry or active-effect birth, the
+  Phase-2 packet opens one narrowly linked issue after confirming that gap.
 - [SemStreams #671](https://github.com/C360Studio/semstreams/issues/671) owns
   occurrence-exact, stale-checked predicate-audit classifications for the
   three non-predicate `quest.failed` expressions. It does not block the DAG

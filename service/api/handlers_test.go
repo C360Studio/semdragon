@@ -2452,70 +2452,46 @@ func TestHandleGetEffects(t *testing.T) {
 }
 
 func TestStoreHandlers_ComponentUnavailable(t *testing.T) {
-	// When store is nil, all handlers should return 503.
+	t.Setenv("SEMDRAGONS_API_KEY", "")
+
+	// Exercise the public route registration rather than calling handlers
+	// directly. A quarantined Store must remain a deterministic 503 surface.
 	svc := newTestService(&mockGraph{}, &mockWorld{})
+	mux := http.NewServeMux()
+	svc.RegisterHTTPHandlers("/api/v1", mux)
 
-	handlers := []struct {
-		name    string
-		method  string
-		path    string
-		handler http.HandlerFunc
-		body    string
+	requests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
 	}{
-		{"listStore", http.MethodGet, "/store", svc.handleListStore, ""},
-		{"purchase", http.MethodPost, "/store/purchase", svc.handlePurchase, `{"agent_id":"a","item_id":"b"}`},
+		{"listStore", http.MethodGet, "/api/v1/store", ""},
+		{"getStoreItem", http.MethodGet, "/api/v1/store/web_search", ""},
+		{"purchase", http.MethodPost, "/api/v1/store/purchase", `{"agent_id":"a","item_id":"b"}`},
+		{"getInventory", http.MethodGet, "/api/v1/agents/a1/inventory", ""},
+		{"useConsumable", http.MethodPost, "/api/v1/agents/a1/inventory/use", `{"consumable_id":"xp_boost"}`},
+		{"getEffects", http.MethodGet, "/api/v1/agents/a1/effects", ""},
 	}
 
-	for _, h := range handlers {
-		t.Run(h.name, func(t *testing.T) {
-			var body *bytes.Reader
-			if h.body != "" {
-				body = bytes.NewReader([]byte(h.body))
-			} else {
-				body = bytes.NewReader(nil)
-			}
-			req := httptest.NewRequest(h.method, h.path, body)
-			rr := httptest.NewRecorder()
-			h.handler(rr, req)
-
-			if rr.Code != http.StatusServiceUnavailable {
-				t.Errorf("%s: got %d, want %d\nbody: %s", h.name, rr.Code, http.StatusServiceUnavailable, rr.Body.String())
-			}
-		})
-	}
-
-	// Handlers with path values need a mux
-	muxHandlers := []struct {
-		name    string
-		pattern string
-		path    string
-		method  string
-		handler http.HandlerFunc
-		body    string
-	}{
-		{"getStoreItem", "GET /store/{id}", "/store/web_search", http.MethodGet, svc.handleGetStoreItem, ""},
-		{"getInventory", "GET /agents/{id}/inventory", "/agents/a1/inventory", http.MethodGet, svc.handleGetInventory, ""},
-		{"useConsumable", "POST /agents/{id}/inventory/use", "/agents/a1/inventory/use", http.MethodPost, svc.handleUseConsumable, `{"consumable_id":"xp_boost"}`},
-		{"getEffects", "GET /agents/{id}/effects", "/agents/a1/effects", http.MethodGet, svc.handleGetEffects, ""},
-	}
-
-	for _, h := range muxHandlers {
-		t.Run(h.name, func(t *testing.T) {
-			mux := http.NewServeMux()
-			mux.HandleFunc(h.pattern, h.handler)
-
-			var body *bytes.Reader
-			if h.body != "" {
-				body = bytes.NewReader([]byte(h.body))
-			} else {
-				body = bytes.NewReader(nil)
-			}
-			req := httptest.NewRequest(h.method, h.path, body)
+	for _, request := range requests {
+		t.Run(request.name, func(t *testing.T) {
+			req := httptest.NewRequest(
+				request.method,
+				request.path,
+				bytes.NewReader([]byte(request.body)),
+			)
 			rr := httptest.NewRecorder()
 			mux.ServeHTTP(rr, req)
 
 			if rr.Code != http.StatusServiceUnavailable {
-				t.Errorf("%s: got %d, want %d\nbody: %s", h.name, rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+				t.Errorf(
+					"%s: got %d, want %d\nbody: %s",
+					request.name,
+					rr.Code,
+					http.StatusServiceUnavailable,
+					rr.Body.String(),
+				)
 			}
 		})
 	}
@@ -3705,8 +3681,8 @@ func newTestController(bucket jetstream.KeyValue) *boardcontrol.Controller {
 // different board availability scenarios.
 func TestHandleBoardStatus(t *testing.T) {
 	tests := []struct {
-		name      string
-		setup     func() *Service
+		name       string
+		setup      func() *Service
 		wantPaused bool
 		checkBody  func(t *testing.T, body []byte)
 	}{

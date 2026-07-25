@@ -739,6 +739,71 @@ writer. Phase-2 reactivation remains blocked on beta.158 adoption and the
 public owner-token create/replace path tracked by
 [SemStreams #313](https://github.com/C360Studio/semstreams/issues/313).
 
+### D19: Quarantine agentstore and delete its no-consumer raw event plane
+
+Issue [#32](https://github.com/C360Studio/semdragon/issues/32) completes only
+the agentstore slice of the Phase-1 mechanics cut. The default profile already
+sets `agent_store.enabled` to `false`; issue #32 makes the semsource and tier-1
+E2E profiles match. The complete quest rule pack and mechanics stub remain
+unchanged, so shipped Phase 1 produces no store or inventory side effect.
+
+The product surface remains dormant for Phase 2:
+
+- component registration, configuration, catalog, inventory, effects, and XP
+  marketplace policy;
+- StoreItem, AgentInventory, OwnedItem, consumable-effect, reconstruction, and
+  validation models;
+- REST routes, handlers, OpenAPI schemas, and generated consumer models; and
+- autonomy's unavailable-store no-op behavior.
+
+Because the component is absent at runtime, store REST handlers retain their
+existing `503 Service Unavailable` contract. Autonomy continues without a
+store action when the component cannot be resolved. Issue #32 adds no API,
+OpenAPI, UI, or autonomy behavior.
+
+The component also carries a separate raw core-NATS event plane:
+`StoreItemListedPayload`, `StorePurchasePayload`,
+`ConsumableUsedPayload`, `ConsumableExpiredPayload`, and
+`InventoryUpdatedPayload`. Production code publishes those five subjects, but
+repository search finds no subscriber, payload-registry factory,
+`BaseMessage`, graph-ingest route, replay reader, API reader, UI reader, or DM
+reader. UI activity is derived from authoritative EntityState KV message
+categories, not these raw subjects.
+
+Issue #32 deletes all five DTO/subject/publisher families rather than retaining
+a wire contract with no consumer. It also deletes the component's incomplete
+`store-events` output and all seven raw-event vocabulary entries:
+`PredicateStoreItemListed`, `PredicateStoreItemPurchased`,
+`PredicateStoreItemUsed`, `PredicateStoreItemExpired`,
+`PredicateConsumableUsed`, `PredicateConsumableExpired`, and
+`PredicateInventoryUpdated`. No replacement subject, `BaseMessage`, payload
+registration, graph route, owner, compatibility alias, or UI mapping is added.
+
+The historical beta.158 package baseline remains 23 invalid candidates from 30
+extracted. `payloads.go` contributes nine invalid candidates from twelve
+extracted; deleting that raw projection plane leaves the retained `store.go`
+corpus at 14 invalid from 18 extracted. Those retained findings are not renamed
+or owner-bound in issue #32.
+
+This packet changes no agentprogression code, SemStreams dependency, retained
+predicate, entity ID, projection owner, lifecycle workflow, graph view, API,
+or UI. Phase-2 reactivation remains blocked on beta.158 adoption and the public
+owner-token mutation helper tracked by
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313).
+Issue #32 opens no duplicate. If the eventual #313 delivery does not provide
+the owned-create operation required to birth first-class inventory-entry and
+active-effect entities, the Phase-2 packet may open one narrowly linked
+owned-create issue after confirming that gap.
+
+The deferred Phase-2 authority boundary is explicit even though issue #32 does
+not implement it. Agentstore's catalog, inventory, effect, and XP `sync.Map`
+caches become SemStreams graphview-derived read projections. A purchase sends
+an idempotent, durable XP-debit command/request to the agentprogression owner
+after #313 enables owner-safe mutation; agentstore never debits XP directly or
+replaces the full Agent entity. Agent lifecycle and status, including
+cooldown-to-idle behavior, remain outside agentstore authority and cross the
+progression or lifecycle owner boundary.
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

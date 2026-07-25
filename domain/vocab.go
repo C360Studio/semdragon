@@ -342,31 +342,6 @@ const (
 	PredicateReviewCompleted = "review.lifecycle.completed"
 )
 
-// --- Store Predicates ---
-
-const (
-	// PredicateStoreItemListed - New item added to store.
-	PredicateStoreItemListed = "store.item.listed"
-
-	// PredicateStoreItemPurchased - Agent bought something.
-	PredicateStoreItemPurchased = "store.item.purchased"
-
-	// PredicateStoreItemUsed - Rental use consumed.
-	PredicateStoreItemUsed = "store.item.used"
-
-	// PredicateStoreItemExpired - Rental ran out of uses.
-	PredicateStoreItemExpired = "store.item.expired"
-
-	// PredicateConsumableUsed - Consumable activated.
-	PredicateConsumableUsed = "store.consumable.used"
-
-	// PredicateConsumableExpired - Consumable effect wore off.
-	PredicateConsumableExpired = "store.consumable.expired"
-
-	// PredicateInventoryUpdated - Agent inventory changed.
-	PredicateInventoryUpdated = "agent.inventory.updated"
-)
-
 // RegisterVocabulary registers all semdragons predicates with the vocabulary system.
 // Call this during application initialization.
 func RegisterVocabulary() {
@@ -748,34 +723,6 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicateAutonomyGuildCreateCandidates,
 		vocabulary.WithDescription("Number of candidates considered for guild creation"),
-	)
-
-	// Store predicates
-	vocabulary.Register(PredicateStoreItemListed,
-		vocabulary.WithDescription("New item added to store catalog"),
-		vocabulary.WithDataType("StoreItemListedPayload"),
-	)
-	vocabulary.Register(PredicateStoreItemPurchased,
-		vocabulary.WithDescription("Agent purchased an item from the store"),
-		vocabulary.WithDataType("StorePurchasePayload"),
-	)
-	vocabulary.Register(PredicateStoreItemUsed,
-		vocabulary.WithDescription("Rental item use consumed"),
-	)
-	vocabulary.Register(PredicateStoreItemExpired,
-		vocabulary.WithDescription("Rental item ran out of uses"),
-	)
-	vocabulary.Register(PredicateConsumableUsed,
-		vocabulary.WithDescription("Consumable item activated"),
-		vocabulary.WithDataType("ConsumableUsedPayload"),
-	)
-	vocabulary.Register(PredicateConsumableExpired,
-		vocabulary.WithDescription("Consumable effect wore off"),
-		vocabulary.WithDataType("ConsumableExpiredPayload"),
-	)
-	vocabulary.Register(PredicateInventoryUpdated,
-		vocabulary.WithDescription("Agent inventory changed"),
-		vocabulary.WithDataType("InventoryUpdatedPayload"),
 	)
 
 	// Peer review predicates

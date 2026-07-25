@@ -515,6 +515,78 @@ Agent writes as beta.158-compatible.
   extracted candidates
 - **AND** the historical baseline audit remains unchanged
 
+### Requirement: Agentstore is quarantined without migrating retained state
+
+Phase 1 SHALL disable agentstore in every shipped profile and SHALL delete its
+repository-unconsumed raw event plane. It SHALL retain the store product and
+API surface as dormant Phase-2 code without presenting retained full-object
+state writers as beta.158-compatible.
+
+#### Scenario: Every shipped profile disables agentstore
+
+- **GIVEN** the default profile already disables `agent_store`
+- **WHEN** contract tests parse the default, semsource, and tier-1 E2E
+  configurations
+- **THEN** each retains `components.agent_store`
+- **AND** each sets that component's `enabled` field to `false`
+- **AND** each retains the complete quest rule pack and mechanics-stub rule
+
+#### Scenario: Product and API surfaces remain dormant
+
+- **WHEN** issue #32 completes the Phase-1 quarantine
+- **THEN** store registration, configuration, models, validation, product
+  policy, handlers, and watchers remain
+- **AND** REST routes, OpenAPI, and generated models remain
+- **AND** unavailable store endpoints retain their 503 response
+- **AND** autonomy treats the unavailable store as a no-op
+- **AND** no store or inventory side effect is produced
+
+#### Scenario: The publisher-only raw event plane is deleted
+
+- **GIVEN** the five raw payload families have production publishers
+- **AND** no repository subscriber, payload factory, `BaseMessage`,
+  graph-ingest route, replay reader, API reader, UI reader, or DM reader
+  consumes them
+- **WHEN** issue #32 removes the raw plane
+- **THEN** all five DTOs, typed subjects, publishers, Graphable/schema methods,
+  validation, trace fields, and assertions are absent
+- **AND** all seven raw-event vocabulary constants and registrations are
+  absent
+- **AND** the false component output is absent
+- **AND** authoritative EntityState KV message categories remain unchanged
+- **AND** no replacement subject, graph route, owner, compatibility alias, or
+  UI event mapping is added
+
+#### Scenario: Audit delta isolates the retained migration
+
+- **GIVEN** the historical package baseline is 23 invalid candidates from 30
+  extracted
+- **AND** payloads.go contributes 9 invalid candidates from 12 extracted
+- **WHEN** the pinned beta.158 audit is rerun after issue #32
+- **THEN** it reports 14 invalid candidates from 18 extracted
+- **AND** all 14/18 belong to the retained store.go corpus
+- **AND** the historical baseline audit remains unchanged
+
+#### Scenario: Phase-2 framework handoff remains deferred
+
+- **WHEN** issue #32 completes
+- **THEN** agentprogression, the SemStreams dependency, retained predicates,
+  entity IDs, owners, lifecycle workflows, graph views, API, and UI are
+  unchanged
+- **AND** reactivation remains blocked on beta.158 and SemStreams #313
+- **AND** no duplicate upstream issue is opened
+- **AND** a linked owned-create issue is opened only if Phase 2 proves #313
+  does not supply the required inventory-entry and active-effect birth
+  operation
+- **AND** Phase 2 replaces agentstore `sync.Map` current-state reads with
+  SemStreams graphview-derived projections
+- **AND** purchases send an idempotent durable XP-debit command/request to the
+  agentprogression owner after #313 enables owner-safe mutation
+- **AND** agentstore never directly debits progression XP or replaces the full
+  Agent entity
+- **AND** Agent lifecycle and status predicates remain outside agentstore
+  authority
+
 ### Requirement: Dead party events and DAG shadows are deleted
 
 The system SHALL retain partycoord only as the current Party formation,

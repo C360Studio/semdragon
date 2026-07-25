@@ -37,6 +37,11 @@ after the lifecycle/gated-DAG foundation in draft PR
   output, and dead progression vocabulary. Retain its Agent model, XP policy,
   validation, and registered Phase-2 implementation without migrating its
   predicates or writers in this packet.
+- Resolve issue #32 by disabling agentstore in the two alternate shipped
+  profiles and deleting its five publisher-only raw event families, seven
+  event-only vocabulary entries, and false output port. Retain the registered
+  store implementation, product policy, REST/OpenAPI/models, and later
+  authoritative migration target.
 - Cut over by wiping and reseeding development/test graph state. No aliases,
   dual writes, permissive mode, or beta-state rewriter will be added.
 - Establish zero-finding predicate, entity-ID, relationship, build, and UI
@@ -65,6 +70,9 @@ after the lifecycle/gated-DAG foundation in draft PR
 - **Agent progression**: issue #30 removes runtime activation and a dead
   projection facade while preserving the dormant product implementation.
   Canonical predicates, ownership, lifecycle, and watchers remain deferred.
+- **Agent store**: issue #32 completes the Phase-1 configuration quarantine
+  and removes a raw event plane with no repository consumer. Store routes,
+  models, policy, and dormant implementation remain for Phase 2.
 - **Data**: incompatible beta graph/index state is deleted and reseeded from
   source; no production deployment or retained beta data requires migration.
 - **Upstream coordination**: reuse SemStreams issues

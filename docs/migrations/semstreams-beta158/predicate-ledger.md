@@ -220,12 +220,19 @@ extracted candidates. The historical baseline audit remains unchanged.
 
 ### agentstore: 23 findings
 
-- `agent.purchase.{item_id,xp_spent}` becomes
-  `agent.purchase.{item-id,xp-spent}`.
-- `agent.consumable.{effect_type,expired_reason}` becomes
-  `agent.consumable.{effect-type,expired-reason}`.
-- `agent.inventory.{change_type,item_id,quantity_change,total_spent}` becomes
-  `agent.inventory.{change-type,item-id,quantity-change,total-spent}`.
+This is the historical beta.158 baseline: 23 invalid candidates from 30
+extracted. Issue #32 deletes the repository-unconsumed raw event plane rather
+than renaming it. `payloads.go` contributes nine invalid candidates from
+twelve extracted: `agent.purchase.{item_id,xp_spent}`,
+`agent.progression.xp.current`,
+`agent.consumable.{effect_type,expired_reason}`, and
+`agent.inventory.{change_type,item_id,quantity_change,total_spent}`. The pinned
+post-change audit target is 14 invalid from 18 extracted, all in retained
+`store.go`. The historical baseline audit remains unchanged.
+
+The retained `store.go` findings migrate later:
+
+- `agent.inventory.total_spent` becomes `agent.inventory.total-spent`.
 - `agent.inventory.{tools_count,consumables_count}` becomes
   `agent.inventory.{tools-count,consumables-count}`.
 - `store.item.{purchase_type,xp_cost,min_tier,in_stock,rental_uses,min_level}`
@@ -234,24 +241,15 @@ extracted candidates. The historical baseline audit remains unchanged.
 - `store.item.{guild_discount,tool_id,effect_type,effect_magnitude,effect_duration}`
   becomes
   `store.item.{guild-discount,tool-id,effect-type,effect-magnitude,effect-duration}`.
-- The repeated `agent.progression.xp.current` occurrence becomes
-  `agent.progression.xp-current`.
 
 Inventory/effect state does not remain embedded on the agent; the approved
 first-class model below supersedes dynamic inventory predicates.
-`agentstore` must not project `agent.progression.xp-current`: the payload is
-graph-bound today, but that triple crosses the agentprogression claim. The
-store workflow invokes the agentprogression owner API for the XP change and
-removes this predicate from its own `Triples`.
-
-The remaining graph-bound store payload predicates are classified rather than
-exempted. `agent.purchase.{item-id,xp-spent}`,
-`agent.consumable.{effect-type,expired-reason}`, and
-`agent.inventory.{change-type,item-id,quantity-change}` are append evidence.
-`agent.inventory.{total-spent,tools-count,consumables-count}` are
-agentstore-owned current aggregates. Their relationship-looking item values
-remain scalar catalog IDs unless converted as specified under “Catalog aliases
-and entity references.”
+The deleted raw payload predicates are neither compatibility aliases nor
+append evidence. A later product need for purchase or consumption receipts
+requires a new explicit projection and consumer contract; it does not
+resurrect the removed DTO Graphables. The retained
+`agent.inventory.{total-spent,tools-count,consumables-count}` predicates remain
+the future agentstore-owned aggregate target until the first-class cutover.
 
 ### autonomy: 19 findings
 

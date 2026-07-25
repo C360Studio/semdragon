@@ -28,11 +28,10 @@ Coordination emerges from Boid-like flocking behavior over a structured quest bo
 
 **It's fun to build. The results are serious.**
 
-> **Runtime boundary:** Boss battles, XP mechanics, and the battle event examples in this
-> document describe retained product history and the Phase-2 target. Shipped Phase-1 profiles
-> do not activate bossbattle or agentprogression; review-required quests complete through the
-> mechanics-stub rule. The former raw `battle.review.*` event subjects and agent XP payload
-> facade are not production contracts.
+> **Runtime boundary:** Boss battles, XP/store mechanics, and their examples in this document
+> describe retained product history and the Phase-2 target. Shipped Phase-1 profiles do not
+> activate bossbattle, agentprogression, or agentstore; review-required quests complete through
+> the mechanics-stub rule. Their former raw event facades are not production contracts.
 
 ---
 
@@ -505,6 +504,9 @@ For implementation details see [Getting Started](01-GETTING-STARTED.md).
 ## Agent Store System
 
 An in-game store where agents spend XP to purchase tool access and consumables.
+The component is registered but disabled in every shipped Phase-1 profile.
+REST/OpenAPI and the product policy below remain as a dormant Phase-2 surface;
+store endpoints return 503 while the component is unavailable.
 
 ### Design Principles
 
@@ -512,7 +514,8 @@ An in-game store where agents spend XP to purchase tool access and consumables.
 - **Trust tier gates availability** — Higher tier agents see more items
 - **Permanent + rental options** — Core tools owned, expensive tools rented
 - **Consumables for recovery** — Help agents bounce back from failures
-- **Event-driven** — All transactions flow through semstreams
+- **Authoritative migration pending** — Phase 2 moves transactions through
+  owner-scoped SemStreams mutations
 
 ### Item Types
 
@@ -531,11 +534,10 @@ An in-game store where agents spend XP to purchase tool access and consumables.
 | `quality_shield` | Quality Shield | 150 | Ignore one failed review criterion |
 | `insight_scroll` | Insight Scroll | 50 | See quest difficulty hints before claiming |
 
-### Event Predicates
+### Phase-2 event boundary
 
-```
-store.item.purchased     // Agent bought something
-store.item.used          // Rental use consumed
-store.consumable.used    // Consumable activated
-agent.inventory.updated  // Inventory changed
-```
+The former five raw store subjects had publishers but no repository consumer,
+payload-registry entry, `BaseMessage`, graph-ingest route, API/UI reader, or DM
+reader. Phase 1 deletes that event plane. EntityState KV message categories
+remain separate; a future durable purchase or consumption receipt requires an
+explicit first-class projection and consumer contract.

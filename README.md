@@ -8,11 +8,11 @@ decompose into party quests with a lead agent coordinating a DAG of sub-quests. 
 framing is genuine — trust tiers are earned, not declared, and emergent Boid-like behavior
 handles quest distribution without central scheduling.
 
-> **Current Phase-1 runtime:** The shipped profiles do not activate bossbattle or
-> agentprogression. Review-required quests pass through `in_review` and are completed by the
-> mechanics-stub rule with `review-skipped-mechanics-disabled`. Battle and Agent/XP product
-> models remain for Phase 2, but a fresh Phase-1 run creates no battle or progression side
-> effect.
+> **Current Phase-1 runtime:** The shipped profiles do not activate bossbattle,
+> agentprogression, or agentstore. Review-required quests pass through `in_review` and are
+> completed by the mechanics-stub rule with `review-skipped-mechanics-disabled`. Battle,
+> Agent/XP, and store product models remain for Phase 2, but a fresh Phase-1 run creates no
+> battle, progression, store, or inventory side effect.
 
 ## Quick Start
 
@@ -72,7 +72,7 @@ task docker:up:ollama      # local Ollama, no key needed
 ├─────────────────────────────────────────────────┤
 │           QUEST BOARD + EXECUTION               │
 │  questboard · rules · bossbattle (Phase 2)      │
-│  agentprogression (Phase 2) · agentstore        │
+│  agentprogression (Phase 2) · agentstore (P2)   │
 │  questbridge · questtools · questdagexec        │
 │  promptmanager                                  │
 ├─────────────────────────────────────────────────┤
@@ -137,7 +137,7 @@ semdragons/
 │   ├── questtools/         # Tool execution with tier/skill/sandbox gates
 │   ├── questdagexec/       # DAG execution for party quest decomposition
 │   ├── agentprogression/   # Dormant Phase-2 Agent model and XP policy
-│   ├── agentstore/         # XP marketplace: tools and consumables
+│   ├── agentstore/         # Dormant Phase-2 XP marketplace policy and models
 │   ├── autonomy/           # Heartbeat-driven agent decision loop
 │   ├── boidengine/         # Periodic boid attraction computation, publishes per-agent suggestions
 │   ├── guildformation/     # Auto guild clustering from shared performance patterns

@@ -72,8 +72,9 @@
   `boidengine`, and `redteam` from all three shipped runtime profiles; enable
   the complete quest lifecycle rule pack in each profile; and verify clean
   boot and quest flow without mechanics. Issue #26 owns the bossbattle slice,
-  including the no-battle side-effect proof. Keep this five-component task
-  partial until every listed processor is disabled in every shipped profile.
+  issue #30 owns agentprogression, and issue #32 owns agentstore. Keep this
+  five-component task partial until boidengine and redteam are also disabled
+  in every shipped profile.
 - [ ] 4.2 Add the stub rule: on transition into `in_review`, fire `lifecycle_transition` to `completed` with `verdict: review-skipped-mechanics-disabled` set atomically
 - [ ] 4.3 Enable `lifecycle-gateway` scoped to the quest workflow; verify inspect/history/operator-transition against the running stack
 - [ ] 4.4 Delete `service/api` handlers superseded by the gateway (status mutation only; keep world/DM/workspace/creation endpoints)
@@ -96,6 +97,34 @@
   race, and integration tests; the full Go test and build; schema freshness;
   strict OpenSpec validation; and diff checks pass. Architect and independent
   Go reviewer approve the slice.
+- [x] 4.6 Resolve
+  [semdragon #32](https://github.com/C360Studio/semdragon/issues/32): retain
+  `agent_store` registration but disable it in every shipped profile; preserve
+  the complete mechanics-stub rule pack, product policy/models, dormant code,
+  REST/OpenAPI, API 503 behavior, and autonomy's unavailable-store no-op.
+  Delete the five publisher-only payload/subject/publisher families, seven
+  raw-event vocabulary entries, and false output while retaining EntityState
+  KV categories. Verify the pinned audit moves from 23/30 to 14/18 by deleting
+  payloads.go's 9/12 corpus and retaining store.go's 14/18 corpus. Make no
+  agentprogression, dependency, retained-predicate, owner, lifecycle,
+  graph-view, API, or UI change. Keep Phase-2 reactivation blocked on
+  SemStreams #313 and add a linked owned-create issue only if later required.
+  Record, but do not implement, the future graphview reads, idempotent durable
+  agentprogression XP-debit command, prohibition on full Agent replacement,
+  and exclusion of Agent lifecycle/status from agentstore authority.
+
+  Completed evidence (2026-07-25): all shipped profiles disable
+  `agent_store`, and a real ComponentManager creates no agentstore instance.
+  All six routed store requests return 503; deep-isolated tests prove all four
+  autonomy store actions are nil-store no-ops with no mutation. The raw
+  payload/subject/publisher plane, seven vocabulary entries, and false output
+  are absent while policy, models, routes, and schemas remain. Fresh-graph
+  integration preserves seeded Agent and Guild state and creates no unexpected
+  entity. The pinned beta.158 audit is exactly 14/18. Focused unit/race and
+  agentstore integration-race, `go test ./...`, `go build ./...`, entity and
+  OpenAPI schema freshness, `npm run check` with 0 errors and 15 unrelated
+  existing warnings, both strict OpenSpec validations, and diff checks pass.
+  Architect, independent Go reviewer, and Svelte reviewer approve the slice.
 
 ### Issue #26 partial Stage B3 evidence
 
@@ -110,9 +139,8 @@
   Go, and Svelte review.
 
 This evidence completes only the bossbattle slice. Task 4.1 remains partial
-until `agentprogression`, `agentstore`, `boidengine`, and `redteam` are also
-disabled in every shipped profile. Task 4.2 and the remaining lifecycle gates
-remain unchecked.
+until boidengine and redteam are also disabled in every shipped profile. Task
+4.2 and the remaining lifecycle gates remain unchecked.
 
 ## 5. Verification gate
 

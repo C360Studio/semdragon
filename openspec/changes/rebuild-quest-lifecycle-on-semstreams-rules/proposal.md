@@ -49,6 +49,11 @@ against the mock LLM (zero paid tokens).
   delete its no-publisher `AgentXPPayload`, false output port, and six dead
   vocabulary entries; and retain the Agent/reconstruction, XP engine,
   validation, rules, and dormant Phase-2 implementation.
+- Resolve the agentstore slice through issue #32: keep `agent_store`
+  registered but disabled in all three shipped profiles; delete its five
+  publisher-only raw payload/subject/publisher families, seven event-only
+  vocabulary entries, and false output; and retain store policy, models,
+  REST/OpenAPI, and the dormant Phase-2 implementation.
 - Adopt the framework `lifecycle-gateway` operator REST surface for quest
   workflow CRUD/history where it can replace bespoke `service/api` handlers;
   keep product endpoints (world state, DM chat, workspace) as-is.
@@ -85,7 +90,8 @@ against the mock LLM (zero paid tokens).
   retreat surfaces while retaining its dormant authoritative model for Phase
   2. Issue #30 config-gates agentprogression without changing agentstore,
   SemStreams, predicates, ownership, lifecycle, or watcher behavior.
-  Agentstore, boidengine, and redteam remain open under Stage B3.
+  Issue #32 config-gates agentstore and removes only its no-consumer raw event
+  plane. Boidengine and redteam remain open under Stage B3.
 - **Dependencies**: the beta.21 → beta.135 foundation is implemented on this
   branch. The beta.158 pre-v1 clean break is a separate prerequisite change:
   `adopt-semstreams-prev1-contract`. No dependency-only bump is permitted.

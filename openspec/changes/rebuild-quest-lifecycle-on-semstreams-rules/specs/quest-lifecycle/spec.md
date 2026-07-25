@@ -133,6 +133,28 @@ are disabled.
   migration is included
 - **AND** reactivation remains blocked on beta.158 and SemStreams #313
 
+#### Scenario: Agentstore is unavailable without product-surface deletion
+
+- **WHEN** issue #32 completes the agentstore quarantine
+- **THEN** every shipped profile retains `agent_store` with `enabled: false`
+- **AND** completion through the mechanics stub produces no store or inventory
+  side effect
+- **AND** store routes, OpenAPI, models, policy, and dormant implementation
+  remain
+- **AND** store API calls retain their unavailable 503 response
+- **AND** autonomy treats the unavailable store as a no-op
+- **AND** the five publisher-only raw event families, seven event vocabulary
+  entries, and false output are absent
+- **AND** EntityState KV message categories remain unchanged
+- **AND** no agentprogression, dependency, retained-predicate, owner,
+  lifecycle, graph-view, API, or UI migration is included
+- **AND** reactivation remains blocked on SemStreams #313
+- **AND** Phase 2 replaces agentstore's `sync.Map` current-state reads with
+  SemStreams graphview-derived projections
+- **AND** Phase-2 XP debit uses an idempotent durable command/request to the
+  agentprogression owner rather than a direct Agent replacement
+- **AND** Agent lifecycle and status remain outside agentstore authority
+
 ### Requirement: UI-facing predicate stability
 The quest entity predicates consumed by the dashboard world store SHALL remain
 stable across the migration, and any predicate change SHALL ship with an

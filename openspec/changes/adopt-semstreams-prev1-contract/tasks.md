@@ -175,6 +175,37 @@
   race, and integration tests; the full Go test and build; schema freshness;
   strict OpenSpec validation; and diff checks pass. Architect and independent
   Go reviewer approve the slice.
+- [x] 2.19 Resolve
+  [semdragon #32](https://github.com/C360Studio/semdragon/issues/32) by
+  retaining `agent_store` registration but disabling it in all three shipped
+  profiles. Preserve product policy, catalog/inventory/effect models and
+  validation, dormant handlers/watchers, REST routes, OpenAPI, generated
+  models, the API 503 contract, and autonomy's unavailable-store no-op.
+  Delete the five publisher-only payload/subject/publisher families, all seven
+  raw-event vocabulary entries, and the false component output. Preserve
+  EntityState KV message categories. Verify the pinned beta.158 audit moves
+  from the historical 23/30 baseline to 14/18 by deleting payloads.go's 9/12
+  corpus while retaining store.go's 14/18 corpus. Make no agentprogression,
+  dependency, retained-predicate, owner, lifecycle, graph-view, API, or UI
+  change. Keep reactivation blocked on issue #4 and SemStreams #313; open a
+  linked owned-create issue only if the Phase-2 implementation proves #313
+  insufficient. Record, but do not implement, the future graphview read
+  projection, idempotent durable agentprogression XP-debit command, prohibition
+  on full Agent replacement, and exclusion of Agent lifecycle/status from
+  agentstore authority.
+
+  Completed evidence (2026-07-25): all shipped profiles disable
+  `agent_store`, and a real ComponentManager creates no agentstore instance.
+  All six routed store requests return 503; deep-isolated tests prove all four
+  autonomy store actions are nil-store no-ops with no mutation. The raw
+  payload/subject/publisher plane, seven vocabulary entries, and false output
+  are absent while policy, models, routes, and schemas remain. Fresh-graph
+  integration preserves seeded Agent and Guild state and creates no unexpected
+  entity. The pinned beta.158 audit is exactly 14/18. Focused unit/race and
+  agentstore integration-race, `go test ./...`, `go build ./...`, entity and
+  OpenAPI schema freshness, `npm run check` with 0 errors and 15 unrelated
+  existing warnings, both strict OpenSpec validations, and diff checks pass.
+  Architect, independent Go reviewer, and Svelte reviewer approve the slice.
 
 ## 3. Verification and handoff to beta.158
 

@@ -103,19 +103,11 @@ func (c *Component) InputPorts() []component.Port {
 	}
 }
 
-// OutputPorts returns the ports this component produces data on.
+// OutputPorts returns the ports this component produces data on. Store
+// operations currently expose only request/response APIs and persisted state;
+// the former raw event plane had no durable consumer.
 func (c *Component) OutputPorts() []component.Port {
-	return []component.Port{
-		{
-			Name:        "store-events",
-			Direction:   component.DirectionOutput,
-			Required:    true,
-			Description: "Store operation events",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateStoreItemPurchased,
-			},
-		},
-	}
+	return nil
 }
 
 // ConfigSchema returns the configuration schema for this component.

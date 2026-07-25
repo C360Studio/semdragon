@@ -131,6 +131,33 @@ candidates. The retained authoritative writer cannot reactivate until
 beta.158 and SemStreams #313 provide the approved owner-token mutation
 boundary.
 
+Issue #32 applies the quarantine boundary to agentstore. The default profile
+already disables `agent_store`; the semsource and tier-1 E2E profiles now do
+the same. Store routes, OpenAPI, models, catalog/inventory/effect policy,
+component registration, and dormant code remain. Store API calls return their
+existing 503 response while unavailable, and autonomy treats the missing store
+as a no-op.
+
+The five publisher-only raw store payload families, their subjects and
+publishers, all seven raw-event vocabulary entries, and the false component
+output are deleted. EntityState KV message categories remain distinct and
+unchanged. The pinned beta.158 audit moves from the historical 23/30 baseline
+to 14/18: exactly the payloads.go 9/12 plane is removed and the store.go 14/18
+corpus remains.
+
+Issue #32 performs no agentprogression, dependency, retained-predicate, owner,
+lifecycle, graph-view, API, or UI migration. Reactivation remains blocked on
+SemStreams #313. A linked owned-create issue is opened later only if #313 does
+not supply the first-class inventory/effect birth operation actually required
+by Phase 2.
+
+The later migration replaces agentstore's `sync.Map` current-state reads with
+SemStreams graphview projections. It sends an idempotent, durable XP-debit
+command/request to the agentprogression owner after #313 instead of directly
+debiting XP or replacing Agent. Agent lifecycle and status remain outside
+agentstore authority. These are Phase-2 handoffs, not issue #32 production
+changes.
+
 ### D7: Adopt lifecycle-gateway for workflow operations only
 Enable the framework `lifecycle-gateway` for quest workflow inspect/history/
 transition (satisfies the operator-surface requirement). Product endpoints

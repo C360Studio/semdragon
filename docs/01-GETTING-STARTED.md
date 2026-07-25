@@ -5,10 +5,10 @@ Work items are *quests*, autonomous LLM processes are *adventurers* (agents) who
 up, and quality reviews are *boss battles*. The system is reactive: post a quest and watch the
 processors claim and execute it without manual intervention.
 
-> **Phase-1 runtime status:** Bossbattle is not activated by any shipped profile. A
-> review-required quest enters `in_review`, then the mechanics-stub rule completes it with
-> `review-skipped-mechanics-disabled`. The retained battle API, UI, evaluator, and model are
-> dormant until the Phase-2 authoritative projection is implemented.
+> **Phase-1 runtime status:** Bossbattle, agentprogression, and agentstore are not activated by
+> any shipped profile. A review-required quest enters `in_review`, then the mechanics-stub rule
+> completes it with `review-skipped-mechanics-disabled`. Their retained product and API
+> surfaces remain dormant until the Phase-2 authoritative projections are implemented.
 
 This guide gets you from zero to your first completed quest.
 
@@ -303,9 +303,9 @@ The `components` section enables or disables each reactive processor. The defaul
 `questboard`, the complete quest `rule-processor` pack, `guildformation`, `boidengine`,
 `agentic-loop`, `agentic-model`, `questbridge`, `questtools`, `questdagexec`, `autonomy`, and
 `partycoord`. The registered `agent_progression` component remains disabled, and bossbattle
-remains absent, in every shipped profile during Phase 1. `agent_store` is registered and
-default-disabled, but the semsource and tier-1 E2E profiles still enable it pending a separate
-Stage B3 packet.
+remains absent, in every shipped profile during Phase 1. The registered `agent_store`
+component is also disabled in every shipped profile; its routes and product models remain for
+Phase 2.
 
 ### Key env vars
 
@@ -398,7 +398,7 @@ which makes E2E tests reliable without relying on any live LLM service.
 | NATS connection refused | NATS not running on port 4222 | Run `docker compose -f docker/compose.yml up nats -d` |
 | `sandbox_dir` errors locally | Default path `/workspace` does not exist on host | Set `sandbox_dir` in config to a local path |
 | Quest stuck in `in_review` | Incomplete Phase-1 rules | Confirm `rule-processor` loads all four quest rule files |
-| 503 on store endpoints | `agent_store` not running | Confirm `agent_store` is `enabled: true` in config |
+| Store endpoints return 503 | Expected Phase-1 quarantine | Leave agentstore disabled until Phase 2 |
 
 ### Watch live NATS state changes
 

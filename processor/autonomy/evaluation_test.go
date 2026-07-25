@@ -2,6 +2,7 @@ package autonomy
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -163,6 +164,28 @@ func TestActions_ReturnFalseWithoutStore(t *testing.T) {
 	for _, act := range actions {
 		if act.shouldExecute(agent, tracker) {
 			t.Errorf("action %q shouldExecute returned true with nil store", act.name)
+		}
+	}
+
+	for _, act := range actions[:4] {
+		before, err := json.Marshal(agent)
+		if err != nil {
+			t.Fatalf("marshal Agent before action %q: %v", act.name, err)
+		}
+		var candidate agentprogression.Agent
+		if err := json.Unmarshal(before, &candidate); err != nil {
+			t.Fatalf("clone Agent before action %q: %v", act.name, err)
+		}
+
+		if err := act.execute(context.Background(), &candidate, tracker); err != nil {
+			t.Errorf("action %q execute with nil store: %v", act.name, err)
+		}
+		after, err := json.Marshal(&candidate)
+		if err != nil {
+			t.Fatalf("marshal Agent after action %q: %v", act.name, err)
+		}
+		if string(after) != string(before) {
+			t.Errorf("action %q mutated Agent with nil store", act.name)
 		}
 	}
 }
