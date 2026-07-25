@@ -51,6 +51,16 @@
   raw typed-subject events, but do not bind a projection owner while no
   autonomy payload is registered or routed through graph-ingest. Hand issue #4
   an explicit wire-or-delete decision for the seven latent Graphables.
+- [x] 2.11 Resolve
+  [semdragon #16](https://github.com/C360Studio/semdragon/issues/16) by
+  declaring the 15 canonical predicates emitted by the three live execution
+  lifecycle payloads, preserving their raw event publishers in executor and
+  questbridge, and deleting the unproduced tool-call/result payload surfaces.
+  Canonicalize the real web-fetch writer's three invalid names and two `@id`
+  relationships, but defer its owner-safe mutation to a later packet. Add no
+  payload registration, graph-ingest route, projection bind, or heartbeat.
+  Hand graph routing to issue #4, generic tool telemetry to issue #7, and the
+  temporary `dc.terms.modified` compatibility declaration to SemStreams #673.
 
 ## 3. Verification and handoff to beta.158
 
@@ -129,5 +139,29 @@ This evidence closes only task 2.10:
   occurrences.
 - Source review confirms that no projection contract, owner bind, payload
   registration, or graph-ingest route was added.
+- Strict OpenSpec validation and `git diff --check` pass.
+- Architect and Go reviewer approved the implementation.
+
+## Completed issue #16 evidence
+
+This evidence closes only task 2.11:
+
+- Vocabulary and payload tests cover all 15 execution lifecycle predicates and
+  seven product `source.doc.*` predicates. The web writer also reuses
+  SemStreams `vocabulary.DCTermsTitle`.
+- Tool-call and tool-result payloads, subjects, vocabulary metadata, and graph
+  fixtures are deleted. A stale-checked inventory test covers the production,
+  vocabulary, and relationship-fixture surfaces.
+- Contract tests prove exactly three retained `@id` relationships:
+  `execution.agent.id`, `source.doc.fetched-by`, and `source.doc.quest-id`.
+- The isolated `DCTermsModified` compatibility declaration is linked to
+  SemStreams #673 and remains scheduled for deletion on tagged upstream
+  adoption.
+- `go test -race . ./domain ./processor/executor ./processor/questbridge -count=1`
+  and `go test ./...` pass.
+- The pinned beta.158 predicate audit for `./processor/executor` reports zero
+  findings.
+- Source review confirms that no payload registration, graph-ingest route,
+  projection contract, owner bind, or heartbeat was added.
 - Strict OpenSpec validation and `git diff --check` pass.
 - Architect and Go reviewer approved the implementation.

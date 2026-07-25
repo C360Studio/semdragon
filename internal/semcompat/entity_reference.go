@@ -7,6 +7,13 @@ package semcompat
 // use with message.EntityReferenceDatatype immediately after the beta.158 bump.
 const EntityReferenceDatatype = "@id"
 
+// DCTermsModified is the beta.135 compatibility value for the standard
+// dc.terms.modified predicate. SemStreams #673 owns the framework primitive:
+// https://github.com/C360Studio/semstreams/issues/673
+// Delete this constant when Semdragon adopts the first SemStreams release
+// containing that primitive.
+const DCTermsModified = "dc.terms.modified"
+
 // These gated-DAG predicates are the SemStreams beta.158 config defaults.
 // Semdragons is still compiled against beta.135, whose gated-DAG package does
 // not export them, so issue #4 MUST replace these compatibility values with

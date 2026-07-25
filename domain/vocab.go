@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/vocabulary"
 )
 
@@ -325,17 +326,72 @@ const (
 	// PredicateExecutionStarted - Quest execution started.
 	PredicateExecutionStarted = "execution.lifecycle.started"
 
+	// PredicateExecutionAgentID - Agent executing the quest.
+	PredicateExecutionAgentID = "execution.agent.id"
+
+	// PredicateExecutionLoopID - Agentic loop identifier.
+	PredicateExecutionLoopID = "execution.loop.id"
+
+	// PredicateExecutionConfigMaxTurns - Maximum configured execution turns.
+	PredicateExecutionConfigMaxTurns = "execution.config.max-turns"
+
+	// PredicateExecutionConfigMaxTokens - Maximum configured execution tokens.
+	PredicateExecutionConfigMaxTokens = "execution.config.max-tokens"
+
+	// PredicateExecutionToolsAvailable - Number of tools available to the execution.
+	PredicateExecutionToolsAvailable = "execution.tools.available"
+
 	// PredicateExecutionCompleted - Quest execution completed successfully.
 	PredicateExecutionCompleted = "execution.lifecycle.completed"
+
+	// PredicateExecutionStatusFinal - Final execution status.
+	PredicateExecutionStatusFinal = "execution.status.final"
+
+	// PredicateExecutionMetricsTurns - Number of execution turns.
+	PredicateExecutionMetricsTurns = "execution.metrics.turns"
+
+	// PredicateExecutionMetricsToolCalls - Number of execution tool calls.
+	PredicateExecutionMetricsToolCalls = "execution.metrics.tool-calls"
+
+	// PredicateExecutionTokensPrompt - Prompt tokens consumed by the execution.
+	PredicateExecutionTokensPrompt = "execution.tokens.prompt"
+
+	// PredicateExecutionTokensCompletion - Completion tokens consumed by the execution.
+	PredicateExecutionTokensCompletion = "execution.tokens.completion"
+
+	// PredicateExecutionDurationMS - Execution duration in milliseconds.
+	PredicateExecutionDurationMS = "execution.duration.ms"
 
 	// PredicateExecutionFailed - Quest execution failed.
 	PredicateExecutionFailed = "execution.lifecycle.failed"
 
-	// PredicateToolCall - Tool invocation during execution.
-	PredicateToolCall = "execution.tool.call"
+	// PredicateExecutionFailureError - Final execution failure detail.
+	PredicateExecutionFailureError = "execution.failure.error"
+)
 
-	// PredicateToolResult - Tool result returned during execution.
-	PredicateToolResult = "execution.tool.result"
+// --- Source Document Predicates ---
+
+const (
+	// PredicateSourceDocumentContent - Fetched document content.
+	PredicateSourceDocumentContent = "source.doc.content"
+
+	// PredicateSourceDocumentSummary - Fetched document summary.
+	PredicateSourceDocumentSummary = "source.doc.summary"
+
+	// PredicateSourceDocumentURL - Fetched document source URL.
+	PredicateSourceDocumentURL = "source.doc.url"
+
+	// PredicateSourceDocumentMIMEType - Fetched document MIME type.
+	PredicateSourceDocumentMIMEType = "source.doc.mime-type"
+
+	// PredicateSourceDocumentScope - Visibility scope for the fetched document.
+	PredicateSourceDocumentScope = "source.doc.scope"
+
+	// PredicateSourceDocumentFetchedBy - Agent that fetched the document.
+	PredicateSourceDocumentFetchedBy = "source.doc.fetched-by"
+
+	// PredicateSourceDocumentQuestID - Quest associated with the fetched document.
+	PredicateSourceDocumentQuestID = "source.doc.quest-id"
 )
 
 // --- Agent Autonomy Predicates ---
@@ -746,21 +802,99 @@ func RegisterVocabulary() {
 		vocabulary.WithDescription("Quest execution started by agent"),
 		vocabulary.WithDataType("ExecutionStartedPayload"),
 	)
+	vocabulary.Register(PredicateExecutionAgentID,
+		vocabulary.WithDescription("Agent executing the quest"),
+		vocabulary.WithDataType("string"),
+	)
+	vocabulary.Register(PredicateExecutionLoopID,
+		vocabulary.WithDescription("Agentic loop identifier"),
+		vocabulary.WithDataType("string"),
+	)
+	vocabulary.Register(PredicateExecutionConfigMaxTurns,
+		vocabulary.WithDescription("Maximum configured execution turns"),
+		vocabulary.WithDataType("int"),
+	)
+	vocabulary.Register(PredicateExecutionConfigMaxTokens,
+		vocabulary.WithDescription("Maximum configured execution tokens"),
+		vocabulary.WithDataType("int"),
+	)
+	vocabulary.Register(PredicateExecutionToolsAvailable,
+		vocabulary.WithDescription("Number of tools available to the execution"),
+		vocabulary.WithDataType("int"),
+	)
 	vocabulary.Register(PredicateExecutionCompleted,
 		vocabulary.WithDescription("Quest execution completed successfully"),
 		vocabulary.WithDataType("ExecutionCompletedPayload"),
+	)
+	vocabulary.Register(PredicateExecutionStatusFinal,
+		vocabulary.WithDescription("Final execution status"),
+		vocabulary.WithDataType("string"),
+	)
+	vocabulary.Register(PredicateExecutionMetricsTurns,
+		vocabulary.WithDescription("Number of execution turns"),
+		vocabulary.WithDataType("int"),
+	)
+	vocabulary.Register(PredicateExecutionMetricsToolCalls,
+		vocabulary.WithDescription("Number of execution tool calls"),
+		vocabulary.WithDataType("int"),
+	)
+	vocabulary.Register(PredicateExecutionTokensPrompt,
+		vocabulary.WithDescription("Prompt tokens consumed by the execution"),
+		vocabulary.WithDataType("int"),
+	)
+	vocabulary.Register(PredicateExecutionTokensCompletion,
+		vocabulary.WithDescription("Completion tokens consumed by the execution"),
+		vocabulary.WithDataType("int"),
+	)
+	vocabulary.Register(PredicateExecutionDurationMS,
+		vocabulary.WithDescription("Execution duration in milliseconds"),
+		vocabulary.WithDataType("int64"),
 	)
 	vocabulary.Register(PredicateExecutionFailed,
 		vocabulary.WithDescription("Quest execution failed"),
 		vocabulary.WithDataType("ExecutionFailedPayload"),
 	)
-	vocabulary.Register(PredicateToolCall,
-		vocabulary.WithDescription("Tool invoked during execution"),
-		vocabulary.WithDataType("ToolCallPayload"),
+	vocabulary.Register(PredicateExecutionFailureError,
+		vocabulary.WithDescription("Final execution failure detail"),
+		vocabulary.WithDataType("string"),
 	)
-	vocabulary.Register(PredicateToolResult,
-		vocabulary.WithDescription("Tool result returned during execution"),
-		vocabulary.WithDataType("ToolResultPayload"),
+
+	// Source document predicates
+	vocabulary.Register(PredicateSourceDocumentContent,
+		vocabulary.WithDescription("Fetched document content"),
+		vocabulary.WithDataType("string"),
+	)
+	vocabulary.Register(PredicateSourceDocumentSummary,
+		vocabulary.WithDescription("Fetched document summary"),
+		vocabulary.WithDataType("string"),
+	)
+	vocabulary.Register(PredicateSourceDocumentURL,
+		vocabulary.WithDescription("Fetched document source URL"),
+		vocabulary.WithDataType("string"),
+	)
+	vocabulary.Register(PredicateSourceDocumentMIMEType,
+		vocabulary.WithDescription("Fetched document MIME type"),
+		vocabulary.WithDataType("string"),
+	)
+	vocabulary.Register(PredicateSourceDocumentScope,
+		vocabulary.WithDescription("Visibility scope for the fetched document"),
+		vocabulary.WithDataType("string"),
+	)
+	vocabulary.Register(PredicateSourceDocumentFetchedBy,
+		vocabulary.WithDescription("Agent that fetched the document"),
+		vocabulary.WithDataType("string"),
+	)
+	vocabulary.Register(PredicateSourceDocumentQuestID,
+		vocabulary.WithDescription("Quest associated with the fetched document"),
+		vocabulary.WithDataType("string"),
+	)
+
+	// Beta.135 compatibility only. SemStreams #673 owns this standard
+	// dc.terms.modified declaration and registration:
+	// https://github.com/C360Studio/semstreams/issues/673
+	vocabulary.Register(semcompat.DCTermsModified,
+		vocabulary.WithDescription("Beta.135 compatibility declaration pending SemStreams #673"),
+		vocabulary.WithDataType("string"),
 	)
 
 	// Agent autonomy predicates

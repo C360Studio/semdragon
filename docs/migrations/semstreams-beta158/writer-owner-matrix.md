@@ -508,7 +508,34 @@ Bare store catalog aliases are scalar. `inventory.assignment.item` and
 `BoardConfig.StoreItemEntityID` conversion and the table-driven validator,
 datatype, and round-trip evidence specified in the rename ledger.
 
-## Executor web-fetch claim
+## Executor lifecycle observations
+
+Executor and questbridge both publish the three live execution lifecycle
+payload families as raw typed-subject JSON. No payload factory or graph-ingest
+route exists, so issue #16 declares no owner and adds no binding.
+
+Their prospective graph shapes contain 15 unique predicates under pattern
+`*.*.game.*.quest.*`. Each started, completed, or failed shape uses one
+`append-evidence` group, no foreign edges, and no indexing profile.
+`execution.agent.id` is the only typed relationship and is an edge on the
+payload's quest subject.
+
+Issue #4 either deletes these Graphables or wires a real framework graph route.
+If executor and questbridge both become graph publishers, each binds only the
+shapes it actually emits under its own owner ID. If one component projects the
+shared event subjects, that projector is the owner. Every static owner uses
+`projection.BindAndHeartbeat` at the composition root; the payload package does
+not imply ownership.
+
+The unproduced tool-call and tool-result Graphables are deleted in issue #16.
+Issue #7 owns any later tool observation contract through SemStreams
+agentic-tools and trajectories.
+
+## Executor web-fetch target claim
+
+Issue #16 canonicalizes this real writer's predicate names and relationships,
+but does not yet activate the following owner claim or replace its full-object
+write:
 
 - Owner: `executor-web-fetch`; token
   `executor-web-fetch#<incarnation>`.
@@ -523,6 +550,16 @@ datatype, and round-trip evidence specified in the rename ledger.
 
 This resolves the previously ambiguous executor/semsource ownership: the
 executor web-fetch producer owns this exact source-document pattern and set.
+The pattern is disjoint from Semsource-owned document patterns even where
+predicate names overlap. A later web-document packet binds the replace-owned
+contract with `projection.BindAndHeartbeat` and moves `GraphClient.EmitEntity`
+to the supported owner-classified mutation lane.
+
+`source.doc.fetched-by` and `source.doc.quest-id` are typed same-subject
+relationships and require no `ForeignEdgeClaim`. SemStreams supplies
+`vocabulary.DCTermsTitle`. The temporary `dc.terms.modified` declaration is a
+compatibility surface linked to SemStreams #673, not product-owned vocabulary,
+and is deleted on adoption of a tagged upstream implementation.
 
 ## Graph-bound payload classification
 

@@ -100,6 +100,72 @@ the payload.
 - **AND** a wired route uses no foreign-edge claim and binds static owner
   `autonomy` with `projection.BindAndHeartbeat`
 
+### Requirement: Executor graph surfaces follow their runtime behavior
+
+The system SHALL preserve and canonicalize live execution lifecycle events,
+delete definition-only tool-event projections, and keep the real web-document
+writer distinct from both. A raw typed-subject publish SHALL NOT be treated as
+graph-ingest persistence.
+
+#### Scenario: Live execution lifecycle vocabulary is declared
+
+- **GIVEN** executor and questbridge both publish execution lifecycle events
+- **WHEN** tests enumerate the started, completed, and failed payload Graphables
+- **THEN** they emit exactly 15 unique declared canonical predicates
+- **AND** only `execution.agent.id` uses `@id`
+- **AND** the relationship subject equals the payload's quest `EntityID()`
+
+#### Scenario: Unproduced tool-event projections are removed
+
+- **GIVEN** tool-call and tool-result payloads have no production publisher or
+  consumer
+- **WHEN** issue #16 resolves their predicate-audit findings
+- **THEN** their payloads, typed subjects, vocabulary metadata, and graph
+  relationship fixtures are deleted
+- **AND** no projection owner, compatibility event, or replacement telemetry
+  implementation is added
+- **AND** issue #7 owns any later tool telemetry through SemStreams primitives
+
+#### Scenario: Real web writer is only lexically canonicalized
+
+- **GIVEN** web fetch persists a document through direct full-object
+  `GraphClient.EmitEntity`
+- **WHEN** issue #16 canonicalizes the writer
+- **THEN** it emits `source.doc.mime-type`, `source.doc.fetched-by`, and
+  `source.doc.quest-id`
+- **AND** exactly `source.doc.fetched-by` and `source.doc.quest-id` use `@id`
+- **AND** they remain same-subject edges with no `ForeignEdgeClaim`
+- **AND** owner-safe replacement of the full-object write remains a later
+  web-document packet
+
+#### Scenario: Executor package has exactly three typed relationships
+
+- **WHEN** contract tests enumerate the retained executor graph surfaces
+- **THEN** exactly `execution.agent.id`, `source.doc.fetched-by`, and
+  `source.doc.quest-id` use `@id`
+- **AND** loop IDs, URLs, MIME type, status, errors, counts, tokens, and
+  durations remain scalar
+
+#### Scenario: No executor projection is bound in the lexical packet
+
+- **GIVEN** lifecycle events have no payload registration or graph-ingest route
+- **AND** the web writer has not moved to an owner-classified mutation lane
+- **WHEN** issue #16 completes
+- **THEN** no executor projection contract, owner bind, or heartbeat is added
+- **AND** issue #4 owns the real lifecycle graph route and publisher-specific
+  `BindAndHeartbeat` lifecycle
+- **AND** no single owner is inferred from the executor payload package
+
+#### Scenario: Missing standard modified predicate remains upstream-owned
+
+- **GIVEN** beta.158 lacks a constant and registration for
+  `dc.terms.modified`
+- **WHEN** issue #16 declares the web document vocabulary
+- **THEN** it may add one compatibility declaration linked to SemStreams #673
+- **AND** the declaration is not treated as product-owned generic vocabulary
+- **AND** it is deleted on adoption of the first SemStreams tag containing
+  the upstream primitive
+
 ### Requirement: Disjoint authoritative writers
 
 Every mutable predicate group SHALL have one declared owner and write mode.

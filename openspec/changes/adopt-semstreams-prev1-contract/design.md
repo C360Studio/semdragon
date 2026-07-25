@@ -145,6 +145,10 @@ Semdragon does not turn temporary product seams into local framework code:
   task 3.1 remains open until the full predicate audit has exact evidence.
 - [SemStreams #670](https://github.com/C360Studio/semstreams/issues/670) owns
   generic staged fan-out admission and retires the activation latch.
+- [SemStreams #673](https://github.com/C360Studio/semstreams/issues/673) owns
+  the missing standard `dc.terms.modified` constant and vocabulary
+  registration. Issue #16 may carry one linked beta.135 compatibility
+  declaration; the first adopted tag containing #673 deletes it.
 - [semdragon #4](https://github.com/C360Studio/semdragon/issues/4) owns the
   beta.158 dependency adoption, decoded-entity validation, and registry
   wiring.
@@ -228,6 +232,69 @@ foreign-edge-only registrations, the static owner uses
 occurs once at the composition root after ownership initialization and before
 the autonomy component starts, never inside `Component.Start`.
 
+### D11: Executor observations, dead telemetry, and web state are distinct
+
+Issue [#16](https://github.com/C360Studio/semdragon/issues/16) partitions the
+35 executor audit candidates and nine findings by runtime behavior.
+
+`ExecutionStartedPayload`, `ExecutionCompletedPayload`, and
+`ExecutionFailedPayload` are live raw typed-subject events. Both
+`processor/executor` and `processor/questbridge` publish these families.
+Questbridge consumes framework agentic-loop `BaseMessage`s, but its executor
+observation publish is still raw JSON. No executor payload factory or event
+route to `graph.ingest.entity` exists, so the payload Graphables declare a
+prospective shape and do not prove graph persistence.
+
+The three live payloads emit 15 unique declared canonical predicates. Only
+`execution.agent.id` is an `@id` relationship, and it is a same-subject edge on
+the payload's quest entity. The other lifecycle, loop, configuration, metrics,
+token, duration, status, and failure values are scalar.
+
+`ToolCallPayload`, `ToolResultPayload`, their typed subjects, vocabulary
+metadata, and graph relationship fixtures have no production publisher or
+consumer. Issue #16 deletes that seven-predicate surface rather than creating a
+phantom graph owner. Issue
+[#7](https://github.com/C360Studio/semdragon/issues/7) owns any later tool
+telemetry requirement through SemStreams agentic-tools and trajectories.
+
+The web-fetch surface is different. `persistWebContent` is a real writer that
+passes `webContentEntity` to the full-object `GraphClient.EmitEntity` path.
+Issue #16 canonicalizes `source.doc.mime-type`, `source.doc.fetched-by`, and
+`source.doc.quest-id`; the last two are same-subject `@id` relationships on the
+document entity. Together with `execution.agent.id`, they are exactly the three
+`@id` relationships remaining in `processor/executor`.
+
+SemStreams supplies and registers `vocabulary.DCTermsTitle`, which the writer
+must reuse. Beta.158 does not supply or register `dc.terms.modified`, while
+`projection.Contract.Validate` requires declared vocabulary. SemStreams
+[#673](https://github.com/C360Studio/semstreams/issues/673) owns that standard
+primitive. Issue #16 may add one isolated, linked beta.135 compatibility
+constant and registration; it is not product vocabulary and must be deleted
+when Semdragon adopts the first SemStreams tag containing #673.
+
+Issue #16 adds no `projection.Contract`, owner bind, heartbeat, payload
+registration, graph-ingest route, or owner-safe web mutation. Issue
+[#4](https://github.com/C360Studio/semdragon/issues/4) wires or deletes the
+three latent lifecycle projections after choosing the real graph publisher.
+Because executor and questbridge both publish the raw events, neither package
+may claim sole ownership merely because the payload definitions live in
+executor.
+
+If a real graph route is approved, the three lifecycle shapes are
+`semdragons.execution.started.v1`,
+`semdragons.execution.completed.v1`, and
+`semdragons.execution.failed.v1`. Each uses pattern
+`*.*.game.*.quest.*`, one `append-evidence` group, no foreign edges, and no
+indexing profile. Every static graph publisher binds only its actual shapes
+with `projection.BindAndHeartbeat` at the composition root.
+
+A later web-document packet owns the `executor-web-fetch` replace-owned
+contract over `*.*.web.agent.doc.*`, including replacement of the raw
+full-object write with the supported owner-classified framework lane. Its nine
+predicates include the seven `source.doc.*` values plus `dc.terms.title` and
+`dc.terms.modified`; its two typed relationships require no
+`ForeignEdgeClaim`.
+
 ### Approved core-wave verification
 
 The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:
@@ -272,6 +339,29 @@ The 2026-07-25 evidence closes only task 2.10:
 
 The raw typed-subject events remain separate from graph persistence. Issue #4
 still owns the documented wire-or-delete decision for the seven Graphables.
+
+### Approved issue #16 verification
+
+The 2026-07-25 evidence closes only task 2.11:
+
+- vocabulary and payload tests cover all 15 execution lifecycle predicates,
+  seven product source-document predicates, and the reused framework title;
+- the dead tool-call/result payload, subject, vocabulary, and fixture surfaces
+  are absent under a stale-checked inventory test;
+- contract tests prove exactly three retained same-subject `@id`
+  relationships;
+- the temporary `DCTermsModified` compatibility declaration remains isolated,
+  linked to SemStreams #673, and scheduled for tagged upstream retirement;
+- the focused root/domain/executor/questbridge race suite and full Go suite
+  pass;
+- the pinned beta.158 executor predicate audit reports zero findings;
+- source review confirms that no payload registration, graph-ingest route,
+  projection contract, owner bind, or heartbeat was added;
+- strict OpenSpec validation and the diff check pass; and
+- architect and Go reviewer approved the implementation.
+
+The two real raw-event publishers remain distinct, issue #4 still owns their
+graph route or deletion, and the owner-safe web mutation remains deferred.
 
 ## Delivery Order
 

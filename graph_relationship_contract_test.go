@@ -267,20 +267,6 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 			},
 			wantReferences: map[string]int{"execution.agent.id": 1},
 		},
-		{
-			name: "executor tool-call event",
-			entity: &executor.ToolCallPayload{
-				QuestID: quest1, AgentID: agent1, ToolName: "search", Timestamp: now,
-			},
-			wantNoReferences: true,
-		},
-		{
-			name: "executor tool-result event",
-			entity: &executor.ToolResultPayload{
-				QuestID: quest1, AgentID: agent1, ToolName: "search", Timestamp: now,
-			},
-			wantNoReferences: true,
-		},
 		// These graph-bound event projections intentionally emit no references.
 		{name: "autonomy evaluated event", entity: &autonomy.EvaluatedPayload{AgentID: agent1, Timestamp: now}, wantNoReferences: true},
 		{name: "autonomy idle event", entity: &autonomy.IdlePayload{AgentID: agent1, Timestamp: now}, wantNoReferences: true},

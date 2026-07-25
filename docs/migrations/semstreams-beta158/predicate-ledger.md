@@ -291,25 +291,74 @@ Graphable surfaces and their graph-only tests.
   `battle.verdict.{quality-score,xp-awarded,xp-penalty,level-change}`.
 - `battle.outcome` becomes `battle.review.outcome`.
 
-### dmsession, executor, guildformation, and seeding
+### executor: nine findings across three boundaries
 
-- `dm.session.{quests_completed,quests_failed}` becomes
-  `dm.session.{quests-completed,quests-failed}`.
+The pinned beta.158 audit extracts 35 candidates from `processor/executor` and
+reports nine findings.
+
+The three live execution lifecycle payloads account for 19 candidates and four
+findings:
+
 - `execution.config.{max_turns,max_tokens}` becomes
   `execution.config.{max-turns,max-tokens}`.
 - `execution.metrics.tool_calls` becomes `execution.metrics.tool-calls`.
-- `execution.tool.{call_id,duration_ms}` becomes
-  `execution.tool.{call-id,duration-ms}`.
+
+Both executor and questbridge publish started, completed, and failed payloads
+as raw typed-subject JSON. Their Graphable methods emit 15 unique canonical
+predicates, all declared in the product vocabulary:
+
+- `execution.lifecycle.started`, `execution.agent.id`, `execution.loop.id`,
+  `execution.config.max-turns`, `execution.config.max-tokens`, and
+  `execution.tools.available`;
+- `execution.lifecycle.completed`, `execution.status.final`,
+  `execution.metrics.turns`, `execution.metrics.tool-calls`,
+  `execution.tokens.prompt`, `execution.tokens.completion`, and
+  `execution.duration.ms`; and
+- `execution.lifecycle.failed` and `execution.failure.error`.
+
+`execution.agent.id` is the only `@id`; it is a same-subject relationship on
+the quest entity.
+
+The tool-call and tool-result Graphables account for seven candidates and two
+findings, `execution.tool.call_id` and `execution.tool.duration_ms`. They have
+no production publisher or consumer. Issue #16 deletes both payloads, subjects,
+vocabulary metadata, and relationship fixtures instead of renaming or binding
+them. Issue #7 owns any future framework tool telemetry.
+
+The real web-fetch writer accounts for nine candidates and three findings:
+
 - `source.doc.{mime_type,fetched_by,quest_id}` becomes
   `source.doc.{mime-type,fetched-by,quest-id}`.
+
+`source.doc.fetched-by` and `source.doc.quest-id` are same-subject `@id`
+relationships on the web document. They join `execution.agent.id` as exactly
+the three typed relationships remaining in the package. The other values,
+including loop IDs, URLs, MIME type, status, errors, counts, tokens, and
+durations, are scalar.
+
+Issue #16 reuses SemStreams `vocabulary.DCTermsTitle`. Because beta.158 lacks
+the standard `dc.terms.modified` constant and registration, one isolated
+compatibility declaration may remain linked to
+[SemStreams #673](https://github.com/C360Studio/semstreams/issues/673). It is
+not product-owned generic vocabulary and is deleted when Semdragon adopts the
+first tagged SemStreams release containing the upstream primitive.
+
+No lifecycle Graphable is currently registered or routed through graph-ingest.
+Issue #16 adds no binding. Issue #4 owns the route-or-delete decision and must
+bind the actual publisher or publishers, not infer one owner from the payload
+package. The web writer remains a direct full-object graph mutation; a later
+web-document packet owns its replace-owned migration.
+
+### dmsession, guildformation, and seeding
+
+- `dm.session.{quests_completed,quests_failed}` becomes
+  `dm.session.{quests-completed,quests-failed}`.
 - `guild.event.created_by` becomes `guild.event.created-by`.
 - `guild.lifecycle.disbanded_at` becomes `guild.lifecycle.disbanded-at`.
 - `seeding.mode` becomes `seeding.config.mode`.
 - `seeding.stats.{agents_created,guilds_created}` becomes
   `seeding.stats.{agents-created,guilds-created}`.
 - `guild.specialization` becomes `guild.identity.specialization`.
-
-`source.doc.fetched-by` and `source.doc.quest-id` are `@id`.
 
 ### promptmanager: delete the definition-only projection
 

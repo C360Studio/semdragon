@@ -26,6 +26,7 @@ import (
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
+	"github.com/c360studio/semstreams/vocabulary"
 )
 
 // =============================================================================
@@ -957,19 +958,19 @@ func buildWebContentEntity(
 	questID, _ := call.Metadata["quest_id"].(string)
 
 	triples := []message.Triple{
-		{Subject: entityID, Predicate: "source.doc.content", Object: content},
-		{Subject: entityID, Predicate: "source.doc.summary", Object: summary},
-		{Subject: entityID, Predicate: "source.doc.url", Object: rawURL},
-		{Subject: entityID, Predicate: "source.doc.mime_type", Object: "text/html"},
-		{Subject: entityID, Predicate: "source.doc.scope", Object: "all"},
-		{Subject: entityID, Predicate: "dc.terms.title", Object: effectiveTitle},
-		{Subject: entityID, Predicate: "dc.terms.modified", Object: time.Now().Format(time.RFC3339)},
+		{Subject: entityID, Predicate: domain.PredicateSourceDocumentContent, Object: content},
+		{Subject: entityID, Predicate: domain.PredicateSourceDocumentSummary, Object: summary},
+		{Subject: entityID, Predicate: domain.PredicateSourceDocumentURL, Object: rawURL},
+		{Subject: entityID, Predicate: domain.PredicateSourceDocumentMIMEType, Object: "text/html"},
+		{Subject: entityID, Predicate: domain.PredicateSourceDocumentScope, Object: "all"},
+		{Subject: entityID, Predicate: vocabulary.DCTermsTitle, Object: effectiveTitle},
+		{Subject: entityID, Predicate: semcompat.DCTermsModified, Object: time.Now().Format(time.RFC3339)},
 	}
 	if agentID != "" {
-		triples = append(triples, message.Triple{Subject: entityID, Predicate: "source.doc.fetched_by", Object: agentID, Datatype: semcompat.EntityReferenceDatatype})
+		triples = append(triples, message.Triple{Subject: entityID, Predicate: domain.PredicateSourceDocumentFetchedBy, Object: agentID, Datatype: semcompat.EntityReferenceDatatype})
 	}
 	if questID != "" {
-		triples = append(triples, message.Triple{Subject: entityID, Predicate: "source.doc.quest_id", Object: questID, Datatype: semcompat.EntityReferenceDatatype})
+		triples = append(triples, message.Triple{Subject: entityID, Predicate: domain.PredicateSourceDocumentQuestID, Object: questID, Datatype: semcompat.EntityReferenceDatatype})
 	}
 
 	return &webContentEntity{id: entityID, triples: triples}
