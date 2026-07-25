@@ -2,7 +2,7 @@
 
 ## Why
 
-Semdragons pins semstreams `v1.0.0-beta.21` — 111 releases behind — and hand-rolls
+Semdragons began this change on semstreams `v1.0.0-beta.21` and hand-rolls
 state machines the framework now provides as first-class primitives
 (`pkg/lifecycle` workflows, rule-engine lifecycle actions, `processor/gated-dag`).
 The 2026-07-04 revival audit concluded the product concept is worth reviving but
@@ -13,9 +13,10 @@ against the mock LLM (zero paid tokens).
 
 ## What Changes
 
-- Upgrade `github.com/c360studio/semstreams` `v1.0.0-beta.21` → `v1.0.0-beta.132`,
-  absorbing graph-write/ownership semantics (upstream ADR-054/055/056) and
-  agentic-loop wire-contract drift (upstream ADR-053).
+- Upgrade `github.com/c360studio/semstreams` from `v1.0.0-beta.21` through the
+  latest approved target, currently `v1.0.0-beta.158`. The beta.158 adoption is
+  blocked on `adopt-semstreams-prev1-contract`, which canonicalizes predicates,
+  entity IDs/references, and writer ownership before the dependency cutover.
 - **BREAKING (internal)**: replace `processor/questboard`'s hand-rolled quest
   state machine with a declared `pkg/lifecycle` `Workflow` (transition table,
   phase predicate, audit triples) plus rule-engine
@@ -65,10 +66,9 @@ against the mock LLM (zero paid tokens).
   `cmd/semdragons`, `config/semdragons.json`. Mechanics processors
   (`agentprogression`, `bossbattle`, `agentstore`, `boidengine`, `redteam`)
   config-gated off but not deleted.
-- **Dependencies**: semstreams beta.21 → beta.132 is the bulk of the risk; the
-  rules DSL is stable but graph-write ownership and agentic wire contracts
-  changed across the gap. Budget for incremental migration-doc review
-  (`semstreams/docs/operations/migration-*.md`).
+- **Dependencies**: the beta.21 → beta.135 foundation is implemented on this
+  branch. The beta.158 pre-v1 clean break is a separate prerequisite change:
+  `adopt-semstreams-prev1-contract`. No dependency-only bump is permitted.
 - **Data/predicates**: quest entity predicates consumed by the UI
   (`worldStore`) must remain stable or ship with a documented mapping;
   `quest.dag.*` layout may change with the gated-dag model.

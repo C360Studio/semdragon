@@ -2,7 +2,7 @@
 
 ## Context
 
-Semdragons pins semstreams `beta.21` and hand-implements two state machines the
+Semdragons began this change on semstreams `beta.21` and hand-implements two state machines the
 framework now provides: the quest lifecycle (`processor/questboard`, imperative
 transition handlers over KV) and party DAG execution (`processor/questdagexec`,
 a single-goroutine event loop with bespoke bootstrap/recovery). Upstream now
@@ -16,7 +16,7 @@ mechanics disabled. Verification is mock-LLM only.
 ## Goals / Non-Goals
 
 **Goals:**
-- Semdragons runs on current semstreams (beta.132) with all bespoke lifecycle
+- Semdragons runs on the approved current semstreams target (beta.158) with all bespoke lifecycle
   and DAG-ordering code replaced by framework primitives.
 - Quest lifecycle behavior matches the `quest-lifecycle` spec; DAG behavior
   matches the `dag-execution` spec.
@@ -32,11 +32,14 @@ mechanics disabled. Verification is mock-LLM only.
 
 ## Decisions
 
-### D1: Two stages inside one change — bump first, swap second
-Stage A upgrades the dependency to beta.132 and adapts existing components
+### D1: Contract-gated dependency and behavior stages
+Stage A upgraded the dependency through beta.135 and adapted existing components
 until the current test suite is green again (wire contracts, payload registry,
 graph-write/ownership semantics). Stage B then performs the architectural
-swaps. Alternative — swapping architectures during the bump — was rejected:
+swaps. The beta.158 pre-v1 contract is owned by the prerequisite
+`adopt-semstreams-prev1-contract` change and must land before the final
+dependency cutover. Alternative — swapping architectures during a breaking
+contract bump — was rejected:
 with 111 releases of drift, we need to be able to attribute breakage to
 "framework moved" vs "we re-architected". Stage A's green suite is the
 bisection point.
@@ -122,19 +125,21 @@ deleted in favor of the gateway.
 
 ## Migration Plan
 
-1. **Stage A** — branch; bump to beta.132; walk migration docs; fix payload
+1. **Stage A** — branch; bump through beta.135; walk migration docs; fix payload
    registry/ownership/wire-contract breakage until `task test` and
    `task test:integration` are green with the *existing* architecture.
-2. **Stage B1** — declare the quest Workflow + rules; run questboard's
+2. **Pre-v1 contract gate** — complete `adopt-semstreams-prev1-contract`, then
+   adopt beta.158 with zero predicate/entity/reference findings.
+3. **Stage B1** — declare the quest Workflow + rules; run questboard's
    transition logic and the lifecycle workflow side by side behind a config
    flag only long enough to port tests; then delete questboard's bespoke
    transition handlers.
-3. **Stage B2** — introduce the `questdag` domain layer on gated-dag; delete
+4. **Stage B2** — introduce the `questdag` domain layer on gated-dag; delete
    the questdagexec event loop; port its tests to the new seam.
-4. **Stage B3** — mechanics-disable config + stub rule; enable
+5. **Stage B3** — mechanics-disable config + stub rule; enable
    lifecycle-gateway; delete superseded `service/api` handlers.
-5. **Gate** — full mock e2e (`task e2e`); dashboard progression assertions.
-6. **Rollback** — revert the branch. No production deployments exist; no data
+6. **Gate** — full mock e2e (`task e2e`); dashboard progression assertions.
+7. **Rollback** — revert the branch. No production deployments exist; no data
    migration is performed (dev boards are recreated from scratch).
 
 ## Open Questions

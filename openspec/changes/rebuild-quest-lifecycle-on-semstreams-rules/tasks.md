@@ -1,5 +1,14 @@
 # Tasks: rebuild-quest-lifecycle-on-semstreams-rules
 
+## 0. Prerequisite — SemStreams beta.158 graph contract
+
+- [ ] 0.1 Complete and archive the `adopt-semstreams-prev1-contract` change:
+  canonical predicates, entity IDs/query prefixes, `@id` relationships,
+  writer-owner matrix, and fresh-state cutover.
+- [ ] 0.2 Wait for the beta.158 adoption change tracked in
+  [semdragon#4](https://github.com/C360Studio/semdragon/issues/4) to pass its
+  exact-version, ownership, fresh-volume, and replay gates.
+
 ## 1. Stage A — dependency bump and contract adaptation
 
 - [x] 1.1 Read `semstreams/docs/operations/migration-*.md` for beta.21→beta.132; list every item touching semdragons (ownership ADR-054/055/056, agentrun ADR-053, payload registry, message shapes) — findings in `research/00-stage-a-findings.md` (+ 01-04 cluster files). Verdict: near-zero compile risk; real work is Stage B + ownership partitioning.
