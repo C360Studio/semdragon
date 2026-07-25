@@ -112,19 +112,8 @@ func TestComponent_InputOutputPorts(t *testing.T) {
 	}
 
 	outputs := comp.OutputPorts()
-	if len(outputs) == 0 {
-		t.Error("should have at least one output port")
-	}
-
-	hasPartyEvents := false
-	for _, port := range outputs {
-		if port.Name == "party-events" {
-			hasPartyEvents = true
-			break
-		}
-	}
-	if !hasPartyEvents {
-		t.Error("missing party-events output port")
+	if len(outputs) != 0 {
+		t.Errorf("output ports = %d, want 0; party state is persisted through the authoritative graph/KV path", len(outputs))
 	}
 }
 

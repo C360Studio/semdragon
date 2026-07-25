@@ -141,7 +141,7 @@ semdragons/
 │   ├── boidengine/         # Periodic boid attraction computation, publishes per-agent suggestions
 │   ├── guildformation/     # Auto guild clustering from shared performance patterns
 │   ├── redteam/            # Retained adversarial review implementation; Phase-1 gated
-│   ├── partycoord/         # Party lifecycle: form, assign, merge, disband
+│   ├── partycoord/         # Party KV lifecycle/roster authority; temporary assignment bridge
 │   ├── promptmanager/      # Fragment-based domain-aware prompt assembly (library, not standalone)
 │   ├── boardcontrol/       # Board state management (pause/resume)
 │   ├── tokenbudget/        # Token budget ledger — hourly spend tracking and circuit breaker (library, not standalone)

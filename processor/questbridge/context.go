@@ -230,10 +230,6 @@ func (b *entityKnowledgeBuilder) formatPartyContext(ctx context.Context, quest *
 	sb.WriteString(fmt.Sprintf("Party: %s\n", party.Name))
 	sb.WriteString(fmt.Sprintf("Lead: %s\n", domain.ExtractInstance(string(party.Lead))))
 
-	if party.Strategy != "" {
-		sb.WriteString(fmt.Sprintf("Strategy: %s\n", party.Strategy))
-	}
-
 	// Format members
 	if len(party.Members) > 0 {
 		sb.WriteString("Members:\n")

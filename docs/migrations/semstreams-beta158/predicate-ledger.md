@@ -554,20 +554,45 @@ agent relationship is ordinary same-subject data because the triple subject is
 the quest returned by `EntityID()`; it does not require a
 `ForeignEdgeClaim`.
 
-### partycoord: 14 findings
+### partycoord: historical 14 findings, current 4
 
-- `party.quest` becomes `party.assignment.quest` with `@id`.
-- `party.lead` becomes `party.membership.lead` with `@id`.
-- `party.strategy` becomes `party.coordination.strategy`.
-- `party.lifecycle.{formed_at,disbanded_at}` becomes
-  `party.lifecycle.{formed-at,disbanded-at}`.
-- `party.coordination.{decomposed_by,parent_quest,sub_quest_count,sub_quest}`
-  becomes
-  `party.coordination.{decomposed-by,parent-quest,sub-quest-count,sub-quest}`.
-- `party.rollup.{started_at,sub_results_count,completed_at}` becomes
-  `party.rollup.{started-at,sub-results-count,completed-at}`.
+The historical beta.158 baseline remains 14 invalid candidates from 27
+extracted. Issue #28 does not rewrite that baseline. It deletes ten findings:
 
-`decomposed-by`, `parent-quest`, and repeated `sub-quest` are `@id`.
+- nine event-projection occurrences:
+  `party.lifecycle.disbanded_at`,
+  `party.coordination.decomposed_by`,
+  `party.coordination.parent_quest`,
+  `party.coordination.sub_quest_count`, `party.strategy`,
+  `party.coordination.sub_quest`, `party.rollup.started_at`,
+  `party.rollup.sub_results_count`, and `party.rollup.completed_at`; and
+- the authoritative Party shadow occurrence of `party.strategy`.
+
+The event findings disappear with all eight raw party DTO/typed-subject/
+publisher/Graphable families. The same deletion removes thirteen event-only
+vocabulary entries, three false event ports, two phantom DM event values, and
+their graph relationship fixtures. No subscriber, payload-factory route, or
+durable graph-ingest route consumed that plane, so issue #28 adds no
+replacement event plane.
+
+The package also deletes the test-only `DecomposeQuest`, `SubmitResult`,
+`StartRollup`, and `CompleteRollup` methods and the `Strategy`,
+`SharedContext`/`ContextItem`, `SubResults`, and `RollupResult` shadows. DAG
+node output, review, retry, and rollup remain questdag/quest-lifecycle state.
+
+The current pinned audit extracts eight candidates and reports exactly four
+invalid scalars:
+
+- `party.quest`;
+- `party.lead`;
+- `party.lifecycle.formed_at`; and
+- `party.lifecycle.disbanded_at`.
+
+Scanner-hidden `party.member.<full-agent-id>.role` and
+`party.assignment.<full-quest-id>` remain deferred with those four findings.
+The temporary assignment family survives only for current questdagexec/
+questdag callers. Issue #4 removes both dynamic families when beta.158 and the
+SemStreams #313 owner-classified mutation path are available.
 
 ### Auditor false positives proved non-graph
 
@@ -708,8 +733,8 @@ accounted for`, `no stale <entity> entries in HANDLED`, and
   lifecycle timestamps, loop ID, verdict numeric fields, criteria, judges,
   and results.
 - Party fields:
-  `quest_id`, `lead`, `strategy`, `formed_at`, member roles, and
-  `sub_quest_map`.
+  `quest_id`, `lead`, `formed_at`, `disbanded_at`, member roles, and
+  temporary `sub_quest_map`.
 
 There is no current `quest.dag.*` transformer mapping. DAG status is therefore
 not protected by the schema-contract test; issue #3 must add explicit DAG
@@ -723,8 +748,9 @@ also enumerate:
 - Agent:
   guild, current quest, current party, inventory-entry/item, and effect/quest.
 - Party:
-  parent quest, lead, members, decomposed-by, sub-quests, and first-class
-  assignment/submission relationships.
+  parent quest, lead, members, and the temporary assignment relationship.
+  The future contract separately covers party membership plus
+  questdag-owned assignment and node submission/output relationships.
 - BossBattle:
   assignment quest and agent. Judge IDs inside bounded objects are not graph
   edges.
@@ -735,7 +761,7 @@ also enumerate:
   `source.doc.fetched-by` and `source.doc.quest-id`.
 - Event payload projections:
   agent XP quest, autonomy quest/item/guild relations, store item relations,
-  party decomposition/assignment/submission, and review assignment.
+  and review assignment.
 - Authoritative Guild:
   `guild.founding.agent`, `guild.membership.agent`, and the current dynamic
   application applicant/reviewer relationships. Issue #4 replaces membership
@@ -743,10 +769,10 @@ also enumerate:
 - Additional payload projections:
   `execution.agent.id` and store purchase/consumable item references.
 
-The deleted prompt-assembly, guild-event, and four seeding DTO fixtures are not
-relationship coverage. If a real publisher is introduced later, its typed
-relationship must be added back to this inventory with evidence from that
-publisher.
+The deleted prompt-assembly, guild-event, party-event, and four seeding DTO
+fixtures are not relationship coverage. If a real publisher is introduced
+later, its typed relationship must be added back to this inventory with
+evidence from that publisher.
 
 Issue #3 uses one centralized compatibility marker,
 `internal/semcompat.EntityReferenceDatatype = "@id"`, across all packages.

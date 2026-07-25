@@ -116,80 +116,6 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 			wantNoReferences: true,
 		},
 		{
-			name: "party formed event",
-			entity: &partycoord.PartyFormedPayload{
-				Party: partycoord.Party{
-					ID:      party,
-					QuestID: quest1,
-					Lead:    agent1,
-					Members: []partycoord.PartyMember{{AgentID: agent2}},
-				},
-				FormedAt: now,
-			},
-			wantReferences: map[string]int{
-				"party.quest":             1,
-				"party.lead":              1,
-				"party.membership.member": 1,
-			},
-		},
-		{
-			name: "party joined event",
-			entity: &partycoord.PartyJoinedPayload{
-				PartyID: party, AgentID: agent1, JoinedAt: now,
-			},
-			wantReferences: map[string]int{
-				"party.membership.member": 1,
-				"agent.membership.party":  1,
-			},
-		},
-		{
-			name: "party decomposed event",
-			entity: &partycoord.PartyQuestDecomposedPayload{
-				PartyID: party, LeadID: agent1, ParentQuest: quest1,
-				SubQuests: []domain.QuestID{quest2}, Timestamp: now,
-			},
-			wantReferences: map[string]int{
-				"party.coordination.decomposed_by": 1,
-				"party.coordination.parent_quest":  1,
-				"party.coordination.sub_quest":     1,
-			},
-		},
-		{
-			name: "party assignment event",
-			entity: &partycoord.PartyTaskAssignedPayload{
-				PartyID: party, LeadID: agent1, AssignedTo: agent2,
-				SubQuestID: quest2, Timestamp: now,
-			},
-			wantReferences: map[string]int{
-				"party.assignment." + string(quest2): 1,
-				"quest.assignment.agent":             1,
-				"quest.assignment.party":             1,
-			},
-		},
-		{
-			name: "party result event",
-			entity: &partycoord.PartyResultSubmittedPayload{
-				PartyID: party, MemberID: agent2, SubQuestID: quest2, Timestamp: now,
-			},
-			wantReferences: map[string]int{
-				"party.result." + string(quest2) + ".submitted_by": 1,
-			},
-		},
-		{
-			name: "party rollup-started event",
-			entity: &partycoord.PartyRollupStartedPayload{
-				PartyID: party, LeadID: agent1, ParentQuestID: quest1, Timestamp: now,
-			},
-			wantNoReferences: true,
-		},
-		{
-			name: "party rollup-completed event",
-			entity: &partycoord.PartyRollupCompletedPayload{
-				PartyID: party, LeadID: agent1, ParentQuestID: quest1, Timestamp: now,
-			},
-			wantNoReferences: true,
-		},
-		{
 			name:           "agent XP event",
 			entity:         &agentprogression.AgentXPPayload{AgentID: agent1, QuestID: quest1, Timestamp: now},
 			wantReferences: map[string]int{"agent.progression.xp.quest": 1},
@@ -206,7 +132,6 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 		{name: "autonomy idle event", entity: &autonomy.IdlePayload{AgentID: agent1, Timestamp: now}, wantNoReferences: true},
 		{name: "execution completed event", entity: &executor.ExecutionCompletedPayload{QuestID: quest1, AgentID: agent1, Timestamp: now}, wantNoReferences: true},
 		{name: "execution failed event", entity: &executor.ExecutionFailedPayload{QuestID: quest1, AgentID: agent1, Timestamp: now}, wantNoReferences: true},
-		{name: "party disbanded event", entity: &partycoord.PartyDisbandedPayload{PartyID: party, QuestID: quest1, DisbandedAt: now}, wantNoReferences: true},
 	}
 
 	for _, tt := range tests {

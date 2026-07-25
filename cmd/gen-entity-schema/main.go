@@ -324,12 +324,11 @@ func extractParty() EntitySchema {
 	}
 
 	full := &partycoord.Party{
-		ID:       "test-party",
-		Name:     "Full Party",
-		Status:   domain.PartyActive,
-		QuestID:  "test-quest",
-		Lead:     "test-agent",
-		Strategy: "balanced",
+		ID:      "test-party",
+		Name:    "Full Party",
+		Status:  domain.PartyActive,
+		QuestID: "test-quest",
+		Lead:    "test-agent",
 		Members: []partycoord.PartyMember{
 			{AgentID: domain.AgentID(markerAgentA), Role: domain.RoleExecutor},
 			{AgentID: domain.AgentID(markerAgentB), Role: domain.RoleReviewer},

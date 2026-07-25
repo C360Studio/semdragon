@@ -122,6 +122,46 @@ transition (satisfies the operator-surface requirement). Product endpoints
 in `service/api`. Bespoke handlers that merely mutate quest status are
 deleted in favor of the gateway.
 
+### D8: Partycoord remains policy and Party KV authority, not a second DAG
+
+The Stage B2 decision is to retain partycoord narrowly. Rules can detect a
+party-required quest and gated-DAG can order units, but neither owns lead
+selection, roster composition, membership policy, or disband intent.
+Partycoord therefore retains core formation/join/disband behavior,
+authoritative `Party` writes through `GraphClient.EmitEntity`, Party readers,
+and the temporary `AssignTask`/`SubQuestMap` advisory used by both
+`questdagexec` and `questdag`.
+
+Issue [#28](https://github.com/C360Studio/semdragon/issues/28) deletes the
+separate surfaces that have no surviving product authority:
+
+- all eight raw party DTO/typed-subject/publisher/Graphable families;
+- all thirteen event-only vocabulary entries, party event ports, and the two
+  phantom dmsession party event values;
+- the test-only `DecomposeQuest`, `SubmitResult`, `StartRollup`, and
+  `CompleteRollup` methods; and
+- `Strategy`, `SharedContext`/`ContextItem`, `SubResults`, and `RollupResult`
+  across Go, API/schema, TypeScript, UI, fixtures, and documentation.
+
+The raw subjects have no production subscriber, payload factory,
+`BaseMessage`, graph-ingest route, replay path, API reader, or UI reader.
+Party UI activity instead comes from the retained KV `EntityState`
+message categories `party.formed`, `party.joined`, and `party.disbanded`.
+Questdag and quest lifecycle own decomposition output, node results, retry,
+clarification, escalation, and rollup.
+
+This decision is not the canonical Party migration. Deleting the event
+Graphables removes nine of partycoord's fourteen beta.158 audit findings, and
+deleting shadow-only `Party.Strategy` removes one more. Four authoritative
+Party findings remain: `party.quest`, `party.lead`,
+`party.lifecycle.formed_at`, and `party.lifecycle.disbanded_at`.
+Scanner-hidden dynamic member/assignment families and the UI
+dynamic-assignment parser trap also remain explicitly deferred. Issue #4 later
+creates first-class membership and assignment entities, adopts the beta.158
+owner contract, and uses the public owner-token mutation path tracked by
+SemStreams #313. Issue #28 binds no owner, copies no framework mutator,
+activates no questdag replacement, and adds no compatibility event plane.
+
 ## Risks / Trade-offs
 
 - [Graph-write/ownership semantics changed upstream (ADR-054/055/056)] →
@@ -157,11 +197,13 @@ deleted in favor of the gateway.
    transition handlers.
 4. **Stage B2** — introduce the `questdag` domain layer on gated-dag; delete
    the questdagexec event loop; port its tests to the new seam.
-5. **Stage B3** — mechanics-disable every shipped config + complete rule pack;
+5. **Stage B2 party boundary** — implement issue #28's deletion-only narrowing
+   while retaining Party KV behavior and the temporary assignment advisory.
+6. **Stage B3** — mechanics-disable every shipped config + complete rule pack;
    prove the bossbattle/stub race is absent; enable lifecycle-gateway; delete
    superseded `service/api` handlers.
-6. **Gate** — full mock e2e (`task e2e`); dashboard progression assertions.
-7. **Rollback** — revert the branch. No production deployments exist; no data
+7. **Gate** — full mock e2e (`task e2e`); dashboard progression assertions.
+8. **Rollback** — revert the branch. No production deployments exist; no data
    migration is performed (dev boards are recreated from scratch).
 
 ## Open Questions
@@ -182,9 +224,12 @@ deleted in favor of the gateway.
   `TaskMessage.RunID` on sub-quest spawns + run an `agentrun.MilestoneSubscriber`
   while keeping QUEST_LOOPS for per-loop bookkeeping — the two are non-conflicting
   because `RunID` is `omitempty`. (Evidence: `research/02-agentic-wire.md`.)
-- Is `partycoord` still needed as a component, or does party formation reduce
-  to rules + the questdag layer? (Resolve in Stage B2; out of scope to
-  redesign if it still works.)
+- ~~Is `partycoord` still needed as a component, or does party formation
+  reduce to rules + the questdag layer?~~ **RESOLVED (Stage B2 design, task
+  3.7): retain it narrowly for formation/roster/membership/disband policy and
+  authoritative Party KV state. Issue #28 deletes its event plane and
+  decomposition/result/rollup shadows; canonical beta.158 ownership remains
+  deferred to issue #4 and SemStreams #313.**
 - ~~Which predicates on the quest entity need explicit ownership claims under
   ADR-056 so rules and questbridge don't fight?~~ **RESOLVED (Stage A spike, task
   1.3):** three prefix-disjoint owned groups — lifecycle owner claims

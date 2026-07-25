@@ -1,6 +1,5 @@
 // Package partycoord provides a native semstreams component for party
-// coordination and quest decomposition. It manages party lifecycle and
-// coordinates communication between party leads and members.
+// lifecycle and authoritative graph/KV state.
 package partycoord
 
 import (
@@ -24,7 +23,7 @@ import (
 // COMPONENT - PartyCoord as native semstreams processor
 // =============================================================================
 // Implements Discoverable + LifecycleComponent interfaces.
-// Manages party formation, coordination, and rollup for quest decomposition.
+// Manages party formation, membership, and lifecycle state.
 // =============================================================================
 
 // QuestBoardRef is the narrow interface partycoord needs from questboard
@@ -51,6 +50,7 @@ type Component struct {
 	questsMu sync.RWMutex
 
 	// Party tracking
+	partyMu       sync.RWMutex
 	activeParties sync.Map // map[PartyID]*Party
 
 	// Internal state
@@ -63,7 +63,6 @@ type Component struct {
 	// Metrics
 	partiesFormed    atomic.Uint64
 	partiesDisbanded atomic.Uint64
-	rollupsCompleted atomic.Uint64
 	errorsCount      atomic.Int64
 	lastActivity     atomic.Value // time.Time
 	startTime        time.Time
@@ -107,24 +106,6 @@ func (c *Component) InputPorts() []component.Port {
 // OutputPorts returns the ports this component produces data on.
 func (c *Component) OutputPorts() []component.Port {
 	return []component.Port{
-		{
-			Name:        "party-formed",
-			Direction:   component.DirectionOutput,
-			Required:    true,
-			Description: "Party formation events",
-			Config: &component.NATSPort{
-				Subject: domain.PredicatePartyFormed,
-			},
-		},
-		{
-			Name:        "party-disbanded",
-			Direction:   component.DirectionOutput,
-			Required:    true,
-			Description: "Party disbanding events",
-			Config: &component.NATSPort{
-				Subject: domain.PredicatePartyDisbanded,
-			},
-		},
 		{
 			Name:        "party-state",
 			Direction:   component.DirectionOutput,

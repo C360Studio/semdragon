@@ -138,7 +138,6 @@ func TestContainsQuestEventTypes_NonQuestTypesOnly(t *testing.T) {
 	nonQuestTypes := []domain.GameEventType{
 		domain.EventAgentRecruited,
 		domain.EventAgentLevelUp,
-		domain.EventPartyFormed,
 		domain.EventGuildCreated,
 	}
 
@@ -150,7 +149,7 @@ func TestContainsQuestEventTypes_NonQuestTypesOnly(t *testing.T) {
 func TestContainsQuestEventTypes_MixedTypes(t *testing.T) {
 	mixed := []domain.GameEventType{
 		domain.EventAgentLevelUp,
-		domain.EventPartyFormed,
+		domain.EventGuildJoined,
 		domain.EventQuestFailed, // one quest type in the mix
 	}
 
@@ -168,8 +167,8 @@ func TestContainsQuestEventTypes_AllNonQuestNeverReturnsTrue(t *testing.T) {
 		domain.EventAgentDeath,
 		domain.EventAgentPermadeath,
 		domain.EventAgentRevived,
-		domain.EventPartyFormed,
-		domain.EventPartyDisbanded,
+		domain.EventGuildCreated,
+		domain.EventGuildJoined,
 	}
 
 	if containsQuestEventTypes(types) {
@@ -211,7 +210,7 @@ func TestContainsAgentEventTypes_NonAgentTypesOnly(t *testing.T) {
 	nonAgentTypes := []domain.GameEventType{
 		domain.EventQuestPosted,
 		domain.EventQuestCompleted,
-		domain.EventPartyFormed,
+		domain.EventGuildCreated,
 	}
 
 	if containsAgentEventTypes(nonAgentTypes) {
@@ -222,7 +221,7 @@ func TestContainsAgentEventTypes_NonAgentTypesOnly(t *testing.T) {
 func TestContainsAgentEventTypes_MixedTypes(t *testing.T) {
 	mixed := []domain.GameEventType{
 		domain.EventQuestPosted,
-		domain.EventPartyFormed,
+		domain.EventGuildJoined,
 		domain.EventAgentDeath, // one agent type in the mix
 	}
 

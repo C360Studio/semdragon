@@ -31,6 +31,18 @@ composition adapters in those areas.
 - **AND** any temporary downstream adapter is minimal, isolated, and linked to
   the upstream issue
 
+#### Scenario: Partycoord deletion needs no replacement framework
+
+- **GIVEN** party raw events have no consumer or durable graph route
+- **AND** partycoord decomposition, result, and rollup state duplicates the
+  questdag and quest lifecycle boundary
+- **WHEN** issue #28 deletes those surfaces
+- **THEN** it opens no new upstream framework issue
+- **AND** it does not recreate them through rule `publish`, a local event bus,
+  a projection owner, or a private lifecycle/DAG implementation
+- **AND** the later authoritative Party projection remains gated on beta.158
+  adoption and SemStreams #313
+
 ### Requirement: Projection ownership follows a real publisher
 
 The system SHALL declare and bind a SemStreams `projection.Contract` only when

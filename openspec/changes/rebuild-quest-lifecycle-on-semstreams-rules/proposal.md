@@ -27,6 +27,12 @@ against the mock LLM (zero paid tokens).
   code: DAG-node → sub-quest mapping, the lead review gate, and escalation
   policy. The `quest.dag.*` predicate layout is re-derived from the gated-dag
   unit/edge model.
+- Resolve partycoord's Stage B2 boundary through issue #28: retain Party
+  formation, roster policy, membership, authoritative KV
+  form/join/disband/read behavior, and the temporary `AssignTask` advisory;
+  delete its eight no-consumer raw event families and test-only
+  decomposition/result/rollup shadow. Canonical Party ownership remains in
+  the beta.158 adoption, not this lifecycle packet.
 - Adapt `questbridge`/`questtools` to the beta.132 agentic-loop contracts;
   evaluate (in design) whether dispatch-on-`in_progress` moves to a rule-engine
   `publish_agent` action or stays in `questbridge`.
@@ -67,6 +73,9 @@ against the mock LLM (zero paid tokens).
 - **Code**: `processor/questboard`, `processor/questdagexec` (largely deleted),
   `processor/questbridge`, `processor/questtools`, `componentregistry/`,
   `cmd/semdragons`, and all three shipped `config/semdragons*.json` profiles.
+  Issue #28 also narrows `processor/partycoord`, `processor/dmpartyformation`,
+  party event vocabulary/DM filters, and shadow-field API/UI consumers while
+  retaining Party KV readers and writes.
   Mechanics processors (`agentprogression`, `bossbattle`, `agentstore`,
   `boidengine`, `redteam`) are config-gated off. Issue #26 also removes
   bossbattle's unproduced raw-event and retreat surfaces while retaining its

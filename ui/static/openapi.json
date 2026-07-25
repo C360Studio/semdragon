@@ -6424,32 +6424,6 @@
           "quest_id": {
             "type": "string"
           },
-          "rollup_result": {},
-          "shared_context": {
-            "items": {
-              "properties": {
-                "added_at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "added_by": {
-                  "type": "string"
-                },
-                "key": {
-                  "type": "string"
-                },
-                "value": {}
-              },
-              "required": [
-                "key",
-                "value",
-                "added_by",
-                "added_at"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
           "status": {
             "enum": [
               "forming",
@@ -6458,23 +6432,10 @@
             ],
             "type": "string"
           },
-          "strategy": {
-            "enum": [
-              "balanced",
-              "specialist",
-              "mentor",
-              "minimal"
-            ],
-            "type": "string"
-          },
           "sub_quest_map": {
             "additionalProperties": {
               "type": "string"
             },
-            "type": "object"
-          },
-          "sub_results": {
-            "additionalProperties": {},
             "type": "object"
           }
         },
@@ -6485,9 +6446,7 @@
           "quest_id",
           "lead",
           "members",
-          "strategy",
           "sub_quest_map",
-          "shared_context",
           "formed_at"
         ],
         "type": "object"

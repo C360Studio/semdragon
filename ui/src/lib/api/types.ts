@@ -276,7 +276,6 @@ export type ConsumableType =
 export type AgentArchetype = 'scholar' | 'engineer' | 'scribe' | 'strategist';
 
 export type DMMode = 'full_auto' | 'assisted' | 'supervised' | 'manual';
-export type PartyStrategy = 'balanced' | 'specialist' | 'mentor' | 'minimal';
 export type InterventionType = 'assist' | 'redirect' | 'takeover' | 'abort' | 'augment';
 
 // =============================================================================

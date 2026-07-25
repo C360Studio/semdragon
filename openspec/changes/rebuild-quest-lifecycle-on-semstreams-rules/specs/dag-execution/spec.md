@@ -44,6 +44,32 @@ SHALL NOT be assigned executor work.
 - **WHEN** a DAG node is posted as a sub-quest
 - **THEN** it does not appear in the public available-quests listing and only party members can be assigned to it
 
+### Requirement: Party coordination is not a second DAG state machine
+
+Partycoord SHALL retain formation, roster, membership, authoritative Party KV
+form/join/disband behavior, and the temporary assignment advisory required by
+the two DAG implementations. It SHALL NOT own decomposition output, node
+results, retry, clarification, escalation, or rollup.
+
+#### Scenario: Party lifecycle remains visible without raw party events
+
+- **WHEN** issue #28 deletes the eight unconsumed raw party event families
+- **THEN** form, join, and disband still persist and expose the Party through
+  KV, REST, dmworldstate, and UI readers
+- **AND** UI activity remains derived from the Party entity's
+  `party.formed`, `party.joined`, and `party.disbanded` message categories
+- **AND** no rule publish, compatibility subject, or local DAG state machine
+  replaces the deleted event and shadow surfaces
+
+#### Scenario: Temporary assignment advisory has an explicit retirement gate
+
+- **WHEN** questdag selects a party member during the transition from
+  questdagexec
+- **THEN** `AssignTask` and `SubQuestMap` may remain as a temporary advisory
+- **AND** they are not treated as canonical beta.158 assignment ownership
+- **AND** they are removed only when both DAG callers migrate atomically to
+  first-class assignment state
+
 ### Requirement: Lead review gate
 When a sub-quest is submitted, the node SHALL enter a review state and the
 lead SHALL rate it on the three review questions (1–5). An average of 3.0 or

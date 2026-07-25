@@ -82,17 +82,7 @@ func (c *Component) InputPorts() []component.Port {
 
 // OutputPorts returns the ports this component produces data on.
 func (c *Component) OutputPorts() []component.Port {
-	return []component.Port{
-		{
-			Name:        "party-events",
-			Direction:   component.DirectionOutput,
-			Required:    true,
-			Description: "Party formed events",
-			Config: &component.NATSPort{
-				Subject: domain.PredicatePartyFormed,
-			},
-		},
-	}
+	return nil
 }
 
 // ConfigSchema returns the configuration schema for this component.

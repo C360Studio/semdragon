@@ -99,9 +99,6 @@
 							<h2>{party.name || `Party #${party.id.slice(-6)}`}</h2>
 							<span class="party-status">{party.status}</span>
 						</div>
-						<div class="party-badges">
-							<span class="strategy-badge">{party.strategy}</span>
-						</div>
 						<div class="party-info">
 							<div class="info-item">
 								<span class="info-label">Quest</span>
@@ -284,22 +281,6 @@
 		border-radius: var(--radius-full);
 		text-transform: capitalize;
 		background: var(--ui-surface-tertiary);
-	}
-
-	/* Strategy Badge */
-	.party-badges {
-		margin-bottom: var(--spacing-sm);
-	}
-
-	.strategy-badge {
-		display: inline-block;
-		font-size: 0.625rem;
-		padding: 2px 8px;
-		border-radius: var(--radius-sm);
-		text-transform: uppercase;
-		font-weight: 600;
-		background: var(--ui-surface-tertiary);
-		color: var(--ui-text-secondary);
 	}
 
 	/* Party Info Grid */

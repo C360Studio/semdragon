@@ -460,6 +460,103 @@ No writer SHALL replace a full shared entity or another owner's predicates.
 - **THEN** startup or contract validation fails before either writer mutates
   authoritative state
 
+### Requirement: Dead party events and DAG shadows are deleted
+
+The system SHALL retain partycoord only as the current Party formation,
+roster, membership, temporary assignment-advisory, and disband authority.
+It SHALL delete the unconsumed raw party event plane and partycoord-local
+decomposition, result, and rollup shadows without creating a replacement
+projection.
+
+#### Scenario: No-consumer party event plane disappears
+
+- **GIVEN** eight party DTO families publish raw core-NATS JSON
+- **AND** no production subscriber, payload factory, `BaseMessage`,
+  graph-ingest route, owner, replay path, API reader, or UI reader consumes
+  them
+- **WHEN** issue #28 removes the dead event plane
+- **THEN** all eight DTOs, typed subjects, publisher calls,
+  validation/schema/Graphable methods, DTO tests, and relationship fixtures
+  are absent
+- **AND** the DTO inventory is exactly `PartyFormedPayload`,
+  `PartyDisbandedPayload`, `PartyJoinedPayload`,
+  `PartyQuestDecomposedPayload`, `PartyTaskAssignedPayload`,
+  `PartyResultSubmittedPayload`, `PartyRollupStartedPayload`, and
+  `PartyRollupCompletedPayload`
+- **AND** all thirteen party-event vocabulary entries are absent
+- **AND** partycoord exposes neither `party-formed` nor `party-disbanded`, and
+  dmpartyformation exposes no `party-events` output port
+- **AND** dmsession exposes neither `EventPartyFormed` nor
+  `EventPartyDisbanded` or a corresponding filter fixture
+- **AND** no rule publish, compatibility subject, payload registration,
+  projection bind, owner, or heartbeat replaces them
+
+#### Scenario: Authoritative Party and KV activity remain
+
+- **GIVEN** form, join, and disband persist `Party` through
+  `GraphClient.EmitEntity`
+- **AND** the service SSE stream watches authoritative KV entity changes
+- **WHEN** the raw party subjects are deleted
+- **THEN** Party list/detail, dmworldstate, prompt, and UI readers remain
+  backed by the Party entity
+- **AND** `party.formed`, `party.joined`, and `party.disbanded` remain message
+  categories mapped by KV-backed SSE
+- **AND** form, join, and disband succeed without a party event subscriber
+
+#### Scenario: Shadow DAG and rollup state is absent
+
+- **GIVEN** `DecomposeQuest`, `SubmitResult`, `StartRollup`, and
+  `CompleteRollup` have no production caller
+- **WHEN** issue #28 narrows partycoord
+- **THEN** those methods and their tests are absent
+- **AND** strategy, shared-context, sub-result, and rollup-result fields,
+  triples, reconstruction, metrics, prompt/UI rendering, generated types,
+  fixtures, and documentation are absent
+- **AND** questdag and quest lifecycle remain the owners of node result,
+  retry, escalation, clarification, and rollup behavior
+- **AND** temporary `AssignTask` and `SubQuestMap` remain until both DAG
+  implementations move off the advisory seam
+
+#### Scenario: Audit reduction does not disguise authoritative debt
+
+- **GIVEN** partycoord has 14 beta.158 audit findings
+- **WHEN** issue #28 deletes the latent event Graphables and shadow-only
+  strategy state
+- **THEN** the audit drops exactly ten findings: nine event projections and
+  `party.strategy`
+- **AND** exactly four scanner-visible authoritative Party findings remain:
+  `party.quest`, `party.lead`, `party.lifecycle.formed_at`, and
+  `party.lifecycle.disbanded_at`
+- **AND** scanner-hidden dynamic member-role and quest-assignment predicate
+  families remain explicitly recorded as deferred defects
+- **AND** no rename-only patch, alias, wildcard claim, or auditor exemption
+  presents the retained full-object projection as canonical
+
+#### Scenario: Dynamic UI parsing is not promoted to a contract
+
+- **GIVEN** the UI reconstructs member roles and advisory assignments by
+  matching dynamic predicate prefixes
+- **WHEN** issue #28 updates UI and generated artifacts
+- **THEN** it removes only deleted shadow-field rendering and fixtures
+- **AND** it neither generalizes nor labels the dynamic parser as
+  beta.158-compatible
+- **AND** a later canonical packet replaces first-class membership and
+  assignment producers and their UI readers atomically
+
+#### Scenario: Canonical Party ownership remains a framework handoff
+
+- **WHEN** the authoritative Party projection is migrated after issue #28
+- **THEN** rules detect party-required quests
+- **AND** partycoord policy owns roster selection, first-class membership, and
+  disband intent
+- **AND** SemStreams lifecycle Manager owns Party phase, history, contention,
+  and restart recovery
+- **AND** quest lifecycle owns quest phase and quest assignment
+- **AND** questdag owns DAG-unit assignee, output, retry, and rollup state
+- **AND** SemStreams gated-DAG owns order, claim, redelivery, and stalls
+- **AND** issue #4 consumes the public owner-token mutation path tracked by
+  SemStreams #313 rather than copying framework internals
+
 ### Requirement: Clean pre-v1 cutover
 
 The cutover SHALL use a fresh development/test graph reseeded from canonical

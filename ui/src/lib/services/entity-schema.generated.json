@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-25T14:54:30Z",
+  "generated_at": "2026-07-25T21:18:53Z",
   "entities": {
     "agent": {
       "static": [
@@ -90,13 +90,11 @@
     },
     "party": {
       "static": [
-        "party.context.count",
         "party.identity.name",
         "party.lead",
         "party.lifecycle.formed_at",
         "party.membership.count",
         "party.quest",
-        "party.results.count",
         "party.status.state"
       ],
       "dynamic": [
@@ -104,8 +102,7 @@
         "party.member.{id}.role"
       ],
       "optional": [
-        "party.lifecycle.disbanded_at",
-        "party.strategy"
+        "party.lifecycle.disbanded_at"
       ],
       "multi_value": [
         "party.membership.member"

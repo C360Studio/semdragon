@@ -153,10 +153,7 @@ function createTestParty(overrides: Partial<Party> = {}): Party {
 		quest_id: questId('quest-1'),
 		lead: agentId('agent-1'),
 		members: [],
-		strategy: 'balanced',
 		sub_quest_map: {},
-		shared_context: [],
-		sub_results: {},
 		formed_at: new Date().toISOString(),
 		...overrides
 	};

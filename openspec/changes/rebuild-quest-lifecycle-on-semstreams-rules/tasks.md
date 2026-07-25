@@ -36,7 +36,35 @@
 - [ ] 3.4 Port per-node retry budget, parent escalation on exhaustion (cancel remaining nodes), and topological rollup to parent output + party disband
 - [ ] 3.5 Re-derive the `quest.dag.*` parent-quest projection from the gated-dag unit model (UI-facing shape preserved or mapped)
 - [ ] 3.6 Port questdagexec tests to the new seam; delete the event loop, bootstrap protocol, and dedup caches
-- [ ] 3.7 Evaluate whether `partycoord` survives as-is or reduces to rules + questdag; document outcome (no redesign in this change)
+- [x] 3.7 Decide the partycoord boundary — retain it narrowly for lead/roster
+  selection, membership policy, disband intent, authoritative Party KV
+  form/join/disband/read behavior, and temporary `AssignTask`/`SubQuestMap`.
+  Rules detect party-required work; questdag/gated-DAG own DAG execution.
+  Delete the no-consumer event plane and decomposition/result/rollup shadows
+  through issue #28; defer canonical Party ownership to issue #4 and
+  SemStreams #313.
+- [x] 3.8 Implement
+  [semdragon #28](https://github.com/C360Studio/semdragon/issues/28): delete
+  all eight raw party DTO/subject/publisher/Graphable families, thirteen
+  event-only vocabulary entries, party event ports, two phantom dmsession
+  party event values, four test-only coordination/rollup methods, and shadow
+  fields across Go/API/schema/TypeScript/UI/tests/docs. Retain Party KV
+  `EmitEntity`, form/join/disband/read behavior, KV-backed UI activity, and
+  temporary `AssignTask`/`SubQuestMap`. Prove exactly ten audit findings
+  disappear—nine event projections plus shadow-only `party.strategy`—while
+  the four retained authoritative findings (`party.quest`, `party.lead`,
+  `party.lifecycle.formed_at`, and `party.lifecycle.disbanded_at`) and hidden
+  dynamic families remain deferred. Do not bind an owner, activate questdag,
+  or add a replacement event plane.
+
+  Completed evidence (2026-07-25): the deletion guard and pinned 4/8 audit
+  pass, with hidden member and assignment families still deferred. Candidate
+  emit-then-commit mutations are race-tested and roll back on emit failure.
+  `go test ./...` passes. `go build ./...` exits 0 with only a non-fatal
+  module stat-cache permission warning. `npm test -- --run` passes 342/342;
+  `npm run check` reports 0 errors and 15 pre-existing warnings;
+  `npm run build` and `task schema:check` pass. No owner or replacement raw
+  Party event plane was introduced.
 
 ## 4. Stage B3 — mechanics disablement and operator surface
 

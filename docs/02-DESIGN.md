@@ -273,15 +273,16 @@ board.PostQuest(ctx, quest)
 
 The Boids engine identifies idle agents with matching skills:
 
-- **DataDragon** (Level 14, Expert, Guild: Data Wranglers) — high affinity for data quests
+- **DataDragon** (Level 16, Master, Guild: Data Wranglers) — high affinity for data quests
 - **SummaryScribe** (Level 12, Expert, Guild: Analysts) — strong analysis + writing
 - **MailHawk** (Level 8, Journeyman, Skills: customer_communications) — can send emails
 
-### 3. DM Forms Party with Mentor Strategy
+### 3. Party Forms for the Quest
 
 ```go
-party := dm.FormParty(ctx, quest.ID, PartyStrategyBalanced)
-// DataDragon becomes lead (highest level, can decompose)
+party, err := partyCoordinator.FormParty(ctx, quest.ID, dataDragon.ID)
+// partycoord persists authoritative Party KV state; no strategy or raw Party event is emitted.
+// DataDragon becomes lead (Master tier, can propose the DAG)
 // SummaryScribe is executor for analysis
 // MailHawk is executor for email delivery
 ```
@@ -344,13 +345,15 @@ SummaryScribe: 350 base + 140 quality + 0 speed + 52 guild  = 542 XP
 MailHawk:       50 base +  40 quality + 20 speed + 0 guild   = 110 XP
 ```
 
-### 9. Historical event sketch
+### 9. KV activity and historical event sketch
 
-The `battle.review.*` lines below are design history, not current subjects.
+The Party lines below are retained KV `EntityState.MessageType.Category` values normalized by
+SSE, not raw Party event subjects or payloads. The `battle.review.*` lines are design history,
+not current subjects.
 
 ```
 quest.lifecycle.posted     → {quest_id: "q-123", difficulty: "epic"}
-party.formation.formed     → {party_id: "p-456", lead: "DataDragon", members: [...]}
+party.formed               → authoritative Party KV snapshot
 quest.lifecycle.claimed    → {quest_id: "q-123-sub-1", agent: "DataDragon"}
 quest.lifecycle.started    → ...
 quest.lifecycle.completed  → {quest_id: "q-123-sub-1", quality: 0.92}
@@ -358,7 +361,7 @@ battle.review.started      → {battle_id: "b-789", level: "strict", judges: 3}
 battle.review.victory      → {battle_id: "b-789", quality: 0.89}
 agent.progression.levelup  → {agent: "DataDragon", old: 14, new: 15, tier: "expert"}
 quest.lifecycle.completed  → {quest_id: "q-123", quality: 0.89}
-party.formation.disbanded  → {party_id: "p-456"}
+party.disbanded            → final Party KV snapshot
 ```
 
 ---
@@ -476,8 +479,9 @@ The following questions arose during design and are now settled:
 - **Inter-guild quests**: The party system handles cross-guild collaboration. Parties can
   draw members from multiple guilds; no separate inter-guild mechanism is needed.
 
-- **Agent memory**: Guild library for persistent cross-quest knowledge; party context for
-  quest-scoped memory. Agents are persistent KV entities and retain state across sessions.
+- **Agent memory**: Guild library for persistent cross-quest knowledge; quest and DAG state
+  for quest-scoped coordination. Agents are persistent KV entities and retain state across
+  sessions.
 
 - **Boids vs explicit assignment**: Boids is the default. DM modes (`full_auto`,
   `supervised`, `manual`) control how much the DM overrides suggestions. In `supervised`

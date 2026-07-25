@@ -584,6 +584,114 @@ projection, ownership, lifecycle handoffs, fresh-state tests, and #313-backed
 mutation path are complete. Merely renaming the eight scanner findings does
 not satisfy this gate.
 
+### D17: Partycoord survives narrowly; its dead event and DAG shadows do not
+
+Issue [#28](https://github.com/C360Studio/semdragon/issues/28) resolves the
+partycoord boundary without attempting the beta.158 authoritative projection.
+Partycoord remains a product component because rules and gated-DAG do not own
+lead selection, roster composition, party membership policy, or the decision
+to disband. It does not survive as a second lifecycle or DAG engine.
+
+The current component has two independent output planes:
+
+1. `Party` is written through `GraphClient.EmitEntity` on form, join, and
+   disband. Party REST readers, dmworldstate, the UI, and the board KV watcher
+   consume this authoritative current-state projection.
+2. Eight party event DTOs publish raw core-NATS JSON through typed subjects.
+   No production subscriber, `BaseMessage`, payload factory, graph-ingest
+   route, owner, replay path, API reader, or UI reader consumes those messages.
+   Their `Graphable` methods are latent projections only.
+
+Issue #28 deletes the second plane completely rather than preserving a
+no-consumer wire facade. This differs from the dmsession and guildformation
+decisions: those packages retain demonstrably published or internally consumed
+raw event contracts, while the party subjects have no runtime consumer
+contract. The deletion includes all eight DTOs, typed subjects, publishers,
+validation/schema/Graphable methods and tests; all thirteen party-event
+vocabulary entries; party event output ports in partycoord and the phantom
+dmpartyformation output port; the two unrouteable dmsession party
+`GameEventType` values; and the event relationship fixtures. It adds no
+replacement rule `publish`, payload registration, graph route, projection
+owner, heartbeat, or compatibility subject.
+
+The exact eight DTO families are `PartyFormedPayload`,
+`PartyDisbandedPayload`, `PartyJoinedPayload`,
+`PartyQuestDecomposedPayload`, `PartyTaskAssignedPayload`,
+`PartyResultSubmittedPayload`, `PartyRollupStartedPayload`, and
+`PartyRollupCompletedPayload`. The thirteen vocabulary symbols are
+`PredicatePartyFormed`, `PredicatePartyDisbanded`, `PredicatePartyJoined`,
+`PredicatePartyLeft`, `PredicatePartyQuestDecomposed`,
+`PredicatePartyTaskAssigned`, `PredicatePartyContextShared`,
+`PredicatePartyGuidanceIssued`, `PredicatePartyProgressReported`,
+`PredicatePartyHelpRequested`, `PredicatePartyResultSubmitted`,
+`PredicatePartyRollupStarted`, and `PredicatePartyRollupCompleted`. The ports
+are partycoord's `party-formed` and `party-disbanded` plus dmpartyformation's
+`party-events`; the phantom DM values are `EventPartyFormed` and
+`EventPartyDisbanded`.
+
+The retained KV activity feed is not part of that event plane. The service SSE
+stream watches authoritative `EntityState` changes and derives
+`party.formed`, `party.joined`, and `party.disbanded` from the message category
+stamped by the retained `EmitEntity` calls. Those category-to-UI mappings
+remain. Removing them would break live Party activity while retaining an
+unused NATS facade, the inverse of the intended boundary.
+
+Partycoord also carries an in-memory shadow of DAG execution that no production
+caller reads: decomposition strategy, shared context, submitted node results,
+and rollup result. `DecomposeQuest`, `SubmitResult`, `StartRollup`, and
+`CompleteRollup` are test-only. Issue #28 deletes those methods; `Strategy`,
+`SharedContext`/`ContextItem`, `SubResults`, and `RollupResult`; their triples,
+reconstruction, metrics, prompt/UI rendering, generated types, fixtures, and
+documentation. Questdag and quest lifecycle own node output, retry,
+clarification, escalation, and rollup.
+
+`AssignTask` and `SubQuestMap` remain temporary because both the selected
+legacy `questdagexec` and the replacement `questdag` still call that advisory
+seam. They are not approved as the canonical assignment projection. The later
+questdag activation packet moves DAG-unit assignee authority to questdag and
+removes the advisory shadow only when its callers and compatibility tests move
+atomically.
+
+The package baseline is 14 beta.158 audit findings. Nine belong to the deleted
+event Graphables, and deleting shadow-only `Party.Strategy` removes one more
+authoritative finding. Issue #28 therefore removes exactly ten and leaves four:
+`party.quest`, `party.lead`, `party.lifecycle.formed_at`, and
+`party.lifecycle.disbanded_at`. Those four scanner-visible findings on the
+retained authoritative Party projection remain deferred, together with
+scanner-hidden `party.member.<agent-id>.role` and
+`party.assignment.<quest-id>` families. This is deliberate: a rename-only
+patch would preserve the unsafe full-object writer and dynamic vocabulary under
+new spellings.
+
+The UI currently reconstructs member roles and advisory assignments by
+matching those dynamic predicate families. That parser is a migration trap,
+not a canonical contract. Issue #28 may update generated types and remove UI
+rendering for deleted shadow fields, but it must neither generalize those
+dynamic-prefix parsers nor present them as beta.158-compatible. The later
+canonical packet replaces membership and assignment with first-class entities,
+then removes the dynamic producers and parsers together.
+
+The authoritative handoff occurs only after issue
+[#4](https://github.com/C360Studio/semdragon/issues/4) adopts beta.158 and
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313)
+provides the public owner-token create/replace mutation path. At that point:
+
+- rules detect a posted party-required quest;
+- partycoord policy selects the lead and roster and owns first-class
+  membership plus disband intent;
+- SemStreams lifecycle Manager owns Party phase, history, contention, and
+  restart recovery;
+- quest lifecycle owns quest phase and party/agent assignment;
+- questdag chooses DAG-unit assignees and owns node output, retry, and rollup;
+  and
+- SemStreams gated-DAG owns dependency order, claim, redelivery, and stall
+  handling.
+
+Issue #28 requires no new upstream issue. It must not copy the rule
+processor's internal mutator, hand-build a reusable local ownership framework,
+or bind an owner around the retained full-object writer. Those changes belong
+to the beta.158/#313 canonical projection gate.
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

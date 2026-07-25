@@ -126,6 +126,34 @@
   indexed-predicate defect, fresh-state canonical target, exact cross-owner
   handoffs, SemStreams #313 dependency, and reactivation block without
   implementing the Phase-2 writer in this packet.
+- [x] 2.17 Resolve
+  [semdragon #28](https://github.com/C360Studio/semdragon/issues/28) by
+  deleting the eight no-consumer party event DTO/subject/publisher/Graphable
+  families, all thirteen event-only vocabulary entries, false party event
+  ports, two phantom dmsession party event types, and event relationship
+  fixtures. Delete test-only decomposition/result/rollup methods and their
+  strategy/context/result/rollup shadow fields across Go, API/schema,
+  TypeScript, UI, tests, and docs. Retain authoritative Party KV
+  `EmitEntity`, form/join/disband/read APIs, KV SSE message-category mappings,
+  and temporary `AssignTask`/`SubQuestMap`. Prove the audit drops exactly ten
+  findings—nine event projections plus shadow-only `party.strategy`—while the
+  four retained authoritative findings (`party.quest`, `party.lead`,
+  `party.lifecycle.formed_at`, and `party.lifecycle.disbanded_at`) and the
+  scanner-hidden member/assignment dynamic families remain explicitly
+  deferred. Do not
+  canonicalize the dynamic UI parser, bind an owner, bump SemStreams, activate
+  questdag, copy a mutator, or add a replacement event plane. Hand the
+  canonical Party lifecycle and first-class child projection to issue #4 and
+  SemStreams #313.
+
+  Completed evidence (2026-07-25): the deletion guard and pinned audit pass;
+  the audit is 4/8 with the four retained authoritative findings. Party
+  mutations use candidate emit-then-commit, deep clones, and rollback on emit
+  failure. `go test ./...` passes. `go build ./...` exits 0 with only a
+  non-fatal module stat-cache permission warning. `npm test -- --run` passes
+  342/342; `npm run check` reports 0 errors and 15 pre-existing warnings;
+  `npm run build` and `task schema:check` pass. No owner or replacement raw
+  Party event plane was added, and retained SSE activity remains KV-backed.
 
 ## 3. Verification and handoff to beta.158
 

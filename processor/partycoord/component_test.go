@@ -4,6 +4,7 @@ package partycoord
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -131,30 +132,18 @@ func TestComponent_InputOutputPorts(t *testing.T) {
 	}
 
 	outputs := comp.OutputPorts()
-	if len(outputs) < 2 {
-		t.Errorf("Should have at least 2 output ports, got %d", len(outputs))
+	if len(outputs) != 1 {
+		t.Fatalf("output ports = %d, want only authoritative party-state", len(outputs))
 	}
-
-	expectedOutputs := map[string]bool{
-		"party-formed":    false,
-		"party-disbanded": false,
-		"party-state":     false,
+	port := outputs[0]
+	if port.Name != "party-state" {
+		t.Errorf("output port = %q, want party-state", port.Name)
 	}
-	for _, port := range outputs {
-		if _, expected := expectedOutputs[port.Name]; expected {
-			expectedOutputs[port.Name] = true
-			if !port.Required {
-				t.Errorf("Output port %q should be required", port.Name)
-			}
-			if port.Direction != component.DirectionOutput {
-				t.Errorf("Port %q direction = %v, want output", port.Name, port.Direction)
-			}
-		}
+	if !port.Required || port.Direction != component.DirectionOutput {
+		t.Errorf("party-state port required=%v direction=%v", port.Required, port.Direction)
 	}
-	for name, found := range expectedOutputs {
-		if !found {
-			t.Errorf("Missing expected output port %q", name)
-		}
+	if _, ok := port.Config.(*component.KVWritePort); !ok {
+		t.Errorf("party-state config = %T, want *component.KVWritePort", port.Config)
 	}
 }
 
@@ -201,6 +190,7 @@ func TestComponent_FormParty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FormParty failed: %v", err)
 	}
+	assertPersistedPartyState(t, ctx, comp, party.ID, "party.formed", domain.PartyForming, 1)
 
 	// Verify returned party
 	if party.ID == "" {
@@ -229,6 +219,7 @@ func TestComponent_FormParty(t *testing.T) {
 	if party.Members[0].Role != domain.RoleLead {
 		t.Errorf("Lead member role = %v, want %v", party.Members[0].Role, domain.RoleLead)
 	}
+	party.Members[0].Role = domain.RoleReviewer
 
 	// Party should be retrievable from active parties
 	retrieved, ok := comp.GetParty(party.ID)
@@ -237,6 +228,9 @@ func TestComponent_FormParty(t *testing.T) {
 	}
 	if retrieved.QuestID != questID {
 		t.Errorf("Retrieved QuestID = %v, want %v", retrieved.QuestID, questID)
+	}
+	if retrieved.Members[0].Role != domain.RoleLead {
+		t.Errorf("mutating FormParty result changed stored role to %v", retrieved.Members[0].Role)
 	}
 
 	// Metrics
@@ -298,6 +292,7 @@ func TestComponent_JoinParty(t *testing.T) {
 	if err := comp.JoinParty(ctx, party.ID, member2ID, domain.RoleExecutor); err != nil {
 		t.Fatalf("JoinParty member2 failed: %v", err)
 	}
+	assertPersistedPartyState(t, ctx, comp, party.ID, "party.joined", domain.PartyForming, 3)
 
 	// Verify membership
 	updated, ok := comp.GetParty(party.ID)
@@ -372,6 +367,7 @@ func TestComponent_DisbandParty(t *testing.T) {
 	if err := comp.DisbandParty(ctx, party.ID, "quest completed"); err != nil {
 		t.Fatalf("DisbandParty failed: %v", err)
 	}
+	assertPersistedPartyState(t, ctx, comp, party.ID, "party.disbanded", domain.PartyDisbanded, 2)
 
 	// Party should no longer be retrievable as active
 	_, ok := comp.GetParty(party.ID)
@@ -454,54 +450,6 @@ func TestComponent_ListActiveParties(t *testing.T) {
 	}
 }
 
-func TestComponent_DecomposeQuest(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
-	client := testClient.Client
-	ctx := context.Background()
-
-	comp := setupPartyComponent(t, client, "decompose")
-	defer comp.Stop(5 * time.Second)
-
-	leadID := makePartyAgentID(t, comp.boardConfig, "decomp-lead")
-	questID := makePartyQuestID(t, comp.boardConfig, "decomp-quest")
-	sq1 := makePartyQuestID(t, comp.boardConfig, "sub1")
-	sq2 := makePartyQuestID(t, comp.boardConfig, "sub2")
-
-	party, err := comp.FormParty(ctx, questID, leadID)
-	if err != nil {
-		t.Fatalf("FormParty failed: %v", err)
-	}
-
-	subQuests := []domain.QuestID{sq1, sq2}
-	if err := comp.DecomposeQuest(ctx, party.ID, subQuests, "parallel approach"); err != nil {
-		t.Fatalf("DecomposeQuest failed: %v", err)
-	}
-
-	// Strategy should be updated on the in-memory party
-	updated, ok := comp.GetParty(party.ID)
-	if !ok {
-		t.Fatal("GetParty: party not found after decomposition")
-	}
-	if updated.Strategy != "parallel approach" {
-		t.Errorf("Strategy = %q, want %q", updated.Strategy, "parallel approach")
-	}
-}
-
-func TestComponent_DecomposeQuestPartyNotFound(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
-	client := testClient.Client
-	ctx := context.Background()
-
-	comp := setupPartyComponent(t, client, "decompnotfound")
-	defer comp.Stop(5 * time.Second)
-
-	ghost := domain.PartyID("test.integration.game.decompnotfound.party.ghost")
-	err := comp.DecomposeQuest(ctx, ghost, []domain.QuestID{"sq1"}, "strategy")
-	if err == nil {
-		t.Error("DecomposeQuest should fail for non-existent party")
-	}
-}
-
 func TestComponent_AssignTask(t *testing.T) {
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
@@ -534,6 +482,18 @@ func TestComponent_AssignTask(t *testing.T) {
 	}
 	if err := comp.AssignTask(ctx, party.ID, sq2, member2ID, "experienced coder"); err != nil {
 		t.Fatalf("AssignTask sq2 failed: %v", err)
+	}
+	entity, err := comp.graph.GetParty(ctx, party.ID)
+	if err != nil {
+		t.Fatalf("GetParty from graph/KV failed: %v", err)
+	}
+	if entity.MessageType.Category != "party.task-assigned" {
+		t.Errorf("persisted category = %q, want party.task-assigned", entity.MessageType.Category)
+	}
+	persisted := PartyFromEntityState(entity)
+	if persisted.SubQuestMap[sq1] != member1ID || persisted.SubQuestMap[sq2] != member2ID {
+		t.Fatalf("persisted assignments = %#v, want %s->%s and %s->%s",
+			persisted.SubQuestMap, sq1, member1ID, sq2, member2ID)
 	}
 
 	// Verify sub-quest assignments recorded in party state
@@ -571,136 +531,129 @@ func TestComponent_AssignTaskPartyNotFound(t *testing.T) {
 	}
 }
 
-func TestComponent_SubmitResult(t *testing.T) {
+func TestComponent_ConcurrentJoinAndAssignPreserveAllState(t *testing.T) {
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
-	comp := setupPartyComponent(t, client, "submitresult")
+	comp := setupPartyComponent(t, client, "concurrent-state")
 	defer comp.Stop(5 * time.Second)
 
-	leadID := makePartyAgentID(t, comp.boardConfig, "submit-lead")
-	memberID := makePartyAgentID(t, comp.boardConfig, "submit-member")
-	questID := makePartyQuestID(t, comp.boardConfig, "submit-quest")
-	sq := makePartyQuestID(t, comp.boardConfig, "submit-sub")
-
+	leadID := makePartyAgentID(t, comp.boardConfig, "concurrent-lead")
+	questID := makePartyQuestID(t, comp.boardConfig, "concurrent-quest")
 	party, err := comp.FormParty(ctx, questID, leadID)
 	if err != nil {
 		t.Fatalf("FormParty failed: %v", err)
 	}
 
-	if err := comp.JoinParty(ctx, party.ID, memberID, domain.RoleExecutor); err != nil {
-		t.Fatalf("JoinParty failed: %v", err)
+	const operationCount = 12
+	agents := make([]domain.AgentID, operationCount)
+	subQuests := make([]domain.QuestID, operationCount)
+	for i := range operationCount {
+		agents[i] = makePartyAgentID(t, comp.boardConfig, "concurrent-member")
+		subQuests[i] = makePartyQuestID(t, comp.boardConfig, "concurrent-subquest")
 	}
 
-	result := map[string]any{"output": "analysis complete", "confidence": 0.95}
-	if err := comp.SubmitResult(ctx, party.ID, memberID, sq, result); err != nil {
-		t.Fatalf("SubmitResult failed: %v", err)
+	start := make(chan struct{})
+	errCh := make(chan error, operationCount*2)
+	var wg sync.WaitGroup
+	wg.Add(operationCount * 2)
+	for i := range operationCount {
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			if err := comp.JoinParty(ctx, party.ID, agents[index], domain.RoleExecutor); err != nil {
+				errCh <- err
+			}
+		}(i)
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			if err := comp.AssignTask(ctx, party.ID, subQuests[index], agents[index], "stress"); err != nil {
+				errCh <- err
+			}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("concurrent operation failed: %v", err)
 	}
 
-	// Verify result was recorded in party state
-	updated, ok := comp.GetParty(party.ID)
+	got, ok := comp.GetParty(party.ID)
 	if !ok {
-		t.Fatal("GetParty: party not found after result submission")
+		t.Fatal("party missing after concurrent operations")
 	}
-	if _, exists := updated.SubResults[sq]; !exists {
-		t.Error("SubResults should contain the submitted result")
+	if len(got.Members) != operationCount+1 {
+		t.Errorf("members = %d, want %d", len(got.Members), operationCount+1)
+	}
+	if len(got.SubQuestMap) != operationCount {
+		t.Errorf("assignments = %d, want %d", len(got.SubQuestMap), operationCount)
+	}
+
+	entity, err := comp.graph.GetParty(ctx, party.ID)
+	if err != nil {
+		t.Fatalf("GetParty from graph/KV failed: %v", err)
+	}
+	persisted := PartyFromEntityState(entity)
+	if len(persisted.Members) != operationCount+1 {
+		t.Errorf("persisted members = %d, want %d", len(persisted.Members), operationCount+1)
+	}
+	if len(persisted.SubQuestMap) != operationCount {
+		t.Errorf("persisted assignments = %d, want %d", len(persisted.SubQuestMap), operationCount)
 	}
 }
 
-func TestComponent_SubmitResultPartyNotFound(t *testing.T) {
+func TestComponent_PersistenceFailureDoesNotCommitCandidateState(t *testing.T) {
 	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
 	client := testClient.Client
 	ctx := context.Background()
 
-	comp := setupPartyComponent(t, client, "submitnotfound")
+	comp := setupPartyComponent(t, client, "failed-persistence")
 	defer comp.Stop(5 * time.Second)
 
-	ghost := domain.PartyID("test.integration.game.submitnotfound.party.ghost")
-	member := makePartyAgentID(t, comp.boardConfig, "ghost-member")
-	sq := domain.QuestID("test.integration.game.submitnotfound.quest.sub1")
+	leadID := makePartyAgentID(t, comp.boardConfig, "failure-lead")
+	memberID := makePartyAgentID(t, comp.boardConfig, "failure-member")
+	questID := makePartyQuestID(t, comp.boardConfig, "failure-quest")
+	subQuestID := makePartyQuestID(t, comp.boardConfig, "failure-subquest")
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
 
-	err := comp.SubmitResult(ctx, ghost, member, sq, "result")
-	if err == nil {
-		t.Error("SubmitResult should fail for non-existent party")
+	if _, err := comp.FormParty(canceled, questID, leadID); err == nil {
+		t.Fatal("FormParty with canceled persistence context succeeded")
 	}
-}
-
-func TestComponent_RollupLifecycle(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
-	client := testClient.Client
-	ctx := context.Background()
-
-	comp := setupPartyComponent(t, client, "rollup")
-	defer comp.Stop(5 * time.Second)
-
-	leadID := makePartyAgentID(t, comp.boardConfig, "rollup-lead")
-	memberID := makePartyAgentID(t, comp.boardConfig, "rollup-member")
-	questID := makePartyQuestID(t, comp.boardConfig, "rollup-quest")
-	sq := makePartyQuestID(t, comp.boardConfig, "rollup-sub")
+	if parties := comp.ListActiveParties(); len(parties) != 0 {
+		t.Fatalf("failed FormParty committed %d in-memory parties", len(parties))
+	}
 
 	party, err := comp.FormParty(ctx, questID, leadID)
 	if err != nil {
-		t.Fatalf("FormParty failed: %v", err)
+		t.Fatalf("valid FormParty failed: %v", err)
+	}
+	if err := comp.JoinParty(canceled, party.ID, memberID, domain.RoleExecutor); err == nil {
+		t.Fatal("JoinParty with canceled persistence context succeeded")
+	}
+	if got, _ := comp.GetParty(party.ID); len(got.Members) != 1 {
+		t.Fatalf("failed JoinParty committed members: %#v", got.Members)
 	}
 
-	if err := comp.JoinParty(ctx, party.ID, memberID, domain.RoleExecutor); err != nil {
-		t.Fatalf("JoinParty failed: %v", err)
+	if err := comp.AssignTask(canceled, party.ID, subQuestID, memberID, "failure"); err == nil {
+		t.Fatal("AssignTask with canceled persistence context succeeded")
+	}
+	if got, _ := comp.GetParty(party.ID); len(got.SubQuestMap) != 0 {
+		t.Fatalf("failed AssignTask committed assignments: %#v", got.SubQuestMap)
 	}
 
-	// Submit a sub-result
-	if err := comp.SubmitResult(ctx, party.ID, memberID, sq, "sub-result-data"); err != nil {
-		t.Fatalf("SubmitResult failed: %v", err)
+	if err := comp.DisbandParty(canceled, party.ID, "failure"); err == nil {
+		t.Fatal("DisbandParty with canceled persistence context succeeded")
 	}
-
-	// Start rollup
-	if err := comp.StartRollup(ctx, party.ID); err != nil {
-		t.Fatalf("StartRollup failed: %v", err)
-	}
-
-	// Complete rollup with a combined result
-	rollupResult := map[string]any{"combined": "final synthesis", "quality": 0.9}
-	if err := comp.CompleteRollup(ctx, party.ID, rollupResult); err != nil {
-		t.Fatalf("CompleteRollup failed: %v", err)
-	}
-
-	// Verify rollup result was stored
-	updated, ok := comp.GetParty(party.ID)
+	got, ok := comp.GetParty(party.ID)
 	if !ok {
-		t.Fatal("GetParty: party not found after rollup")
+		t.Fatal("failed DisbandParty removed active party")
 	}
-	if updated.RollupResult == nil {
-		t.Error("RollupResult should be set after CompleteRollup")
-	}
-}
-
-func TestComponent_StartRollupPartyNotFound(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
-	client := testClient.Client
-	ctx := context.Background()
-
-	comp := setupPartyComponent(t, client, "startrollupnotfound")
-	defer comp.Stop(5 * time.Second)
-
-	ghost := domain.PartyID("test.integration.game.startrollupnotfound.party.ghost")
-	err := comp.StartRollup(ctx, ghost)
-	if err == nil {
-		t.Error("StartRollup should fail for non-existent party")
-	}
-}
-
-func TestComponent_CompleteRollupPartyNotFound(t *testing.T) {
-	testClient := natsclient.NewTestClient(t, natsclient.WithKV(), natsclient.WithFileStorage(), natsclient.WithKVBuckets(graph.BucketEntityStates))
-	client := testClient.Client
-	ctx := context.Background()
-
-	comp := setupPartyComponent(t, client, "completerollupnotfound")
-	defer comp.Stop(5 * time.Second)
-
-	ghost := domain.PartyID("test.integration.game.completerollupnotfound.party.ghost")
-	err := comp.CompleteRollup(ctx, ghost, "result")
-	if err == nil {
-		t.Error("CompleteRollup should fail for non-existent party")
+	if got.Status != domain.PartyForming || got.DisbandedAt != nil {
+		t.Fatalf("failed DisbandParty committed lifecycle state: %#v", got)
 	}
 }
 
@@ -735,13 +688,7 @@ func TestComponent_FullPartyWorkflow(t *testing.T) {
 	}
 	t.Log("Members joined")
 
-	// 3. Lead decomposes quest
-	if err := comp.DecomposeQuest(ctx, party.ID, []domain.QuestID{sq1, sq2}, "divide and conquer"); err != nil {
-		t.Fatalf("DecomposeQuest failed: %v", err)
-	}
-	t.Log("Quest decomposed")
-
-	// 4. Assign sub-quests
+	// 3. Assign sub-quests.
 	if err := comp.AssignTask(ctx, party.ID, sq1, m1ID, "best for analysis"); err != nil {
 		t.Fatalf("AssignTask sq1 failed: %v", err)
 	}
@@ -750,25 +697,7 @@ func TestComponent_FullPartyWorkflow(t *testing.T) {
 	}
 	t.Log("Tasks assigned")
 
-	// 5. Members submit results
-	if err := comp.SubmitResult(ctx, party.ID, m1ID, sq1, "analysis done"); err != nil {
-		t.Fatalf("SubmitResult m1 failed: %v", err)
-	}
-	if err := comp.SubmitResult(ctx, party.ID, m2ID, sq2, "implementation done"); err != nil {
-		t.Fatalf("SubmitResult m2 failed: %v", err)
-	}
-	t.Log("Results submitted")
-
-	// 6. Lead rolls up
-	if err := comp.StartRollup(ctx, party.ID); err != nil {
-		t.Fatalf("StartRollup failed: %v", err)
-	}
-	if err := comp.CompleteRollup(ctx, party.ID, "combined deliverable"); err != nil {
-		t.Fatalf("CompleteRollup failed: %v", err)
-	}
-	t.Log("Rollup completed")
-
-	// 7. Verify final party state
+	// 4. Verify authoritative party state.
 	final, ok := comp.GetParty(party.ID)
 	if !ok {
 		t.Fatal("GetParty: party not found after workflow")
@@ -779,18 +708,9 @@ func TestComponent_FullPartyWorkflow(t *testing.T) {
 	if len(final.SubQuestMap) != 2 {
 		t.Errorf("Final SubQuestMap size = %d, want 2", len(final.SubQuestMap))
 	}
-	if len(final.SubResults) != 2 {
-		t.Errorf("Final SubResults size = %d, want 2", len(final.SubResults))
-	}
-	if final.RollupResult == nil {
-		t.Error("RollupResult should be set")
-	}
-	if final.Strategy != "divide and conquer" {
-		t.Errorf("Strategy = %q, want %q", final.Strategy, "divide and conquer")
-	}
 	t.Log("Full workflow verified")
 
-	// 8. Disband party
+	// 5. Disband party.
 	if err := comp.DisbandParty(ctx, party.ID, "quest complete"); err != nil {
 		t.Fatalf("DisbandParty failed: %v", err)
 	}
@@ -990,4 +910,38 @@ func makePartyQuestID(t *testing.T, cfg *domain.BoardConfig, suffix string) doma
 	t.Helper()
 	instance := suffix + "-" + domain.GenerateInstance()
 	return domain.QuestID(cfg.QuestEntityID(instance))
+}
+
+// assertPersistedPartyState proves lifecycle operations work with the test
+// setup's intentionally absent raw-event subscriber. The observable contract
+// is the authoritative graph/KV entity and its retained EntityState category.
+func assertPersistedPartyState(
+	t *testing.T,
+	ctx context.Context,
+	comp *Component,
+	partyID domain.PartyID,
+	category string,
+	status domain.PartyStatus,
+	memberCount int,
+) {
+	t.Helper()
+
+	entity, err := comp.graph.GetParty(ctx, partyID)
+	if err != nil {
+		t.Fatalf("GetParty(%s) from graph/KV failed: %v", partyID, err)
+	}
+	if entity.MessageType.Category != category {
+		t.Errorf("persisted category = %q, want %q", entity.MessageType.Category, category)
+	}
+
+	party := PartyFromEntityState(entity)
+	if party == nil {
+		t.Fatal("PartyFromEntityState returned nil for persisted party")
+	}
+	if party.ID != partyID || party.Status != status {
+		t.Errorf("persisted party ID/status = %q/%q, want %q/%q", party.ID, party.Status, partyID, status)
+	}
+	if len(party.Members) != memberCount {
+		t.Errorf("persisted member count = %d, want %d", len(party.Members), memberCount)
+	}
 }

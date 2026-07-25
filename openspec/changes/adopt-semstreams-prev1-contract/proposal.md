@@ -28,6 +28,10 @@ after the lifecycle/gated-DAG foundation in draft PR
   product owner before beta.158 is adopted.
 - Update Go, rule JSON, TypeScript projections, generated artifacts, fixtures,
   queries, and documentation atomically.
+- Resolve issue #28 by deleting partycoord's eight unconsumed raw event
+  families and its test-only decomposition/result/rollup shadow, while
+  retaining authoritative Party KV form/join/disband behavior and the
+  temporary assignment advisory used by both DAG implementations.
 - Cut over by wiping and reseeding development/test graph state. No aliases,
   dual writes, permissive mode, or beta-state rewriter will be added.
 - Establish zero-finding predicate, entity-ID, relationship, build, and UI
@@ -51,6 +55,8 @@ after the lifecycle/gated-DAG foundation in draft PR
   tracked in [semdragon#4](https://github.com/C360Studio/semdragon/issues/4).
 - **UI and generated artifacts**: predicate projections, entity schemas,
   OpenAPI, and TypeScript types must change in the same gate.
+- **Party coordination**: issue #28 narrows partycoord before the canonical
+  beta.158 owner migration; it does not bind an owner or activate questdag.
 - **Data**: incompatible beta graph/index state is deleted and reseeded from
   source; no production deployment or retained beta data requires migration.
 - **Upstream coordination**: reuse SemStreams issues

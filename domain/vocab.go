@@ -125,54 +125,6 @@ const (
 	PredicateMentorBonus = "skill.progression.mentorbonus"
 )
 
-// --- Party Predicates ---
-
-const (
-	// PredicatePartyFormed - Party created for a quest.
-	PredicatePartyFormed = "party.formation.formed"
-
-	// PredicatePartyDisbanded - Party dissolved after quest.
-	PredicatePartyDisbanded = "party.formation.disbanded"
-
-	// PredicatePartyJoined - Agent joined a party.
-	PredicatePartyJoined = "party.membership.joined"
-
-	// PredicatePartyLeft - Agent left a party.
-	PredicatePartyLeft = "party.membership.left"
-)
-
-// --- Party Coordination Predicates ---
-// Communication events between party leads and members for quest coordination.
-
-const (
-	// PredicatePartyQuestDecomposed - Lead broke down quest into sub-quests.
-	PredicatePartyQuestDecomposed = "party.coordination.decomposed"
-
-	// PredicatePartyTaskAssigned - Lead assigned sub-quest to member.
-	PredicatePartyTaskAssigned = "party.coordination.assigned"
-
-	// PredicatePartyContextShared - Context shared with party.
-	PredicatePartyContextShared = "party.coordination.contextshared"
-
-	// PredicatePartyGuidanceIssued - Lead guided member.
-	PredicatePartyGuidanceIssued = "party.coordination.guidance"
-
-	// PredicatePartyProgressReported - Member reported status.
-	PredicatePartyProgressReported = "party.coordination.progress"
-
-	// PredicatePartyHelpRequested - Member needs help.
-	PredicatePartyHelpRequested = "party.coordination.helprequest"
-
-	// PredicatePartyResultSubmitted - Member submitted result.
-	PredicatePartyResultSubmitted = "party.coordination.resultsubmitted"
-
-	// PredicatePartyRollupStarted - Lead combining results.
-	PredicatePartyRollupStarted = "party.coordination.rollupstarted"
-
-	// PredicatePartyRollupCompleted - Rollup ready for boss battle.
-	PredicatePartyRollupCompleted = "party.coordination.rollupcompleted"
-)
-
 // --- Guild Predicates ---
 
 const (
@@ -546,59 +498,6 @@ func RegisterVocabulary() {
 	vocabulary.Register(PredicateMentorBonus,
 		vocabulary.WithDescription("Mentor earned XP for trainee improvement"),
 		vocabulary.WithDataType("MentorBonusPayload"),
-	)
-
-	// Party predicates
-	vocabulary.Register(PredicatePartyFormed,
-		vocabulary.WithDescription("Party formed for a quest"),
-		vocabulary.WithDataType("PartyFormedPayload"),
-	)
-	vocabulary.Register(PredicatePartyDisbanded,
-		vocabulary.WithDescription("Party disbanded after quest"),
-		vocabulary.WithDataType("PartyDisbandedPayload"),
-	)
-	vocabulary.Register(PredicatePartyJoined,
-		vocabulary.WithDescription("Agent joined a party"),
-		vocabulary.WithDataType("PartyMemberPayload"),
-	)
-	vocabulary.Register(PredicatePartyLeft,
-		vocabulary.WithDescription("Agent left a party"),
-		vocabulary.WithDataType("PartyMemberPayload"),
-	)
-
-	// Party coordination predicates
-	vocabulary.Register(PredicatePartyQuestDecomposed,
-		vocabulary.WithDescription("Lead decomposed quest into sub-quests for party"),
-		vocabulary.WithDataType("PartyQuestDecomposedPayload"),
-	)
-	vocabulary.Register(PredicatePartyTaskAssigned,
-		vocabulary.WithDescription("Lead assigned sub-quest to party member"),
-		vocabulary.WithDataType("PartyTaskAssignedPayload"),
-	)
-	vocabulary.Register(PredicatePartyContextShared,
-		vocabulary.WithDescription("Context/insight shared with party"),
-	)
-	vocabulary.Register(PredicatePartyGuidanceIssued,
-		vocabulary.WithDescription("Lead issued guidance to party member"),
-		vocabulary.WithDataType("PartyGuidanceIssuedPayload"),
-	)
-	vocabulary.Register(PredicatePartyProgressReported,
-		vocabulary.WithDescription("Member reported progress to lead"),
-	)
-	vocabulary.Register(PredicatePartyHelpRequested,
-		vocabulary.WithDescription("Member requested help from lead"),
-	)
-	vocabulary.Register(PredicatePartyResultSubmitted,
-		vocabulary.WithDescription("Member submitted sub-quest result to lead"),
-		vocabulary.WithDataType("PartyResultSubmittedPayload"),
-	)
-	vocabulary.Register(PredicatePartyRollupStarted,
-		vocabulary.WithDescription("Lead began combining sub-results"),
-		vocabulary.WithDataType("PartyRollupStartedPayload"),
-	)
-	vocabulary.Register(PredicatePartyRollupCompleted,
-		vocabulary.WithDescription("Lead completed rollup, ready for boss battle"),
-		vocabulary.WithDataType("PartyRollupCompletedPayload"),
 	)
 
 	// Guild predicates

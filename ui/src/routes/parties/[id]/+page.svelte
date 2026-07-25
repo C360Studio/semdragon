@@ -70,7 +70,6 @@
 						<div class="party-identity">
 							<h1>{party.name || `Party #${party.id.slice(-6)}`}</h1>
 							<span class="status-badge" data-status={party.status}>{party.status}</span>
-							<span class="strategy-badge">{party.strategy}</span>
 						</div>
 					</div>
 
@@ -231,17 +230,6 @@
 	.status-badge[data-status='disbanded'] {
 		background: var(--ui-surface-tertiary);
 		color: var(--ui-text-tertiary);
-	}
-
-	.strategy-badge {
-		display: inline-block;
-		font-size: 0.625rem;
-		padding: 2px 8px;
-		border-radius: var(--radius-sm);
-		text-transform: uppercase;
-		font-weight: 600;
-		background: var(--ui-surface-tertiary);
-		color: var(--ui-text-secondary);
 	}
 
 	/* Detail Cards Grid */

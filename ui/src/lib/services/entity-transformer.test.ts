@@ -733,7 +733,6 @@ describe('transformParty', () => {
 			triple('party.status.state', 'active'),
 			triple('party.quest', QUEST_KEY),
 			triple('party.lead', AGENT_KEY),
-			triple('party.strategy', 'balanced'),
 			triple('party.lifecycle.formed_at', '2026-01-14T12:00:00Z')
 		]);
 		const party = transformEntity('party', PARTY_KEY, entity) as Party;
@@ -743,7 +742,6 @@ describe('transformParty', () => {
 		expect(party.status).toBe('active');
 		expect(party.quest_id).toBe(questId(QUEST_KEY));
 		expect(party.lead).toBe(agentId(AGENT_KEY));
-		expect(party.strategy).toBe('balanced');
 		expect(party.formed_at).toBe('2026-01-14T12:00:00Z');
 	});
 
@@ -755,39 +753,40 @@ describe('transformParty', () => {
 		expect(party.status).toBe('forming');
 		expect(party.quest_id).toBe(questId(''));
 		expect(party.lead).toBe(agentId(''));
-		expect(party.strategy).toBe('balanced');
 		expect(party.formed_at).toBe('');
+		expect(party.disbanded_at).toBeUndefined();
 	});
 
-	it('provides empty defaults for non-triple fields', () => {
+	it('provides empty defaults for retained collection fields', () => {
 		const entity = graphEntity(PARTY_KEY, []);
 		const party = transformEntity('party', PARTY_KEY, entity) as Party;
 
 		expect(party.members).toEqual([]);
 		expect(party.sub_quest_map).toEqual({});
-		expect(party.shared_context).toEqual([]);
-		expect(party.sub_results).toEqual({});
 	});
 
-	it('extracts party members and sub-quest assignments from triples', () => {
+	it('extracts lifecycle, members, and full-ID sub-quest assignments', () => {
+		const subQuestKey = 'c360.prod.game.board.quest.sub-1';
 		const entity = graphEntity(PARTY_KEY, [
 			triple('party.identity.name', 'Alpha Strike'),
 			triple('party.status.state', 'active'),
 			triple('party.quest', QUEST_KEY),
 			triple('party.lead', AGENT_KEY),
 			triple('party.lifecycle.formed_at', '2026-01-14T12:00:00Z'),
+			triple('party.lifecycle.disbanded_at', '2026-01-15T12:00:00Z'),
 			triple('party.membership.member', 'agent-1'),
 			triple('party.member.agent-1.role', 'lead'),
 			triple('party.membership.member', 'agent-2'),
 			triple('party.member.agent-2.role', 'executor'),
-			triple('party.assignment.quest-sub-1', 'agent-2')
+			triple(`party.assignment.${subQuestKey}`, 'agent-2')
 		]);
 		const party = transformEntity('party', PARTY_KEY, entity) as Party;
 
 		expect(party.members).toHaveLength(2);
 		expect(party.members[0].role).toBe('lead');
 		expect(party.members[1].role).toBe('executor');
-		expect(party.sub_quest_map).toEqual({ 'quest-sub-1': 'agent-2' });
+		expect(party.sub_quest_map).toEqual({ [subQuestKey]: 'agent-2' });
+		expect(party.disbanded_at).toBe('2026-01-15T12:00:00Z');
 	});
 });
 
@@ -1080,18 +1079,15 @@ describe('schema contract validation', () => {
 		'party.status.state': 'status',
 		'party.quest': 'quest_id',
 		'party.lead': 'lead',
-		'party.strategy': 'strategy',
-		'party.lifecycle.formed_at': 'formed_at'
+		'party.lifecycle.formed_at': 'formed_at',
+		'party.lifecycle.disbanded_at': 'disbanded_at',
+		'party.membership.member': 'members[].agent_id',
+		'party.member.{id}.role': 'members[].role',
+		'party.assignment.{id}': 'sub_quest_map'
 	};
 
 	const PARTY_IGNORED: Record<string, string> = {
-		'party.lifecycle.disbanded_at': 'disbanded timestamp not displayed',
-		'party.membership.member': 'member list populated from separate source',
-		'party.membership.count': 'member count derived from member list',
-		'party.member.{id}.role': 'member roles not in party card',
-		'party.assignment.{id}': 'sub-quest assignments not in party card',
-		'party.context.count': 'shared context count not displayed',
-		'party.results.count': 'sub-results count not displayed'
+		'party.membership.count': 'member count derived from members'
 	};
 
 	// -------------------------------------------------------------------------

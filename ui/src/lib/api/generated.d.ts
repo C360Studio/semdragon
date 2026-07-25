@@ -4885,23 +4885,10 @@ export interface components {
             }[];
             name: string;
             quest_id: string;
-            rollup_result?: unknown;
-            shared_context: {
-                /** Format: date-time */
-                added_at: string;
-                added_by: string;
-                key: string;
-                value: unknown;
-            }[];
             /** @enum {string} */
             status: "forming" | "active" | "disbanded";
-            /** @enum {string} */
-            strategy: "balanced" | "specialist" | "mentor" | "minimal";
             sub_quest_map: {
                 [key: string]: string;
-            };
-            sub_results?: {
-                [key: string]: unknown;
             };
         };
         PartyMember: {

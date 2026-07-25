@@ -428,26 +428,26 @@ lifecycle, rules, and first-class children already cover this migration; issue
 
 ### Party
 
-- Owner: `partycoord`; token `partycoord#<incarnation>`.
+This is a future beta.158 target, not a current owner binding. Issue #28
+retains the legacy Party KV writer without an owner token. Issue #4 may
+activate this target only after beta.158 adoption and the public SemStreams
+#313 owner-classified create/replace path are available.
+
+- Prospective owner: the composition-owned Party lifecycle integration.
 - Pattern: `*.*.game.*.party.*`.
 - Mode: `replace-owned`.
-- Producer: `processor/partycoord`.
+- Policy producer: `processor/partycoord`.
 - Exact mutable predicates:
   `party.status.state`, `party.membership.count`,
-  `party.lifecycle.disbanded-at`, `party.coordination.strategy`,
-  `party.coordination.decomposed-by`,
-  `party.coordination.parent-quest`,
-  `party.coordination.sub-quest-count`,
-  `party.coordination.sub-quest`, `party.context.count`,
-  `party.results.count`, `party.disband.reason`,
-  `party.rollup.started-at`, `party.rollup.sub-results-count`,
-  `party.rollup.completed-at`, and `party.rollup.status`.
+  and `party.lifecycle.disbanded-at`.
 - Create-only facts, excluded from `OwnerClaim.Predicates`:
   `party.identity.name`, `party.assignment.quest`,
   `party.membership.lead`, and `party.lifecycle.formed-at`.
 
-Dynamic members, assignments, and submissions move to their first-class
-patterns below and are not included in the party claim.
+Party strategy, context, result, rollup, and disband-reason targets do not
+exist. Issue #28 deleted their fields or proved that no authoritative field
+ever stored them. Dynamic members and temporary assignments move to the
+first-class patterns below and are not included in the Party claim.
 
 ### Boss battle
 
@@ -566,19 +566,21 @@ mutable set; the listed birth facts are excluded from
   Mutable: `membership.state.role`.
   Create-only: `membership.assignment.party`,
   `membership.assignment.agent`, and `membership.lifecycle.joined-at`.
-- `partycoord`, pattern `*.*.game.*.party-assignment.*`.
+- `questdag`, pattern `*.*.game.*.party-assignment.*`.
   Mutable: `assignment.state.rationale`.
   Create-only: `assignment.relationship.party`,
   `assignment.relationship.quest`, `assignment.relationship.agent`, and
   `assignment.lifecycle.assigned-at`.
-- `partycoord`, pattern `*.*.game.*.party-submission.*`.
+- `questdag`, pattern `*.*.game.*.party-submission.*`.
   Mutable: none after creation.
   Create-only: `submission.relationship.party`,
   `submission.relationship.quest`, `submission.relationship.member`,
   `submission.result.output`, `submission.result.quality`, and
   `submission.lifecycle.submitted-at`.
 
-No parent-entity reconcile includes predicates from these child entities.
+Partycoord owns future membership. Questdag owns future assignment and any
+node submission/output representation. No parent-entity reconcile includes
+predicates from these child entities, and issue #28 binds none of these owners.
 Bare store catalog aliases are scalar. `inventory.assignment.item` and
 `effect.assignment.consumable` carry `@id` only after
 `BoardConfig.StoreItemEntityID` conversion and the table-driven validator,
@@ -691,9 +693,10 @@ projection contracts, ownership services, heartbeats, or lifecycle timers.
   sent through the agentprogression owner API.
 - Autonomy action/decision predicates listed above use append evidence.
   Relationship datatypes still obey the catalog-alias conversion boundary.
-- Questboard/questbridge/questdag, partycoord, and review payloads either call
-  the owner workflow, create the classified first-class entity, or append
-  their documented evidence. Dormant bossbattle binds no owner; Phase 2 must
+- Questboard/questbridge/questdag and review payloads either call the owner
+  workflow, create the classified first-class entity, or append their
+  documented evidence. Partycoord retains its legacy Party KV writer until
+  issue #4 and binds no owner. Dormant bossbattle binds no owner; Phase 2 must
   use the same classified lanes. Former cross-owner projections are removed,
   not silently exempted.
 - Guildformation's five raw event DTOs remain active wire contracts, but their
@@ -713,11 +716,12 @@ The guild event projections `guild.event.created_by`,
 `guild.membership.member`, `guild.membership.left`, and dynamic event rank facts
 are deleted in issue #22. Authoritative `guild.membership.agent` remains until
 issue #4 creates first-class membership children. Legacy payload projections
-for party membership/assignment/submission are removed when their
-corresponding first-class entities are created. The seeding-event
-`agent.guild.member` projection and all four seeding fixture rows are deleted
-outright in issue #24. A producer may not keep both representations merely
-because both are graph-bound.
+for party membership/assignment/submission were deleted in issue #28 without
+replacement. Future first-class membership and questdag
+assignment/submission entities are introduced only with their canonical
+owners. The seeding-event `agent.guild.member` projection and all four seeding
+fixture rows are deleted outright in issue #24. A producer may not keep both
+representations merely because both are graph-bound.
 
 ### Startup/E2E Agent birth
 
@@ -755,30 +759,15 @@ the contract owner.
 
 A SemStreams `ForeignEdgeClaim` is not every `@id` relationship. It applies
 when a Graphable emits a triple whose subject differs from its own entity ID.
-The source sweep finds exactly three such production projections, all in
+Issue #28 deletes the complete party event projection plane, including the
+three former foreign-subject projections in
 `processor/partycoord/payloads.go`.
 
-### Allowed during issue #3
-
-- Owner: `partycoord`; token `partycoord#<incarnation>`.
-- Producer: `semdragons.party.joined.v1`.
-- Predicate: `agent.membership.party`.
-- Target pattern: `*.*.game.*.agent.*`.
-- Edge mode: `strict`; the agent has independent birth.
-
-This projection is deleted when party membership becomes first-class. Until
-then, agentprogression must not include `agent.membership.party` in a
-replace-owned claim.
-
-### Prohibited overlap
-
-`semdragons.party.assigned.v1` currently emits
-`quest.assignment.agent` and `quest.assignment.party` on a sub-quest subject.
-Both exact predicates belong to the quest lifecycle `cas-transition` claim.
-Registering partycoord foreign-edge claims would create an owner/foreign-edge
-overlap, so issue #3 removes those two payload projections. Partycoord creates
-the first-class party-assignment entity and requests the quest transition
-through lifecycle.
+There is therefore no current Party foreign-edge claim. The future
+party-membership child is created by partycoord. Questdag creates the future
+party-assignment or node-submission/output child and requests quest
+transitions through quest lifecycle. Neither owner may project a foreign
+subject as a shortcut.
 
 All other `@id` predicates in this matrix have the owner entity as their
 subject, so they are ordinary owned relationship triples, not foreign-edge
@@ -798,8 +787,10 @@ the target-birth rule remains strict. Every relationship uses
 - questbridge: keep only its exact owner-scoped mutations.
 - questdagexec: temporary; delete after the private questdag completion,
   failure, and reset controllers own their exact marker sets.
-- autonomy, bossbattle, redteam, guildformation, and partycoord: replace
-  cross-entity full-object writes with owner APIs or first-class child creates.
+- autonomy, bossbattle, redteam, and guildformation: replace cross-entity
+  full-object writes with owner APIs or first-class child creates.
+- partycoord: retain the issue #28 Party KV writer; issue #4 replaces it with
+  lifecycle/owner APIs and first-class membership creates.
 - agentprogression and agentstore: replace full-object writes with exact
   owner-scoped mutation.
 - startup/e2e seed: retain the empty-corpus create-only workflow, then migrate

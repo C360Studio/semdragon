@@ -68,14 +68,20 @@ agent.progression.levelup   // Level increased
 agent.progression.leveldown // Level decreased
 agent.progression.death     // Agent permadeath
 
-// Social
-party.formation.created     // Party formed
-party.formation.disbanded   // Party dissolved
+// Party EntityState categories (KV/SSE, not raw event subjects)
+party.formed                // Party formed
+party.joined                // Member joined
+party.disbanded             // Party dissolved
+
+// Other social events
 guild.membership.joined     // Agent joined guild
 guild.membership.promoted   // Rank increased
 ```
 
 Phase 1 publishes no raw boss-battle events. Do not invent replacement battle event subjects.
+Party activity is derived from retained KV `EntityState.MessageType.Category` values. Issue #28
+removed the raw Party event payload, typed-subject, publisher, and vocabulary plane without a
+replacement route.
 
 **Rules:**
 - Dots only for separation (no underscores, colons)
@@ -521,13 +527,14 @@ Components enabled in the default config (`config/semdragons.json`):
 - `agentic-loop`, `agentic-model` — semstreams event-driven LLM loop orchestration
 - `questbridge`, `questtools` — quest-to-LLM bridge (requires model_registry and AGENT stream)
 - `questdagexec` — party quest DAG execution (requires questbridge, questtools)
+- `partycoord` — Party KV form/join/disband/read lifecycle, roster policy, and temporary
+  assignment bridge
 
 Processors registered but excluded from the default config (opt-in):
 - `redteam` — guild red-team adversarial review before boss battle, extracts lessons to guild knowledge (also requires `bossbattle.red_team_enabled: true`)
 - `executor` — synchronous LLM execution (superseded by questbridge+questtools for event-driven execution)
 - `autonomy` — depends on executor; DM approval gate is implemented but untested with real LLM calls
 - `seeding` — requires explicit config; `ModeTrainingArena` needs LLM, `ModeTieredRoster` works without
-- `partycoord` — party lifecycle management (form, assign, merge, disband)
 - `dmworldstate` — world state aggregation (used by API but can run standalone)
 - `dmsession`, `dmapproval`, `dmpartyformation` — DM session management (functional, not in default config)
 

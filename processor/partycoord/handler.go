@@ -20,8 +20,8 @@ import (
 
 // FormParty creates a new party for a quest.
 func (c *Component) FormParty(ctx context.Context, questID domain.QuestID, leadID domain.AgentID) (*Party, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.partyMu.Lock()
+	defer c.partyMu.Unlock()
 
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
@@ -31,20 +31,15 @@ func (c *Component) FormParty(ctx context.Context, questID domain.QuestID, leadI
 	now := time.Now()
 
 	party := &Party{
-		ID:            partyID,
-		Name:          "", // Will be set by lead or auto-generated
-		Status:        domain.PartyForming,
-		QuestID:       questID,
-		Lead:          leadID,
-		Members:       []PartyMember{{AgentID: leadID, Role: domain.RoleLead, JoinedAt: now}},
-		SubQuestMap:   make(map[domain.QuestID]domain.AgentID),
-		SharedContext: []ContextItem{},
-		SubResults:    make(map[domain.QuestID]any),
-		FormedAt:      now,
+		ID:          partyID,
+		Name:        "", // Will be set by lead or auto-generated
+		Status:      domain.PartyForming,
+		QuestID:     questID,
+		Lead:        leadID,
+		Members:     []PartyMember{{AgentID: leadID, Role: domain.RoleLead, JoinedAt: now}},
+		SubQuestMap: make(map[domain.QuestID]domain.AgentID),
+		FormedAt:    now,
 	}
-
-	// Store party
-	c.activeParties.Store(partyID, party)
 
 	// Emit to graph
 	if err := c.graph.EmitEntity(ctx, party, "party.formed"); err != nil {
@@ -52,14 +47,8 @@ func (c *Component) FormParty(ctx context.Context, questID domain.QuestID, leadI
 		return nil, errs.Wrap(err, "PartyCoord", "FormParty", "emit party entity")
 	}
 
-	// Publish party formed event
-	if err := SubjectPartyFormed.Publish(ctx, c.deps.NATSClient, PartyFormedPayload{
-		Party:    *party,
-		FormedAt: now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return nil, errs.Wrap(err, "PartyCoord", "FormParty", "publish party formed")
-	}
+	// Publish the immutable in-memory snapshot only after persistence succeeds.
+	c.activeParties.Store(partyID, cloneParty(party))
 
 	c.partiesFormed.Add(1)
 	c.lastActivity.Store(now)
@@ -69,17 +58,20 @@ func (c *Component) FormParty(ctx context.Context, questID domain.QuestID, leadI
 		"quest_id", questID,
 		"lead_id", leadID)
 
-	return party, nil
+	return cloneParty(party), nil
 }
 
 // JoinParty adds a member to a party.
 func (c *Component) JoinParty(ctx context.Context, partyID domain.PartyID, agentID domain.AgentID, role domain.PartyRole) error {
+	c.partyMu.Lock()
+	defer c.partyMu.Unlock()
+
 	val, ok := c.activeParties.Load(partyID)
 	if !ok {
 		return errors.New("party not found")
 	}
 
-	party := val.(*Party)
+	party := cloneParty(val.(*Party))
 	now := time.Now()
 
 	// Add member
@@ -96,17 +88,7 @@ func (c *Component) JoinParty(ctx context.Context, partyID domain.PartyID, agent
 		return errs.Wrap(err, "PartyCoord", "JoinParty", "emit party entity")
 	}
 
-	// Publish join event
-	if err := SubjectPartyJoined.Publish(ctx, c.deps.NATSClient, PartyJoinedPayload{
-		PartyID:  partyID,
-		AgentID:  agentID,
-		Role:     role,
-		JoinedAt: now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return errs.Wrap(err, "PartyCoord", "JoinParty", "publish party joined")
-	}
-
+	c.activeParties.Store(partyID, party)
 	c.lastActivity.Store(now)
 
 	c.logger.Info("member joined party",
@@ -119,19 +101,19 @@ func (c *Component) JoinParty(ctx context.Context, partyID domain.PartyID, agent
 
 // DisbandParty disbands a party.
 func (c *Component) DisbandParty(ctx context.Context, partyID domain.PartyID, reason string) error {
+	c.partyMu.Lock()
+	defer c.partyMu.Unlock()
+
 	val, ok := c.activeParties.Load(partyID)
 	if !ok {
 		return errors.New("party not found")
 	}
 
-	party := val.(*Party)
+	party := cloneParty(val.(*Party))
 	now := time.Now()
 
 	party.Status = domain.PartyDisbanded
 	party.DisbandedAt = &now
-
-	// Remove from active parties
-	c.activeParties.Delete(partyID)
 
 	// Emit final state
 	if err := c.graph.EmitEntity(ctx, party, "party.disbanded"); err != nil {
@@ -139,17 +121,8 @@ func (c *Component) DisbandParty(ctx context.Context, partyID domain.PartyID, re
 		return errs.Wrap(err, "PartyCoord", "DisbandParty", "emit party entity")
 	}
 
-	// Publish disband event
-	if err := SubjectPartyDisbanded.Publish(ctx, c.deps.NATSClient, PartyDisbandedPayload{
-		PartyID:     partyID,
-		QuestID:     party.QuestID,
-		Reason:      reason,
-		DisbandedAt: now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return errs.Wrap(err, "PartyCoord", "DisbandParty", "publish party disbanded")
-	}
-
+	// Remove the active snapshot only after final persistence succeeds.
+	c.activeParties.Delete(partyID)
 	c.partiesDisbanded.Add(1)
 	c.lastActivity.Store(now)
 
@@ -162,172 +135,55 @@ func (c *Component) DisbandParty(ctx context.Context, partyID domain.PartyID, re
 
 // GetParty returns a party by ID.
 func (c *Component) GetParty(partyID domain.PartyID) (*Party, bool) {
+	c.partyMu.RLock()
+	defer c.partyMu.RUnlock()
+
 	val, ok := c.activeParties.Load(partyID)
 	if !ok {
 		return nil, false
 	}
-	return val.(*Party), true
+	return cloneParty(val.(*Party)), true
 }
 
 // ListActiveParties returns all active parties.
 func (c *Component) ListActiveParties() []*Party {
+	c.partyMu.RLock()
+	defer c.partyMu.RUnlock()
+
 	var parties []*Party
 	c.activeParties.Range(func(_, value any) bool {
 		if p, ok := value.(*Party); ok {
-			parties = append(parties, p)
+			parties = append(parties, cloneParty(p))
 		}
 		return true
 	})
 	return parties
 }
 
-// =============================================================================
-// COORDINATION HANDLERS
-// =============================================================================
-
-// DecomposeQuest records quest decomposition by the lead.
-func (c *Component) DecomposeQuest(ctx context.Context, partyID domain.PartyID, subQuests []domain.QuestID, strategy string) error {
-	val, ok := c.activeParties.Load(partyID)
-	if !ok {
-		return errors.New("party not found")
-	}
-
-	party := val.(*Party)
-	now := time.Now()
-
-	party.Strategy = strategy
-
-	// Publish decomposition event
-	if err := SubjectPartyQuestDecomposed.Publish(ctx, c.deps.NATSClient, PartyQuestDecomposedPayload{
-		PartyID:     partyID,
-		LeadID:      party.Lead,
-		ParentQuest: party.QuestID,
-		SubQuests:   subQuests,
-		Strategy:    strategy,
-		Timestamp:   now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return errs.Wrap(err, "PartyCoord", "DecomposeQuest", "publish quest decomposed")
-	}
-
-	c.lastActivity.Store(now)
-
-	return nil
-}
-
 // AssignTask assigns a sub-quest to a party member.
 func (c *Component) AssignTask(ctx context.Context, partyID domain.PartyID, subQuestID domain.QuestID, assignedTo domain.AgentID, rationale string) error {
+	c.partyMu.Lock()
+	defer c.partyMu.Unlock()
+
 	val, ok := c.activeParties.Load(partyID)
 	if !ok {
 		return errors.New("party not found")
 	}
 
-	party := val.(*Party)
+	party := cloneParty(val.(*Party))
 	now := time.Now()
 
 	// Record assignment
 	party.SubQuestMap[subQuestID] = assignedTo
 
-	// Publish assignment event
-	if err := SubjectPartyTaskAssigned.Publish(ctx, c.deps.NATSClient, PartyTaskAssignedPayload{
-		PartyID:    partyID,
-		LeadID:     party.Lead,
-		AssignedTo: assignedTo,
-		SubQuestID: subQuestID,
-		Rationale:  rationale,
-		Timestamp:  now,
-	}); err != nil {
+	// Persist the authoritative Party entity. Assignment remains transitional
+	// state until questdag owns this relationship directly.
+	if err := c.graph.EmitEntity(ctx, party, "party.task-assigned"); err != nil {
 		c.errorsCount.Add(1)
-		return errs.Wrap(err, "PartyCoord", "AssignTask", "publish task assigned")
+		return errs.Wrap(err, "PartyCoord", "AssignTask", "emit party entity")
 	}
 
-	c.lastActivity.Store(now)
-
-	return nil
-}
-
-// SubmitResult records a member's sub-quest result.
-func (c *Component) SubmitResult(ctx context.Context, partyID domain.PartyID, memberID domain.AgentID, subQuestID domain.QuestID, result any) error {
-	val, ok := c.activeParties.Load(partyID)
-	if !ok {
-		return errors.New("party not found")
-	}
-
-	party := val.(*Party)
-	now := time.Now()
-
-	// Record result
-	party.SubResults[subQuestID] = result
-
-	// Publish result submission event
-	if err := SubjectPartyResultSubmitted.Publish(ctx, c.deps.NATSClient, PartyResultSubmittedPayload{
-		PartyID:    partyID,
-		MemberID:   memberID,
-		SubQuestID: subQuestID,
-		Result:     result,
-		Timestamp:  now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return errs.Wrap(err, "PartyCoord", "SubmitResult", "publish result submitted")
-	}
-
-	c.lastActivity.Store(now)
-
-	return nil
-}
-
-// StartRollup begins the rollup process.
-func (c *Component) StartRollup(ctx context.Context, partyID domain.PartyID) error {
-	val, ok := c.activeParties.Load(partyID)
-	if !ok {
-		return errors.New("party not found")
-	}
-
-	party := val.(*Party)
-	now := time.Now()
-
-	// Publish rollup started event
-	if err := SubjectPartyRollupStarted.Publish(ctx, c.deps.NATSClient, PartyRollupStartedPayload{
-		PartyID:         partyID,
-		LeadID:          party.Lead,
-		ParentQuestID:   party.QuestID,
-		SubResultsCount: len(party.SubResults),
-		Timestamp:       now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return errs.Wrap(err, "PartyCoord", "StartRollup", "publish rollup started")
-	}
-
-	c.lastActivity.Store(now)
-
-	return nil
-}
-
-// CompleteRollup completes the rollup process with the combined result.
-func (c *Component) CompleteRollup(ctx context.Context, partyID domain.PartyID, rollupResult any) error {
-	val, ok := c.activeParties.Load(partyID)
-	if !ok {
-		return errors.New("party not found")
-	}
-
-	party := val.(*Party)
-	now := time.Now()
-
-	party.RollupResult = rollupResult
-
-	// Publish rollup completed event
-	if err := SubjectPartyRollupCompleted.Publish(ctx, c.deps.NATSClient, PartyRollupCompletedPayload{
-		PartyID:       partyID,
-		LeadID:        party.Lead,
-		ParentQuestID: party.QuestID,
-		RollupResult:  rollupResult,
-		Timestamp:     now,
-	}); err != nil {
-		c.errorsCount.Add(1)
-		return errs.Wrap(err, "PartyCoord", "CompleteRollup", "publish rollup completed")
-	}
-
-	c.rollupsCompleted.Add(1)
+	c.activeParties.Store(partyID, party)
 	c.lastActivity.Store(now)
 
 	return nil

@@ -1,12 +1,16 @@
 # Parties and Peer Reviews
 
 Parties are temporary groups of agents formed to tackle quests too complex for a single
-agent. The party lead decomposes the parent quest into sub-quests, assigns them to members,
-and rolls up the results into a final answer.
+agent. The party lead proposes and reviews a quest DAG, while `questdagexec` schedules
+assignments, persists node outputs, and coordinates final synthesis.
 
 > **Phase-1 note:** Bossbattle and its review side effects are dormant in shipped profiles.
 > Boss-battle steps in this guide describe the retained Phase-2 design. Party/DAG migration
 > continues separately on SemStreams gated-DAG primitives.
+>
+> `partycoord` owns authoritative Party KV form/join/disband/read behavior and roster policy.
+> It has no raw Party event plane. Decomposition, node submission/output, retry, and rollup
+> belong to questdag execution, not Party shadow fields.
 
 ## Contents
 
@@ -40,10 +44,10 @@ disbands.
 
 | Role | Who | Responsibilities |
 |------|-----|------------------|
-| **Lead** | Claiming agent (Master+ tier) | Decompose quest, assign sub-quests, roll up results |
+| **Lead** | Claiming agent (Master+ tier) | Propose the DAG, review nodes, synthesize output |
 | **Executor** | Recruited member | Complete assigned sub-quest |
 | **Reviewer** | Recruited member | Review other members' output before rollup |
-| **Scout** | Recruited member | Gather context and feed shared knowledge |
+| **Scout** | Recruited member | Gather context for assigned quest work |
 
 Roles are set when an agent joins the party via `JoinParty`. The lead's role is
 automatically set to `lead` at formation time.
@@ -392,7 +396,6 @@ behaviors get explicit reminders to improve, and improvement shows up in future 
 |---------|---------|-------------|
 | `default_max_party_size` | 5 | Maximum members per party |
 | `formation_timeout` | 10m | Time to fill a forming party before timeout |
-| `rollup_timeout` | 5m | Time limit for the lead to complete rollup |
 | `auto_form_parties` | true | Auto-create party when party-required quest is claimed |
 | `min_members_for_party` | 2 | Minimum members (including lead) |
 | `require_lead_approval` | false | Lead must approve new members (default off in dev config) |

@@ -161,10 +161,6 @@ const (
 	EventAgentPermadeath GameEventType = "agent.permadeath"
 	EventAgentRevived    GameEventType = "agent.revived"
 
-	// EventPartyFormed fires when agents form a party.
-	EventPartyFormed    GameEventType = "party.formed"
-	EventPartyDisbanded GameEventType = "party.disbanded"
-
 	// EventGuildCreated fires when a new guild is established.
 	EventGuildCreated GameEventType = "guild.created"
 	EventGuildJoined  GameEventType = "guild.joined"

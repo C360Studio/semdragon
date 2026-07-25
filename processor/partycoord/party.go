@@ -1,6 +1,7 @@
 package partycoord
 
 import (
+	"strings"
 	"time"
 
 	"github.com/c360studio/semstreams/graph"
@@ -18,7 +19,6 @@ import (
 // =============================================================================
 
 // Party is a temporary group of agents formed to tackle a quest together.
-// The party lead is responsible for decomposing the quest and rolling up results.
 type Party struct {
 	ID      domain.PartyID     `json:"id"`
 	Name    string             `json:"name"` // Auto-generated or lead-chosen
@@ -29,14 +29,8 @@ type Party struct {
 	Lead    domain.AgentID `json:"lead"`
 	Members []PartyMember  `json:"members"`
 
-	// Coordination
-	Strategy      string                            `json:"strategy"`       // The lead's plan of attack
-	SubQuestMap   map[domain.QuestID]domain.AgentID `json:"sub_quest_map"`  // Who's doing what
-	SharedContext []ContextItem                     `json:"shared_context"` // Party-wide knowledge
-
-	// Results
-	SubResults   map[domain.QuestID]any `json:"sub_results,omitempty"`   // Collected sub-quest outputs
-	RollupResult any                    `json:"rollup_result,omitempty"` // Lead's combined result
+	// Transitional assignment state retained until questdag owns it directly.
+	SubQuestMap map[domain.QuestID]domain.AgentID `json:"sub_quest_map"`
 
 	FormedAt    time.Time  `json:"formed_at"`
 	DisbandedAt *time.Time `json:"disbanded_at,omitempty"`
@@ -50,12 +44,34 @@ type PartyMember struct {
 	JoinedAt time.Time         `json:"joined_at"`
 }
 
-// ContextItem represents a piece of shared knowledge in a party.
-type ContextItem struct {
-	Key     string         `json:"key"`
-	Value   any            `json:"value"`
-	AddedBy domain.AgentID `json:"added_by"`
-	AddedAt time.Time      `json:"added_at"`
+// cloneParty returns a deep copy suitable for crossing the Component's party
+// state synchronization boundary.
+func cloneParty(party *Party) *Party {
+	if party == nil {
+		return nil
+	}
+
+	cloned := *party
+	if party.Members != nil {
+		cloned.Members = make([]PartyMember, len(party.Members))
+		copy(cloned.Members, party.Members)
+		for i := range cloned.Members {
+			if party.Members[i].Skills != nil {
+				cloned.Members[i].Skills = append([]domain.SkillTag(nil), party.Members[i].Skills...)
+			}
+		}
+	}
+	if party.SubQuestMap != nil {
+		cloned.SubQuestMap = make(map[domain.QuestID]domain.AgentID, len(party.SubQuestMap))
+		for questID, agentID := range party.SubQuestMap {
+			cloned.SubQuestMap[questID] = agentID
+		}
+	}
+	if party.DisbandedAt != nil {
+		disbandedAt := *party.DisbandedAt
+		cloned.DisbandedAt = &disbandedAt
+	}
+	return &cloned
 }
 
 // =============================================================================
@@ -93,14 +109,6 @@ func (p *Party) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "party.lifecycle.formed_at", Object: p.FormedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
-	// Strategy if set
-	if p.Strategy != "" {
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "party.strategy", Object: p.Strategy,
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-	}
-
 	// Member relationships
 	for _, member := range p.Members {
 		triples = append(triples, message.Triple{
@@ -128,18 +136,6 @@ func (p *Party) Triples() []message.Triple {
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
-
-	// Context items count
-	triples = append(triples, message.Triple{
-		Subject: entityID, Predicate: "party.context.count", Object: len(p.SharedContext),
-		Source: source, Timestamp: now, Confidence: 1.0,
-	})
-
-	// Sub-results count
-	triples = append(triples, message.Triple{
-		Subject: entityID, Predicate: "party.results.count", Object: len(p.SubResults),
-		Source: source, Timestamp: now, Confidence: 1.0,
-	})
 
 	return triples
 }
@@ -181,10 +177,6 @@ func PartyFromEntityState(entity *graph.EntityState) *Party {
 			agentID := domain.AgentID(domain.AsString(triple.Object))
 			memberRoles[agentID] = "" // Will be filled by role triple
 
-		// Coordination
-		case "party.coordination.strategy", "party.strategy":
-			p.Strategy = domain.AsString(triple.Object)
-
 		// Lifecycle
 		case "party.lifecycle.formed_at":
 			p.FormedAt = domain.AsTime(triple.Object)
@@ -207,6 +199,17 @@ func PartyFromEntityState(entity *graph.EntityState) *Party {
 					}
 					break
 				}
+			}
+		}
+
+		// Transitional legacy schema: party.assignment.<full quest ID>.
+		// Retained only until questdag becomes the assignment authority.
+		const assignmentPrefix = "party.assignment."
+		if triple.Predicate != "party.assignment.quest" &&
+			strings.HasPrefix(triple.Predicate, assignmentPrefix) {
+			questID := strings.TrimPrefix(triple.Predicate, assignmentPrefix)
+			if questID != "" {
+				p.SubQuestMap[domain.QuestID(questID)] = domain.AgentID(domain.AsString(triple.Object))
 			}
 		}
 	}
