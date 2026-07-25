@@ -40,10 +40,32 @@
 
 ## 4. Stage B3 — mechanics disablement and operator surface
 
-- [ ] 4.1 Remove `agentprogression`, `bossbattle`, `agentstore`, `boidengine`, `redteam` from `config/semdragons.json`; verify clean boot and quest flow without them
+- [~] 4.1 PARTIAL: remove `agentprogression`, `bossbattle`, `agentstore`,
+  `boidengine`, and `redteam` from all three shipped runtime profiles; enable
+  the complete quest lifecycle rule pack in each profile; and verify clean
+  boot and quest flow without mechanics. Issue #26 owns the bossbattle slice,
+  including the no-battle side-effect proof. Keep this five-component task
+  partial until every listed processor is disabled in every shipped profile.
 - [ ] 4.2 Add the stub rule: on transition into `in_review`, fire `lifecycle_transition` to `completed` with `verdict: review-skipped-mechanics-disabled` set atomically
 - [ ] 4.3 Enable `lifecycle-gateway` scoped to the quest workflow; verify inspect/history/operator-transition against the running stack
 - [ ] 4.4 Delete `service/api` handlers superseded by the gateway (status mutation only; keep world/DM/workspace/creation endpoints)
+
+### Issue #26 partial Stage B3 evidence
+
+- Every shipped profile omits bossbattle and uses the exact enabled
+  `rule-processor`, ordered four-file quest pack, and quest entity watch.
+- The fresh-graph integration path completes review-required work with
+  `review-skipped-mechanics-disabled` and produces no battle or mechanics side
+  effect.
+- The false `battle.review.*` event facade and retreat surface are deleted;
+  the authoritative model remains dormant for the owner-safe Phase-2 rebuild.
+- Go, UI, generated-schema, and strict OpenSpec checks pass under architect,
+  Go, and Svelte review.
+
+This evidence completes only the bossbattle slice. Task 4.1 remains partial
+until `agentprogression`, `agentstore`, `boidengine`, and `redteam` are also
+disabled in every shipped profile. Task 4.2 and the remaining lifecycle gates
+remain unchecked.
 
 ## 5. Verification gate
 

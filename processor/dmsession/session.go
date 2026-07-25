@@ -270,15 +270,6 @@ func (sm *SessionManager) WatchEvents(ctx context.Context, filter domain.EventFi
 		}()
 	}
 
-	// Subscribe to battle events
-	if len(filter.Types) == 0 || containsBattleEventTypes(filter.Types) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sm.subscribeBattleEvents(ctx, events)
-		}()
-	}
-
 	go func() {
 		<-ctx.Done()
 		wg.Wait()
@@ -304,16 +295,6 @@ func containsAgentEventTypes(types []domain.GameEventType) bool {
 		switch t {
 		case domain.EventAgentRecruited, domain.EventAgentLevelUp, domain.EventAgentLevelDown,
 			domain.EventAgentDeath, domain.EventAgentPermadeath, domain.EventAgentRevived:
-			return true
-		}
-	}
-	return false
-}
-
-func containsBattleEventTypes(types []domain.GameEventType) bool {
-	for _, t := range types {
-		switch t {
-		case domain.EventBattleStarted, domain.EventBattleVictory, domain.EventBattleDefeat:
 			return true
 		}
 	}
@@ -413,55 +394,6 @@ func (sm *SessionManager) subscribeAgentEvents(ctx context.Context, events chan<
 	})
 	if err != nil {
 		sm.logger.Error("failed to subscribe to agent events", "error", err)
-		return
-	}
-
-	go func() {
-		<-ctx.Done()
-		sub.Unsubscribe()
-	}()
-}
-
-func (sm *SessionManager) subscribeBattleEvents(ctx context.Context, events chan<- domain.GameEvent) {
-	sm.logger.Debug("subscribing to battle events")
-
-	const battleReviewPrefix = "battle.review."
-	subject := battleReviewPrefix + ">"
-
-	sub, err := sm.client.Subscribe(ctx, subject, func(msgCtx context.Context, msg *nats.Msg) {
-		select {
-		case <-msgCtx.Done():
-			return
-		default:
-		}
-
-		eventType := domain.EventBattleStarted
-		suffix := strings.TrimPrefix(msg.Subject, battleReviewPrefix)
-		if suffix != msg.Subject {
-			switch suffix {
-			case "started":
-				eventType = domain.EventBattleStarted
-			case "victory":
-				eventType = domain.EventBattleVictory
-			case "defeat":
-				eventType = domain.EventBattleDefeat
-			}
-		}
-
-		event := domain.GameEvent{
-			Type:      eventType,
-			Timestamp: time.Now().UnixMilli(),
-			Data:      msg.Data,
-		}
-
-		select {
-		case events <- event:
-		case <-msgCtx.Done():
-			return
-		}
-	})
-	if err != nil {
-		sm.logger.Error("failed to subscribe to battle events", "error", err)
 		return
 	}
 

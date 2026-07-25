@@ -1,10 +1,13 @@
 # Domain System
 
-Semdragons is a workflow framework, not a workflow theme. The same quest board, XP engine,
-boss battle evaluator, and boid coordination logic operate regardless of whether your agents
-are "developers" completing "tasks" or "adventurers" completing "quests." Domains provide
-the vocabulary and behavioral instructions that make the framework feel native to a specific
-context.
+Semdragons is a workflow framework, not a workflow theme. Its quest board and retained
+mechanics designs are domain-independent whether agents are "developers" completing
+"tasks" or "adventurers" completing "quests." Domains provide the vocabulary and
+behavioral instructions that make the framework feel native to a specific context.
+
+> **Phase-1 runtime status:** Domain catalogs still retain bossbattle judge prompts and
+> progression vocabulary for Phase 2, but shipped profiles do not activate bossbattle.
+> Review-required quests currently use the mechanics-stub lifecycle rule.
 
 ## Why Domains Matter
 
@@ -24,8 +27,9 @@ Three things change when you switch domains, and nothing else does:
    they should approach each required skill, and how the LLM-as-judge should evaluate their
    output. Swapping a domain catalog changes agent behavior without touching any code.
 
-Everything else — the quest lifecycle, XP calculations, boss battle scoring, boid rules,
-DAG execution — is domain-agnostic.
+The retained quest lifecycle, XP calculations, boss battle scoring, boid rules, and DAG
+execution designs are domain-agnostic. Runtime activation still depends on the current
+migration phase and shipped profile.
 
 This document describes how domains work, what the three built-in domains provide, and how
 to add a custom domain.
@@ -208,9 +212,9 @@ You are a Junior Developer. Your capabilities are limited:
 - Focus on accuracy over speed
 ```
 
-**Boss battle judge framing**: When a quest is submitted for review, the `bossbattle` processor
-runs an LLM-as-judge evaluation. The judge's system prompt opens with the domain's
-`JudgeSystemBase` to set the evaluator's persona:
+**Dormant boss battle judge framing**: `JudgeSystemBase` is retained for the Phase-2 evaluator,
+but shipped Phase-1 profiles do not activate `bossbattle`. After the authoritative writer is
+rebuilt, the judge's system prompt will open with the domain's `JudgeSystemBase`:
 
 > You are a senior code reviewer evaluating a developer's work output.
 

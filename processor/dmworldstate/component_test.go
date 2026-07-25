@@ -567,7 +567,7 @@ func putTestBattle(
 		battle.Verdict = &verdict
 	}
 
-	if err := gc.PutEntityState(ctx, battle, "battle.review.started"); err != nil {
+	if err := gc.PutEntityState(ctx, battle, "battle.started"); err != nil {
 		t.Fatalf("putTestBattle: PutEntityState failed: %v", err)
 	}
 	return battle

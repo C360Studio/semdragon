@@ -133,13 +133,13 @@ endpoint names at runtime.
 | `fallback`       | []string | no       | Tried in order if all preferred endpoints fail           |
 | `requires_tools` | bool     | no       | If `true`, only endpoints with `supports_tools` qualify  |
 
-**Capabilities used by default components:**
+**Capabilities referenced by shipped or retained components:**
 
 | Capability                    | Used By               | Notes                                    |
 |-------------------------------|-----------------------|------------------------------------------|
 | `agent-work`                  | questbridge           | Default agent quest execution            |
 | `quest-execution-sequential`  | questbridge           | Solo sequential quests (stronger model)  |
-| `boss-battle`                 | bossbattle            | LLM-as-judge evaluation                  |
+| `boss-battle`                 | bossbattle            | Dormant Phase-2 LLM-as-judge evaluation  |
 | `quest-design`                | DM session handlers   | DM quest parameter decisions             |
 | `dm-chat`                     | service/api DM chat   | DM conversational interface              |
 | `embedding`                   | graph-embedding       | Vector embeddings for semantic search    |
@@ -468,7 +468,8 @@ type RegistryReader interface {
 before publishing to the AGENT stream. The `agentic-model` processor picks up that name
 and opens the actual connection, so questbridge itself never holds an open LLM client.
 
-**Bossbattle** resolves `boss-battle` capability when running LLM-judge evaluations.
+**Bossbattle** retains `boss-battle` capability resolution for Phase 2. No shipped Phase-1
+profile activates that evaluator.
 
 **DM chat handler** (`service/api`) resolves `dm-chat` capability for the conversational
 interface.

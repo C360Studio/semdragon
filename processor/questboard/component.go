@@ -49,12 +49,12 @@ type Component struct {
 	mu          sync.RWMutex
 
 	// Triage watcher (auto-triage for pending_triage quests)
-	triageWatch   jetstream.KeyWatcher
-	triageDoneCh  chan struct{}
-	triageStopCh  chan struct{}
-	triageCache   sync.Map // entityKey → domain.QuestStatus
-	registry      model.RegistryReader
-	approval      dmapproval.ApprovalRouter
+	triageWatch  jetstream.KeyWatcher
+	triageDoneCh chan struct{}
+	triageStopCh chan struct{}
+	triageCache  sync.Map // entityKey → domain.QuestStatus
+	registry     model.RegistryReader
+	approval     dmapproval.ApprovalRouter
 
 	// Metrics
 	messagesProcessed atomic.Uint64
@@ -118,20 +118,6 @@ func (c *Component) OutputPorts() []component.Port {
 			},
 		},
 		{
-			Name:        "battle-events",
-			Direction:   component.DirectionOutput,
-			Required:    false,
-			Description: "Boss battle review events (started, verdict)",
-			Config: &component.JetStreamPort{
-				StreamName:      "BATTLE_EVENTS",
-				Subjects:        []string{"battle.review.>"},
-				Storage:         "file",
-				RetentionPolicy: "limits",
-				RetentionDays:   30,
-				Replicas:        1,
-			},
-		},
-		{
 			Name:        "quest-state",
 			Direction:   component.DirectionOutput,
 			Required:    true,
@@ -174,7 +160,7 @@ func (c *Component) ConfigSchema() component.ConfigSchema {
 			},
 			"enable_evaluation": {
 				Type:        "bool",
-				Description: "Enable automatic boss battle evaluation",
+				Description: "Retained legacy review-mechanics intent; dormant under Phase-1 lifecycle rules",
 				Default:     true,
 				Category:    "advanced",
 			},

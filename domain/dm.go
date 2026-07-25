@@ -143,7 +143,7 @@ type WorldStats struct {
 // GameEventType categorizes events in the game event stream.
 type GameEventType string
 
-// Game event type values covering quests, agents, battles, parties, guilds, and DM actions.
+// Game event type values covering quests, agents, parties, guilds, and DM actions.
 const (
 	// EventQuestPosted fires when a quest is added to the board.
 	EventQuestPosted    GameEventType = "quest.posted"
@@ -160,11 +160,6 @@ const (
 	EventAgentDeath      GameEventType = "agent.death"
 	EventAgentPermadeath GameEventType = "agent.permadeath"
 	EventAgentRevived    GameEventType = "agent.revived"
-
-	// EventBattleStarted fires when a boss battle review begins.
-	EventBattleStarted GameEventType = "battle.started"
-	EventBattleVictory GameEventType = "battle.victory"
-	EventBattleDefeat  GameEventType = "battle.defeat"
 
 	// EventPartyFormed fires when agents form a party.
 	EventPartyFormed    GameEventType = "party.formed"
@@ -260,20 +255,20 @@ type ApprovalType string
 
 // Approval request kind values.
 const (
-	ApprovalQuestCreate        ApprovalType = "quest_create"
-	ApprovalQuestDecomposition ApprovalType = "quest_decomposition"
-	ApprovalPartyFormation     ApprovalType = "party_formation"
-	ApprovalBattleVerdict      ApprovalType = "battle_verdict"
-	ApprovalAgentRecruit       ApprovalType = "agent_recruit"
-	ApprovalAgentRetire        ApprovalType = "agent_retire"
-	ApprovalIntervention       ApprovalType = "intervention"
-	ApprovalEscalation         ApprovalType = "escalation"
-	ApprovalAutonomyClaim      ApprovalType = "autonomy_claim"
-	ApprovalAutonomyShop       ApprovalType = "autonomy_shop"
-	ApprovalAutonomyGuild      ApprovalType = "autonomy_guild"
+	ApprovalQuestCreate         ApprovalType = "quest_create"
+	ApprovalQuestDecomposition  ApprovalType = "quest_decomposition"
+	ApprovalPartyFormation      ApprovalType = "party_formation"
+	ApprovalBattleVerdict       ApprovalType = "battle_verdict"
+	ApprovalAgentRecruit        ApprovalType = "agent_recruit"
+	ApprovalAgentRetire         ApprovalType = "agent_retire"
+	ApprovalIntervention        ApprovalType = "intervention"
+	ApprovalEscalation          ApprovalType = "escalation"
+	ApprovalAutonomyClaim       ApprovalType = "autonomy_claim"
+	ApprovalAutonomyShop        ApprovalType = "autonomy_shop"
+	ApprovalAutonomyGuild       ApprovalType = "autonomy_guild"
 	ApprovalAutonomyGuildCreate ApprovalType = "autonomy_guild_create"
-	ApprovalAutonomyUse        ApprovalType = "autonomy_use"
-	ApprovalFailureTriage      ApprovalType = "failure_triage"
+	ApprovalAutonomyUse         ApprovalType = "autonomy_use"
+	ApprovalFailureTriage       ApprovalType = "failure_triage"
 )
 
 // ApprovalRequest represents a request for human approval.

@@ -207,21 +207,6 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 		{name: "execution completed event", entity: &executor.ExecutionCompletedPayload{QuestID: quest1, AgentID: agent1, Timestamp: now}, wantNoReferences: true},
 		{name: "execution failed event", entity: &executor.ExecutionFailedPayload{QuestID: quest1, AgentID: agent1, Timestamp: now}, wantNoReferences: true},
 		{name: "party disbanded event", entity: &partycoord.PartyDisbandedPayload{PartyID: party, QuestID: quest1, DisbandedAt: now}, wantNoReferences: true},
-		{
-			name: "battle retreat event",
-			entity: &bossbattle.BattleRetreatPayload{
-				Battle: bossbattle.BossBattle{
-					ID:      domain.BattleID("c360.local.game.board.battle.battle-1"),
-					QuestID: quest1,
-					AgentID: agent1,
-				},
-				RetreatedAt: now,
-			},
-			wantReferences: map[string]int{
-				"battle.assignment.quest": 1,
-				"battle.assignment.agent": 1,
-			},
-		},
 	}
 
 	for _, tt := range tests {

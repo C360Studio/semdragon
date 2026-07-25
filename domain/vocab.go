@@ -82,25 +82,6 @@ const (
 	PredicateQuestProduced = "quest.relationship.produced"
 )
 
-// --- Boss Battle Predicates ---
-
-const (
-	// PredicateBattleStarted - Boss battle (review) began.
-	PredicateBattleStarted = "battle.review.started"
-
-	// PredicateBattleVerdict - Review verdict rendered.
-	PredicateBattleVerdict = "battle.review.verdict"
-
-	// PredicateBattleVictory - Agent passed the review.
-	PredicateBattleVictory = "battle.review.victory"
-
-	// PredicateBattleDefeat - Agent failed the review.
-	PredicateBattleDefeat = "battle.review.defeat"
-
-	// PredicateBattleRetreat - Agent requested re-do.
-	PredicateBattleRetreat = "battle.review.retreat"
-)
-
 // --- Agent Identity Predicates ---
 
 const (
@@ -524,24 +505,6 @@ func RegisterVocabulary() {
 	)
 	vocabulary.Register(PredicateQuestProduced,
 		vocabulary.WithDescription("Relationship: quest entity to semsource entity it produced"),
-	)
-
-	// Boss battle predicates
-	vocabulary.Register(PredicateBattleStarted,
-		vocabulary.WithDescription("Boss battle (quality review) began"),
-	)
-	vocabulary.Register(PredicateBattleVerdict,
-		vocabulary.WithDescription("Review verdict rendered"),
-	)
-	vocabulary.Register(PredicateBattleVictory,
-		vocabulary.WithDescription("Agent passed the review"),
-	)
-	vocabulary.Register(PredicateBattleDefeat,
-		vocabulary.WithDescription("Agent failed the review"),
-	)
-	vocabulary.Register(PredicateBattleRetreat,
-		vocabulary.WithDescription("Agent requested re-do of submission"),
-		vocabulary.WithDataType("BattleRetreatPayload"),
 	)
 
 	// Agent identity predicates

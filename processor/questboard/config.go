@@ -16,8 +16,10 @@ type Config struct {
 	// DefaultMaxAttempts for quests without explicit setting.
 	DefaultMaxAttempts int `json:"default_max_attempts" schema:"type:int,description:Default max attempts for quests"`
 
-	// EnableEvaluation enables automatic boss battle evaluation on submission.
-	EnableEvaluation bool `json:"enable_evaluation" schema:"type:bool,description:Enable automatic evaluation"`
+	// EnableEvaluation retains legacy review-mechanics intent for config
+	// compatibility. Phase 1 resolves in_review through lifecycle rules; this
+	// field does not enable or instantiate bossbattle.
+	EnableEvaluation bool `json:"enable_evaluation" schema:"type:bool,description:Retained legacy review-mechanics intent (dormant in Phase 1)"`
 
 	// AutoPartyAboveDifficulty sets the difficulty threshold above which quests
 	// automatically get PartyRequired=true. Nil means disabled (no auto-party).

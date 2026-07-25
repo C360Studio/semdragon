@@ -68,18 +68,14 @@ agent.progression.levelup   // Level increased
 agent.progression.leveldown // Level decreased
 agent.progression.death     // Agent permadeath
 
-// Boss battles
-battle.review.started       // Review began
-battle.review.verdict       // Review result
-battle.review.victory       // Passed review
-battle.review.defeat        // Failed review
-
 // Social
 party.formation.created     // Party formed
 party.formation.disbanded   // Party dissolved
 guild.membership.joined     // Agent joined guild
 guild.membership.promoted   // Rank increased
 ```
+
+Phase 1 publishes no raw boss-battle events. Do not invent replacement battle event subjects.
 
 **Rules:**
 - Dots only for separation (no underscores, colons)

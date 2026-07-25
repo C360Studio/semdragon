@@ -87,12 +87,33 @@ projection, re-derived from the gated-dag unit model.
 
 ### D6: Mechanics disablement is config + one stub rule
 Mechanics processors (`agentprogression`, `bossbattle`, `agentstore`,
-`boidengine`, `redteam`) are removed from `config/semdragons.json` (code
-retained). One stub rule handles the review path: on transition into
-`in_review`, fire `lifecycle_transition` to `completed` with a
+`boidengine`, `redteam`) are removed from every shipped
+`config/semdragons*.json` runtime profile. Each profile enables the complete
+quest lifecycle rule pack and watches quest entities. One stub rule handles
+the review path: on transition into `in_review`, fire
+`lifecycle_transition` to `completed` with a
 `verdict: review-skipped-mechanics-disabled` field set atomically. This keeps
 the `in_review` phase reachable (so Phase 2 re-enables review by replacing one
 rule) rather than special-casing submission routing.
+
+Bossbattle requires an explicit ordering constraint. Before issue #26, it
+watched the same `in_review` transition as the stub, so enabling both permitted
+the stub to complete a quest while bossbattle created a battle and later
+replaced foreign Quest, Agent, and PeerReview state. All shipped profiles now
+disable bossbattle before the mechanics-stub behavior is accepted, and
+verification proves that no battle entity or mechanics mutation is produced.
+
+Issue #26 retains the dormant authoritative `BossBattle` model, evaluator,
+factory registration, REST/dmworldstate/UI readers, battle-state KV port, and
+typed quest/agent relationships. It deletes only the unproduced
+`battle.review.*` event facade and retreat-only surface. The separate
+`adopt-semstreams-prev1-contract` D16 records the Phase-2 canonical projection,
+cross-owner handoffs, SemStreams #313 dependency, and reactivation block.
+
+The reviewed issue #26 slice proves the three-profile configuration contract,
+fresh-graph review-skipped transition, and absence of battle/mechanics side
+effects. This closes only the bossbattle portion of Stage B3. The other four
+mechanics processors and the global lifecycle gates remain open.
 
 ### D7: Adopt lifecycle-gateway for workflow operations only
 Enable the framework `lifecycle-gateway` for quest workflow inspect/history/
@@ -136,8 +157,9 @@ deleted in favor of the gateway.
    transition handlers.
 4. **Stage B2** — introduce the `questdag` domain layer on gated-dag; delete
    the questdagexec event loop; port its tests to the new seam.
-5. **Stage B3** — mechanics-disable config + stub rule; enable
-   lifecycle-gateway; delete superseded `service/api` handlers.
+5. **Stage B3** — mechanics-disable every shipped config + complete rule pack;
+   prove the bossbattle/stub race is absent; enable lifecycle-gateway; delete
+   superseded `service/api` handlers.
 6. **Gate** — full mock e2e (`task e2e`); dashboard progression assertions.
 7. **Rollback** — revert the branch. No production deployments exist; no data
    migration is performed (dev boards are recreated from scratch).

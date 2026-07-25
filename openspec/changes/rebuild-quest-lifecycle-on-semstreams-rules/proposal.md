@@ -31,10 +31,13 @@ against the mock LLM (zero paid tokens).
   evaluate (in design) whether dispatch-on-`in_progress` moves to a rule-engine
   `publish_agent` action or stays in `questbridge`.
 - Disable game mechanics for the duration of this change: `agentprogression`,
-  `bossbattle`, `agentstore`, `boidengine`, and `redteam` are removed from the
-  default config or stubbed to pass-through (quests complete without XP, review,
-  or store side effects). They are rebuilt against the two-loop principle in a
-  subsequent change — no incentive-mechanic behavior is in scope here.
+  `bossbattle`, `agentstore`, `boidengine`, and `redteam` are removed from
+  every shipped runtime profile or stubbed to pass-through. Every shipped
+  profile loads the complete quest lifecycle rule pack, including the
+  mechanics-stub rule, so quests complete without XP, review, battle,
+  reputation, inventory, or store side effects. The processors are rebuilt
+  against the two-loop principle in a subsequent change; no incentive-mechanic
+  behavior is in scope here.
 - Adopt the framework `lifecycle-gateway` operator REST surface for quest
   workflow CRUD/history where it can replace bespoke `service/api` handlers;
   keep product endpoints (world state, DM chat, workspace) as-is.
@@ -63,9 +66,11 @@ against the mock LLM (zero paid tokens).
 
 - **Code**: `processor/questboard`, `processor/questdagexec` (largely deleted),
   `processor/questbridge`, `processor/questtools`, `componentregistry/`,
-  `cmd/semdragons`, `config/semdragons.json`. Mechanics processors
-  (`agentprogression`, `bossbattle`, `agentstore`, `boidengine`, `redteam`)
-  config-gated off but not deleted.
+  `cmd/semdragons`, and all three shipped `config/semdragons*.json` profiles.
+  Mechanics processors (`agentprogression`, `bossbattle`, `agentstore`,
+  `boidengine`, `redteam`) are config-gated off. Issue #26 also removes
+  bossbattle's unproduced raw-event and retreat surfaces while retaining its
+  dormant authoritative model for Phase 2.
 - **Dependencies**: the beta.21 → beta.135 foundation is implemented on this
   branch. The beta.158 pre-v1 clean break is a separate prerequisite change:
   `adopt-semstreams-prev1-contract`. No dependency-only bump is permitted.

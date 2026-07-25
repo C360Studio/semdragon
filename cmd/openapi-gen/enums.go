@@ -71,7 +71,7 @@ var enumFieldOverrides = map[string]map[string][]any{
 
 	// BossBattle
 	"BossBattle": {
-		"status": {"active", "victory", "defeat", "retreat"},
+		"status": {"active", "victory", "defeat"},
 		"level":  {0, 1, 2, 3},
 	},
 	"Judge": {

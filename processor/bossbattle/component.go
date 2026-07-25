@@ -129,29 +129,6 @@ func (c *Component) InputPorts() []component.Port {
 func (c *Component) OutputPorts() []component.Port {
 	return []component.Port{
 		{
-			Name:        "battle-started",
-			Direction:   component.DirectionOutput,
-			Required:    true,
-			Description: "Battle started events",
-			Config: &component.JetStreamPort{
-				StreamName:      "BATTLE_EVENTS",
-				Subjects:        []string{"battle.review.>"},
-				Storage:         "file",
-				RetentionPolicy: "limits",
-				RetentionDays:   30,
-				Replicas:        1,
-			},
-		},
-		{
-			Name:        "battle-verdict",
-			Direction:   component.DirectionOutput,
-			Required:    true,
-			Description: "Battle verdict events",
-			Config: &component.NATSPort{
-				Subject: domain.PredicateBattleVerdict,
-			},
-		},
-		{
 			Name:        "battle-state",
 			Direction:   component.DirectionOutput,
 			Required:    true,
@@ -277,7 +254,6 @@ func (c *Component) SetTokenLedger(l *tokenbudget.TokenLedger) {
 	}
 	c.tokenLedger = l
 }
-
 
 // Initialize performs one-time setup. No I/O operations here.
 func (c *Component) Initialize() error {

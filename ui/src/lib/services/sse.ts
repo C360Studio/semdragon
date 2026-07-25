@@ -71,7 +71,6 @@ const CATEGORY_TO_EVENT_TYPE: Record<string, GameEventType> = {
 	'agent.autonomy.cooldown_expired': 'agent.autonomy.cooldown',
 	'agent.inventory.purchased': 'agent.inventory.updated',
 	'agent.consumable.used': 'store.consumable.used',
-	'battle.started': 'battle.review.started',
 	'guild.created': 'guild.membership.joined',
 	'guild.member.joined': 'guild.membership.joined',
 	'guild.member.promoted': 'guild.membership.promoted',

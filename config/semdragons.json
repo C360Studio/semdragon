@@ -346,20 +346,6 @@
         "enable_evaluation": true
       }
     },
-    "bossbattle": {
-      "type": "processor",
-      "name": "bossbattle",
-      "enabled": true,
-      "config": {
-        "org": "local",
-        "platform": "dev",
-        "board": "board1",
-        "domain": "software",
-        "auto_start_on_submit": true,
-        "max_concurrent": 10,
-        "red_team_enabled": false
-      }
-    },
     "redteam": {
       "type": "processor",
       "name": "redteam",

@@ -268,7 +268,7 @@ func TestComponent_QuestWithReview(t *testing.T) {
 		t.Fatalf("SubmitResult failed: %v", err)
 	}
 
-	// Quest should be in review (bossbattle processor handles battle creation reactively)
+	// Without the rule processor in this unit test, a review-required quest remains in review.
 	inReview, _ := comp.GetQuest(ctx, quest.ID)
 	if inReview.Status != domain.QuestInReview {
 		t.Errorf("Status = %v, want %v", inReview.Status, domain.QuestInReview)
@@ -508,20 +508,21 @@ func TestComponent_InputOutputPorts(t *testing.T) {
 	}
 
 	outputs := comp.OutputPorts()
-	if len(outputs) < 2 {
-		t.Errorf("Should have at least 2 output ports, got %d", len(outputs))
+	if len(outputs) != 2 {
+		t.Fatalf("OutputPorts() returned %d ports, want quest lifecycle and state only", len(outputs))
 	}
 
-	// Check for quest-lifecycle output port
-	hasQuestLifecycle := false
+	gotNames := make(map[string]bool, len(outputs))
 	for _, port := range outputs {
-		if port.Name == "quest-lifecycle" {
-			hasQuestLifecycle = true
-			break
+		gotNames[port.Name] = true
+	}
+	for _, want := range []string{"quest-lifecycle", "quest-state"} {
+		if !gotNames[want] {
+			t.Errorf("OutputPorts() missing %q", want)
 		}
 	}
-	if !hasQuestLifecycle {
-		t.Error("Missing quest-lifecycle output port")
+	if gotNames["battle-events"] {
+		t.Error("OutputPorts() retains phantom battle-events port")
 	}
 }
 

@@ -495,6 +495,120 @@ creates no upstream issue. Any future evaluation arena is a new product
 composition over those primitives, not a reason to preserve or resurrect the
 seeding event Graphables.
 
+### D16: Disable bossbattle before rebuilding its authoritative projection
+
+Issue [#26](https://github.com/C360Studio/semdragon/issues/26) separates the
+Phase-1 mechanics cut from the later authoritative battle-state migration.
+Before issue #26, bossbattle was enabled in all three shipped configurations.
+The default configuration also enabled the mechanics-stub rule, so two
+independent consumers reacted to the same transition into `in_review`: the
+lifecycle rule completed the quest while bossbattle could create a battle and
+later replace Quest, Agent, and PeerReview snapshots. That race violated the
+Phase-1 contract that review-required quests complete without a battle or
+mechanics side effects.
+
+Phase 1 removes bossbattle activation from:
+
+- `config/semdragons.json`;
+- `config/semdragons-semsource.json`; and
+- `config/semdragons-e2e-tier1.json`.
+
+Each profile enables the complete quest lifecycle rule pack, including the
+mechanics-stub rule and the quest entity watch. Removing bossbattle without the
+stub from the alternate profiles would leave review-required quests in
+`in_review`. The other four mechanics processors remain owned by the broader
+lifecycle task; issue #26 does not claim that the five-component disablement is
+complete.
+
+The component factory, evaluator, authoritative `BossBattle` type, REST
+readers, dmworldstate readers, battle UI, and real battle-state KV output port
+remain dormant. The quest and agent assignment triples remain typed `@id`
+relationships. Factory registration is not runtime activation and preserves
+the accepted Phase-2 code-retention boundary.
+
+Issue #26 deletes the false raw-event facade. No production code publishes any
+of `battle.review.started`, `battle.review.verdict`,
+`battle.review.victory`, `battle.review.defeat`, or
+`battle.review.retreat`. The five vocabulary constants and registrations,
+bossbattle raw event/verdict ports, questboard's false battle-event port,
+dmsession battle-subject routing, and the three battle `GameEventType` values
+therefore disappear together.
+
+`BattleRetreatPayload` is also definition-only. It has no publisher,
+subscriber, payload-registry factory, `BaseMessage` route, graph-ingest route,
+projection binding, API writer, or UI writer. Its `TraceInfo`, tests, root
+relationship fixture, retreat-only status, and retreat UI fixtures are
+deleted. Synthetic graph-manifest tests retain battle-family filtering with a
+real authoritative predicate rather than preserving a nonexistent event
+subject.
+
+This deletion does not canonicalize the authoritative battle projection.
+`BossBattle.Triples` still constructs runtime-indexed predicates:
+
+- `battle.criteria.<index>.<field>`;
+- `battle.judge.<index>.<field>`; and
+- `battle.result.<index>.<field>`.
+
+Those predicates are a blocking defect, not an auditor exception. Beta.158
+projection and ownership contracts require exact, declared predicates, so no
+owner can claim an unbounded indexed family. Phase 2 uses the fresh-state
+cutover and writes only repeated bounded objects at
+`battle.review.criteria`, `battle.review.judges`, and
+`battle.review.results`. It also adopts the canonical scalar names recorded in
+the predicate ledger. No legacy reader, alias, dual write, or in-place battle
+rewriter is added.
+
+On reactivation, bossbattle binds one authoritative battle
+`projection.Contract` as static owner `bossbattle`, heartbeats that owner, and
+uses its typed owner token for graph-ingest birth and owned replacement.
+Bossbattle supplies review results but does not mutate foreign authoritative
+state:
+
+- quest phase, attempts, assignment, failure, verdict, and completion cross
+  the quest lifecycle Manager or rule-command boundary;
+- agent status and progression cross the agentprogression owner boundary;
+- review birth and completion cross the review create/lifecycle boundaries;
+- artifact merge/index state crosses the `quest-artifacts` owner boundary;
+- DAG failure, reset, and rollup cross questdag and quest lifecycle; and
+- agent-loop cancellation remains a typed framework `UserSignal`.
+
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313) is the
+existing upstream request for the reusable Go owner-token mutation helper.
+Its Semdragon evidence already asks for create, replace-owned, append-evidence,
+classified retry, and authoritative read-back support. Issue #26 opens no
+duplicate. If #313 is delivered as replace-only, the missing create helper
+must be split upstream before reactivation rather than copied locally.
+
+Bossbattle remains blocked from every shipped configuration until the Phase-2
+projection, ownership, lifecycle handoffs, fresh-state tests, and #313-backed
+mutation path are complete. Merely renaming the eight scanner findings does
+not satisfy this gate.
+
+### Issue #26 implementation evidence, pending the final root gate
+
+The reviewed implementation establishes the task 2.16 behavior without
+marking that task complete:
+
+- TDD contract tests parse all three shipped profiles and mutation-check the
+  exact `rule-processor` type, name, enabled state, ordered four-rule pack, and
+  quest watch pattern while rejecting any bossbattle component.
+- A fresh-graph integration test drives a review-required quest through the
+  real graph-ingest, lifecycle Manager, and rule processor. It reaches
+  `completed` with `review-skipped-mechanics-disabled` and produces no battle,
+  peer review, XP, reputation, store, inventory, or artifact side effect.
+- Stale-checked source inventory deletes the five unproduced event subjects,
+  their ports and routing, all retreat-only graph/status/UI/API surfaces, and
+  rejects synthetic reintroduction.
+- Retention tests preserve the authoritative model, evaluator, component
+  factory, battle-state KV port, readers, and typed quest/agent relationships
+  without binding an owner or heartbeat.
+- The Go unit/build gates, repeated mutation contract, tagged integration
+  fixtures, all 342 UI tests, Svelte diagnostics, generated API/schema
+  freshness, and diff checks pass under architect, Go, and Svelte review.
+
+Task 2.16 remains unchecked until the root agent completes the final combined
+repository gates. Tasks 3.1 through 3.6 remain independently open.
+
 ### Approved core-wave verification
 
 The 2026-07-25 live evidence closes only tasks 2.7, 2.8, and 3.7:

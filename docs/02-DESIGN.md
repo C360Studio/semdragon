@@ -28,6 +28,11 @@ Coordination emerges from Boid-like flocking behavior over a structured quest bo
 
 **It's fun to build. The results are serious.**
 
+> **Runtime boundary:** Boss battles, XP mechanics, and the battle event examples in this
+> document describe retained product history and the Phase-2 target. Shipped Phase-1 profiles
+> do not activate bossbattle; review-required quests complete through the mechanics-stub rule.
+> The former raw `battle.review.*` event subjects are not production contracts.
+
 ---
 
 ## Concept Map
@@ -326,9 +331,10 @@ Multi-judge review panel:
 - **LLM judge** — evaluates summary quality, insight depth, tone appropriateness
 - **LLM judge 2** — cross-checks analysis against raw data for hallucinations
 
-Criteria and results are persisted as indexed triples on the battle entity
-(`battle.criteria.{i}.name`, `battle.result.{i}.score`, etc.) for full observability
-and trajectory replay.
+The historical writer used indexed predicates such as
+`battle.criteria.<index>.name` and `battle.result.<index>.score`. That shape is
+not valid for the authoritative projection. Phase 2 replaces it with repeated
+structured criteria, judge, and result values on a fresh graph.
 
 ### 8. XP Distribution
 
@@ -338,7 +344,9 @@ SummaryScribe: 350 base + 140 quality + 0 speed + 52 guild  = 542 XP
 MailHawk:       50 base +  40 quality + 20 speed + 0 guild   = 110 XP
 ```
 
-### 9. Events Stream (via semstreams)
+### 9. Historical event sketch
+
+The `battle.review.*` lines below are design history, not current subjects.
 
 ```
 quest.lifecycle.posted     → {quest_id: "q-123", difficulty: "epic"}
@@ -406,10 +414,10 @@ prevent recursion.
 without red-team input. The timed-out quest is explicitly failed so sub-quests are not
 left orphaned. The system never blocks on red-team availability.
 
-**Configuration:** Both the `redteam` component and `bossbattle.red_team_enabled: true`
-must be enabled. Both are **disabled by default** in `config/semdragons.json` and must
-be opted in explicitly. The `min_difficulty` config (default: 1, i.e., Easy) controls
-which quests trigger red-team review — quests below the threshold are skipped.
+**Phase-2 configuration history:** The former flow required both the `redteam`
+component and `bossbattle.red_team_enabled: true`. Redteam remains disabled and
+bossbattle is absent from shipped Phase-1 profiles; operators must not reactivate this
+pair until the authoritative battle projection and owner handoffs are complete.
 
 ---
 

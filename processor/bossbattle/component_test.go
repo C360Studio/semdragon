@@ -110,20 +110,14 @@ func TestComponent_InputOutputPorts(t *testing.T) {
 	}
 
 	outputs := comp.OutputPorts()
-	if len(outputs) == 0 {
-		t.Error("Should have output ports defined")
+	if len(outputs) != 1 {
+		t.Fatalf("OutputPorts() returned %d ports, want only the authoritative KV state port", len(outputs))
 	}
-
-	// Check for battle-verdict output port
-	hasBattleVerdict := false
-	for _, port := range outputs {
-		if port.Name == "battle-verdict" {
-			hasBattleVerdict = true
-			break
-		}
+	if outputs[0].Name != "battle-state" {
+		t.Errorf("OutputPorts()[0].Name = %q, want battle-state", outputs[0].Name)
 	}
-	if !hasBattleVerdict {
-		t.Error("Missing battle-verdict output port")
+	if _, ok := outputs[0].Config.(*component.KVWritePort); !ok {
+		t.Errorf("battle-state config = %T, want *component.KVWritePort", outputs[0].Config)
 	}
 }
 

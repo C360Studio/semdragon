@@ -271,11 +271,6 @@
 		color: var(--status-error);
 	}
 
-	.battle-status[data-status='retreat'] {
-		background: var(--status-warning-container);
-		color: var(--status-warning);
-	}
-
 	.battle-summary {
 		display: flex;
 		gap: var(--spacing-xl);

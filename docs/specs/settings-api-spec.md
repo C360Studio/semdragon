@@ -95,15 +95,15 @@ Returns the current runtime configuration. API keys are NEVER returned — only 
       "last_error": ""
     },
     {
-      "name": "bossbattle",
+      "name": "rule-processor",
       "type": "processor",
       "enabled": true,
       "running": true,
-      "healthy": false,
-      "status": "degraded",
+      "healthy": true,
+      "status": "running",
       "uptime_seconds": 3600,
-      "error_count": 3,
-      "last_error": "model endpoint unreachable"
+      "error_count": 0,
+      "last_error": ""
     }
   ],
   "workspace": {

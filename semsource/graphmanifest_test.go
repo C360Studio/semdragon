@@ -27,9 +27,9 @@ func TestNewGraphManifestClient_WhitespaceURL(t *testing.T) {
 func TestGraphManifestFetch_Success(t *testing.T) {
 	srv := newGraphManifestServer(t, makePredicatesResponse(map[string]int{
 		"source.content.language": 10,
-		"source.content.text":    5,
-		"source.metadata.path":   3,
-		"doc.section.title":      2,
+		"source.content.text":     5,
+		"source.metadata.path":    3,
+		"doc.section.title":       2,
 	}))
 	defer srv.Close()
 
@@ -68,10 +68,10 @@ func TestGraphManifestFetch_FiltersGamePredicates(t *testing.T) {
 	srv := newGraphManifestServer(t, makePredicatesResponse(map[string]int{
 		"quest.lifecycle.posted":    10,
 		"quest.lifecycle.completed": 5,
-		"agent.progression.xp":     3,
-		"battle.review.verdict":    2,
-		"source.content.language":  8,
-		"doc.section.title":        4,
+		"agent.progression.xp":      3,
+		"battle.status.state":       2,
+		"source.content.language":   8,
+		"doc.section.title":         4,
 	}))
 	defer srv.Close()
 
@@ -111,8 +111,8 @@ func TestGraphManifestFetch_FiltersGamePredicates(t *testing.T) {
 func TestGraphManifestFetch_AllGamePredicates_EmptyManifest(t *testing.T) {
 	srv := newGraphManifestServer(t, makePredicatesResponse(map[string]int{
 		"quest.lifecycle.posted": 10,
-		"agent.progression.xp":  3,
-		"battle.review.verdict": 2,
+		"agent.progression.xp":   3,
+		"battle.status.state":    2,
 	}))
 	defer srv.Close()
 

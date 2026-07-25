@@ -1,8 +1,9 @@
 # Quest Lifecycle
 
-Quests are the fundamental unit of work in semdragons. Every quest flows through a state
-machine managed by the `questboard` processor, with quality gates enforced by `bossbattle`
-and execution driven by `questbridge` + `questtools`.
+Quests are the fundamental unit of work in semdragons. Quest transitions are moving to the
+SemStreams lifecycle and rules engine, with execution driven by `questbridge` + `questtools`.
+In shipped Phase-1 profiles, bossbattle is dormant and the mechanics-stub rule completes
+review-required work without creating a battle or mechanics side effects.
 
 ## Contents
 
@@ -14,7 +15,7 @@ and execution driven by `questbridge` + `questtools`.
 - [Review Levels](#review-levels)
 - [Quest Chains and Dependencies](#quest-chains-and-dependencies)
 - [Lifecycle State Machine](#lifecycle-state-machine)
-- [Boss Battle Evaluation](#boss-battle-evaluation)
+- [Dormant Phase-2 Boss Battle Evaluation](#dormant-phase-2-boss-battle-evaluation)
 - [Party Quests and DAG Decomposition](#party-quests-and-dag-decomposition)
 - [Artifacts](#artifacts)
 - [Scenarios as Acceptance Criteria](#scenarios-as-acceptance-criteria)
@@ -154,7 +155,7 @@ cycles and unknown name references are rejected at creation time.
 | `party_required` | bool | from classification | Requires a party (set by decomposability heuristic) |
 | `min_party_size` | int | `0` | Minimum party members |
 | `base_xp` | int64 | from difficulty | XP awarded on completion |
-| `constraints.require_review` | bool | `false` | Send to boss battle on submission |
+| `constraints.require_review` | bool | `false` | Enter review; Phase 1 skips it, Phase 2 evaluates it |
 | `constraints.review_level` | int (0-3) | `0` (Auto) | Review rigor (see table below) |
 | `constraints.max_duration` | duration | `0` (none) | Time limit for execution |
 | `constraints.max_tokens` | int | `0` (none) | Token budget for LLM calls |
@@ -305,8 +306,8 @@ dependent quest's `TaskMessage` before dispatching to the agentic loop.
 | `in_progress` | `completed` | `SubmitResult` (no review) | Sets output, `completed_at`, duration |
 | `in_progress` | `posted` | `AbandonQuest` | Resets agent to idle, clears assignment |
 | `in_progress` | `failed` / `posted` | `FailQuest` | Repost if attempts < max, else pending_triage |
-| `in_review` | `completed` | `CompleteQuest` (victory) | Sets verdict, `completed_at`, duration |
-| `in_review` | `failed` / `posted` | `FailQuest` (defeat) | Repost if attempts < max, else pending_triage |
+| `in_review` | `completed` | Phase-1 mechanics stub | Records review skipped and completes without battle |
+| `in_review` | `failed` / `posted` | Phase-2 battle defeat | Dormant until authoritative review is rebuilt |
 | any active | `escalated` | `EscalateQuest` | Flags for DM attention, terminal state |
 
 When a quest exhausts its retry budget (`attempts >= max_attempts`), it moves to
@@ -328,10 +329,14 @@ explicitly post).
 
 ---
 
-## Boss Battle Evaluation
+## Dormant Phase-2 Boss Battle Evaluation
 
-When a quest transitions to `in_review`, the `bossbattle` processor detects the state
-change via KV watch and automatically starts a battle:
+No shipped Phase-1 profile activates `bossbattle`. Review-required quests currently complete
+through the mechanics-stub rule with `review-skipped-mechanics-disabled`. The battle factory,
+evaluator, REST/dmworldstate readers, battle UI, and battle-state KV port remain as a dormant
+Phase-2 surface.
+
+The retained evaluator describes the intended Phase-2 flow:
 
 1. **Detection** — KV watcher compares cached quest status against new status. On
    transition to `in_review`, checks `needs_review` and `review_level`.
@@ -342,11 +347,11 @@ change via KV watch and automatically starts a battle:
    - *Automated judge* — heuristic scoring (output present = 0.8 base score)
    - *LLM judge* — LLM-as-judge evaluation against criteria
    - *Human judge* — returns `Pending` status, pausing until human submits verdict
-5. **Persistence** — Criteria and results are stored as indexed triples on the battle
-   entity. Criteria use predicates like `battle.criteria.{i}.name`,
-   `battle.criteria.{i}.weight`, `battle.criteria.{i}.threshold`. Results use
-   `battle.result.{i}.score`, `battle.result.{i}.passed`, `battle.result.{i}.reasoning`.
-   The overall verdict is stored under `battle.verdict.*` predicates.
+5. **Persistence** — The dormant writer still constructs
+   `battle.criteria.<index>.*`, `battle.judge.<index>.*`, and
+   `battle.result.<index>.*`. This is a blocking defect, not a supported schema. Phase 2
+   must write repeated structured values at `battle.review.criteria`,
+   `battle.review.judges`, and `battle.review.results` on a fresh graph.
 6. **Verdict** — Weighted scores produce a quality score. All criteria must meet their
    threshold for the verdict to pass.
 7. **Quest transition** — Victory sets quest to `completed` with verdict attached.
@@ -354,10 +359,11 @@ change via KV watch and automatically starts a battle:
 
 ### Failure and Retry
 
-When a quest fails, `questboard` checks `attempts < max_attempts`. If retryable, the
+When a quest fails, the lifecycle path checks `attempts < max_attempts`. If retryable, the
 quest resets to `posted` and the agent returns to `idle`. If the budget is exhausted,
-the quest moves to `pending_triage` for DM triage. Failure types: `quality` (boss
-battle defeat), `timeout`, `error`, `abandoned`.
+the quest moves to `pending_triage` for DM triage. The retained `quality` failure type is
+used by the dormant Phase-2 battle design; active failures include timeout, error, and
+abandonment.
 
 ---
 
@@ -396,8 +402,9 @@ tier or above) who decomposes the quest into a DAG of sub-quests before any work
    When `questdagexec` detects a `ready` node, it calls `ClaimAndStartForParty` to
    assign it to the best-matched party member.
 
-6. **Lead review gate** — After a sub-quest completes its boss battle (or bypasses it),
-   the node enters `pending_review`. DataDragon receives a `review_sub_quest` tool call
+6. **Lead review gate** — After a sub-quest completes its active lifecycle path (Phase 1
+   bypasses bossbattle), the node enters `pending_review`. DataDragon receives a
+   `review_sub_quest` tool call
    with the member's output and the node's acceptance criteria. The lead rates on a 1-5
    scale across three questions. Average >= 3.0 accepts the node; below that rejects it
    with corrective feedback injected into the member's next dispatch prompt. The lead
@@ -468,8 +475,8 @@ purposes but with richer structure:
    For solo (sequential/trivial) quests, scenarios appear as ordered acceptance
    criteria. For party quests, the party lead receives scenarios as structured
    decomposition material instead of having to invent a breakdown from prose.
-2. **Boss battle evaluation** — Scenario names and descriptions feed the LLM judge's
-   evaluation prompt, providing concrete standards beyond generic review criteria.
+2. **Phase-2 boss battle evaluation** — Once the authoritative battle writer is rebuilt,
+   scenario names and descriptions feed the LLM judge prompt. Phase 1 does not run this step.
 
 A minimal quest with no scenarios still works — the `goal` and `requirements` fields
 serve as the acceptance signal. Scenarios are optional but strongly recommended for

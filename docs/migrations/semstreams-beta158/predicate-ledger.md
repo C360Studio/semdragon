@@ -282,7 +282,7 @@ adds no projection binding. Issue #4 must either wire the real framework
 `BaseMessage`/payload-registry/graph-ingest route or delete the seven latent
 Graphable surfaces and their graph-only tests.
 
-### bossbattle: eight findings
+### bossbattle: eight scanner-visible findings, deferred
 
 - `battle.lifecycle.{started_at,completed_at}` becomes
   `battle.lifecycle.{started-at,completed-at}`.
@@ -290,6 +290,48 @@ Graphable surfaces and their graph-only tests.
 - `battle.verdict.{quality_score,xp_awarded,xp_penalty,level_change}` becomes
   `battle.verdict.{quality-score,xp-awarded,xp-penalty,level-change}`.
 - `battle.outcome` becomes `battle.review.outcome`.
+
+The authoritative audit result remains `8/19`: eight findings from 19
+extracted candidates. Issue #26 does not rename or activate those predicates.
+It disables bossbattle in every shipped profile and defers the eight findings
+to the Phase-2 authoritative projection.
+
+Issue #26 deletes a separate phantom event surface. Production has no publisher
+for `battle.review.started`, `battle.review.verdict`,
+`battle.review.victory`, `battle.review.defeat`, or
+`battle.review.retreat`. Their five vocabulary constants and registrations,
+raw bossbattle event/verdict ports, questboard output port, dmsession routing,
+and battle game-event types are deleted rather than renamed or assigned an
+owner.
+
+The definition-only retreat surface is deleted with that facade:
+`BattleRetreatPayload`, its graph methods and tests, the retreat status, and
+the UI filter, style, fixture, OpenAPI value, and generated TypeScript value.
+No alias or compatibility reader survives. The authoritative `BossBattle`
+model, evaluator, REST/dmworldstate/UI readers, real battle-state KV port, and
+typed quest/agent relationships remain dormant for Phase 2.
+
+The predicate scanner does not expose the blocking indexed-family defect.
+`BossBattle.Triples` constructs criteria, judge, and result predicates at
+runtime:
+
+- `battle.criteria.<index>.<field>`;
+- `battle.judge.<index>.<field>`; and
+- `battle.result.<index>.<field>`.
+
+These families cannot be made safe through wildcard owner claims or
+occurrence-level audit exceptions. On a fresh graph, Phase 2 replaces them with
+repeated structured values at `battle.review.criteria`,
+`battle.review.judges`, and `battle.review.results`, and applies the eight
+lower-kebab scalar renames above. It adds no legacy reader, alias, dual write,
+or in-place rewriter.
+
+Reactivation remains blocked until bossbattle binds and heartbeats one
+authoritative projection contract, all cross-owner effects use their approved
+owner APIs, fresh-state tests pass, and the mutation path consumes the
+upstream helper tracked by
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313).
+Semdragon does not copy a generic owner-token mutator locally.
 
 ### executor: nine findings across three boundaries
 

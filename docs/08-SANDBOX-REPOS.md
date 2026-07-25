@@ -3,8 +3,13 @@
 Semdragons uses a sandbox container for agent code execution and artifact management.
 Real git repositories are bind-mounted from the host into the sandbox. Each quest gets
 its own git worktree branching from the target repo's main, so agents work in isolated
-branches. Only boss-battle-approved work merges to `main`, creating a quality gate
-before code enters the knowledge graph via semsource.
+branches. The retained Phase-2 design allows only battle-approved work to merge to
+`main`; Phase 1 does not invoke that automatic merge gate.
+
+> **Runtime status:** The merge gate below is retained Phase-2 design. Shipped Phase-1
+> profiles do not activate bossbattle, so they do not automatically review or merge a quest
+> workspace. The sandbox endpoints and battle/artifact readers remain available for the
+> future owner-safe workflow.
 
 ## Contents
 
@@ -30,7 +35,7 @@ HOST FILESYSTEM (bind mount)
 NAMED DOCKER VOLUME
   /workspace/{quest-id}/ ← git worktree branched from target repo
 
-FLOW:
+PHASE-2 TARGET FLOW:
   1. Quest brief declares repo    → "repo": "semstreams"
   2. CreateWorkspace               → git branch + worktree from repo's main
   3. Agent works in worktree       → commits via bash (git commands)
@@ -55,10 +60,10 @@ FLOW:
    - Commit changes using `git` commands inside `bash` (add, commit, status, diff, log)
    - The agent sees the full codebase from the branch point (read access to all repo files)
 
-4. **Boss battle review**: The evaluator reads quest artifacts from the sandbox via
+4. **Phase-2 boss battle review**: The dormant evaluator can read quest artifacts via
    `ListWorkspaceFiles` + `ReadFile` to include in the judge prompt.
 
-5. **Merge to main**: On boss battle victory, the backend calls
+5. **Phase-2 merge to main**: After reactivation, a boss battle victory can call
    `POST /workspace/{questID}/merge-to-main`. The sandbox:
    - Auto-commits any uncommitted work in the worktree
    - Switches the repo to main
@@ -153,7 +158,7 @@ isolated at the container level, not enforced per-tool.
 | **Symlink escape protection** | All file paths are resolved and validated against the workspace root before any operation. |
 | **`bash` scope** | Agents run `bash` commands inside their `/workspace/{quest-id}/` directory (`Cmd.Dir`). Git operations that affect `main` (push, merge, rebase to main) are not available from inside the workspace — `merge-to-main` is a privileged sandbox server endpoint only. |
 | **Worktree isolation** | Each quest gets its own branch and worktree. Agents never touch `main` directly. |
-| **Merge gate** | Only boss battle victory triggers `merge-to-main`. This is a privileged sandbox server endpoint, not an agent tool. |
+| **Merge gate** | Privileged endpoint, not an agent tool; no shipped Phase-1 profile calls it automatically. |
 | **Rollback** | If a merge goes wrong, `git revert` on main is trivial. |
 
 > **Known limitation**: `bash` commands run as the `sandbox` user inside the container.
@@ -220,7 +225,7 @@ The `repo` source type expands into git + ast + docs + config handlers. It only 
 | Predicate | Type | Description |
 |-----------|------|-------------|
 | `quest.context.repo` | string | Target repository name |
-| `quest.artifacts.merged` | string | Merge commit hash after boss battle victory |
+| `quest.artifacts.merged` | string | Phase-2 merge commit after owner-safe battle approval |
 | `quest.artifacts.indexed` | bool | True when semsource has processed merged artifacts |
 | `quest.relationship.produced` | []string | Semsource entity IDs produced by this quest |
 

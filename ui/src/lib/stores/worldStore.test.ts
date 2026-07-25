@@ -725,15 +725,15 @@ describe('worldStore', () => {
 				expect(stats.winRate).toBe(0);
 			});
 
-			it('ignores active and retreat battles when calculating win rate', () => {
+			it('ignores active battles when calculating win rate', () => {
 				store.upsertBattle(createTestBattle({ id: battleId('b1'), status: 'active' }));
-				store.upsertBattle(createTestBattle({ id: battleId('b2'), status: 'retreat' }));
-				store.upsertBattle(createTestBattle({ id: battleId('b3'), status: 'victory' }));
+				store.upsertBattle(createTestBattle({ id: battleId('b2'), status: 'victory' }));
+				store.upsertBattle(createTestBattle({ id: battleId('b3'), status: 'defeat' }));
 
 				const stats = store.battleStats;
 				expect(stats.won).toBe(1);
-				expect(stats.lost).toBe(0);
-				expect(stats.winRate).toBe(100);
+				expect(stats.lost).toBe(1);
+				expect(stats.winRate).toBe(50);
 			});
 
 			it('calculates 50% win rate correctly', () => {

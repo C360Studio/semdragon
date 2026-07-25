@@ -74,7 +74,7 @@ describe('getPredicateColor', () => {
 		expect(getPredicateColor('agent.progression.xp')).toBe(PREDICATE_COLORS.progression);
 		expect(getPredicateColor('party.formation.created')).toBe(PREDICATE_COLORS.formation);
 		expect(getPredicateColor('guild.membership.joined')).toBe(PREDICATE_COLORS.membership);
-		expect(getPredicateColor('battle.review.verdict')).toBe(PREDICATE_COLORS.review);
+		expect(getPredicateColor('quest.review.needs-review')).toBe(PREDICATE_COLORS.review);
 	});
 
 	it('returns slate color for data and state categories', () => {

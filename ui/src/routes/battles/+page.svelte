@@ -21,8 +21,7 @@
 		{ status: 'all', label: 'All' },
 		{ status: 'active', label: 'Active' },
 		{ status: 'victory', label: 'Victory' },
-		{ status: 'defeat', label: 'Defeat' },
-		{ status: 'retreat', label: 'Retreat' }
+		{ status: 'defeat', label: 'Defeat' }
 	];
 
 	const filteredBattles = $derived.by(() => {
@@ -437,11 +436,6 @@
 	.battle-status[data-status='defeat'] {
 		background: var(--status-error-container);
 		color: var(--status-error);
-	}
-
-	.battle-status[data-status='retreat'] {
-		background: var(--status-warning-container);
-		color: var(--status-warning);
 	}
 
 	.battle-info {

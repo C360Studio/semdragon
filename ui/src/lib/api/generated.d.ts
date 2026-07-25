@@ -3989,7 +3989,7 @@ export interface components {
             /** Format: date-time */
             started_at: string;
             /** @enum {string} */
-            status: "active" | "victory" | "defeat" | "retreat";
+            status: "active" | "victory" | "defeat";
             verdict?: {
                 feedback: string;
                 level_change: number;

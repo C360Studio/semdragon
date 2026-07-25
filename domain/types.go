@@ -37,12 +37,12 @@ type AgentStatus string
 
 // Agent status values.
 const (
-	AgentIdle     AgentStatus = "idle"
-	AgentOnQuest  AgentStatus = "on_quest"
-	AgentInBattle AgentStatus = "in_battle"
-	AgentCooldown AgentStatus = "cooldown"
-	AgentRetired        AgentStatus = "retired"
-	AgentPendingReview  AgentStatus = "pending_review"
+	AgentIdle          AgentStatus = "idle"
+	AgentOnQuest       AgentStatus = "on_quest"
+	AgentInBattle      AgentStatus = "in_battle"
+	AgentCooldown      AgentStatus = "cooldown"
+	AgentRetired       AgentStatus = "retired"
+	AgentPendingReview AgentStatus = "pending_review"
 )
 
 // PeerReviewStatus represents the lifecycle state of a peer review.
@@ -230,8 +230,8 @@ type QuestType string
 
 // Quest type constants.
 const (
-	QuestTypeNormal      QuestType = ""                // Standard implementation quest
-	QuestTypeRedTeam     QuestType = "red_team_review" // Adversarial review of another quest's output
+	QuestTypeNormal  QuestType = ""                // Standard implementation quest
+	QuestTypeRedTeam QuestType = "red_team_review" // Adversarial review of another quest's output
 )
 
 // QuestStatus represents the lifecycle state of a quest.
@@ -239,15 +239,15 @@ type QuestStatus string
 
 // Quest lifecycle status values.
 const (
-	QuestPosted     QuestStatus = "posted"
-	QuestClaimed    QuestStatus = "claimed"
-	QuestInProgress QuestStatus = "in_progress"
-	QuestInReview   QuestStatus = "in_review"
-	QuestCompleted  QuestStatus = "completed"
-	QuestFailed     QuestStatus = "failed"
-	QuestEscalated      QuestStatus = "escalated"
-	QuestCancelled      QuestStatus = "cancelled"
-	QuestPendingTriage  QuestStatus = "pending_triage"
+	QuestPosted        QuestStatus = "posted"
+	QuestClaimed       QuestStatus = "claimed"
+	QuestInProgress    QuestStatus = "in_progress"
+	QuestInReview      QuestStatus = "in_review"
+	QuestCompleted     QuestStatus = "completed"
+	QuestFailed        QuestStatus = "failed"
+	QuestEscalated     QuestStatus = "escalated"
+	QuestCancelled     QuestStatus = "cancelled"
+	QuestPendingTriage QuestStatus = "pending_triage"
 )
 
 // QuestDifficulty represents the challenge level of a quest.
@@ -286,7 +286,6 @@ const (
 	BattleActive  BattleStatus = "active"
 	BattleVictory BattleStatus = "victory"
 	BattleDefeat  BattleStatus = "defeat"
-	BattleRetreat BattleStatus = "retreat"
 )
 
 // JudgeType indicates the kind of judge.

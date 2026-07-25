@@ -13,8 +13,8 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semdragons/processor/agentprogression"
+	"github.com/c360studio/semdragons/processor/partycoord"
 )
 
 // =============================================================================
@@ -844,8 +844,9 @@ func (c *Component) StartQuest(ctx context.Context, questID domain.QuestID) erro
 }
 
 // SubmitResult submits quest output for review.
-// If the quest requires review, the bossbattle processor will handle battle creation
-// when it receives the QuestSubmitted event.
+// If the quest requires review, the lifecycle rule processor observes the
+// authoritative in_review state and the Phase-1 mechanics stub completes it.
+// No raw QuestSubmitted or battle-review event is emitted.
 func (c *Component) SubmitResult(ctx context.Context, questID domain.QuestID, result any) error {
 	if !c.running.Load() {
 		return errors.New("component not running")
@@ -877,7 +878,7 @@ func (c *Component) SubmitResult(ctx context.Context, questID domain.QuestID, re
 		}
 	}
 
-	// Emit updated quest to graph (KV write is the event — bossbattle watches for in_review)
+	// Persist the authoritative state; the lifecycle mechanics-stub rule observes in_review.
 	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.submitted"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "SubmitResult", "emit update")

@@ -76,8 +76,9 @@ Framework mutation paths are:
   `quest.transition.source`, `quest.transition.at`,
   `quest.transition.from`, and `quest.transition.note`.
 
-Lifecycle is the sole owner of `quest.verdict.xp-awarded`. Bossbattle supplies
-the transition input; it does not write that predicate directly.
+Lifecycle is the sole owner of `quest.verdict.xp-awarded`. In Phase 2,
+bossbattle supplies transition input through lifecycle; it does not write that
+predicate directly.
 The four transition predicates replace
 `quest.lifecycle.last_transition_{source,at,from,note}`; the old namespace is
 not registered as an alias.
@@ -151,7 +152,7 @@ second owner for `quest.dm.clarifications`.
 - Owner: `quest-artifacts`; token `quest-artifacts#<incarnation>`.
 - Pattern: `*.*.game.*.quest.*`.
 - Mode: `replace-owned`.
-- Producer: bossbattle artifact merge/index controller.
+- Future producer: the reactivated bossbattle artifact controller.
 - Exact mutable predicates:
   `quest.artifacts.merged` and `quest.artifacts.indexed`.
 - Append evidence:
@@ -450,10 +451,18 @@ patterns below and are not included in the party claim.
 
 ### Boss battle
 
+Current Phase-1 state: dormant. No shipped profile activates
+`processor/bossbattle`, and bossbattle binds no projection owner or heartbeat.
+Factory registration, readers, the evaluator, and the battle-state KV port are
+retained code, not an active ownership claim. The current indexed
+`BossBattle.Triples` writer is not approved for activation.
+
+The approved Phase-2 target is:
+
 - Owner: `bossbattle`; token `bossbattle#<incarnation>`.
 - Pattern: `*.*.game.*.battle.*`.
 - Mode: `replace-owned`.
-- Producer: `processor/bossbattle`.
+- Producer: the reactivated `processor/bossbattle`.
 - Exact mutable predicates:
   `battle.status.state`, `battle.review.outcome`,
   `battle.review.results`, `battle.lifecycle.completed-at`,
@@ -467,7 +476,27 @@ patterns below and are not included in the party claim.
   `battle.review.criteria`, `battle.review.judges`,
   `battle.lifecycle.started-at`, and `battle.execution.loop-id`.
 
-Bossbattle does not claim any quest predicate.
+The repeated criteria, judges, and results replace the scanner-hidden
+`battle.criteria.<index>.*`, `battle.judge.<index>.*`, and
+`battle.result.<index>.*` families on a fresh graph. No wildcard owner claim,
+legacy reader, alias, dual write, or in-place rewrite is allowed.
+
+Bossbattle owns only the future battle projection. Every foreign effect uses
+the exact authoritative boundary:
+
+- quest phase, assignment, attempts, failure, verdict, and completion use the
+  quest lifecycle Manager or rule-command boundary;
+- agent status and progression use the `agentprogression` owner API;
+- peer-review birth and completion use the review create and lifecycle owners;
+- artifact merge/index state uses the `quest-artifacts` owner;
+- DAG failure, reset, and rollup use questdag and quest lifecycle; and
+- agent-loop cancellation uses the typed framework `UserSignal`.
+
+No bossbattle path may replace a Quest, Agent, PeerReview, or other
+cross-owner full object. Reactivation is blocked until these handoffs, the
+fresh-state projection tests, the owner bind/heartbeat, and the
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313)
+mutation helper are complete.
 
 ## Peer-review ownership
 
@@ -476,7 +505,8 @@ Bossbattle does not claim any quest predicate.
 - Owner: `review-create`; token `review-create#<incarnation>`.
 - Pattern: `*.*.game.*.peerreview.*`.
 - Mode: create only.
-- Producers: bossbattle, questdag review creation, and review API creation.
+- Producers: questdag review creation and review API creation; reactivated
+  bossbattle joins only in Phase 2.
 - Exact predicates:
   `review.assignment.quest`, `review.assignment.leader`,
   `review.assignment.member`, `review.assignment.party`,
@@ -497,8 +527,8 @@ Bossbattle does not claim any quest predicate.
   `review.result.leader-avg`, `review.result.member-avg`, and
   `review.lifecycle.completed-at`.
 
-API, bossbattle, and questdag submit review transitions through this workflow;
-they do not replace the review entity.
+API and questdag submit review transitions through this workflow. Reactivated
+bossbattle must do the same; none replaces the review entity.
 
 ## First-class child entity claims
 
@@ -661,10 +691,11 @@ projection contracts, ownership services, heartbeats, or lifecycle timers.
   sent through the agentprogression owner API.
 - Autonomy action/decision predicates listed above use append evidence.
   Relationship datatypes still obey the catalog-alias conversion boundary.
-- Questboard/questbridge/questdag, partycoord, bossbattle, and
-  review payloads either call the owner workflow, create the classified
-  first-class entity, or append their documented evidence. Their former
-  cross-owner projections are removed, not silently exempted.
+- Questboard/questbridge/questdag, partycoord, and review payloads either call
+  the owner workflow, create the classified first-class entity, or append
+  their documented evidence. Dormant bossbattle binds no owner; Phase 2 must
+  use the same classified lanes. Former cross-owner projections are removed,
+  not silently exempted.
 - Guildformation's five raw event DTOs remain active wire contracts, but their
   latent Graphables are deleted in issue #22. Guild events are not append
   evidence, and no event projection owner is registered.

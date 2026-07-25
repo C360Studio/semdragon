@@ -3,7 +3,12 @@
 Semdragons is an agentic workflow coordination framework built around a tabletop RPG metaphor.
 Work items are *quests*, autonomous LLM processes are *adventurers* (agents) who earn XP and level
 up, and quality reviews are *boss battles*. The system is reactive: post a quest and watch the
-processors claim it, execute it, and evaluate the result without manual intervention.
+processors claim and execute it without manual intervention.
+
+> **Phase-1 runtime status:** Bossbattle is not activated by any shipped profile. A
+> review-required quest enters `in_review`, then the mechanics-stub rule completes it with
+> `review-skipped-mechanics-disabled`. The retained battle API, UI, evaluator, and model are
+> dormant until the Phase-2 authoritative projection is implemented.
 
 This guide gets you from zero to your first completed quest.
 
@@ -29,8 +34,8 @@ provider — see [Using Real LLM Providers](#using-real-llm-providers) below.
 
 ## Quick Start with Mock LLM
 
-The mock LLM returns deterministic, canned responses. It exercises the full quest pipeline
-(claim, execute, review, XP award) without any API keys or costs.
+The mock LLM returns deterministic, canned responses. It exercises the current Phase-1 quest
+pipeline (claim, execute, lifecycle-rule completion) without any API keys or costs.
 
 ### Step 1: Start the stack
 
@@ -113,20 +118,20 @@ the dashboard event feed:
 3. **`in_progress`** — The questbridge processor detects the transition and dispatches the quest
    to the LLM via the AGENT JetStream stream. The mock LLM calls a tool, receives a result, then
    emits a completion message.
-4. **`in_review`** — The agent submits its work product. The bossbattle processor begins
-   evaluation (the *boss battle*, i.e., LLM-as-judge review).
-5. **`completed`** — The review passes. The agentprogression processor awards XP to the agent.
+4. **`in_review`** — The agent submits review-required work. The mechanics-stub rule records
+   that review is skipped while mechanics are disabled.
+5. **`completed`** — The lifecycle rule completes the quest without creating a battle, peer
+   review, XP award, reputation change, artifact merge/index mutation, or store mutation.
 
 The full loop with the mock LLM typically completes in under 30 seconds.
 
 ### Step 5: See the results
 
-- **Quest detail** — Click the quest in the dashboard to see the submitted output, review verdict,
-  and XP awarded.
+- **Quest detail** — Click the quest to see its submitted output and Phase-1 review-skipped marker.
 - **Trajectory timeline** — Each quest execution generates a trajectory (trace). Click
   **Trajectory** on the quest detail page to see the full tool call audit: which tools were
   called, what arguments were passed, and what results came back.
-- **Agent card** — Click the agent to see updated XP, level, and quest history.
+- **Agent card** — Click the agent to see its retained profile and quest history.
 - **Live SSE** — Watch raw state changes stream in:
 
   ```bash
@@ -173,9 +178,9 @@ task docker:down
 task docker:up:gemini       # or whichever provider you chose
 ```
 
-**Cost warning:** Each quest execution calls the LLM for agent work, and the bossbattle review
-calls it a second time as an LLM-as-judge pass. A busy board burns through tokens quickly.
-Start with Ollama or Gemini Flash for development. Set billing alerts on cloud providers.
+**Cost warning:** Each quest execution calls the LLM for agent work. Shipped Phase-1 profiles do
+not make a second bossbattle judge call. A busy board can still burn through tokens quickly, so
+start with Ollama or Gemini Flash and set billing alerts on cloud providers.
 
 See [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) for advanced configuration: multi-model
 setups, capability-based routing, fallback chains, and self-hosted OpenAI-compatible services.
@@ -256,7 +261,7 @@ The primary config file is `config/semdragons.json`. Top-level structure:
   "services": { "service-manager": { ... }, "game": { ... } },
   "model_registry": { "endpoints": { ... }, "capabilities": { ... } },
   "streams": { "GRAPH": { ... }, "AGENT": { ... } },
-  "components": { "questboard": { ... }, "bossbattle": { ... }, ... }
+  "components": { "questboard": { ... }, "rule-processor": { ... }, ... }
 }
 ```
 
@@ -294,11 +299,11 @@ Replace endpoint URLs and models to switch providers. See [07-MODEL-REGISTRY.md]
 
 ### Components
 
-The `components` section enables or disables each reactive processor. To disable a component,
-set `"enabled": false`. The default config enables everything needed for the full pipeline:
-`questboard`, `bossbattle`, `agent_progression`, `agent_store`, `guildformation`, `boidengine`,
-`agentic-loop`, `agentic-model`, `questbridge`, `questtools`, `questdagexec`, `autonomy`, and
-`partycoord`.
+The `components` section enables or disables each reactive processor. The default config includes
+`questboard`, the complete quest `rule-processor` pack, `agent_progression`, `agent_store`,
+`guildformation`, `boidengine`, `agentic-loop`, `agentic-model`, `questbridge`, `questtools`,
+`questdagexec`, `autonomy`, and `partycoord`. Bossbattle is intentionally absent from every
+shipped profile during Phase 1.
 
 ### Key env vars
 
@@ -390,7 +395,7 @@ which makes E2E tests reliable without relying on any live LLM service.
 | No agents visible on dashboard | `SEED_AGENTS` not set | Default is `true`; verify the backend env var |
 | NATS connection refused | NATS not running on port 4222 | Run `docker compose -f docker/compose.yml up nats -d` |
 | `sandbox_dir` errors locally | Default path `/workspace` does not exist on host | Set `sandbox_dir` in config to a local path |
-| Quest stuck in `in_review` | `bossbattle` not running | Confirm `bossbattle` is `enabled: true` in config |
+| Quest stuck in `in_review` | Incomplete Phase-1 rules | Confirm `rule-processor` loads all four quest rule files |
 | 503 on store endpoints | `agent_store` not running | Confirm `agent_store` is `enabled: true` in config |
 
 ### Watch live NATS state changes
@@ -419,8 +424,7 @@ docker compose -f docker/compose.yml logs -f backend   # Direct compose command
 
 - [02-DESIGN.md](02-DESIGN.md) — Architecture deep dive: reactive event model, trust tiers, boid
   algorithm, death mechanics
-- [03-QUESTS.md](03-QUESTS.md) — Quest creation API, lifecycle state machine, difficulty/XP table,
-  boss battle configuration
+- [03-QUESTS.md](03-QUESTS.md) — Quest creation API, lifecycle rules, and dormant Phase-2 battle model
 - [04-PARTIES.md](04-PARTIES.md) — Party formation, DAG decomposition, peer reviews, feedback loop
 - [07-MODEL-REGISTRY.md](07-MODEL-REGISTRY.md) — LLM provider setup, capability routing, fallback
   chains, self-hosted services

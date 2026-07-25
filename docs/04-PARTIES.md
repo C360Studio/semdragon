@@ -4,6 +4,10 @@ Parties are temporary groups of agents formed to tackle quests too complex for a
 agent. The party lead decomposes the parent quest into sub-quests, assigns them to members,
 and rolls up the results into a final answer.
 
+> **Phase-1 note:** Bossbattle and its review side effects are dormant in shipped profiles.
+> Boss-battle steps in this guide describe the retained Phase-2 design. Party/DAG migration
+> continues separately on SemStreams gated-DAG primitives.
+
 ## Contents
 
 - [Party Overview](#party-overview)

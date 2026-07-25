@@ -338,6 +338,117 @@ without preserving its DTOs as product wire or graph contracts.
 - **AND** it adds no private lifecycle engine, goroutine pool, shared-KV
   writer, or replacement event-Graphable state projection
 
+### Requirement: Bossbattle is disabled before authoritative migration
+
+The system SHALL disable bossbattle in every shipped runtime profile during
+Phase 1 and SHALL use the complete quest lifecycle rule pack to resolve
+review-required quests without battle or mechanics side effects.
+
+#### Scenario: Every shipped profile disables bossbattle
+
+- **WHEN** contract tests parse `config/semdragons.json`,
+  `config/semdragons-semsource.json`, and
+  `config/semdragons-e2e-tier1.json`
+- **THEN** none activates a bossbattle component
+- **AND** each activates the quest rule processor for the quest entity pattern
+- **AND** each loads the complete quest lifecycle rule pack, including the
+  mechanics-stub rule
+
+#### Scenario: Review-required quest completes without mechanics
+
+- **GIVEN** a shipped Phase-1 profile starts from a fresh graph
+- **WHEN** a review-required quest enters `in_review`
+- **THEN** the mechanics-stub rule transitions it to `completed`
+- **AND** the quest records `review-skipped-mechanics-disabled`
+- **AND** no battle entity, XP award, reputation update, peer review, store
+  mutation, inventory mutation, or artifact merge/index mutation is produced
+
+### Requirement: False battle event contracts are deleted
+
+The system SHALL delete raw battle event contracts that have no production
+publisher instead of assigning them a projection owner or preserving them as
+compatibility vocabulary.
+
+#### Scenario: Five unproduced subjects disappear together
+
+- **GIVEN** production code publishes none of `battle.review.started`,
+  `battle.review.verdict`, `battle.review.victory`,
+  `battle.review.defeat`, or `battle.review.retreat`
+- **WHEN** issue #26 removes the false event facade
+- **THEN** all five vocabulary constants and registrations are absent
+- **AND** bossbattle exposes no raw battle-event or verdict port
+- **AND** questboard exposes no battle-event output port
+- **AND** dmsession has no `battle.review.>` routing or battle-event filter
+- **AND** the three battle `GameEventType` values are absent
+- **AND** no replacement payload registration, `BaseMessage` route,
+  projection bind, heartbeat, or compatibility subject is added
+
+#### Scenario: Definition-only retreat surface is removed
+
+- **GIVEN** `BattleRetreatPayload` has no publisher, subscriber,
+  payload-registry factory, graph-ingest route, API writer, or UI writer
+- **WHEN** issue #26 removes it
+- **THEN** the payload, `TraceInfo`, `Graphable` assertion, graph methods,
+  tests, and root relationship fixture are absent
+- **AND** the retreat-only battle status and UI filter/style/fixture surface is
+  absent
+- **AND** graph-manifest tests use an authoritative battle predicate rather
+  than a deleted event subject
+- **AND** no deleted retreat predicate is renamed or retained as an alias
+
+### Requirement: Authoritative BossBattle remains dormant
+
+Phase 1 SHALL retain the authoritative battle read model without activating
+its unsafe writer. Reactivation SHALL remain blocked until its canonical
+projection and owner-safe lifecycle handoffs are complete.
+
+#### Scenario: Dormant authoritative read surface is retained
+
+- **WHEN** issue #26 disables the bossbattle runtime
+- **THEN** the `BossBattle` type, evaluator, factory registration, REST
+  readers, dmworldstate readers, battle UI, and battle-state KV port remain
+- **AND** `battle.assignment.quest` and `battle.assignment.agent` remain typed
+  `@id` relationships
+- **AND** raw event ports and event-derived state projections remain absent
+
+#### Scenario: Dynamic indexed predicates block reactivation
+
+- **GIVEN** the dormant writer constructs `battle.criteria.<index>.<field>`,
+  `battle.judge.<index>.<field>`, and
+  `battle.result.<index>.<field>`
+- **WHEN** the beta.158 projection contract is validated
+- **THEN** no wildcard or occurrence-level owner exception is accepted
+- **AND** Phase 2 replaces those families with repeated bounded objects at
+  `battle.review.criteria`, `battle.review.judges`, and
+  `battle.review.results`
+- **AND** canonical scalar predicates use the ledger's lower-kebab names
+- **AND** the fresh-state cutover adds no legacy reader, alias, dual write, or
+  in-place battle-state rewriter
+
+#### Scenario: Reactivation uses framework ownership boundaries
+
+- **WHEN** a later change reactivates bossbattle
+- **THEN** owner `bossbattle` binds and heartbeats one authoritative battle
+  `projection.Contract`
+- **AND** graph-ingest birth and owned replacement carry its typed owner token
+- **AND** quest changes cross the lifecycle Manager or rule-command boundary
+- **AND** agent changes cross the agentprogression owner boundary
+- **AND** review changes cross the review create and lifecycle boundaries
+- **AND** artifact changes cross the `quest-artifacts` owner boundary
+- **AND** DAG changes cross questdag and quest lifecycle
+- **AND** agent-loop cancellation uses the typed framework signal contract
+- **AND** no full-object cross-owner or direct shared-KV write remains
+
+#### Scenario: The reusable mutation helper remains upstream-owned
+
+- **GIVEN** SemStreams #313 owns the reusable Go owner-token mutation helper
+- **WHEN** Phase 2 implements battle birth and owned replacement
+- **THEN** it consumes the tagged upstream primitive
+- **AND** issue #26 opens no duplicate helper issue
+- **AND** a replace-only #313 delivery requires a linked upstream create
+  helper before bossbattle activation
+- **AND** Semdragon does not copy a generic mutator or retry framework locally
+
 ### Requirement: Disjoint authoritative writers
 
 Every mutable predicate group SHALL have one declared owner and write mode.

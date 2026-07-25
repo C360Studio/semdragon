@@ -113,6 +113,19 @@
   to issue #4 or a dedicated packet for graph-ingest create-with-triples and
   the agentprogression ownership boundary. Add no projection owner, heartbeat,
   replacement event route, private framework, or upstream SemStreams issue.
+- [ ] 2.16 Resolve
+  [semdragon #26](https://github.com/C360Studio/semdragon/issues/26) by
+  removing bossbattle activation from all three shipped configurations and
+  enabling the complete quest lifecycle rule pack, including the mechanics
+  stub, in each profile. Delete the five unproduced `battle.review.*`
+  vocabulary contracts, false raw event/verdict ports, questboard's false
+  battle-event port, dmsession battle routing, three battle game-event types,
+  and the dead retreat Graphable/status/UI fixture surface. Retain the dormant
+  authoritative `BossBattle` model, evaluator, REST/dmworldstate/UI readers,
+  real battle-state KV port, and typed quest/agent relationships. Record the
+  indexed-predicate defect, fresh-state canonical target, exact cross-owner
+  handoffs, SemStreams #313 dependency, and reactivation block without
+  implementing the Phase-2 writer in this packet.
 
 ## 3. Verification and handoff to beta.158
 
@@ -328,3 +341,31 @@ This evidence closes only task 2.15:
 - Architect and final Go reviewer recorded **APPROVE**.
 
 Tasks 3.1 through 3.6 remain open.
+
+## Issue #26 evidence, pending final root gates
+
+This evidence supports task 2.16 but deliberately leaves it unchecked:
+
+- The initial contract RED exposed bossbattle activation in every shipped
+  profile and an incomplete quest rule pack outside the default profile.
+- All three profiles now omit bossbattle and declare the exact enabled
+  `rule-processor`, ordered four-file quest pack, and quest entity watch.
+- The fresh-graph integration path reaches `completed` with
+  `review-skipped-mechanics-disabled` and creates no battle, peer review, XP,
+  reputation, store, inventory, or artifact side effect.
+- Stale-checked inventory and mutation tests cover the five phantom event
+  subjects, ports, routing, game-event values, and retreat-only graph, status,
+  OpenAPI, generated TypeScript, and UI surfaces.
+- The dormant authoritative model, evaluator, component factory,
+  battle-state KV port, readers, and typed quest/agent relationships remain.
+  No projection owner or heartbeat is bound.
+- The migration ledger records the unchanged 8/19 audit result, the
+  scanner-hidden indexed-family defect, the fresh-state structured target,
+  exact cross-owner handoffs, SemStreams #313, and the Phase-2 reactivation
+  block.
+- Focused and full Go/UI gates, repeated mutation checks, tagged integration
+  fixtures, Svelte diagnostics, schema freshness, and diff checks pass under
+  architect, Go, and Svelte review.
+
+Task 2.16 awaits the final root combined gate. Tasks 3.1 through 3.6 remain
+open.

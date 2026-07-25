@@ -97,13 +97,27 @@ SHALL be constrained to operator-writable fields and table-valid transitions.
 
 ### Requirement: Mechanics side effects are stubbed in this change
 While game mechanics are disabled, quest completion SHALL NOT emit XP, start
-boss battles, update reputation, or touch store inventory. Quests that require
-review SHALL transition `in_review` → `completed` with a verdict noting that
-review was skipped because mechanics are disabled.
+boss battles, create peer reviews, update reputation, merge/index artifacts,
+or touch store inventory. Every shipped runtime profile SHALL disable
+bossbattle and SHALL load the complete quest lifecycle rule pack, including the
+mechanics stub. Quests that require review SHALL transition `in_review` →
+`completed` with a verdict noting that review was skipped because mechanics
+are disabled.
 
 #### Scenario: Review-required quest completes under stub
 - **WHEN** a quest requiring review is submitted while mechanics are disabled
-- **THEN** it reaches `completed` with a recorded review-skipped marker, and no XP or battle entities are created
+- **THEN** it reaches `completed` with a recorded review-skipped marker
+- **AND** no battle entity, XP award, reputation update, peer review, store
+  mutation, inventory mutation, or artifact merge/index mutation is produced
+
+#### Scenario: Every shipped profile uses one review resolver
+
+- **WHEN** contract tests parse the default, semsource, and tier-1 E2E
+  Semdragons configurations
+- **THEN** none activates bossbattle
+- **AND** each loads the complete quest lifecycle rule pack for quest entities
+- **AND** the mechanics-stub rule is the only automatic resolver of
+  `in_review` during Phase 1
 
 ### Requirement: UI-facing predicate stability
 The quest entity predicates consumed by the dashboard world store SHALL remain

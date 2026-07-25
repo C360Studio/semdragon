@@ -8,6 +8,11 @@ decompose into party quests with a lead agent coordinating a DAG of sub-quests. 
 framing is genuine — trust tiers are earned, not declared, and emergent Boid-like behavior
 handles quest distribution without central scheduling.
 
+> **Current Phase-1 runtime:** The shipped profiles do not activate bossbattle. Review-required
+> quests pass through `in_review` and are completed by the mechanics-stub rule with
+> `review-skipped-mechanics-disabled`. Battle APIs, readers, and UI remain for the dormant
+> Phase-2 feature, but a fresh Phase-1 run creates no battle.
+
 ## Quick Start
 
 **Prerequisites**: [Docker](https://docs.docker.com/get-docker/),
@@ -33,7 +38,7 @@ without spending tokens. Once the stack is up:
 
 1. Open the DM Chat panel and type: `Post a quest to write a hello world function`
 2. Watch the Quests view — agents claim the quest and begin executing within seconds
-3. The Battles view shows the boss battle review once the agent submits its result
+3. Review-required work completes through the Phase-1 review-skipped stub; no battle is created
 4. Trajectories show the full tool call audit trail for each quest execution
 
 To use a real LLM instead, copy `.env.example` to `.env`, add your key, and pick a provider:
@@ -65,7 +70,7 @@ task docker:up:ollama      # local Ollama, no key needed
 │   guildformation  partycoord       boidengine   │
 ├─────────────────────────────────────────────────┤
 │           QUEST BOARD + EXECUTION               │
-│  questboard · bossbattle · redteam (opt-in)     │
+│  questboard · rules · bossbattle (Phase 2)      │
 │  agentprogression · agentstore                  │
 │  questbridge · questtools · questdagexec        │
 │  promptmanager                                  │
@@ -94,14 +99,14 @@ event bus is needed.
 | **Agent** | An LLM-powered worker with a level, XP total, skill tags, and a trust tier |
 | **Guild** | A specialization cluster agents join based on demonstrated performance patterns |
 | **Party** | A temporary ensemble assembled for a complex quest that decomposes into a DAG |
-| **Boss Battle** | The quality gate — automated or LLM-based review that runs after an agent submits |
+| **Boss Battle** | Dormant Phase-2 quality gate; its API/read/UI model remains, but shipped profiles do not run it |
 | **Boids** | Emergent quest-claiming: agents attract toward quests matching their skills, no scheduler needed |
 | **Trust Tier** | Permission boundary (Apprentice through Grandmaster) derived from level, not declared |
 | **Trajectory** | A semstreams trace linking every event, tool call, and state transition for a quest |
 | **Dungeon Master** | The human or hybrid controller: posts quests, sets policy, intervenes via chat |
 | **Sandbox** | An isolated container where agents run code, write files, and execute shell commands |
 | **Artifact** | A file produced by an agent during quest execution, stored in the sandbox workspace |
-| **Red-Team Review** | Optional adversarial cross-guild review before boss battle; disabled by default, enable via `redteam` component + `bossbattle.red_team_enabled` |
+| **Red-Team Review** | Retained Phase-2 adversarial review design; it is not active in shipped Phase-1 profiles |
 | **Guild Lessons** | Indexed knowledge (by skill + category) persisted from red-team reviews and injected into future agent prompts (requires red-team) |
 | **Explore** | A read-only sub-agent spawned via the `explore` tool for multi-step discovery without consuming the parent agent's iteration budget |
 
@@ -126,7 +131,7 @@ semdragons/
 ├── domains/                # Domain implementations: software.go, dnd.go, research.go
 ├── processor/              # Reactive components — each watches KV, reacts to state changes
 │   ├── questboard/         # Quest lifecycle state machine (post, claim, start, submit, complete)
-│   ├── bossbattle/         # Review evaluation triggered on quest submission
+│   ├── bossbattle/         # Dormant Phase-2 review evaluator and battle read model
 │   ├── questbridge/        # Quest-to-LLM bridge: assembles TaskMessage, publishes to AGENT stream
 │   ├── questtools/         # Tool execution with tier/skill/sandbox gates
 │   ├── questdagexec/       # DAG execution for party quest decomposition
@@ -135,7 +140,7 @@ semdragons/
 │   ├── autonomy/           # Heartbeat-driven agent decision loop
 │   ├── boidengine/         # Periodic boid attraction computation, publishes per-agent suggestions
 │   ├── guildformation/     # Auto guild clustering from shared performance patterns
-│   ├── redteam/            # Guild red-team adversarial review before boss battle
+│   ├── redteam/            # Retained adversarial review implementation; Phase-1 gated
 │   ├── partycoord/         # Party lifecycle: form, assign, merge, disband
 │   ├── promptmanager/      # Fragment-based domain-aware prompt assembly (library, not standalone)
 │   ├── boardcontrol/       # Board state management (pause/resume)
