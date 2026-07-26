@@ -1494,7 +1494,72 @@ the owner-safe mutation and repeated structured-value contracts needed for an
 honest beta.158 cutover. Issue #55 records those blockers without approving the
 dependency handoff.
 
-### Issue #26 implementation evidence, pending the final root gate
+### D31: Reconcile completed canonical graph gates without changing runtime
+
+Issue [#57](https://github.com/C360Studio/semdragon/issues/57), under parent
+[#3](https://github.com/C360Studio/semdragon/issues/3), is an evidence-only
+closeout stacked on the accepted PR #56 head. It may close only tasks 2.3, 2.4,
+and 2.16 after their current-head evidence, required reviews, and live stacked
+CI are recorded. It changes no production code, shipped configuration,
+dependency, generated contract, or runbook and adds no new normative behavior.
+
+Task 2.3 adopts the already shipped task 2.12 prefix correction only when the
+current head proves all four graph-source entries across the three profiles
+remain canonical. The focused contract must prove exact-or-dot-descendant
+ownership, reject false siblings, and mutation-check stale source values.
+The entity-ID audit must remain `0/25`. SemStreams #675 owns only later
+retirement of the isolated beta.135 comparison after a tagged primitive exists;
+it is not a blocker for this reconciliation.
+
+Task 2.4 adopts the completed task 3.3 relationship contract only when the
+current head proves exactly 36 reviewed shapes cover or classify all 20
+production `Triples` implementations plus direct questdag constructors.
+Every relationship object must use `@id` exclusively, the mutation suite must
+reject stale datatypes, and `task contract:relationships` must pass. Issue #57
+adds no relationship mapping, writer, projection, or runtime behavior.
+
+Task 2.16 adopts the reviewed issue #26 implementation only when the current
+head proves the three shipped configurations remain free of bossbattle
+activation and retain the complete ordered quest rule pack. The source
+inventory and mutation contracts must reject reintroduction of the deleted
+Phase-1 raw battle surface while preserving the dormant authoritative model.
+The tagged fresh-graph integration must still complete review-required work
+with no battle or mechanics side effect. Completed task 3.4 supplies the final
+combined repository gate that issue #26 previously awaited.
+
+Acceptance requires:
+
+1. `go test -race ./...`;
+2. the focused root contracts
+   `TestShippedGraphSourcePrefixesAreCanonical`,
+   `TestRepositoryRelationshipContract`,
+   `TestRepositoryRelationshipContractRejectsMutations`,
+   `TestPhase1MechanicsDisabledInEveryShippedProfile`,
+   `TestPhase1RawBattleSurfaceRemovedWhileAuthoritativeModelRemainsDormant`,
+   `TestPhase1RawBattleEventsAbsentFromUIAndContributorVocabulary`, and
+   `TestPhase1MechanicsContractsRejectReintroduction`;
+3. the tagged integration
+   `TestMechanicsDisabledReviewCompletesWithoutBattleOrMechanicsSideEffects`
+   under the race detector;
+4. `task contract:relationships`, `task schema:check`, the UI unit,
+   diagnostic, and production-build gates, both active strict OpenSpec
+   validations, `git diff --check`, and a clean generated diff; and
+5. architect, Go, Svelte, and technical-writer approval plus live stacked PR CI
+   with test and lint success and the publication build skipped. An
+   intentionally red aggregate may be recorded only with its exact SemStreams
+   #671 baseline; it does not prove task 3.1.
+
+The remaining blockers are not widened or hidden by this closeout. Task 2.1
+remains open because scanner-hidden dynamic predicate families are still
+noncanonical. Task 2.2 remains blocked by SemStreams #313 and #683. Task 2.5
+remains blocked while beta.135 requires `internal/semcompat` copies of the
+canonical gated-DAG markers. Task 2.6 remains coupled to the unresolved
+dynamic-family representation in task 2.2. Task 3.1 remains blocked by
+SemStreams #671. Task 3.6 remains blocked by task 3.1 and by SemStreams #313
+and #683. SemStreams #667 is not a current blocker because scoped audit roots
+remain explicitly approved.
+
+### Issue #26 implementation evidence, pending #57 reconciliation
 
 The reviewed implementation establishes the task 2.16 behavior without
 marking that task complete:
@@ -1516,8 +1581,11 @@ marking that task complete:
   fixtures, all 342 UI tests, Svelte diagnostics, generated API/schema
   freshness, and diff checks pass under architect, Go, and Svelte review.
 
-Task 2.16 remains unchecked until the root agent completes the final combined
-repository gates. Tasks 3.1 through 3.6 remain independently open.
+Task 3.4 now supplies the final current-head combined repository gate. Issue
+#57 owns the remaining evidence reconciliation before task 2.16 can close.
+Tasks 2.3 and 2.4 also remain unchecked until that acceptance is recorded.
+The independent global blockers remain tasks 2.1, 2.2, 2.5, 2.6, 3.1, and
+3.6.
 
 ### Approved core-wave verification
 

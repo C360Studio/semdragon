@@ -21,10 +21,26 @@
   fixtures, and documentation.
 - [ ] 2.2 Replace dynamic predicate names with repeated canonical relationships,
   bounded structured values, or first-class entities as approved in the ledger.
-- [ ] 2.3 Replace trailing-dot and malformed query prefixes with canonical
-  one-through-six-segment prefixes.
-- [ ] 2.4 Type every relationship triple as `@id`; update reconstruction and
-  relationship query tests.
+- [ ] 2.3 Reconcile
+  [semdragon #57](https://github.com/C360Studio/semdragon/issues/57) against
+  the completed task 2.12 implementation. Prove on the current head that all
+  four shipped graph-source prefixes across the three profiles are canonical,
+  that exact-or-dot-descendant ownership rejects false siblings, and that
+  stale-source mutation coverage remains green. Keep the beta.135 comparison
+  isolated; SemStreams #675 owns only its later tagged-primitive retirement.
+  Require the focused race contract, entity-ID audit `0/25`, both strict
+  OpenSpec validations, architect and Go review, and live stacked CI before
+  checking this task. Add no production or configuration change.
+- [ ] 2.4 Reconcile
+  [semdragon #57](https://github.com/C360Studio/semdragon/issues/57) against
+  the completed task 3.3 relationship inventory. Prove on the current head
+  that the exact 36 reviewed shapes cover or classify all 20 production
+  `Triples` implementations plus direct questdag constructors, that every
+  relationship object uses `@id` exclusively, and that mutation tests reject
+  stale datatypes. Require `task contract:relationships`, the focused race
+  contract, both strict OpenSpec validations, architect and Go review, and
+  live stacked CI before checking this task. Add no new mapping or runtime
+  behavior.
 - [ ] 2.5 Remove copied gated-DAG marker overrides and use the framework's
   canonical default vocabulary.
 - [ ] 2.6 Update UI predicate projections and graph relationship consumers;
@@ -125,7 +141,14 @@
   real battle-state KV port, and typed quest/agent relationships. Record the
   indexed-predicate defect, fresh-state canonical target, exact cross-owner
   handoffs, SemStreams #313 dependency, and reactivation block without
-  implementing the Phase-2 writer in this packet.
+  implementing the Phase-2 writer in this packet. Reconcile
+  [semdragon #57](https://github.com/C360Studio/semdragon/issues/57) only after
+  the current head passes the Phase-1 configuration, source-inventory, and
+  mutation contracts; the tagged fresh-graph integration; full Go and UI
+  gates; schema freshness; both strict OpenSpec validations; architect, Go,
+  Svelte, and technical-writer review; and live stacked CI. The accepted task
+  3.4 proof supplies the final combined repository gate. Do not reactivate
+  mechanics or change production behavior in the reconciliation.
 - [x] 2.17 Resolve
   [semdragon #28](https://github.com/C360Studio/semdragon/issues/28) by
   deleting the eight no-consumer party event DTO/subject/publisher/Graphable
@@ -896,7 +919,8 @@ This evidence closes only task 2.14:
   OpenSpec validation, and `git diff --check` pass.
 - Architect and final Go reviewer approved the implementation.
 
-Tasks 3.1 through 3.6 remain open.
+Tasks 3.2 through 3.5 are complete. Task 3.1 remains blocked by SemStreams
+#671. Task 3.6 remains blocked by task 3.1 and SemStreams #313 and #683.
 
 ## Completed issue #24 evidence
 
@@ -928,9 +952,10 @@ This evidence closes only task 2.15:
   deletion exposes no upstream framework gap.
 - Architect and final Go reviewer recorded **APPROVE**.
 
-Tasks 3.1 through 3.6 remain open.
+Tasks 3.2 through 3.5 are complete. Task 3.1 remains blocked by SemStreams
+#671. Task 3.6 remains blocked by task 3.1 and SemStreams #313 and #683.
 
-## Issue #26 evidence, pending final root gates
+## Issue #26 evidence, pending #57 reconciliation
 
 This evidence supports task 2.16 but deliberately leaves it unchecked:
 
@@ -955,5 +980,8 @@ This evidence supports task 2.16 but deliberately leaves it unchecked:
   fixtures, Svelte diagnostics, schema freshness, and diff checks pass under
   architect, Go, and Svelte review.
 
-Task 2.16 awaits the final root combined gate. Tasks 3.1 through 3.6 remain
-open.
+Task 3.4 now supplies the final current-head combined repository gate. Issue
+#57 owns the remaining evidence reconciliation before task 2.16 can close.
+Tasks 2.3 and 2.4 also remain unchecked until that acceptance is recorded.
+The independent global blockers remain tasks 2.1, 2.2, 2.5, 2.6, 3.1, and
+3.6.
