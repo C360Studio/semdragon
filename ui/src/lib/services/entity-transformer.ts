@@ -370,8 +370,8 @@ function transformGuild(key: string, entity: GraphEntity): Guild {
 function transformBattle(key: string, entity: GraphEntity): BossBattle {
 	const m = tripleMap(entity.triples);
 
-	const loopIdRaw = str(m.get('battle.execution.loop_id'));
-	const completedAt = str(m.get('battle.lifecycle.completed_at'));
+	const loopIdRaw = str(m.get('battle.execution.loop-id'));
+	const completedAt = str(m.get('battle.lifecycle.completed-at'));
 
 	// Extract indexed criteria: battle.criteria.N.{name,description,weight,threshold}
 	const criteria = collectIndexed<BossBattle['criteria'][0]>(entity.triples, 'battle.criteria.', (parts, obj, item) => {
@@ -408,10 +408,10 @@ function transformBattle(key: string, entity: GraphEntity): BossBattle {
 		const passed = m.get('battle.verdict.passed');
 		verdict = {
 			passed: passed === true || passed === 'true',
-			quality_score: num(m.get('battle.verdict.quality_score')),
-			xp_awarded: num(m.get('battle.verdict.xp_awarded')),
-			xp_penalty: num(m.get('battle.verdict.xp_penalty')),
-			level_change: num(m.get('battle.verdict.level_change')),
+			quality_score: num(m.get('battle.verdict.quality-score')),
+			xp_awarded: num(m.get('battle.verdict.xp-awarded')),
+			xp_penalty: num(m.get('battle.verdict.xp-penalty')),
+			level_change: num(m.get('battle.verdict.level-change')),
 			feedback: str(m.get('battle.verdict.feedback'))
 		};
 	}
@@ -427,7 +427,7 @@ function transformBattle(key: string, entity: GraphEntity): BossBattle {
 		results: results.length > 0 ? results : undefined,
 		judges,
 		verdict,
-		started_at: str(m.get('battle.lifecycle.started_at')),
+		started_at: str(m.get('battle.lifecycle.started-at')),
 		completed_at: completedAt || undefined,
 		loop_id: loopIdRaw || undefined
 	};

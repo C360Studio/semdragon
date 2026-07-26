@@ -184,7 +184,7 @@ func TestBossBattle_Triples_MinimalBattle(t *testing.T) {
 		"battle.assignment.agent",
 		"battle.status.state",
 		"battle.review.level",
-		"battle.lifecycle.started_at",
+		"battle.lifecycle.started-at",
 		"battle.criteria.count",
 	}
 
@@ -255,9 +255,9 @@ func TestBossBattle_Triples_StartedAt(t *testing.T) {
 	b := newTestBattle()
 	triples := b.Triples()
 
-	tr, found := tripleByPredicate(triples, "battle.lifecycle.started_at")
+	tr, found := tripleByPredicate(triples, "battle.lifecycle.started-at")
 	if !found {
-		t.Fatal("battle.lifecycle.started_at predicate not found")
+		t.Fatal("battle.lifecycle.started-at predicate not found")
 	}
 	got, ok := tr.Object.(string)
 	if !ok {
@@ -333,9 +333,9 @@ func TestBossBattle_Triples_Verdict(t *testing.T) {
 		wantObj   any
 	}{
 		{"battle.verdict.passed", b.Verdict.Passed},
-		{"battle.verdict.quality_score", b.Verdict.QualityScore},
-		{"battle.verdict.xp_awarded", b.Verdict.XPAwarded},
-		{"battle.verdict.xp_penalty", b.Verdict.XPPenalty},
+		{"battle.verdict.quality-score", b.Verdict.QualityScore},
+		{"battle.verdict.xp-awarded", b.Verdict.XPAwarded},
+		{"battle.verdict.xp-penalty", b.Verdict.XPPenalty},
 		{"battle.verdict.feedback", b.Verdict.Feedback},
 	}
 
@@ -381,9 +381,9 @@ func TestBossBattle_Triples_NoVerdict(t *testing.T) {
 
 	verdictPredicates := []string{
 		"battle.verdict.passed",
-		"battle.verdict.quality_score",
-		"battle.verdict.xp_awarded",
-		"battle.verdict.xp_penalty",
+		"battle.verdict.quality-score",
+		"battle.verdict.xp-awarded",
+		"battle.verdict.xp-penalty",
 		"battle.verdict.feedback",
 	}
 
@@ -400,9 +400,9 @@ func TestBossBattle_Triples_CompletedAt(t *testing.T) {
 	b.CompletedAt = &completed
 	triples := b.Triples()
 
-	tr, found := tripleByPredicate(triples, "battle.lifecycle.completed_at")
+	tr, found := tripleByPredicate(triples, "battle.lifecycle.completed-at")
 	if !found {
-		t.Fatal("battle.lifecycle.completed_at not found when CompletedAt is set")
+		t.Fatal("battle.lifecycle.completed-at not found when CompletedAt is set")
 	}
 	got, ok := tr.Object.(string)
 	if !ok {
@@ -419,8 +419,8 @@ func TestBossBattle_Triples_NoCompletedAt(t *testing.T) {
 	b.CompletedAt = nil
 	triples := b.Triples()
 
-	if _, found := tripleByPredicate(triples, "battle.lifecycle.completed_at"); found {
-		t.Error("battle.lifecycle.completed_at should not appear when CompletedAt is nil")
+	if _, found := tripleByPredicate(triples, "battle.lifecycle.completed-at"); found {
+		t.Error("battle.lifecycle.completed-at should not appear when CompletedAt is nil")
 	}
 }
 
@@ -503,7 +503,7 @@ func TestBossBattle_LoopID_RoundTrip(t *testing.T) {
 	// Verify the triple is emitted
 	found := false
 	for _, tr := range triples {
-		if tr.Predicate == "battle.execution.loop_id" {
+		if tr.Predicate == "battle.execution.loop-id" {
 			found = true
 			if tr.Object != b.LoopID {
 				t.Errorf("loop_id triple object = %v, want %q", tr.Object, b.LoopID)
@@ -511,7 +511,7 @@ func TestBossBattle_LoopID_RoundTrip(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("battle.execution.loop_id triple not found")
+		t.Error("battle.execution.loop-id triple not found")
 	}
 
 	// Verify round-trip through reconstruction
@@ -528,8 +528,8 @@ func TestBossBattle_LoopID_EmptyNotEmitted(t *testing.T) {
 	triples := b.Triples()
 
 	for _, tr := range triples {
-		if tr.Predicate == "battle.execution.loop_id" {
-			t.Error("battle.execution.loop_id should not be emitted when LoopID is empty")
+		if tr.Predicate == "battle.execution.loop-id" {
+			t.Error("battle.execution.loop-id should not be emitted when LoopID is empty")
 		}
 	}
 }

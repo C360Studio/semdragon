@@ -66,13 +66,13 @@ func (b *BossBattle) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "battle.review.level", Object: int(b.Level), Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Lifecycle
-		{Subject: entityID, Predicate: "battle.lifecycle.started_at", Object: b.StartedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "battle.lifecycle.started-at", Object: b.StartedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
 	// Loop ID for trajectory observability (omitted when empty)
 	if b.LoopID != "" {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "battle.execution.loop_id", Object: b.LoopID,
+			Subject: entityID, Predicate: "battle.execution.loop-id", Object: b.LoopID,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -108,10 +108,10 @@ func (b *BossBattle) Triples() []message.Triple {
 	if b.Verdict != nil {
 		triples = append(triples,
 			message.Triple{Subject: entityID, Predicate: "battle.verdict.passed", Object: b.Verdict.Passed, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "battle.verdict.quality_score", Object: b.Verdict.QualityScore, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "battle.verdict.xp_awarded", Object: b.Verdict.XPAwarded, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "battle.verdict.xp_penalty", Object: b.Verdict.XPPenalty, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "battle.verdict.level_change", Object: b.Verdict.LevelChange, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "battle.verdict.quality-score", Object: b.Verdict.QualityScore, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "battle.verdict.xp-awarded", Object: b.Verdict.XPAwarded, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "battle.verdict.xp-penalty", Object: b.Verdict.XPPenalty, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "battle.verdict.level-change", Object: b.Verdict.LevelChange, Source: source, Timestamp: now, Confidence: 1.0},
 		)
 
 		if b.Verdict.Feedback != "" {
@@ -125,7 +125,7 @@ func (b *BossBattle) Triples() []message.Triple {
 	// Completed time if set
 	if b.CompletedAt != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "battle.lifecycle.completed_at", Object: b.CompletedAt.Format(time.RFC3339),
+			Subject: entityID, Predicate: "battle.lifecycle.completed-at", Object: b.CompletedAt.Format(time.RFC3339),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -195,9 +195,9 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 			b.Level = domain.ReviewLevel(domain.AsInt(triple.Object))
 
 		// Lifecycle
-		case "battle.lifecycle.started_at":
+		case "battle.lifecycle.started-at":
 			b.StartedAt = domain.AsTime(triple.Object)
-		case "battle.lifecycle.completed_at":
+		case "battle.lifecycle.completed-at":
 			t := domain.AsTime(triple.Object)
 			b.CompletedAt = &t
 
@@ -207,22 +207,22 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 				b.Verdict = &domain.BattleVerdict{}
 			}
 			b.Verdict.Passed = domain.AsBool(triple.Object)
-		case "battle.verdict.score", "battle.verdict.quality_score":
+		case "battle.verdict.quality-score":
 			if b.Verdict == nil {
 				b.Verdict = &domain.BattleVerdict{}
 			}
 			b.Verdict.QualityScore = domain.AsFloat64(triple.Object)
-		case "battle.verdict.xp_awarded":
+		case "battle.verdict.xp-awarded":
 			if b.Verdict == nil {
 				b.Verdict = &domain.BattleVerdict{}
 			}
 			b.Verdict.XPAwarded = domain.AsInt64(triple.Object)
-		case "battle.verdict.xp_penalty":
+		case "battle.verdict.xp-penalty":
 			if b.Verdict == nil {
 				b.Verdict = &domain.BattleVerdict{}
 			}
 			b.Verdict.XPPenalty = domain.AsInt64(triple.Object)
-		case "battle.verdict.level_change":
+		case "battle.verdict.level-change":
 			if b.Verdict == nil {
 				b.Verdict = &domain.BattleVerdict{}
 			}
@@ -233,7 +233,7 @@ func BattleFromEntityState(entity *graph.EntityState) *BossBattle {
 			}
 			b.Verdict.Feedback = domain.AsString(triple.Object)
 		// Execution metadata
-		case "battle.execution.loop_id":
+		case "battle.execution.loop-id":
 			b.LoopID = domain.AsString(triple.Object)
 
 		default:

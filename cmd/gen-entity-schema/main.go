@@ -299,6 +299,7 @@ func extractBattle() EntitySchema {
 		AgentID:     "test-agent",
 		Status:      domain.BattleVictory,
 		Level:       domain.ReviewStrict,
+		LoopID:      "battle-test-loop-123",
 		StartedAt:   now,
 		CompletedAt: &completedAt,
 		Verdict: &domain.BattleVerdict{

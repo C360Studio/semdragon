@@ -346,12 +346,14 @@
   incremental dormant Agent-projection packet. Canonicalize exactly the 17
   retained scalar predicates recorded in D24 and the predicate ledger.
   Replace dynamic `agent.skill.{tag}.{level,total_xp}` predicates with repeated
-  bounded `agent.skill.proficiency` objects containing `tag`, `level`, and
-  `total-xp`. Cut producer, reconstruction, UI consumers, and generated schema
-  to canonical-only names in one gate. Preserve typed `@id` relationships for
-  Guild, current Quest, and current Party, while scalars and skill objects
-  remain non-relationships. Keep `agent_progression` disabled in all three
-  shipped profiles.
+  `agent.skill.proficiency` map values containing `tag`, `level`, and
+  `total-xp`. Treat that representation as a dormant downstream stopgap, not
+  a framework-ready SemStreams primitive or precedent for another projection;
+  SemStreams #683 blocks reactivation. Cut producer, reconstruction, UI
+  consumers, and generated schema to canonical-only names in one gate.
+  Preserve typed `@id` relationships for Guild, current Quest, and current
+  Party, while scalars and skill values remain non-relationships. Keep
+  `agent_progression` disabled in all three shipped profiles.
 
   Require the pinned beta.158 agentprogression audit to report zero invalid
   from exactly 27 scanner-visible candidates, with stale-name, runtime-tag,
@@ -365,10 +367,11 @@
   change, compatibility alias, dual read/write, or component reactivation.
 
   Completed 2026-07-25 evidence: producer and round-trip tests cover all 17
-  scalars, multiple deterministic bounded skill objects, stale/runtime-tag
-  absence, and the three typed Agent relationships. Canonical-only UI tests
-  and generated-schema contracts cover every required and optional Agent field
-  with no dynamic skill placeholder. The pinned beta.158 audits report
+  scalars, multiple deterministic skill map values, stale/runtime-tag absence,
+  and the three typed Agent relationships. The map representation remains the
+  documented dormant stopgap blocked by SemStreams #683. Canonical-only UI
+  tests and generated-schema contracts cover every required and optional Agent
+  field with no dynamic skill placeholder. The pinned beta.158 audits report
   agentprogression 0/27, UI 0/41, and entity IDs 0/20 while retaining the
   documented scanner-hidden blockers.
 
@@ -411,6 +414,46 @@
   and identity boundary. Svelte review approves the intentional no-change
   UI/schema boundary. Semdragon remains pinned to beta.135, and global tasks
   3.1 through 3.6 remain open.
+
+- [x] 2.26 Resolve
+  [semdragon #48](https://github.com/C360Studio/semdragon/issues/48) as a
+  scalar-only dormant BossBattle projection packet. Canonicalize exactly the
+  seven mappings recorded in D26 and the predicate ledger. Cut the Go producer
+  and reconstruction, UI graph transformer, and generated graph schema to
+  canonical-only predicates. Delete the undocumented
+  `battle.verdict.score` reconstruction alias. Preserve
+  `battle.assignment.quest` and `battle.assignment.agent` as typed `@id`
+  relationships, while the seven scalar values remain non-relationships.
+  Preserve the REST and OpenAPI snake_case JSON contract and keep bossbattle
+  disabled in every shipped profile.
+
+  Reconcile the historical `8/19` measurement: `battle.outcome` existed only
+  on the issue-#26-deleted `BattleRetreatPayload`, so the authoritative
+  baseline is `7/17` and the scalar target is `0/17`. Leave scanner-hidden
+  indexed criteria, judge, and result predicates unchanged and blocking on
+  SemStreams #683. Add no repeated map object, JSON string encoding, local
+  codec, first-class battle child entity, projection owner, bind, heartbeat,
+  owner-token writer, dependency/configuration change, state rewrite,
+  scalar compatibility path, cross-owner mutation, or component reactivation.
+  Preserve the legacy unindexed `battle.judge.id` fallback in
+  `parseIndexedJudge` as part of the unresolved indexed judge family, and
+  retire it with the #683-backed migration rather than counting it among the
+  seven scalar aliases.
+
+  Completed 2026-07-25 evidence: focused, race, full, vet, and build Go gates
+  pass. The beta.158 bossbattle audit reports 0/17 and the entity-ID audit
+  reports 0/23. Targeted UI tests pass 87/87, the full UI suite passes 347/347,
+  Svelte check reports 0 errors and 15 pre-existing warnings, and the UI build
+  passes. Generator tests and full schema, OpenAPI, and generated TypeScript
+  freshness checks pass. Both strict OpenSpec validations and the diff check
+  pass.
+
+  Go review records **APPROVE** after the exclusive `@id` guard was added.
+  Svelte review records **APPROVE** after correcting the schema inventory so
+  every mapped scalar, verdict, and judge predicate is `HANDLED` and
+  `battle.criteria.count` is the sole ignored predicate. Semdragon remains
+  pinned to beta.135, bossbattle remains disabled, and #683 remains the
+  framework blocker for the indexed families and judge fallback.
 
 ## 3. Verification and handoff to beta.158
 
@@ -644,10 +687,10 @@ This evidence supports task 2.16 but deliberately leaves it unchecked:
 - The dormant authoritative model, evaluator, component factory,
   battle-state KV port, readers, and typed quest/agent relationships remain.
   No projection owner or heartbeat is bound.
-- The migration ledger records the unchanged 8/19 audit result, the
-  scanner-hidden indexed-family defect, the fresh-state structured target,
-  exact cross-owner handoffs, SemStreams #313, and the Phase-2 reactivation
-  block.
+- The migration ledger records the historical pre-deletion `8/19` audit and
+  the current authoritative `7/17` baseline after the retreat-only
+  `battle.outcome` deletion. It keeps the scanner-hidden indexed-family
+  defect and Phase-2 reactivation block explicit.
 - Focused and full Go/UI gates, repeated mutation checks, tagged integration
   fixtures, Svelte diagnostics, schema freshness, and diff checks pass under
   architect, Go, and Svelte review.

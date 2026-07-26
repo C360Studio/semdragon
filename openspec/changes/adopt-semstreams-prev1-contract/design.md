@@ -551,12 +551,15 @@ This deletion does not canonicalize the authoritative battle projection.
 
 Those predicates are a blocking defect, not an auditor exception. Beta.158
 projection and ownership contracts require exact, declared predicates, so no
-owner can claim an unbounded indexed family. Phase 2 uses the fresh-state
-cutover and writes only repeated bounded objects at
-`battle.review.criteria`, `battle.review.judges`, and
-`battle.review.results`. It also adopts the canonical scalar names recorded in
-the predicate ledger. No legacy reader, alias, dual write, or in-place battle
-rewriter is added.
+owner can claim an unbounded indexed family. SemStreams beta.158 documents
+complex values as flattened triples and does not yet publish a typed repeated
+structured-value contract. Repeated map objects are therefore not an approved
+Phase-2 replacement.
+[SemStreams #683](https://github.com/C360Studio/semstreams/issues/683) owns
+that framework decision. The indexed families remain dormant and blocking
+until a tagged SemStreams primitive is available. Semdragon does not bridge
+the gap with JSON strings, a local codec, or first-class battle child
+entities.
 
 On reactivation, bossbattle binds one authoritative battle
 `projection.Contract` as static owner `bossbattle`, heartbeats that owner, and
@@ -581,8 +584,8 @@ must be split upstream before reactivation rather than copied locally.
 
 Bossbattle remains blocked from every shipped configuration until the Phase-2
 projection, ownership, lifecycle handoffs, fresh-state tests, and #313-backed
-mutation path are complete. Merely renaming the eight scanner findings does
-not satisfy this gate.
+mutation path are complete. Canonicalizing the seven retained scalar findings
+does not satisfy this gate.
 
 ### D17: Partycoord survives narrowly; its dead event and DAG shadows do not
 
@@ -985,9 +988,9 @@ The retained scalar cut is exactly 17 lexical canonicalizations:
 All names retain their existing `agent.<family>.` prefix. The predicate ledger
 records every complete old-to-new identity.
 
-Dynamic skill predicates are not renamed one tag at a time. Every
-`agent.skill.{tag}.{level,total_xp}` pair becomes one repeated
-`agent.skill.proficiency` bounded object:
+Dynamic skill predicates were not renamed one tag at a time. Issue #44 wrote
+every `agent.skill.{tag}.{level,total_xp}` pair as one repeated
+`agent.skill.proficiency` map value:
 
 ```json
 {"tag": "coding", "level": 3, "total-xp": 420}
@@ -995,9 +998,15 @@ Dynamic skill predicates are not renamed one tag at a time. Every
 
 The producer sorts tags for deterministic output, but consumers treat the
 repeated values as an unordered set keyed by `tag`. Runtime tags remain data.
-Reconstruction, UI transformation and labels, and generated entity schema read
-only canonical predicates. No compatibility aliases, dual readers, dual
-writes, or in-place state rewrite are introduced.
+This map-valued representation is a dormant downstream stopgap, not a
+framework-ready SemStreams primitive and not precedent for another projection.
+SemStreams beta.158 documents complex values as flattened triples;
+[SemStreams #683](https://github.com/C360Studio/semstreams/issues/683) owns
+the typed repeated structured-value contract. Agent reactivation and any
+claim of framework readiness remain blocked until that tagged primitive is
+adopted. Reconstruction, UI transformation and labels, and generated entity
+schema read only canonical predicates. No compatibility aliases, dual
+readers, dual writes, or in-place state rewrite are introduced.
 
 The three retained Agent relationships remain explicit:
 
@@ -1087,6 +1096,71 @@ vet, and build, and 166 targeted UI tests. Go review approves canonical-only
 producer/reconstruction, fail-closed identity, and scalar-alias behavior.
 Svelte boundary review approves the intentional no-change UI/schema boundary.
 Global beta.158 readiness tasks remain open.
+
+### D26: Canonicalize only the dormant BossBattle scalar contract
+
+Issue [#48](https://github.com/C360Studio/semdragon/issues/48) is an
+incremental dormant-projection packet. Bossbattle remains disabled in every
+shipped profile. The packet changes the retained producer, Go reconstruction,
+UI graph transformer, and generated graph schema together without changing
+the REST or OpenAPI snake_case JSON contract.
+
+The scanner-visible cut is exactly seven mappings:
+
+- `battle.lifecycle.started_at` to `battle.lifecycle.started-at`;
+- `battle.execution.loop_id` to `battle.execution.loop-id`;
+- `battle.verdict.quality_score` to `battle.verdict.quality-score`;
+- `battle.verdict.xp_awarded` to `battle.verdict.xp-awarded`;
+- `battle.verdict.xp_penalty` to `battle.verdict.xp-penalty`;
+- `battle.verdict.level_change` to `battle.verdict.level-change`; and
+- `battle.lifecycle.completed_at` to `battle.lifecycle.completed-at`.
+
+All direct scalar graph consumers use only those canonical predicates. The
+undocumented `battle.verdict.score` reconstruction alias is deleted rather
+than retained as a scalar compatibility reader. `battle.assignment.quest`
+and `battle.assignment.agent` remain SemStreams entity-reference values; the
+seven scalar values do not.
+
+Audit chronology distinguishes historical deletion from the current model.
+The original scanner measurement was eight invalid from 19 extracted. Its
+eighth finding, `battle.outcome`, existed only on the
+`BattleRetreatPayload` deleted by issue #26. The authoritative `BossBattle`
+baseline is now seven invalid from 17 extracted, and issue #48 targets zero
+invalid from those same 17 scanner-visible candidates.
+
+That scalar result does not cover the runtime-indexed
+`battle.criteria.<index>.<field>`,
+`battle.judge.<index>.<field>`, or
+`battle.result.<index>.<field>` families. Those scanner-hidden families remain
+unchanged and blocking. SemStreams beta.158 documents complex objects as
+flattened triples and does not provide a public typed repeated
+structured-value contract.
+[SemStreams #683](https://github.com/C360Studio/semstreams/issues/683) owns
+the framework primitive and its tagged release. Issue #48 adds no repeated map
+object, JSON string encoding, local codec, or first-class battle child entity
+as a substitute.
+
+`parseIndexedJudge` still accepts legacy unindexed `battle.judge.id`. That
+fallback belongs to the unresolved indexed judge family, not the seven scalar
+aliases. Issue #48 leaves it in place and requires its retirement with the
+#683-backed indexed-family migration.
+
+The packet adds no projection owner, bind, heartbeat, owner-token mutation
+path, dependency or configuration change, scalar compatibility alias, scalar
+dual read/write, state rewrite, cross-owner mutation, or component
+reactivation.
+
+The completed evidence covers focused, race, full, vet, and build Go gates;
+the beta.158 bossbattle audit at `0/17`; and the entity-ID audit at `0/23`.
+Targeted UI tests pass `87/87`, the full UI suite passes `347/347`, Svelte
+check reports zero errors and 15 pre-existing warnings, and the UI build
+passes. Generator tests and complete schema, OpenAPI, and generated TypeScript
+freshness checks pass. Both strict OpenSpec validations and the diff check
+pass. Go review records **APPROVE** after adding an exclusive `@id` guard.
+Svelte review records **APPROVE** after the schema inventory was corrected so
+every mapped scalar, verdict, and judge predicate is `HANDLED` and
+`battle.criteria.count` is the sole ignored predicate. Semdragon remains
+pinned to beta.135 and bossbattle remains disabled.
 
 ### Issue #26 implementation evidence, pending the final root gate
 

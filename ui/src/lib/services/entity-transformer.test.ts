@@ -704,7 +704,14 @@ describe('transformBattle', () => {
 			triple('battle.assignment.agent', AGENT_KEY),
 			triple('battle.review.level', 2),
 			triple('battle.status.state', 'victory'),
-			triple('battle.lifecycle.started_at', '2026-01-15T09:00:00Z')
+			triple('battle.lifecycle.started-at', '2026-01-15T09:00:00Z'),
+			triple('battle.execution.loop-id', 'loop-17'),
+			triple('battle.lifecycle.completed-at', '2026-01-15T09:30:00Z'),
+			triple('battle.verdict.passed', true),
+			triple('battle.verdict.quality-score', 0.92),
+			triple('battle.verdict.xp-awarded', 500),
+			triple('battle.verdict.xp-penalty', 25),
+			triple('battle.verdict.level-change', 1)
 		]);
 		const battle = transformEntity('battle', BATTLE_KEY, entity) as BossBattle;
 
@@ -714,6 +721,72 @@ describe('transformBattle', () => {
 		expect(battle.level).toBe(2);
 		expect(battle.status).toBe('victory');
 		expect(battle.started_at).toBe('2026-01-15T09:00:00Z');
+		expect(battle.loop_id).toBe('loop-17');
+		expect(battle.completed_at).toBe('2026-01-15T09:30:00Z');
+		expect(battle.verdict).toMatchObject({
+			passed: true,
+			quality_score: 0.92,
+			xp_awarded: 500,
+			xp_penalty: 25,
+			level_change: 1
+		});
+	});
+
+	it('rejects the seven stale underscore scalar predicates', () => {
+		const entity = graphEntity(BATTLE_KEY, [
+			triple('battle.lifecycle.started_at', '2026-01-15T09:00:00Z'),
+			triple('battle.execution.loop_id', 'stale-loop'),
+			triple('battle.lifecycle.completed_at', '2026-01-15T09:30:00Z'),
+			triple('battle.verdict.passed', true),
+			triple('battle.verdict.quality_score', 0.92),
+			triple('battle.verdict.xp_awarded', 500),
+			triple('battle.verdict.xp_penalty', 25),
+			triple('battle.verdict.level_change', 1)
+		]);
+		const battle = transformEntity('battle', BATTLE_KEY, entity) as BossBattle;
+
+		expect(battle.started_at).toBe('');
+		expect(battle.loop_id).toBeUndefined();
+		expect(battle.completed_at).toBeUndefined();
+		expect(battle.verdict).toMatchObject({
+			passed: true,
+			quality_score: 0,
+			xp_awarded: 0,
+			xp_penalty: 0,
+			level_change: 0
+		});
+	});
+
+	it('keeps indexed criteria, judge, and result predicates unchanged', () => {
+		const entity = graphEntity(BATTLE_KEY, [
+			triple('battle.criteria.0.name', 'Correctness'),
+			triple('battle.criteria.0.description', 'Meets the contract'),
+			triple('battle.criteria.0.weight', 0.75),
+			triple('battle.criteria.0.threshold', 0.8),
+			triple('battle.judge.0.id', 'judge-1'),
+			triple('battle.judge.0.type', 'llm'),
+			triple('battle.result.0.criterion_name', 'Correctness'),
+			triple('battle.result.0.judge_id', 'judge-1'),
+			triple('battle.result.0.score', 0.9),
+			triple('battle.result.0.passed', true),
+			triple('battle.result.0.reasoning', 'Evidence matched')
+		]);
+		const battle = transformEntity('battle', BATTLE_KEY, entity) as BossBattle;
+
+		expect(battle.criteria).toEqual([{
+			name: 'Correctness',
+			description: 'Meets the contract',
+			weight: 0.75,
+			threshold: 0.8
+		}]);
+		expect(battle.judges).toEqual([{ id: 'judge-1', type: 'llm' }]);
+		expect(battle.results).toEqual([{
+			criterion_name: 'Correctness',
+			judge_id: 'judge-1',
+			score: 0.9,
+			passed: true,
+			reasoning: 'Evidence matched'
+		}]);
 	});
 
 	it('uses correct defaults when all predicates are missing', () => {
@@ -1072,22 +1145,23 @@ describe('schema contract validation', () => {
 		'battle.assignment.agent': 'agent_id',
 		'battle.status.state': 'status',
 		'battle.review.level': 'level',
-		'battle.lifecycle.started_at': 'started_at',
-		'battle.verdict.level_change': 'verdict.level_change'
+		'battle.lifecycle.started-at': 'started_at',
+		'battle.lifecycle.completed-at': 'completed_at',
+		'battle.execution.loop-id': 'loop_id',
+		'battle.verdict.passed': 'verdict.passed',
+		'battle.verdict.quality-score': 'verdict.quality_score',
+		'battle.verdict.xp-awarded': 'verdict.xp_awarded',
+		'battle.verdict.xp-penalty': 'verdict.xp_penalty',
+		'battle.verdict.feedback': 'verdict.feedback',
+		'battle.verdict.level-change': 'verdict.level_change',
+		'battle.judge.0.id': 'judges[0].id',
+		'battle.judge.0.type': 'judges[0].type',
+		'battle.judge.1.id': 'judges[1].id',
+		'battle.judge.1.type': 'judges[1].type'
 	};
 
 	const BATTLE_IGNORED: Record<string, string> = {
-		'battle.lifecycle.completed_at': 'battle detail view not yet built',
-		'battle.verdict.passed': 'verdict display not yet built',
-		'battle.verdict.quality_score': 'verdict display not yet built',
-		'battle.verdict.xp_awarded': 'verdict display not yet built',
-		'battle.verdict.xp_penalty': 'verdict display not yet built',
-		'battle.verdict.feedback': 'verdict display not yet built',
-		'battle.criteria.count': 'criteria count not displayed',
-		'battle.judge.0.id': 'judge list not displayed',
-		'battle.judge.0.type': 'judge list not displayed',
-		'battle.judge.1.id': 'judge list not displayed',
-		'battle.judge.1.type': 'judge list not displayed'
+		'battle.criteria.count': 'criteria count not displayed'
 	};
 
 	// -------------------------------------------------------------------------
@@ -1215,6 +1289,42 @@ describe('schema contract validation', () => {
 
 	validateEntity('quest', schema.entities.quest, QUEST_HANDLED, QUEST_IGNORED);
 	validateEntity('guild', schema.entities.guild, GUILD_HANDLED, GUILD_IGNORED);
+
+	it('battle schema has exactly the seven canonical scalar renames and keeps indexed families', () => {
+		const predicates = allPredicates(schema.entities.battle);
+		const canonicalScalars = [
+			'battle.lifecycle.started-at',
+			'battle.execution.loop-id',
+			'battle.verdict.quality-score',
+			'battle.verdict.xp-awarded',
+			'battle.verdict.xp-penalty',
+			'battle.verdict.level-change',
+			'battle.lifecycle.completed-at'
+		];
+		const staleScalars = [
+			'battle.lifecycle.started_at',
+			'battle.execution.loop_id',
+			'battle.verdict.quality_score',
+			'battle.verdict.xp_awarded',
+			'battle.verdict.xp_penalty',
+			'battle.verdict.level_change',
+			'battle.lifecycle.completed_at'
+		];
+
+		expect(predicates.filter((predicate) => canonicalScalars.includes(predicate)).sort())
+			.toEqual([...canonicalScalars].sort());
+		expect(predicates.filter((predicate) => staleScalars.includes(predicate))).toEqual([]);
+		expect(schema.entities.battle.dynamic).toEqual([]);
+		expect(schema.entities.battle.multi_value).toEqual([]);
+		expect(predicates).toEqual(expect.arrayContaining([
+			'battle.criteria.count',
+			'battle.judge.0.id',
+			'battle.judge.0.type',
+			'battle.judge.1.id',
+			'battle.judge.1.type'
+		]));
+	});
+
 	validateEntity('battle', schema.entities.battle, BATTLE_HANDLED, BATTLE_IGNORED);
 	validateEntity('party', schema.entities.party, PARTY_HANDLED, PARTY_IGNORED);
 });

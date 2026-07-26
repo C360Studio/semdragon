@@ -44,6 +44,43 @@ func TestExtractGuildIncludesQuorumSize(t *testing.T) {
 	}
 }
 
+func TestExtractBattleIncludesCanonicalScalars(t *testing.T) {
+	schema := extractBattle()
+	all := append(append(append(
+		[]string{},
+		schema.Static...),
+		schema.Optional...),
+		schema.MultiValue...)
+
+	for _, predicate := range []string{
+		"battle.lifecycle.started-at",
+		"battle.execution.loop-id",
+		"battle.verdict.quality-score",
+		"battle.verdict.xp-awarded",
+		"battle.verdict.xp-penalty",
+		"battle.verdict.level-change",
+		"battle.lifecycle.completed-at",
+	} {
+		if !containsPredicate(all, predicate) {
+			t.Errorf("battle schema is missing canonical scalar %q", predicate)
+		}
+	}
+
+	for _, predicate := range []string{
+		"battle.lifecycle.started_at",
+		"battle.execution.loop_id",
+		"battle.verdict.quality_score",
+		"battle.verdict.xp_awarded",
+		"battle.verdict.xp_penalty",
+		"battle.verdict.level_change",
+		"battle.lifecycle.completed_at",
+	} {
+		if containsPredicate(all, predicate) {
+			t.Errorf("battle schema retains stale scalar %q", predicate)
+		}
+	}
+}
+
 func containsPredicate(predicates []string, want string) bool {
 	for _, predicate := range predicates {
 		if predicate == want {

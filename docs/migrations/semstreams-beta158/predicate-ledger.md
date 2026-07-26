@@ -1,8 +1,9 @@
 # SemStreams beta.158 predicate rename ledger
 
 Status: architect-reviewed target contract for semdragon issue #3. This ledger is
-the implementation source of truth. It is not an alias table: issue #3 writes
-only the canonical identity and deletes every legacy reader in the same change.
+the implementation source of truth. It is not an alias table: each approved
+scalar mapping writes and reads only the canonical identity. Scanner-hidden
+indexed-family compatibility is called out explicitly where it remains.
 
 ## Audit coverage
 
@@ -34,7 +35,8 @@ That bounded sweep reports exactly 107 invalid candidates from 193 extracted.
 The package totals are:
 
 - agentprogression 22/32, agentstore 23/30, autonomy 19/21.
-- bossbattle 8/19, dmsession 2/4, executor 9/35.
+- bossbattle 8/19 before issue #26's retreat deletion, dmsession 2/4,
+  executor 9/35.
 - guildformation 2/5, partycoord 14/27, promptmanager 2/5.
 - questboard 2/2 and seeding 4/13.
 - All other processor package roots report zero invalid candidates.
@@ -225,16 +227,18 @@ Issue #44 applies exactly these 17 retained scalar canonicalizations:
   becomes
   `agent.reputation.{peer-avg,peer-q1-avg,peer-q2-avg,peer-q3-avg,peer-count}`.
 
-The dynamic `agent.skill.{tag}.{level,total_xp}` family becomes repeated
-`agent.skill.proficiency` bounded objects with `tag`, `level`, and `total-xp`
+The dynamic `agent.skill.{tag}.{level,total_xp}` family became repeated
+`agent.skill.proficiency` map values with `tag`, `level`, and `total-xp`
 fields. Runtime skill tags remain data and never become predicate segments.
-Reconstruction, UI consumers, and generated schema use only these canonical
-names; issue #44 adds no compatibility alias or dual reader.
+This is a dormant downstream stopgap, not a framework-ready SemStreams
+primitive; SemStreams #683 blocks reactivation. Reconstruction, UI consumers,
+and generated schema use only these canonical names; issue #44 adds no
+compatibility alias or dual reader.
 
 Guild membership, current quest, and current party remain typed `@id`
 relationships through `agent.membership.guild`, `agent.assignment.quest`, and
 `agent.membership.party`. The 17 canonical scalars and
-`agent.skill.proficiency` bounded objects are not relationships. The removed
+`agent.skill.proficiency` map values are not relationships. The removed
 payload's historical `agent.progression.xp.quest` does not return.
 
 Zero scanner-visible findings is not beta.158 readiness. The auditor does not
@@ -346,19 +350,19 @@ adds no projection binding. Issue #4 must either wire the real framework
 `BaseMessage`/payload-registry/graph-ingest route or delete the seven latent
 Graphable surfaces and their graph-only tests.
 
-### bossbattle: eight scanner-visible findings, deferred
+### bossbattle: seven scanner-visible findings canonicalized
 
 - `battle.lifecycle.{started_at,completed_at}` becomes
   `battle.lifecycle.{started-at,completed-at}`.
 - `battle.execution.loop_id` becomes `battle.execution.loop-id`.
 - `battle.verdict.{quality_score,xp_awarded,xp_penalty,level_change}` becomes
   `battle.verdict.{quality-score,xp-awarded,xp-penalty,level-change}`.
-- `battle.outcome` becomes `battle.review.outcome`.
 
-The authoritative audit result remains `8/19`: eight findings from 19
-extracted candidates. Issue #26 does not rename or activate those predicates.
-It disables bossbattle in every shipped profile and defers the eight findings
-to the Phase-2 authoritative projection.
+The original audit reported `8/19`. Its eighth finding was `battle.outcome`,
+which existed only on the definition-only `BattleRetreatPayload` deleted by
+issue #26. The current authoritative `BossBattle` baseline is therefore
+`7/17`. Issue #48 reports `0/17` for this scalar-only packet; it does not
+rewrite the historical measurement.
 
 Issue #26 deletes a separate phantom event surface. Production has no publisher
 for `battle.review.started`, `battle.review.verdict`,
@@ -371,9 +375,17 @@ owner.
 The definition-only retreat surface is deleted with that facade:
 `BattleRetreatPayload`, its graph methods and tests, the retreat status, and
 the UI filter, style, fixture, OpenAPI value, and generated TypeScript value.
-No alias or compatibility reader survives. The authoritative `BossBattle`
-model, evaluator, REST/dmworldstate/UI readers, real battle-state KV port, and
-typed quest/agent relationships remain dormant for Phase 2.
+No retreat alias or compatibility reader survives. The authoritative
+`BossBattle` model, evaluator, REST/dmworldstate/UI readers, real battle-state
+KV port, and typed quest/agent relationships remain dormant for Phase 2.
+
+Issue #48 cuts the authoritative producer, scalar Go reconstruction, UI graph
+transformer, and generated graph schema to the seven canonical predicates in
+one gate. It deletes the undocumented reconstruction alias
+`battle.verdict.score`. It preserves `battle.assignment.quest` and
+`battle.assignment.agent` as typed `@id` relationships. REST and OpenAPI
+snake_case JSON fields remain unchanged, and bossbattle remains disabled in
+every shipped profile.
 
 The predicate scanner does not expose the blocking indexed-family defect.
 `BossBattle.Triples` constructs criteria, judge, and result predicates at
@@ -383,12 +395,19 @@ runtime:
 - `battle.judge.<index>.<field>`; and
 - `battle.result.<index>.<field>`.
 
+Go reconstruction also still accepts legacy unindexed `battle.judge.id` in
+`parseIndexedJudge`. Issue #48 does not present that indexed-family
+compatibility path as part of the seven scalar aliases: it remains with the
+scanner-hidden judge blocker and must retire under SemStreams #683.
+
 These families cannot be made safe through wildcard owner claims or
-occurrence-level audit exceptions. On a fresh graph, Phase 2 replaces them with
-repeated structured values at `battle.review.criteria`,
-`battle.review.judges`, and `battle.review.results`, and applies the eight
-lower-kebab scalar renames above. It adds no legacy reader, alias, dual write,
-or in-place rewriter.
+occurrence-level audit exceptions. They remain unchanged and blocking after
+the scalar packet. SemStreams beta.158 documents complex values as flattened
+triples and does not provide a public repeated-structured-value contract, so
+repeated downstream map objects are not an approved replacement.
+[SemStreams #683](https://github.com/C360Studio/semstreams/issues/683) owns the
+framework decision and tagged primitive. Semdragon does not substitute JSON
+strings, a local codec, or first-class battle child entities.
 
 Reactivation remains blocked until bossbattle binds and heartbeats one
 authoritative projection contract, all cross-owner effects use their approved
@@ -672,24 +691,26 @@ file, value, package, or directory. This upstream tooling gap does not block
 the completed questdag core wave, but task 3.1 remains open until the final
 predicate audit has exact evidence.
 
-## Approved replacement for dynamic predicate families
+## Replacement contracts for dynamic predicate families
 
-These models are architect-approved targets. Implementation evidence is pending
-until issue #3 adds producers, readers, tests, and schema generation.
+First-class entity models below remain approved targets. Repeated structured
+values are not framework-ready until SemStreams publishes a tagged contract.
 
-### Bounded values
+### Repeated structured values blocked on SemStreams #683
 
-- `agent.skill.{tag}.{level,total_xp}` becomes repeated
-  `agent.skill.proficiency`. Each bounded object contains `tag`, `level`, and
-  `total-xp`; no runtime tag appears in a predicate.
-- Indexed battle criteria become repeated `battle.review.criteria` objects with
-  `name`, `description`, `weight`, and `threshold`.
-- Indexed judges become repeated `battle.review.judges` objects with `id` and
-  `type`.
-- Indexed results become repeated `battle.review.results` objects with
-  `criterion-name`, `judge-id`, `score`, `passed`, and `reasoning`.
+Issue #44 wrote each `agent.skill.{tag}.{level,total_xp}` pair as a repeated
+`agent.skill.proficiency` map containing `tag`, `level`, and `total-xp`. That
+map-valued representation is a dormant downstream stopgap, not an approved
+SemStreams primitive or a pattern for other projections. Agent reactivation
+and framework-readiness remain blocked on
+[SemStreams #683](https://github.com/C360Studio/semstreams/issues/683).
 
-### First-class entities
+The scanner-hidden battle criteria, judge, and result families remain indexed
+until #683 defines a typed repeated structured representation or another
+framework-owned model. Issue #48 does not replace them with map objects, JSON
+strings, a local codec, or first-class battle child entities.
+
+### Approved first-class entities
 
 Every pattern has exactly six positions:
 

@@ -418,12 +418,13 @@ projection and owner-safe lifecycle handoffs are complete.
   `battle.result.<index>.<field>`
 - **WHEN** the beta.158 projection contract is validated
 - **THEN** no wildcard or occurrence-level owner exception is accepted
-- **AND** Phase 2 replaces those families with repeated bounded objects at
-  `battle.review.criteria`, `battle.review.judges`, and
-  `battle.review.results`
-- **AND** canonical scalar predicates use the ledger's lower-kebab names
-- **AND** the fresh-state cutover adds no legacy reader, alias, dual write, or
-  in-place battle-state rewriter
+- **AND** repeated map objects are not an approved replacement because
+  beta.158 documents complex values as flattened triples
+- **AND** SemStreams #683 owns the typed repeated structured-value decision
+- **AND** the indexed families remain dormant and blocking until a tagged
+  framework primitive is available
+- **AND** Semdragon adds no JSON string encoding, local codec, or first-class
+  battle child entity as a substitute
 
 #### Scenario: Reactivation uses framework ownership boundaries
 
@@ -448,6 +449,71 @@ projection and owner-safe lifecycle handoffs are complete.
 - **AND** a replace-only #313 delivery requires a linked upstream create
   helper before bossbattle activation
 - **AND** Semdragon does not copy a generic mutator or retry framework locally
+
+### Requirement: Dormant BossBattle scalar projection is canonicalized
+
+Issue #48 SHALL canonicalize only the retained scanner-visible BossBattle
+scalar contract. The cut SHALL contain exactly these seven mappings:
+
+- `battle.lifecycle.started_at` to `battle.lifecycle.started-at`;
+- `battle.execution.loop_id` to `battle.execution.loop-id`;
+- `battle.verdict.quality_score` to `battle.verdict.quality-score`;
+- `battle.verdict.xp_awarded` to `battle.verdict.xp-awarded`;
+- `battle.verdict.xp_penalty` to `battle.verdict.xp-penalty`;
+- `battle.verdict.level_change` to `battle.verdict.level-change`; and
+- `battle.lifecycle.completed_at` to `battle.lifecycle.completed-at`.
+
+#### Scenario: Producer and direct consumers use only canonical predicates
+
+- **WHEN** issue #48 emits or reconstructs a retained `BossBattle`
+- **THEN** all seven scalar values use only the canonical mappings above
+- **AND** Go reconstruction reads no stale underscore alias
+- **AND** the undocumented `battle.verdict.score` reconstruction alias is
+  absent
+- **AND** the UI graph transformer and generated graph schema use only the
+  seven canonical predicate names
+- **AND** REST and OpenAPI retain their existing snake_case JSON field names
+
+#### Scenario: BossBattle relationships remain typed
+
+- **WHEN** a retained battle references its Quest and assigned Agent
+- **THEN** `battle.assignment.quest` and `battle.assignment.agent` use the
+  SemStreams entity-reference datatype
+- **AND** the seven canonical scalar values do not use that datatype
+
+#### Scenario: Audit chronology preserves the deletion boundary
+
+- **GIVEN** the historical audit reported eight invalid from 19 extracted
+  candidates
+- **AND** its `battle.outcome` finding existed only on the
+  issue-#26-deleted `BattleRetreatPayload`
+- **WHEN** issue #48 audits the authoritative `BossBattle` projection
+- **THEN** its baseline is seven invalid from 17 extracted candidates
+- **AND** its scalar target is zero invalid from those same 17 candidates
+- **AND** the historical `8/19` measurement is not rewritten
+
+#### Scenario: Scanner-hidden structured families remain blocked
+
+- **GIVEN** criteria, judge, and result predicates contain runtime indexes
+- **AND** `parseIndexedJudge` accepts legacy unindexed `battle.judge.id`
+- **WHEN** the seven scalar mappings become canonical
+- **THEN** those indexed families remain unchanged and blocking
+- **AND** the judge fallback remains an indexed-family compatibility path to
+  retire under SemStreams #683, not one of the seven scalar aliases
+- **AND** repeated map objects are not treated as a SemStreams primitive
+- **AND** SemStreams #683 owns their typed repeated structured-value contract
+  or another framework-owned representation
+- **AND** issue #48 adds no JSON string encoding, local codec, or first-class
+  battle child entity
+
+#### Scenario: Scalar cleanup does not reactivate bossbattle
+
+- **WHEN** issue #48 completes its scalar-only packet
+- **THEN** bossbattle remains disabled in every shipped profile
+- **AND** no projection owner, bind, heartbeat, owner-token mutation path,
+  dependency change, configuration change, or state rewriter is added
+- **AND** no scalar compatibility alias, scalar dual read/write, cross-owner
+  mutation, or component reactivation is introduced
 
 ### Requirement: Disjoint authoritative writers
 
@@ -547,25 +613,29 @@ exactly these 17 mappings:
 - **AND** generated Agent schema contains all 17 canonical fields and no stale
   counterpart
 
-#### Scenario: Skill tags remain bounded data
+#### Scenario: Skill map is a dormant downstream stopgap
 
 - **GIVEN** an Agent has multiple skill proficiencies
 - **WHEN** its graph triples are emitted
-- **THEN** each skill is one repeated `agent.skill.proficiency` bounded object
+- **THEN** each skill is one repeated `agent.skill.proficiency` map value
 - **AND** each object contains only `tag`, `level`, and `total-xp`
 - **AND** reconstruction preserves every skill independently of map iteration
   order
 - **AND** no runtime skill tag appears in a predicate name
 - **AND** generated schema marks `agent.skill.proficiency` as multi-value and
   contains no dynamic skill placeholder
+- **AND** the map representation is treated as a dormant downstream stopgap,
+  not a framework-ready SemStreams primitive or reusable projection pattern
+- **AND** SemStreams #683 blocks Agent reactivation until a tagged typed
+  repeated structured-value contract is adopted
 
 #### Scenario: Agent relationships remain typed
 
 - **WHEN** an Agent references its Guild, current Quest, or current Party
 - **THEN** `agent.membership.guild`, `agent.assignment.quest`, and
   `agent.membership.party` use the SemStreams entity-reference datatype
-- **AND** the 17 scalar predicates and `agent.skill.proficiency` objects do not
-  use the entity-reference datatype
+- **AND** the 17 scalar predicates and `agent.skill.proficiency` map values do
+  not use the entity-reference datatype
 
 #### Scenario: Scanner-visible zero does not imply migration readiness
 

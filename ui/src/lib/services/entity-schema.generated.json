@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-26T01:22:10Z",
+  "generated_at": "2026-07-26T02:14:35Z",
   "entities": {
     "agent": {
       "static": [
@@ -42,23 +42,24 @@
         "battle.assignment.quest",
         "battle.criteria.count",
         "battle.identity.name",
-        "battle.lifecycle.started_at",
+        "battle.lifecycle.started-at",
         "battle.review.level",
         "battle.status.state"
       ],
       "dynamic": [],
       "optional": [
+        "battle.execution.loop-id",
         "battle.judge.0.id",
         "battle.judge.0.type",
         "battle.judge.1.id",
         "battle.judge.1.type",
-        "battle.lifecycle.completed_at",
+        "battle.lifecycle.completed-at",
         "battle.verdict.feedback",
-        "battle.verdict.level_change",
+        "battle.verdict.level-change",
         "battle.verdict.passed",
-        "battle.verdict.quality_score",
-        "battle.verdict.xp_awarded",
-        "battle.verdict.xp_penalty"
+        "battle.verdict.quality-score",
+        "battle.verdict.xp-awarded",
+        "battle.verdict.xp-penalty"
       ],
       "multi_value": []
     },
