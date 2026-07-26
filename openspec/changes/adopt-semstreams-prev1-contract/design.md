@@ -1396,22 +1396,28 @@ The runbook is an executable operator contract but is not executed in issue
 
 1. identify the exact reviewed commit, beta.135 module pin, rendered shipped
    configuration, development/test NATS target, and NATS context;
-2. stop every writer and prove that no writer remains able to mutate the
-   selected Semdragon graph;
-3. derive the candidate bucket and volume inventory from rendered
+2. build the backend once at that commit, record its immutable image ID, and
+   require both later starts to disable build and pull behavior and run that
+   exact image ID;
+3. stop and remove only the backend writer and Semdragon NATS containers,
+   without removing attached volumes, then prove that no container remains
+   attached to the selected graph volume;
+4. derive the candidate bucket and volume inventory from rendered
    configuration, require operator review, and copy the approved targets into
    deletion commands as literal values;
-4. abort before deletion when the environment, context, rendered inventory, or
+5. abort before deletion when the environment, context, rendered inventory, or
    literal targets do not match;
-5. delete only the approved Semdragon development/test graph state, excluding
+6. prove the selected volume's Compose project and logical-volume labels, then
+   delete only the approved Semdragon development/test graph state, excluding
    SemSource substrates, embedding caches, workspaces, and unrelated volumes;
-6. start the exact reviewed binary, seed canonical state once, poll
-   authoritative readiness, and capture normalized entity, relationship,
+7. start the recorded image without build or pull, seed canonical state once,
+   poll authoritative readiness, and capture normalized entity, relationship,
    quest-status, and DAG projection evidence;
-7. stop and restart the same binary with `SEED_E2E=false`,
+8. stop and restart the same recorded image without build or pull and with
+   `SEED_E2E=false`,
    `SEED_AGENTS=false`, and `SEED_PROS=false`, allow no intervening write, poll
    authoritative readiness again, and compare parity; and
-8. retain the evidence and leave the environment in an explicitly reported
+9. retain the evidence and leave the environment in an explicitly reported
    state.
 
 Deletion is fail-closed. The runbook and its stale-checked contract reject
@@ -1420,11 +1426,35 @@ wildcard targets, unresolved or unset variables in a destructive target,
 delete outside the reviewed literal set. Broad convenience teardown is not a
 cutover primitive.
 
+Stopping a service does not release its volume attachment. The runbook must
+stop and remove exactly the `backend` and Semdragon `nats` containers without
+`-v`, verify both are absent, and require a zero-result Docker attachment query
+for the literal graph volume before deletion. It does not stop, remove, or
+recreate either SemSource NATS service or any SemSource container or volume.
+
+The reviewed source commit alone is not binary identity. The backend is built
+once, its `sha256` image ID is retained, and both seed and replay starts use
+the local image with build and pull disabled. Before and after each start, the
+runbook proves that the tag and running backend container resolve to the
+retained image ID.
+
 Parity normalization may remove only reviewed nondeterministic transport
 metadata such as observation timestamps, KV revisions, and readiness
 watermarks. It must preserve entity IDs, predicates, object values, datatypes,
 cardinality, relationship targets, quest status, DAG dependencies, and DAG
 outputs. A difference in any preserved field fails replay parity.
+
+Entity evidence comes from read-only raw `ENTITY_STATES` KV values, not from a
+GraphQL selection that omits triple fields. The reviewed NATS CLI version and
+context are asserted. Every listed key must produce exactly one valid complete
+`graph.EntityState` JSON value, and normalization retains the complete entity
+and triple objects, including `datatype`. Key and response counts must match.
+
+Relationship evidence remains a read-only graph-index projection. It runs
+under `set -euo pipefail`, validates every GraphQL envelope before appending
+it, and requires exactly one response for every captured entity before
+flattening or deduplicating relationships. A transport failure, invalid
+envelope, or short response set fails the capture.
 
 The stale-checked runbook contract is test-only evidence, not a runtime
 framework. It must fail if a shipped configuration, Compose graph-volume name,

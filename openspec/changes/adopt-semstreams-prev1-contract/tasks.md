@@ -655,13 +655,33 @@
   procedure, authoritative readiness polling, and normalized entity,
   relationship, quest-status, and DAG projection evidence.
 
-  Restart the same reviewed binary in the documented procedure with
+  Build the backend exactly once at the reviewed commit and retain its
+  immutable `sha256` image ID. Require seed and replay starts to disable build
+  and pull behavior, assert the tag before each start, and assert the running
+  container after each start resolves to that same ID.
+
+  Stop and remove only the backend and Semdragon NATS containers without
+  removing volumes. Before the one literal volume deletion, require both
+  containers to be absent, the Docker attachment query to return zero
+  containers, and the volume's Compose project and logical-volume labels to
+  match. Do not stop, remove, or recreate SemSource services or volumes.
+
+  Capture complete read-only raw `ENTITY_STATES` values with one reviewed,
+  asserted NATS CLI version and context. Require one valid
+  `graph.EntityState` response per listed key and retain every entity and
+  triple field, including `datatype`. Run relationship iteration under
+  `set -euo pipefail`, validate each GraphQL envelope, and require exactly one
+  response per captured entity before normalization.
+
+  Restart the same reviewed image in the documented procedure with
   `SEED_E2E=false`, `SEED_AGENTS=false`, and `SEED_PROS=false`, permit no
   intervening write, and require replay parity after readiness. The contract
-  fails on shipped topology, Compose graph-volume, seed-flag, readiness,
-  parity, or safety drift. It rejects wildcard or unresolved destructive
-  targets, `docker compose down -v`, unscoped volume pruning, and deletion
-  outside the approved literal Semdragon development/test graph set.
+  fails on shipped topology, Compose graph-volume, container attachment,
+  volume-label, image-ID, no-build/no-pull, raw-state cardinality, relationship
+  response cardinality, seed-flag, readiness, parity, or safety drift. It
+  rejects wildcard or unresolved destructive targets,
+  `docker compose down -v`, unscoped volume pruning, and deletion outside the
+  approved literal Semdragon development/test graph set.
 
   Do not execute the wipe in issue #55. Add no production utility, Docker or
   configuration change, dependency change, state rewriter, compatibility

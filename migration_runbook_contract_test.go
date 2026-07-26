@@ -22,6 +22,9 @@ const (
 	engineGraphVolume      = composeProject + "_" + graphVolume
 	developmentNATSURL     = "nats://localhost:4222"
 	developmentNATSContext = "semdragon-dev"
+	reviewedNATSCLIVersion = "0.3.1"
+	reviewedBackendImage   = composeProject + "-backend"
+	backendImageNamePath   = "cutover-evidence/backend-image.name"
 )
 
 var (
@@ -33,6 +36,12 @@ var (
 	protectedVolumes = []string{
 		"nats-local-semsource-data",
 		"nats-semsource-data",
+	}
+	protectedServices = []string{
+		"local-semsource",
+		"nats-local-semsource",
+		"nats-semsource",
+		"semsource",
 	}
 	backendSeedFlags = []string{
 		"SEED_AGENTS",
@@ -57,10 +66,8 @@ type composeContract struct {
 }
 
 type evidenceContract struct {
-	label      string
-	file       string
-	query      string
-	normalizer string
+	label string
+	file  string
 }
 
 func TestFreshVolumeReplayRunbookContract(t *testing.T) {
@@ -82,6 +89,18 @@ func TestFreshVolumeReplayRunbookContract(t *testing.T) {
 	t.Run("unsafe or incomplete mutations fail closed", func(t *testing.T) {
 		baseline := validRunbookContractFixture(topology)
 		assertRunbookViolations(t, validateFreshVolumeRunbook(baseline, topology))
+
+		preservedFields := "entity IDs, predicates, object values, datatypes, cardinality, relationship targets, quest status, DAG dependencies, and DAG outputs"
+		wrappedFields := strings.Replace(preservedFields, "quest status, ", "quest status,\n", 1)
+		wrapped := strings.Replace(baseline, preservedFields, wrappedFields, 1)
+		assertRunbookViolations(t, validateFreshVolumeRunbook(wrapped, topology))
+		removedSemanticField := strings.Replace(wrapped, "datatypes, ", "", 1)
+		if violations := validateFreshVolumeRunbook(removedSemanticField, topology); !containsRunbookViolation(
+			violations,
+			"preserved replay fields",
+		) {
+			t.Fatalf("wrapped prose with removed semantic field violations = %v", violations)
+		}
 
 		mutations := []struct {
 			name     string
@@ -185,7 +204,7 @@ func TestFreshVolumeReplayRunbookContract(t *testing.T) {
 			{
 				name: "bypassed stopped-writer proof",
 				mutate: func(runbook string) string {
-					return strings.Replace(runbook, `test -z "$(`, `echo "$(`, 1)
+					return strings.Replace(runbook, writerProofCommand(), `: "$RUNNING_WRITER_SERVICES"`, 1)
 				},
 				fragment: "empty stopped-writer assertion",
 			},
@@ -213,9 +232,9 @@ func TestFreshVolumeReplayRunbookContract(t *testing.T) {
 			{
 				name: "moved backend stop",
 				mutate: func(runbook string) string {
-					return swapRunbookLines(runbook, backendStopCommand(), writerProofCommand())
+					return swapRunbookLines(runbook, backendStopCommand(), writerQueryCommand())
 				},
-				fragment: "immediately followed",
+				fragment: "followed by fail-fast writer query",
 			},
 			{
 				name: "GET readiness",
@@ -285,7 +304,7 @@ func TestFreshVolumeReplayRunbookContract(t *testing.T) {
 				mutate: func(runbook string) string {
 					return strings.Replace(runbook, natsContextSelectCommand()+"\n", "", 1)
 				},
-				fragment: "NATS context creation",
+				fragment: "NATS context selection",
 			},
 			{
 				name: "wrong context server",
@@ -327,7 +346,7 @@ func TestFreshVolumeReplayRunbookContract(t *testing.T) {
 						1,
 					)
 				},
-				fragment: "executable query+normalizer for before/entities.normalized.json",
+				fragment: "reviewed evidence workflow command",
 			},
 			{
 				name: "missing relationship parity",
@@ -345,81 +364,464 @@ func TestFreshVolumeReplayRunbookContract(t *testing.T) {
 				fragment: "exact reviewed commit",
 			},
 		}
-		specs := evidenceContracts()
-		for index, spec := range specs {
-			spec := spec
-			other := specs[(index+1)%len(specs)]
-			appendMutation := func(name string, mutate func(string) string) {
-				mutations = append(mutations, struct {
-					name     string
-					mutate   func(string) string
-					fragment string
-				}{
-					name:     name,
-					mutate:   mutate,
-					fragment: "executable query+normalizer for before/" + spec.file,
-				})
-			}
-			appendMutation("cross-label "+spec.label, func(runbook string) string {
-				return replaceBeforeCapture(
-					runbook,
-					spec,
-					crossLabelCaptureCommand("before", spec, other),
-				)
-			})
-			appendMutation("error validation bypass "+spec.label, func(runbook string) string {
-				command := strings.Replace(captureCommand("before", spec.file), ".errors == null", "true", 1)
-				return replaceBeforeCapture(runbook, spec, command)
-			})
-			appendMutation("data validation bypass "+spec.label, func(runbook string) string {
-				command := strings.Replace(
-					captureCommand("before", spec.file),
-					evidenceDataGuard(spec),
-					"true",
-					1,
-				)
-				return replaceBeforeCapture(runbook, spec, command)
-			})
-			appendMutation("silent empty fallback "+spec.label, func(runbook string) string {
-				command := strings.Replace(
-					captureCommand("before", spec.file),
-					evidenceDataField(spec),
-					"("+evidenceDataField(spec)+" // [])",
-					1,
-				)
-				return replaceBeforeCapture(runbook, spec, command)
-			})
-		}
-		relationship := specs[1]
-		relationshipMutations := []struct {
-			name string
-			old  string
-			new  string
-		}{
-			{name: "relationship slurp removed", old: "jq -sSe", new: "jq -Se"},
-			{name: "relationship merge removed", old: "[.[].data.relationships[]]", new: ".[0].data.relationships"},
-			{name: "relationship dedup removed", old: " | unique_by([.from,.predicate,.to])", new: ""},
-		}
-		for _, mutation := range relationshipMutations {
-			mutation := mutation
+		appendMutation := func(name string, mutate func(string) string, fragment string) {
 			mutations = append(mutations, struct {
 				name     string
 				mutate   func(string) string
 				fragment string
 			}{
-				name: mutation.name,
-				mutate: func(runbook string) string {
-					command := strings.Replace(
-						captureCommand("before", relationship.file),
-						mutation.old,
-						mutation.new,
-						1,
-					)
-					return replaceBeforeCapture(runbook, relationship, command)
-				},
-				fragment: "executable query+normalizer for before/" + relationship.file,
+				name:     name,
+				mutate:   mutate,
+				fragment: fragment,
 			})
 		}
+		removeCommand := func(command string) func(string) string {
+			return func(runbook string) string {
+				return strings.Replace(runbook, command+"\n", "", 1)
+			}
+		}
+		appendMutation(
+			"NATS CLI version drift",
+			func(runbook string) string {
+				return strings.Replace(runbook, reviewedNATSCLIVersion, "0.3.2", 1)
+			},
+			"pinned NATS CLI version assertion",
+		)
+		appendMutation(
+			"missing NATS CLI version assertion",
+			removeCommand(natsCLIVersionCommand()),
+			"pinned NATS CLI version assertion",
+		)
+		appendMutation(
+			"NATS CLI version assertion after context invocation",
+			func(runbook string) string {
+				return swapRunbookLines(runbook, natsCLIVersionCommand(), natsContextSaveCommand())
+			},
+			"must precede every other NATS invocation",
+		)
+		appendMutation(
+			"container removal also removes volumes",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					removeStoppedContainersCommand(),
+					composePrefix()+" rm -f -v backend nats",
+					1,
+				)
+			},
+			"container removal must not remove volumes",
+		)
+		appendMutation(
+			"missing stopped container removal",
+			removeCommand(removeStoppedContainersCommand()),
+			"stopped backend+nats container removal",
+		)
+		appendMutation(
+			"missing empty container IDs assertion",
+			removeCommand(emptyContainerIDsCommand()),
+			"empty backend+nats container ID assertion",
+		)
+		appendMutation(
+			"missing zero attachment assertion",
+			removeCommand(zeroVolumeAttachmentsCommand()),
+			"zero graph-volume attachment assertion",
+		)
+		appendMutation(
+			"missing Compose project volume label",
+			removeCommand(volumeProjectLabelCommand()),
+			"Compose project volume label assertion",
+		)
+		appendMutation(
+			"missing Compose logical volume label",
+			removeCommand(volumeLogicalLabelCommand()),
+			"Compose logical-volume label assertion",
+		)
+		appendMutation(
+			"protected SemSource service stopped",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					backendStopCommand(),
+					backendStopCommand()+" semsource",
+					1,
+				)
+			},
+			"protected SemSource service",
+		)
+		appendMutation(
+			"duplicate reviewed backend build",
+			func(runbook string) string {
+				return runbook + backendBuildCommand() + "\n"
+			},
+			"reviewed backend build",
+		)
+		appendMutation(
+			"missing cutover evidence directory preparation",
+			removeCommand(prepareEvidenceDirectoryCommand()),
+			"cutover evidence directory preparation",
+		)
+		for _, directory := range []string{"before", "after"} {
+			directory := directory
+			appendMutation(
+				"missing "+directory+" evidence directory preparation",
+				func(runbook string) string {
+					return strings.Replace(
+						runbook,
+						prepareEvidenceDirectoryCommand(),
+						strings.Replace(prepareEvidenceDirectoryCommand(), " "+directory, "", 1),
+						1,
+					)
+				},
+				"cutover evidence directory preparation",
+			)
+		}
+		appendMutation(
+			"cutover evidence directory prepared after write",
+			func(runbook string) string {
+				return swapRunbookLines(runbook, prepareEvidenceDirectoryCommand(), writeBackendImageNameCommand())
+			},
+			"must be prepared before evidence-file writes",
+		)
+		appendMutation(
+			"missing reviewed backend image name write",
+			removeCommand(writeBackendImageNameCommand()),
+			"reviewed backend image name write",
+		)
+		appendMutation(
+			"wrong reviewed backend image tag",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					writeBackendImageNameCommand(),
+					strings.Replace(writeBackendImageNameCommand(), reviewedBackendImage, "other-backend", 1),
+					1,
+				)
+			},
+			"reviewed backend image name write",
+		)
+		appendMutation(
+			"missing exact rendered backend image name",
+			removeCommand(assertBackendImageNameCommand()),
+			"exact rendered backend image name assertion",
+		)
+		appendMutation(
+			"wrong exact rendered backend image name",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					assertBackendImageNameCommand(),
+					strings.Replace(assertBackendImageNameCommand(), reviewedBackendImage, "other-backend", 1),
+					1,
+				)
+			},
+			"exact rendered backend image name assertion",
+		)
+		appendMutation(
+			"missing rendered backend image membership",
+			removeCommand(assertRenderedBackendImageMembershipCommand()),
+			"rendered backend image membership assertion",
+		)
+		for _, count := range []string{"0", "2"} {
+			count := count
+			appendMutation(
+				"rendered backend image membership count "+count,
+				func(runbook string) string {
+					return strings.Replace(
+						runbook,
+						assertRenderedBackendImageMembershipCommand(),
+						strings.Replace(assertRenderedBackendImageMembershipCommand(), `= "1"`, `= "`+count+`"`, 1),
+						1,
+					)
+				},
+				"rendered backend image membership assertion",
+			)
+		}
+		appendMutation(
+			"nullable JSON backend image resolution",
+			func(runbook string) string {
+				return runbook + composePrefix() +
+					` config --format json | jq -er '.services.backend.image' > ` + backendImageNamePath + "\n"
+			},
+			"JSON backend image-field resolution is forbidden",
+		)
+		appendMutation(
+			"Compose images q backend lookup",
+			func(runbook string) string {
+				return runbook + `BACKEND_IMAGE_ID="$(docker image inspect "$(` + composePrefix() +
+					` images -q backend)" --format '{{.Id}}')"` + "\n"
+			},
+			"Compose images -q backend lookup is forbidden",
+		)
+		appendMutation(
+			"missing backend image capture",
+			removeCommand(captureBackendImageIDCommand()),
+			"backend image ID capture",
+		)
+		appendMutation(
+			"missing sha256 image assertion",
+			removeCommand(assertBackendImageIDSHACommand()),
+			"sha256 backend image ID assertion",
+		)
+		appendMutation(
+			"seed start may rebuild",
+			func(runbook string) string {
+				return strings.Replace(runbook, " --no-build --pull never backend nats", " --pull never backend nats", 1)
+			},
+			"exact seed-enabled start",
+		)
+		appendMutation(
+			"restart may pull",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					" --force-recreate --no-build --pull never backend nats",
+					" --force-recreate --no-build --pull always backend nats",
+					1,
+				)
+			},
+			"exact all-false restart",
+		)
+		appendMutation(
+			"missing local image assertion",
+			removeCommand(assertLocalImageIDCommand()),
+			"local backend image ID assertion",
+		)
+		appendMutation(
+			"missing container image assertion",
+			removeCommand(assertContainerImageIDCommand()),
+			"started backend container image ID assertion",
+		)
+		appendMutation(
+			"missing running writer assignment",
+			removeCommand(writerQueryCommand()),
+			"running writer-services assignment",
+		)
+		appendMutation(
+			"writer command failure masked",
+			func(runbook string) string {
+				return strings.Replace(runbook, writerQueryCommand(), writerQueryCommand()+" || true", 1)
+			},
+			"running writer-services assignment",
+		)
+		appendMutation(
+			"missing Compose ps all",
+			func(runbook string) string {
+				return strings.Replace(runbook, " ps --all -q backend nats", " ps -q backend nats", 1)
+			},
+			"all backend+nats container IDs assignment",
+		)
+		appendMutation(
+			"missing container IDs assignment",
+			removeCommand(containerIDsQueryCommand()),
+			"all backend+nats container IDs assignment",
+		)
+		appendMutation(
+			"container query failure masked",
+			func(runbook string) string {
+				return strings.Replace(runbook, containerIDsQueryCommand(), containerIDsQueryCommand()+" || true", 1)
+			},
+			"all backend+nats container IDs assignment",
+		)
+		appendMutation(
+			"missing graph-volume attachments assignment",
+			removeCommand(volumeAttachmentsQueryCommand()),
+			"graph-volume attachments assignment",
+		)
+
+		entityWorkflow := captureWorkflow("before", "entities.normalized.json")
+		relationshipWorkflow := captureWorkflow("before", "relationships.normalized.json")
+		appendMutation(
+			"pre-deletion pipefail removed",
+			func(runbook string) string {
+				return strings.Replace(runbook, entityWorkflow[0], "set -eu", 1)
+			},
+			"fail-fast shell mode",
+		)
+		appendMutation(
+			"wrong ENTITY_STATES inventory bucket",
+			func(runbook string) string {
+				return strings.Replace(runbook, "kv ls ENTITY_STATES", "kv ls OTHER_STATES", 1)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"ENTITY_STATES get is not raw",
+			func(runbook string) string {
+				return strings.Replace(runbook, ` "$entity_id" --raw`, ` "$entity_id"`, 1)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"minimal EntityState shape accepted",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					entityStateGuard(true),
+					`((type == "object") and (.id == $entity_id) and (.triples | type == "array"))`,
+					1,
+				)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"entity capture projects away triples",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					`then map(.updated_at = "<normalized>"`,
+					`then map({id} | .updated_at = "<normalized>"`,
+					1,
+				)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"recursive walk normalization",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					`map(.updated_at = "<normalized>" | .triples |= map(.timestamp = "<normalized>"))`,
+					`map(walk(if ((type == "object") and has("timestamp")) then .timestamp = "<normalized>" else . end))`,
+					1,
+				)
+			},
+			"recursive walk normalization is forbidden",
+		)
+		appendMutation(
+			"nested semantic object timestamp normalized",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					`.triples |= map(.timestamp = "<normalized>")`,
+					`.triples |= map(.timestamp = "<normalized>" | if (.object | type == "object") then .object.timestamp = "<normalized>" else . end)`,
+					1,
+				)
+			},
+			"nested semantic object metadata normalization is forbidden",
+		)
+		appendMutation(
+			"entity capture deletes triples",
+			func(runbook string) string {
+				return strings.Replace(runbook, " | sort_by(.id) else", " | map(del(.triples)) | sort_by(.id) else", 1)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"entity capture silently falls back",
+			func(runbook string) string {
+				return strings.Replace(runbook, "then . else error(\"invalid ENTITY_STATES value\")", "then (. // {}) else error(\"invalid ENTITY_STATES value\")", 1)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"missing key to JSONL cardinality",
+			removeCommand(entityWorkflow[5]),
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"missing entity cardinality",
+			removeCommand(entityWorkflow[7]),
+			"reviewed evidence workflow command",
+		)
+		for _, phase := range []string{"before", "after"} {
+			phase := phase
+			appendMutation(
+				"missing non-empty "+phase+" entity IDs assertion",
+				removeCommand(captureWorkflow(phase, "entities.normalized.json")[2]),
+				"reviewed evidence workflow command",
+			)
+		}
+		appendMutation(
+			"missing EntityState ID uniqueness",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					" and (length == ([.[].id] | unique | length))",
+					"",
+					1,
+				)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"missing final EntityState expected count",
+			func(runbook string) string {
+				return strings.Replace(runbook, "(length == $expected) and ", "", 1)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"relationship pipeline loop",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					relationshipWorkflow[1],
+					"cat before/entity-ids.txt | "+strings.TrimSuffix(relationshipWorkflow[1], " < before/entity-ids.txt"),
+					1,
+				)
+			},
+			"pipeline-fed evidence loops",
+		)
+		appendMutation(
+			"relationship response is not fail closed",
+			func(runbook string) string {
+				return strings.Replace(runbook, " | jq -ce 'if ((.errors == null)", " | jq -c 'if ((.errors == null)", 1)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"missing relationship response cardinality",
+			removeCommand(relationshipWorkflow[2]),
+			"reviewed evidence workflow command",
+		)
+		for _, mutation := range []struct {
+			name string
+			old  string
+			new  string
+		}{
+			{"relationship slurp removed", "jq -sSe", "jq -Se"},
+			{"relationship merge removed", "[.[].data.relationships[]]", ".[0].data.relationships"},
+			{"relationship dedup removed", " | unique_by([.from,.predicate,.to])", ""},
+			{"relationship sort removed", " | sort_by(.from,.predicate,.to)", ""},
+		} {
+			mutation := mutation
+			appendMutation(
+				mutation.name,
+				func(runbook string) string {
+					return strings.Replace(
+						runbook,
+						relationshipWorkflow[3],
+						strings.Replace(relationshipWorkflow[3], mutation.old, mutation.new, 1),
+						1,
+					)
+				},
+				"reviewed evidence workflow command",
+			)
+		}
+		appendMutation(
+			"quest projection drops datatype",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					captureCommand("before", "quest-status.normalized.json"),
+					strings.Replace(captureCommand("before", "quest-status.normalized.json"), ",datatype:.datatype", "", 1),
+					1,
+				)
+			},
+			"reviewed evidence workflow command",
+		)
+		appendMutation(
+			"DAG projection drops datatype",
+			func(runbook string) string {
+				return strings.Replace(
+					runbook,
+					captureCommand("before", "dag-projection.normalized.json"),
+					strings.Replace(captureCommand("before", "dag-projection.normalized.json"), ",datatype:.datatype", "", 1),
+					1,
+				)
+			},
+			"reviewed evidence workflow command",
+		)
 
 		for _, mutation := range mutations {
 			mutation := mutation
@@ -621,7 +1023,8 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 		"seed exactly once":            "Seed canonical state exactly once.",
 		"same reviewed binary":         "restart the same reviewed binary",
 		"no-intervening-write rule":    "No intervening writes are permitted.",
-		"normalization allowlist":      "Normalization removes only observation timestamps, KV revisions, and readiness watermarks.",
+		"normalization allowlist":      "Normalization changes only top-level EntityState updated_at and each triple timestamp.",
+		"nested metadata preservation": "Nested semantic object timestamp, revision, and readiness keys are preserved.",
 		"preserved replay fields":      "entity IDs, predicates, object values, datatypes, cardinality, relationship targets, quest status, DAG dependencies, and DAG outputs",
 		"retained evidence":            "Retain the evidence",
 		"reported final state":         "Report the final environment state",
@@ -630,8 +1033,11 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 		"protected embedding cache":    "`semembed-cache`",
 		"protected workspaces":         "`workspaces`",
 	}
+	for _, service := range protectedServices {
+		requiredFragments["protected SemSource service "+service] = "`" + service + "`"
+	}
 	for label, fragment := range requiredFragments {
-		if !strings.Contains(runbook, fragment) {
+		if !containsWhitespaceNormalized(runbook, fragment) {
 			violations = append(violations, label+" is missing")
 		}
 	}
@@ -659,10 +1065,28 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 			!strings.Contains(command, "--project-name "+composeProject) {
 			violations = append(violations, "Compose project is missing or inconsistent: "+command)
 		}
+		if strings.Contains(command, " images -q backend") {
+			violations = append(violations, "Compose images -q backend lookup is forbidden")
+		}
+		if strings.Contains(command, "config --format json") &&
+			strings.Contains(command, ".services.backend.image") {
+			violations = append(violations, "JSON backend image-field resolution is forbidden")
+		}
+		if strings.Contains(command, "walk(") {
+			violations = append(violations, "recursive walk normalization is forbidden")
+		}
+		if strings.Contains(command, ".object.timestamp") {
+			violations = append(violations, "nested semantic object metadata normalization is forbidden")
+		}
 		if strings.Contains(lower, "docker compose") &&
 			strings.Contains(lower, " down") &&
 			(strings.Contains(lower, " -v") || strings.Contains(lower, " --volumes")) {
 			violations = append(violations, "broad docker compose volume teardown is forbidden")
+		}
+		if strings.Contains(lower, "docker compose") &&
+			strings.Contains(lower, " rm ") &&
+			(strings.Contains(lower, " -v") || strings.Contains(lower, " --volumes")) {
+			violations = append(violations, "container removal must not remove volumes")
 		}
 		if strings.Contains(lower, "docker volume prune") {
 			violations = append(violations, "unscoped docker volume prune is forbidden")
@@ -672,6 +1096,14 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 		}
 		if isNATSDestructiveCommand(lower) {
 			violations = append(violations, "NATS bucket or stream deletion is forbidden")
+		}
+		if strings.Contains(lower, "docker compose") &&
+			(strings.Contains(lower, " stop ") || strings.Contains(lower, " rm ")) {
+			for _, service := range protectedServices {
+				if strings.Contains(" "+lower+" ", " "+service+" ") {
+					violations = append(violations, "protected SemSource service in destructive command: "+service)
+				}
+			}
 		}
 		if strings.HasPrefix(command, "docker volume rm ") {
 			deletionCount++
@@ -713,16 +1145,21 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 			fmt.Sprintf("seed-enabled start count = %d, want 1", len(seedIndexes)),
 		)
 	}
+	if got := len(exactCommandIndexes(commands, seedEnabledCommand())); got != 1 {
+		violations = append(violations, fmt.Sprintf("exact seed-enabled start count = %d, want 1", got))
+	}
 	if len(restartIndexes) != 1 {
 		violations = append(
 			violations,
 			fmt.Sprintf("all-false restart count = %d, want 1; restart does not set every seed flag false", len(restartIndexes)),
 		)
 	}
-	if strings.Count(runbook, writerProofCommand()) != 1 {
-		violations = append(violations, "empty stopped-writer assertion is missing")
+	if got := len(exactCommandIndexes(commands, restartWithoutSeedsCommand())); got != 1 {
+		violations = append(violations, fmt.Sprintf("exact all-false restart count = %d, want 1", got))
 	}
+
 	stopIndexes := exactCommandIndexes(commands, backendStopCommand())
+	writerQueryIndexes := exactCommandIndexes(commands, writerQueryCommand())
 	writerIndexes := exactCommandIndexes(commands, writerProofCommand())
 	if len(stopIndexes) != 1 {
 		violations = append(
@@ -730,22 +1167,73 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 			fmt.Sprintf("backend stop count = %d, want 1", len(stopIndexes)),
 		)
 	}
-	if len(stopIndexes) == 1 && len(writerIndexes) == 1 &&
-		writerIndexes[0] != stopIndexes[0]+1 {
-		violations = append(violations, "backend stop must be immediately followed by empty running-services assertion")
+	if len(writerIndexes) != 1 {
+		violations = append(violations, "empty stopped-writer assertion is missing or duplicated")
 	}
-	if strings.Count(runbook, natsContextSaveCommand()) != 1 ||
-		strings.Count(runbook, natsContextSelectCommand()) != 1 {
-		violations = append(violations, "NATS context creation and selection are incomplete")
+	if len(stopIndexes) == 1 && len(writerQueryIndexes) == 1 && len(writerIndexes) == 1 &&
+		(writerQueryIndexes[0] != stopIndexes[0]+1 || writerIndexes[0] != writerQueryIndexes[0]+1) {
+		violations = append(violations, "backend stop must be followed by fail-fast writer query and empty assertion")
 	}
-	if strings.Count(runbook, natsContextVerifyCommand()) != 1 {
-		violations = append(violations, "NATS context server verification is missing")
+
+	exactLifecycleCommands := []struct {
+		command string
+		label   string
+		count   int
+	}{
+		{shellSafetyCommand(), "fail-fast shell mode", 3},
+		{natsContextSaveCommand(), "NATS context creation", 1},
+		{natsContextSelectCommand(), "NATS context selection", 1},
+		{natsContextVerifyCommand(), "NATS context server verification", 1},
+		{natsCLIVersionCommand(), "pinned NATS CLI version assertion", 1},
+		{composeProjectVerifyCommand(), "Compose project rendered identity verification", 1},
+		{backendBuildCommand(), "reviewed backend build", 1},
+		{prepareEvidenceDirectoryCommand(), "cutover evidence directory preparation", 1},
+		{writeBackendImageNameCommand(), "reviewed backend image name write", 1},
+		{assertBackendImageNameCommand(), "exact rendered backend image name assertion", 1},
+		{assertRenderedBackendImageMembershipCommand(), "rendered backend image membership assertion", 1},
+		{captureBackendImageIDCommand(), "backend image ID capture", 1},
+		{assertBackendImageIDSHACommand(), "sha256 backend image ID assertion", 1},
+		{writerQueryCommand(), "running writer-services assignment", 1},
+		{removeStoppedContainersCommand(), "stopped backend+nats container removal", 1},
+		{containerIDsQueryCommand(), "all backend+nats container IDs assignment", 1},
+		{emptyContainerIDsCommand(), "empty backend+nats container ID assertion", 1},
+		{volumeAttachmentsQueryCommand(), "graph-volume attachments assignment", 1},
+		{zeroVolumeAttachmentsCommand(), "zero graph-volume attachment assertion", 1},
+		{engineVolumeVerifyCommand(), "Compose project volume identity verification", 1},
+		{volumeProjectLabelCommand(), "Compose project volume label assertion", 1},
+		{volumeLogicalLabelCommand(), "Compose logical-volume label assertion", 1},
+		{assertLocalImageIDCommand(), "local backend image ID assertion", 4},
+		{assertContainerImageIDCommand(), "started backend container image ID assertion", 2},
 	}
-	if strings.Count(runbook, composeProjectVerifyCommand()) != 1 {
-		violations = append(violations, "Compose project rendered identity verification is missing")
+	for _, contract := range exactLifecycleCommands {
+		got := len(exactCommandIndexes(commands, contract.command))
+		if got != contract.count {
+			violations = append(
+				violations,
+				fmt.Sprintf("%s count = %d, want %d", contract.label, got, contract.count),
+			)
+		}
 	}
-	if strings.Count(runbook, engineVolumeVerifyCommand()) != 1 {
-		violations = append(violations, "Compose project volume identity verification is missing")
+	shellSafetyIndexes := exactCommandIndexes(commands, shellSafetyCommand())
+	if len(shellSafetyIndexes) == 3 && shellSafetyIndexes[0] != 0 {
+		violations = append(violations, "fail-fast shell mode must precede pre-deletion lifecycle checks")
+	}
+	evidenceDirectoryIndexes := exactCommandIndexes(commands, prepareEvidenceDirectoryCommand())
+	backendImageWriteIndexes := exactCommandIndexes(commands, writeBackendImageNameCommand())
+	if len(evidenceDirectoryIndexes) == 1 && len(backendImageWriteIndexes) == 1 &&
+		evidenceDirectoryIndexes[0] >= backendImageWriteIndexes[0] {
+		violations = append(violations, "cutover evidence directory must be prepared before evidence-file writes")
+	}
+	natsVersionIndexes := exactCommandIndexes(commands, natsCLIVersionCommand())
+	if len(natsVersionIndexes) == 1 {
+		for index, command := range commands {
+			if command != natsCLIVersionCommand() &&
+				isNATSCLIInvocation(command) &&
+				index < natsVersionIndexes[0] {
+				violations = append(violations, "pinned NATS CLI version assertion must precede every other NATS invocation")
+				break
+			}
+		}
 	}
 
 	parityFiles := []string{
@@ -758,6 +1246,15 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 	afterIndexes := make([]int, 0, len(parityFiles))
 	diffIndexes := make([]int, 0, len(parityFiles))
 	deletionIndexes := exactCommandIndexes(commands, deletionCommand())
+	workflowCounts := map[string]int{}
+	for _, phase := range []string{"before", "after"} {
+		for _, name := range parityFiles {
+			for _, command := range captureWorkflow(phase, name) {
+				workflowCounts[command]++
+			}
+		}
+	}
+	workflowCounts[shellSafetyCommand()]++
 	for _, name := range parityFiles {
 		beforePath := "before/" + name
 		afterPath := "after/" + name
@@ -781,6 +1278,32 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 			diffIndexes = append(diffIndexes, diff[0])
 		}
 	}
+	for command, want := range workflowCounts {
+		if got := len(exactCommandIndexes(commands, command)); got != want {
+			violations = append(
+				violations,
+				fmt.Sprintf("reviewed evidence workflow command count = %d, want %d: %s", got, want, command),
+			)
+		}
+	}
+	if strings.Contains(runbook, "| while ") {
+		violations = append(violations, "pipeline-fed evidence loops are forbidden")
+	}
+
+	localImageIndexes := exactCommandIndexes(commands, assertLocalImageIDCommand())
+	containerImageIndexes := exactCommandIndexes(commands, assertContainerImageIDCommand())
+	if len(seedIndexes) == 1 && len(restartIndexes) == 1 &&
+		len(localImageIndexes) == 4 && len(containerImageIndexes) == 2 {
+		if localImageIndexes[0]+1 != seedIndexes[0] ||
+			seedIndexes[0]+1 != localImageIndexes[1] ||
+			localImageIndexes[1]+1 != containerImageIndexes[0] ||
+			localImageIndexes[2]+1 != restartIndexes[0] ||
+			restartIndexes[0]+1 != localImageIndexes[3] ||
+			localImageIndexes[3]+1 != containerImageIndexes[1] {
+			violations = append(violations, "local backend image assertions must bracket both starts before container image checks")
+		}
+	}
+
 	if len(deletionIndexes) == 1 && len(seedIndexes) == 1 && len(readinessIndexes) == 2 &&
 		len(beforeIndexes) == len(parityFiles) && len(restartIndexes) == 1 &&
 		len(afterIndexes) == len(parityFiles) && len(diffIndexes) == len(parityFiles) {
@@ -802,20 +1325,49 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 	if len(deletionIndexes) == 1 {
 		preflightCommands := []string{
 			composeProjectVerifyCommand(),
-			engineVolumeVerifyCommand(),
+			natsCLIVersionCommand(),
 			natsContextSaveCommand(),
 			natsContextSelectCommand(),
 			natsContextVerifyCommand(),
+			prepareEvidenceDirectoryCommand(),
+			writeBackendImageNameCommand(),
+			assertBackendImageNameCommand(),
+			assertRenderedBackendImageMembershipCommand(),
+			backendBuildCommand(),
+			captureBackendImageIDCommand(),
+			assertBackendImageIDSHACommand(),
+			backendStopCommand(),
+			writerQueryCommand(),
 			writerProofCommand(),
+			removeStoppedContainersCommand(),
+			containerIDsQueryCommand(),
+			emptyContainerIDsCommand(),
+			volumeAttachmentsQueryCommand(),
+			zeroVolumeAttachmentsCommand(),
+			engineVolumeVerifyCommand(),
+			volumeProjectLabelCommand(),
+			volumeLogicalLabelCommand(),
 		}
 		previous := -1
 		for _, command := range preflightCommands {
 			indexes := exactCommandIndexes(commands, command)
 			if len(indexes) != 1 || indexes[0] <= previous || indexes[0] >= deletionIndexes[0] {
-				violations = append(violations, "project, volume, context, and stopped-writer checks must precede deletion")
+				violations = append(violations, "reviewed build, context, stop, removal, and volume checks must precede deletion")
 				break
 			}
 			previous = indexes[0]
+		}
+	}
+	if len(commit) == 2 {
+		commitAssertion := `test "$(git rev-parse HEAD)" = "` + commit[1] + `"`
+		moduleAssertion := `test "$(go list -m github.com/c360studio/semstreams)" = "` + reviewedSemStreamsPin + `"`
+		buildIndexes := exactCommandIndexes(commands, backendBuildCommand())
+		commitIndexes := exactCommandIndexes(commands, commitAssertion)
+		moduleIndexes := exactCommandIndexes(commands, moduleAssertion)
+		if len(buildIndexes) == 1 &&
+			(len(commitIndexes) != 1 || len(moduleIndexes) != 1 ||
+				commitIndexes[0] >= buildIndexes[0] || moduleIndexes[0] >= buildIndexes[0]) {
+			violations = append(violations, "backend must be built once after reviewed commit and module assertions")
 		}
 	}
 	lastBefore := captureCommand("before", "dag-projection.normalized.json")
@@ -838,6 +1390,7 @@ func validRunbookContractFixture(topology cutoverTopology) string {
 		"# Fresh-volume replay",
 		"",
 		"Reviewed commit: `" + commit + "`",
+		shellSafetyCommand(),
 		`test "$(git rev-parse HEAD)" = "` + commit + `"`,
 		"Reviewed module: `" + reviewedSemStreamsPin + "`",
 		"go list -m github.com/c360studio/semstreams",
@@ -851,42 +1404,70 @@ func validRunbookContractFixture(topology cutoverTopology) string {
 		"Reviewed engine volume: `" + engineGraphVolume + "`",
 		"Development/test NATS URL: `" + developmentNATSURL + "`",
 		"Development/test NATS context: `" + developmentNATSContext + "`",
-		"Protected: `nats-local-semsource-data`, `nats-semsource-data`, `semembed-cache`, and `workspaces`.",
+		"Protected services: `local-semsource`, `nats-local-semsource`, `nats-semsource`, and `semsource`.",
+		"Protected volumes: `nats-local-semsource-data`, `nats-semsource-data`, `semembed-cache`, and `workspaces`.",
 		fmt.Sprintf("Candidate buckets (%d): %s.", len(buckets), strings.Join(buckets, ", ")),
 		composePrefix() + " config",
 		composePrefix() + " config --volumes",
 		composeProjectVerifyCommand(),
-		engineVolumeVerifyCommand(),
+		natsCLIVersionCommand(),
 		natsContextSaveCommand(),
 		natsContextSelectCommand(),
 		natsContextVerifyCommand(),
+		prepareEvidenceDirectoryCommand(),
+		writeBackendImageNameCommand(),
+		assertBackendImageNameCommand(),
+		assertRenderedBackendImageMembershipCommand(),
+		backendBuildCommand(),
+		captureBackendImageIDCommand(),
+		assertBackendImageIDSHACommand(),
 		"The operator reviews and copies the literal target. Any mismatch must abort before deletion.",
 		backendStopCommand(),
+		writerQueryCommand(),
 		writerProofCommand(),
+		removeStoppedContainersCommand(),
+		containerIDsQueryCommand(),
+		emptyContainerIDsCommand(),
+		volumeAttachmentsQueryCommand(),
+		zeroVolumeAttachmentsCommand(),
+		engineVolumeVerifyCommand(),
+		volumeProjectLabelCommand(),
+		volumeLogicalLabelCommand(),
 		deletionCommand(),
 		"Seed canonical state exactly once.",
+		assertLocalImageIDCommand(),
 		seedEnabledCommand(),
+		assertLocalImageIDCommand(),
+		assertContainerImageIDCommand(),
 		readinessCommand(),
-		captureCommand("before", "entities.normalized.json"),
-		captureCommand("before", "relationships.normalized.json"),
-		captureCommand("before", "quest-status.normalized.json"),
-		captureCommand("before", "dag-projection.normalized.json"),
+	}
+	for _, contract := range evidenceContracts() {
+		lines = append(lines, captureWorkflow("before", contract.file)...)
+	}
+	lines = append(
+		lines,
 		"No intervening writes are permitted.",
 		"Now restart the same reviewed binary.",
+		assertLocalImageIDCommand(),
 		restartWithoutSeedsCommand(),
+		assertLocalImageIDCommand(),
+		assertContainerImageIDCommand(),
 		readinessCommand(),
-		captureCommand("after", "entities.normalized.json"),
-		captureCommand("after", "relationships.normalized.json"),
-		captureCommand("after", "quest-status.normalized.json"),
-		captureCommand("after", "dag-projection.normalized.json"),
+	)
+	for _, contract := range evidenceContracts() {
+		lines = append(lines, captureWorkflow("after", contract.file)...)
+	}
+	lines = append(
+		lines,
 		"diff --no-index -- before/entities.normalized.json after/entities.normalized.json",
 		"diff --no-index -- before/relationships.normalized.json after/relationships.normalized.json",
 		"diff --no-index -- before/quest-status.normalized.json after/quest-status.normalized.json",
 		"diff --no-index -- before/dag-projection.normalized.json after/dag-projection.normalized.json",
-		"Normalization removes only observation timestamps, KV revisions, and readiness watermarks.",
+		"Normalization changes only top-level EntityState updated_at and each triple timestamp.",
+		"Nested semantic object timestamp, revision, and readiness keys are preserved.",
 		"Preserve entity IDs, predicates, object values, datatypes, cardinality, relationship targets, quest status, DAG dependencies, and DAG outputs.",
 		"Retain the evidence. Report the final environment state.",
-	}
+	)
 	return strings.Join(lines, "\n") + "\n"
 }
 
@@ -940,12 +1521,92 @@ func natsContextVerifyCommand() string {
 		` --json | jq -r '.server')" = "` + developmentNATSURL + `"`
 }
 
+func shellSafetyCommand() string {
+	return "set -euo pipefail"
+}
+
+func writerQueryCommand() string {
+	return `RUNNING_WRITER_SERVICES="$(` + composePrefix() + ` ps --status running --services backend nats)"`
+}
+
 func writerProofCommand() string {
-	return `test -z "$(` + composePrefix() + ` ps --status running --services backend)"`
+	return `test -z "$RUNNING_WRITER_SERVICES"`
 }
 
 func backendStopCommand() string {
-	return composePrefix() + " stop backend"
+	return composePrefix() + " stop backend nats"
+}
+
+func removeStoppedContainersCommand() string {
+	return composePrefix() + " rm -f backend nats"
+}
+
+func containerIDsQueryCommand() string {
+	return `BACKEND_NATS_CONTAINER_IDS="$(` + composePrefix() + ` ps --all -q backend nats)"`
+}
+
+func emptyContainerIDsCommand() string {
+	return `test -z "$BACKEND_NATS_CONTAINER_IDS"`
+}
+
+func volumeAttachmentsQueryCommand() string {
+	return `GRAPH_VOLUME_ATTACHMENTS="$(docker ps --all --quiet --filter volume=` + engineGraphVolume + `)"`
+}
+
+func zeroVolumeAttachmentsCommand() string {
+	return `test -z "$GRAPH_VOLUME_ATTACHMENTS"`
+}
+
+func volumeProjectLabelCommand() string {
+	return `test "$(docker volume inspect ` + engineGraphVolume +
+		` --format '{{ index .Labels "com.docker.compose.project" }}')" = "` + composeProject + `"`
+}
+
+func volumeLogicalLabelCommand() string {
+	return `test "$(docker volume inspect ` + engineGraphVolume +
+		` --format '{{ index .Labels "com.docker.compose.volume" }}')" = "` + graphVolume + `"`
+}
+
+func natsCLIVersionCommand() string {
+	return `test "$(nats --version)" = "` + reviewedNATSCLIVersion + `"`
+}
+
+func backendBuildCommand() string {
+	return composePrefix() + " build backend"
+}
+
+func prepareEvidenceDirectoryCommand() string {
+	return "mkdir -p cutover-evidence before after"
+}
+
+func writeBackendImageNameCommand() string {
+	return `printf '%s\n' '` + reviewedBackendImage + `' > ` + backendImageNamePath
+}
+
+func assertBackendImageNameCommand() string {
+	return `test "$(cat ` + backendImageNamePath + `)" = "` + reviewedBackendImage + `"`
+}
+
+func assertRenderedBackendImageMembershipCommand() string {
+	return `test "$(` + composePrefix() + ` config --images | grep -Fxc "$(cat ` +
+		backendImageNamePath + `)")" = "1"`
+}
+
+func captureBackendImageIDCommand() string {
+	return `BACKEND_IMAGE_ID="$(docker image inspect "` + reviewedBackendImage + `" --format '{{.Id}}')"`
+}
+
+func assertBackendImageIDSHACommand() string {
+	return `case "$BACKEND_IMAGE_ID" in sha256:*) ;; *) exit 1 ;; esac`
+}
+
+func assertLocalImageIDCommand() string {
+	return `test "$(docker image inspect "` + reviewedBackendImage + `" --format '{{.Id}}')" = "$BACKEND_IMAGE_ID"`
+}
+
+func assertContainerImageIDCommand() string {
+	return `test "$(docker inspect "$(` + composePrefix() +
+		` ps -q backend)" --format '{{.Image}}')" = "$BACKEND_IMAGE_ID"`
 }
 
 func deletionCommand() string {
@@ -953,12 +1614,13 @@ func deletionCommand() string {
 }
 
 func seedEnabledCommand() string {
-	return "SEED_E2E=false SEED_AGENTS=true SEED_PROS=false " + composePrefix() + " up -d backend"
+	return "SEED_E2E=false SEED_AGENTS=true SEED_PROS=false " +
+		composePrefix() + " up -d --no-build --pull never backend nats"
 }
 
 func restartWithoutSeedsCommand() string {
 	return "SEED_E2E=false SEED_AGENTS=false SEED_PROS=false " +
-		composePrefix() + " up -d --force-recreate backend"
+		composePrefix() + " up -d --force-recreate --no-build --pull never backend nats"
 }
 
 func readinessCommand() string {
@@ -970,78 +1632,114 @@ func readinessCommand() string {
 }
 
 func captureCommand(phase, name string) string {
-	for _, contract := range evidenceContracts() {
-		if contract.file == name {
-			return captureCommandForContract(phase, name, contract)
-		}
+	workflow := captureWorkflow(phase, name)
+	if len(workflow) == 0 {
+		return ""
 	}
-	return ""
+	return workflow[len(workflow)-1]
 }
 
 func crossLabelCaptureCommand(phase string, target, source evidenceContract) string {
-	return captureCommandForContract(phase, target.file, source)
+	command := captureCommand(phase, source.file)
+	return strings.Replace(command, phase+"/"+source.file, phase+"/"+target.file, 1)
 }
 
 func replaceBeforeCapture(runbook string, contract evidenceContract, replacement string) string {
 	return strings.Replace(runbook, captureCommand("before", contract.file), replacement, 1)
 }
 
-func evidenceDataField(contract evidenceContract) string {
-	if contract.label == "relationships" {
-		return ".data.relationships"
-	}
-	return ".data.entitiesByPrefix"
-}
-
-func evidenceDataGuard(contract evidenceContract) string {
-	return "(" + evidenceDataField(contract) + ` | type == "array")`
-}
-
-func captureCommandForContract(phase, outputFile string, contract evidenceContract) string {
-	output := phase + "/" + outputFile
-	if contract.label == "relationships" {
-		return `jq -r '.[].id' ` + phase + `/entities.normalized.json | ` +
-			`while IFS= read -r entity_id; do ` +
-			`curl --fail --silent --show-error --request POST ` +
-			`--header 'Content-Type: application/json' ` +
-			`--data "$(jq -nc --arg entityId "$entity_id" --arg query '` + contract.query +
-			`' '{query:$query,variables:{entityId:$entityId}}')" ` +
-			`http://localhost:8081/graph-gateway/graphql; done | ` +
-			`jq -sSe '` + contract.normalizer + `' > ` + output
-	}
-	return `curl --fail --silent --show-error --request POST ` +
-		`--header 'Content-Type: application/json' ` +
-		`--data '{"query":"` + strings.ReplaceAll(contract.query, `"`, `\"`) + `"}' ` +
-		`http://localhost:8081/graph-gateway/graphql | jq -Se '` + contract.normalizer + `' > ` + output
-}
-
 func evidenceContracts() []evidenceContract {
 	return []evidenceContract{
 		{
-			label:      "entities",
-			file:       "entities.normalized.json",
-			query:      `query EntitiesEvidence { entitiesByPrefix(prefix: "local.dev.game.board1", limit: 10000) { id triples { subject predicate object } } }`,
-			normalizer: `if ((.errors == null) and (.data.entitiesByPrefix | type == "array")) then [.data.entitiesByPrefix[] | {id,triples:(.triples | sort_by(.subject,.predicate,.object))}] | sort_by(.id) else error("invalid entities GraphQL envelope") end`,
+			label: "entities",
+			file:  "entities.normalized.json",
 		},
 		{
-			label:      "relationships",
-			file:       "relationships.normalized.json",
-			query:      `query RelationshipsEvidence($entityId: String!) { relationships(entityId: $entityId) { from to predicate } }`,
-			normalizer: `if all(.[]; ((.errors == null) and (.data.relationships | type == "array"))) then [.[].data.relationships[]] | unique_by([.from,.predicate,.to]) | sort_by(.from,.predicate,.to) else error("invalid relationships GraphQL envelope") end`,
+			label: "relationships",
+			file:  "relationships.normalized.json",
 		},
 		{
-			label:      "quest-status",
-			file:       "quest-status.normalized.json",
-			query:      `query QuestStatusEvidence { entitiesByPrefix(prefix: "local.dev.game.board1.quest", limit: 10000) { id triples { subject predicate object } } }`,
-			normalizer: `if ((.errors == null) and (.data.entitiesByPrefix | type == "array")) then [.data.entitiesByPrefix[] as $entity | $entity.triples[] | select(.predicate == "quest.status.state") | {id:$entity.id,status:.object}] | sort_by(.id) else error("invalid quest-status GraphQL envelope") end`,
+			label: "quest-status",
+			file:  "quest-status.normalized.json",
 		},
 		{
-			label:      "dag-projection",
-			file:       "dag-projection.normalized.json",
-			query:      `query DAGProjectionEvidence { entitiesByPrefix(prefix: "local.dev.game.board1.dagunit", limit: 10000) { id triples { subject predicate object } } }`,
-			normalizer: `if ((.errors == null) and (.data.entitiesByPrefix | type == "array")) then [.data.entitiesByPrefix[] as $entity | $entity.triples[] | select((.predicate | startswith("gateddag.unit.")) or (.predicate | startswith("questdag.unit."))) | {id:$entity.id,predicate,object}] | sort_by(.id,.predicate,.object) else error("invalid DAG projection GraphQL envelope") end`,
+			label: "dag-projection",
+			file:  "dag-projection.normalized.json",
 		},
 	}
+}
+
+func captureWorkflow(phase, name string) []string {
+	entityIDs := phase + "/entity-ids.txt"
+	rawEntities := phase + "/entities.raw.jsonl"
+	normalizedEntities := phase + "/entities.normalized.json"
+	relationshipResponses := phase + "/relationship-responses.jsonl"
+	keyedEntityGuard := entityStateGuard(true)
+	storedEntityGuard := entityStateGuard(false)
+	switch name {
+	case "entities.normalized.json":
+		return []string{
+			shellSafetyCommand(),
+			"nats --context " + developmentNATSContext + " kv ls ENTITY_STATES | LC_ALL=C sort > " + entityIDs,
+			"test -s " + entityIDs,
+			": > " + rawEntities,
+			`while IFS= read -r entity_id; do nats --context ` + developmentNATSContext +
+				` kv get ENTITY_STATES "$entity_id" --raw | jq -ce --arg entity_id "$entity_id" ` +
+				`'if ` + keyedEntityGuard + ` then . else error("invalid ENTITY_STATES value") end' >> ` +
+				rawEntities + `; done < ` + entityIDs,
+			`test "$(wc -l < ` + entityIDs + ` | tr -d ' ')" = "$(wc -l < ` + rawEntities + ` | tr -d ' ')"`,
+			`jq -sSe --argjson expected "$(wc -l < ` + entityIDs + ` | tr -d ' ')" ` +
+				`'if (length == $expected) and (length == ([.[].id] | unique | length)) and all(.[]; ` + storedEntityGuard +
+				`) then map(.updated_at = "<normalized>" | .triples |= map(.timestamp = "<normalized>")) | sort_by(.id) else error("invalid ENTITY_STATES JSONL") end' ` +
+				rawEntities + " > " + normalizedEntities,
+			`test "$(wc -l < ` + entityIDs + ` | tr -d ' ')" = "$(jq -r 'length' ` + normalizedEntities + `)"`,
+		}
+	case "relationships.normalized.json":
+		return []string{
+			": > " + relationshipResponses,
+			`while IFS= read -r entity_id; do curl --fail --silent --show-error --request POST ` +
+				`--header 'Content-Type: application/json' ` +
+				`--data "$(jq -nc --arg entityId "$entity_id" --arg query 'query RelationshipsEvidence($entityId: String!) { relationships(entityId: $entityId) { from to predicate } }' '{query:$query,variables:{entityId:$entityId}}')" ` +
+				`http://localhost:8081/graph-gateway/graphql | jq -ce 'if ((.errors == null) and (.data.relationships | type == "array")) then . else error("invalid relationships GraphQL envelope") end' >> ` +
+				relationshipResponses + `; done < ` + entityIDs,
+			`test "$(wc -l < ` + entityIDs + ` | tr -d ' ')" = "$(wc -l < ` + relationshipResponses + ` | tr -d ' ')"`,
+			`jq -sSe 'if all(.[]; ((.errors == null) and (.data.relationships | type == "array"))) then [.[].data.relationships[]] | unique_by([.from,.predicate,.to]) | sort_by(.from,.predicate,.to) else error("invalid relationships GraphQL envelopes") end' ` +
+				relationshipResponses + " > " + phase + "/relationships.normalized.json",
+		}
+	case "quest-status.normalized.json":
+		return []string{
+			`jq -Se 'if ((type == "array") and all(.[]; ((type == "object") and (.triples | type == "array")))) then [.[] as $entity | $entity.triples[] | select(.predicate == "quest.status.state") | {id:$entity.id,predicate:.predicate,object:.object,datatype:.datatype}] | sort_by(.id,.predicate,.object,.datatype) else error("invalid normalized entity corpus") end' ` +
+				normalizedEntities + " > " + phase + "/quest-status.normalized.json",
+		}
+	case "dag-projection.normalized.json":
+		return []string{
+			`jq -Se 'if ((type == "array") and all(.[]; ((type == "object") and (.triples | type == "array")))) then [.[] as $entity | $entity.triples[] | select((.predicate | startswith("gateddag.unit.")) or (.predicate | startswith("questdag.unit."))) | {id:$entity.id,predicate:.predicate,object:.object,datatype:.datatype}] | sort_by(.id,.predicate,.object,.datatype) else error("invalid normalized entity corpus") end' ` +
+				normalizedEntities + " > " + phase + "/dag-projection.normalized.json",
+		}
+	}
+	return nil
+}
+
+func entityStateGuard(matchKey bool) string {
+	idGuard := `(.id | type == "string")`
+	if matchKey {
+		idGuard += ` and (.id == $entity_id)`
+	}
+	return `(type == "object") and ` + idGuard +
+		` and (.message_type | type == "object")` +
+		` and (.message_type.domain | type == "string")` +
+		` and (.message_type.category | type == "string")` +
+		` and (.message_type.version | type == "string")` +
+		` and (.version | type == "number")` +
+		` and (.updated_at | type == "string")` +
+		` and (.triples | type == "array")` +
+		` and all(.triples[]; (type == "object")` +
+		` and (.subject | type == "string")` +
+		` and (.predicate | type == "string")` +
+		` and has("object")` +
+		` and (.source | type == "string")` +
+		` and (.timestamp | type == "string")` +
+		` and (.confidence | type == "number"))`
 }
 
 func isNATSDestructiveCommand(command string) bool {
@@ -1063,6 +1761,13 @@ func isNATSDestructiveCommand(command string) bool {
 		}
 	}
 	return false
+}
+
+func isNATSCLIInvocation(command string) bool {
+	command = strings.TrimSpace(command)
+	return strings.HasPrefix(command, "nats ") ||
+		strings.Contains(command, "$(nats ") ||
+		strings.Contains(command, " do nats ")
 }
 
 func exactCommandIndexes(commands []string, want string) []int {
@@ -1158,6 +1863,15 @@ func runbookCommandLines(runbook string) []string {
 		if strings.HasPrefix(line, "docker ") ||
 			strings.HasPrefix(line, "nats ") ||
 			strings.HasPrefix(line, "test ") ||
+			strings.HasPrefix(line, "set ") ||
+			strings.HasPrefix(line, ": ") ||
+			strings.HasPrefix(line, "while ") ||
+			strings.HasPrefix(line, "BACKEND_") ||
+			strings.HasPrefix(line, "RUNNING_") ||
+			strings.HasPrefix(line, "GRAPH_") ||
+			strings.HasPrefix(line, "case ") ||
+			strings.HasPrefix(line, "printf ") ||
+			strings.HasPrefix(line, "mkdir ") ||
 			strings.HasPrefix(line, "until ") ||
 			strings.HasPrefix(line, "SEED_") ||
 			strings.HasPrefix(line, "curl ") ||
@@ -1229,4 +1943,11 @@ func containsRunbookViolation(violations []string, fragment string) bool {
 		}
 	}
 	return false
+}
+
+func containsWhitespaceNormalized(document, fragment string) bool {
+	normalize := func(value string) string {
+		return strings.Join(strings.Fields(value), " ")
+	}
+	return strings.Contains(normalize(document), normalize(fragment))
 }

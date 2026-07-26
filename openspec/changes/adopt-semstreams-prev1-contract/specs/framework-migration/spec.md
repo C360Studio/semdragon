@@ -159,6 +159,18 @@ rendered configuration, fresh-state procedure, and verification results.
 - **AND** evidence is collected from one current head rather than inferred
   from earlier stacked pull requests
 
+#### Scenario: Seed and replay use one immutable backend image
+
+- **GIVEN** the exact reviewed commit and module pin have passed preflight
+- **WHEN** the backend image is prepared for the cutover procedure
+- **THEN** it is built exactly once and its immutable `sha256` image ID is
+  retained
+- **AND** both seed and replay starts disable image build and pull behavior
+- **AND** the local backend tag resolves to the retained ID before each start
+- **AND** the running backend container resolves to the retained ID after each
+  start
+- **AND** a missing or mismatched assertion aborts the procedure
+
 #### Scenario: Expected predicate findings block the dependency handoff
 
 - **GIVEN** the entity-ID audit reports `0/25`

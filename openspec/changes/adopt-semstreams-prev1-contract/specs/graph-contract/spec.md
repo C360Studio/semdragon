@@ -1301,6 +1301,19 @@ or an in-place beta-state rewriter.
 - **AND** the operator reviews and copies approved deletion targets into the
   destructive commands as literal values
 
+#### Scenario: The graph volume has no remaining container attachment
+
+- **GIVEN** the literal Semdragon graph volume has been approved
+- **WHEN** the runbook prepares that volume for deletion
+- **THEN** it stops and removes only the backend and Semdragon NATS containers
+- **AND** container removal does not use a volume-removal option
+- **AND** both containers are proved absent
+- **AND** a Docker attachment query for the literal graph volume returns zero
+  containers
+- **AND** the volume's Compose project and logical-volume labels match the
+  reviewed topology
+- **AND** SemSource services, containers, and volumes remain untouched
+
 #### Scenario: Destructive guidance fails closed
 
 - **WHEN** the environment, NATS context, rendered inventory, or literal target
@@ -1323,6 +1336,30 @@ or an in-place beta-state rewriter.
 - **AND** normalized entity, relationship, quest-status, and DAG projection
   evidence is captured before restart
 
+#### Scenario: Raw entity capture retains complete triple semantics
+
+- **GIVEN** the reviewed NATS CLI version and development context are asserted
+- **WHEN** entity evidence is captured from `ENTITY_STATES`
+- **THEN** the read-only key list is nonempty
+- **AND** every listed key returns exactly one raw `graph.EntityState` JSON
+  value
+- **AND** every response ID equals its KV key
+- **AND** key, response, and unique-entity counts are equal
+- **AND** normalization retains the complete entity and triple objects
+- **AND** triple `datatype`, source, confidence, context, expiry, and
+  cardinality are not discarded
+
+#### Scenario: Relationship iteration cannot accept a partial response set
+
+- **GIVEN** raw entity capture produced a reviewed entity set
+- **WHEN** relationship evidence is fetched for those entities
+- **THEN** the command block runs under `set -euo pipefail`
+- **AND** each entity produces one GraphQL response
+- **AND** every response has no GraphQL error and contains a relationship array
+- **AND** request, response, and captured-entity counts are equal
+- **AND** flattening, deduplication, and sorting occur only after those checks
+- **AND** any transport, envelope, or count failure aborts the capture
+
 #### Scenario: Restart replay parity
 
 - **GIVEN** canonical state was seeded once and graph readiness was reached
@@ -1340,7 +1377,9 @@ or an in-place beta-state rewriter.
 #### Scenario: Runbook topology and safety are stale-checked
 
 - **WHEN** a shipped configuration, Compose graph-volume name, seed flag,
-  readiness requirement, parity field, or destructive-safety clause drifts
+  container attachment, volume label, immutable image assertion, raw-state
+  count, relationship-response count, readiness requirement, parity field, or
+  destructive-safety clause drifts
 - **THEN** the issue #55 runbook contract fails
 - **AND** review is required before the runbook can be accepted
 - **AND** the contract remains test-only evidence rather than a runtime
