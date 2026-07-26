@@ -1231,6 +1231,45 @@ The architect approves the exact four mappings and blocks any broader Party
 readiness claim on issue #4 and SemStreams #313. Go review records **APPROVE**
 with no findings. Svelte review records **APPROVE** with no findings.
 
+### D28: Gate every pull-request base without granting publish authority
+
+Issue [#11](https://github.com/C360Studio/semdragon/issues/11), under tracking
+parent [#2](https://github.com/C360Studio/semdragon/issues/2), fixes the CI
+gap that left stacked pull requests without checks. The implementation PR
+stacks on base PR #51.
+
+The `CI` workflow runs its test and lint jobs for every `pull_request` base.
+It retains the `push` branch filter for `main` only and does not introduce
+`pull_request_target`. Pull-request code therefore executes only in the
+unprivileged pull-request context.
+
+Least privilege is explicit:
+
+- workflow-global permissions contain only `contents: read`;
+- only `build-and-push` receives `packages: write`;
+- `build-and-push` uses the exact guard
+  `github.event_name == 'push' && github.ref == 'refs/heads/main'`; and
+- test and lint jobs receive no secret, Docker login, image-build push, or
+  package-publication step.
+
+An `internal/cicontract/workflow_test.go` contract test drives the change
+RED-to-GREEN. It parses `.github/workflows/ci.yml` and asserts the trigger,
+permission, publish-guard, and unprivileged test/lint boundaries. It also
+rejects `pull_request_target`, a pull-request base filter, workflow-global
+`packages: write`, or any publish capability outside `build-and-push`.
+
+Static validation includes the focused contract test, `actionlint`, full Go
+race, vet, and build gates, and the diff check. Architect/security, Go, and
+technical-writer reviews are required. This repository-specific workflow
+correction exposes no missing SemStreams primitive and opens no upstream
+issue.
+
+The stacked implementation PR itself supplies the live acceptance proof.
+After publication against PR #51's non-main base, its test and lint checks must
+appear, `build-and-push` must be skipped, and no package or image may be
+published. That evidence cannot be recorded honestly before the PR exists, so
+task 2.28 remains unchecked until publication and inspection of its checks.
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

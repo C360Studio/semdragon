@@ -85,6 +85,61 @@ integration.
   technical-writer sign-off requests changes
 - **THEN** the pull request remains draft or blocked
 
+### Requirement: Stacked pull requests receive least-privilege CI
+
+Issue #11 SHALL run test and lint checks for every pull-request base while
+reserving image publication for pushes to `main`. Pull-request code SHALL NOT
+execute with package-write authority or through `pull_request_target`.
+
+#### Scenario: Every pull-request base receives checks
+
+- **WHEN** `.github/workflows/ci.yml` is evaluated
+- **THEN** `pull_request` has no branch-base filter
+- **AND** `push` remains filtered to `main` only
+- **AND** the workflow contains no `pull_request_target` trigger
+- **AND** test and lint jobs are eligible for a pull request targeting any base
+
+#### Scenario: Publish authority belongs only to the main push job
+
+- **WHEN** workflow and job permissions are inspected
+- **THEN** workflow-global permissions contain exactly `contents: read`
+- **AND** only `build-and-push` receives `packages: write`
+- **AND** `build-and-push` uses exactly
+  `github.event_name == 'push' && github.ref == 'refs/heads/main'`
+- **AND** no other job can publish a package or image
+
+#### Scenario: Pull-request test and lint jobs remain unprivileged
+
+- **WHEN** test and lint steps are inspected
+- **THEN** neither job references a secret
+- **AND** neither job performs a Docker login
+- **AND** neither job pushes an image or package
+- **AND** fork-originated pull requests retain read-only repository access
+
+#### Scenario: Workflow behavior is enforced as code
+
+- **WHEN** issue #11 implements the workflow change
+- **THEN** `internal/cicontract/workflow_test.go` first fails against the old
+  trigger and permission contract
+- **AND** it passes only after the trigger, permission, job, and exact guard
+  assertions are satisfied
+- **AND** `actionlint`, full race, vet, build, and diff gates pass
+
+#### Scenario: The stacked pull request supplies live evidence
+
+- **GIVEN** the issue #11 implementation PR targets PR #51's non-main base
+- **WHEN** that stacked pull request is published
+- **THEN** GitHub reports test and lint checks on the pull request
+- **AND** `build-and-push` is skipped
+- **AND** no package or image is published
+- **AND** task 2.28 remains unchecked until those live results are inspected
+
+#### Scenario: Repository CI needs no upstream framework issue
+
+- **WHEN** the CI workflow contract is corrected
+- **THEN** no SemStreams issue is opened
+- **AND** architect/security, Go, and technical-writer reviews gate completion
+
 ### Requirement: Exact target and evidence
 
 The adoption gate SHALL record the exact SemStreams tag/revision, Go toolchain,

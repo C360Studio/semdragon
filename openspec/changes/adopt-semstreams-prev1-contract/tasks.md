@@ -510,6 +510,37 @@
   **APPROVE** with no findings. Svelte review records **APPROVE** with no
   findings.
 
+- [ ] 2.28 Resolve
+  [semdragon #11](https://github.com/C360Studio/semdragon/issues/11), tracked
+  by parent [#2](https://github.com/C360Studio/semdragon/issues/2), so stacked
+  pull requests receive CI before integration. On the implementation PR
+  stacked over base PR #51, remove the pull-request base filter so test and
+  lint run for every `pull_request` base. Keep `push` restricted to `main`.
+  Do not add `pull_request_target`.
+
+  Reduce workflow-global permissions to exactly `contents: read`. Grant
+  `packages: write` only to `build-and-push`, and keep that job behind the
+  exact guard
+  `github.event_name == 'push' && github.ref == 'refs/heads/main'`.
+  Test and lint receive no secret, Docker login, image push, or package
+  publication capability.
+
+  Add `internal/cicontract/workflow_test.go` through a RED/GREEN contract
+  cycle. Assert the pull-request and push triggers, global and job permission
+  boundaries, exact publish guard, unprivileged test/lint jobs, and absence of
+  `pull_request_target`. Reject a pull-request base filter or publish
+  capability outside `build-and-push`.
+
+  Require the focused CI contract, `actionlint`, full race, vet, build, both
+  strict OpenSpec validations, and diff checks. Require architect/security,
+  Go, and technical-writer review. Open no upstream issue because this is a
+  repository workflow correction.
+
+  Keep this task unchecked until the stacked implementation PR is published.
+  That PR is the live acceptance proof: test and lint checks appear against
+  its non-main base, `build-and-push` is skipped, and no package or image is
+  published. Do not record those live results before the PR and checks exist.
+
 ## 3. Verification and handoff to beta.158
 
 - [ ] 3.1 Predicate audit has zero findings.
