@@ -1155,7 +1155,7 @@ func classifyDatatypeExpression(expression ast.Expr, imports map[string]string) 
 	}
 }
 
-func assertExactStringSet(t *testing.T, label string, got, want map[string]string) {
+func assertExactStringSet(t *testing.T, _ string, got, want map[string]string) {
 	t.Helper()
 	assertNoContractViolations(t, exactStringSetViolations(got, want))
 }
