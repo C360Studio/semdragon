@@ -567,7 +567,7 @@
   [SemStreams #671](https://github.com/C360Studio/semstreams/issues/671)
   prevents occurrence-exact classification of the three non-predicate
   `quest.failed` values. Do not add a file-wide or value-wide exemption.
-- [ ] 3.2 Resolve
+- [x] 3.2 Resolve
   [semdragon #55](https://github.com/C360Studio/semdragon/issues/55), under
   parent [#3](https://github.com/C360Studio/semdragon/issues/3), by rerunning
   `task contract:entity-ids` on the current stacked head and recording exactly
@@ -576,6 +576,15 @@
   `v1.0.0-beta.135`. Close this task only after the measured result, strict
   OpenSpec validation, clean diff, role review, and live stacked CI evidence
   are recorded.
+
+  Completed 2026-07-26 evidence: accepted
+  [PR #56](https://github.com/C360Studio/semdragon/pull/56) head
+  `86bb06421c5f754f195622b03468ef0d16858c29` reports entity IDs `0/25` while
+  the application remains pinned to SemStreams `v1.0.0-beta.135`. Both active
+  changes validate strictly, the accepted-head worktree is clean, role review
+  approved the bounded result, and
+  [run 30190759313](https://github.com/C360Studio/semdragon/actions/runs/30190759313)
+  provides the live stacked CI proof.
 - [x] 3.3 Resolve
   [semdragon #53](https://github.com/C360Studio/semdragon/issues/53), under
   parent [#3](https://github.com/C360Studio/semdragon/issues/3), with one
@@ -631,7 +640,7 @@
   zero seconds on `pull_request`. No login or package/image publication step
   executed, so no package or image was published. Architect, Go, and
   technical-writer reviews approve the bounded test-only contract.
-- [ ] 3.4 Complete issue #55 with one current-head beta.135 verification
+- [x] 3.4 Complete issue #55 with one current-head beta.135 verification
   result rather than composing evidence from earlier stacked PRs. Record the
   exact commit and prove
   `go list -m github.com/c360studio/semstreams` reports
@@ -646,7 +655,26 @@
   entity IDs `0/25`, and relationships green. Require architect, Go reviewer,
   and technical-writer approval plus live stacked PR test/lint success with
   `build-and-push` skipped.
-- [ ] 3.5 Complete issue #55 by writing and reviewing
+
+  Completed 2026-07-26 evidence: the one measured proof uses accepted
+  [PR #56](https://github.com/C360Studio/semdragon/pull/56) head
+  `86bb06421c5f754f195622b03468ef0d16858c29`. The application module is
+  `v1.0.0-beta.135`. Go race, vet, build, and Revive pass; build exits zero
+  with only the known sandbox stat-cache warning. UI tests pass `349/349`;
+  Svelte check reports zero errors and 15 existing warnings; the production
+  UI build passes. Schema, OpenAPI, and generated TypeScript freshness pass
+  with a clean diff. Entity IDs report `0/25`, relationships pass, both active
+  OpenSpec changes validate strictly, and the accepted-head worktree is clean.
+
+  The aggregate intentionally exits nonzero only on SemStreams #671: core
+  `0/329`, processor questboard `2/72`, service `1/1`, UI `0/41`, entity IDs
+  `0/25`, and relationships green. Architect, Go, and technical-writer
+  reviews approve that classification.
+  [Run 30190759313](https://github.com/C360Studio/semdragon/actions/runs/30190759313)
+  reports lint **SUCCESS** in 1 minute 36 seconds with Revive and Vet, test
+  **SUCCESS** in 2 minutes 4 seconds, and `build-and-push` **SKIPPED** in zero
+  seconds. No image or package publication occurred.
+- [x] 3.5 Complete issue #55 by writing and reviewing
   `docs/migrations/semstreams-beta158/fresh-volume-replay-runbook.md` and a
   narrow stale-checked runbook contract. The runbook records the exact commit,
   beta.135 pin, rendered shipped configuration, explicit development/test NATS
@@ -686,6 +714,13 @@
   Do not execute the wipe in issue #55. Add no production utility, Docker or
   configuration change, dependency change, state rewriter, compatibility
   path, owner binding, component activation, or local SemStreams substitute.
+
+  Completed 2026-07-26 evidence: the deletion-safe runbook and its
+  stale-checked contract are accepted at
+  `86bb06421c5f754f195622b03468ef0d16858c29`. The focused static contract,
+  both strict OpenSpec validations, and diff checks pass. The procedure was
+  specified and statically validated only; issue #55 did not execute the
+  volume wipe, seed/replay workflow, or any publication.
 - [ ] 3.6 Record the approved dependency handoff to
   [semdragon #4](https://github.com/C360Studio/semdragon/issues/4) only after
   task 3.1 reaches zero findings and the SemStreams #313 owner-safe mutation

@@ -1371,7 +1371,7 @@ technical-writer reviews approve the bounded test-only contract.
 ### D30: Prove the pinned-beta gate and specify a deletion-safe cutover
 
 Issue [#55](https://github.com/C360Studio/semdragon/issues/55), under parent
-[#3](https://github.com/C360Studio/semdragon/issues/3), stacks after PR #54.
+[#3](https://github.com/C360Studio/semdragon/issues/3), is accepted in PR #56.
 It closes only the independently unblocked entity-ID, pinned-beta verification,
 and runbook-authoring tasks 3.2, 3.4, and 3.5. Semdragon remains pinned to
 SemStreams `v1.0.0-beta.135`.
@@ -1438,11 +1438,12 @@ the local image with build and pull disabled. Before and after each start, the
 runbook proves that the tag and running backend container resolve to the
 retained image ID.
 
-Parity normalization may remove only reviewed nondeterministic transport
-metadata such as observation timestamps, KV revisions, and readiness
-watermarks. It must preserve entity IDs, predicates, object values, datatypes,
-cardinality, relationship targets, quest status, DAG dependencies, and DAG
-outputs. A difference in any preserved field fails replay parity.
+Parity normalization changes only top-level `graph.EntityState.updated_at` and
+each triple timestamp. Nested semantic object `timestamp`, `revision`, and
+readiness keys remain unchanged. It must preserve entity IDs, predicates,
+object values, datatypes, cardinality, relationship targets, quest status, DAG
+dependencies, and DAG outputs. A difference in any preserved field fails
+replay parity.
 
 Entity evidence comes from read-only raw `ENTITY_STATES` KV values, not from a
 GraphQL selection that omits triple fields. The reviewed NATS CLI version and
@@ -1455,6 +1456,29 @@ under `set -euo pipefail`, validates every GraphQL envelope before appending
 it, and requires exactly one response for every captured entity before
 flattening or deduplicating relationships. A transport failure, invalid
 envelope, or short response set fails the capture.
+
+Accepted implementation evidence is one current-head proof at
+`86bb06421c5f754f195622b03468ef0d16858c29` in
+[PR #56](https://github.com/C360Studio/semdragon/pull/56). The application
+module remains exactly SemStreams `v1.0.0-beta.135`. Full Go race, vet, build,
+and Revive gates pass. The build exits zero with only the known sandbox
+stat-cache warning. UI tests pass `349/349`; Svelte check reports zero errors
+and 15 existing warnings; and the production UI build passes. Schema, OpenAPI,
+and generated TypeScript freshness pass with a clean diff.
+
+The entity-ID contract reports `0/25`, the relationship contract passes, both
+active OpenSpec changes validate strictly, and the accepted-head worktree is
+clean. The aggregate intentionally exits nonzero only on SemStreams #671:
+core `0/329`, processor questboard `2/72`, service `1/1`, UI `0/41`, entity
+IDs `0/25`, and relationships green. Architect, Go, and technical-writer
+reviews approve this bounded classification.
+
+[Run 30190759313](https://github.com/C360Studio/semdragon/actions/runs/30190759313)
+reports lint **SUCCESS** in 1 minute 36 seconds with Revive and Vet, test
+**SUCCESS** in 2 minutes 4 seconds, and `build-and-push` **SKIPPED** in zero
+seconds. No image or package publication occurred. The deletion-safe runbook
+and its contract were specified, reviewed, and statically validated; issue #55
+did not execute the volume wipe or seed/replay workflow.
 
 The stale-checked runbook contract is test-only evidence, not a runtime
 framework. It must fail if a shipped configuration, Compose graph-volume name,
