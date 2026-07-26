@@ -920,8 +920,13 @@ adds no production, dependency, beta-version, semcompat, dynamic-family,
 owner/writer, configuration, alias, rewrite, or activation change. This
 repository test consolidation needs no upstream issue.
 
-The focused relationship task must pass. The aggregate remains expected red
+The focused relationship task passes. The aggregate remains intentionally red
 solely on SemStreams #671 classifications: processor questboard reports
 `2/72` and service reports `1/1` for non-predicate `quest.failed` message
 categories. Core `0/329`, UI `0/41`, and entity IDs `0/25` pass. Issue #53
 does not hide those findings or claim the aggregate is green before #671.
+
+Live stacked evidence on PR #54 records test and lint success on replacement
+run `30187601332` at head
+`ad995bf39b08b3479bd5478e2dfdc8fff0e552bb`, with `build-and-push` skipped
+and no login, package publication, or image publication.
