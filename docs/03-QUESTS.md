@@ -316,6 +316,20 @@ When a quest exhausts its retry budget (`attempts >= max_attempts`), it moves to
 salvage (preserve partial work and retry), TPK (clear and retry with anti-pattern
 context), escalate (require human attention), or terminal (mark as impossible).
 
+### Operator Gateway
+
+Every shipped profile exposes the SemStreams lifecycle gateway at
+`/lifecycle-gateway/workflows`. It uses the shared lifecycle manager and exposes only
+`quest`, the sole registered workflow. The complete namespace requires
+`SEMDRAGONS_API_KEY` when configured; clients may send the key through `X-API-Key` or
+Bearer authentication. WebSocket streaming is disabled.
+
+Use this gateway to discover and inspect workflow state, read transition history and
+children, or perform authenticated operator and break-glass transitions. Continue to
+use `/game/quests/{id}/...` for normal product commands: those handlers enforce domain
+checks and coupled Agent/Quest writes that the current gateway transition request cannot
+express atomically. Their retirement remains a separate migration gate.
+
 ### Triage
 
 Quests enter `pending_triage` when the DM attention system flags them for review. The DM can:

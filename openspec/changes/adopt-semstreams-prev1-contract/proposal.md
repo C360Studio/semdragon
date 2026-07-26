@@ -88,13 +88,18 @@ after the lifecycle/gated-DAG foundation in draft PR
 - **Boidengine**: issue #34 disables the recommender without deleting its live
   dormant subjects, DTOs, KV implementation, scoring policy, or
   dmpartyformation reuse. REST API and test-fixture claim/start are the
-  supported shipped Phase-1 path; the lifecycle operator joins that path only
-  when separately enabled under task 4.3.
+  supported shipped Phase-1 path; the separately authenticated lifecycle
+  operator also joins that path through completed task 4.3.
 - **Redteam**: issue #36 explicitly disables the retained component in all
   shipped profiles and removes two false OutputPorts without deleting its
   category/vocabulary or product contracts. Its raw watcher/cache,
   full-Quest/full-Guild writers, and process-local timeout design remain
   dormant and deferred to Semdragon #4/#5/#22 and SemStreams #313/#676.
+- **Lifecycle operator**: issue #38 enables the upstream lifecycle gateway at
+  `/lifecycle-gateway/workflows` for the sole registered `quest` workflow. The
+  complete namespace uses `SEMDRAGONS_API_KEY`, WebSockets are disabled, and
+  existing product command handlers coexist until task 4.4 can retire them
+  without losing domain validation or coupled writes.
 - **Data**: incompatible beta graph/index state is deleted and reseeded from
   source; no production deployment or retained beta data requires migration.
 - **Upstream coordination**: reuse SemStreams issues
@@ -107,4 +112,20 @@ after the lifecycle/gated-DAG foundation in draft PR
   [#670](https://github.com/C360Studio/semstreams/issues/670) and
   [#671](https://github.com/C360Studio/semstreams/issues/671). Existing issue
   [#587](https://github.com/C360Studio/semstreams/issues/587) covers only
-  message-logger per-client KV-watch migration; issue #34 opens no duplicate.
+  message-logger per-client KV-watch migration. Lifecycle-gateway gaps are
+  tracked upstream in [#677](https://github.com/C360Studio/semstreams/issues/677)
+  for atomic transition fields,
+  [#678](https://github.com/C360Studio/semstreams/issues/678) for workflow and
+  operation allowlists, and
+  [#679](https://github.com/C360Studio/semstreams/issues/679) for runtime
+  managed-gateway OpenAPI paths.
+  [#680](https://github.com/C360Studio/semstreams/issues/680) tracks the
+  missing OpenAPI security-scheme and operation/document policy model. It does
+  not block the authenticated runtime gateway.
+  [#681](https://github.com/C360Studio/semstreams/issues/681) tracks the
+  framework-owned revision retention needed by lifecycle history, while
+  [#682](https://github.com/C360Studio/semstreams/issues/682) tracks the
+  lifecycle gateway's oversized-body status mismatch. Semdragon does not own
+  downstream substitutes for those framework primitives; #681 must be resolved
+  before retiring the legacy bucket bootstrap that currently preserves
+  history.

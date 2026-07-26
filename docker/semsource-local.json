@@ -1,6 +1,5 @@
 {
   "namespace": "local",
-  "mode": "headless",
   "sources": [
     {
       "type": "repo",

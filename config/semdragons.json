@@ -434,6 +434,16 @@
         }
       }
     },
+    "lifecycle-gateway": {
+      "type": "gateway",
+      "name": "lifecycle-gateway",
+      "enabled": true,
+      "config": {
+        "path_prefix": "workflows",
+        "enable_websocket": false,
+        "max_body_bytes": 65536
+      }
+    },
     "rule-processor": {
       "type": "processor",
       "name": "rule-processor",

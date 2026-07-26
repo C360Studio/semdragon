@@ -20,7 +20,7 @@ This guide gets you from zero to your first completed quest.
 | Tool | Minimum version | Check |
 |------|----------------|-------|
 | Docker + Docker Compose | Docker 24+ | `docker --version && docker compose version` |
-| Go | 1.25+ | `go version` |
+| Go | 1.26.3+ | `go version` |
 | Node.js | 20+ | `node --version` |
 | go-task | any | `task --version` |
 
@@ -317,7 +317,9 @@ disabled in every shipped profile, and bossbattle remains absent, during Phase 1
 policy and models remain for Phase 2. Without boidengine, posting alone does not select an
 agent; use the REST API or a test fixture to claim and start. Without redteam, review-required
 work is resolved only by mechanics-stub and creates no adversarial-review or guild-lesson side
-effect. A lifecycle operator is available only when its separately gated component is enabled.
+effect. Every shipped profile enables the authenticated lifecycle operator at
+`/lifecycle-gateway/workflows` with WebSocket streaming disabled. The gateway is an operator
+and break-glass surface; use the product REST endpoints for normal quest commands.
 
 ### Key env vars
 
@@ -329,7 +331,7 @@ effect. A lifecycle operator is available only when its separately gated compone
 | `BRAVE_SEARCH_API_KEY` | Enables the `web_search` tool for agents |
 | `SEMDRAGONS_NATS_URLS` | Override NATS connection URL |
 | `SEMDRAGONS_MODELS` | Model registry overlay file path (set automatically by provider task variants) |
-| `SEMDRAGONS_API_KEY` | Auth key for write endpoints (empty = dev mode, no auth) |
+| `SEMDRAGONS_API_KEY` | Auth key for writes and the lifecycle-gateway namespace (empty = dev mode, no auth) |
 | `SEED_AGENTS` | Seed starter agents on boot (default: `true`) |
 | `SEED_E2E` | Full seed: agents + guilds + store catalog (default: `false`) |
 | `WORKSPACE` | Host directory mounted into the backend at `/workspace` |

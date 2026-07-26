@@ -615,8 +615,8 @@ that posted quests still advance autonomously.
 - **AND** seeded Agent, Quest, and Guild state remains bit-for-bit unchanged
   until an explicit claim
 - **AND** REST API and test-fixture claim/start are the supported shipped paths
-- **AND** the lifecycle operator joins that path only when separately enabled
-  under task 4.3
+- **AND** the separately authenticated lifecycle operator joins that path
+  through completed task 4.3
 - **AND** explicit claim/start can reach questbridge and mechanics-stub
   completion without battle, XP, store, or redteam side effects
 - **AND** the documentation does not describe this quarantine as
@@ -711,6 +711,51 @@ this change.
   SemStreams #313 and #676
 - **AND** no dependency, graphview, ownership, writer, lifecycle, rule,
   API/UI/schema, or durable-deadline migration is included
+
+### Requirement: Lifecycle operator surface uses the framework gateway
+
+Phase 1 SHALL expose the sole registered `quest` workflow through the
+SemStreams lifecycle gateway at `/lifecycle-gateway/workflows`. The complete
+namespace SHALL use the existing `SEMDRAGONS_API_KEY` policy, WebSocket
+streaming SHALL be disabled, and the deployment SHALL NOT add a downstream
+workflow/operation allowlist or runtime OpenAPI merger.
+
+#### Scenario: Gateway exposure is authenticated and quest-only
+
+- **WHEN** the default, semsource, or tier-1 E2E profile starts
+- **THEN** the lifecycle gateway resolves to
+  `/lifecycle-gateway/workflows`
+- **AND** `quest` is the only discoverable workflow because it is the only
+  workflow registered with the shared manager
+- **AND** the complete gateway namespace requires the configured API key
+- **AND** either `X-API-Key` or Bearer authentication is accepted
+- **AND** an empty configured key preserves development passthrough
+- **AND** WebSocket streaming is disabled
+
+#### Scenario: Operator transition reaches the mechanics stub
+
+- **GIVEN** a quest is `in_progress`
+- **WHEN** an authenticated operator transitions it to `in_review`
+- **THEN** history records the operator source and note
+- **AND** the mechanics-stub rule transitions the quest to `completed`
+- **AND** phase, `verdict=review-skipped-mechanics-disabled`, and audit
+  metadata are present together in the first completed revision
+- **AND** no mechanics side effect is produced
+
+#### Scenario: Product handlers coexist until their retirement gate
+
+- **WHEN** issue #38 enables the lifecycle gateway
+- **THEN** existing `/game/quests/{id}/...` command behavior remains available
+- **AND** task 4.4 remains open pending a framework-supported way to preserve
+  transition-coupled field updates and product invariants
+- **AND** SemStreams #677, #678, #679, #680, #681, and #682 remain the
+  upstream owners for atomic transition fields, gateway policy, runtime
+  gateway OpenAPI paths, OpenAPI security policy, lifecycle-history retention,
+  and the oversized-body status mismatch
+- **AND** the OpenAPI security-policy gap does not block runtime
+  authentication
+- **AND** the legacy Semdragon bucket bootstrap is not treated as durable
+  framework ownership of lifecycle-history retention
 
 ### Requirement: Dead party events and DAG shadows are deleted
 
@@ -822,3 +867,22 @@ or an in-place beta-state rewriter.
 - **THEN** graph readiness returns true
 - **AND** entity, relationship, quest-status, and DAG projections match the
   pre-restart results
+
+### Requirement: External SemSource runtime isolation
+
+The local SemSource workspace index SHALL run as a complete external service
+on a JetStream substrate isolated from Semdragon's graph consumers and KV
+buckets. Semdragon SHALL query that service over its declared HTTP surfaces
+and SHALL NOT recreate the removed SemSource `headless` mode.
+
+#### Scenario: Local workspace indexing does not compete with Semdragon
+
+- **WHEN** the default or Tier-1 Compose stack starts from clean volumes
+- **THEN** SemSource and Semdragon each start their own graph consumers on
+  separate NATS services
+- **AND** each SemSource NATS service stores JetStream state in its mounted
+  `/data` volume
+- **AND** SemSource does not inventory Semdragon entities under its vocabulary
+- **AND** neither service encounters a durable-consumer configuration conflict
+- **AND** the SemSource GraphQL and readiness endpoints remain available to
+  Semdragon as an external graph source

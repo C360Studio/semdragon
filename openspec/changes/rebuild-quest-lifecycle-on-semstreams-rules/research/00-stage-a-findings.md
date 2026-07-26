@@ -94,8 +94,10 @@ re-verification (see "Runtime re-verify" below).
   need explicit transitions); no orphan-node auto-recovery (gh#373) so the consumer must write
   completion markers at-least-once; retry counter is unavoidably DM-patchable; forward-additive
   schema only.
-- **lifecycle-gateway** (operator surface, task 4.3): `GET/POST /workflows/{type}/{id}[/history
-  |children|state|transition]` + WebSocket `?stream=true`, backed by the shared `Manager`.
+- **lifecycle-gateway** (operator surface, task 4.3): Semdragon mounts
+  `GET/POST /lifecycle-gateway/workflows/{type}/{id}[/history|children|state|transition]`,
+  backed by the shared `Manager`. WebSocket support exists upstream but is
+  disabled in every shipped Semdragon profile.
 
 ## Follow-up housekeeping (not blocking)
 

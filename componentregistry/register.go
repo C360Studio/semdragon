@@ -6,6 +6,7 @@ package componentregistry
 import (
 	"github.com/c360studio/semstreams/component"
 	graphgateway "github.com/c360studio/semstreams/gateway/graph-gateway"
+	lifecyclegateway "github.com/c360studio/semstreams/gateway/lifecycle-gateway"
 	wsinput "github.com/c360studio/semstreams/input/websocket"
 	graphclustering "github.com/c360studio/semstreams/processor/graph-clustering"
 	graphembedding "github.com/c360studio/semstreams/processor/graph-embedding"
@@ -48,13 +49,14 @@ func RegisterAll(registry *component.Registry) error {
 	// These provide entity persistence, indexing, and query capabilities
 	// that semdragons components depend on.
 	graphProcessors := []func(*component.Registry) error{
-		wsinput.Register,         // WebSocket input for semsource entity streaming
-		graphingest.Register,     // Entity/triple ingestion and storage
-		graphindex.Register,      // Relationship and predicate indexes
-		graphquery.Register,      // Query coordination and PathRAG
-		graphembedding.Register,  // Vector embeddings (BM25 or HTTP)
-		graphclustering.Register, // Community detection and structural analysis
-		graphgateway.Register,    // GraphQL/MCP HTTP gateway
+		wsinput.Register,          // WebSocket input for semsource entity streaming
+		graphingest.Register,      // Entity/triple ingestion and storage
+		graphindex.Register,       // Relationship and predicate indexes
+		graphquery.Register,       // Query coordination and PathRAG
+		graphembedding.Register,   // Vector embeddings (BM25 or HTTP)
+		graphclustering.Register,  // Community detection and structural analysis
+		graphgateway.Register,     // GraphQL/MCP HTTP gateway
+		lifecyclegateway.Register, // Lifecycle operator HTTP gateway
 	}
 
 	for _, register := range graphProcessors {
@@ -118,6 +120,7 @@ func RegisterProcessors(registry *component.Registry) error {
 		graphindex.Register,
 		graphquery.Register,
 		graphgateway.Register,
+		lifecyclegateway.Register,
 	}
 
 	for _, register := range graphProcessors {
@@ -178,6 +181,7 @@ func ComponentNames() []string {
 		"graph-embedding",
 		"graph-clustering",
 		"graph-gateway",
+		lifecyclegateway.ComponentName,
 		// Semstreams agentic processors
 		"agentic-loop",
 		"agentic-model",
@@ -215,6 +219,7 @@ func ProcessorNames() []string {
 		"graph-embedding",
 		"graph-clustering",
 		"graph-gateway",
+		lifecyclegateway.ComponentName,
 		// Semstreams agentic processors
 		"agentic-loop",
 		"agentic-model",

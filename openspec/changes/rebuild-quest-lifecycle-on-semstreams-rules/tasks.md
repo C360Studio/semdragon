@@ -12,7 +12,13 @@
 ## 1. Stage A — dependency bump and contract adaptation
 
 - [x] 1.1 Read `semstreams/docs/operations/migration-*.md` for beta.21→beta.132; list every item touching semdragons (ownership ADR-054/055/056, agentrun ADR-053, payload registry, message shapes) — findings in `research/00-stage-a-findings.md` (+ 01-04 cluster files). Verdict: near-zero compile risk; real work is Stage B + ownership partitioning.
-- [x] 1.2 Bump `go.mod` to semstreams v1.0.0-beta.132; fix compilation across all packages — `go build ./...` + `go vet ./...` clean, zero source changes needed. Note: beta.132 requires Go ≥ 1.26.3 (toolchain auto-switched to go1.26.4); Docker base image must be updated before e2e (Stage B3/gate).
+- [x] 1.2 Bump `go.mod` to semstreams v1.0.0-beta.132; fix compilation
+  across all packages — `go build ./...` + `go vet ./...` clean, zero source
+  changes needed. Beta.132 requires Go ≥ 1.26.3; issue #39 aligns the backend,
+  mock-LLM, and sandbox build/runtime images on Go 1.26.4 so the Stage B3 E2E
+  gate runs the same supported toolchain as local verification. Issues #40 and
+  #41 also update the current SemSource configuration boundary and SemEmbed
+  cold-start health window discovered by that real-image gate.
 - [x] 1.3 Ownership spike: write and read one quest entity under beta.132 ownership/projection rules; document which `quest.*` predicates need ownership claims for rules vs questbridge — questboard integration PASS under beta.132 (ownership is observe-only; raw-KV-`Put` path unaffected). Predicate partition documented in `research/05-ownership-spike.md`: lifecycle owns `quest.status/lifecycle/attempts/failure/assignment/verdict/data.output`, questbridge owns `quest.execution/context/loop/metrics`, questdag owns `quest.dag.*`.
 - [x] 1.4 Adapt payload registry, BaseMessage wrapping, and graph-write call sites until `task test` is green with the existing architecture — `task test` green (EXIT=0) with **zero adaptation**; additive-only wire + unchanged payload registry confirmed empirically.
 - [x] 1.5 Add contract-level integration tests: questbridge↔agentic-loop TaskMessage round trip, questtools↔tool.execute/tool.result round trip — added `processor/questbridge/contract_test.go` (`TestContract_TaskMessageWireRoundTrip`) and `processor/questtools/contract_test.go` (`TestContract_ToolCallWireFidelity`); both decode through the production payload registry and pass under beta.132. Pre-existing behavioral round-trip tests (`TestQuestStartedPublishesTaskMessage`, `TestCorrelationIDPropagation`) also green.
@@ -84,8 +90,55 @@
   per-component evidence remains recorded in tasks 4.5 through 4.8 and the
   issue #26 evidence below. Reactivation migrations remain separate tasks and
   blockers; completing Stage B3 does not activate or migrate any mechanic.
-- [ ] 4.2 Add the stub rule: on transition into `in_review`, fire `lifecycle_transition` to `completed` with `verdict: review-skipped-mechanics-disabled` set atomically
-- [ ] 4.3 Enable `lifecycle-gateway` scoped to the quest workflow; verify inspect/history/operator-transition against the running stack
+- [x] 4.2 Add the stub rule: on transition into `in_review`, fire
+  `lifecycle_transition` to `completed` with
+  `verdict: review-skipped-mechanics-disabled` set atomically.
+
+  Completed 2026-07-25 evidence: the shipped
+  `config/rules/quest/04-mechanics-stub.json` is exercised through the real
+  graph-ingest, lifecycle Manager, rule processor, and upstream lifecycle
+  gateway. An authenticated operator transition from `in_progress` to
+  `in_review` is followed by the rule transition to `completed`; the first
+  observed completed revision contains the verdict, and ordered history
+  attributes the two transitions to `operator` and `rule`. The existing
+  mechanics-disabled integration proves the same first-completed-revision
+  invariant and no battle, progression, store, redteam, Guild, or other
+  mechanics side effect. Both focused integration tests and `go test ./...`
+  pass.
+- [x] 4.3 Enable `lifecycle-gateway` scoped to the quest workflow; verify
+  inspect/history/operator-transition against the running stack.
+
+  Completed 2026-07-25 evidence: both registry entry points register the
+  upstream component, and every shipped profile enables the identical
+  `/lifecycle-gateway/workflows` deployment with WebSockets disabled and a
+  64 KiB body cap. One shared Manager registers only `quest`, making scope
+  compositional. Path-boundary authentication reuses
+  `SEMDRAGONS_API_KEY`, accepts `X-API-Key` and Bearer credentials, preserves
+  empty-key development passthrough, and leaves unrelated routes untouched.
+  The real component-stack integration verifies authenticated discovery,
+  quest-only scope, inspect, state patch, body rejection, disabled streaming,
+  operator transition, mechanics-stub completion, and ordered history.
+  Static generation reuses and rebases the upstream provider at the deployed
+  path with resolved request schemas. Focused component/auth/OpenAPI tests and
+  both focused integrations pass, as do the full Go and UI gates and both
+  strict OpenSpec validations. The tier-1 scenario uses the canonical returned
+  entity ID and is retained under gate 5.2.
+
+  Runtime-image evidence also closes Semdragon #40, #41, and #42: current
+  SemSource runs as a complete external service on isolated JetStream rather
+  than the removed `headless` mode, Compose waits through the observed
+  86-second cold SemEmbed load, and the backend image packages all four quest
+  rules at their profile-resolved paths. The focused Tier-1 Playwright spec
+  passes 4/4 through the UI proxy, including rule completion and history.
+
+  SemStreams #677 owns atomic transition fields, #678 owns workflow/operation
+  policy, #679 owns runtime publication of resolved gateway paths, #680 owns
+  OpenAPI security policy, #681 owns lifecycle-history retention, and #682
+  owns the documented 413 versus observed 400 oversized-body response. None
+  is reimplemented here; #680 and #682 do not block runtime authentication.
+  The shipped stack's legacy history-10 bucket bootstrap makes current history
+  verification pass, but it is not accepted as durable ownership in place of
+  #681.
 - [ ] 4.4 Delete `service/api` handlers superseded by the gateway (status mutation only; keep world/DM/workspace/creation endpoints)
 - [x] 4.5 Resolve
   [semdragon #30](https://github.com/C360Studio/semdragon/issues/30): retain
@@ -145,8 +198,8 @@
   claim/join/form mutation without the producer, and seeded Agent, Quest, and
   Guild state remains bit-for-bit unchanged until an explicit claim. Prove
   REST API or test-fixture claim/start reaches questbridge and mechanics-stub
-  completion without mechanics side effects; the lifecycle operator joins
-  this path only when separately enabled under task 4.3. Keep the pinned
+  completion without mechanics side effects; the separately authenticated
+  lifecycle operator joins this path through completed task 4.3. Keep the pinned
   beta.158 audit at zero structured candidates. Reclassify positive boid E2E
   coverage as dormant/opt-in. Record, but do not implement, the future
   `pkg/graphview`-backed reads and durable KV/stigmergic suggestion projection.
@@ -227,8 +280,9 @@
 
 This evidence completes only the bossbattle slice. Task 4.1 is now complete on
 the accumulated issue #26/#30/#32/#34/#36 evidence that all five mechanics
-components are inactive in every shipped profile. Task 4.2 and the remaining
-lifecycle gates remain unchecked.
+components are inactive in every shipped profile. Tasks 4.2 and 4.3 are
+completed by issue #38 evidence above. Task 4.4 and the remaining lifecycle
+gates stay open.
 
 ## 5. Verification gate
 

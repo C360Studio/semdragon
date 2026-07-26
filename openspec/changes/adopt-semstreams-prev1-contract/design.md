@@ -819,8 +819,9 @@ of `boid.suggestions.>` and `boid.guild.>`, and autonomy's corresponding
 actions require cached suggestions. Shipped Phase 1 therefore offers no
 autonomous quest claim or guild selection. Posting a quest leaves it posted
 until an explicit REST API or test-fixture claim and start. The lifecycle
-operator joins that path only when separately enabled under task 4.3. The
-explicit path remains supported through questbridge execution and
+operator joins that path through the separately authenticated gateway
+completed in task 4.3. The explicit path remains supported through
+questbridge execution and
 mechanics-stub completion without battle, XP, store, or redteam side effects.
 
 The retained surface is product behavior, not a retired framework subsystem:
@@ -894,6 +895,69 @@ Issue #36 performs no dependency bump, graphview adoption, predicate-owner
 binding, writer/lifecycle/rule migration, API/UI/schema redesign, or deadline
 implementation and opens no duplicate upstream issue. Historical audit
 baselines remain unchanged.
+
+### D22: Expose lifecycle through the framework gateway without forking it
+
+Issue [#38](https://github.com/C360Studio/semdragon/issues/38) activates the
+SemStreams `lifecycle-gateway` at the manager-resolved path
+`/lifecycle-gateway/workflows`. It reuses the one shared lifecycle manager, and
+that manager registers only `quest`; quest-only exposure is therefore a
+compositional fact rather than a downstream policy implementation. WebSocket
+streaming is disabled and request bodies are capped at 64 KiB.
+
+The entire gateway namespace and its descendants use the existing
+`SEMDRAGONS_API_KEY` policy through SemStreams
+`Manager.UseHTTPMiddleware`. Both `X-API-Key` and Bearer credentials remain
+valid, an empty key preserves development passthrough, prefix matching is
+path-segment aware, and unrelated routes retain their existing access policy.
+
+This gateway is an operator and break-glass surface. Product command handlers
+under `/game/quests/{id}/...` continue to own domain checks and coupled writes.
+They coexist with the gateway until the separate task 4.4 retirement packet
+can preserve every invariant. SemStreams
+[#677](https://github.com/C360Studio/semstreams/issues/677) owns atomic
+validated transition fields, and
+[#678](https://github.com/C360Studio/semstreams/issues/678) owns workflow and
+operation allowlists. The current packet creates neither primitive locally.
+
+Manager history reconstructs audit events from retained `ENTITY_STATES`
+revisions. The shipped stack currently works because Semdragon's legacy
+board-bucket bootstrap precreates that bucket with history 10. That accidental
+creation-order dependency is not durable ownership.
+[SemStreams #681](https://github.com/C360Studio/semstreams/issues/681) requires
+one graph-ingest/lifecycle retention invariant before the bootstrap retires.
+
+The gateway enforces its 64 KiB body cap, but beta.135 and beta.158 return 400
+for a body over the limit while their OpenAPI advertises 413. Semdragon asserts
+the observed response and leaves the correction to
+[SemStreams #682](https://github.com/C360Studio/semstreams/issues/682) rather
+than wrapping the framework handler.
+
+Committed static OpenAPI may reuse and rebase the upstream gateway provider;
+Semdragon does not restate its operations. The live SemStreams manager does
+not yet merge resolved managed-gateway paths into `/openapi.json`, so
+SemStreams [#679](https://github.com/C360Studio/semstreams/issues/679) owns the
+runtime framework fix. The framework document model also lacks security
+schemes and operation/document security requirements, which is tracked by
+SemStreams [#680](https://github.com/C360Studio/semstreams/issues/680).
+Neither OpenAPI gap blocks runtime authentication, and no downstream runtime
+merger or duplicate operation model is introduced.
+
+### D23: Keep external SemSource graph ownership off Semdragon JetStream
+
+Current SemSource has one external-service runtime and rejects the obsolete
+top-level `mode: headless` configuration. It starts its own SemStreams graph
+consumers and owns their KV buckets. The local workspace sidecar therefore
+uses a dedicated NATS JetStream service and remains a Semdragon query source
+over GraphQL and status HTTP. It must not share Semdragon's graph stream,
+consumer names, configuration bucket, or entity vocabulary.
+
+This boundary is tracked by Semdragon
+[#40](https://github.com/C360Studio/semdragon/issues/40). It replaces the
+removed compatibility mode rather than recreating it. SemEmbed remains a
+separate optional framework service; Semdragon
+[#41](https://github.com/C360Studio/semdragon/issues/41) grants its real health
+probe enough start grace for the observed cold model load.
 
 ### Issue #26 implementation evidence, pending the final root gate
 

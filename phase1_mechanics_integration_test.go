@@ -481,8 +481,14 @@ func awaitCompletedReviewSkip(
 			}
 			phase, hasPhase := state.GetPropertyValue(questlifecycle.PhasePredicate)
 			verdict, hasVerdict := state.GetPropertyValue("quest.verdict.feedback")
-			if state.ID == questID && hasPhase && phase == questlifecycle.PhaseCompleted &&
-				hasVerdict && verdict == "review-skipped-mechanics-disabled" {
+			if state.ID == questID && hasPhase && phase == questlifecycle.PhaseCompleted {
+				if !hasVerdict || verdict != "review-skipped-mechanics-disabled" {
+					t.Fatalf(
+						"observed completed quest without atomic mechanics-stub verdict: verdict=%v present=%v",
+						verdict,
+						hasVerdict,
+					)
+				}
 				return state
 			}
 		case <-ctx.Done():

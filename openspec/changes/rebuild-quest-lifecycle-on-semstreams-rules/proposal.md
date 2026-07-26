@@ -59,17 +59,22 @@ against the mock LLM (zero paid tokens).
   scoring policy, DTOs, `boid.suggestions.>` / `boid.guild.>` contracts,
   `BOID_SUGGESTIONS`, and direct dmpartyformation policy reuse. Shipped Phase 1
   has no autonomous claim or guild selection; REST API and test-fixture
-  claim/start are the supported shipped paths. The lifecycle operator joins
-  that path only when separately enabled under task 4.3.
+  claim/start are the supported shipped paths. The separately authenticated
+  lifecycle operator also joins that path through completed task 4.3.
 - Resolve the redteam slice through issue #36: keep `redteam` registered and
   configured but disabled in all three shipped profiles. Remove its two false
   OutputPorts while retaining category/vocabulary taxonomy, Quest/API/UI
   fields, findings/lesson policy, prompts, and opt-in E2E. The shipped path is
   explicit claim/start through questbridge and mechanics-stub with no
   red-team side effect.
-- Adopt the framework `lifecycle-gateway` operator REST surface for quest
-  workflow CRUD/history where it can replace bespoke `service/api` handlers;
-  keep product endpoints (world state, DM chat, workspace) as-is.
+- Adopt the framework `lifecycle-gateway` at
+  `/lifecycle-gateway/workflows` as an authenticated operator and break-glass
+  surface for quest workflow discovery, inspection, history, children, state
+  patching, and table-valid transitions. The complete namespace uses the
+  existing `SEMDRAGONS_API_KEY` policy, WebSocket streaming is disabled, and
+  quest-only scope is compositional because `quest` is the sole registered
+  workflow. Product command handlers continue to own their coupled writes
+  until task 4.4 can retire them safely.
 - Verification gate: the mock-LLM e2e suite (`task e2e`) passes end-to-end on
   the migrated stack. Real-LLM tiers are explicitly out of scope.
 
@@ -112,6 +117,21 @@ against the mock LLM (zero paid tokens).
 - **Dependencies**: the beta.21 → beta.135 foundation is implemented on this
   branch. The beta.158 pre-v1 clean break is a separate prerequisite change:
   `adopt-semstreams-prev1-contract`. No dependency-only bump is permitted.
+- **Upstream lifecycle gaps**: SemStreams
+  [#677](https://github.com/C360Studio/semstreams/issues/677) tracks atomic
+  validated transition fields, [#678](https://github.com/C360Studio/semstreams/issues/678)
+  tracks workflow and operation allowlists, and
+  [#679](https://github.com/C360Studio/semstreams/issues/679) tracks runtime
+  publication of resolved managed-gateway OpenAPI paths.
+  [#680](https://github.com/C360Studio/semstreams/issues/680) tracks OpenAPI
+  security schemes and operation/document security policy.
+  [#681](https://github.com/C360Studio/semstreams/issues/681) tracks the
+  framework-owned revision retention required for truthful lifecycle history,
+  and [#682](https://github.com/C360Studio/semstreams/issues/682) tracks the
+  documented 413 versus observed 400 oversized-body response. Semdragon does
+  not fork these primitives; #680 and #682 do not block authenticated runtime
+  activation, while #681 is critical framework ownership debt and task 4.4
+  remains open because product command handlers require coupled writes.
 - **Data/predicates**: quest entity predicates consumed by the UI
   (`worldStore`) must remain stable or ship with a documented mapping;
   `quest.dag.*` layout may change with the gated-dag model.

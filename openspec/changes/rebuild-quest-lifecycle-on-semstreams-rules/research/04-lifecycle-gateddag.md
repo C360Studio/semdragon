@@ -548,8 +548,10 @@ a visible `Failed` marker instead of a silent wedge.
 
 A framework component that exposes `Manager` read + operator-mutation over HTTP +
 WebSocket. It reads `Dependencies.LifecycleManager` (the *same* Manager instance
-the rule processor and gated-dag use) and mounts under a configurable
-`PathPrefix` (default `/workflows`). Routes (`handlers.go`, `doc.go`, `openapi.go`):
+the rule processor and gated-dag use). Its provider-relative path is configured
+by `PathPrefix` (default `/workflows`), while SemStreams service-manager also
+mounts the component instance name. Semdragon therefore deploys the root at
+`/lifecycle-gateway/workflows`. Routes (`handlers.go`, `doc.go`, `openapi.go`):
 
 | Method | Path | Handler → Manager call |
 |---|---|---|
@@ -566,10 +568,10 @@ Uniform error envelope `{"error":"..."}`. Status mapping (`errorToStatus`):
 `ErrWorkflowNotRegistered`/`ErrEntityNotFound` → 404;
 `ErrFieldNotOperatorWritable`/`ErrInvalidTransition`/`ErrTerminalPhase` → 400;
 `ErrUpdateRetriesExhausted` → 409 (write race); everything else → 500 (message
-redacted, logged server-side). **This is the DM's operator surface** — inspect any
-quest, replay its audit trail, force a transition, patch operator-writable fields,
-and subscribe to a live quest-board feed, all without semdragons writing bespoke
-endpoints.
+redacted, logged server-side). **This is the DM's operator surface** — inspect
+any quest, replay its audit trail, force a transition, and patch
+operator-writable fields without Semdragon writing bespoke endpoints.
+Semdragon disables the optional live WebSocket feed in every shipped profile.
 
 ---
 

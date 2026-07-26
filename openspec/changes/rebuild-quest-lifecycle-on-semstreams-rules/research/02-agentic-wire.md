@@ -39,7 +39,11 @@ type MilestoneSubscriber struct { ... }   // subscribes agent.complete.*/agent.f
 Key properties:
 - The run entity lives in `ENTITY_STATES` (low write-rate: phase transitions + audit). **Loops stay in `AGENT_LOOPS`** — unchanged (ADR-049 exception).
 - Run identity now propagates on the wire as a typed **`RunID`** (bare run loop-id) plus **`RunEntityID`** (6-part chain entity), set at spawn and stamped as an `agent.run` triple. It is threaded onto `TaskMessage`, all four loop events, and `ToolCall.Metadata` (keys `agent.run_id` / `agent.run_entity_id`).
-- It reuses the ADR-047 Lifecycle harness wholesale: `Manager.Create/Get/Transition/Complete/List/Watch/History/Children`, operator gateway (`GET /workflows`), restart recovery, rule integration (`RunScope: "new"|"inherit"|"none"` on `rule.Action`).
+- It reuses the ADR-047 Lifecycle harness wholesale:
+  `Manager.Create/Get/Transition/Complete/List/Watch/History/Children`,
+  operator gateway (mounted by Semdragon at
+  `GET /lifecycle-gateway/workflows`), restart recovery, and rule integration
+  (`RunScope: "new"|"inherit"|"none"` on `rule.Action`).
 
 It is **opt-in**: `cmd/semstreams/main.go:215` and `cmd/e2e-semstreams/main.go:182` call `agentrun.Register(svcDeps.LifecycleManager)` + `agentrun.NewMilestoneSubscriber(...)`. A binary that does not wire the lifecycle harness gets none of it, and every wire field stays empty (back-compat).
 

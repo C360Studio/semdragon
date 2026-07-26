@@ -287,6 +287,59 @@
   - Architect, independent Go reviewer, Svelte reviewer, and technical writer
     approve the slice. SemStreams #676 records the durable entity-deadline
     blocker; no duplicate upstream issue was opened.
+- [x] 2.22 Resolve
+  [semdragon #38](https://github.com/C360Studio/semdragon/issues/38) by
+  enabling the upstream lifecycle gateway in all three shipped profiles at
+  `/lifecycle-gateway/workflows`. Reuse the single lifecycle Manager, expose
+  only its sole registered `quest` workflow, disable WebSockets, cap bodies at
+  64 KiB, and protect the complete namespace with the existing
+  `SEMDRAGONS_API_KEY` semantics. Treat the gateway as an operator and
+  break-glass surface while product command handlers coexist through the
+  separate task 4.4 retirement gate.
+
+  Completed 2026-07-25 evidence: registration and profile contracts, shared
+  Manager composition, path-boundary authentication, disabled streaming,
+  bounded bodies, static upstream-provider OpenAPI rebasing, and resolved
+  request schemas are covered by focused tests. A real component-stack
+  integration drives an authenticated `in_progress` to `in_review` operator
+  transition through the mechanics-stub rule to atomic
+  `review-skipped-mechanics-disabled` completion and verifies ordered operator
+  and rule history. The focused unit and integration commands, the full Go
+  suite, and both strict OpenSpec validations pass. SemStreams
+  #677/#678/#679/#680/#681/#682 retain ownership of atomic transition fields,
+  gateway policy, runtime gateway paths, OpenAPI security policy,
+  lifecycle-history retention, and the oversized-body status mismatch. The
+  current legacy history-10 bucket bootstrap is recorded as temporary rather
+  than durable framework ownership. No downstream framework substitute is
+  introduced. Task 4.4 remains open.
+
+- [x] 2.23 Resolve Semdragon
+  [#39](https://github.com/C360Studio/semdragon/issues/39),
+  [#40](https://github.com/C360Studio/semdragon/issues/40),
+  [#41](https://github.com/C360Studio/semdragon/issues/41), and
+  [#42](https://github.com/C360Studio/semdragon/issues/42) at the container
+  boundary. Align all Go build/runtime images with Go 1.26.4, remove the
+  obsolete SemSource `headless` key, isolate the complete SemSource service on
+  its own JetStream, retain the real SemEmbed health probe with sufficient
+  cold-start grace, and package the configured quest rules in the backend
+  image.
+
+  Completed 2026-07-25 evidence: clean Compose created independent Semdragon
+  and SemSource NATS volumes with explicit `/data` JetStream stores; SemSource
+  reached healthy without poisoned Semdragon entities, platform-identity
+  refusal, or durable-consumer conflict. Its real
+  `/source-manifest/status` response reported `phase: ready` with five
+  entities, and GraphQL introspection returned query type `Query`; the NATS
+  container confirmed its store at `/data/jetstream`.
+
+  Backend, mock-LLM, and sandbox builds completed with Go 1.26.4 builders.
+  A direct sandbox runtime probe returned
+  `go version go1.26.4 linux/arm64`. SemEmbed loaded after 86 seconds and
+  reached its real `/health` endpoint inside the 120-second start period. The
+  backend image contained all four quest rule files, and the focused Tier-1
+  Playwright lifecycle spec passed 4/4 through the UI proxy, including
+  rule-driven completion, verdict, and ordered history. A static packaging
+  contract prevents future images from omitting the rule tree.
 
 ## 3. Verification and handoff to beta.158
 

@@ -15,6 +15,20 @@ services:
       timeout: 3s
       retries: 5
 
+  # SemSource is a complete external SemStreams service and therefore owns its
+  # graph consumers and KV buckets on an isolated JetStream substrate.
+  nats-local-semsource:
+    image: nats:2.12-alpine
+    command: ["-js", "--store_dir", "/data", "-m", "8222", "--name", "local-semsource-nats"]
+    volumes:
+      - nats-local-semsource-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   mockllm:
     profiles: ["mock"]
     build:
@@ -44,7 +58,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      # A cold model download/load takes roughly 90s on the supported arm64
+      # development stack. Keep Compose in "starting" state during that window.
+      start_period: 120s
 
   sandbox:
     image: ghcr.io/c360studio/semdragon/sandbox:latest
@@ -164,7 +180,7 @@ services:
   nats-semsource:
     profiles: ["semsource"]
     image: nats:2.12-alpine
-    command: ["-js", "-m", "8222", "--name", "semsource-nats"]
+    command: ["-js", "--store_dir", "/data", "-m", "8222", "--name", "semsource-nats"]
     volumes:
       - nats-semsource-data:/data
     restart: unless-stopped
@@ -174,8 +190,8 @@ services:
       timeout: 3s
       retries: 5
 
-  # Local semsource: indexes sandbox repos on our NATS.
-  # Headless mode — semdragons owns graph components, semsource only does ingest.
+  # Local SemSource indexes sandbox repos as an external service. Its graph
+  # components run on isolated NATS; Semdragons queries it over HTTP.
   local-semsource:
     image: ghcr.io/c360studio/semsource:latest
     command:
@@ -185,10 +201,10 @@ services:
       - --log-level
       - ${SEMSOURCE_LOG_LEVEL:-info}
     depends_on:
-      backend:
+      nats-local-semsource:
         condition: service_healthy
     environment:
-      NATS_URL: nats://nats:4222
+      NATS_URL: nats://nats-local-semsource:4222
       # Allow git operations on repos owned by a different user (host bind mount).
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: safe.directory
@@ -234,6 +250,7 @@ services:
 
 volumes:
   nats-data:
+  nats-local-semsource-data:
   nats-semsource-data:
   semembed-cache:
   workspaces:

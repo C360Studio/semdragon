@@ -31,6 +31,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
+	"github.com/c360studio/semdragons/internal/httpauth"
 	"github.com/c360studio/semdragons/processor/questbridge"
 	"github.com/c360studio/semdragons/questlifecycle"
 	"github.com/c360studio/semdragons/semsource"
@@ -46,6 +47,8 @@ var (
 )
 
 const appName = "semdragons"
+
+const lifecycleGatewayNamespace = "/lifecycle-gateway/workflows"
 
 func main() {
 	defer func() {
@@ -148,6 +151,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	manager.UseHTTPMiddleware(
+		httpauth.ProtectNamespace(httpauth.LoadAPIKey(), lifecycleGatewayNamespace),
+	)
 
 	// 8a. Build the payload registry (semstreams beta.18+ retired the package-level
 	// singleton). Builtins cover agentic/message/dispatch/rule/objectstore types;
@@ -165,9 +171,9 @@ func run() error {
 	// workflow (Stage B1). Components receive the same Manager instance via
 	// deps.LifecycleManager — the rule engine's lifecycle_* actions and the
 	// lifecycle-gateway both resolve "quest" transitions through it.
-	lifecycleManager := lifecycle.NewManager(natsClient, logger)
-	if err := lifecycleManager.Register(questlifecycle.WorkflowDeclaration()); err != nil {
-		return fmt.Errorf("register quest lifecycle workflow: %w", err)
+	lifecycleManager, err := createLifecycleManager(natsClient, logger)
+	if err != nil {
+		return err
 	}
 	svcDeps.LifecycleManager = lifecycleManager
 
@@ -183,6 +189,19 @@ func run() error {
 
 	// 11. Run application with signal handling
 	return runWithSignalHandling(ctx, manager, cliCfg.ShutdownTimeout)
+}
+
+// createLifecycleManager owns the production workflow allowlist. Any workflow
+// registered here becomes discoverable and mutable through lifecycle-gateway.
+func createLifecycleManager(
+	natsClient *natsclient.Client,
+	logger *slog.Logger,
+) (*lifecycle.Manager, error) {
+	manager := lifecycle.NewManager(natsClient, logger)
+	if err := manager.Register(questlifecycle.WorkflowDeclaration()); err != nil {
+		return nil, fmt.Errorf("register quest lifecycle workflow: %w", err)
+	}
+	return manager, nil
 }
 
 // parseCLI parses and validates CLI flags.

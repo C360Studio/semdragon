@@ -1,5 +1,5 @@
 # Stage 1: Build sandbox server
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
@@ -19,9 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-# Go 1.25
+# Go toolchain aligned with the repository's go.mod requirement.
 RUN ARCH=$(dpkg --print-architecture) && \
-    curl -fsSL "https://go.dev/dl/go1.25.3.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
+    curl -fsSL "https://go.dev/dl/go1.26.4.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:/go/bin:${PATH}" \
     GOPATH=/go
 

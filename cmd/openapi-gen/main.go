@@ -17,8 +17,11 @@ import (
 
 	"github.com/c360studio/semstreams/service"
 
-	// Side-effect import: triggers service.RegisterOpenAPISpec("game", ...) in init().
+	// Side-effect imports trigger framework and product OpenAPI registration.
+	// The lifecycle gateway provider remains owned by SemStreams; servicePrefix
+	// resolves its component-relative paths to the deployed component mount.
 	_ "github.com/c360studio/semdragons/service/api"
+	_ "github.com/c360studio/semstreams/gateway/lifecycle-gateway"
 )
 
 // =============================================================================

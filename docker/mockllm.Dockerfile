@@ -1,5 +1,5 @@
 # Mock LLM server Dockerfile — OpenAI-compatible stub for E2E testing.
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./

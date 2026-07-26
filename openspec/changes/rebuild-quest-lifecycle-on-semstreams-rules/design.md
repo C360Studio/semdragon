@@ -167,8 +167,8 @@ producer of `boid.suggestions.>` and `boid.guild.>`, so shipped Phase 1 has no
 autonomous quest claim, guild join, or guild formation recommendation.
 Posting a quest does not advance it. The supported shipped Phase-1 path is
 explicit REST API or test-fixture claim and start, followed by questbridge
-execution and mechanics-stub completion. The lifecycle operator joins that
-path only when separately enabled under task 4.3.
+execution and mechanics-stub completion. The separately authenticated
+lifecycle operator also joins that path through completed task 4.3.
 
 The product surface remains dormant rather than being deleted:
 `DefaultBoidEngine`, configurable rules, attraction/scoring policy, suggestion
@@ -187,12 +187,70 @@ ownership change, dependency bump, or API/schema change. SemStreams #587
 already covers message-logger per-client KV-watch migration; issue #34 opens
 no duplicate upstream issue.
 
-### D7: Adopt lifecycle-gateway for workflow operations only
-Enable the framework `lifecycle-gateway` for quest workflow inspect/history/
-transition (satisfies the operator-surface requirement). Product endpoints
-(world state, DM chat, workspace, quest creation with brief validation) stay
-in `service/api`. Bespoke handlers that merely mutate quest status are
-deleted in favor of the gateway.
+### D7: Adopt lifecycle-gateway as an authenticated operator surface
+
+Enable the framework `lifecycle-gateway` at the service-manager-resolved path
+`/lifecycle-gateway/workflows`. The gateway exposes workflow discovery, list,
+inspect, history, children, operator state patch, and table-valid transition
+operations. WebSocket streaming is explicitly disabled and request bodies are
+bounded to 64 KiB.
+
+The complete namespace and all descendants use the existing
+`SEMDRAGONS_API_KEY` policy through SemStreams
+`Manager.UseHTTPMiddleware`: `X-API-Key` and Bearer credentials are accepted,
+while an empty configured key preserves the existing development passthrough.
+Prefix matching is path-segment aware so unrelated routes remain under their
+existing policies.
+
+The shared lifecycle manager registers only the `quest` workflow. This makes
+the deployed gateway quest-only by composition, not by a downstream
+allowlist. SemStreams
+[#678](https://github.com/C360Studio/semstreams/issues/678) owns the missing
+workflow and operation policy primitive; Semdragon does not create one.
+
+The gateway is an operator and break-glass surface. Existing
+`/game/quests/{id}/...` command handlers remain the supported product surface
+and continue to own domain validation and transition-coupled writes.
+SemStreams [#677](https://github.com/C360Studio/semstreams/issues/677) owns
+atomic validated fields on operator transitions. Until that primitive can
+preserve product invariants, task 4.4 must not delete or redirect those
+handlers.
+
+Lifecycle history depends on retained `ENTITY_STATES` KV revisions.
+Semdragon's legacy board-bucket bootstrap currently precreates that bucket
+with history 10, so the shipped stack preserves the tested operator and rule
+events. That bootstrap is not durable framework ownership:
+[SemStreams #681](https://github.com/C360Studio/semstreams/issues/681) requires
+graph-ingest and lifecycle consumers to share and validate one retention
+invariant before the bespoke bootstrap can retire.
+
+The configured body cap is enforced before mutation, but beta.135 and beta.158
+return 400 for an oversized body despite advertising 413. The integration test
+asserts the observed 400 and links
+[SemStreams #682](https://github.com/C360Studio/semstreams/issues/682);
+Semdragon does not wrap the upstream handlers to translate it.
+
+Static OpenAPI generation may reuse and rebase the upstream gateway provider;
+it must not restate lifecycle-gateway operations. The live SemStreams manager
+does not yet publish resolved component-gateway paths in `/openapi.json`;
+SemStreams [#679](https://github.com/C360Studio/semstreams/issues/679) owns
+that framework defect. The framework OpenAPI model also cannot express the
+API-key/Bearer policy supplied through `UseHTTPMiddleware`; SemStreams
+[#680](https://github.com/C360Studio/semstreams/issues/680) owns security
+schemes and operation/document security requirements. Neither gap blocks the
+runtime authentication in this packet, and Semdragon will not add a parallel
+runtime merger or restate upstream operations.
+
+Product endpoints for world state, DM chat, workspace, quest creation, and
+quest commands stay in `service/api`. Task 4.4 remains a separate retirement
+gate.
+
+The shipped backend image must copy the configured quest rule tree and run
+from the directory against which the profiles resolve `config/rules/...`.
+Repository-only integration is insufficient evidence because a rule processor
+with no packaged rules cannot complete an operator transition. Semdragon
+[#42](https://github.com/C360Studio/semdragon/issues/42) owns this packaging
+contract.
 
 ### D8: Partycoord remains policy and Party KV authority, not a second DAG
 

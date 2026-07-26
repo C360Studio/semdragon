@@ -56,6 +56,27 @@ func TestPhase1MechanicsDisabledInEveryShippedProfile(t *testing.T) {
 	}
 }
 
+func TestBackendImagePackagesShippedQuestRulePack(t *testing.T) {
+	data, err := os.ReadFile("docker/backend.Dockerfile")
+	if err != nil {
+		t.Fatalf("read backend Dockerfile: %v", err)
+	}
+	dockerfile := string(data)
+	runtimeStageStart := strings.LastIndex(dockerfile, "\nFROM ")
+	if runtimeStageStart < 0 {
+		t.Fatal("backend Dockerfile has no runtime stage")
+	}
+	runtimeStage := dockerfile[runtimeStageStart:]
+	for _, fragment := range []string{
+		"COPY --from=builder /app/config/rules/ /app/config/rules/",
+		"WORKDIR /app",
+	} {
+		if !strings.Contains(runtimeStage, fragment) {
+			t.Errorf("backend image is missing rule-pack contract %q", fragment)
+		}
+	}
+}
+
 func TestPhase1AgentProgressionQuarantinedInEveryShippedProfile(t *testing.T) {
 	for _, path := range shippedRuntimeProfiles {
 		t.Run(filepath.Base(path), func(t *testing.T) {

@@ -1,5 +1,5 @@
 # Semdragons backend Dockerfile
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -16,6 +16,8 @@ COPY --from=builder /app/config/semdragons.json /etc/semdragons/semdragons.json
 COPY --from=builder /app/config/semdragons-semsource.json /etc/semdragons/semdragons-semsource.json
 COPY --from=builder /app/config/semdragons-e2e-tier1.json /etc/semdragons/semdragons-e2e-tier1.json
 COPY --from=builder /app/config/models/ /etc/semdragons/models/
+COPY --from=builder /app/config/rules/ /app/config/rules/
+WORKDIR /app
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:8080/health || exit 1
 USER app

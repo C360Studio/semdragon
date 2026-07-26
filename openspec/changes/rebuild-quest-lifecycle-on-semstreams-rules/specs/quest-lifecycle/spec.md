@@ -88,12 +88,75 @@ at creation time.
 
 ### Requirement: Operator lifecycle surface
 Operators SHALL be able to inspect quest workflow state and history and force
-valid transitions through the framework lifecycle gateway. Operator writes
-SHALL be constrained to operator-writable fields and table-valid transitions.
+valid transitions through the framework lifecycle gateway mounted at
+`/lifecycle-gateway/workflows`. The complete gateway namespace SHALL use the
+existing `SEMDRAGONS_API_KEY` authentication semantics. WebSocket streaming
+SHALL be disabled. Operator writes SHALL be constrained to operator-writable
+fields and table-valid transitions.
+
+Only the `quest` workflow SHALL be registered with the shared lifecycle
+manager in this phase, so gateway discovery and direct access expose no other
+workflow. This compositional restriction SHALL NOT be represented as a local
+replacement for the SemStreams workflow/operation allowlist tracked by
+SemStreams #678.
 
 #### Scenario: Operator escalates a stuck quest
 - **WHEN** an operator issues an escalate transition for an active quest via the lifecycle gateway
 - **THEN** the quest transitions to `escalated` with the transition source recorded as operator
+
+#### Scenario: Gateway namespace is authenticated
+
+- **WHEN** a client calls `/lifecycle-gateway/workflows` or any descendant
+  while `SEMDRAGONS_API_KEY` is configured
+- **THEN** missing or incorrect credentials are rejected
+- **AND** the configured key is accepted through `X-API-Key` or Bearer
+  authentication
+- **AND** unrelated public routes are not captured by the gateway middleware
+
+#### Scenario: Development authentication passthrough is preserved
+
+- **WHEN** `SEMDRAGONS_API_KEY` is empty
+- **THEN** gateway requests use the existing development passthrough behavior
+
+#### Scenario: Quest-only composition and streaming policy
+
+- **WHEN** an authenticated operator discovers the deployed gateway
+- **THEN** `quest` is the only exposed workflow because it is the only
+  workflow registered with the shared lifecycle manager
+- **AND** WebSocket streaming is unavailable
+
+#### Scenario: Operator transition and mechanics stub share one history
+
+- **GIVEN** a quest is `in_progress`
+- **WHEN** an authenticated operator transitions it to `in_review`
+- **THEN** history records the operator source and note
+- **AND** the mechanics-stub rule atomically transitions the same quest to
+  `completed` with `verdict=review-skipped-mechanics-disabled`
+- **AND** history records the rule transition after the operator transition
+
+### Requirement: Product quest commands coexist with the operator gateway
+
+The lifecycle gateway SHALL be treated as an operator and break-glass surface
+until it can preserve every product invariant and transition-coupled field
+write. Existing `/game/quests/{id}/...` command handlers SHALL remain the
+supported product command surface during task 4.3. Their retirement SHALL
+remain task 4.4 and SHALL depend on the SemStreams atomic transition-field
+primitive tracked by SemStreams #677.
+
+#### Scenario: Product commands remain available
+
+- **WHEN** the lifecycle gateway is enabled
+- **THEN** existing quest claim, start, submit, complete, fail, abandon, and
+  cancel command behavior remains available
+- **AND** no product command handler is deleted or redirected as part of task
+  4.3
+- **AND** SemStreams #679 and #680 remain the upstream owners for runtime
+  gateway paths and OpenAPI security policy without blocking runtime
+  authentication
+- **AND** SemStreams #681 remains the owner of the revision-retention
+  invariant required for durable lifecycle history
+- **AND** SemStreams #682 remains the owner of the gateway's documented 413
+  versus observed 400 oversized-body response
 
 ### Requirement: Mechanics side effects are stubbed in this change
 While game mechanics are disabled, quest completion SHALL NOT emit XP, start
@@ -119,6 +182,16 @@ are disabled.
 - **AND** each loads the complete quest lifecycle rule pack for quest entities
 - **AND** the mechanics-stub rule is the only automatic resolver of
   `in_review` during Phase 1
+
+#### Scenario: The backend image packages the configured rule pack
+
+- **WHEN** a shipped profile starts inside the backend container
+- **THEN** every configured `config/rules/quest/*.json` file is present at its
+  resolved runtime path
+- **AND** an operator transition to `in_review` is completed by the packaged
+  mechanics-stub rule
+- **AND** the first completed state includes
+  `review-skipped-mechanics-disabled`
 
 #### Scenario: Agentprogression is a dormant product implementation
 

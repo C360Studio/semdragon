@@ -3492,6 +3492,449 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/lifecycle-gateway/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List registered workflow types
+         * @description Returns the workflow types registered with the Manager + per-phase instance counts. Per-workflow List errors surface as a `counts_error` field on the failing entry so partial degradation is visible without breaking the whole response.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Workflow types with instance counts */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Method not allowed (GET only) */
+                405: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle-gateway/workflows/{type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List instances of a workflow type
+         * @description Lists Participant instances for the given workflow type with filter + pagination query parameters. When ?stream=true is set, the connection is upgraded to a WebSocket that streams bootstrap + live updates from Manager.Watch.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Filter to instances in this phase */
+                    phase?: string;
+                    /** @description Filter to non-terminal instances when true */
+                    active?: boolean;
+                    /** @description Maximum results returned (default unlimited) */
+                    limit?: number;
+                    /** @description Skip the first N matching results for pagination */
+                    offset?: number;
+                    /** @description Field-equality filter (any number; one query param per field) */
+                    "match.<field>"?: string;
+                    /** @description Set to 'true' to upgrade to a WebSocket carrying Manager.Watch updates */
+                    stream?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description Workflow type identifier (matches Participant.Workflow()) */
+                    type: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Instance array (or WebSocket frames when ?stream=true) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Invalid query parameter */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description WebSocket streaming disabled (enable_websocket=false) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Workflow type not registered */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Method not allowed (GET only) */
+                405: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle-gateway/workflows/{type}/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get instance state
+         * @description Returns the full Participant state for the given workflow type + entity ID.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Workflow type identifier */
+                    type: string;
+                    /** @description Entity ID (Participant.EntityID()) */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Participant state */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Workflow or entity not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Method not allowed (GET only) */
+                405: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle-gateway/workflows/{type}/{id}/children": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List child instances
+         * @description Returns Participants whose ParentEntityID matches the given entity, across all registered workflows. The {type} segment is required for routing symmetry with the other endpoints; the underlying Manager.Children call scans cross-workflow.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Workflow type identifier (routing-only; cross-workflow scan ignores it) */
+                    type: string;
+                    /** @description Parent entity ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Child Participant array */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Method not allowed (GET only) */
+                405: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle-gateway/workflows/{type}/{id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List phase-transition history
+         * @description Returns the phase-transition history derived from KV revision replay. Each entry includes from/to phases, wallclock timestamp, the TransitionSource (rule/operator/component/framework), and any operator-supplied note.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Workflow type identifier */
+                    type: string;
+                    /** @description Entity ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description TransitionEvent array */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Workflow or entity not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Method not allowed (GET only) */
+                405: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle-gateway/workflows/{type}/{id}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Operator patch (state mutation)
+         * @description Applies a JSON-body patch to the Participant. The body is a `{<field>: <value>}` map; every field MUST be tagged `lifecycle:"operator_writable"` on the registered state struct. Identity (`lifecycle:"id"`) and phase fields are protected by the same default-deny gate the rule layer enforces (ADR-047 § AssertRuleWritable).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Workflow type identifier */
+                    type: string;
+                    /** @description Entity ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description Field-name → value patch map */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StatePatchRequest"];
+                };
+            };
+            responses: {
+                /** @description Patch applied */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Invalid body OR field is not operator_writable OR type mismatch */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Workflow or entity not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Method not allowed (POST only) */
+                405: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Optimistic-concurrency retries exhausted */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Request body exceeds max_body_bytes */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle-gateway/workflows/{type}/{id}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Operator-initiated phase transition
+         * @description Transitions the Participant to the requested phase via Manager.Transition with TransitionSourceOperator. Phase must be declared in the workflow's Transitions table; current → target must be a declared edge; current must not be terminal.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Workflow type identifier */
+                    type: string;
+                    /** @description Entity ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description Target phase + optional operator note for the audit trail */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TransitionRequest"];
+                };
+            };
+            responses: {
+                /** @description Transition applied */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Invalid body OR target phase undeclared OR edge undeclared OR current phase terminal */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Workflow or entity not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Method not allowed (POST only) */
+                405: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Request body exceeds max_body_bytes */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/message-logger/entries": {
         parameters: {
             query?: never;
@@ -5415,6 +5858,9 @@ export interface components {
             skill_name: string;
             total_xp: number;
         };
+        StatePatchRequest: {
+            [key: string]: unknown;
+        };
         StatusStreamEnvelope: {
             flow_id: string;
             id: string;
@@ -5646,6 +6092,10 @@ export interface components {
             tool_status?: string;
             url_fetched?: string[];
             utilization?: number;
+        };
+        TransitionRequest: {
+            note?: string;
+            phase: string;
         };
         TriageDecision: {
             analysis: string;

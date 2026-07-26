@@ -97,6 +97,24 @@ rendered configuration, fresh-state procedure, and verification results.
 - **AND** either updates the target with evidence or records why the newer tag
   is deferred to a new issue and gate
 
+#### Scenario: Shipped Go images satisfy the module toolchain
+
+- **GIVEN** `go.mod` requires Go 1.26.3 or newer
+- **WHEN** the backend, mock-LLM, and sandbox images are built
+- **THEN** every Go builder uses Go 1.26.4
+- **AND** the sandbox runtime exposes `go version go1.26.4`
+- **AND** container verification does not rely on an unsupported Go 1.25
+  toolchain
+
+#### Scenario: Cold SemEmbed startup retains a real health gate
+
+- **GIVEN** a clean Compose stack with no cached embedding model
+- **WHEN** SemEmbed downloads and loads its configured model
+- **THEN** Compose keeps the container in its starting period for at least the
+  observed cold-load duration
+- **AND** readiness still requires the real SemEmbed `/health` endpoint
+- **AND** the backend does not replace that probe with process-only liveness
+
 ### Requirement: Gated-DAG plans are admitted before dispatch
 
 While the repository remains pinned to beta.135, issue #3 SHALL stage each

@@ -24,6 +24,11 @@
 		}
 	}
 
+	# Authenticated lifecycle operator gateway → backend
+	handle /lifecycle-gateway/* {
+		reverse_proxy backend:8080
+	}
+
 	# API docs (Swagger UI) → backend
 	handle /docs* {
 		reverse_proxy backend:8080
