@@ -126,10 +126,12 @@ func TestPartyEventPlaneAndShadowStateAreFullyRemoved(t *testing.T) {
 	assertPartyFileContains(t, "processor/partycoord/party.go",
 		"type Party struct",
 		"SubQuestMap",
-		`Predicate: "party.quest"`,
-		`Predicate: "party.lead"`,
+		`Predicate: "party.assignment.quest"`,
+		`Predicate: "party.membership.lead"`,
 		`Predicate: "party.membership.member"`,
 		`Predicate: "party.assignment." + string(questID)`,
+		`Predicate: "party.lifecycle.formed-at"`,
+		`Predicate: "party.lifecycle.disbanded-at"`,
 	)
 	assertPartyFileContains(t, "processor/partycoord/handler.go",
 		"func (c *Component) FormParty(",
@@ -148,8 +150,8 @@ func TestPartyEventPlaneAndShadowStateAreFullyRemoved(t *testing.T) {
 	)
 	assertPartyFileContains(t, "graph_relationship_contract_test.go",
 		`name: "persisted party"`,
-		`"party.quest":`,
-		`"party.lead":`,
+		`"party.assignment.quest":`,
+		`"party.membership.lead":`,
 		`"party.membership.member":`,
 		`"party.assignment." + string(quest2):`,
 	)

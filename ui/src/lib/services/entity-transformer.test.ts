@@ -819,9 +819,10 @@ describe('transformParty', () => {
 		const entity = graphEntity(PARTY_KEY, [
 			triple('party.identity.name', 'Alpha Strike'),
 			triple('party.status.state', 'active'),
-			triple('party.quest', QUEST_KEY),
-			triple('party.lead', AGENT_KEY),
-			triple('party.lifecycle.formed_at', '2026-01-14T12:00:00Z')
+			triple('party.assignment.quest', QUEST_KEY),
+			triple('party.membership.lead', AGENT_KEY),
+			triple('party.lifecycle.formed-at', '2026-01-14T12:00:00Z'),
+			triple('party.lifecycle.disbanded-at', '2026-01-15T12:00:00Z')
 		]);
 		const party = transformEntity('party', PARTY_KEY, entity) as Party;
 
@@ -831,6 +832,23 @@ describe('transformParty', () => {
 		expect(party.quest_id).toBe(questId(QUEST_KEY));
 		expect(party.lead).toBe(agentId(AGENT_KEY));
 		expect(party.formed_at).toBe('2026-01-14T12:00:00Z');
+		expect(party.disbanded_at).toBe('2026-01-15T12:00:00Z');
+		expect(party.sub_quest_map).not.toHaveProperty('quest');
+	});
+
+	it('rejects the four stale scalar predicates', () => {
+		const entity = graphEntity(PARTY_KEY, [
+			triple('party.quest', QUEST_KEY),
+			triple('party.lead', AGENT_KEY),
+			triple('party.lifecycle.formed_at', '2026-01-14T12:00:00Z'),
+			triple('party.lifecycle.disbanded_at', '2026-01-15T12:00:00Z')
+		]);
+		const party = transformEntity('party', PARTY_KEY, entity) as Party;
+
+		expect(party.quest_id).toBe(questId(''));
+		expect(party.lead).toBe(agentId(''));
+		expect(party.formed_at).toBe('');
+		expect(party.disbanded_at).toBeUndefined();
 	});
 
 	it('uses correct defaults when all predicates are missing', () => {
@@ -858,10 +876,10 @@ describe('transformParty', () => {
 		const entity = graphEntity(PARTY_KEY, [
 			triple('party.identity.name', 'Alpha Strike'),
 			triple('party.status.state', 'active'),
-			triple('party.quest', QUEST_KEY),
-			triple('party.lead', AGENT_KEY),
-			triple('party.lifecycle.formed_at', '2026-01-14T12:00:00Z'),
-			triple('party.lifecycle.disbanded_at', '2026-01-15T12:00:00Z'),
+			triple('party.assignment.quest', QUEST_KEY),
+			triple('party.membership.lead', AGENT_KEY),
+			triple('party.lifecycle.formed-at', '2026-01-14T12:00:00Z'),
+			triple('party.lifecycle.disbanded-at', '2026-01-15T12:00:00Z'),
 			triple('party.membership.member', 'agent-1'),
 			triple('party.member.agent-1.role', 'lead'),
 			triple('party.membership.member', 'agent-2'),
@@ -874,6 +892,7 @@ describe('transformParty', () => {
 		expect(party.members[0].role).toBe('lead');
 		expect(party.members[1].role).toBe('executor');
 		expect(party.sub_quest_map).toEqual({ [subQuestKey]: 'agent-2' });
+		expect(party.sub_quest_map).not.toHaveProperty('quest');
 		expect(party.disbanded_at).toBe('2026-01-15T12:00:00Z');
 	});
 });
@@ -1171,10 +1190,10 @@ describe('schema contract validation', () => {
 	const PARTY_HANDLED: Record<string, string> = {
 		'party.identity.name': 'name',
 		'party.status.state': 'status',
-		'party.quest': 'quest_id',
-		'party.lead': 'lead',
-		'party.lifecycle.formed_at': 'formed_at',
-		'party.lifecycle.disbanded_at': 'disbanded_at',
+		'party.assignment.quest': 'quest_id',
+		'party.membership.lead': 'lead',
+		'party.lifecycle.formed-at': 'formed_at',
+		'party.lifecycle.disbanded-at': 'disbanded_at',
 		'party.membership.member': 'members[].agent_id',
 		'party.member.{id}.role': 'members[].role',
 		'party.assignment.{id}': 'sub_quest_map'
@@ -1326,5 +1345,40 @@ describe('schema contract validation', () => {
 	});
 
 	validateEntity('battle', schema.entities.battle, BATTLE_HANDLED, BATTLE_IGNORED);
+
+	it('party schema has exactly the four canonical scalar renames and preserves dynamic families', () => {
+		const predicates = allPredicates(schema.entities.party);
+		const canonicalScalars = [
+			'party.assignment.quest',
+			'party.membership.lead',
+			'party.lifecycle.formed-at',
+			'party.lifecycle.disbanded-at'
+		];
+		const staleScalars = [
+			'party.quest',
+			'party.lead',
+			'party.lifecycle.formed_at',
+			'party.lifecycle.disbanded_at'
+		];
+
+		expect(predicates.filter((predicate) => canonicalScalars.includes(predicate)).sort())
+			.toEqual([...canonicalScalars].sort());
+		expect(predicates.filter((predicate) => staleScalars.includes(predicate))).toEqual([]);
+		expect(schema.entities.party.static).toEqual([
+			'party.assignment.quest',
+			'party.identity.name',
+			'party.lifecycle.formed-at',
+			'party.membership.count',
+			'party.membership.lead',
+			'party.status.state'
+		]);
+		expect(schema.entities.party.optional).toEqual(['party.lifecycle.disbanded-at']);
+		expect(schema.entities.party.multi_value).toEqual(['party.membership.member']);
+		expect(schema.entities.party.dynamic).toEqual([
+			'party.assignment.{id}',
+			'party.member.{id}.role'
+		]);
+	});
+
 	validateEntity('party', schema.entities.party, PARTY_HANDLED, PARTY_IGNORED);
 });

@@ -453,7 +453,10 @@ function transformParty(key: string, entity: GraphEntity): Party {
 	const subQuestMap: Record<string, string> = {};
 	const assignmentPrefix = 'party.assignment.';
 	for (const triple of entity.triples) {
-		if (triple.predicate.startsWith(assignmentPrefix)) {
+		if (
+			triple.predicate !== 'party.assignment.quest'
+			&& triple.predicate.startsWith(assignmentPrefix)
+		) {
 			const subQuestId = triple.predicate.slice(assignmentPrefix.length);
 			if (subQuestId) {
 				subQuestMap[subQuestId] = str(triple.object);
@@ -465,11 +468,11 @@ function transformParty(key: string, entity: GraphEntity): Party {
 		id: partyId(key),
 		name: str(m.get('party.identity.name'), 'Unknown Party'),
 		status: str(m.get('party.status.state'), 'forming') as Party['status'],
-		quest_id: questId(str(m.get('party.quest'))),
-		lead: agentId(str(m.get('party.lead'))),
+		quest_id: questId(str(m.get('party.assignment.quest'))),
+		lead: agentId(str(m.get('party.membership.lead'))),
 		members,
 		sub_quest_map: subQuestMap,
-		formed_at: str(m.get('party.lifecycle.formed_at')),
-		disbanded_at: str(m.get('party.lifecycle.disbanded_at')) || undefined
+		formed_at: str(m.get('party.lifecycle.formed-at')),
+		disbanded_at: str(m.get('party.lifecycle.disbanded-at')) || undefined
 	};
 }

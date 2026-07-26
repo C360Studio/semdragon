@@ -69,8 +69,8 @@ func TestPersistedAndEventGraphProjectionsTypeEntityReferences(t *testing.T) {
 				FormedAt: now,
 			},
 			wantReferences: map[string]int{
-				"party.quest":                        1,
-				"party.lead":                         1,
+				"party.assignment.quest":             1,
+				"party.membership.lead":              1,
 				"party.membership.member":            2,
 				"party.assignment." + string(quest2): 1,
 			},

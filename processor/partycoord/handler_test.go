@@ -75,11 +75,11 @@ func TestPartyTriplesProjectAuthoritativeRelationships(t *testing.T) {
 	triples := party.Triples()
 	assertPartyTriple(t, triples, partyID, "party.identity.name", party.Name, "")
 	assertPartyTriple(t, triples, partyID, "party.status.state", string(domain.PartyDisbanded), "")
-	assertPartyTriple(t, triples, partyID, "party.quest", string(questID), semcompat.EntityReferenceDatatype)
-	assertPartyTriple(t, triples, partyID, "party.lead", string(leadID), semcompat.EntityReferenceDatatype)
+	assertPartyTriple(t, triples, partyID, "party.assignment.quest", string(questID), semcompat.EntityReferenceDatatype)
+	assertPartyTriple(t, triples, partyID, "party.membership.lead", string(leadID), semcompat.EntityReferenceDatatype)
 	assertPartyTriple(t, triples, partyID, "party.membership.count", 2, "")
-	assertPartyTriple(t, triples, partyID, "party.lifecycle.formed_at", now.Format(time.RFC3339), "")
-	assertPartyTriple(t, triples, partyID, "party.lifecycle.disbanded_at", disbandedAt.Format(time.RFC3339), "")
+	assertPartyTriple(t, triples, partyID, "party.lifecycle.formed-at", now.Format(time.RFC3339), "")
+	assertPartyTriple(t, triples, partyID, "party.lifecycle.disbanded-at", disbandedAt.Format(time.RFC3339), "")
 	assertPartyTriple(t, triples, partyID, "party.assignment."+string(subQuestID), string(memberID), semcompat.EntityReferenceDatatype)
 
 	memberTriples := triplesForPredicate(triples, "party.membership.member")
@@ -100,7 +100,7 @@ func TestPartyTriplesOmitDisbandedTimeWhenActive(t *testing.T) {
 		FormedAt:    time.Now(),
 	}
 
-	if got := triplesForPredicate(party.Triples(), "party.lifecycle.disbanded_at"); len(got) != 0 {
+	if got := triplesForPredicate(party.Triples(), "party.lifecycle.disbanded-at"); len(got) != 0 {
 		t.Fatalf("active party emitted %d disbanded_at triples, want 0", len(got))
 	}
 }
@@ -118,15 +118,15 @@ func TestPartyFromEntityStateReconstructsAuthoritativeParty(t *testing.T) {
 		Triples: []message.Triple{
 			{Predicate: "party.identity.name", Object: "Iron Wolves"},
 			{Predicate: "party.status.state", Object: string(domain.PartyDisbanded)},
-			{Predicate: "party.quest", Object: "c360.prod.game.board.quest.q001"},
-			{Predicate: "party.lead", Object: string(leadID)},
+			{Predicate: "party.assignment.quest", Object: "c360.prod.game.board.quest.q001"},
+			{Predicate: "party.membership.lead", Object: string(leadID)},
 			{Predicate: "party.membership.member", Object: string(leadID)},
 			{Predicate: "party.member." + string(leadID) + ".role", Object: string(domain.RoleLead)},
 			{Predicate: "party.membership.member", Object: string(memberID)},
 			{Predicate: "party.member." + string(memberID) + ".role", Object: string(domain.RoleExecutor)},
 			{Predicate: "party.assignment." + string(subQuestID), Object: string(memberID)},
-			{Predicate: "party.lifecycle.formed_at", Object: now.Format(time.RFC3339)},
-			{Predicate: "party.lifecycle.disbanded_at", Object: disbandedAt.Format(time.RFC3339)},
+			{Predicate: "party.lifecycle.formed-at", Object: now.Format(time.RFC3339)},
+			{Predicate: "party.lifecycle.disbanded-at", Object: disbandedAt.Format(time.RFC3339)},
 		},
 	}
 

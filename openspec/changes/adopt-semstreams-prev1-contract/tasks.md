@@ -455,6 +455,61 @@
   pinned to beta.135, bossbattle remains disabled, and #683 remains the
   framework blocker for the indexed families and judge fallback.
 
+- [x] 2.27 Resolve
+  [semdragon #50](https://github.com/C360Studio/semdragon/issues/50) as a
+  scanner-visible Party projection packet. Canonicalize exactly
+  `party.quest` to `party.assignment.quest`, `party.lead` to
+  `party.membership.lead`, `party.lifecycle.formed_at` to
+  `party.lifecycle.formed-at`, and `party.lifecycle.disbanded_at` to
+  `party.lifecycle.disbanded-at`. Cut the producer, Go reconstruction, UI
+  graph transformer, and generated schema to those canonical scalar names
+  only. Delete all four legacy scalar readers. Preserve Quest and lead as
+  typed `@id` relationships, timestamps as RFC3339 scalar literals with empty
+  values omitted, `party.status.state` unchanged, and the REST/OpenAPI `lead`,
+  `quest_id`, and remaining snake_case Party JSON contract.
+
+  Exclude exact `party.assignment.quest` from the temporary dynamic assignment
+  prefix parser in both Go and UI. Require a regression corpus containing that
+  exact edge and one six-part dynamic assignment to produce one real subquest
+  entry and no synthetic `"quest"` key. Require generated schema to record
+  exact `party.assignment.quest` separately from
+  `party.assignment.{id}`.
+
+  Preserve scanner-hidden `party.member.<full-agent-id>.role` and
+  `party.assignment.<full-quest-id>` as noncanonical blockers, including their
+  existing Go and UI compatibility parsers. Defer first-class
+  party-membership and party-assignment implementation to issue #4 after
+  SemStreams #313 supplies the reusable create/replace client. If #313 lands
+  replace-only, require issue #4 to open a linked owned-create upstream issue.
+
+  Require the pinned beta.158 audit to move from `4/8` to `0/8` without an
+  auditor exemption. Record reset and reseed as a required operational
+  cutover, not an executed runtime reset or restart in this disabled dormant
+  slice. Add no local mutator, wildcard owner claim, child entity
+  implementation, dependency or configuration change, bind, heartbeat,
+  component reactivation, dual representation, legacy alias, or in-place
+  state rewrite.
+
+  Completed 2026-07-25 evidence: producer, Go reconstruction, UI transformer,
+  and generated schema use only the four canonical scalar predicates; source
+  and behavior guards reject all four stale names. Quest and lead remain typed
+  `@id`, timestamps remain scalars, and exact Quest/dynamic prefix collision
+  coverage produces one real assignment and no synthetic `"quest"` key. The
+  dynamic member-role and assignment families remain explicit blockers, and
+  no forbidden scope is included.
+
+  `go test ./...`, `go test -race ./processor/partycoord`, `go vet ./...`, and
+  `go build ./...` pass. The pinned beta.158 Party audit reports `0/8`; the
+  entity-ID audit reports `0/23`. UI tests pass `349/349`; `npm run check`
+  reports zero errors and 15 pre-existing warnings; `npm run build` and
+  `task schema:check` pass. Both strict OpenSpec validations and
+  `git diff --check` pass.
+
+  The architect approves the exact four mappings and keeps full Party
+  readiness blocked on issue #4 and SemStreams #313. Go review records
+  **APPROVE** with no findings. Svelte review records **APPROVE** with no
+  findings.
+
 ## 3. Verification and handoff to beta.158
 
 - [ ] 3.1 Predicate audit has zero findings.

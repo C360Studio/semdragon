@@ -661,18 +661,19 @@ authoritative finding. Issue #28 therefore removes exactly ten and leaves four:
 `party.quest`, `party.lead`, `party.lifecycle.formed_at`, and
 `party.lifecycle.disbanded_at`. Those four scanner-visible findings on the
 retained authoritative Party projection remain deferred, together with
-scanner-hidden `party.member.<agent-id>.role` and
-`party.assignment.<quest-id>` families. This is deliberate: a rename-only
-patch would preserve the unsafe full-object writer and dynamic vocabulary under
-new spellings.
+scanner-hidden `party.member.<full-agent-id>.role` and
+`party.assignment.<full-quest-id>` families. A scalar-only packet may resolve
+the four visible findings, but it cannot present the unsafe full-object writer
+and dynamic vocabulary as beta.158-ready.
 
 The UI currently reconstructs member roles and advisory assignments by
 matching those dynamic predicate families. That parser is a migration trap,
 not a canonical contract. Issue #28 may update generated types and remove UI
 rendering for deleted shadow fields, but it must neither generalize those
 dynamic-prefix parsers nor present them as beta.158-compatible. The later
-canonical packet replaces membership and assignment with first-class entities,
-then removes the dynamic producers and parsers together.
+issue #50 scalar packet retains those compatibility parsers. Issue #4 replaces
+membership and assignment with first-class entities, then removes the dynamic
+producers and parsers together.
 
 The authoritative handoff occurs only after issue
 [#4](https://github.com/C360Studio/semdragon/issues/4) adopts beta.158 and
@@ -1161,6 +1162,74 @@ Svelte review records **APPROVE** after the schema inventory was corrected so
 every mapped scalar, verdict, and judge predicate is `HANDLED` and
 `battle.criteria.count` is the sole ignored predicate. Semdragon remains
 pinned to beta.135 and bossbattle remains disabled.
+
+### D27: Canonicalize Party scalars without promoting dynamic families
+
+Issue [#50](https://github.com/C360Studio/semdragon/issues/50) is a
+scanner-visible Party projection packet. It changes the producer, Go
+reconstruction, UI graph transformer, and generated schema together while
+leaving runtime activation and configuration unchanged.
+
+The cut is exactly four mappings:
+
+- `party.quest` to `party.assignment.quest` as an entity reference;
+- `party.lead` to `party.membership.lead` as an entity reference;
+- `party.lifecycle.formed_at` to `party.lifecycle.formed-at` as an RFC3339
+  scalar literal; and
+- `party.lifecycle.disbanded_at` to `party.lifecycle.disbanded-at` as an
+  RFC3339 scalar literal.
+
+Production and direct scalar consumers use only those canonical predicates.
+The four legacy scalar readers are deleted. Quest and lead remain typed
+`@id` relationships; timestamps remain non-relationship scalars and are
+omitted when empty. `party.status.state` remains unchanged. REST and OpenAPI
+retain `lead`, `quest_id`, and their existing snake_case Party JSON contract.
+
+The exact canonical Quest edge shares the prefix
+`party.assignment.` with the temporary
+`party.assignment.<full-quest-id>` family. Both Go reconstruction and the UI
+transformer must exclude exact `party.assignment.quest` before applying the
+dynamic parser. A regression corpus containing the exact edge plus one
+six-part dynamic assignment reconstructs one real subquest assignment and
+never synthesizes `SubQuestMap["quest"]` or its UI equivalent. Generated
+schema records both the exact predicate and the dynamic family without
+conflating them.
+
+The scanner-hidden `party.member.<full-agent-id>.role` and
+`party.assignment.<full-quest-id>` families remain noncanonical blockers.
+Their existing Go and UI compatibility parsers remain for current callers;
+issue #50 does not approve them as framework contracts or add a second
+representation. Issue
+[#4](https://github.com/C360Studio/semdragon/issues/4) replaces them with
+first-class party-membership and party-assignment entities after
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313)
+provides the reusable owner-safe create/replace client. If #313 delivers only
+replace, issue #4 opens a linked owned-create upstream issue before
+implementation.
+
+The pinned beta.158 audit moves from four invalid from eight extracted to zero
+invalid from the same eight candidates. That result does not include or excuse
+either scanner-hidden dynamic family. Issue #50 records a fresh-state reset
+and reseed as a required operational cutover; this disabled dormant slice does
+not execute a runtime reset or end-to-end restart. It adds no legacy alias,
+wildcard owner claim, child-entity implementation, local mutator, owner bind,
+heartbeat, dependency or configuration change, reactivation, dual
+representation, state rewrite, or auditor exemption.
+
+Completed evidence covers canonical-only producer, Go reconstruction, UI
+transformer, and generated schema; rejection of all four stale scalar names;
+typed relationship and scalar timestamp guards; and the exact Quest/dynamic
+prefix collision regression. The dynamic member-role and assignment families
+remain explicit blockers. The full Go test, focused partycoord race test, Go
+vet, and Go build pass. The pinned beta.158 Party audit reports `0/8`, and the
+entity-ID audit reports `0/23`. All `349/349` UI tests pass; Svelte check
+reports zero errors and 15 pre-existing warnings; the UI build and
+`task schema:check` pass. Both strict OpenSpec validations and the diff check
+pass.
+
+The architect approves the exact four mappings and blocks any broader Party
+readiness claim on issue #4 and SemStreams #313. Go review records **APPROVE**
+with no findings. Svelte review records **APPROVE** with no findings.
 
 ### Issue #26 implementation evidence, pending the final root gate
 

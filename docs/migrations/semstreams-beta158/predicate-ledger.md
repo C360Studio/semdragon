@@ -637,7 +637,7 @@ agent relationship is ordinary same-subject data because the triple subject is
 the quest returned by `EntityID()`; it does not require a
 `ForeignEdgeClaim`.
 
-### partycoord: historical 14 findings, current 4
+### partycoord: historical 14 findings, four scalars canonicalized
 
 The historical beta.158 baseline remains 14 invalid candidates from 27
 extracted. Issue #28 does not rewrite that baseline. It deletes ten findings:
@@ -666,16 +666,44 @@ node output, review, retry, and rollup remain questdag/quest-lifecycle state.
 The current pinned audit extracts eight candidates and reports exactly four
 invalid scalars:
 
-- `party.quest`;
-- `party.lead`;
-- `party.lifecycle.formed_at`; and
-- `party.lifecycle.disbanded_at`.
+- `party.quest` becomes `party.assignment.quest` with the entity-reference
+  datatype;
+- `party.lead` becomes `party.membership.lead` with the entity-reference
+  datatype;
+- `party.lifecycle.formed_at` becomes `party.lifecycle.formed-at` as an
+  RFC3339 scalar literal; and
+- `party.lifecycle.disbanded_at` becomes `party.lifecycle.disbanded-at` as an
+  RFC3339 scalar literal.
+
+Issue #50 reports `0/8` for those scanner-visible predicates. The Party
+producer, Go reconstruction, UI graph transformer, and generated schema move
+together to the four canonical names. The four legacy scalar readers are
+deleted. `party.status.state` is unchanged. REST and OpenAPI retain `lead`,
+`quest_id`, and the remaining snake_case Party JSON fields.
+
+The exact canonical `party.assignment.quest` edge overlaps lexically with the
+temporary `party.assignment.<full-quest-id>` prefix. Go and UI parsers exclude
+the exact predicate before parsing dynamic assignments. Regression
+coverage containing that exact edge plus one six-part dynamic assignment
+produces one real `SubQuestMap` entry and no synthetic `"quest"` key.
 
 Scanner-hidden `party.member.<full-agent-id>.role` and
-`party.assignment.<full-quest-id>` remain deferred with those four findings.
-The temporary assignment family survives only for current questdagexec/
-questdag callers. Issue #4 removes both dynamic families when beta.158 and the
-SemStreams #313 owner-classified mutation path are available.
+`party.assignment.<full-quest-id>` remain noncanonical blockers. Their
+existing Go and UI compatibility parsers remain unchanged for current
+questdagexec/questdag callers; they are not canonical framework contracts.
+Issue #4 replaces them with first-class party-membership and party-assignment
+entities after
+[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313)
+provides the reusable owner-safe create/replace client. If #313 lands
+replace-only, issue #4 opens a linked owned-create upstream issue rather than
+copying a local mutator.
+
+Issue #50 records a fresh-state reset and reseed as an operational cutover
+requirement; this dormant slice does not execute a runtime reset or restart
+test. It adds no compatibility alias, dual representation, in-place state
+rewrite, wildcard owner claim, auditor exemption, child entity, projection
+owner, bind, heartbeat, local mutator, dependency or configuration change, or
+component reactivation.
 
 ### Auditor false positives proved non-graph
 

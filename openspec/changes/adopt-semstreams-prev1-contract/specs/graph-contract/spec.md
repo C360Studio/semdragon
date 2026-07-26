@@ -1071,8 +1071,10 @@ projection.
 - **THEN** it removes only deleted shadow-field rendering and fixtures
 - **AND** it neither generalizes nor labels the dynamic parser as
   beta.158-compatible
-- **AND** a later canonical packet replaces first-class membership and
-  assignment producers and their UI readers atomically
+- **AND** issue #50 may canonicalize the four scalar predicates while retaining
+  those compatibility parsers as explicit blockers
+- **AND** issue #4 replaces dynamic membership and assignment producers and
+  their UI readers with first-class entities atomically
 
 #### Scenario: Canonical Party ownership remains a framework handoff
 
@@ -1087,6 +1089,85 @@ projection.
 - **AND** SemStreams gated-DAG owns order, claim, redelivery, and stalls
 - **AND** issue #4 consumes the public owner-token mutation path tracked by
   SemStreams #313 rather than copying framework internals
+
+### Requirement: Party scalar projection is canonicalized incrementally
+
+Issue #50 SHALL canonicalize only the four scanner-visible Party predicates.
+The cut SHALL contain exactly these mappings:
+
+- `party.quest` to `party.assignment.quest`;
+- `party.lead` to `party.membership.lead`;
+- `party.lifecycle.formed_at` to `party.lifecycle.formed-at`; and
+- `party.lifecycle.disbanded_at` to `party.lifecycle.disbanded-at`.
+
+#### Scenario: Producer and direct consumers use only canonical Party scalars
+
+- **WHEN** issue #50 emits or reconstructs a Party
+- **THEN** its Quest, lead, formed-at, and disbanded-at values use only the
+  four canonical mappings above
+- **AND** Go reconstruction retains none of the four legacy scalar readers
+- **AND** the UI graph transformer and generated schema use only the four
+  canonical names for those values
+- **AND** `party.status.state` remains unchanged
+- **AND** REST and OpenAPI retain `lead`, `quest_id`, and the remaining
+  snake_case Party JSON fields
+
+#### Scenario: Relationships and timestamp literals remain distinct
+
+- **WHEN** Party relationship datatype coverage is evaluated
+- **THEN** `party.assignment.quest` and `party.membership.lead` use the
+  SemStreams entity-reference datatype
+- **AND** `party.lifecycle.formed-at` and
+  `party.lifecycle.disbanded-at` are RFC3339 scalar literals
+- **AND** empty timestamp values produce no timestamp triple
+- **AND** relationship coverage rejects an `@id` datatype on either timestamp
+
+#### Scenario: Exact Quest edge cannot become a dynamic assignment
+
+- **GIVEN** one Party corpus contains exact `party.assignment.quest`
+- **AND** it contains one
+  `party.assignment.<six-part-full-quest-id>` dynamic assignment
+- **WHEN** Go reconstruction and the UI transformer parse that corpus
+- **THEN** each produces exactly one real subquest assignment
+- **AND** neither produces `SubQuestMap["quest"]` nor a UI `"quest"` key
+- **AND** generated schema records exact `party.assignment.quest` separately
+  from dynamic `party.assignment.{id}`
+
+#### Scenario: Dynamic Party compatibility remains an explicit blocker
+
+- **GIVEN** stored Party state still uses
+  `party.member.<full-agent-id>.role` and
+  `party.assignment.<full-quest-id>`
+- **WHEN** issue #50 completes the four scalar mappings
+- **THEN** both families remain noncanonical and scanner-hidden
+- **AND** their existing Go and UI compatibility parsers remain unchanged
+- **AND** those parsers are not approved as framework contracts
+- **AND** issue #4 owns first-class party-membership and party-assignment
+  implementation after the SemStreams #313 create/replace client is available
+- **AND** a replace-only #313 delivery requires a linked owned-create upstream
+  issue before issue #4 implements the child entities
+
+#### Scenario: Scalar audit success does not claim Party readiness
+
+- **GIVEN** the pinned beta.158 authoritative Party baseline is four invalid
+  from eight extracted candidates
+- **WHEN** issue #50 runs the scanner-visible audit
+- **THEN** its target is zero invalid from the same eight candidates
+- **AND** no wildcard owner claim or auditor exemption hides a dynamic family
+- **AND** no child entity, local mutator, owner bind, heartbeat, dependency or
+  configuration change, component reactivation, or dual representation is
+  introduced
+
+#### Scenario: Operational Party cutover requires fresh state
+
+- **GIVEN** issue #50 does not execute a runtime reset or restart in its
+  disabled dormant slice
+- **WHEN** a later operational cutover activates the canonical Party
+  projection
+- **THEN** the graph is reset and reseeded from canonical sources
+- **AND** no legacy alias, dual write, in-place state rewrite, or migration
+  reader is added for the four scalar predicates
+- **AND** restart behavior consumes only the reseeded canonical scalar state
 
 ### Requirement: Clean pre-v1 cutover
 

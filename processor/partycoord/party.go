@@ -97,16 +97,16 @@ func (p *Party) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "party.status.state", Object: string(p.Status), Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Quest relationship
-		{Subject: entityID, Predicate: "party.quest", Object: string(p.QuestID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "party.assignment.quest", Object: string(p.QuestID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 
 		// Lead
-		{Subject: entityID, Predicate: "party.lead", Object: string(p.Lead), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "party.membership.lead", Object: string(p.Lead), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
 
 		// Membership count
 		{Subject: entityID, Predicate: "party.membership.count", Object: len(p.Members), Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Lifecycle
-		{Subject: entityID, Predicate: "party.lifecycle.formed_at", Object: p.FormedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "party.lifecycle.formed-at", Object: p.FormedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
 	// Member relationships
@@ -132,7 +132,7 @@ func (p *Party) Triples() []message.Triple {
 	// Disbanded time if set
 	if p.DisbandedAt != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "party.lifecycle.disbanded_at", Object: p.DisbandedAt.Format(time.RFC3339),
+			Subject: entityID, Predicate: "party.lifecycle.disbanded-at", Object: p.DisbandedAt.Format(time.RFC3339),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -169,18 +169,18 @@ func PartyFromEntityState(entity *graph.EntityState) *Party {
 			p.Status = domain.PartyStatus(domain.AsString(triple.Object))
 
 		// Relationships
-		case "party.assignment.quest", "party.quest":
+		case "party.assignment.quest":
 			p.QuestID = domain.QuestID(domain.AsString(triple.Object))
-		case "party.membership.lead", "party.lead":
+		case "party.membership.lead":
 			p.Lead = domain.AgentID(domain.AsString(triple.Object))
 		case "party.membership.member":
 			agentID := domain.AgentID(domain.AsString(triple.Object))
 			memberRoles[agentID] = "" // Will be filled by role triple
 
 		// Lifecycle
-		case "party.lifecycle.formed_at":
+		case "party.lifecycle.formed-at":
 			p.FormedAt = domain.AsTime(triple.Object)
-		case "party.lifecycle.disbanded_at":
+		case "party.lifecycle.disbanded-at":
 			t := domain.AsTime(triple.Object)
 			p.DisbandedAt = &t
 		}

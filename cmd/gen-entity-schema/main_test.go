@@ -81,6 +81,59 @@ func TestExtractBattleIncludesCanonicalScalars(t *testing.T) {
 	}
 }
 
+func TestExtractPartyHasCanonicalScalarAndDynamicInventory(t *testing.T) {
+	schema := extractParty()
+
+	assertPredicatesEqual(t, "static", schema.Static, []string{
+		"party.assignment.quest",
+		"party.identity.name",
+		"party.lifecycle.formed-at",
+		"party.membership.count",
+		"party.membership.lead",
+		"party.status.state",
+	})
+	assertPredicatesEqual(t, "optional", schema.Optional, []string{
+		"party.lifecycle.disbanded-at",
+	})
+	assertPredicatesEqual(t, "multi-value", schema.MultiValue, []string{
+		"party.membership.member",
+	})
+	assertPredicatesEqual(t, "dynamic", schema.Dynamic, []string{
+		"party.assignment.{id}",
+		"party.member.{id}.role",
+	})
+
+	for _, predicate := range []string{
+		"party.quest",
+		"party.lead",
+		"party.lifecycle.formed_at",
+		"party.lifecycle.disbanded_at",
+	} {
+		for _, predicates := range [][]string{
+			schema.Static,
+			schema.Optional,
+			schema.MultiValue,
+			schema.Dynamic,
+		} {
+			if containsPredicate(predicates, predicate) {
+				t.Errorf("party schema retains stale scalar %q", predicate)
+			}
+		}
+	}
+}
+
+func assertPredicatesEqual(t *testing.T, category string, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("unexpected %s predicates: got %v, want %v", category, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("unexpected %s predicates: got %v, want %v", category, got, want)
+		}
+	}
+}
+
 func containsPredicate(predicates []string, want string) bool {
 	for _, predicate := range predicates {
 		if predicate == want {
