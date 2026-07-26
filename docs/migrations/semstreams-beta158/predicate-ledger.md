@@ -855,32 +855,53 @@ projection tests and retain the existing party-DAG e2e assertion.
 
 ## Relationship coverage expansion
 
-The current domain contract test covers Quest, Guild, and PeerReview. It must
-also enumerate:
+Issue #53 replaces fragmented tests with one stale-checked inventory of exactly
+36 current relationship predicate shapes:
 
-- Agent:
-  guild, current quest, current party, inventory-entry/item, and effect/quest.
-- Party:
-  parent quest, lead, members, and the temporary assignment relationship.
-  The future contract separately covers party membership plus
-  questdag-owned assignment and node submission/output relationships.
-- BossBattle:
-  assignment quest and agent. Judge IDs inside bounded objects are not graph
-  edges.
-- DAG:
+- Domain Quest, eight:
+  `quest.assignment.agent`, `quest.assignment.party`,
+  `quest.priority.guild`, `quest.classification.red-team-target`,
+  `quest.classification.red-team-quest-id`, `quest.parent.quest`,
+  `quest.dependency.quest`, and `quest.relationship.produced`;
+- Domain Guild, four:
+  `guild.founding.agent`, `guild.membership.agent`,
+  `guild.application.{id}.applicant`, and
+  `guild.application.{id}.reviewed_by`;
+- Domain PeerReview, four:
+  `review.assignment.quest`, `review.assignment.leader`,
+  `review.assignment.member`, and `review.assignment.party`;
+- Agent, five:
+  `agent.membership.guild`, `agent.assignment.quest`,
+  `agent.membership.party`, `agent.inventory.tool.{id}`, and
+  `agent.effects.{id}.quest`;
+- Party, four:
+  `party.assignment.quest`, `party.membership.lead`,
+  `party.membership.member`, and `party.assignment.{id}`;
+- BossBattle, two:
+  `battle.assignment.quest` and `battle.assignment.agent`;
+- autonomy, three:
+  `agent.autonomy.claim-quest`, `agent.autonomy.guild-join`, and
+  `agent.autonomy.use-quest`;
+- executor and web fetch, three:
+  `execution.agent.id`, `source.doc.fetched-by`, and
+  `source.doc.quest-id`; and
+- questdag, three:
   `gateddag.unit.depends-on`, `questdag.unit.parent-quest`, and
   `questdag.unit.sub-quest`.
-- Executor web fetch:
-  `source.doc.fetched-by` and `source.doc.quest-id`.
-- Event payload projections:
-  agent XP quest, autonomy quest/item/guild relations, store item relations,
-  and review assignment.
-- Authoritative Guild:
-  `guild.founding.agent`, `guild.membership.agent`, and the current dynamic
-  application applicant/reviewer relationships. Issue #4 replaces membership
-  and application facts with first-class child entities.
-- Additional payload projections:
-  `execution.agent.id` and store purchase/consumable item references.
+
+The `{id}` notation normalizes runtime predicate instances only for inventory
+comparison. It neither approves dynamic grammar nor changes the existing
+Semdragon #4, SemStreams #313, or SemStreams #683 blockers.
+
+The contract covers or classifies all 20 current production `Triples`
+implementations plus direct questdag constructors. `semsource.EntityPayload`
+is external pass-through pending decoded-state validation in issue #4.
+StoreItem and AgentInventory are no-edge publishers. Quest/Guild tool and
+catalog aliases and autonomy shop-item IDs are scalars. Autonomy evaluated,
+idle, shop, and guild-create projections are no-edge; their catalog aliases
+and candidate counts remain scalar.
+Execution completion/failure projections are no-edge. Structured Agent and
+BossBattle values are non-relationships, including BossBattle judge IDs.
 
 The deleted prompt-assembly, guild-event, party-event, and four seeding DTO
 fixtures are not relationship coverage. If a real publisher is introduced
@@ -891,3 +912,16 @@ Issue #3 uses one centralized compatibility marker,
 `internal/semcompat.EntityReferenceDatatype = "@id"`, across all packages.
 Issue #4 replaces every use with `message.EntityReferenceDatatype` and deletes
 the compatibility definition immediately after adopting beta.158.
+
+`task contract:relationships` runs this inventory and is part of
+`task contract:default`. It fails on an unreviewed producer or shape, an
+entity-valued object without `@id`, or `@id` on a non-entity object. Issue #53
+adds no production, dependency, beta-version, semcompat, dynamic-family,
+owner/writer, configuration, alias, rewrite, or activation change. This
+repository test consolidation needs no upstream issue.
+
+The focused relationship task must pass. The aggregate remains expected red
+solely on SemStreams #671 classifications: processor questboard reports
+`2/72` and service reports `1/1` for non-predicate `quest.failed` message
+categories. Core `0/329`, UI `0/41`, and entity IDs `0/25` pass. Issue #53
+does not hide those findings or claim the aggregate is green before #671.

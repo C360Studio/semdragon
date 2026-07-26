@@ -565,7 +565,43 @@
 
 - [ ] 3.1 Predicate audit has zero findings.
 - [ ] 3.2 Entity-ID audit has zero findings.
-- [ ] 3.3 Relationship coverage test proves every graph edge is typed `@id`.
+- [ ] 3.3 Resolve
+  [semdragon #53](https://github.com/C360Studio/semdragon/issues/53), under
+  parent [#3](https://github.com/C360Studio/semdragon/issues/3), with one
+  stale-checked repository relationship contract. Inventory exactly 36
+  reviewed relationship predicate shapes: 16 Domain Quest/Guild/PeerReview,
+  five Agent, four Party, two BossBattle, three autonomy, three executor/web
+  fetch, and three questdag. Cover or classify all 20 current production
+  `Triples` implementations plus direct questdag triple constructors.
+
+  Normalize dynamic predicate instances to `{id}` only for inventory
+  comparison; do not approve their grammar or remove the #4/#313/#683
+  blockers. Classify `semsource.EntityPayload` as external pass-through pending
+  decoded-state validation in issue #4. Classify StoreItem and AgentInventory
+  as no-edge publishers; tool/catalog aliases and autonomy shop item IDs as
+  scalars; autonomy evaluated, idle, shop, and guild-create projections as
+  no-edge; execution completion/failure projections as no-edge; and structured
+  Agent and BossBattle values as non-relationships.
+
+  Replace fragmented relationship tests with a RED/GREEN and mutation-tested
+  inventory that fails on a new unreviewed producer or relationship shape, an
+  entity object without `@id`, or `@id` on a non-entity object. Add
+  `task contract:relationships` and invoke it from
+  `task contract:default`.
+
+  Require the focused relationship task to pass. The aggregate may remain red
+  only on SemStreams #671: processor questboard `2/72` and service `1/1` for
+  non-predicate `quest.failed` message-category classifications. Record core
+  `0/329`, UI `0/41`, and entity IDs `0/25` without claiming the aggregate is
+  green before #671.
+
+  Add no production change, dependency or beta bump, semcompat replacement,
+  dynamic-family approval, owner/writer, configuration, alias, rewrite, or
+  activation change. Open no upstream issue. Keep this task unchecked pending
+  TDD mutation evidence, focused and aggregate contract invocation, full Go
+  race/vet/build and audit gates, architect, Go, and technical-writer reviews,
+  and live stacked CI test/lint checks with `build-and-push` skipped and no
+  image publication.
 - [ ] 3.4 `go build ./...`, unit tests, UI checks, and schema freshness gates
   pass while still pinned to beta.135.
 - [ ] 3.5 Write and review the literal fresh-volume wipe/reseed and

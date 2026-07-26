@@ -1288,6 +1288,69 @@ The technical-writer review records the two-run evidence above. PR #52 remains
 draft under parent #2. The final documentation commit will trigger a fresh CI
 run, but task 2.28 may close on the completed acceptance proof for `8441456`.
 
+### D29: Make relationship coverage repository-exact and stale-checked
+
+Issue [#53](https://github.com/C360Studio/semdragon/issues/53), under parent
+[#3](https://github.com/C360Studio/semdragon/issues/3), stacks after PR #52
+and completes the evidence boundary in task 3.3 without changing production
+graph behavior.
+
+The reviewed inventory contains exactly 36 relationship predicate shapes:
+
+- Domain Quest, Guild, and PeerReview: 16;
+- Agent: five;
+- Party: four;
+- BossBattle: two;
+- autonomy: three;
+- executor and web fetch: three; and
+- questdag: three.
+
+The predicate ledger records every exact shape. Runtime IDs in dynamic
+predicates are normalized to `{id}` only while comparing inventory. That
+normalization is not an approved grammar and does not remove the existing
+Semdragon #4, SemStreams #313, or SemStreams #683 blockers.
+
+One repository contract covers or explicitly classifies all 20 current
+production `Triples` implementations plus direct questdag triple constructors.
+The 20 implementations are the domain Quest, Guild, and PeerReview; external
+`semsource.EntityPayload`; BossBattle; StoreItem and AgentInventory; all seven
+autonomy payloads; Agent; the three executor lifecycle payloads; Party; and
+the web-content entity.
+
+The non-edge boundary is explicit:
+
+- `semsource.EntityPayload` is external pass-through pending decoded-state
+  validation in issue #4;
+- StoreItem and AgentInventory publish no graph edges;
+- tool and catalog aliases, including autonomy shop item IDs, remain scalars;
+- autonomy evaluated, idle, shop, and guild-create projections are no-edge;
+- execution completion and failure projections emit no relationships; and
+- structured Agent and BossBattle values, including judge IDs, are not graph
+  relationships.
+
+The stale-checked contract fails when a production `Triples` implementation or
+direct questdag constructor appears without review, a relationship shape is
+not inventoried, an entity object lacks `@id`, or `@id` is attached to a
+non-entity object. TDD mutation cases prove each failure mode.
+
+`task contract:relationships` runs the focused contract and is added to the
+`task contract:default` aggregate. The relationship task must pass. The
+aggregate is expected to remain red solely on SemStreams #671 classifications:
+processor questboard reports `2/72` and service reports `1/1` for
+non-predicate `quest.failed` message categories. Core `0/329`, UI `0/41`, and
+entity IDs `0/25` remain green. Issue #53 neither hides those findings nor
+claims the aggregate is green before #671.
+
+This packet adds no production code, dependency or beta bump,
+`internal/semcompat` replacement, dynamic-family approval, owner/writer,
+configuration, alias, rewrite, or activation change. It exposes no missing
+framework primitive and opens no upstream issue.
+
+Task 3.3 remains pending until the RED/GREEN contract, focused and aggregate
+task invocation, full Go race/vet/build and audit gates, architect, Go, and
+technical-writer reviews, and live stacked test/lint checks complete.
+`build-and-push` must remain skipped with no image publication.
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

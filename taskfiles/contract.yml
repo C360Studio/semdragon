@@ -11,6 +11,7 @@ tasks:
         status=0
         task contract:predicates || status=1
         task contract:entity-ids || status=1
+        task contract:relationships || status=1
         exit "$status"
 
   predicates:
@@ -65,3 +66,12 @@ tasks:
         go run
         github.com/c360studio/semstreams/cmd/entity-id-audit@{{.SEMSTREAMS_CONTRACT_VERSION}}
         --include-untracked .
+
+  relationships:
+    desc: Audit the exact Semdragon relationship projection contract
+    cmds:
+      - >-
+        go test ./...
+        -run
+        '^(TestRepositoryRelationshipContract|TestRepositoryRelationshipContractRejectsMutations|TestDomainGraphableRelationshipsUseExplicitEntityReferences|TestDomainGraphableRegistryAndProvenanceIDsRemainScalar|TestUnitRelationshipContract|TestBuildWebContentEntityTypesSourceRelationships)$'
+        -count=1

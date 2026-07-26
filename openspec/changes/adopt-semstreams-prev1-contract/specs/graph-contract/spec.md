@@ -89,6 +89,111 @@ relationships merely because they resemble an entity ID.
 - **THEN** every approved relationship predicate has an `@id` object
 - **AND** no unapproved scalar-to-edge inference is required
 
+### Requirement: Repository relationship coverage is stale-checked
+
+Issue #53 SHALL replace fragmented relationship tests with one repository
+inventory covering every current production `Triples` implementation and
+direct questdag relationship constructors. The inventory SHALL contain exactly
+36 reviewed predicate shapes.
+
+#### Scenario: Domain relationships contribute exactly 16 shapes
+
+- **WHEN** Quest relationships are inventoried
+- **THEN** the eight shapes are `quest.assignment.agent`,
+  `quest.assignment.party`, `quest.priority.guild`,
+  `quest.classification.red-team-target`,
+  `quest.classification.red-team-quest-id`, `quest.parent.quest`,
+  `quest.dependency.quest`, and `quest.relationship.produced`
+- **WHEN** Guild relationships are inventoried
+- **THEN** the four shapes are `guild.founding.agent`,
+  `guild.membership.agent`, `guild.application.{id}.applicant`, and
+  `guild.application.{id}.reviewed_by`
+- **WHEN** PeerReview relationships are inventoried
+- **THEN** the four shapes are `review.assignment.quest`,
+  `review.assignment.leader`, `review.assignment.member`, and
+  `review.assignment.party`
+
+#### Scenario: Product relationships contribute exactly 17 shapes
+
+- **WHEN** Agent relationships are inventoried
+- **THEN** the five shapes are `agent.membership.guild`,
+  `agent.assignment.quest`, `agent.membership.party`,
+  `agent.inventory.tool.{id}`, and `agent.effects.{id}.quest`
+- **WHEN** Party relationships are inventoried
+- **THEN** the four shapes are `party.assignment.quest`,
+  `party.membership.lead`, `party.membership.member`, and
+  `party.assignment.{id}`
+- **WHEN** BossBattle relationships are inventoried
+- **THEN** the two shapes are `battle.assignment.quest` and
+  `battle.assignment.agent`
+- **WHEN** autonomy relationships are inventoried
+- **THEN** the three shapes are `agent.autonomy.claim-quest`,
+  `agent.autonomy.guild-join`, and `agent.autonomy.use-quest`
+- **WHEN** executor and web-fetch relationships are inventoried
+- **THEN** the three shapes are `execution.agent.id`,
+  `source.doc.fetched-by`, and `source.doc.quest-id`
+
+#### Scenario: Questdag contributes exactly three shapes
+
+- **WHEN** direct questdag triple constructors are inventoried
+- **THEN** the shapes are `gateddag.unit.depends-on`,
+  `questdag.unit.parent-quest`, and `questdag.unit.sub-quest`
+- **AND** the repository total is exactly 36 reviewed shapes
+
+#### Scenario: Dynamic normalization is inventory-only
+
+- **GIVEN** current Guild, Agent, or Party predicates contain runtime IDs
+- **WHEN** the relationship contract compares their instances to reviewed
+  shapes
+- **THEN** it may normalize only the runtime ID to `{id}`
+- **AND** that normalization does not approve dynamic predicate grammar
+- **AND** Semdragon #4 and SemStreams #313/#683 remain blocking
+
+#### Scenario: Every current producer is covered or classified
+
+- **WHEN** the contract inventories production graph projections
+- **THEN** all 20 current `Triples` implementations are named
+- **AND** direct questdag triple constructors are covered
+- **AND** `semsource.EntityPayload` is external pass-through pending
+  decoded-state validation in issue #4
+- **AND** StoreItem and AgentInventory are no-edge publishers
+- **AND** tool/catalog aliases and autonomy shop item IDs are scalars
+- **AND** autonomy evaluated, idle, shop, and guild-create projections are
+  no-edge
+- **AND** execution completion and failure projections are no-edge
+- **AND** structured Agent and BossBattle values are non-relationships
+
+#### Scenario: Stale or invalid relationship contracts fail
+
+- **WHEN** a production `Triples` implementation or direct questdag
+  constructor appears without review
+- **THEN** the contract fails
+- **WHEN** a relationship shape appears outside the 36-shape inventory
+- **THEN** the contract fails
+- **WHEN** an entity object lacks `@id` or a non-entity object carries `@id`
+- **THEN** the contract fails
+
+#### Scenario: Relationship contract joins the default gate
+
+- **WHEN** task contracts are evaluated
+- **THEN** `task contract:relationships` runs the stale-checked inventory
+- **AND** `task contract:default` invokes that task
+- **AND** the focused relationship task must pass
+- **AND** the aggregate may remain red only on SemStreams #671 classifications
+  for processor questboard `2/72` and service `1/1`
+- **AND** core `0/329`, UI `0/41`, and entity IDs `0/25` remain explicit
+- **AND** issue #53 does not claim aggregate green before #671
+
+#### Scenario: Coverage consolidation changes no runtime boundary
+
+- **WHEN** issue #53 implements the relationship contract
+- **THEN** it adds no production, dependency, beta-version, semcompat,
+  dynamic-family, owner/writer, configuration, alias, rewrite, or activation
+  change
+- **AND** no upstream issue is opened
+- **AND** architect, Go, and technical-writer reviews plus live stacked CI gate
+  completion
+
 ### Requirement: Autonomy graph-event vocabulary is explicit
 
 The system SHALL declare and emit the canonical autonomy graph-event
