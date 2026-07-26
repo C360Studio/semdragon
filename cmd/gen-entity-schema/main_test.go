@@ -2,6 +2,26 @@ package main
 
 import "testing"
 
+func TestExtractAgentIncludesCanonicalOptionalAggregates(t *testing.T) {
+	schema := extractAgent()
+
+	for _, predicate := range []string{
+		"agent.inventory.total-spent",
+		"agent.reputation.peer-avg",
+		"agent.reputation.peer-q1-avg",
+		"agent.reputation.peer-q2-avg",
+		"agent.reputation.peer-q3-avg",
+		"agent.reputation.peer-count",
+	} {
+		if !containsPredicate(schema.Optional, predicate) {
+			t.Errorf("agent optional schema is missing %q", predicate)
+		}
+	}
+	if !containsPredicate(schema.MultiValue, "agent.skill.proficiency") {
+		t.Error(`agent multi-value schema is missing "agent.skill.proficiency"`)
+	}
+}
+
 func TestExtractQuestIncludesCanonicalMetrics(t *testing.T) {
 	schema := extractQuest()
 

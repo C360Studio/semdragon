@@ -1,35 +1,40 @@
 {
-  "generated_at": "2026-07-25T21:18:53Z",
+  "generated_at": "2026-07-26T01:22:10Z",
   "entities": {
     "agent": {
       "static": [
-        "agent.identity.display_name",
+        "agent.identity.display-name",
         "agent.identity.name",
-        "agent.lifecycle.created_at",
-        "agent.lifecycle.updated_at",
+        "agent.lifecycle.created-at",
+        "agent.lifecycle.updated-at",
         "agent.npc.flag",
-        "agent.progression.death_count",
+        "agent.progression.death-count",
         "agent.progression.level",
         "agent.progression.tier",
-        "agent.progression.xp.current",
-        "agent.progression.xp.to_level",
-        "agent.stats.bosses_defeated",
-        "agent.stats.quests_completed",
-        "agent.stats.quests_failed",
-        "agent.stats.total_xp_earned",
+        "agent.progression.xp-current",
+        "agent.progression.xp-to-level",
+        "agent.stats.bosses-defeated",
+        "agent.stats.quests-completed",
+        "agent.stats.quests-failed",
+        "agent.stats.total-xp-earned",
         "agent.status.state"
       ],
-      "dynamic": [
-        "agent.skill.{tag}.level",
-        "agent.skill.{tag}.total_xp"
-      ],
+      "dynamic": [],
       "optional": [
         "agent.assignment.quest",
+        "agent.inventory.total-spent",
         "agent.membership.guild",
         "agent.membership.party",
-        "agent.status.cooldown_until"
+        "agent.reputation.peer-avg",
+        "agent.reputation.peer-count",
+        "agent.reputation.peer-q1-avg",
+        "agent.reputation.peer-q2-avg",
+        "agent.reputation.peer-q3-avg",
+        "agent.status.cooldown-until"
       ],
-      "multi_value": []
+      "multi_value": [
+        "agent.skill.proficiency"
+      ]
     },
     "battle": {
       "static": [

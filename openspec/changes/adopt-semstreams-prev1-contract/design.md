@@ -959,6 +959,76 @@ separate optional framework service; Semdragon
 [#41](https://github.com/C360Studio/semdragon/issues/41) grants its real health
 probe enough start grace for the observed cold model load.
 
+### D24: Canonicalize the dormant Agent projection without claiming readiness
+
+Issue [#44](https://github.com/C360Studio/semdragon/issues/44) is an
+incremental dormant-projection packet. The `agent_progression` component stays
+disabled in every shipped profile. The packet changes the retained Agent
+producer, reconstruction, UI consumers, and generated schema together while
+Semdragon remains pinned to beta.135.
+
+The retained scalar cut is exactly 17 lexical canonicalizations:
+
+- one identity field: `display_name` to `display-name`;
+- two progression XP fields: `xp.current` and `xp.to_level` to `xp-current`
+  and `xp-to-level`;
+- one progression count: `death_count` to `death-count`;
+- four stats fields: `quests_completed`, `quests_failed`, `bosses_defeated`,
+  and `total_xp_earned` to their hyphenated forms;
+- two lifecycle fields: `created_at` and `updated_at` to `created-at` and
+  `updated-at`;
+- one status field: `cooldown_until` to `cooldown-until`;
+- one inventory aggregate: `total_spent` to `total-spent`; and
+- five reputation fields: `peer_avg`, `peer_q1_avg`, `peer_q2_avg`,
+  `peer_q3_avg`, and `peer_count` to their hyphenated forms.
+
+All names retain their existing `agent.<family>.` prefix. The predicate ledger
+records every complete old-to-new identity.
+
+Dynamic skill predicates are not renamed one tag at a time. Every
+`agent.skill.{tag}.{level,total_xp}` pair becomes one repeated
+`agent.skill.proficiency` bounded object:
+
+```json
+{"tag": "coding", "level": 3, "total-xp": 420}
+```
+
+The producer sorts tags for deterministic output, but consumers treat the
+repeated values as an unordered set keyed by `tag`. Runtime tags remain data.
+Reconstruction, UI transformation and labels, and generated entity schema read
+only canonical predicates. No compatibility aliases, dual readers, dual
+writes, or in-place state rewrite are introduced.
+
+The three retained Agent relationships remain explicit:
+
+- `agent.membership.guild` references the current Guild;
+- `agent.assignment.quest` references the current Quest; and
+- `agent.membership.party` references the current Party.
+
+All three use the SemStreams entity-reference datatype. The 17 scalar values
+and skill proficiency objects do not.
+
+Audit chronology remains precise. The historical package baseline is 22
+invalid candidates from 32 extracted. Issue #30 removed the dead XP payload
+and measured 17 invalid from 26 extracted. Issue #44 targets zero invalid from
+27 scanner-visible candidates after adding the bounded proficiency predicate.
+That result does not cover scanner-hidden dynamic inventory tool, consumable,
+or active-effect families, and it does not validate writer ownership.
+
+Inventory entries and active effects still become first-class child entities
+in issue #4. Their owner-safe create and mutation paths remain blocked on
+SemStreams #313. Issue #44 adds no child entity, agentstore ownership,
+projection bind, heartbeat, owner-token mutator, dependency bump, writer
+migration, configuration change, or component reactivation.
+
+The issue #44 evidence gate passes producer and round-trip coverage for all 17
+scalars and multiple skills, stale-name and runtime-tag guards, relationship
+datatype checks, and canonical-only UI and schema coverage. The pinned
+beta.158 audits report agentprogression 0/27, UI 0/41, and entity IDs 0/20.
+Focused race, full Go, UI, schema, strict OpenSpec, and diff gates pass.
+Architect review approves this boundary. Svelte review approves the canonical
+consumer/schema coverage after all optional Agent fields were included.
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

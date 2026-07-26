@@ -2,6 +2,7 @@ package agentprogression
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -195,7 +196,7 @@ func (a *Agent) Triples() []message.Triple {
 	triples := []message.Triple{
 		// Identity
 		{Subject: entityID, Predicate: "agent.identity.name", Object: a.Name, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.identity.display_name", Object: a.DisplayName, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.identity.display-name", Object: a.DisplayName, Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
 	// Archetype (class identity — fixed at creation, omit if unset for legacy agents)
@@ -213,20 +214,20 @@ func (a *Agent) Triples() []message.Triple {
 
 		// Progression
 		{Subject: entityID, Predicate: "agent.progression.level", Object: a.Level, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.progression.xp.current", Object: a.XP, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.progression.xp.to_level", Object: a.XPToLevel, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.progression.xp-current", Object: a.XP, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.progression.xp-to-level", Object: a.XPToLevel, Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "agent.progression.tier", Object: int(a.Tier), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.progression.death_count", Object: a.DeathCount, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.progression.death-count", Object: a.DeathCount, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Stats
-		{Subject: entityID, Predicate: "agent.stats.quests_completed", Object: a.Stats.QuestsCompleted, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.stats.quests_failed", Object: a.Stats.QuestsFailed, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.stats.bosses_defeated", Object: a.Stats.BossesDefeated, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.stats.total_xp_earned", Object: a.Stats.TotalXPEarned, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.stats.quests-completed", Object: a.Stats.QuestsCompleted, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.stats.quests-failed", Object: a.Stats.QuestsFailed, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.stats.bosses-defeated", Object: a.Stats.BossesDefeated, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.stats.total-xp-earned", Object: a.Stats.TotalXPEarned, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Lifecycle
-		{Subject: entityID, Predicate: "agent.lifecycle.created_at", Object: a.CreatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.lifecycle.updated_at", Object: a.UpdatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.lifecycle.created-at", Object: a.CreatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.lifecycle.updated-at", Object: a.UpdatedAt.Format(time.RFC3339), Source: source, Timestamp: now, Confidence: 1.0},
 	}...)
 
 	// Guild membership (single guild)
@@ -237,14 +238,23 @@ func (a *Agent) Triples() []message.Triple {
 		})
 	}
 
-	// Skill proficiencies
-	for skill, prof := range a.SkillProficiencies {
+	// Skill proficiencies are repeated bounded values. Runtime skill tags remain
+	// data and never become predicate segments.
+	skills := make([]string, 0, len(a.SkillProficiencies))
+	for skill := range a.SkillProficiencies {
+		skills = append(skills, string(skill))
+	}
+	sort.Strings(skills)
+	for _, tag := range skills {
+		prof := a.SkillProficiencies[domain.SkillTag(tag)]
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: fmt.Sprintf("agent.skill.%s.level", skill), Object: int(prof.Level),
-			Source: source, Timestamp: now, Confidence: 1.0,
-		})
-		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: fmt.Sprintf("agent.skill.%s.total_xp", skill), Object: prof.TotalXP,
+			Subject:   entityID,
+			Predicate: "agent.skill.proficiency",
+			Object: map[string]any{
+				"tag":      tag,
+				"level":    int(prof.Level),
+				"total-xp": prof.TotalXP,
+			},
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -266,7 +276,7 @@ func (a *Agent) Triples() []message.Triple {
 
 	if a.CooldownUntil != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.status.cooldown_until", Object: a.CooldownUntil.Format(time.RFC3339),
+			Subject: entityID, Predicate: "agent.status.cooldown-until", Object: a.CooldownUntil.Format(time.RFC3339),
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -293,7 +303,7 @@ func (a *Agent) Triples() []message.Triple {
 	// Total XP spent in store
 	if a.TotalSpent > 0 {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "agent.inventory.total_spent", Object: a.TotalSpent,
+			Subject: entityID, Predicate: "agent.inventory.total-spent", Object: a.TotalSpent,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
@@ -316,11 +326,11 @@ func (a *Agent) Triples() []message.Triple {
 	// Peer review reputation
 	if a.Stats.PeerReviewCount > 0 {
 		triples = append(triples,
-			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_avg", Object: a.Stats.PeerReviewAvg, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_q1_avg", Object: a.Stats.PeerReviewQ1Avg, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_q2_avg", Object: a.Stats.PeerReviewQ2Avg, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_q3_avg", Object: a.Stats.PeerReviewQ3Avg, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer_count", Object: a.Stats.PeerReviewCount, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer-avg", Object: a.Stats.PeerReviewAvg, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer-q1-avg", Object: a.Stats.PeerReviewQ1Avg, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer-q2-avg", Object: a.Stats.PeerReviewQ2Avg, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer-q3-avg", Object: a.Stats.PeerReviewQ3Avg, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "agent.reputation.peer-count", Object: a.Stats.PeerReviewCount, Source: source, Timestamp: now, Confidence: 1.0},
 		)
 	}
 
@@ -349,7 +359,7 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 		// Identity
 		case "agent.identity.name":
 			a.Name = domain.AsString(triple.Object)
-		case "agent.identity.display_name":
+		case "agent.identity.display-name":
 			a.DisplayName = domain.AsString(triple.Object)
 		case "agent.identity.archetype":
 			a.Archetype = domain.AgentArchetype(domain.AsString(triple.Object))
@@ -359,36 +369,36 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 			a.Status = domain.AgentStatus(domain.AsString(triple.Object))
 		case "agent.npc.flag":
 			a.IsNPC = domain.AsBool(triple.Object)
-		case "agent.status.cooldown_until":
+		case "agent.status.cooldown-until":
 			t := domain.AsTime(triple.Object)
 			a.CooldownUntil = &t
 
 		// Progression
 		case "agent.progression.level":
 			a.Level = domain.AsInt(triple.Object)
-		case "agent.progression.xp.current":
+		case "agent.progression.xp-current":
 			a.XP = domain.AsInt64(triple.Object)
-		case "agent.progression.xp.to_level":
+		case "agent.progression.xp-to-level":
 			a.XPToLevel = domain.AsInt64(triple.Object)
 		case "agent.progression.tier":
 			a.Tier = domain.TrustTier(domain.AsInt(triple.Object))
-		case "agent.progression.death_count":
+		case "agent.progression.death-count":
 			a.DeathCount = domain.AsInt(triple.Object)
 
 		// Stats
-		case "agent.stats.quests_completed":
+		case "agent.stats.quests-completed":
 			a.Stats.QuestsCompleted = domain.AsInt(triple.Object)
-		case "agent.stats.quests_failed":
+		case "agent.stats.quests-failed":
 			a.Stats.QuestsFailed = domain.AsInt(triple.Object)
-		case "agent.stats.bosses_defeated":
+		case "agent.stats.bosses-defeated":
 			a.Stats.BossesDefeated = domain.AsInt(triple.Object)
-		case "agent.stats.total_xp_earned":
+		case "agent.stats.total-xp-earned":
 			a.Stats.TotalXPEarned = domain.AsInt64(triple.Object)
 
 		// Lifecycle
-		case "agent.lifecycle.created_at":
+		case "agent.lifecycle.created-at":
 			a.CreatedAt = domain.AsTime(triple.Object)
-		case "agent.lifecycle.updated_at":
+		case "agent.lifecycle.updated-at":
 			a.UpdatedAt = domain.AsTime(triple.Object)
 
 		// Relationships
@@ -402,41 +412,23 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 			a.CurrentParty = &partyID
 
 		// Inventory total spent
-		case "agent.inventory.total_spent":
+		case "agent.inventory.total-spent":
 			a.TotalSpent = domain.AsInt64(triple.Object)
 
 		// Peer review reputation
-		case "agent.reputation.peer_avg":
+		case "agent.reputation.peer-avg":
 			a.Stats.PeerReviewAvg = domain.AsFloat64(triple.Object)
-		case "agent.reputation.peer_q1_avg":
+		case "agent.reputation.peer-q1-avg":
 			a.Stats.PeerReviewQ1Avg = domain.AsFloat64(triple.Object)
-		case "agent.reputation.peer_q2_avg":
+		case "agent.reputation.peer-q2-avg":
 			a.Stats.PeerReviewQ2Avg = domain.AsFloat64(triple.Object)
-		case "agent.reputation.peer_q3_avg":
+		case "agent.reputation.peer-q3-avg":
 			a.Stats.PeerReviewQ3Avg = domain.AsFloat64(triple.Object)
-		case "agent.reputation.peer_count":
+		case "agent.reputation.peer-count":
 			a.Stats.PeerReviewCount = domain.AsInt(triple.Object)
-		}
-
-		// Handle skill proficiencies (dynamic predicates)
-		// Format: agent.skill.{skill}.level or agent.skill.{skill}.total_xp
-		if len(triple.Predicate) > 12 && triple.Predicate[:12] == "agent.skill." {
-			rest := triple.Predicate[12:] // e.g., "coding.level" or "coding.total_xp"
-			for i := len(rest) - 1; i >= 0; i-- {
-				if rest[i] == '.' {
-					skillTag := domain.SkillTag(rest[:i])
-					suffix := rest[i+1:]
-
-					prof := a.SkillProficiencies[skillTag]
-					switch suffix {
-					case "level":
-						prof.Level = domain.ProficiencyLevel(domain.AsInt(triple.Object))
-					case "total_xp":
-						prof.TotalXP = domain.AsInt64(triple.Object)
-					}
-					a.SkillProficiencies[skillTag] = prof
-					break
-				}
+		case "agent.skill.proficiency":
+			if skill, prof, ok := decodeSkillProficiency(triple.Object); ok {
+				a.SkillProficiencies[skill] = prof
 			}
 		}
 
@@ -508,4 +500,28 @@ func AgentFromEntityState(entity *graph.EntityState) *Agent {
 	}
 
 	return a
+}
+
+func decodeSkillProficiency(object any) (domain.SkillTag, domain.SkillProficiency, bool) {
+	var values map[string]any
+	switch typed := object.(type) {
+	case map[string]any:
+		values = typed
+	case map[string]string:
+		values = make(map[string]any, len(typed))
+		for key, value := range typed {
+			values[key] = value
+		}
+	default:
+		return "", domain.SkillProficiency{}, false
+	}
+
+	tag := domain.SkillTag(domain.AsString(values["tag"]))
+	if tag == "" {
+		return "", domain.SkillProficiency{}, false
+	}
+	return tag, domain.SkillProficiency{
+		Level:   domain.ProficiencyLevel(domain.AsInt(values["level"])),
+		TotalXP: domain.AsInt64(values["total-xp"]),
+	}, true
 }

@@ -500,8 +500,10 @@ Agent writes as beta.158-compatible.
 - **AND** component registration, configuration, handlers, and watchers remain
   dormant
 - **AND** agentstore and the SemStreams dependency are unchanged
-- **AND** no retained predicate is renamed and no owner or lifecycle contract
-  is bound
+- **AND** issue #30 itself renames no retained predicate and binds no owner or
+  lifecycle contract
+- **AND** subsequent issue #44 may canonicalize the retained dormant Agent
+  projection without changing this quarantine boundary
 - **AND** reactivation remains blocked on beta.158 and SemStreams #313
 
 #### Scenario: Audit evidence measures rather than predicts
@@ -514,6 +516,82 @@ Agent writes as beta.158-compatible.
 - **AND** the measured delta is exactly five fewer invalid and six fewer
   extracted candidates
 - **AND** the historical baseline audit remains unchanged
+
+### Requirement: Dormant Agent projection is canonicalized incrementally
+
+Issue #44 SHALL canonicalize the retained Agent projection without activating
+agentprogression or claiming beta.158 readiness. The scalar cut SHALL contain
+exactly these 17 mappings:
+
+- `agent.identity.display_name` to `agent.identity.display-name`;
+- `agent.progression.xp.current` to `agent.progression.xp-current`;
+- `agent.progression.xp.to_level` to `agent.progression.xp-to-level`;
+- `agent.progression.death_count` to `agent.progression.death-count`;
+- the four `agent.stats` fields `quests_completed`, `quests_failed`,
+  `bosses_defeated`, and `total_xp_earned` to their corresponding
+  `quests-completed`, `quests-failed`, `bosses-defeated`, and
+  `total-xp-earned` fields;
+- `agent.lifecycle.created_at` and `agent.lifecycle.updated_at` to
+  `agent.lifecycle.created-at` and `agent.lifecycle.updated-at`;
+- `agent.status.cooldown_until` to `agent.status.cooldown-until`;
+- `agent.inventory.total_spent` to `agent.inventory.total-spent`; and
+- the five `agent.reputation` fields `peer_avg`, `peer_q1_avg`, `peer_q2_avg`,
+  `peer_q3_avg`, and `peer_count` to their corresponding hyphenated fields.
+
+#### Scenario: Producer and consumers use only the canonical Agent contract
+
+- **WHEN** issue #44 emits and reconstructs a retained Agent
+- **THEN** all 17 scalar values use only the canonical mappings above
+- **AND** Go reconstruction reads no stale alias
+- **AND** UI transformation and graph labels read only canonical predicates
+- **AND** generated Agent schema contains all 17 canonical fields and no stale
+  counterpart
+
+#### Scenario: Skill tags remain bounded data
+
+- **GIVEN** an Agent has multiple skill proficiencies
+- **WHEN** its graph triples are emitted
+- **THEN** each skill is one repeated `agent.skill.proficiency` bounded object
+- **AND** each object contains only `tag`, `level`, and `total-xp`
+- **AND** reconstruction preserves every skill independently of map iteration
+  order
+- **AND** no runtime skill tag appears in a predicate name
+- **AND** generated schema marks `agent.skill.proficiency` as multi-value and
+  contains no dynamic skill placeholder
+
+#### Scenario: Agent relationships remain typed
+
+- **WHEN** an Agent references its Guild, current Quest, or current Party
+- **THEN** `agent.membership.guild`, `agent.assignment.quest`, and
+  `agent.membership.party` use the SemStreams entity-reference datatype
+- **AND** the 17 scalar predicates and `agent.skill.proficiency` objects do not
+  use the entity-reference datatype
+
+#### Scenario: Scanner-visible zero does not imply migration readiness
+
+- **GIVEN** the historical beta.158 Agent package baseline is 22 invalid from
+  32 extracted
+- **AND** issue #30 measured 17 invalid from 26 extracted after quarantine
+- **WHEN** issue #44 runs the pinned beta.158 audit
+- **THEN** the target is zero invalid from exactly 27 scanner-visible
+  candidates
+- **AND** scanner-hidden `agent.inventory.tool.*`,
+  `agent.inventory.consumable.*`, and `agent.effects.*` predicate families
+  remain blocking
+- **AND** unsafe full-object writers remain blocking
+- **AND** the documentation does not claim beta.158 readiness
+
+#### Scenario: Ownership and reactivation remain deferred
+
+- **WHEN** issue #44 completes
+- **THEN** `agent_progression` remains disabled in the default, semsource, and
+  tier-1 E2E profiles
+- **AND** no inventory-entry or active-effect child entity is introduced
+- **AND** first-class child projection, owner-safe writes, the dependency bump,
+  ownership binding, and component reactivation remain deferred to issue #4
+  and SemStreams #313
+- **AND** no agentstore owner, projection bind, heartbeat, owner-token mutator,
+  compatibility alias, dual reader, dual writer, or state rewrite is added
 
 ### Requirement: Agentstore is quarantined without migrating retained state
 

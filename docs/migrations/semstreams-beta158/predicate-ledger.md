@@ -189,21 +189,30 @@ runtime alias survives.
 
 ## Processor and service ledger
 
-### agentprogression: 22 findings
+### agentprogression: historical 22/32; issue #44 target 0/27 visible
 
-This is the historical beta.158 baseline: 22 invalid candidates from 32
-extracted. Issue #30 quarantines the component during Phase 1 and deletes the
-unproduced `AgentXPPayload` rather than renaming its graph-only predicates.
-Exactly five invalid occurrences belong to that dead payload:
-`agent.progression.xp.delta`, `agent.progression.xp.current`,
-`agent.progression.xp.quest`, `agent.progression.xp.awarded`, and
-`agent.progression.xp.penalty`. The pinned post-change audit measures 17
-invalid candidates from 26 extracted, exactly five fewer invalid and six fewer
-extracted candidates. The historical baseline audit remains unchanged.
+The baseline and incremental measurements are distinct:
+
+- The historical beta.158 baseline is 22 invalid candidates from 32
+  extracted.
+- Issue #30 quarantined the component and deleted the unproduced
+  `AgentXPPayload`. Its five invalid occurrences were
+  `agent.progression.xp.delta`, `agent.progression.xp.current`,
+  `agent.progression.xp.quest`, `agent.progression.xp.awarded`, and
+  `agent.progression.xp.penalty`. The measured post-quarantine baseline is 17
+  invalid candidates from 26 extracted.
+- Issue #44 canonicalizes the retained dormant Agent projection and replaces
+  dynamic skill predicate names with one bounded repeated value. Its pinned
+  beta.158 target is zero invalid candidates from 27 scanner-visible
+  candidates.
+
+Issue #44 applies exactly these 17 retained scalar canonicalizations:
 
 - `agent.identity.display_name` becomes `agent.identity.display-name`.
-- `agent.progression.xp.{current,to_level,delta,quest,awarded,penalty}` becomes
-  `agent.progression.{xp-current,xp-to-level,xp-delta,xp-quest,xp-awarded,xp-penalty}`.
+- `agent.progression.xp.current` becomes
+  `agent.progression.xp-current`.
+- `agent.progression.xp.to_level` becomes
+  `agent.progression.xp-to-level`.
 - `agent.progression.death_count` becomes `agent.progression.death-count`.
 - `agent.stats.{quests_completed,quests_failed,bosses_defeated,total_xp_earned}`
   becomes
@@ -216,7 +225,25 @@ extracted candidates. The historical baseline audit remains unchanged.
   becomes
   `agent.reputation.{peer-avg,peer-q1-avg,peer-q2-avg,peer-q3-avg,peer-count}`.
 
-`agent.progression.xp-quest` is a quest relationship and is typed `@id`.
+The dynamic `agent.skill.{tag}.{level,total_xp}` family becomes repeated
+`agent.skill.proficiency` bounded objects with `tag`, `level`, and `total-xp`
+fields. Runtime skill tags remain data and never become predicate segments.
+Reconstruction, UI consumers, and generated schema use only these canonical
+names; issue #44 adds no compatibility alias or dual reader.
+
+Guild membership, current quest, and current party remain typed `@id`
+relationships through `agent.membership.guild`, `agent.assignment.quest`, and
+`agent.membership.party`. The 17 canonical scalars and
+`agent.skill.proficiency` bounded objects are not relationships. The removed
+payload's historical `agent.progression.xp.quest` does not return.
+
+Zero scanner-visible findings is not beta.158 readiness. The auditor does not
+extract the dynamic tool, consumable, and active-effect predicate families or
+prove their full-object writers ownership-safe. Those families still migrate
+to first-class inventory-entry and active-effect child entities through issue
+#4 and the owner-safe framework mutation path tracked by SemStreams #313.
+Issue #44 performs no child-entity migration, owner bind, heartbeat, safe
+writer migration, dependency bump, or component reactivation.
 
 ### agentstore: 23 findings
 

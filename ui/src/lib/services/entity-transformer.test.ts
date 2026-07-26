@@ -182,26 +182,30 @@ describe('transformAgent', () => {
 	function fullAgentTriples() {
 		return [
 			triple('agent.identity.name', 'Shadowweaver'),
-			triple('agent.identity.display_name', 'The Shadowweaver'),
+			triple('agent.identity.display-name', 'The Shadowweaver'),
 			triple('agent.status.state', 'on_quest'),
 			triple('agent.progression.level', 12),
-			triple('agent.progression.xp.current', 4500),
-			triple('agent.progression.xp.to_level', 6000),
+			triple('agent.progression.xp-current', 4500),
+			triple('agent.progression.xp-to-level', 6000),
 			triple('agent.progression.tier', 2),
-			triple('agent.progression.death_count', 1),
+			triple('agent.progression.death-count', 1),
 			triple('agent.npc.flag', true),
-			triple('agent.stats.quests_completed', 45),
-			triple('agent.stats.quests_failed', 3),
-			triple('agent.stats.bosses_defeated', 40),
-			triple('agent.stats.total_xp_earned', 125000),
-			triple('agent.skill.analysis.level', 3),
-			triple('agent.skill.analysis.total_xp', 8000),
-			triple('agent.skill.code_generation.level', 4),
-			triple('agent.skill.code_generation.total_xp', 12000),
+			triple('agent.stats.quests-completed', 45),
+			triple('agent.stats.quests-failed', 3),
+			triple('agent.stats.bosses-defeated', 40),
+			triple('agent.stats.total-xp-earned', 125000),
+			triple('agent.inventory.total-spent', 2500),
+			triple('agent.reputation.peer-avg', 4.2),
+			triple('agent.reputation.peer-q1-avg', 4.1),
+			triple('agent.reputation.peer-q2-avg', 4.2),
+			triple('agent.reputation.peer-q3-avg', 4.3),
+			triple('agent.reputation.peer-count', 12),
+			triple('agent.skill.proficiency', { tag: 'analysis', level: 3, 'total-xp': 8000 }),
+			triple('agent.skill.proficiency', { tag: 'code_generation', level: 4, 'total-xp': 12000 }),
 			triple('agent.membership.guild', 'c360.prod.game.board1.guild.datawranglers'),
 			triple('agent.membership.guild', 'c360.prod.game.board1.guild.codesmiths'),
-			triple('agent.lifecycle.created_at', '2026-01-01T00:00:00Z'),
-			triple('agent.lifecycle.updated_at', '2026-01-15T10:00:00Z')
+			triple('agent.lifecycle.created-at', '2026-01-01T00:00:00Z'),
+			triple('agent.lifecycle.updated-at', '2026-01-15T10:00:00Z')
 		];
 	}
 
@@ -219,6 +223,7 @@ describe('transformAgent', () => {
 		expect(agent.tier).toBe(2);
 		expect(agent.death_count).toBe(1);
 		expect(agent.is_npc).toBe(true);
+		expect(agent.total_spent).toBe(2500);
 		expect(agent.created_at).toBe('2026-01-01T00:00:00Z');
 		expect(agent.updated_at).toBe('2026-01-15T10:00:00Z');
 	});
@@ -231,6 +236,11 @@ describe('transformAgent', () => {
 		expect(agent.stats.quests_failed).toBe(3);
 		expect(agent.stats.bosses_defeated).toBe(40);
 		expect(agent.stats.total_xp_earned).toBe(125000);
+		expect(agent.stats.peer_review_avg).toBe(4.2);
+		expect(agent.stats.peer_review_q1_avg).toBe(4.1);
+		expect(agent.stats.peer_review_q2_avg).toBe(4.2);
+		expect(agent.stats.peer_review_q3_avg).toBe(4.3);
+		expect(agent.stats.peer_review_count).toBe(12);
 		// Hardcoded fields
 		expect(agent.stats.bosses_failed).toBe(0);
 		expect(agent.stats.total_xp_spent).toBe(0);
@@ -240,7 +250,7 @@ describe('transformAgent', () => {
 		expect(agent.stats.quests_decomposed).toBe(0);
 	});
 
-	it('extracts skill proficiencies via regex', () => {
+	it('extracts repeated bounded skill proficiency objects', () => {
 		const entity = graphEntity(AGENT_KEY, fullAgentTriples());
 		const agent = transformEntity('agent', AGENT_KEY, entity) as Agent;
 
@@ -391,39 +401,39 @@ describe('transformAgent', () => {
 	// transformAgent — skill proficiency edge cases
 	// ---------------------------------------------------------------------------
 
-	it('handles skill with level but no XP triple', () => {
+	it('defaults missing bounded skill object values', () => {
 		const entity = graphEntity(AGENT_KEY, [
-			triple('agent.skill.research.level', 2)
-			// No agent.skill.research.total_xp
+			triple('agent.skill.proficiency', { tag: 'research' })
 		]);
 		const agent = transformEntity('agent', AGENT_KEY, entity) as Agent;
 
 		expect(agent.skill_proficiencies['research']).toEqual({
-			level: 2,
+			level: 1,
 			progress: 50,
 			total_xp: 0,
 			quests_used: 0
 		});
 	});
 
-	it('ignores XP triple without matching level triple', () => {
+	it('ignores malformed bounded skill objects', () => {
 		const entity = graphEntity(AGENT_KEY, [
-			triple('agent.skill.planning.total_xp', 5000)
-			// No agent.skill.planning.level — regex won't match
+			triple('agent.skill.proficiency', null),
+			triple('agent.skill.proficiency', ['planning', 2, 5000]),
+			triple('agent.skill.proficiency', { level: 2, 'total-xp': 5000 }),
+			triple('agent.skill.proficiency', { tag: '', level: 2, 'total-xp': 5000 }),
+			triple('agent.skill.proficiency', { tag: 42, level: 2, 'total-xp': 5000 })
 		]);
 		const agent = transformEntity('agent', AGENT_KEY, entity) as Agent;
 
+		expect(Object.keys(agent.skill_proficiencies)).toHaveLength(0);
 		expect(agent.skill_proficiencies['planning']).toBeUndefined();
 	});
 
-	it('handles multiple skills', () => {
+	it('handles multiple repeated bounded skills', () => {
 		const entity = graphEntity(AGENT_KEY, [
-			triple('agent.skill.code_review.level', 5),
-			triple('agent.skill.code_review.total_xp', 20000),
-			triple('agent.skill.summarization.level', 1),
-			triple('agent.skill.summarization.total_xp', 100),
-			triple('agent.skill.training.level', 3),
-			triple('agent.skill.training.total_xp', 5500)
+			triple('agent.skill.proficiency', { tag: 'code_review', level: 5, 'total-xp': 20000 }),
+			triple('agent.skill.proficiency', { tag: 'summarization', level: 1, 'total-xp': 100 }),
+			triple('agent.skill.proficiency', { tag: 'training', level: 3, 'total-xp': 5500 })
 		]);
 		const agent = transformEntity('agent', AGENT_KEY, entity) as Agent;
 
@@ -433,13 +443,18 @@ describe('transformAgent', () => {
 		expect(agent.skill_proficiencies['training'].level).toBe(3);
 	});
 
-	it('defaults skill level to 1 when object is non-numeric', () => {
+	it('defaults non-numeric bounded skill values', () => {
 		const entity = graphEntity(AGENT_KEY, [
-			triple('agent.skill.analysis.level', 'high') // string, not number
+			triple('agent.skill.proficiency', {
+				tag: 'analysis',
+				level: 'high',
+				'total-xp': 'many'
+			})
 		]);
 		const agent = transformEntity('agent', AGENT_KEY, entity) as Agent;
 
 		expect(agent.skill_proficiencies['analysis'].level).toBe(1);
+		expect(agent.skill_proficiencies['analysis'].total_xp).toBe(0);
 	});
 
 	it('returns null guild_id when no membership triple', () => {
@@ -809,7 +824,7 @@ describe('type coercion', () => {
 	it('num() returns fallback for non-number values', () => {
 		const entity = graphEntity(AGENT_KEY, [
 			triple('agent.progression.level', 'ten'), // string instead of number
-			triple('agent.progression.xp.current', true) // boolean instead of number
+			triple('agent.progression.xp-current', true) // boolean instead of number
 		]);
 		const agent = transformEntity('agent', AGENT_KEY, entity) as Agent;
 
@@ -820,7 +835,7 @@ describe('type coercion', () => {
 	it('num() accepts zero as valid (not treated as falsy)', () => {
 		const entity = graphEntity(AGENT_KEY, [
 			triple('agent.progression.level', 0),
-			triple('agent.progression.xp.current', 0)
+			triple('agent.progression.xp-current', 0)
 		]);
 		const agent = transformEntity('agent', AGENT_KEY, entity) as Agent;
 
@@ -948,29 +963,34 @@ describe('schema contract validation', () => {
 
 	const AGENT_HANDLED: Record<string, string> = {
 		'agent.identity.name': 'name',
-		'agent.identity.display_name': 'display_name',
+		'agent.identity.display-name': 'display_name',
 		'agent.status.state': 'status',
 		'agent.npc.flag': 'is_npc',
 		'agent.progression.level': 'level',
-		'agent.progression.xp.current': 'xp',
-		'agent.progression.xp.to_level': 'xp_to_level',
+		'agent.progression.xp-current': 'xp',
+		'agent.progression.xp-to-level': 'xp_to_level',
 		'agent.progression.tier': 'tier',
-		'agent.progression.death_count': 'death_count',
-		'agent.stats.quests_completed': 'stats.quests_completed',
-		'agent.stats.quests_failed': 'stats.quests_failed',
-		'agent.stats.bosses_defeated': 'stats.bosses_defeated',
-		'agent.stats.total_xp_earned': 'stats.total_xp_earned',
-		'agent.lifecycle.created_at': 'created_at',
-		'agent.lifecycle.updated_at': 'updated_at',
-		'agent.skill.{tag}.level': 'skill_proficiencies[tag].level',
-		'agent.skill.{tag}.total_xp': 'skill_proficiencies[tag].total_xp',
-		'agent.membership.guild': 'guild_id'
+		'agent.progression.death-count': 'death_count',
+		'agent.stats.quests-completed': 'stats.quests_completed',
+		'agent.stats.quests-failed': 'stats.quests_failed',
+		'agent.stats.bosses-defeated': 'stats.bosses_defeated',
+		'agent.stats.total-xp-earned': 'stats.total_xp_earned',
+		'agent.lifecycle.created-at': 'created_at',
+		'agent.lifecycle.updated-at': 'updated_at',
+		'agent.skill.proficiency': 'skill_proficiencies[tag]',
+		'agent.membership.guild': 'guild_id',
+		'agent.inventory.total-spent': 'total_spent',
+		'agent.reputation.peer-avg': 'stats.peer_review_avg',
+		'agent.reputation.peer-q1-avg': 'stats.peer_review_q1_avg',
+		'agent.reputation.peer-q2-avg': 'stats.peer_review_q2_avg',
+		'agent.reputation.peer-q3-avg': 'stats.peer_review_q3_avg',
+		'agent.reputation.peer-count': 'stats.peer_review_count'
 	};
 
 	const AGENT_IGNORED: Record<string, string> = {
 		'agent.assignment.quest': 'current_quest not displayed in list view',
 		'agent.membership.party': 'current_party not displayed in list view',
-		'agent.status.cooldown_until': 'cooldown UI not yet built'
+		'agent.status.cooldown-until': 'cooldown UI not yet built'
 	};
 
 	// -------------------------------------------------------------------------
@@ -1138,6 +1158,61 @@ describe('schema contract validation', () => {
 	}
 
 	validateEntity('agent', schema.entities.agent, AGENT_HANDLED, AGENT_IGNORED);
+
+	it('agent schema has the exact canonical rename set and no stale dynamic family', () => {
+		const predicates = allPredicates(schema.entities.agent);
+		const canonicalRenamedPredicates = [
+			'agent.identity.display-name',
+			'agent.progression.xp-current',
+			'agent.progression.xp-to-level',
+			'agent.progression.death-count',
+			'agent.stats.quests-completed',
+			'agent.stats.quests-failed',
+			'agent.stats.bosses-defeated',
+			'agent.stats.total-xp-earned',
+			'agent.lifecycle.created-at',
+			'agent.lifecycle.updated-at',
+			'agent.status.cooldown-until',
+			'agent.inventory.total-spent',
+			'agent.reputation.peer-avg',
+			'agent.reputation.peer-q1-avg',
+			'agent.reputation.peer-q2-avg',
+			'agent.reputation.peer-q3-avg',
+			'agent.reputation.peer-count'
+		];
+		const stalePredicates = [
+			'agent.identity.display_name',
+			'agent.progression.xp.current',
+			'agent.progression.xp.to_level',
+			'agent.progression.death_count',
+			'agent.stats.quests_completed',
+			'agent.stats.quests_failed',
+			'agent.stats.bosses_defeated',
+			'agent.stats.total_xp_earned',
+			'agent.lifecycle.created_at',
+			'agent.lifecycle.updated_at',
+			'agent.status.cooldown_until',
+			'agent.inventory.total_spent',
+			'agent.reputation.peer_avg',
+			'agent.reputation.peer_q1_avg',
+			'agent.reputation.peer_q2_avg',
+			'agent.reputation.peer_q3_avg',
+			'agent.reputation.peer_count',
+			'agent.skill.{tag}.level',
+			'agent.skill.{tag}.total_xp'
+		];
+		const actualCanonicalRenames = predicates
+			.filter((predicate) => canonicalRenamedPredicates.includes(predicate))
+			.sort();
+
+		expect(canonicalRenamedPredicates).toHaveLength(17);
+		expect(actualCanonicalRenames).toEqual([...canonicalRenamedPredicates].sort());
+		expect(schema.entities.agent.dynamic).toEqual([]);
+		expect(schema.entities.agent.multi_value).toEqual(['agent.skill.proficiency']);
+		expect(predicates.filter((predicate) => stalePredicates.includes(predicate))).toEqual([]);
+		expect(predicates.filter((predicate) => predicate.includes('{tag}'))).toEqual([]);
+	});
+
 	validateEntity('quest', schema.entities.quest, QUEST_HANDLED, QUEST_IGNORED);
 	validateEntity('guild', schema.entities.guild, GUILD_HANDLED, GUILD_IGNORED);
 	validateEntity('battle', schema.entities.battle, BATTLE_HANDLED, BATTLE_IGNORED);

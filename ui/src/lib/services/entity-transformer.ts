@@ -87,6 +87,11 @@ function asStringArray(v: unknown): string[] | undefined {
 	return v.filter((item): item is string => typeof item === 'string');
 }
 
+function asRecord(v: unknown): Record<string, unknown> | undefined {
+	if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined;
+	return v as Record<string, unknown>;
+}
+
 /**
  * Collect indexed triples like "prefix.N.field" into an ordered array.
  * The apply callback populates fields on each item by index.
@@ -168,20 +173,21 @@ function transformAgent(key: string, entity: GraphEntity): Agent {
 		? num(m.get('agent.progression.tier'))
 		: tierFromLevel(level)) as TrustTier;
 
-	// Extract skill proficiencies from agent.skill.{tag}.level / agent.skill.{tag}.total_xp
+	// Extract repeated bounded skill proficiency values. Runtime tags are data,
+	// never predicate segments.
 	const skillProfs: Record<string, SkillProficiency> = {};
 	for (const triple of entity.triples) {
-		const match = triple.predicate.match(/^agent\.skill\.(.+)\.level$/);
-		if (match) {
-			const tag = match[1];
-			const xpTriple = entity.triples.find((t) => t.predicate === `agent.skill.${tag}.total_xp`);
-			skillProfs[tag] = {
-				level: num(triple.object, 1) as ProficiencyLevel,
-				progress: 50,
-				total_xp: xpTriple ? num(xpTriple.object) : 0,
-				quests_used: 0
-			};
-		}
+		if (triple.predicate !== 'agent.skill.proficiency') continue;
+		const value = asRecord(triple.object);
+		if (!value) continue;
+		const tag = str(value.tag);
+		if (!tag) continue;
+		skillProfs[tag] = {
+			level: num(value.level, 1) as ProficiencyLevel,
+			progress: 50,
+			total_xp: num(value['total-xp']),
+			quests_used: 0
+		};
 	}
 
 	// Extract single guild membership
@@ -189,33 +195,33 @@ function transformAgent(key: string, entity: GraphEntity): Agent {
 	const guild_id = guildRaw ? guildId(str(guildRaw)) : null;
 
 	const stats: AgentStats = {
-		quests_completed: num(m.get('agent.stats.quests_completed')),
-		quests_failed: num(m.get('agent.stats.quests_failed')),
-		bosses_defeated: num(m.get('agent.stats.bosses_defeated')),
+		quests_completed: num(m.get('agent.stats.quests-completed')),
+		quests_failed: num(m.get('agent.stats.quests-failed')),
+		bosses_defeated: num(m.get('agent.stats.bosses-defeated')),
 		bosses_failed: 0,
-		total_xp_earned: num(m.get('agent.stats.total_xp_earned')),
+		total_xp_earned: num(m.get('agent.stats.total-xp-earned')),
 		total_xp_spent: 0,
 		avg_quality_score: 0,
 		avg_efficiency: 0,
 		parties_led: 0,
 		quests_decomposed: 0,
-		peer_review_avg: num(m.get('agent.stats.peer_review_avg')),
-		peer_review_count: num(m.get('agent.stats.peer_review_count')),
-		peer_review_q1_avg: 0,
-		peer_review_q2_avg: 0,
-		peer_review_q3_avg: 0
+		peer_review_avg: num(m.get('agent.reputation.peer-avg')),
+		peer_review_count: num(m.get('agent.reputation.peer-count')),
+		peer_review_q1_avg: num(m.get('agent.reputation.peer-q1-avg')),
+		peer_review_q2_avg: num(m.get('agent.reputation.peer-q2-avg')),
+		peer_review_q3_avg: num(m.get('agent.reputation.peer-q3-avg'))
 	};
 
 	return {
 		id: agentId(key),
 		name: str(m.get('agent.identity.name'), key),
-		display_name: str(m.get('agent.identity.display_name')),
+		display_name: str(m.get('agent.identity.display-name')),
 		archetype: str(m.get('agent.identity.archetype')) || undefined,
 		status: str(m.get('agent.status.state'), 'idle') as AgentStatus,
 		level,
-		xp: num(m.get('agent.progression.xp.current')),
-		xp_to_level: num(m.get('agent.progression.xp.to_level'), 100),
-		death_count: num(m.get('agent.progression.death_count')),
+		xp: num(m.get('agent.progression.xp-current')),
+		xp_to_level: num(m.get('agent.progression.xp-to-level'), 100),
+		death_count: num(m.get('agent.progression.death-count')),
 		tier,
 		equipment: [],
 		skill_proficiencies: skillProfs as Record<SkillTag, SkillProficiency>,
@@ -223,9 +229,9 @@ function transformAgent(key: string, entity: GraphEntity): Agent {
 		stats,
 		config: { provider: '', model: '', system_prompt: '', temperature: 0, max_tokens: 0, metadata: {} },
 		is_npc: m.get('agent.npc.flag') === true,
-		total_spent: 0,
-		created_at: str(m.get('agent.lifecycle.created_at')),
-		updated_at: str(m.get('agent.lifecycle.updated_at'))
+		total_spent: num(m.get('agent.inventory.total-spent')),
+		created_at: str(m.get('agent.lifecycle.created-at')),
+		updated_at: str(m.get('agent.lifecycle.updated-at'))
 	};
 }
 

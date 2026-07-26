@@ -242,7 +242,7 @@ describe('getEntityLabel', () => {
 		const entity = makeEntity('c360.prod.game.board1.agent.abc123');
 		entity.properties = [
 			{ predicate: 'agent.identity.name', object: 'CodeForger', confidence: 1.0, source: 'test', timestamp: 0 },
-			{ predicate: 'agent.identity.display_name', object: 'The Code Forger', confidence: 1.0, source: 'test', timestamp: 0 }
+			{ predicate: 'agent.identity.display-name', object: 'The Code Forger', confidence: 1.0, source: 'test', timestamp: 0 }
 		];
 		expect(getEntityLabel(entity)).toBe('The Code Forger');
 	});

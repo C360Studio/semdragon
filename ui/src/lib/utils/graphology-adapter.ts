@@ -38,7 +38,7 @@ function getNodeLabel(entity: GraphEntity): string {
 	let label: string;
 	switch (type) {
 		case 'agent':
-			label = val('agent.identity.display_name') || val('agent.identity.name') || fallback;
+			label = val('agent.identity.display-name') || val('agent.identity.name') || fallback;
 			break;
 		case 'quest':
 			label = val('quest.identity.name') || val('quest.identity.title') || fallback;
@@ -56,7 +56,7 @@ function getNodeLabel(entity: GraphEntity): string {
 			// Semsource / generic entities: try common identity and metadata predicates
 			label =
 				val(`${type}.identity.name`) ||
-				val(`${type}.identity.display_name`) ||
+				val(`${type}.identity.display-name`) ||
 				val('source.identity.name') ||
 				val('source.doc.summary') ||
 				val('source.doc.file_path') ||

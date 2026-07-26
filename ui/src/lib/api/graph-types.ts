@@ -232,7 +232,7 @@ export function getEntityLabel(entity: GraphEntity): string {
 
   switch (type) {
     case 'agent':
-      return val('agent.identity.display_name') || val('agent.identity.name') || fallback;
+      return val('agent.identity.display-name') || val('agent.identity.name') || fallback;
     case 'quest':
       return val('quest.identity.name') || val('quest.identity.title') || fallback;
     case 'battle':
@@ -245,7 +245,7 @@ export function getEntityLabel(entity: GraphEntity): string {
       // Semsource / generic entities: try common identity predicates
       return (
         val(`${type}.identity.name`) ||
-        val(`${type}.identity.display_name`) ||
+        val(`${type}.identity.display-name`) ||
         val('source.identity.name') ||
         val('source.doc.summary') ||
         val('source.doc.file_path') ||

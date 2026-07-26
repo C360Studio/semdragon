@@ -137,6 +137,9 @@ func TestPhase1AgentProgressionProjectionFacadeRemovedWhileSharedPolicyRemains(t
 	assertFileContains(t, "processor/agentprogression/agent.go",
 		"type Agent struct",
 		"func AgentFromEntityState(",
+		`"agent.progression.xp-current"`,
+	)
+	assertFileExcludes(t, "processor/agentprogression/agent.go",
 		`"agent.progression.xp.current"`,
 	)
 	assertFileContains(t, "processor/agentprogression/xp.go",

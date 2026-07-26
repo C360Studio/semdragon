@@ -341,6 +341,45 @@
   rule-driven completion, verdict, and ordered history. A static packaging
   contract prevents future images from omitting the rule tree.
 
+- [x] 2.24 Resolve
+  [semdragon #44](https://github.com/C360Studio/semdragon/issues/44) as an
+  incremental dormant Agent-projection packet. Canonicalize exactly the 17
+  retained scalar predicates recorded in D24 and the predicate ledger.
+  Replace dynamic `agent.skill.{tag}.{level,total_xp}` predicates with repeated
+  bounded `agent.skill.proficiency` objects containing `tag`, `level`, and
+  `total-xp`. Cut producer, reconstruction, UI consumers, and generated schema
+  to canonical-only names in one gate. Preserve typed `@id` relationships for
+  Guild, current Quest, and current Party, while scalars and skill objects
+  remain non-relationships. Keep `agent_progression` disabled in all three
+  shipped profiles.
+
+  Require the pinned beta.158 agentprogression audit to report zero invalid
+  from exactly 27 scanner-visible candidates, with stale-name, runtime-tag,
+  producer/round-trip, relationship, UI, and schema guards. Record the
+  historical 22/32 baseline and issue #30's post-quarantine 17/26 measurement
+  without rewriting either. Explicitly retain scanner-hidden dynamic tool,
+  consumable, and active-effect projections plus unsafe full-object writers as
+  blockers for issue #4 and SemStreams #313. Add no inventory-entry or
+  active-effect child entity, agentstore ownership, projection bind,
+  heartbeat, owner-token mutation adapter, dependency bump, configuration
+  change, compatibility alias, dual read/write, or component reactivation.
+
+  Completed 2026-07-25 evidence: producer and round-trip tests cover all 17
+  scalars, multiple deterministic bounded skill objects, stale/runtime-tag
+  absence, and the three typed Agent relationships. Canonical-only UI tests
+  and generated-schema contracts cover every required and optional Agent field
+  with no dynamic skill placeholder. The pinned beta.158 audits report
+  agentprogression 0/27, UI 0/41, and entity IDs 0/20 while retaining the
+  documented scanner-hidden blockers.
+
+  Focused race tests, `go test ./...`, `go vet ./...`, `go build ./...`, all
+  344 UI tests, Svelte check with 0 errors and 15 pre-existing warnings,
+  schema freshness, both strict OpenSpec validations, and diff checks pass.
+  Architect review approves the bounded dormant-projection boundary. Svelte
+  review approves canonical-only consumers and complete generated-schema
+  coverage. No excluded ownership, dependency, child-entity, compatibility,
+  writer, configuration, or reactivation work is included.
+
 ## 3. Verification and handoff to beta.158
 
 - [ ] 3.1 Predicate audit has zero findings.
