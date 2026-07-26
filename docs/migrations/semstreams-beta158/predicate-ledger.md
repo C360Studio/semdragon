@@ -245,36 +245,65 @@ to first-class inventory-entry and active-effect child entities through issue
 Issue #44 performs no child-entity migration, owner bind, heartbeat, safe
 writer migration, dependency bump, or component reactivation.
 
-### agentstore: 23 findings
+### agentstore: historical 23/30; issue #46 target 0/18 visible
 
-This is the historical beta.158 baseline: 23 invalid candidates from 30
-extracted. Issue #32 deletes the repository-unconsumed raw event plane rather
-than renaming it. `payloads.go` contributes nine invalid candidates from
-twelve extracted: `agent.purchase.{item_id,xp_spent}`,
-`agent.progression.xp.current`,
-`agent.consumable.{effect_type,expired_reason}`, and
-`agent.inventory.{change_type,item_id,quantity_change,total_spent}`. The pinned
-post-change audit target is 14 invalid from 18 extracted, all in retained
-`store.go`. The historical baseline audit remains unchanged.
+The baseline and incremental measurements are distinct:
 
-The retained `store.go` findings migrate later:
+- The historical beta.158 baseline is 23 invalid candidates from 30
+  extracted.
+- Issue #32 deleted the repository-unconsumed raw event plane.
+  `payloads.go` contributed nine invalid candidates from twelve extracted:
+  `agent.purchase.{item_id,xp_spent}`,
+  `agent.progression.xp.current`,
+  `agent.consumable.{effect_type,expired_reason}`, and
+  `agent.inventory.{change_type,item_id,quantity_change,total_spent}`. The
+  measured post-quarantine baseline is 14 invalid from 18 extracted, all in
+  retained `store.go`.
+- Issue #46 canonicalizes those 14 scanner-visible retained mappings. Its
+  pinned beta.158 target is zero invalid candidates from 18 extracted.
+
+Issue #46 applies exactly these 14 canonicalizations:
 
 - `agent.inventory.total_spent` becomes `agent.inventory.total-spent`.
-- `agent.inventory.{tools_count,consumables_count}` becomes
-  `agent.inventory.{tools-count,consumables-count}`.
-- `store.item.{purchase_type,xp_cost,min_tier,in_stock,rental_uses,min_level}`
-  becomes
-  `store.item.{purchase-type,xp-cost,min-tier,in-stock,rental-uses,min-level}`.
-- `store.item.{guild_discount,tool_id,effect_type,effect_magnitude,effect_duration}`
-  becomes
-  `store.item.{guild-discount,tool-id,effect-type,effect-magnitude,effect-duration}`.
+- `agent.inventory.tools_count` becomes `agent.inventory.tools-count`.
+- `agent.inventory.consumables_count` becomes
+  `agent.inventory.consumables-count`.
+- `store.item.purchase_type` becomes `store.item.purchase-type`.
+- `store.item.xp_cost` becomes `store.item.xp-cost`.
+- `store.item.min_tier` becomes `store.item.min-tier`.
+- `store.item.in_stock` becomes `store.item.in-stock`.
+- `store.item.rental_uses` becomes `store.item.rental-uses`.
+- `store.item.min_level` becomes `store.item.min-level`.
+- `store.item.guild_discount` becomes `store.item.guild-discount`.
+- `store.item.tool_id` becomes `store.item.tool-id`.
+- `store.item.effect_type` becomes `store.item.effect-type`.
+- `store.item.effect_magnitude` becomes `store.item.effect-magnitude`.
+- `store.item.effect_duration` becomes `store.item.effect-duration`.
 
-Inventory/effect state does not remain embedded on the agent; the approved
-first-class model below supersedes dynamic inventory predicates.
+Producer and reconstruction use only these canonical names. Issue #46 adds no
+compatibility alias, dual reader, or dual writer. The REST JSON contract is
+unchanged, and dormant graph store items remain outside the generated primary
+entity schema, so no UI or generated-schema migration is required.
+
+StoreItem identity is fail-closed. A configured catalog item uses
+`BoardConfig.StoreItemEntityID`; a nil receiver, missing BoardConfig, or
+missing item ID returns the empty sentinel and emits no triples. The removed
+`store.item.<id>` fallback is not a compatibility identity. The pinned
+entity-ID audit target is zero findings from 23 candidates, with the empty
+return classified exactly as `intentional-sentinel`.
+
+`agent.inventory.tool` remains a repeated scalar catalog alias with empty
+datatype, not an `@id` relationship. Inventory/effect state still migrates to
+the approved first-class child model below. Issue #46 adds no inventory-entry
+or active-effect entity, owner bind, heartbeat, owner-token writer,
+dependency/configuration change, component reactivation, local validation
+framework, or substitute for SemStreams #313. The historical and
+post-quarantine audit baselines remain unchanged.
+
 The deleted raw payload predicates are neither compatibility aliases nor
 append evidence. A later product need for purchase or consumption receipts
 requires a new explicit projection and consumer contract; it does not
-resurrect the removed DTO Graphables. The retained
+resurrect the removed DTO Graphables. The retained canonical
 `agent.inventory.{total-spent,tools-count,consumables-count}` predicates remain
 the future agentstore-owned aggregate target until the first-class cutover.
 

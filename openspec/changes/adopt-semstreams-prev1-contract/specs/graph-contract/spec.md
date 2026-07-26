@@ -648,9 +648,11 @@ state writers as beta.158-compatible.
 #### Scenario: Phase-2 framework handoff remains deferred
 
 - **WHEN** issue #32 completes
-- **THEN** agentprogression, the SemStreams dependency, retained predicates,
-  entity IDs, owners, lifecycle workflows, graph views, API, and UI are
-  unchanged
+- **THEN** issue #32 itself leaves agentprogression, the SemStreams dependency,
+  retained predicates, entity IDs, owners, lifecycle workflows, graph views,
+  API, and UI unchanged
+- **AND** subsequent issue #46 may canonicalize the retained dormant
+  agentstore projection without changing this quarantine boundary
 - **AND** reactivation remains blocked on beta.158 and SemStreams #313
 - **AND** no duplicate upstream issue is opened
 - **AND** a linked owned-create issue is opened only if Phase 2 proves #313
@@ -664,6 +666,90 @@ state writers as beta.158-compatible.
   Agent entity
 - **AND** Agent lifecycle and status predicates remain outside agentstore
   authority
+
+### Requirement: Dormant agentstore projection is canonicalized incrementally
+
+Issue #46 SHALL canonicalize the retained dormant agentstore projection
+without activating the component or claiming beta.158 readiness. The scalar
+cut SHALL contain exactly these 14 mappings:
+
+- `agent.inventory.total_spent` to `agent.inventory.total-spent`;
+- `agent.inventory.tools_count` to `agent.inventory.tools-count`;
+- `agent.inventory.consumables_count` to
+  `agent.inventory.consumables-count`;
+- `store.item.purchase_type` to `store.item.purchase-type`;
+- `store.item.xp_cost` to `store.item.xp-cost`;
+- `store.item.min_tier` to `store.item.min-tier`;
+- `store.item.in_stock` to `store.item.in-stock`;
+- `store.item.rental_uses` to `store.item.rental-uses`;
+- `store.item.min_level` to `store.item.min-level`;
+- `store.item.guild_discount` to `store.item.guild-discount`;
+- `store.item.tool_id` to `store.item.tool-id`;
+- `store.item.effect_type` to `store.item.effect-type`;
+- `store.item.effect_magnitude` to `store.item.effect-magnitude`; and
+- `store.item.effect_duration` to `store.item.effect-duration`.
+
+#### Scenario: Producer and reconstruction use only canonical predicates
+
+- **WHEN** issue #46 emits or reconstructs AgentInventory and StoreItem state
+- **THEN** all 14 values use only the canonical mappings above
+- **AND** no compatibility alias, stale reader, dual reader, or dual writer
+  remains
+
+#### Scenario: StoreItem identity fails closed
+
+- **WHEN** a StoreItem receiver is nil, its BoardConfig is absent, or its item
+  ID is empty
+- **THEN** `EntityID` returns the empty sentinel
+- **AND** `Triples` returns nil
+- **AND** no `store.item.<id>` fallback is emitted
+- **AND** the entity-ID audit classifies the empty return exactly as
+  `intentional-sentinel`
+
+#### Scenario: Configured catalog items use canonical identity
+
+- **GIVEN** a DefaultCatalog item has a BoardConfig and item ID
+- **WHEN** its graph identity is requested
+- **THEN** the ID equals `BoardConfig.StoreItemEntityID(item.ID)`
+- **AND** the result is a canonical six-part StoreItem entity ID
+
+#### Scenario: Tool aliases remain scalar
+
+- **GIVEN** an AgentInventory contains multiple owned tools
+- **WHEN** its triples are emitted
+- **THEN** each catalog alias is a repeated `agent.inventory.tool` scalar
+- **AND** each alias has empty datatype
+- **AND** no alias is typed as `@id`
+
+#### Scenario: Product consumer contracts remain unchanged
+
+- **WHEN** issue #46 canonicalizes the dormant graph projection
+- **THEN** REST JSON fields and product API behavior remain unchanged
+- **AND** UI mappings remain unchanged
+- **AND** generated primary entity schema remains unchanged because dormant
+  graph StoreItems are outside that schema
+
+#### Scenario: Audit zero remains bounded
+
+- **GIVEN** the historical beta.158 package baseline is 23 invalid from 30
+  extracted
+- **AND** issue #32 measured 14 invalid from 18 extracted after quarantine
+- **WHEN** issue #46 runs the pinned beta.158 audits
+- **THEN** the agentstore predicate audit reports zero invalid from 18
+  extracted
+- **AND** the entity-ID audit reports zero findings from 23 candidates
+- **AND** the documentation does not claim beta.158 readiness
+
+#### Scenario: Framework ownership and reactivation remain deferred
+
+- **WHEN** issue #46 completes
+- **THEN** `agent_store` remains disabled in the default, semsource, and tier-1
+  E2E profiles
+- **AND** no inventory-entry or active-effect child entity is introduced
+- **AND** ownership, binding, heartbeat, owner-token writes, dependency
+  adoption, configuration, and reactivation remain deferred to issue #4 and
+  SemStreams #313
+- **AND** no local validation framework or SemStreams #313 substitute is added
 
 ### Requirement: Boidengine is quarantined without deleting live contracts
 

@@ -1029,6 +1029,65 @@ Focused race, full Go, UI, schema, strict OpenSpec, and diff gates pass.
 Architect review approves this boundary. Svelte review approves the canonical
 consumer/schema coverage after all optional Agent fields were included.
 
+### D25: Canonicalize dormant agentstore without inventing identity or ownership
+
+Issue [#46](https://github.com/C360Studio/semdragon/issues/46) is a bounded
+dormant-projection packet while Semdragon remains pinned to beta.135. The
+`agent_store` component stays disabled in every shipped profile. Producer and
+reconstruction move together to canonical-only predicates, with no alias,
+dual reader, dual writer, or state rewrite.
+
+The scanner-visible cut is exactly 14 lexical canonicalizations:
+
+- three Agent inventory aggregates: `total_spent`, `tools_count`, and
+  `consumables_count` become `total-spent`, `tools-count`, and
+  `consumables-count`; and
+- eleven StoreItem fields: `purchase_type`, `xp_cost`, `min_tier`, `in_stock`,
+  `rental_uses`, `min_level`, `guild_discount`, `tool_id`, `effect_type`,
+  `effect_magnitude`, and `effect_duration` become their corresponding
+  hyphenated forms.
+
+All names retain their existing `agent.inventory.` or `store.item.` prefix.
+The predicate ledger records every complete old-to-new identity.
+
+StoreItem identity fails closed. `EntityID` returns the canonical
+`BoardConfig.StoreItemEntityID` only when the receiver, BoardConfig, and item
+ID are present. A nil receiver, missing BoardConfig, or missing item ID returns
+the empty sentinel, and `Triples` returns nil. The legacy `store.item.<id>`
+fallback is deleted rather than preserved as an alias. Configured
+`DefaultCatalog` entries continue using their catalog ID as the instance
+argument to `BoardConfig.StoreItemEntityID`.
+
+The inventory projection deliberately keeps `agent.inventory.tool` as a
+repeated scalar catalog alias with empty datatype. It is not an entity
+reference. Promoting that alias now would claim a first-class inventory item
+relationship before its child entity and ownership contract exist.
+
+No UI or generated-schema change is required. REST models and JSON field names
+are unchanged, and dormant graph StoreItem entities are outside the generated
+primary entity schema. A no-op consumer boundary is therefore evidence of
+scope control, not missing implementation.
+
+Audit chronology remains precise. The historical package baseline is 23
+invalid candidates from 30 extracted. Issue #32 deleted the raw event plane
+and measured 14 invalid from 18 extracted. Issue #46 reports zero invalid from
+18 scanner-visible candidates. The pinned entity-ID audit reports zero
+findings from 23 candidates, with the fail-closed empty return classified
+exactly as `intentional-sentinel`.
+
+Zero scanner-visible findings is not beta.158 readiness. Inventory-entry and
+active-effect child entities, projection ownership, binding, heartbeat,
+owner-token writes, and component reactivation remain deferred to issue #4
+and SemStreams #313. Issue #46 adds no dependency or configuration change,
+local validation framework, or downstream substitute for the framework
+mutation primitive.
+
+The issue #46 evidence gate passes focused and race tests, the full Go test,
+vet, and build, and 166 targeted UI tests. Go review approves canonical-only
+producer/reconstruction, fail-closed identity, and scalar-alias behavior.
+Svelte boundary review approves the intentional no-change UI/schema boundary.
+Global beta.158 readiness tasks remain open.
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

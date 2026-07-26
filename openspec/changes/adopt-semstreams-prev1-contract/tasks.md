@@ -380,6 +380,38 @@
   coverage. No excluded ownership, dependency, child-entity, compatibility,
   writer, configuration, or reactivation work is included.
 
+- [x] 2.25 Resolve
+  [semdragon #46](https://github.com/C360Studio/semdragon/issues/46) as a
+  bounded dormant agentstore-projection packet. Canonicalize exactly the 14
+  retained mappings recorded in D25 and the predicate ledger. Cut producer and
+  reconstruction to canonical-only predicates with no alias or dual
+  read/write. Remove the `store.item.<id>` identity fallback; require a
+  receiver, BoardConfig, and item ID for
+  `BoardConfig.StoreItemEntityID`, otherwise return the empty sentinel and nil
+  triples. Preserve configured `DefaultCatalog` aliases as canonical
+  BoardConfig-derived StoreItem IDs.
+
+  Keep `agent.inventory.tool` as a repeated scalar catalog alias with empty
+  datatype, not `@id`. Make no UI or generated-schema change because REST JSON
+  is unchanged and dormant graph StoreItems are outside the generated primary
+  entity schema. Keep `agent_store` disabled in all three shipped profiles.
+  Add no inventory-entry or active-effect child entity, projection owner,
+  bind, heartbeat, owner-token writer, dependency/configuration change,
+  component reactivation, compatibility path, local validation framework, or
+  SemStreams #313 substitute.
+
+  Completed 2026-07-25 evidence: producer, reconstruction, stale-name,
+  scalar-alias, fail-closed identity, and configured-catalog tests cover the
+  bounded contract. The pinned beta.158 agentstore predicate audit reports
+  0/18. The pinned entity-ID audit reports 0/23 with the empty return classified
+  exactly as `intentional-sentinel`.
+
+  Focused and race tests, `go test ./...`, `go vet ./...`, `go build ./...`,
+  and 166 targeted UI tests pass. Go review approves the canonical projection
+  and identity boundary. Svelte review approves the intentional no-change
+  UI/schema boundary. Semdragon remains pinned to beta.135, and global tasks
+  3.1 through 3.6 remain open.
+
 ## 3. Verification and handoff to beta.158
 
 - [ ] 3.1 Predicate audit has zero findings.

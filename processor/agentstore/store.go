@@ -181,46 +181,50 @@ type ActiveEffect struct {
 
 // EntityID returns the 6-part entity ID for this store item.
 // Format: org.platform.game.board.storeitem.instance
-// Requires BoardConfig to be set; falls back to legacy 3-part format if nil.
+// Requires both BoardConfig and ID; incomplete items are not graph entities.
 func (s *StoreItem) EntityID() string {
-	if s.BoardConfig != nil {
-		return s.BoardConfig.StoreItemEntityID(s.ID)
+	if s == nil || s.BoardConfig == nil || s.ID == "" {
+		// entity-id-audit:classify intentional-sentinel "" line=188 column=10 surface=go-return:EntityID entity_id_invalid:empty canonical BoardConfig or item ID unavailable
+		return ""
 	}
-	// Fallback for backward compatibility during transition
-	return "store.item." + s.ID
+	return s.BoardConfig.StoreItemEntityID(s.ID)
 }
 
 // Triples returns all semantic facts about this store item.
 func (s *StoreItem) Triples() []message.Triple {
+	entityID := s.EntityID()
+	if entityID == "" {
+		return nil
+	}
+
 	now := time.Now()
 	source := "agent_store"
-	entityID := s.EntityID()
 
 	triples := []message.Triple{
 		{Subject: entityID, Predicate: "store.item.name", Object: s.Name, Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "store.item.description", Object: s.Description, Source: source, Timestamp: now, Confidence: 1.0},
 		{Subject: entityID, Predicate: "store.item.type", Object: string(s.ItemType), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "store.item.purchase_type", Object: string(s.PurchaseType), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "store.item.xp_cost", Object: s.XPCost, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "store.item.min_tier", Object: int(s.MinTier), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "store.item.in_stock", Object: s.InStock, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "store.item.rental_uses", Object: s.RentalUses, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "store.item.min_level", Object: s.MinLevel, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "store.item.guild_discount", Object: s.GuildDiscount, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.purchase-type", Object: string(s.PurchaseType), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.xp-cost", Object: s.XPCost, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.min-tier", Object: int(s.MinTier), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.in-stock", Object: s.InStock, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.rental-uses", Object: s.RentalUses, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.min-level", Object: s.MinLevel, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "store.item.guild-discount", Object: s.GuildDiscount, Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
 	if s.ToolID != "" {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: "store.item.tool_id", Object: s.ToolID,
+			Subject: entityID, Predicate: "store.item.tool-id", Object: s.ToolID,
 			Source: source, Timestamp: now, Confidence: 1.0,
 		})
 	}
 
 	if s.Effect != nil {
 		triples = append(triples,
-			message.Triple{Subject: entityID, Predicate: "store.item.effect_type", Object: string(s.Effect.Type), Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "store.item.effect_magnitude", Object: s.Effect.Magnitude, Source: source, Timestamp: now, Confidence: 1.0},
-			message.Triple{Subject: entityID, Predicate: "store.item.effect_duration", Object: s.Effect.Duration, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "store.item.effect-type", Object: string(s.Effect.Type), Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "store.item.effect-magnitude", Object: s.Effect.Magnitude, Source: source, Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "store.item.effect-duration", Object: s.Effect.Duration, Source: source, Timestamp: now, Confidence: 1.0},
 		)
 	}
 
@@ -239,9 +243,9 @@ func (inv *AgentInventory) Triples() []message.Triple {
 	entityID := inv.EntityID()
 
 	triples := []message.Triple{
-		{Subject: entityID, Predicate: "agent.inventory.total_spent", Object: inv.TotalSpent, Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.inventory.tools_count", Object: len(inv.OwnedTools), Source: source, Timestamp: now, Confidence: 1.0},
-		{Subject: entityID, Predicate: "agent.inventory.consumables_count", Object: len(inv.Consumables), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.inventory.total-spent", Object: inv.TotalSpent, Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.inventory.tools-count", Object: len(inv.OwnedTools), Source: source, Timestamp: now, Confidence: 1.0},
+		{Subject: entityID, Predicate: "agent.inventory.consumables-count", Object: len(inv.Consumables), Source: source, Timestamp: now, Confidence: 1.0},
 	}
 
 	for toolID := range inv.OwnedTools {
@@ -276,33 +280,33 @@ func StoreItemFromEntityState(entity *graph.EntityState) *StoreItem {
 			s.Description = tripleString(triple.Object)
 		case "store.item.type":
 			s.ItemType = ItemType(tripleString(triple.Object))
-		case "store.item.purchase_type":
+		case "store.item.purchase-type":
 			s.PurchaseType = PurchaseType(tripleString(triple.Object))
-		case "store.item.xp_cost":
+		case "store.item.xp-cost":
 			s.XPCost = tripleInt64(triple.Object)
-		case "store.item.min_tier":
+		case "store.item.min-tier":
 			s.MinTier = domain.TrustTier(tripleInt(triple.Object))
-		case "store.item.in_stock":
+		case "store.item.in-stock":
 			s.InStock = tripleBool(triple.Object)
-		case "store.item.tool_id":
+		case "store.item.tool-id":
 			s.ToolID = tripleString(triple.Object)
-		case "store.item.rental_uses":
+		case "store.item.rental-uses":
 			s.RentalUses = tripleInt(triple.Object)
-		case "store.item.min_level":
+		case "store.item.min-level":
 			s.MinLevel = tripleInt(triple.Object)
-		case "store.item.guild_discount":
+		case "store.item.guild-discount":
 			s.GuildDiscount = tripleFloat64(triple.Object)
-		case "store.item.effect_type":
+		case "store.item.effect-type":
 			if s.Effect == nil {
 				s.Effect = &ConsumableEffect{}
 			}
 			s.Effect.Type = ConsumableType(tripleString(triple.Object))
-		case "store.item.effect_magnitude":
+		case "store.item.effect-magnitude":
 			if s.Effect == nil {
 				s.Effect = &ConsumableEffect{}
 			}
 			s.Effect.Magnitude = tripleFloat64(triple.Object)
-		case "store.item.effect_duration":
+		case "store.item.effect-duration":
 			if s.Effect == nil {
 				s.Effect = &ConsumableEffect{}
 			}
