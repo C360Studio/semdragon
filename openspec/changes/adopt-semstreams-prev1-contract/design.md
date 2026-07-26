@@ -1235,8 +1235,8 @@ with no findings. Svelte review records **APPROVE** with no findings.
 
 Issue [#11](https://github.com/C360Studio/semdragon/issues/11), under tracking
 parent [#2](https://github.com/C360Studio/semdragon/issues/2), fixes the CI
-gap that left stacked pull requests without checks. The implementation PR
-stacks on base PR #51.
+gap that left stacked pull requests without checks. Draft PR #52 stacks on
+base PR #51 and targets the non-main `codex/canonical-party-scalars` branch.
 
 The `CI` workflow runs its test and lint jobs for every `pull_request` base.
 It retains the `push` branch filter for `main` only and does not introduce
@@ -1264,11 +1264,29 @@ technical-writer reviews are required. This repository-specific workflow
 correction exposes no missing SemStreams primitive and opens no upstream
 issue.
 
-The stacked implementation PR itself supplies the live acceptance proof.
-After publication against PR #51's non-main base, its test and lint checks must
-appear, `build-and-push` must be skipped, and no package or image may be
-published. That evidence cannot be recorded honestly before the PR exists, so
-task 2.28 remains unchecked until publication and inspection of its checks.
+Draft PR #52 supplies the live acceptance proof. Its first run,
+`30185905737`, reported test **SUCCESS**, lint **FAILURE** on three pre-existing
+Revive unused-parameter warnings, and `build-and-push` **SKIPPED**. The lint log
+showed only `Contents: read` and `Metadata: read` token access and
+`allow-unsafe-pr-checkout: false`. Architect review approved the minimal
+behavior-neutral underscore renames, and Go review approved their remediation.
+
+Run `30186108519` on accepted commit `8441456` then reported test **SUCCESS**,
+lint **SUCCESS**, and `build-and-push` **SKIPPED**. No Docker login,
+image-publish, or package-publish job executed, so no image or package was
+published.
+
+Local evidence passes the focused and mutation CI contracts,
+`actionlint` v1.7.12, full Go race, Revive v1.15.0 with zero findings, Go vet,
+Go build, both strict OpenSpec validations, and the diff check. The only direct
+YAML dependency remains the existing `gopkg.in/yaml.v3` v3.0.1
+classification; neither its version nor `go.sum` changes.
+
+Architect/security and Go reviews record **APPROVE** with no findings after
+the security-guard revision; the live lint remediation also has Go approval.
+The technical-writer review records the two-run evidence above. PR #52 remains
+draft under parent #2. The final documentation commit will trigger a fresh CI
+run, but task 2.28 may close on the completed acceptance proof for `8441456`.
 
 ### Issue #26 implementation evidence, pending the final root gate
 

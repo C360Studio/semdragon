@@ -510,7 +510,7 @@
   **APPROVE** with no findings. Svelte review records **APPROVE** with no
   findings.
 
-- [ ] 2.28 Resolve
+- [x] 2.28 Resolve
   [semdragon #11](https://github.com/C360Studio/semdragon/issues/11), tracked
   by parent [#2](https://github.com/C360Studio/semdragon/issues/2), so stacked
   pull requests receive CI before integration. On the implementation PR
@@ -536,10 +536,30 @@
   Go, and technical-writer review. Open no upstream issue because this is a
   repository workflow correction.
 
-  Keep this task unchecked until the stacked implementation PR is published.
-  That PR is the live acceptance proof: test and lint checks appear against
-  its non-main base, `build-and-push` is skipped, and no package or image is
-  published. Do not record those live results before the PR and checks exist.
+  Completed 2026-07-25 live evidence: draft PR #52 targets non-main base
+  `codex/canonical-party-scalars` over base PR #51. Run `30185905737` reported
+  test **SUCCESS**, lint **FAILURE** on three pre-existing Revive
+  unused-parameter warnings, and `build-and-push` **SKIPPED**. Its lint log
+  showed only `Contents: read` and `Metadata: read` token access with
+  `allow-unsafe-pr-checkout: false`. Architect review approved the minimal
+  behavior-neutral underscore renames, and Go review approved the remediation.
+
+  Run `30186108519` on accepted commit `8441456` reported test **SUCCESS**,
+  lint **SUCCESS**, and `build-and-push` **SKIPPED**. No Docker login, image
+  publication, or package publication job executed, so no image or package
+  was published.
+
+  Focused and mutation CI contracts, `actionlint` v1.7.12, full Go race,
+  Revive v1.15.0 with zero findings, Go vet, Go build, both strict OpenSpec
+  validations, and the diff check pass. `gopkg.in/yaml.v3` remains the only
+  direct YAML classification at existing v3.0.1; `go.sum` and its version are
+  unchanged.
+
+  Architect/security and Go reviews record **APPROVE** with no findings after
+  the security-guard revision, and the live lint remediation has Go approval.
+  Technical-writer review records the two-run evidence. PR #52 remains draft
+  under parent #2. The final documentation commit will trigger a fresh run;
+  task completion is based on the inspected acceptance proof for `8441456`.
 
 ## 3. Verification and handoff to beta.158
 

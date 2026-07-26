@@ -127,12 +127,13 @@ execute with package-write authority or through `pull_request_target`.
 
 #### Scenario: The stacked pull request supplies live evidence
 
-- **GIVEN** the issue #11 implementation PR targets PR #51's non-main base
+- **GIVEN** draft PR #52 targets non-main base
+  `codex/canonical-party-scalars` from base PR #51
 - **WHEN** that stacked pull request is published
 - **THEN** GitHub reports test and lint checks on the pull request
 - **AND** `build-and-push` is skipped
 - **AND** no package or image is published
-- **AND** task 2.28 remains unchecked until those live results are inspected
+- **AND** task 2.28 completes only after those live results are inspected
 
 #### Scenario: Repository CI needs no upstream framework issue
 
