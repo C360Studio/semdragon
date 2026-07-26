@@ -161,7 +161,7 @@ func (c *Component) ListActiveParties() []*Party {
 }
 
 // AssignTask assigns a sub-quest to a party member.
-func (c *Component) AssignTask(ctx context.Context, partyID domain.PartyID, subQuestID domain.QuestID, assignedTo domain.AgentID, rationale string) error {
+func (c *Component) AssignTask(ctx context.Context, partyID domain.PartyID, subQuestID domain.QuestID, assignedTo domain.AgentID, _ string) error {
 	c.partyMu.Lock()
 	defer c.partyMu.Unlock()
 

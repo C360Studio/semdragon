@@ -353,7 +353,7 @@ func (c *Component) SetStock(itemID string, inStock bool) error {
 // Purchase buys an item for an agent. Reads agent entity from KV, mutates
 // inventory + XP, and writes back via EmitEntityUpdate. If the agent is in any
 // guild and the item has a GuildDiscount > 0, the effective cost is reduced.
-func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, currentLevel int, agentGuild domain.GuildID) (*OwnedItem, error) {
+func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, _ int, agentGuild domain.GuildID) (*OwnedItem, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
 	}
@@ -606,7 +606,7 @@ func (c *Component) GetActiveEffects(agentID domain.AgentID) []ActiveEffect {
 }
 
 // ConsumeEffect marks an effect as used (decrements quests remaining).
-func (c *Component) ConsumeEffect(ctx context.Context, agentID domain.AgentID, effectType ConsumableType) error {
+func (c *Component) ConsumeEffect(_ context.Context, agentID domain.AgentID, effectType ConsumableType) error {
 	val, ok := c.activeEffects.Load(agentID)
 	if !ok {
 		return nil // No active effects
