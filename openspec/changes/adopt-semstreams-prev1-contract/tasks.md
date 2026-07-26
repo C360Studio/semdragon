@@ -21,7 +21,7 @@
   fixtures, and documentation.
 - [ ] 2.2 Replace dynamic predicate names with repeated canonical relationships,
   bounded structured values, or first-class entities as approved in the ledger.
-- [ ] 2.3 Reconcile
+- [x] 2.3 Reconcile
   [semdragon #57](https://github.com/C360Studio/semdragon/issues/57) against
   the completed task 2.12 implementation. Prove on the current head that all
   four shipped graph-source prefixes across the three profiles are canonical,
@@ -31,7 +31,7 @@
   Require the focused race contract, entity-ID audit `0/25`, both strict
   OpenSpec validations, architect and Go review, and live stacked CI before
   checking this task. Add no production or configuration change.
-- [ ] 2.4 Reconcile
+- [x] 2.4 Reconcile
   [semdragon #57](https://github.com/C360Studio/semdragon/issues/57) against
   the completed task 3.3 relationship inventory. Prove on the current head
   that the exact 36 reviewed shapes cover or classify all 20 production
@@ -129,7 +129,7 @@
   to issue #4 or a dedicated packet for graph-ingest create-with-triples and
   the agentprogression ownership boundary. Add no projection owner, heartbeat,
   replacement event route, private framework, or upstream SemStreams issue.
-- [ ] 2.16 Resolve
+- [x] 2.16 Resolve
   [semdragon #26](https://github.com/C360Studio/semdragon/issues/26) by
   removing bossbattle activation from all three shipped configurations and
   enabling the complete quest lifecycle rule pack, including the mechanics
@@ -955,9 +955,9 @@ This evidence closes only task 2.15:
 Tasks 3.2 through 3.5 are complete. Task 3.1 remains blocked by SemStreams
 #671. Task 3.6 remains blocked by task 3.1 and SemStreams #313 and #683.
 
-## Issue #26 evidence, pending #57 reconciliation
+## Issue #26 evidence, accepted by #57 reconciliation
 
-This evidence supports task 2.16 but deliberately leaves it unchecked:
+This evidence supports task 2.16 and is accepted by the issue #57 closeout:
 
 - The initial contract RED exposed bossbattle activation in every shipped
   profile and an incomplete quest rule pack outside the default profile.
@@ -980,8 +980,40 @@ This evidence supports task 2.16 but deliberately leaves it unchecked:
   fixtures, Svelte diagnostics, schema freshness, and diff checks pass under
   architect, Go, and Svelte review.
 
-Task 3.4 now supplies the final current-head combined repository gate. Issue
-#57 owns the remaining evidence reconciliation before task 2.16 can close.
-Tasks 2.3 and 2.4 also remain unchecked until that acceptance is recorded.
-The independent global blockers remain tasks 2.1, 2.2, 2.5, 2.6, 3.1, and
-3.6.
+Task 3.4 supplies the final current-head combined repository gate. The issue
+#57 closeout below records acceptance for tasks 2.3, 2.4, and 2.16. The
+independent global blockers remain tasks 2.1, 2.2, 2.5, 2.6, 3.1, and 3.6.
+
+## Completed issue #57 canonical graph closeout evidence
+
+This 2026-07-26 evidence closes only tasks 2.3, 2.4, and 2.16:
+
+- Accepted head `6c76ea1f68ac5f37ca7ae132e37a4c8f13622348` passes
+  `go test -race ./...`, the focused graph-source-prefix, repository
+  relationship, and Phase-1 bossbattle race contracts, and the Docker-backed
+  `TestMechanicsDisabledReviewCompletesWithoutBattleOrMechanicsSideEffects`.
+- `task contract:relationships` passes. The entity-ID audit reports `0/25`;
+  vet, build, Revive, and diff gates pass.
+- UI tests pass `349/349`; Svelte check reports zero errors and 15 existing
+  warnings; the production UI build passes. Schema, OpenAPI, and generated
+  TypeScript artifacts are fresh.
+- Both active OpenSpec changes validate strictly. Architect, Go, and Svelte
+  reviewers recorded **APPROVE**; technical-writer reconciliation approves
+  this exact evidence record.
+- [Run 30191514864](https://github.com/C360Studio/semdragon/actions/runs/30191514864)
+  reports test **SUCCESS**, lint **SUCCESS**, and `build-and-push` **SKIPPED**.
+  No image or package publication occurred.
+- The aggregate remains intentionally red only on SemStreams #671: core
+  `0/329`, processor questboard `2/72` on `quest.failed`, service `1/1` on
+  `quest.failed`, UI `0/41`, entity IDs `0/25`, and relationships green.
+
+This evidence adds no production, configuration, dependency, UI, schema,
+predicate, prefix, or relationship change. It does not bump beta.135,
+reactivate bossbattle or mechanics, execute the cutover runbook, or prove task
+3.1. SemStreams #675 owns only later retirement of the isolated beta.135
+prefix comparator and does not block completed task 2.3. Task 2.4 closes on
+the exact repository relationship contract, and task 2.16 closes on the
+current-head combined root gate.
+
+Tasks 2.1, 2.2, 2.5, 2.6, 3.1, and 3.6 remain open with their recorded
+blockers unchanged.

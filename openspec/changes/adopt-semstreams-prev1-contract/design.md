@@ -1559,10 +1559,38 @@ SemStreams #671. Task 3.6 remains blocked by task 3.1 and by SemStreams #313
 and #683. SemStreams #667 is not a current blocker because scoped audit roots
 remain explicitly approved.
 
-### Issue #26 implementation evidence, pending #57 reconciliation
+Accepted D31 evidence at
+`6c76ea1f68ac5f37ca7ae132e37a4c8f13622348` closes only tasks 2.3, 2.4, and
+2.16. Full Go race and the focused graph-source-prefix, repository
+relationship, and Phase-1 bossbattle race contracts pass. The Docker-backed
+`TestMechanicsDisabledReviewCompletesWithoutBattleOrMechanicsSideEffects`
+passes under the race detector. `task contract:relationships` passes, the
+entity-ID audit reports `0/25`, and vet, build, Revive, and diff gates pass.
+UI tests pass `349/349`; Svelte check reports zero errors and 15 existing
+warnings; the production UI build passes. Schema, OpenAPI, and generated
+TypeScript artifacts are fresh, and both active OpenSpec changes validate
+strictly.
+
+Architect, Go, and Svelte reviews recorded **APPROVE**. Technical-writer
+reconciliation approves this exact evidence record.
+[Run 30191514864](https://github.com/C360Studio/semdragon/actions/runs/30191514864)
+reports test **SUCCESS**, lint **SUCCESS**, and `build-and-push` **SKIPPED**;
+no image or package publication occurred. The aggregate remains intentionally
+red only on SemStreams #671: core `0/329`, processor questboard `2/72` on
+`quest.failed`, service `1/1` on `quest.failed`, UI `0/41`, entity IDs `0/25`,
+and relationships green.
+
+This evidence-only closeout adds no production, configuration, dependency, UI,
+schema, predicate, prefix, or relationship change. It does not bump beta.135,
+reactivate bossbattle or mechanics, execute the cutover runbook, or resolve
+the remaining blockers. SemStreams #675 remains only the future replacement
+for the isolated beta.135 prefix comparator. Tasks 2.1, 2.2, 2.5, 2.6, 3.1,
+and 3.6 remain open.
+
+### Issue #26 implementation evidence, accepted by #57 reconciliation
 
 The reviewed implementation establishes the task 2.16 behavior without
-marking that task complete:
+introducing a production change in the issue #57 closeout:
 
 - TDD contract tests parse all three shipped profiles and mutation-check the
   exact `rule-processor` type, name, enabled state, ordered four-rule pack, and
@@ -1581,11 +1609,9 @@ marking that task complete:
   fixtures, all 342 UI tests, Svelte diagnostics, generated API/schema
   freshness, and diff checks pass under architect, Go, and Svelte review.
 
-Task 3.4 now supplies the final current-head combined repository gate. Issue
-#57 owns the remaining evidence reconciliation before task 2.16 can close.
-Tasks 2.3 and 2.4 also remain unchecked until that acceptance is recorded.
-The independent global blockers remain tasks 2.1, 2.2, 2.5, 2.6, 3.1, and
-3.6.
+Task 3.4 supplies the final current-head combined repository gate. The issue
+#57 closeout above records acceptance for tasks 2.3, 2.4, and 2.16. The
+independent global blockers remain tasks 2.1, 2.2, 2.5, 2.6, 3.1, and 3.6.
 
 ### Approved core-wave verification
 
