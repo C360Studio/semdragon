@@ -1368,6 +1368,78 @@ in zero seconds on `pull_request`. No login or package/image publication step
 executed, so no package or image was published. Architect, Go, and
 technical-writer reviews approve the bounded test-only contract.
 
+### D30: Prove the pinned-beta gate and specify a deletion-safe cutover
+
+Issue [#55](https://github.com/C360Studio/semdragon/issues/55), under parent
+[#3](https://github.com/C360Studio/semdragon/issues/3), stacks after PR #54.
+It closes only the independently unblocked entity-ID, pinned-beta verification,
+and runbook-authoring tasks 3.2, 3.4, and 3.5. Semdragon remains pinned to
+SemStreams `v1.0.0-beta.135`.
+
+The verification result is one current-head proof, not an aggregate assembled
+from earlier stacked PRs. It records the exact commit and module pin, then runs
+the full Go race, vet, build, and Revive gates; UI unit, Svelte diagnostic, and
+production-build gates; generated schema freshness; the entity-ID and
+relationship contracts; both active strict OpenSpec validations; and a clean
+generated diff.
+
+The entity-ID contract must report exactly zero findings from 25 extracted
+candidates. The relationship contract must pass. The default contract remains
+intentionally red only on the three occurrence-specific non-predicate values
+owned by SemStreams #671: processor questboard `2/72` and service `1/1` for
+`quest.failed`, with core `0/329`, UI `0/41`, and entity IDs `0/25`. Issue #55
+does not add a file-wide or value-wide audit exemption and does not claim
+predicate-gate success.
+
+The runbook is an executable operator contract but is not executed in issue
+#55. It must:
+
+1. identify the exact reviewed commit, beta.135 module pin, rendered shipped
+   configuration, development/test NATS target, and NATS context;
+2. stop every writer and prove that no writer remains able to mutate the
+   selected Semdragon graph;
+3. derive the candidate bucket and volume inventory from rendered
+   configuration, require operator review, and copy the approved targets into
+   deletion commands as literal values;
+4. abort before deletion when the environment, context, rendered inventory, or
+   literal targets do not match;
+5. delete only the approved Semdragon development/test graph state, excluding
+   SemSource substrates, embedding caches, workspaces, and unrelated volumes;
+6. start the exact reviewed binary, seed canonical state once, poll
+   authoritative readiness, and capture normalized entity, relationship,
+   quest-status, and DAG projection evidence;
+7. stop and restart the same binary with `SEED_E2E=false`,
+   `SEED_AGENTS=false`, and `SEED_PROS=false`, allow no intervening write, poll
+   authoritative readiness again, and compare parity; and
+8. retain the evidence and leave the environment in an explicitly reported
+   state.
+
+Deletion is fail-closed. The runbook and its stale-checked contract reject
+wildcard targets, unresolved or unset variables in a destructive target,
+`docker compose down -v`, unscoped volume pruning, and any command that can
+delete outside the reviewed literal set. Broad convenience teardown is not a
+cutover primitive.
+
+Parity normalization may remove only reviewed nondeterministic transport
+metadata such as observation timestamps, KV revisions, and readiness
+watermarks. It must preserve entity IDs, predicates, object values, datatypes,
+cardinality, relationship targets, quest status, DAG dependencies, and DAG
+outputs. A difference in any preserved field fails replay parity.
+
+The stale-checked runbook contract is test-only evidence, not a runtime
+framework. It must fail if a shipped configuration, Compose graph-volume name,
+seed flag, readiness/parity requirement, or destructive-safety clause drifts
+without review. Issue #55 does not execute a wipe, change Docker or runtime
+configuration, add an operational migration utility, or create a downstream
+SemStreams substitute.
+
+Task 3.1 remains open while SemStreams #671 prevents an occurrence-exact
+zero-finding predicate audit. Task 3.6 also remains open: an approved handoff
+to issue #4 requires task 3.1 to pass, and SemStreams #313 and #683 must supply
+the owner-safe mutation and repeated structured-value contracts needed for an
+honest beta.158 cutover. Issue #55 records those blockers without approving the
+dependency handoff.
+
 ### Issue #26 implementation evidence, pending the final root gate
 
 The reviewed implementation establishes the task 2.16 behavior without

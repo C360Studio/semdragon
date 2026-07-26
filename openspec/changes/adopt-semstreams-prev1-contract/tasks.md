@@ -563,8 +563,19 @@
 
 ## 3. Verification and handoff to beta.158
 
-- [ ] 3.1 Predicate audit has zero findings.
-- [ ] 3.2 Entity-ID audit has zero findings.
+- [ ] 3.1 Predicate audit has zero findings. Keep this task open while
+  [SemStreams #671](https://github.com/C360Studio/semstreams/issues/671)
+  prevents occurrence-exact classification of the three non-predicate
+  `quest.failed` values. Do not add a file-wide or value-wide exemption.
+- [ ] 3.2 Resolve
+  [semdragon #55](https://github.com/C360Studio/semdragon/issues/55), under
+  parent [#3](https://github.com/C360Studio/semdragon/issues/3), by rerunning
+  `task contract:entity-ids` on the current stacked head and recording exactly
+  zero findings from 25 extracted candidates. The audit command remains pinned
+  to beta.158 while the application module remains exactly
+  `v1.0.0-beta.135`. Close this task only after the measured result, strict
+  OpenSpec validation, clean diff, role review, and live stacked CI evidence
+  are recorded.
 - [x] 3.3 Resolve
   [semdragon #53](https://github.com/C360Studio/semdragon/issues/53), under
   parent [#3](https://github.com/C360Studio/semdragon/issues/3), with one
@@ -620,13 +631,47 @@
   zero seconds on `pull_request`. No login or package/image publication step
   executed, so no package or image was published. Architect, Go, and
   technical-writer reviews approve the bounded test-only contract.
-- [ ] 3.4 `go build ./...`, unit tests, UI checks, and schema freshness gates
-  pass while still pinned to beta.135.
-- [ ] 3.5 Write and review the literal fresh-volume wipe/reseed and
-  restart-without-write replay runbook.
+- [ ] 3.4 Complete issue #55 with one current-head beta.135 verification
+  result rather than composing evidence from earlier stacked PRs. Record the
+  exact commit and prove
+  `go list -m github.com/c360studio/semstreams` reports
+  `v1.0.0-beta.135`; `go test -race ./...`, `go vet ./...`,
+  `go build ./...`, and Revive pass; `task ui:test`, `task ui:check`, the UI
+  production build, and `task schema:check` pass; generated output leaves a
+  clean diff; and both active OpenSpec changes validate strictly.
+
+  Require `task contract:relationships` to pass. Run
+  `task contract:default` and record that it remains red only on SemStreams
+  #671: core `0/329`, processor questboard `2/72`, service `1/1`, UI `0/41`,
+  entity IDs `0/25`, and relationships green. Require architect, Go reviewer,
+  and technical-writer approval plus live stacked PR test/lint success with
+  `build-and-push` skipped.
+- [ ] 3.5 Complete issue #55 by writing and reviewing
+  `docs/migrations/semstreams-beta158/fresh-volume-replay-runbook.md` and a
+  narrow stale-checked runbook contract. The runbook records the exact commit,
+  beta.135 pin, rendered shipped configuration, explicit development/test NATS
+  target and context, stopped-writer proof, configuration-derived candidate
+  inventory, operator-reviewed literal deletion targets, canonical seed-once
+  procedure, authoritative readiness polling, and normalized entity,
+  relationship, quest-status, and DAG projection evidence.
+
+  Restart the same reviewed binary in the documented procedure with
+  `SEED_E2E=false`, `SEED_AGENTS=false`, and `SEED_PROS=false`, permit no
+  intervening write, and require replay parity after readiness. The contract
+  fails on shipped topology, Compose graph-volume, seed-flag, readiness,
+  parity, or safety drift. It rejects wildcard or unresolved destructive
+  targets, `docker compose down -v`, unscoped volume pruning, and deletion
+  outside the approved literal Semdragon development/test graph set.
+
+  Do not execute the wipe in issue #55. Add no production utility, Docker or
+  configuration change, dependency change, state rewriter, compatibility
+  path, owner binding, component activation, or local SemStreams substitute.
 - [ ] 3.6 Record the approved dependency handoff to
-  [semdragon#4](https://github.com/C360Studio/semdragon/issues/4); do not bump
-  to beta.158 in this change.
+  [semdragon #4](https://github.com/C360Studio/semdragon/issues/4) only after
+  task 3.1 reaches zero findings and the SemStreams #313 owner-safe mutation
+  and #683 repeated structured-value contracts support the reviewed cutover.
+  Issue #55 records these blockers but does not approve the handoff or bump to
+  beta.158.
 - [x] 3.7 Prove DAG admission at every interruption point: zero early
   dispatch, stable replay convergence without duplicate units, manifest
   collision rejection, activated-plan corruption rejection, root-only release

@@ -1280,13 +1280,71 @@ The cutover SHALL use a fresh development/test graph reseeded from canonical
 sources. It SHALL NOT add runtime aliases, dual writes, permissive validation,
 or an in-place beta-state rewriter.
 
+#### Scenario: Issue 55 specifies but does not execute deletion
+
+- **WHEN** issue #55 prepares the cutover runbook
+- **THEN** Semdragon remains pinned to `v1.0.0-beta.135`
+- **AND** no volume, bucket, stream, or entity state is deleted
+- **AND** no Docker, configuration, runtime, dependency, ownership, or
+  activation change is introduced
+- **AND** issue #4 remains the execution owner
+
+#### Scenario: Cutover preflight resolves one explicit target
+
+- **WHEN** an operator prepares a development/test cutover
+- **THEN** the runbook records the exact reviewed commit and module pin
+- **AND** it identifies the rendered shipped configuration
+- **AND** it identifies one explicit NATS target and context
+- **AND** every writer is stopped and its stopped state is verified
+- **AND** the candidate bucket and volume inventory is derived from that
+  rendered configuration
+- **AND** the operator reviews and copies approved deletion targets into the
+  destructive commands as literal values
+
+#### Scenario: Destructive guidance fails closed
+
+- **WHEN** the environment, NATS context, rendered inventory, or literal target
+  set differs from the reviewed preflight
+- **THEN** the runbook aborts before deletion
+- **AND** wildcard targets and unresolved or unset destructive variables are
+  rejected
+- **AND** `docker compose down -v` and unscoped volume pruning are rejected
+- **AND** SemSource substrates, embedding caches, workspaces, and unrelated
+  volumes remain outside the deletion set
+
+#### Scenario: Canonical state is seeded exactly once
+
+- **GIVEN** only the approved Semdragon development/test graph state was
+  removed
+- **WHEN** the exact reviewed binary starts
+- **THEN** canonical source data is seeded once
+- **AND** authoritative graph readiness is polled rather than inferred from
+  process liveness
+- **AND** normalized entity, relationship, quest-status, and DAG projection
+  evidence is captured before restart
+
 #### Scenario: Restart replay parity
 
-- **WHEN** the canonical graph is reseeded and the exact binary restarts without
-  an intervening write
+- **GIVEN** canonical state was seeded once and graph readiness was reached
+- **WHEN** the exact binary restarts with `SEED_E2E=false`,
+  `SEED_AGENTS=false`, and `SEED_PROS=false` and without an intervening write
 - **THEN** graph readiness returns true
 - **AND** entity, relationship, quest-status, and DAG projections match the
   pre-restart results
+- **AND** normalization removes only reviewed nondeterministic transport
+  metadata
+- **AND** entity IDs, predicates, object values, datatypes, cardinality,
+  relationship targets, quest status, DAG dependencies, and DAG outputs remain
+  exact
+
+#### Scenario: Runbook topology and safety are stale-checked
+
+- **WHEN** a shipped configuration, Compose graph-volume name, seed flag,
+  readiness requirement, parity field, or destructive-safety clause drifts
+- **THEN** the issue #55 runbook contract fails
+- **AND** review is required before the runbook can be accepted
+- **AND** the contract remains test-only evidence rather than a runtime
+  migration framework
 
 ### Requirement: External SemSource runtime isolation
 

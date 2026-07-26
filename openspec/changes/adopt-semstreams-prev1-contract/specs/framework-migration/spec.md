@@ -146,6 +146,30 @@ execute with package-write authority or through `pull_request_target`.
 The adoption gate SHALL record the exact SemStreams tag/revision, Go toolchain,
 rendered configuration, fresh-state procedure, and verification results.
 
+#### Scenario: Pinned-beta verification is current-head evidence
+
+- **GIVEN** issue #55 remains pinned to SemStreams `v1.0.0-beta.135`
+- **WHEN** the pre-adoption verification gate runs
+- **THEN** it records the exact reviewed commit and module version
+- **AND** full Go race, vet, build, and Revive gates pass
+- **AND** UI unit, Svelte diagnostic, production-build, and generated-schema
+  freshness gates pass
+- **AND** both active OpenSpec changes validate strictly
+- **AND** generated verification leaves a clean diff
+- **AND** evidence is collected from one current head rather than inferred
+  from earlier stacked pull requests
+
+#### Scenario: Expected predicate findings block the dependency handoff
+
+- **GIVEN** the entity-ID audit reports `0/25`
+- **AND** the relationship contract passes
+- **WHEN** the default contract still reports the three SemStreams #671
+  non-predicate `quest.failed` findings
+- **THEN** tasks 3.2, 3.4, and 3.5 may complete independently
+- **AND** task 3.1 remains open
+- **AND** no broad predicate-audit exemption is added
+- **AND** task 3.6 does not approve the beta.158 handoff
+
 #### Scenario: Latest tag moves during migration
 
 - **WHEN** SemStreams publishes a newer tag before the adoption PR is finalized
