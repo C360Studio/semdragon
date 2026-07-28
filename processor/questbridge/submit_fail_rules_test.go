@@ -406,8 +406,12 @@ func startQuestRuleProcessor(t *testing.T, client *natsclient.Client, mgr *lifec
 	t.Helper()
 	ctx := context.Background()
 	ruleCfg := mustMarshal(t, map[string]any{
-		"rules_files":           questRuleFilePaths(t),
-		"entity_watch_patterns": []string{"*.*.game.*.quest.*"},
+		"rules_files":              questRuleFilePaths(t),
+		"pack_id":                  "quest-lifecycle-test",
+		"enable_graph_integration": true,
+		"entity_watch_buckets": map[string][]string{
+			graph.BucketEntityStates: {"*.*.game.*.quest.*"},
+		},
 	})
 	startLifecycleComponent(t, ctx, ruleCfg, func(cfg json.RawMessage) (component.Discoverable, error) {
 		return rule.CreateRuleProcessor(cfg, component.Dependencies{NATSClient: client, LifecycleManager: mgr})

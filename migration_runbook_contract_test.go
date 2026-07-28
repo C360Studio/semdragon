@@ -16,7 +16,7 @@ import (
 
 const (
 	freshVolumeRunbookPath = "docs/migrations/semstreams-beta158/fresh-volume-replay-runbook.md"
-	reviewedSemStreamsPin  = "github.com/c360studio/semstreams v1.0.0-beta.135"
+	reviewedSemStreamsPin  = "github.com/c360studio/semstreams v1.0.0-beta.158.0.20260728003411-89617f32dc36"
 	composeProject         = "semdragon-cutover"
 	graphVolume            = "nats-data"
 	engineGraphVolume      = composeProject + "_" + graphVolume

@@ -11,6 +11,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/c360studio/semstreams/graph"
+	semtypes "github.com/c360studio/semstreams/pkg/types"
 )
 
 // ---------------------------------------------------------------------------
@@ -125,9 +128,19 @@ type SummaryType struct {
 const summCacheTTL = 5 * time.Minute
 
 // NewGraphSourceRegistry creates a registry from config.
-func NewGraphSourceRegistry(sources []GraphSource, logger *slog.Logger) *GraphSourceRegistry {
+func NewGraphSourceRegistry(sources []GraphSource, logger *slog.Logger) (*GraphSourceRegistry, error) {
 	ptrs := make([]*GraphSource, len(sources))
 	for i := range sources {
+		if sources[i].EntityPrefix != "" {
+			if err := semtypes.ValidateEntityIDPrefix(sources[i].EntityPrefix); err != nil {
+				return nil, fmt.Errorf(
+					"graph source %q entity_prefix %q: %w",
+					sources[i].Name,
+					sources[i].EntityPrefix,
+					err,
+				)
+			}
+		}
 		ptrs[i] = &sources[i]
 		// Local sources are always ready.
 		if sources[i].Type == "local" || sources[i].AlwaysQuery {
@@ -140,7 +153,7 @@ func NewGraphSourceRegistry(sources []GraphSource, logger *slog.Logger) *GraphSo
 		client:        &http.Client{Timeout: 5 * time.Second},
 		summaryCache:  make(map[string]summCacheEntry),
 		examplesCache: make(map[string]examplesCacheEntry),
-	}
+	}, nil
 }
 
 // SourcesForQuery returns the graph sources that should handle a given query.
@@ -151,7 +164,7 @@ func (r *GraphSourceRegistry) SourcesForQuery(queryType, entityID, prefix string
 	case "entity", "relationships":
 		// Route to the source that owns this entity ID.
 		if entityID != "" {
-			return r.sourcesForRoutedPrefix(entityID)
+			return r.sourcesForRoutedEntity(entityID)
 		}
 		// Fallback: query all ready sources.
 		return r.readySources()
@@ -178,7 +191,10 @@ func (r *GraphSourceRegistry) SourcesForQuery(queryType, entityID, prefix string
 
 // ResolveEntity returns the source that owns a given entity ID, or nil.
 func (r *GraphSourceRegistry) ResolveEntity(entityID string) *GraphSource {
-	src, _ := r.resolveByPrefix(entityID)
+	src, _, valid := r.resolveEntityID(entityID)
+	if !valid {
+		return nil
+	}
 	if src == nil || !src.ready.Load() {
 		return nil
 	}
@@ -420,10 +436,13 @@ func (r *GraphSourceRegistry) readySources() []*GraphSource {
 	return result
 }
 
-// sourcesForRoutedPrefix preserves the distinction between an unavailable
+// sourcesForRoutedEntity preserves the distinction between an unavailable
 // owner and an unowned prefix. Only the latter may use the local fallback.
-func (r *GraphSourceRegistry) sourcesForRoutedPrefix(value string) []*GraphSource {
-	src, ownerMatched := r.resolveByPrefix(value)
+func (r *GraphSourceRegistry) sourcesForRoutedEntity(entityID string) []*GraphSource {
+	src, ownerMatched, valid := r.resolveEntityID(entityID)
+	if !valid {
+		return nil
+	}
 	if src == nil {
 		return nil
 	}
@@ -436,22 +455,59 @@ func (r *GraphSourceRegistry) sourcesForRoutedPrefix(value string) []*GraphSourc
 	return []*GraphSource{src}
 }
 
-// resolveByPrefix returns the matching owner, or the configured local fallback
-// when no owner matches. ownerMatched distinguishes those two outcomes.
-func (r *GraphSourceRegistry) resolveByPrefix(id string) (*GraphSource, bool) {
+// sourcesForRoutedPrefix preserves the distinction between an unavailable
+// owner and an unowned prefix. Only the latter may use the local fallback.
+func (r *GraphSourceRegistry) sourcesForRoutedPrefix(prefix string) []*GraphSource {
+	src, ownerMatched, valid := r.resolvePrefix(prefix)
+	if !valid || src == nil {
+		return nil
+	}
+	if ownerMatched && !src.ready.Load() {
+		return nil
+	}
+	if !src.ready.Load() {
+		return nil
+	}
+	return []*GraphSource{src}
+}
+
+// resolveEntityID routes only canonical concrete six-part IDs through the
+// framework matcher. The boolean reports whether the requested ID was valid.
+func (r *GraphSourceRegistry) resolveEntityID(entityID string) (*GraphSource, bool, bool) {
+	if !graph.MatchesAnyIDPrefix(entityID, nil) {
+		return nil, false, false
+	}
 	var localFallback *GraphSource
 	for _, src := range r.sources {
-		if src.EntityPrefix != "" && matchesGraphSourcePrefix(id, src.EntityPrefix) {
-			return src, true
+		if src.EntityPrefix != "" && graph.MatchesAnyIDPrefix(entityID, []string{src.EntityPrefix}) {
+			return src, true, true
 		}
 		if src.Type == "local" && localFallback == nil {
 			localFallback = src
 		}
 	}
-	return localFallback, false
+	return localFallback, false, true
 }
 
-// matchesGraphSourcePrefix is the minimal beta.135 prefix-containment
+// resolvePrefix routes canonical one-to-six-part query prefixes. Prefix-to-
+// prefix containment remains the narrowly linked #675 compatibility seam.
+func (r *GraphSourceRegistry) resolvePrefix(prefix string) (*GraphSource, bool, bool) {
+	if err := semtypes.ValidateEntityIDPrefix(prefix); err != nil {
+		return nil, false, false
+	}
+	var localFallback *GraphSource
+	for _, src := range r.sources {
+		if src.EntityPrefix != "" && matchesGraphSourcePrefix(prefix, src.EntityPrefix) {
+			return src, true, true
+		}
+		if src.Type == "local" && localFallback == nil {
+			localFallback = src
+		}
+	}
+	return localFallback, false, true
+}
+
+// matchesGraphSourcePrefix is the minimal prefix-to-prefix containment
 // compatibility required until SemStreams #675 supplies the framework
 // primitive: https://github.com/C360Studio/semstreams/issues/675
 func matchesGraphSourcePrefix(value, prefix string) bool {

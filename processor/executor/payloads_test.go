@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/pkg/types"
 )
@@ -95,7 +94,7 @@ func TestExecutionLifecyclePayloadGraphContract(t *testing.T) {
 				if triple.Source != "executor" || !triple.Timestamp.Equal(timestamp) || triple.Confidence != 1 {
 					t.Errorf("%s provenance = source %q timestamp %v confidence %v", triple.Predicate, triple.Source, triple.Timestamp, triple.Confidence)
 				}
-				if triple.Datatype == semcompat.EntityReferenceDatatype {
+				if triple.Datatype == message.EntityReferenceDatatype {
 					referenceCount++
 					if triple.Predicate != "execution.agent.id" {
 						t.Errorf("%s unexpectedly carries @id", triple.Predicate)

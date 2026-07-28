@@ -94,11 +94,6 @@ func TestSeedUnits_DispatchesInDependencyOrder(t *testing.T) {
 		DispatchSubject:      dispatchSubject,
 		BackstopInterval:     "1s",
 		DispatchDedupeWindow: "1s", // must be >= backstop (ADR-070)
-		CompletedPredicate:   PredCompleted,
-		FailedPredicate:      PredFailed,
-		DirtiedPredicate:     PredDirtied,
-		DependsOnPredicate:   PredDependsOn,
-		ClaimPredicate:       PredClaim,
 	}
 	cfgJSON, err := json.Marshal(cfg)
 	if err != nil {
@@ -217,7 +212,7 @@ func TestNATSUnitCompletionWriter_ReplacesAndConfirmsOneMarker(t *testing.T) {
 	}
 	completed := 0
 	for _, triple := range entity.Triples {
-		if triple.Predicate != PredCompleted {
+		if triple.Predicate != frameworkGatedDAGDefaults().CompletedPredicate {
 			continue
 		}
 		completed++
@@ -547,11 +542,6 @@ func startRecordingUnitExecutor(
 		DispatchSubject:      dispatchSubject,
 		BackstopInterval:     "1s",
 		DispatchDedupeWindow: "1s",
-		CompletedPredicate:   PredCompleted,
-		FailedPredicate:      PredFailed,
-		DirtiedPredicate:     PredDirtied,
-		DependsOnPredicate:   PredDependsOn,
-		ClaimPredicate:       PredClaim,
 	}
 	cfgJSON, err := json.Marshal(cfg)
 	if err != nil {
@@ -602,7 +592,7 @@ func newDispatchDecoder(t *testing.T) func([]byte) (string, bool) {
 // signal a real dispatch handler emits after the sub-quest loop finishes).
 func addCompletedMarker(ctx context.Context, client *natsclient.Client, unitID string) {
 	body, err := json.Marshal(graph.AddTripleRequest{
-		Triple: message.Triple{Subject: unitID, Predicate: PredCompleted, Object: true, Confidence: 1.0},
+		Triple: message.Triple{Subject: unitID, Predicate: frameworkGatedDAGDefaults().CompletedPredicate, Object: true, Confidence: 1.0},
 	})
 	if err != nil {
 		return

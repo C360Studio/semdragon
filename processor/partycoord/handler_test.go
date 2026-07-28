@@ -8,7 +8,6 @@ import (
 	"github.com/c360studio/semstreams/message"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -75,20 +74,20 @@ func TestPartyTriplesProjectAuthoritativeRelationships(t *testing.T) {
 	triples := party.Triples()
 	assertPartyTriple(t, triples, partyID, "party.identity.name", party.Name, "")
 	assertPartyTriple(t, triples, partyID, "party.status.state", string(domain.PartyDisbanded), "")
-	assertPartyTriple(t, triples, partyID, "party.assignment.quest", string(questID), semcompat.EntityReferenceDatatype)
-	assertPartyTriple(t, triples, partyID, "party.membership.lead", string(leadID), semcompat.EntityReferenceDatatype)
+	assertPartyTriple(t, triples, partyID, "party.assignment.quest", string(questID), message.EntityReferenceDatatype)
+	assertPartyTriple(t, triples, partyID, "party.membership.lead", string(leadID), message.EntityReferenceDatatype)
 	assertPartyTriple(t, triples, partyID, "party.membership.count", 2, "")
 	assertPartyTriple(t, triples, partyID, "party.lifecycle.formed-at", now.Format(time.RFC3339), "")
 	assertPartyTriple(t, triples, partyID, "party.lifecycle.disbanded-at", disbandedAt.Format(time.RFC3339), "")
-	assertPartyTriple(t, triples, partyID, "party.assignment."+string(subQuestID), string(memberID), semcompat.EntityReferenceDatatype)
+	assertPartyTriple(t, triples, partyID, "party.assignment."+string(subQuestID), string(memberID), message.EntityReferenceDatatype)
 
 	memberTriples := triplesForPredicate(triples, "party.membership.member")
 	if len(memberTriples) != 2 {
 		t.Fatalf("party.membership.member triples = %d, want 2", len(memberTriples))
 	}
 	for _, triple := range memberTriples {
-		if triple.Datatype != semcompat.EntityReferenceDatatype {
-			t.Errorf("member triple datatype = %q, want %q", triple.Datatype, semcompat.EntityReferenceDatatype)
+		if triple.Datatype != message.EntityReferenceDatatype {
+			t.Errorf("member triple datatype = %q, want %q", triple.Datatype, message.EntityReferenceDatatype)
 		}
 	}
 }

@@ -105,13 +105,13 @@ func TestSeedUnitsWithSeamsCreatesAtomicUnitsBehindActivationLatch(t *testing.T)
 	}
 
 	activation := store.entities[plan.ActivationID]
-	assertExactReferences(t, activation, PredDependsOn, []string{plan.ActivationID})
+	assertExactReferences(t, activation, frameworkGatedDAGDefaults().DependsOnPredicate, []string{plan.ActivationID})
 	assertPredicateValue(t, activation, PredUnitPlanDigest, plan.Digest)
 
 	prerequisite := store.entities[plan.NodeUnits["a"]]
-	assertExactReferences(t, prerequisite, PredDependsOn, []string{plan.ActivationID})
+	assertExactReferences(t, prerequisite, frameworkGatedDAGDefaults().DependsOnPredicate, []string{plan.ActivationID})
 	dependent := store.entities[plan.NodeUnits["b"]]
-	assertExactReferences(t, dependent, PredDependsOn, []string{
+	assertExactReferences(t, dependent, frameworkGatedDAGDefaults().DependsOnPredicate, []string{
 		plan.ActivationID,
 		plan.NodeUnits["a"],
 	})
@@ -122,14 +122,14 @@ func TestSeedUnitsWithSeamsCreatesAtomicUnitsBehindActivationLatch(t *testing.T)
 			t.Errorf("work unit %q unexpectedly carries latch-only plan digest", unitID)
 		}
 		assertPredicateValue(t, entity, PredUnitExecutionID, in.ExecutionID)
-		if got := entity.GetTriple(PredCompleted); got != nil {
+		if got := entity.GetTriple(frameworkGatedDAGDefaults().CompletedPredicate); got != nil {
 			t.Errorf("work unit %q was born completed", unitID)
 		}
 	}
 	if store.completeCalls != 1 {
 		t.Errorf("activation release commits = %d, want 1", store.completeCalls)
 	}
-	if activation.GetTriple(PredCompleted) == nil {
+	if activation.GetTriple(frameworkGatedDAGDefaults().CompletedPredicate) == nil {
 		t.Error("activation completion marker was not confirmed")
 	}
 }
@@ -162,7 +162,7 @@ func TestSeedUnitsWithSeamsConvergesAfterEveryCreateInterruption(t *testing.T) {
 			if !errors.Is(err, interrupted) {
 				t.Fatalf("interrupted seed error = %v, want transient cause", err)
 			}
-			if entity := store.entity(plan.ActivationID); entity != nil && entity.GetTriple(PredCompleted) != nil {
+			if entity := store.entity(plan.ActivationID); entity != nil && entity.GetTriple(frameworkGatedDAGDefaults().CompletedPredicate) != nil {
 				t.Fatal("partial manifest released activation")
 			}
 
@@ -402,7 +402,7 @@ func TestNATSUnitCompletionWriterAuthoritativeReadbackCases(t *testing.T) {
 	completed := inactive.Clone()
 	completed.Version = 8
 	completed.Triples = append(completed.Triples, message.Triple{
-		Subject: completed.ID, Predicate: PredCompleted, Object: true,
+		Subject: completed.ID, Predicate: frameworkGatedDAGDefaults().CompletedPredicate, Object: true,
 		Source: unitCompletionOwner, Confidence: 1,
 	})
 	transient := errors.New("lost update reply")
@@ -434,12 +434,12 @@ func TestNATSUnitCompletionWriterAuthoritativeReadbackCases(t *testing.T) {
 		{name: "success missing marker", reads: []readResult{{entity: inactive}, {entity: inactive}}, wantCorruption: true, wantUpdates: 1},
 		{
 			name:           "failed activation",
-			reads:          []readResult{{entity: entityWithMarker(inactive, PredFailed)}},
+			reads:          []readResult{{entity: entityWithMarker(inactive, frameworkGatedDAGDefaults().FailedPredicate)}},
 			wantCorruption: true,
 		},
 		{
 			name:           "dirtied activation",
-			reads:          []readResult{{entity: entityWithMarker(inactive, PredDirtied)}},
+			reads:          []readResult{{entity: entityWithMarker(inactive, frameworkGatedDAGDefaults().DirtiedPredicate)}},
 			wantCorruption: true,
 		},
 		{
@@ -481,7 +481,7 @@ func TestNATSUnitCompletionWriterAuthoritativeReadbackCases(t *testing.T) {
 				) error {
 					updates++
 					if id != plan.ActivationID || marker.Subject != id ||
-						marker.Predicate != PredCompleted || marker.Source != unitCompletionOwner {
+						marker.Predicate != frameworkGatedDAGDefaults().CompletedPredicate || marker.Source != unitCompletionOwner {
 						t.Errorf("completion update marker = %#v", marker)
 					}
 					if token.IsZero() {
@@ -595,7 +595,7 @@ func TestSeedUnitsWithSeamsRejectsUnexpectedUnitInExecutionManifest(t *testing.T
 		{Subject: extraID, Predicate: PredUnitParentQuest, Object: in.ParentQuestID, Datatype: "@id"},
 		{Subject: extraID, Predicate: PredUnitExecutionID, Object: in.ExecutionID},
 		{Subject: extraID, Predicate: PredUnitPlanDigest, Object: plan.Digest},
-		{Subject: extraID, Predicate: PredDependsOn, Object: plan.ActivationID, Datatype: "@id"},
+		{Subject: extraID, Predicate: frameworkGatedDAGDefaults().DependsOnPredicate, Object: plan.ActivationID, Datatype: "@id"},
 	})
 
 	_, err = seedUnitsWithSeams(context.Background(), board, in, store.create, store.read, store.list, store)
@@ -672,18 +672,18 @@ func (s *fakeUnitSeedStore) Complete(_ context.Context, unitID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entity := s.entities[unitID]
-	if entity.GetTriple(PredCompleted) != nil {
+	if entity.GetTriple(frameworkGatedDAGDefaults().CompletedPredicate) != nil {
 		return nil
 	}
 	s.completeCalls++
 	filtered := entity.Triples[:0]
 	for _, triple := range entity.Triples {
-		if triple.Predicate != PredCompleted {
+		if triple.Predicate != frameworkGatedDAGDefaults().CompletedPredicate {
 			filtered = append(filtered, triple)
 		}
 	}
 	entity.Triples = append(filtered, message.Triple{
-		Subject: unitID, Predicate: PredCompleted, Object: true, Source: unitCompletionOwner, Confidence: 1,
+		Subject: unitID, Predicate: frameworkGatedDAGDefaults().CompletedPredicate, Object: true, Source: unitCompletionOwner, Confidence: 1,
 	})
 	return nil
 }

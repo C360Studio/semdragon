@@ -31,8 +31,12 @@ type runtimeComponentContract struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
 	Config  struct {
-		RulesFiles          []string `json:"rules_files"`
-		EntityWatchPatterns []string `json:"entity_watch_patterns"`
+		RulesFiles             []string            `json:"rules_files"`
+		PackID                 string              `json:"pack_id"`
+		EnableGraphIntegration bool                `json:"enable_graph_integration"`
+		EntityWatchBuckets     map[string][]string `json:"entity_watch_buckets"`
+		EntityWatchPatterns    []string            `json:"entity_watch_patterns"`
+		ProjectionContracts    json.RawMessage     `json:"projection_contracts"`
 	} `json:"config"`
 }
 
@@ -191,6 +195,23 @@ func runtimeProfileViolations(profile runtimeProfileContract) []string {
 	if !exists {
 		return append(violations, "components.rule-processor is missing")
 	}
+	enabledPackOwners := make(map[string]string)
+	for componentID, candidate := range profile.Components {
+		if candidate.Name != "rule-processor" || !candidate.Enabled {
+			continue
+		}
+		if previous, duplicate := enabledPackOwners[candidate.Config.PackID]; duplicate {
+			violations = append(violations,
+				"duplicate enabled rule pack_id "+candidate.Config.PackID+
+					" in "+previous+" and "+componentID)
+		} else {
+			enabledPackOwners[candidate.Config.PackID] = componentID
+		}
+		if componentID != "rule-processor" {
+			violations = append(violations,
+				"unexpected enabled rule processor component "+componentID)
+		}
+	}
 	if rules.Type != "processor" {
 		violations = append(violations, "components.rule-processor.type = "+rules.Type+", want processor")
 	}
@@ -204,8 +225,23 @@ func runtimeProfileViolations(profile runtimeProfileContract) []string {
 	if !slices.Equal(rules.Config.RulesFiles, completeQuestRulePack) {
 		violations = append(violations, "rules_files does not equal the complete ordered quest pack")
 	}
-	if !slices.Equal(rules.Config.EntityWatchPatterns, []string{"*.*.game.*.quest.*"}) {
-		violations = append(violations, "entity_watch_patterns does not equal the quest entity pattern")
+	if rules.Config.PackID != "quest-lifecycle" {
+		violations = append(violations, "pack_id does not equal quest-lifecycle")
+	}
+	if !rules.Config.EnableGraphIntegration {
+		violations = append(violations, "enable_graph_integration = false, want true")
+	}
+	if !slices.Equal(rules.Config.EntityWatchBuckets["ENTITY_STATES"], []string{"*.*.game.*.quest.*"}) {
+		violations = append(violations, "entity_watch_buckets.ENTITY_STATES does not equal the quest entity pattern")
+	}
+	if len(rules.Config.EntityWatchBuckets) != 1 {
+		violations = append(violations, "entity_watch_buckets must declare only ENTITY_STATES")
+	}
+	if rules.Config.EntityWatchPatterns != nil {
+		violations = append(violations, "legacy entity_watch_patterns must be omitted")
+	}
+	if rules.Config.ProjectionContracts != nil {
+		violations = append(violations, "projection_contracts must be omitted so SemStreams derives the minimal contract")
 	}
 	return violations
 }
@@ -332,7 +368,11 @@ func TestPhase1MechanicsContractsRejectReintroduction(t *testing.T) {
 		rules.Name = "rule-processor"
 		rules.Enabled = true
 		rules.Config.RulesFiles = slices.Clone(completeQuestRulePack)
-		rules.Config.EntityWatchPatterns = []string{"*.*.game.*.quest.*"}
+		rules.Config.PackID = "quest-lifecycle"
+		rules.Config.EnableGraphIntegration = true
+		rules.Config.EntityWatchBuckets = map[string][]string{
+			"ENTITY_STATES": {"*.*.game.*.quest.*"},
+		}
 		return runtimeProfileContract{
 			Components: map[string]runtimeComponentContract{"rule-processor": rules},
 		}
@@ -369,7 +409,57 @@ func TestPhase1MechanicsContractsRejectReintroduction(t *testing.T) {
 		},
 		"wrong watch pattern": func(profile *runtimeProfileContract) {
 			rules := profile.Components["rule-processor"]
-			rules.Config.EntityWatchPatterns = []string{"*.*.game.*.battle.*"}
+			rules.Config.EntityWatchBuckets["ENTITY_STATES"] = []string{"*.*.game.*.battle.*"}
+			profile.Components["rule-processor"] = rules
+		},
+		"legacy watch pattern": func(profile *runtimeProfileContract) {
+			rules := profile.Components["rule-processor"]
+			rules.Config.EntityWatchPatterns = []string{"*.*.game.*.quest.*"}
+			profile.Components["rule-processor"] = rules
+		},
+		"explicit projection contract": func(profile *runtimeProfileContract) {
+			rules := profile.Components["rule-processor"]
+			rules.Config.ProjectionContracts = json.RawMessage(`[]`)
+			profile.Components["rule-processor"] = rules
+		},
+		"missing pack identity": func(profile *runtimeProfileContract) {
+			rules := profile.Components["rule-processor"]
+			rules.Config.PackID = ""
+			profile.Components["rule-processor"] = rules
+		},
+		"changed pack identity": func(profile *runtimeProfileContract) {
+			rules := profile.Components["rule-processor"]
+			rules.Config.PackID = "quest-lifecycle-v2"
+			profile.Components["rule-processor"] = rules
+		},
+		"duplicate pack identity": func(profile *runtimeProfileContract) {
+			profile.Components["duplicate-rules"] = profile.Components["rule-processor"]
+		},
+		"disabled graph integration": func(profile *runtimeProfileContract) {
+			rules := profile.Components["rule-processor"]
+			rules.Config.EnableGraphIntegration = false
+			profile.Components["rule-processor"] = rules
+		},
+		"non-six-position watch": func(profile *runtimeProfileContract) {
+			rules := profile.Components["rule-processor"]
+			rules.Config.EntityWatchBuckets["ENTITY_STATES"] = []string{"*.*.game.*.quest"}
+			profile.Components["rule-processor"] = rules
+		},
+		"malformed watch": func(profile *runtimeProfileContract) {
+			rules := profile.Components["rule-processor"]
+			rules.Config.EntityWatchBuckets["ENTITY_STATES"] = []string{"*..game.*.quest.*"}
+			profile.Components["rule-processor"] = rules
+		},
+		"null watch buckets": func(profile *runtimeProfileContract) {
+			rules := profile.Components["rule-processor"]
+			rules.Config.EntityWatchBuckets = nil
+			profile.Components["rule-processor"] = rules
+		},
+		"hand-authored lifecycle contract": func(profile *runtimeProfileContract) {
+			rules := profile.Components["rule-processor"]
+			rules.Config.ProjectionContracts = json.RawMessage(
+				`[{"name":"quest-lifecycle","entity_pattern":"*.*.game.*.quest.*"}]`,
+			)
 			profile.Components["rule-processor"] = rules
 		},
 	}

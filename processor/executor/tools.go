@@ -967,10 +967,10 @@ func buildWebContentEntity(
 		{Subject: entityID, Predicate: semcompat.DCTermsModified, Object: time.Now().Format(time.RFC3339)},
 	}
 	if agentID != "" {
-		triples = append(triples, message.Triple{Subject: entityID, Predicate: domain.PredicateSourceDocumentFetchedBy, Object: agentID, Datatype: semcompat.EntityReferenceDatatype})
+		triples = append(triples, message.Triple{Subject: entityID, Predicate: domain.PredicateSourceDocumentFetchedBy, Object: agentID, Datatype: message.EntityReferenceDatatype})
 	}
 	if questID != "" {
-		triples = append(triples, message.Triple{Subject: entityID, Predicate: domain.PredicateSourceDocumentQuestID, Object: questID, Datatype: semcompat.EntityReferenceDatatype})
+		triples = append(triples, message.Triple{Subject: entityID, Predicate: domain.PredicateSourceDocumentQuestID, Object: questID, Datatype: message.EntityReferenceDatatype})
 	}
 
 	return &webContentEntity{id: entityID, triples: triples}

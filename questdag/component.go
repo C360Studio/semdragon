@@ -257,19 +257,7 @@ func (c *Component) Start(ctx context.Context) error {
 
 	// Own the gated-DAG executor over the shared dagunit prefix, markers-only
 	// (no FanOutInstanceID): per-DAG isolation comes from the DAG-local edge set.
-	execCfg := gateddagexec.Config{
-		UnitEntityPrefix:     UnitPrefix(c.boardConfig),
-		DispatchSubject:      c.config.DispatchSubject,
-		DispatchStream:       c.config.DispatchStream,
-		BackstopInterval:     c.config.BackstopInterval,
-		DispatchDedupeWindow: c.config.DispatchDedupeWindow,
-		StrandedAfter:        c.config.StrandedAfter,
-		CompletedPredicate:   PredCompleted,
-		FailedPredicate:      PredFailed,
-		DirtiedPredicate:     PredDirtied,
-		DependsOnPredicate:   PredDependsOn,
-		ClaimPredicate:       PredClaim,
-	}
+	execCfg := c.gatedDAGConfig()
 	execJSON, err := json.Marshal(execCfg)
 	if err != nil {
 		return fmt.Errorf("questdag: marshal executor config: %w", err)
@@ -311,6 +299,19 @@ func (c *Component) Start(ctx context.Context) error {
 		"unit_prefix", UnitPrefix(c.boardConfig),
 		"dispatch_subject", c.config.DispatchSubject)
 	return nil
+}
+
+// gatedDAGConfig declares only Semdragon's required scope and tuning. Marker
+// predicates deliberately remain unset so the framework owns their defaults.
+func (c *Component) gatedDAGConfig() gateddagexec.Config {
+	return gateddagexec.Config{
+		UnitEntityPrefix:     UnitPrefix(c.boardConfig),
+		DispatchSubject:      c.config.DispatchSubject,
+		DispatchStream:       c.config.DispatchStream,
+		BackstopInterval:     c.config.BackstopInterval,
+		DispatchDedupeWindow: c.config.DispatchDedupeWindow,
+		StrandedAfter:        c.config.StrandedAfter,
+	}
 }
 
 // Stop cancels the dispatch consumer and stops the owned executor.

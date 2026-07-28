@@ -31,6 +31,7 @@ import (
 
 	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
+	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/httpauth"
 	"github.com/c360studio/semdragons/processor/questbridge"
 	"github.com/c360studio/semdragons/questlifecycle"
@@ -137,7 +138,9 @@ func run() error {
 
 	// 6a. Initialize global graph source registry from top-level config.
 	// Components access this via questbridge.GlobalGraphSources() during Start().
-	initGraphSources(rawConfigData, logger)
+	if err := initGraphSources(rawConfigData, logger); err != nil {
+		return err
+	}
 
 	// 7. Create remaining infrastructure
 	metricsRegistry, platform, configManager, err := setupInfrastructure(ctx, cfg, natsClient, logger)
@@ -197,6 +200,9 @@ func createLifecycleManager(
 	natsClient *natsclient.Client,
 	logger *slog.Logger,
 ) (*lifecycle.Manager, error) {
+	// SemStreams validates lifecycle predicates at workflow registration time.
+	// Register the product vocabulary before handing the declaration to it.
+	domain.RegisterVocabulary()
 	manager := lifecycle.NewManager(natsClient, logger)
 	if err := manager.Register(questlifecycle.WorkflowDeclaration()); err != nil {
 		return nil, fmt.Errorf("register quest lifecycle workflow: %w", err)
@@ -298,20 +304,23 @@ type graphSourcesEnvelope struct {
 // initGraphSources parses the top-level graph_sources from raw config JSON
 // and initializes the process-wide GraphSourceRegistry singleton.
 // Components access it via questbridge.GlobalGraphSources().
-func initGraphSources(rawConfig []byte, logger *slog.Logger) {
+func initGraphSources(rawConfig []byte, logger *slog.Logger) error {
 	var envelope graphSourcesEnvelope
 	if err := json.Unmarshal(rawConfig, &envelope); err != nil {
-		logger.Warn("failed to parse graph_sources from config", "error", err)
-		return
+		return fmt.Errorf("parse graph_sources from config: %w", err)
 	}
 	if len(envelope.GraphSources) == 0 {
-		return
+		return nil
 	}
 
-	reg := questbridge.NewGraphSourceRegistry(envelope.GraphSources, logger)
+	reg, err := questbridge.NewGraphSourceRegistry(envelope.GraphSources, logger)
+	if err != nil {
+		return fmt.Errorf("initialize graph_sources: %w", err)
+	}
 	questbridge.SetGlobalGraphSources(reg)
 	logger.Info("graph source registry initialized",
 		"sources", len(envelope.GraphSources))
+	return nil
 }
 
 // setupLogger creates a structured logger.

@@ -55,8 +55,12 @@ func TestRulesFire_ClaimCommandTransitionsPostedToClaimed(t *testing.T) {
 
 	// Real rule-processor: watches quest entities, fires lifecycle_transition via the Manager.
 	ruleCfg := mustJSON(t, map[string]any{
-		"rules_files":           questRuleFiles(t),
-		"entity_watch_patterns": []string{"*.*.game.*.quest.*"},
+		"rules_files":              questRuleFiles(t),
+		"pack_id":                  "quest-lifecycle-test",
+		"enable_graph_integration": true,
+		"entity_watch_buckets": map[string][]string{
+			graph.BucketEntityStates: {"*.*.game.*.quest.*"},
+		},
 	})
 	startComponent(t, ctx, ruleCfg, func(cfg json.RawMessage) (component.Discoverable, error) {
 		return rule.CreateRuleProcessor(cfg, component.Dependencies{NATSClient: tc.Client, LifecycleManager: mgr})

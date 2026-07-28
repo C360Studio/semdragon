@@ -8,7 +8,6 @@ import (
 	"github.com/c360studio/semstreams/message"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 // =============================================================================
@@ -97,10 +96,10 @@ func (p *Party) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "party.status.state", Object: string(p.Status), Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Quest relationship
-		{Subject: entityID, Predicate: "party.assignment.quest", Object: string(p.QuestID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "party.assignment.quest", Object: string(p.QuestID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: message.EntityReferenceDatatype},
 
 		// Lead
-		{Subject: entityID, Predicate: "party.membership.lead", Object: string(p.Lead), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "party.membership.lead", Object: string(p.Lead), Source: source, Timestamp: now, Confidence: 1.0, Datatype: message.EntityReferenceDatatype},
 
 		// Membership count
 		{Subject: entityID, Predicate: "party.membership.count", Object: len(p.Members), Source: source, Timestamp: now, Confidence: 1.0},
@@ -113,7 +112,7 @@ func (p *Party) Triples() []message.Triple {
 	for _, member := range p.Members {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "party.membership.member", Object: string(member.AgentID),
-			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: message.EntityReferenceDatatype,
 		})
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "party.member." + string(member.AgentID) + ".role", Object: string(member.Role),
@@ -125,7 +124,7 @@ func (p *Party) Triples() []message.Triple {
 	for questID, agentID := range p.SubQuestMap {
 		triples = append(triples, message.Triple{
 			Subject: entityID, Predicate: "party.assignment." + string(questID), Object: string(agentID),
-			Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
+			Source: source, Timestamp: now, Confidence: 1.0, Datatype: message.EntityReferenceDatatype,
 		})
 	}
 

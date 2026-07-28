@@ -10,7 +10,6 @@ import (
 	"github.com/c360studio/semstreams/message"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 var partyScalarPredicateRenames = map[string]string{
@@ -111,8 +110,8 @@ func TestPartyTriplesRestrictEntityReferenceDatatypeToCanonicalRelationships(t *
 			continue
 		}
 
-		if triple.Datatype != semcompat.EntityReferenceDatatype {
-			t.Errorf("%s datatype = %q, want %q", triple.Predicate, triple.Datatype, semcompat.EntityReferenceDatatype)
+		if triple.Datatype != message.EntityReferenceDatatype {
+			t.Errorf("%s datatype = %q, want %q", triple.Predicate, triple.Datatype, message.EntityReferenceDatatype)
 		}
 		target, ok := triple.Object.(string)
 		if !ok {
@@ -213,8 +212,8 @@ func TestPartyCanonicalQuestEdgeDoesNotCollideWithDynamicAssignmentParser(t *tes
 	got := PartyFromEntityState(&graph.EntityState{
 		ID: entityID,
 		Triples: []message.Triple{
-			{Subject: entityID, Predicate: "party.assignment.quest", Object: questID, Datatype: semcompat.EntityReferenceDatatype},
-			{Subject: entityID, Predicate: "party.assignment." + subQuestID, Object: assignedAgent, Datatype: semcompat.EntityReferenceDatatype},
+			{Subject: entityID, Predicate: "party.assignment.quest", Object: questID, Datatype: message.EntityReferenceDatatype},
+			{Subject: entityID, Predicate: "party.assignment." + subQuestID, Object: assignedAgent, Datatype: message.EntityReferenceDatatype},
 		},
 	})
 
@@ -250,7 +249,7 @@ func TestPartyDynamicFullIDPredicateFamiliesRemainBlockedByIssues4And313(t *test
 	}
 	assignmentTriple := requireSinglePartyPredicate(t, triples, assignmentPredicate)
 	if assignmentTriple.Object != string(party.SubQuestMap[subQuestID]) ||
-		assignmentTriple.Datatype != semcompat.EntityReferenceDatatype {
+		assignmentTriple.Datatype != message.EntityReferenceDatatype {
 		t.Errorf("dynamic assignment triple = %#v", assignmentTriple)
 	}
 

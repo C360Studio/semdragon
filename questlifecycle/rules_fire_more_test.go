@@ -64,8 +64,12 @@ func newRuleStack(t *testing.T, ctx context.Context) (*natsclient.TestClient, *l
 		return graphingest.CreateGraphIngest(cfg, component.Dependencies{NATSClient: tc.Client})
 	})
 	ruleCfg := mustJSON(t, map[string]any{
-		"rules_files":           questRuleFiles(t),
-		"entity_watch_patterns": []string{"*.*.game.*.quest.*"},
+		"rules_files":              questRuleFiles(t),
+		"pack_id":                  "quest-lifecycle-test",
+		"enable_graph_integration": true,
+		"entity_watch_buckets": map[string][]string{
+			graph.BucketEntityStates: {"*.*.game.*.quest.*"},
+		},
 	})
 	startComponent(t, ctx, ruleCfg, func(cfg json.RawMessage) (component.Discoverable, error) {
 		return rule.CreateRuleProcessor(cfg, component.Dependencies{NATSClient: tc.Client, LifecycleManager: mgr})

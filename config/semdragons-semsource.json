@@ -528,15 +528,19 @@
       "name": "rule-processor",
       "enabled": true,
       "config": {
+        "pack_id": "quest-lifecycle",
+        "enable_graph_integration": true,
         "rules_files": [
           "config/rules/quest/01-claim-start.json",
           "config/rules/quest/02-submit.json",
           "config/rules/quest/03-fail.json",
           "config/rules/quest/04-mechanics-stub.json"
         ],
-        "entity_watch_patterns": [
-          "*.*.game.*.quest.*"
-        ]
+        "entity_watch_buckets": {
+          "ENTITY_STATES": [
+            "*.*.game.*.quest.*"
+          ]
+        }
       }
     },
     "questbridge": {

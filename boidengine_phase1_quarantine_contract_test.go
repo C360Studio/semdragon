@@ -23,9 +23,9 @@ type boidPhase1Profile struct {
 		Name    string `json:"name"`
 		Enabled bool   `json:"enabled"`
 		Config  struct {
-			RulesFiles            []string `json:"rules_files"`
-			EntityWatchPatterns   []string `json:"entity_watch_patterns"`
-			BoidSuggestionsBucket string   `json:"boid_suggestions_bucket"`
+			RulesFiles            []string            `json:"rules_files"`
+			EntityWatchBuckets    map[string][]string `json:"entity_watch_buckets"`
+			BoidSuggestionsBucket string              `json:"boid_suggestions_bucket"`
 		} `json:"config"`
 	} `json:"components"`
 	Streams map[string]struct {
@@ -73,8 +73,8 @@ func TestPhase1BoidEngineDisabledInEveryShippedProfile(t *testing.T) {
 			if !slices.Equal(rules.Config.RulesFiles, completeQuestRulePack) {
 				t.Error("rules_files does not equal the complete ordered quest pack")
 			}
-			if !slices.Equal(rules.Config.EntityWatchPatterns, []string{"*.*.game.*.quest.*"}) {
-				t.Error("entity_watch_patterns does not equal the quest entity pattern")
+			if !slices.Equal(rules.Config.EntityWatchBuckets["ENTITY_STATES"], []string{"*.*.game.*.quest.*"}) {
+				t.Error("entity_watch_buckets.ENTITY_STATES does not equal the quest entity pattern")
 			}
 
 			for streamName, stream := range profile.Streams {

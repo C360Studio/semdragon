@@ -15,7 +15,7 @@ import (
 // the task 2.2 cardinality ledger decides whether to flatten it. RequiredTools
 // and SharedTools are tool-registry identifiers, not graph entity IDs.
 func TestDomainGraphableRelationshipsUseExplicitEntityReferences(t *testing.T) {
-	const wantDatatype = "@id" // message.EntityReferenceDatatype in SemStreams beta.158.
+	const wantDatatype = message.EntityReferenceDatatype
 
 	agent1 := AgentID("c360.local.game.board.agent.agent-1")
 	agent2 := AgentID("c360.local.game.board.agent.agent-2")

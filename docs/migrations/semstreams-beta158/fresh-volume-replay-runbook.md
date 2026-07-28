@@ -12,7 +12,7 @@ Compose project, NATS context, server, volume, configuration, or backend image.
 
 Reviewed commit: `4a75e035af2ecafc71419025c9cda2beb881741a`
 
-Reviewed module: `github.com/c360studio/semstreams v1.0.0-beta.135`
+Reviewed module: `github.com/c360studio/semstreams v1.0.0-beta.158.0.20260728003411-89617f32dc36`
 
 Reviewed Compose project: `semdragon-cutover`
 
@@ -48,11 +48,13 @@ module in the retained transcript.
 set -euo pipefail
 test "$(git rev-parse HEAD)" = "4a75e035af2ecafc71419025c9cda2beb881741a"
 go list -m github.com/c360studio/semstreams
-test "$(go list -m github.com/c360studio/semstreams)" = "github.com/c360studio/semstreams v1.0.0-beta.135"
+test "$(go list -m github.com/c360studio/semstreams)" = "github.com/c360studio/semstreams v1.0.0-beta.158.0.20260728003411-89617f32dc36"
 ```
 
-The results must confirm reviewed commit `4a75e035af2ecafc71419025c9cda2beb881741a` and reviewed module
-`github.com/c360studio/semstreams v1.0.0-beta.135`. Any mismatch ends the run.
+The results must confirm reviewed commit
+`4a75e035af2ecafc71419025c9cda2beb881741a` and reviewed module
+`github.com/c360studio/semstreams v1.0.0-beta.158.0.20260728003411-89617f32dc36`.
+Any mismatch ends the run.
 
 ## 2. Render and review topology
 

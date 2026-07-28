@@ -317,10 +317,9 @@ func (*Surprise) Triples() []semmsg.Triple { return nil }
 		source := `package synthetic
 import (
   "github.com/c360studio/semstreams/message"
-  compat "github.com/c360studio/semdragons/internal/semcompat"
 )
 func surprise() message.Triple {
-  return message.Triple{Datatype: compat.EntityReferenceDatatype}
+  return message.Triple{Datatype: message.EntityReferenceDatatype}
 }
 `
 		_, references, scanViolations := scanRelationshipAST(map[string][]byte{
@@ -337,11 +336,10 @@ func surprise() message.Triple {
 		source := `package synthetic
 import (
   "github.com/c360studio/semstreams/message"
-  compat "github.com/c360studio/semdragons/internal/semcompat"
 )
 func surprise() message.Triple {
   triple := message.Triple{}
-  triple.Datatype = compat.EntityReferenceDatatype
+  triple.Datatype = message.EntityReferenceDatatype
   return triple
 }
 `
@@ -376,10 +374,9 @@ func surprise() message.Triple {
 		source := `package synthetic
 import (
   "github.com/c360studio/semstreams/message"
-  compat "github.com/c360studio/semdragons/internal/semcompat"
 )
 func surprise() message.Triple {
-  datatype := compat.EntityReferenceDatatype
+  datatype := message.EntityReferenceDatatype
   triple := message.Triple{}
   triple.Datatype = datatype
   return triple
@@ -1147,8 +1144,7 @@ func classifyDatatypeExpression(expression ast.Expr, imports map[string]string) 
 			return false, false
 		}
 		importPath := imports[alias.Name]
-		entityReference = importPath == "github.com/c360studio/semstreams/message" ||
-			importPath == "github.com/c360studio/semdragons/internal/semcompat"
+		entityReference = importPath == "github.com/c360studio/semstreams/message"
 		return entityReference, entityReference
 	default:
 		return false, false

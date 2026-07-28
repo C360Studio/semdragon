@@ -10,7 +10,6 @@ import (
 	"github.com/c360studio/semstreams/message"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 var bossBattleScalarPredicateRenames = map[string]string{
@@ -116,8 +115,8 @@ func TestBossBattleAssignmentRelationshipsRemainEntityReferences(t *testing.T) {
 		if triple.Object != expectedTarget {
 			t.Errorf("%s object = %#v, want canonical target %q", triple.Predicate, triple.Object, expectedTarget)
 		}
-		if triple.Datatype != semcompat.EntityReferenceDatatype {
-			t.Errorf("%s datatype = %q, want %q", triple.Predicate, triple.Datatype, semcompat.EntityReferenceDatatype)
+		if triple.Datatype != message.EntityReferenceDatatype {
+			t.Errorf("%s datatype = %q, want %q", triple.Predicate, triple.Datatype, message.EntityReferenceDatatype)
 		}
 	}
 	for predicate := range expectedTargets {

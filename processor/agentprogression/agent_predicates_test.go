@@ -13,7 +13,6 @@ import (
 	"github.com/c360studio/semstreams/message"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 var agentScalarPredicateRenames = map[string]string{
@@ -89,8 +88,8 @@ func TestAgentTriplesEmitCanonicalScalarAndBoundedSkillPredicates(t *testing.T) 
 		if !ok {
 			t.Fatalf("missing relationship %q", predicate)
 		}
-		if triple.Datatype != semcompat.EntityReferenceDatatype {
-			t.Errorf("%s datatype = %q, want %q", predicate, triple.Datatype, semcompat.EntityReferenceDatatype)
+		if triple.Datatype != message.EntityReferenceDatatype {
+			t.Errorf("%s datatype = %q, want %q", predicate, triple.Datatype, message.EntityReferenceDatatype)
 		}
 	}
 }

@@ -20,11 +20,11 @@ func TestUnitPredicatesMatchSemStreamsBeta158Contract(t *testing.T) {
 		"plan-digest":  "questdag.unit.plan-digest",
 	}
 	got := map[string]string{
-		"claim":        PredClaim,
-		"completed":    PredCompleted,
-		"failed":       PredFailed,
-		"dirtied":      PredDirtied,
-		"depends-on":   PredDependsOn,
+		"claim":        frameworkGatedDAGDefaults().ClaimPredicate,
+		"completed":    frameworkGatedDAGDefaults().CompletedPredicate,
+		"failed":       frameworkGatedDAGDefaults().FailedPredicate,
+		"dirtied":      frameworkGatedDAGDefaults().DirtiedPredicate,
+		"depends-on":   frameworkGatedDAGDefaults().DependsOnPredicate,
 		"node-id":      PredUnitNodeID,
 		"parent-quest": PredUnitParentQuest,
 		"execution-id": PredUnitExecutionID,
@@ -59,7 +59,7 @@ func TestUnitRelationshipContract(t *testing.T) {
 	expected := map[string]string{
 		PredUnitParentQuest: parentQuest,
 		PredUnitSubQuest:    subQuest,
-		PredDependsOn:       dependencyID,
+		frameworkGatedDAGDefaults().DependsOnPredicate: dependencyID,
 	}
 	observed := make(map[string]int, len(expected))
 

@@ -10,7 +10,6 @@ import (
 	"github.com/c360studio/semstreams/message"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 // =============================================================================
@@ -58,8 +57,8 @@ func (b *BossBattle) Triples() []message.Triple {
 		{Subject: entityID, Predicate: "battle.identity.name", Object: b.Name, Source: source, Timestamp: now, Confidence: 1.0},
 
 		// Relationships — must match reconstruction predicates in BattleFromEntityState
-		{Subject: entityID, Predicate: "battle.assignment.quest", Object: string(b.QuestID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
-		{Subject: entityID, Predicate: "battle.assignment.agent", Object: string(b.AgentID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "battle.assignment.quest", Object: string(b.QuestID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: message.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: "battle.assignment.agent", Object: string(b.AgentID), Source: source, Timestamp: now, Confidence: 1.0, Datatype: message.EntityReferenceDatatype},
 
 		// Status
 		{Subject: entityID, Predicate: "battle.status.state", Object: string(b.Status), Source: source, Timestamp: now, Confidence: 1.0},

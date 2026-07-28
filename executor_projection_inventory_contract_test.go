@@ -87,7 +87,7 @@ func TestExecutorProjectionInventoryRetainsOnlyLiveRawLifecycleSurface(t *testin
 		"executor projection bind":  strings.Join([]string{"executor", ".", "Projection", "Bindings"}, ""),
 		"executor payload registry": strings.Join([]string{"executor", ".", "Register", "Payloads"}, ""),
 	}
-	referenceDatatype := strings.Join([]string{"semcompat", ".", "Entity", "Reference", "Datatype"}, "")
+	referenceDatatype := strings.Join([]string{"message", ".", "Entity", "Reference", "Datatype"}, "")
 	executorReferenceCount := 0
 	for path, data := range files {
 		if strings.HasPrefix(path, "processor/executor/") && !strings.HasSuffix(path, "_test.go") {

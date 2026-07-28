@@ -396,8 +396,10 @@ func shippedQuestRuleConfig(t *testing.T) map[string]any {
 		t.Fatal("shipped default profile has no rule-processor")
 	}
 	return map[string]any{
-		"rules_files":           rules.Config.RulesFiles,
-		"entity_watch_patterns": rules.Config.EntityWatchPatterns,
+		"rules_files":              rules.Config.RulesFiles,
+		"pack_id":                  rules.Config.PackID,
+		"enable_graph_integration": rules.Config.EnableGraphIntegration,
+		"entity_watch_buckets":     rules.Config.EntityWatchBuckets,
 	}
 }
 

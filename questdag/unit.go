@@ -15,31 +15,20 @@ import (
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/errs"
 	"github.com/c360studio/semstreams/pkg/ownership"
+	gateddagexec "github.com/c360studio/semstreams/processor/gated-dag"
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
 )
 
 // Framework gated-DAG marker predicates (processor/gated-dag config defaults).
-// questdag seeds PredDependsOn edges at unit creation; the framework executor
-// reads all of these authoritatively each evaluation to derive a unit's status.
+// questdag seeds depends-on edges at unit creation; the framework executor
+// reads all marker predicates authoritatively each evaluation to derive status.
 // The dispatch handler (and reset/retry logic) writes the terminal/dirtied
-// markers. These MUST match the gated-dag component's configured predicates.
-const (
-	// PredDependsOn is one edge per prerequisite; Object = the prerequisite
-	// unit's entity ID. All prerequisites must be Done for a unit to dispatch.
-	PredDependsOn = semcompat.GatedDAGDependsOnPredicate
-	// PredCompleted marks a unit's work done (presence-based; Object ignored).
-	PredCompleted = semcompat.GatedDAGCompletedPredicate
-	// PredFailed marks a unit's work failed terminally.
-	PredFailed = semcompat.GatedDAGFailedPredicate
-	// PredDirtied resets a unit for re-dispatch (Dirtied precedence re-derives
-	// it Ready over any stale terminal marker).
-	PredDirtied = semcompat.GatedDAGDirtiedPredicate
-	// PredClaim is the executor's durable in-flight record (executor-owned).
-	PredClaim = semcompat.GatedDAGClaimPredicate
-)
+// markers. Resolve the vocabulary from SemStreams rather than copying it.
+func frameworkGatedDAGDefaults() gateddagexec.Config {
+	return gateddagexec.DefaultConfig()
+}
 
 // questdag-owned provenance on a unit entity. The framework treats a unit as an
 // opaque reference (it dispatches only the unit entity ID); these triples let
@@ -454,7 +443,7 @@ func deterministicUnitID(board *domain.BoardConfig, executionID, kind, nodeID st
 func baseUnitTriples(unitID, nodeID, parentQuestID, executionID, digest, subQuestID string) []message.Triple {
 	triples := []message.Triple{
 		{Subject: unitID, Predicate: PredUnitNodeID, Object: nodeID, Confidence: 1},
-		{Subject: unitID, Predicate: PredUnitParentQuest, Object: parentQuestID, Confidence: 1, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: unitID, Predicate: PredUnitParentQuest, Object: parentQuestID, Confidence: 1, Datatype: message.EntityReferenceDatatype},
 		{Subject: unitID, Predicate: PredUnitExecutionID, Object: executionID, Confidence: 1},
 	}
 	if digest != "" {
@@ -465,7 +454,7 @@ func baseUnitTriples(unitID, nodeID, parentQuestID, executionID, digest, subQues
 	if subQuestID != "" {
 		triples = append(triples, message.Triple{
 			Subject: unitID, Predicate: PredUnitSubQuest, Object: subQuestID,
-			Confidence: 1, Datatype: semcompat.EntityReferenceDatatype,
+			Confidence: 1, Datatype: message.EntityReferenceDatatype,
 		})
 	}
 	return triples
@@ -473,8 +462,8 @@ func baseUnitTriples(unitID, nodeID, parentQuestID, executionID, digest, subQues
 
 func referenceTriple(subject, object string) message.Triple {
 	return message.Triple{
-		Subject: subject, Predicate: PredDependsOn, Object: object,
-		Confidence: 1, Datatype: semcompat.EntityReferenceDatatype,
+		Subject: subject, Predicate: frameworkGatedDAGDefaults().DependsOnPredicate, Object: object,
+		Confidence: 1, Datatype: message.EntityReferenceDatatype,
 	}
 }
 
@@ -620,7 +609,7 @@ func verifyImmutableUnit(entity *graph.EntityState, id string, expected []messag
 func immutableTripleKeys(triples []message.Triple) []string {
 	immutable := map[string]struct{}{
 		PredUnitNodeID: {}, PredUnitParentQuest: {}, PredUnitExecutionID: {},
-		PredUnitSubQuest: {}, PredUnitPlanDigest: {}, PredDependsOn: {},
+		PredUnitSubQuest: {}, PredUnitPlanDigest: {}, frameworkGatedDAGDefaults().DependsOnPredicate: {},
 	}
 	result := make([]string, 0, len(triples))
 	for _, triple := range triples {
@@ -647,9 +636,9 @@ func activationState(entity *graph.EntityState, expectedID string) (bool, error)
 	completed := 0
 	for _, triple := range entity.Triples {
 		switch triple.Predicate {
-		case PredCompleted:
+		case frameworkGatedDAGDefaults().CompletedPredicate:
 			completed++
-		case PredFailed, PredDirtied:
+		case frameworkGatedDAGDefaults().FailedPredicate, frameworkGatedDAGDefaults().DirtiedPredicate:
 			return false, fmt.Errorf("%w: activation carries conflicting terminal/reset marker %s", errUnitSeedCorruption, triple.Predicate)
 		}
 	}
@@ -795,7 +784,7 @@ func (w *natsUnitCompletionWriter) Complete(ctx context.Context, unitID string) 
 		)
 	}
 	marker := message.Triple{
-		Subject: unitID, Predicate: PredCompleted, Object: true,
+		Subject: unitID, Predicate: frameworkGatedDAGDefaults().CompletedPredicate, Object: true,
 		Source: unitCompletionOwner, Timestamp: time.Now(), Confidence: 1,
 	}
 	before, err := w.read(ctx, unitID)
@@ -850,7 +839,7 @@ func updateUnitCompletion(
 ) error {
 	body, err := json.Marshal(graph.UpdateEntityWithTriplesRequest{
 		Entity:        &graph.EntityState{ID: unitID},
-		RemoveTriples: []string{PredCompleted},
+		RemoveTriples: []string{frameworkGatedDAGDefaults().CompletedPredicate},
 		AddTriples:    []message.Triple{marker},
 		OwnerToken:    ownerToken.Wire(),
 	})

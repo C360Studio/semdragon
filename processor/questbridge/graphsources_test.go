@@ -12,7 +12,7 @@ import (
 )
 
 func TestGraphSourceRoutingUsesCanonicalSegmentBoundaries(t *testing.T) {
-	registry := newRoutingTestRegistry()
+	registry := newRoutingTestRegistry(t)
 	setGraphSourceReady(t, registry, "osh", true)
 	setGraphSourceReady(t, registry, "workspace", true)
 	setGraphSourceReady(t, registry, "other", true)
@@ -24,7 +24,10 @@ func TestGraphSourceRoutingUsesCanonicalSegmentBoundaries(t *testing.T) {
 		wantSource string
 	}{
 		{"entity one segment descendant", "entity", "osh.platform.domain.system.type.instance", "osh"},
+		{"entity complete six-part ID", "entity", "local.semsource.domain.system.type.instance", "workspace"},
 		{"entity one segment collision", "entity", "oshx.platform.domain.system.type.instance", "local"},
+		{"entity partial prefix rejected", "entity", "osh.platform", ""},
+		{"entity malformed rejected", "entity", "osh..domain.system.type.instance", ""},
 		{"relationships one segment descendant", "relationships", "osh.platform.domain.system.type.instance", "osh"},
 		{"relationships one segment collision", "relationships", "oshx.platform.domain.system.type.instance", "local"},
 		{"entity two segments descendant", "entity", "local.semsource.domain.system.type.instance", "workspace"},
@@ -37,6 +40,8 @@ func TestGraphSourceRoutingUsesCanonicalSegmentBoundaries(t *testing.T) {
 		{"prefix two segments exact", "prefix", "local.semsource", "workspace"},
 		{"prefix two segments descendant", "prefix", "local.semsource.asset", "workspace"},
 		{"prefix two segments collision", "prefix", "local.semsourcex", "local"},
+		{"prefix full entity ID accepted", "prefix", "local.semsource.domain.system.type.instance", "workspace"},
+		{"prefix malformed rejected", "prefix", "local..semsource", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -47,6 +52,12 @@ func TestGraphSourceRoutingUsesCanonicalSegmentBoundaries(t *testing.T) {
 				entityID = tt.value
 			}
 			sources := registry.SourcesForQuery(tt.queryType, entityID, prefix)
+			if tt.wantSource == "" {
+				if len(sources) != 0 {
+					t.Fatalf("sources = %v, want no target", graphSourceNames(sources))
+				}
+				return
+			}
 			if len(sources) != 1 || sources[0].Name != tt.wantSource {
 				t.Fatalf("sources = %v, want exactly %q", graphSourceNames(sources), tt.wantSource)
 			}
@@ -55,7 +66,7 @@ func TestGraphSourceRoutingUsesCanonicalSegmentBoundaries(t *testing.T) {
 }
 
 func TestGraphSourceRoutingPreservesUnreadyOwnership(t *testing.T) {
-	registry := newRoutingTestRegistry()
+	registry := newRoutingTestRegistry(t)
 	setGraphSourceReady(t, registry, "other", true)
 
 	for _, queryType := range []string{"entity", "relationships", "prefix"} {
@@ -86,6 +97,34 @@ func TestGraphSourceRoutingPreservesUnreadyOwnership(t *testing.T) {
 	}
 }
 
+func TestGraphSourceRegistryRejectsMalformedConfiguredPrefix(t *testing.T) {
+	_, err := NewGraphSourceRegistry([]GraphSource{
+		{Name: "local", Type: "local", AlwaysQuery: true},
+		{Name: "broken", Type: "semsource", EntityPrefix: "local..broken"},
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), `graph source "broken" entity_prefix`) {
+		t.Fatalf("NewGraphSourceRegistry error = %v, want malformed configured prefix", err)
+	}
+}
+
+func TestResolveEntityRequiresConcreteSixPartID(t *testing.T) {
+	registry := newRoutingTestRegistry(t)
+	setGraphSourceReady(t, registry, "workspace", true)
+
+	if got := registry.ResolveEntity("local.semsource.domain.system.type.instance"); got == nil || got.Name != "workspace" {
+		t.Fatalf("full entity resolved to %#v, want workspace", got)
+	}
+	for _, invalid := range []string{
+		"local.semsource",
+		"local..domain.system.type.instance",
+		"local.semsource.domain.system.type.instance.extra",
+	} {
+		if got := registry.ResolveEntity(invalid); got != nil {
+			t.Errorf("ResolveEntity(%q) = %#v, want nil", invalid, got)
+		}
+	}
+}
+
 func TestFetchExampleIDsForwardsCanonicalPrefixUnchanged(t *testing.T) {
 	queries := make(chan string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -102,9 +141,12 @@ func TestFetchExampleIDsForwardsCanonicalPrefixUnchanged(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	registry := NewGraphSourceRegistry([]GraphSource{{
+	registry, err := NewGraphSourceRegistry([]GraphSource{{
 		Name: "local", Type: "local", GraphQLURL: server.URL, AlwaysQuery: true,
 	}}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("create graph source registry: %v", err)
+	}
 
 	for _, prefix := range []string{"osh", "local.semsource"} {
 		registry.fetchExampleIDs(context.Background(), &GraphSource{
@@ -144,13 +186,16 @@ func TestFormatSummaryUsesCanonicalPrefixInDisplayAndExample(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	registry := NewGraphSourceRegistry([]GraphSource{
+	registry, err := NewGraphSourceRegistry([]GraphSource{
 		{Name: "local", Type: "local", GraphQLURL: server.URL, AlwaysQuery: true},
 		{
 			Name: "workspace", Type: "semsource", GraphQLURL: server.URL,
 			StatusURL: server.URL + "/status", EntityPrefix: "local.semsource",
 		},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("create graph source registry: %v", err)
+	}
 	setGraphSourceReady(t, registry, "workspace", true)
 
 	formatted := registry.FormatSummaryForPrompt(context.Background())
@@ -164,13 +209,18 @@ func TestFormatSummaryUsesCanonicalPrefixInDisplayAndExample(t *testing.T) {
 	}
 }
 
-func newRoutingTestRegistry() *GraphSourceRegistry {
-	return NewGraphSourceRegistry([]GraphSource{
+func newRoutingTestRegistry(t *testing.T) *GraphSourceRegistry {
+	t.Helper()
+	registry, err := NewGraphSourceRegistry([]GraphSource{
 		{Name: "local", Type: "local", GraphQLURL: "http://local/graphql", AlwaysQuery: true},
 		{Name: "osh", Type: "semsource", GraphQLURL: "http://osh/graphql", EntityPrefix: "osh"},
 		{Name: "workspace", Type: "semsource", GraphQLURL: "http://workspace/graphql", EntityPrefix: "local.semsource"},
 		{Name: "other", Type: "semsource", GraphQLURL: "http://other/graphql", EntityPrefix: "other"},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("create graph source registry: %v", err)
+	}
+	return registry
 }
 
 func setGraphSourceReady(t *testing.T, registry *GraphSourceRegistry, name string, ready bool) {

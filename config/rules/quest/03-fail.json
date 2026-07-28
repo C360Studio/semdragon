@@ -3,14 +3,14 @@
     "id": "quest_fail_retry",
     "type": "expression",
     "name": "Quest fail -> retry",
-    "description": "in_progress + command=fail while attempts remain (< max) -> posted, freeing the agent. The attempt counter is incremented on claim (not here), so it already reflects the number of attempts made; the next claim increments again. Clears command and claimed_by atomically. NOTE: max is a literal (default MaxAttempts=3); rule conditions cannot reference the per-quest quest.attempts.max triple. failed stays terminal (spec) — fail routing goes straight to posted/pending_triage, never through failed.",
+    "description": "in_progress + command=fail while attempts remain (< the quest's max) -> posted, freeing the agent. The attempt counter is incremented on claim (not here), so it already reflects the number of attempts made; the next claim increments again. Clears command and claimed_by atomically. failed stays terminal (spec) — fail routing goes straight to posted/pending_triage, never through failed.",
     "enabled": true,
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [
       { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
       { "field": "quest.lifecycle.command", "operator": "eq", "value": "fail" },
-      { "field": "quest.attempts.current", "operator": "lt", "value": 3 }
+      { "field": "quest.attempts.current", "operator": "lt", "value": "$entity.triple.quest.attempts.max.value" }
     ],
     "on_enter": [
       {
@@ -36,7 +36,7 @@
     "conditions": [
       { "field": "$entity.lifecycle.phase", "operator": "eq", "value": "in_progress" },
       { "field": "quest.lifecycle.command", "operator": "eq", "value": "fail" },
-      { "field": "quest.attempts.current", "operator": "gte", "value": 3 }
+      { "field": "quest.attempts.current", "operator": "gte", "value": "$entity.triple.quest.attempts.max.value" }
     ],
     "on_enter": [
       {

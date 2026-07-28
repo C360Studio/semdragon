@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
-	"github.com/c360studio/semdragons/internal/semcompat"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
 	"github.com/c360studio/semstreams/natsclient"
@@ -171,7 +170,7 @@ func (p *ClaimIntentPayload) Triples() []message.Triple {
 	source := "autonomy"
 	entityID := string(p.AgentID)
 	return []message.Triple{
-		{Subject: entityID, Predicate: domain.PredicateAutonomyClaimQuest, Object: string(p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyClaimQuest, Object: string(p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: message.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: domain.PredicateAutonomyClaimScore, Object: p.Score, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 		{Subject: entityID, Predicate: domain.PredicateAutonomyClaimRank, Object: p.SuggestionRank, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
@@ -263,7 +262,7 @@ func (p *GuildIntentPayload) Triples() []message.Triple {
 	source := "autonomy"
 	entityID := string(p.AgentID)
 	return []message.Triple{
-		{Subject: entityID, Predicate: domain.PredicateAutonomyGuildJoin, Object: p.GuildID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype},
+		{Subject: entityID, Predicate: domain.PredicateAutonomyGuildJoin, Object: p.GuildID, Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: message.EntityReferenceDatatype},
 		{Subject: entityID, Predicate: domain.PredicateAutonomyGuildScore, Object: p.Score, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 		{Subject: entityID, Predicate: domain.PredicateAutonomyGuildChoices, Object: p.ChoicesEvaluated, Source: source, Timestamp: p.Timestamp, Confidence: 1.0},
 	}
@@ -312,7 +311,7 @@ func (p *UseIntentPayload) Triples() []message.Triple {
 	}
 	if p.QuestID != nil {
 		triples = append(triples, message.Triple{
-			Subject: entityID, Predicate: domain.PredicateAutonomyUseQuest, Object: string(*p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: semcompat.EntityReferenceDatatype,
+			Subject: entityID, Predicate: domain.PredicateAutonomyUseQuest, Object: string(*p.QuestID), Source: source, Timestamp: p.Timestamp, Confidence: 1.0, Datatype: message.EntityReferenceDatatype,
 		})
 	}
 	return triples
