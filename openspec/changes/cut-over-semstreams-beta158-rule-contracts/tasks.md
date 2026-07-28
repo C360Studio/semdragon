@@ -112,7 +112,7 @@
   procedure using one immutable backend image. Capture authoritative
   readiness and normalized entity, relationship, quest-status, and DAG parity
   while leaving SemSource services and volumes untouched.
-- [ ] 6.8 Obtain architect, Go, Svelte when applicable, and technical-writer
+- [x] 6.8 Obtain architect, Go, Svelte when applicable, and technical-writer
   approval. Record live CI test/lint success and skipped pull-request
   publication before integration.
 - [ ] 6.9 Report issue #59 complete only for this bounded cutover. Keep issue
@@ -131,10 +131,11 @@
   three-consecutive-checksum quiescence boundary tracked by [SemStreams #712],
   but [SemStreams #713] appended 15 duplicate hierarchy triples across six
   entities and advanced their revisions on the seed-disabled restart.
-- Task 6.8 remains unchecked until the stacked draft has live CI evidence and
-  the published documentation state has completed review. Task 6.9 remains
-  unchecked; [issue #59], parent [issue #4], and all upstream blockers stay
-  open.
+- Task 6.8 passed on stacked draft [PR #60]: architect, Go, and
+  technical-writer approvals are recorded; Svelte review is not applicable;
+  live GitHub lint and test passed; and the pull-request `build-and-push` job
+  was skipped as required. Task 6.9 remains unchecked; [issue #59], parent
+  [issue #4], and all upstream blockers stay open.
 
 [Semdragon issue #59]: https://github.com/C360Studio/semdragon/issues/59
 [issue #59]: https://github.com/C360Studio/semdragon/issues/59
@@ -142,3 +143,4 @@
 [SemStreams #671]: https://github.com/C360Studio/semstreams/issues/671
 [SemStreams #712]: https://github.com/C360Studio/semstreams/issues/712
 [SemStreams #713]: https://github.com/C360Studio/semstreams/issues/713
+[PR #60]: https://github.com/C360Studio/semdragon/pull/60
