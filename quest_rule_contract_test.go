@@ -4,6 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+
+	"github.com/c360studio/semstreams/processor/rule"
+	"github.com/c360studio/semstreams/vocabulary"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 type questRuleCondition struct {
@@ -58,5 +63,26 @@ func TestQuestFailureRulesCompareAttemptsAgainstEntityMax(t *testing.T) {
 	}
 	for missing := range wantOperators {
 		t.Errorf("missing failure rule %s", missing)
+	}
+}
+
+func TestShippedQuestRulePackPassesVocabularyBootAdmission(t *testing.T) {
+	restoreVocabulary := vocabulary.SnapshotRegistry()
+	t.Cleanup(restoreVocabulary)
+	vocabulary.ClearRegistry()
+	domain.RegisterVocabulary()
+
+	config, err := rule.NewConfig("quest-lifecycle-boot-admission")
+	if err != nil {
+		t.Fatalf("new rule config: %v", err)
+	}
+	config.RulesFiles = completeQuestRulePack
+
+	processor, err := rule.NewProcessor(nil, &config)
+	if err != nil {
+		t.Fatalf("construct shipped rule processor: %v", err)
+	}
+	if err := processor.PreflightProjectionMutations(); err != nil {
+		t.Fatalf("shipped quest rule pack failed boot admission: %v", err)
 	}
 }

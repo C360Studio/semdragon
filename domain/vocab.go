@@ -349,18 +349,19 @@ func RegisterVocabulary() {
 	// SemStreams lifecycle manager validates every declared predicate against
 	// the registry before accepting a workflow.
 	for predicate, description := range map[string]string{
-		"quest.status.state":      "Current quest lifecycle phase",
-		"quest.lifecycle.command": "Requested quest lifecycle transition",
-		"quest.attempts.current":  "Number of quest attempts made",
-		"quest.attempts.max":      "Maximum quest attempts before triage",
-		"quest.assignment.agent":  "Agent assigned to the quest",
-		"quest.assignment.party":  "Party assigned to the quest",
-		"quest.failure.reason":    "Reason the quest attempt failed",
-		"quest.verdict.feedback":  "Review feedback attached to the quest",
-		"quest.transition.source": "Source that requested the quest transition",
-		"quest.transition.at":     "Timestamp of the quest transition",
-		"quest.transition.from":   "Previous quest lifecycle phase",
-		"quest.transition.note":   "Human-readable quest transition note",
+		"quest.status.state":        "Current quest lifecycle phase",
+		"quest.lifecycle.command":   "Requested quest lifecycle transition",
+		"quest.attempts.current":    "Number of quest attempts made",
+		"quest.attempts.max":        "Maximum quest attempts before triage",
+		"quest.assignment.agent":    "Agent assigned to the quest",
+		"quest.assignment.party":    "Party assigned to the quest",
+		"quest.failure.reason":      "Reason the quest attempt failed",
+		"quest.review.needs-review": "Whether the quest requires review before completion",
+		"quest.verdict.feedback":    "Review feedback attached to the quest",
+		"quest.transition.source":   "Source that requested the quest transition",
+		"quest.transition.at":       "Timestamp of the quest transition",
+		"quest.transition.from":     "Previous quest lifecycle phase",
+		"quest.transition.note":     "Human-readable quest transition note",
 	} {
 		vocabulary.Register(predicate, vocabulary.WithDescription(description))
 	}
