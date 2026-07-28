@@ -251,6 +251,28 @@ func TestFreshVolumeReplayRunbookContract(t *testing.T) {
 				fragment: "POST graphSummary readiness",
 			},
 			{
+				name: "readiness omits observed data envelope",
+				mutate: func(runbook string) string {
+					return strings.ReplaceAll(
+						runbook,
+						"graphSummary { data { total_entities } }",
+						"graphSummary { total_entities }",
+					)
+				},
+				fragment: "POST graphSummary readiness",
+			},
+			{
+				name: "readiness checks obsolete jq path",
+				mutate: func(runbook string) string {
+					return strings.ReplaceAll(
+						runbook,
+						".data.graphSummary.data.total_entities",
+						".data.graphSummary.total_entities",
+					)
+				},
+				fragment: "POST graphSummary readiness",
+			},
+			{
 				name: "readiness ignores errors",
 				mutate: func(runbook string) string {
 					return strings.ReplaceAll(runbook, "(.errors == null)", "true")
@@ -354,6 +376,34 @@ func TestFreshVolumeReplayRunbookContract(t *testing.T) {
 					return strings.ReplaceAll(runbook, "relationships.normalized.json", "edges.json")
 				},
 				fragment: "relationships normalized parity",
+			},
+			{
+				name: "non-portable diff option",
+				mutate: func(runbook string) string {
+					return strings.ReplaceAll(runbook, "diff -u ", "diff --no-index -- ")
+				},
+				fragment: "portable diff -u",
+			},
+			{
+				name: "missing failed execution status",
+				mutate: func(runbook string) string {
+					return strings.Replace(runbook, "Execution status: failed", "Execution status: pending", 1)
+				},
+				fragment: "failed execution status",
+			},
+			{
+				name: "missing SemStreams 712 blocker",
+				mutate: func(runbook string) string {
+					return strings.Replace(runbook, "SemStreams #712", "SemStreams #711", 1)
+				},
+				fragment: "SemStreams #712 blocker",
+			},
+			{
+				name: "missing SemStreams 713 blocker",
+				mutate: func(runbook string) string {
+					return strings.Replace(runbook, "SemStreams #713", "SemStreams #714", 1)
+				},
+				fragment: "SemStreams #713 blocker",
 			},
 			{
 				name: "short commit",
@@ -1007,6 +1057,17 @@ func validateShippedTopology(topology cutoverTopology) []string {
 
 func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []string {
 	var violations []string
+	if !regexp.MustCompile(`(?im)^Execution status:[^\n]*\bfailed\b`).MatchString(runbook) {
+		violations = append(violations, "explicit failed execution status is missing")
+	}
+	for _, issue := range []string{"712", "713"} {
+		pattern := regexp.MustCompile(
+			`(?i)(?:c360studio/)?semstreams(?:\s+issue)?(?:\s*#|/issues/)` + issue + `\b`,
+		)
+		if !pattern.MatchString(runbook) {
+			violations = append(violations, "SemStreams #"+issue+" blocker is missing")
+		}
+	}
 	requiredFragments := map[string]string{
 		"exact reviewed module pin":    reviewedSemStreamsPin,
 		"module preflight":             "go list -m github.com/c360studio/semstreams",
@@ -1077,6 +1138,9 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 		}
 		if strings.Contains(command, ".object.timestamp") {
 			violations = append(violations, "nested semantic object metadata normalization is forbidden")
+		}
+		if strings.HasPrefix(command, "diff --no-index ") {
+			violations = append(violations, "portable diff -u command is required")
 		}
 		if strings.Contains(lower, "docker compose") &&
 			strings.Contains(lower, " down") &&
@@ -1260,7 +1324,7 @@ func validateFreshVolumeRunbook(runbook string, topology cutoverTopology) []stri
 		afterPath := "after/" + name
 		before := exactCommandIndexes(commands, captureCommand("before", name))
 		after := exactCommandIndexes(commands, captureCommand("after", name))
-		diff := exactCommandIndexes(commands, "diff --no-index -- "+beforePath+" "+afterPath)
+		diff := exactCommandIndexes(commands, "diff -u "+beforePath+" "+afterPath)
 		if len(before) != 1 {
 			violations = append(violations, "executable query+normalizer for "+beforePath+" is missing or duplicated")
 		} else {
@@ -1389,6 +1453,8 @@ func validRunbookContractFixture(topology cutoverTopology) string {
 	lines := []string{
 		"# Fresh-volume replay",
 		"",
+		"Execution status: failed",
+		"Blocked by SemStreams #712 and SemStreams #713.",
 		"Reviewed commit: `" + commit + "`",
 		shellSafetyCommand(),
 		`test "$(git rev-parse HEAD)" = "` + commit + `"`,
@@ -1459,10 +1525,10 @@ func validRunbookContractFixture(topology cutoverTopology) string {
 	}
 	lines = append(
 		lines,
-		"diff --no-index -- before/entities.normalized.json after/entities.normalized.json",
-		"diff --no-index -- before/relationships.normalized.json after/relationships.normalized.json",
-		"diff --no-index -- before/quest-status.normalized.json after/quest-status.normalized.json",
-		"diff --no-index -- before/dag-projection.normalized.json after/dag-projection.normalized.json",
+		"diff -u before/entities.normalized.json after/entities.normalized.json",
+		"diff -u before/relationships.normalized.json after/relationships.normalized.json",
+		"diff -u before/quest-status.normalized.json after/quest-status.normalized.json",
+		"diff -u before/dag-projection.normalized.json after/dag-projection.normalized.json",
 		"Normalization changes only top-level EntityState updated_at and each triple timestamp.",
 		"Nested semantic object timestamp, revision, and readiness keys are preserved.",
 		"Preserve entity IDs, predicates, object values, datatypes, cardinality, relationship targets, quest status, DAG dependencies, and DAG outputs.",
@@ -1626,9 +1692,9 @@ func restartWithoutSeedsCommand() string {
 func readinessCommand() string {
 	return `until curl --fail --silent --show-error --request POST ` +
 		`--header 'Content-Type: application/json' ` +
-		`--data '{"query":"query CutoverReadiness { graphSummary { total_entities } }"}' ` +
+		`--data '{"query":"query CutoverReadiness { graphSummary { data { total_entities } } }"}' ` +
 		`http://localhost:8081/graph-gateway/graphql | ` +
-		`jq -e '(.errors == null) and (.data.graphSummary.total_entities > 0)' >/dev/null; do sleep 2; done`
+		`jq -e '(.errors == null) and (.data.graphSummary.data.total_entities > 0)' >/dev/null; do sleep 2; done`
 }
 
 func captureCommand(phase, name string) string {

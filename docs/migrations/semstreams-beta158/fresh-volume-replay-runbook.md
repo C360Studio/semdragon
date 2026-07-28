@@ -2,15 +2,21 @@
 
 ## Purpose and status
 
-This is the specify-only operator procedure for issue 55. It has not been executed. It proves that the reviewed
-SemStreams cutover can rebuild the disposable SemDragon development graph and retain exact semantic state after a
-seed-disabled restart.
+This executable candidate procedure for [SemDragon issue #59] under [parent issue #4] was run against the
+reviewed candidate below.
+
+Execution status: failed.
+
+Blocked by [SemStreams #712] and [SemStreams #713].
+
+It tests whether the SemStreams cutover can rebuild the disposable SemDragon development graph and retain exact
+semantic state after a seed-disabled restart. The failed result below is evidence, not acceptance.
 
 Run the commands from the repository root in one Bash shell. Stop on the first unexpected value, nonzero exit,
 GraphQL error, count mismatch, image mismatch, or parity difference. Do not substitute another commit, module,
 Compose project, NATS context, server, volume, configuration, or backend image.
 
-Reviewed commit: `4a75e035af2ecafc71419025c9cda2beb881741a`
+Reviewed commit: `a4912d725ccb722e38b87feecb31b7c56e328ffc`
 
 Reviewed module: `github.com/c360studio/semstreams v1.0.0-beta.158.0.20260728003411-89617f32dc36`
 
@@ -31,6 +37,27 @@ Protected volumes: `nats-local-semsource-data`, `nats-semsource-data`, `semembed
 The only data deletion in this procedure is the literal removal of `semdragon-cutover_nats-data`. Do not stop,
 remove, rebuild, or modify a protected service. Do not remove, prune, recreate, or modify a protected volume.
 
+## Observed candidate result
+
+Candidate `a4912d725ccb722e38b87feecb31b7c56e328ffc` used immutable backend image
+`sha256:7d8cd71a2eaf1b30e277f3114a0bd9301a526118c29a6c0c297a31ad172f2296`.
+
+Both sides stabilized across three consecutive normalized `ENTITY_STATES` checksum checks. This temporary
+quiescence boundary addresses the readiness gap tracked by [SemStreams #712]; it cannot hide the [SemStreams #713]
+restart-idempotence failure.
+
+The stable pre-restart digest was
+`2033bbde523036af0cfbdc53fa22ba3f2a42973fe793304fcfddc15312ff345a`. The stable post-restart digest was
+`bdb7d45d7837732fc3e563d0b874aeef1bc7ece4c57a2a66ca136c73faefc918`.
+
+Exactly six model-registry hierarchy entities changed and 15 duplicate semantic triples were appended. The
+domain, type, and system containers each gained three triples and moved from revision 6 to 9. The
+`ollama-coder`, `ollama-qwen3`, and `semembed` endpoints each gained two triples and moved from revisions 4 to 6,
+3 to 5, and 2 to 4, respectively. The duplicated predicates were `hierarchy.domain.contains`,
+`hierarchy.system.contains`, `hierarchy.type.contains`, and `hierarchy.type.sibling`.
+
+The stable digests differ, so the replay and operational acceptance gate remain failed.
+
 ## Preconditions
 
 - Obtain an approved maintenance window with no other writer targeting this development graph.
@@ -46,13 +73,13 @@ module in the retained transcript.
 
 ```sh
 set -euo pipefail
-test "$(git rev-parse HEAD)" = "4a75e035af2ecafc71419025c9cda2beb881741a"
+test "$(git rev-parse HEAD)" = "a4912d725ccb722e38b87feecb31b7c56e328ffc"
 go list -m github.com/c360studio/semstreams
 test "$(go list -m github.com/c360studio/semstreams)" = "github.com/c360studio/semstreams v1.0.0-beta.158.0.20260728003411-89617f32dc36"
 ```
 
 The results must confirm reviewed commit
-`4a75e035af2ecafc71419025c9cda2beb881741a` and reviewed module
+`a4912d725ccb722e38b87feecb31b7c56e328ffc` and reviewed module
 `github.com/c360studio/semstreams v1.0.0-beta.158.0.20260728003411-89617f32dc36`.
 Any mismatch ends the run.
 
@@ -166,7 +193,7 @@ test "$(docker inspect "$(docker compose --project-name semdragon-cutover -f doc
 Poll the exact nonempty GraphQL readiness condition:
 
 ```sh
-until curl --fail --silent --show-error --request POST --header 'Content-Type: application/json' --data '{"query":"query CutoverReadiness { graphSummary { total_entities } }"}' http://localhost:8081/graph-gateway/graphql | jq -e '(.errors == null) and (.data.graphSummary.total_entities > 0)' >/dev/null; do sleep 2; done
+until curl --fail --silent --show-error --request POST --header 'Content-Type: application/json' --data '{"query":"query CutoverReadiness { graphSummary { data { total_entities } } }"}' http://localhost:8081/graph-gateway/graphql | jq -e '(.errors == null) and (.data.graphSummary.data.total_entities > 0)' >/dev/null; do sleep 2; done
 ```
 
 ## 7. Capture complete baseline evidence
@@ -185,6 +212,10 @@ test "$(wc -l < before/entity-ids.txt | tr -d ' ')" = "$(wc -l < before/entities
 jq -sSe --argjson expected "$(wc -l < before/entity-ids.txt | tr -d ' ')" 'if (length == $expected) and (length == ([.[].id] | unique | length)) and all(.[]; (type == "object") and (.id | type == "string") and (.message_type | type == "object") and (.message_type.domain | type == "string") and (.message_type.category | type == "string") and (.message_type.version | type == "string") and (.version | type == "number") and (.updated_at | type == "string") and (.triples | type == "array") and all(.triples[]; (type == "object") and (.subject | type == "string") and (.predicate | type == "string") and has("object") and (.source | type == "string") and (.timestamp | type == "string") and (.confidence | type == "number"))) then map(.updated_at = "<normalized>" | .triples |= map(.timestamp = "<normalized>")) | sort_by(.id) else error("invalid ENTITY_STATES JSONL") end' before/entities.raw.jsonl > before/entities.normalized.json
 test "$(wc -l < before/entity-ids.txt | tr -d ' ')" = "$(jq -r 'length' before/entities.normalized.json)"
 ```
+
+Repeat the complete normalized entity capture until its SHA-256 checksum is identical for three consecutive
+captures. Retain the final stable capture as the baseline. This [SemStreams #712] workaround establishes
+quiescence; it does not weaken parity or the [SemStreams #713] correctness gate.
 
 The relationship workflow reads IDs from a file-backed loop, validates every GraphQL envelope, proves one response
 per entity ID, then merges, deduplicates, and sorts the complete relationship set.
@@ -221,7 +252,7 @@ test "$(docker inspect "$(docker compose --project-name semdragon-cutover -f doc
 Poll the same exact nonempty readiness condition:
 
 ```sh
-until curl --fail --silent --show-error --request POST --header 'Content-Type: application/json' --data '{"query":"query CutoverReadiness { graphSummary { total_entities } }"}' http://localhost:8081/graph-gateway/graphql | jq -e '(.errors == null) and (.data.graphSummary.total_entities > 0)' >/dev/null; do sleep 2; done
+until curl --fail --silent --show-error --request POST --header 'Content-Type: application/json' --data '{"query":"query CutoverReadiness { graphSummary { data { total_entities } } }"}' http://localhost:8081/graph-gateway/graphql | jq -e '(.errors == null) and (.data.graphSummary.data.total_entities > 0)' >/dev/null; do sleep 2; done
 ```
 
 Repeat the complete-state capture without any seed or other write.
@@ -236,6 +267,9 @@ test "$(wc -l < after/entity-ids.txt | tr -d ' ')" = "$(wc -l < after/entities.r
 jq -sSe --argjson expected "$(wc -l < after/entity-ids.txt | tr -d ' ')" 'if (length == $expected) and (length == ([.[].id] | unique | length)) and all(.[]; (type == "object") and (.id | type == "string") and (.message_type | type == "object") and (.message_type.domain | type == "string") and (.message_type.category | type == "string") and (.message_type.version | type == "string") and (.version | type == "number") and (.updated_at | type == "string") and (.triples | type == "array") and all(.triples[]; (type == "object") and (.subject | type == "string") and (.predicate | type == "string") and has("object") and (.source | type == "string") and (.timestamp | type == "string") and (.confidence | type == "number"))) then map(.updated_at = "<normalized>" | .triples |= map(.timestamp = "<normalized>")) | sort_by(.id) else error("invalid ENTITY_STATES JSONL") end' after/entities.raw.jsonl > after/entities.normalized.json
 test "$(wc -l < after/entity-ids.txt | tr -d ' ')" = "$(jq -r 'length' after/entities.normalized.json)"
 ```
+
+Repeat the post-restart normalized entity capture until its SHA-256 checksum is identical for three consecutive
+captures. A stable mismatch is still a [SemStreams #713] replay failure and must keep the gate failed.
 
 Repeat the file-backed, fail-closed relationship capture and count proof.
 
@@ -258,10 +292,10 @@ jq -Se 'if ((type == "array") and all(.[]; ((type == "object") and (.triples | t
 Each comparison must exit zero with no output:
 
 ```sh
-diff --no-index -- before/entities.normalized.json after/entities.normalized.json
-diff --no-index -- before/relationships.normalized.json after/relationships.normalized.json
-diff --no-index -- before/quest-status.normalized.json after/quest-status.normalized.json
-diff --no-index -- before/dag-projection.normalized.json after/dag-projection.normalized.json
+diff -u before/entities.normalized.json after/entities.normalized.json
+diff -u before/relationships.normalized.json after/relationships.normalized.json
+diff -u before/quest-status.normalized.json after/quest-status.normalized.json
+diff -u before/dag-projection.normalized.json after/dag-projection.normalized.json
 ```
 
 Normalization changes only top-level EntityState updated_at and each triple timestamp. Nested semantic object
@@ -285,3 +319,8 @@ Report the final environment state as pass only when both readiness checks succe
 passed, both container image IDs matched, every diff exited zero, and no intervening write occurred. Record the
 literal surviving project and graph volume, all seed flags false, protected resources unchanged, and any abort or
 anomaly. An incomplete evidence record is not a successful replay.
+
+[SemDragon issue #59]: https://github.com/C360Studio/semdragon/issues/59
+[parent issue #4]: https://github.com/C360Studio/semdragon/issues/4
+[SemStreams #712]: https://github.com/C360Studio/semstreams/issues/712
+[SemStreams #713]: https://github.com/C360Studio/semstreams/issues/713
