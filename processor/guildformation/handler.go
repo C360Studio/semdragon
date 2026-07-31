@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 	"github.com/c360studio/semstreams/pkg/errs"
@@ -90,7 +91,7 @@ func (c *Component) CreateGuild(ctx context.Context, params CreateGuildParams) (
 	c.addAgentGuild(params.FounderID, guildID)
 
 	// Persist to KV via graph client
-	if err := c.graph.EmitEntity(ctx, guild, eventPredicate); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, eventPredicate); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to persist guild to KV", "guild_id", guildID, "error", err)
 		// Continue -- in-memory state is valid, KV will catch up on next mutation.
@@ -192,7 +193,7 @@ func (c *Component) JoinGuild(ctx context.Context, guildID domain.GuildID, agent
 	c.addAgentGuild(agentID, guildID)
 
 	// Persist updated guild to KV
-	if err := c.graph.EmitEntity(ctx, guild, "guild.member.joined"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, "guild.member.joined"); err != nil {
 		c.logger.Error("failed to persist guild update to KV", "guild_id", guildID, "error", err)
 	}
 
@@ -264,7 +265,7 @@ func (c *Component) LeaveGuild(ctx context.Context, guildID domain.GuildID, agen
 	now := time.Now()
 
 	// Persist updated guild to KV
-	if err := c.graph.EmitEntity(ctx, guild, "guild.member.left"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, "guild.member.left"); err != nil {
 		c.logger.Error("failed to persist guild update to KV", "guild_id", guildID, "error", err)
 	}
 
@@ -321,7 +322,7 @@ func (c *Component) PromoteMember(ctx context.Context, guildID domain.GuildID, a
 	now := time.Now()
 
 	// Persist updated guild to KV
-	if err := c.graph.EmitEntity(ctx, guild, "guild.member.promoted"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, "guild.member.promoted"); err != nil {
 		c.logger.Error("failed to persist guild update to KV", "guild_id", guildID, "error", err)
 	}
 
@@ -378,7 +379,7 @@ func (c *Component) DisbandGuild(ctx context.Context, guildID domain.GuildID, re
 	}
 
 	// Persist updated guild to KV
-	if err := c.graph.EmitEntity(ctx, guild, "guild.disbanded"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, "guild.disbanded"); err != nil {
 		c.logger.Error("failed to persist guild disbandment to KV", "guild_id", guildID, "error", err)
 	}
 
@@ -425,7 +426,7 @@ func (c *Component) updateAgentGuild(ctx context.Context, agentID domain.AgentID
 		agent.Guild = ""
 	}
 
-	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.membership.updated"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.membership.updated"); err != nil {
 		c.logger.Warn("updateAgentGuild: failed to persist", "agent_id", agentID, "error", err)
 	} else {
 		c.logger.Info("updateAgentGuild: agent guild updated",
@@ -500,7 +501,7 @@ func (c *Component) SubmitApplication(ctx context.Context, guildID domain.GuildI
 	mu.Unlock()
 
 	// Persist to KV
-	if err := c.graph.EmitEntity(ctx, guild, domain.PredicateGuildApplicationSubmitted); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, domain.PredicateGuildApplicationSubmitted); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to persist guild application", "guild_id", guildID, "error", err)
 	}
@@ -586,7 +587,7 @@ func (c *Component) ReviewApplication(ctx context.Context, guildID domain.GuildI
 	}
 
 	// Persist to KV
-	if err := c.graph.EmitEntity(ctx, guild, predicate); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, predicate); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to persist application review", "guild_id", guildID, "error", err)
 	}
@@ -630,7 +631,7 @@ func (c *Component) checkQuorumLocked(ctx context.Context, guildID domain.GuildI
 	guild.FormationDeadline = nil
 	mu.Unlock()
 
-	if err := c.graph.EmitEntity(ctx, guild, domain.PredicateGuildActivated); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, domain.PredicateGuildActivated); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to persist guild activation", "guild_id", guild.ID, "error", err)
 	}
@@ -668,7 +669,7 @@ func (c *Component) dissolveGuild(ctx context.Context, guild *domain.Guild, reas
 		c.removeAgentGuild(member.AgentID, guild.ID)
 	}
 
-	if err := c.graph.EmitEntity(ctx, guild, domain.PredicateGuildDissolved); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, domain.PredicateGuildDissolved); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to persist guild dissolution", "guild_id", guild.ID, "error", err)
 	}

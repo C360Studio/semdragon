@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/partycoord"
 	"github.com/c360studio/semstreams/agentic"
@@ -66,12 +67,12 @@ func (c *Component) createReviewEntity(ctx context.Context, dagState *DAGExecuti
 	}
 
 	pr := &domain.PeerReview{
-		ID:      reviewID,
-		Status:  domain.PeerReviewCompleted,
-		QuestID: domain.QuestID(subQuestID),
-		PartyID: partyIDPtr,
-		LeaderID: leaderID,
-		MemberID: memberID,
+		ID:         reviewID,
+		Status:     domain.PeerReviewCompleted,
+		QuestID:    domain.QuestID(subQuestID),
+		PartyID:    partyIDPtr,
+		LeaderID:   leaderID,
+		MemberID:   memberID,
 		IsSoloTask: false,
 		LeaderReview: &domain.ReviewSubmission{
 			ReviewerID:  leaderID,
@@ -86,7 +87,7 @@ func (c *Component) createReviewEntity(ctx context.Context, dagState *DAGExecuti
 		CompletedAt:     &now,
 	}
 
-	if err := c.graph.EmitEntity(ctx, pr, domain.PredicateReviewCompleted); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, pr, domain.PredicateReviewCompleted); err != nil {
 		c.logger.Error("failed to emit peer review entity for failed node",
 			"execution_id", dagState.ExecutionID,
 			"node_id", nodeID,
@@ -134,12 +135,12 @@ func (c *Component) createAcceptReviewEntity(ctx context.Context, dagState *DAGE
 	}
 
 	pr := &domain.PeerReview{
-		ID:       reviewID,
-		Status:   domain.PeerReviewCompleted,
-		QuestID:  domain.QuestID(subQuestID),
-		PartyID:  partyIDPtr,
-		LeaderID: leaderID,
-		MemberID: memberID,
+		ID:         reviewID,
+		Status:     domain.PeerReviewCompleted,
+		QuestID:    domain.QuestID(subQuestID),
+		PartyID:    partyIDPtr,
+		LeaderID:   leaderID,
+		MemberID:   memberID,
 		IsSoloTask: false,
 		LeaderReview: &domain.ReviewSubmission{
 			ReviewerID:  leaderID,
@@ -154,7 +155,7 @@ func (c *Component) createAcceptReviewEntity(ctx context.Context, dagState *DAGE
 		CompletedAt:     &now,
 	}
 
-	if err := c.graph.EmitEntity(ctx, pr, domain.PredicateReviewCompleted); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, pr, domain.PredicateReviewCompleted); err != nil {
 		c.logger.Error("failed to emit peer review entity for accepted node",
 			"execution_id", dagState.ExecutionID,
 			"node_id", nodeID,
@@ -631,7 +632,7 @@ func (c *Component) onClarificationAnswered(ctx context.Context, evt dagEvent) {
 	quest.DAGClarifications = dagState.NodeClarifications[nodeID]
 	quest.Status = domain.QuestInProgress
 	quest.Escalated = false
-	if emitErr := c.graph.EmitEntityCAS(ctx, quest, "quest.dag.clarification_answered", revision); emitErr != nil {
+	if emitErr := semdragons.DisabledProjectionMutation(ctx, quest, "quest.dag.clarification_answered", revision); emitErr != nil {
 		c.logger.Error("failed to reset sub-quest status after clarification",
 			"sub_quest_id", answer.SubQuestID, "error", emitErr,
 			"revision", revision)
@@ -1054,7 +1055,7 @@ func (c *Component) aggregateMetricsToParent(
 	parent.TokensPrompt = totalTokensIn
 	parent.TokensCompletion = totalTokensOut
 	parent.Duration = totalDuration
-	if emitErr := c.graph.EmitEntityUpdate(ctx, parent, "quest.metrics.rollup"); emitErr != nil {
+	if emitErr := semdragons.DisabledProjectionMutation(ctx, parent, "quest.metrics.rollup"); emitErr != nil {
 		c.logger.Warn("failed to emit aggregated metrics on parent quest",
 			"parent_quest_id", dagState.ParentQuestID, "error", emitErr)
 	}
@@ -1380,7 +1381,7 @@ func (c *Component) routeNodeToTriage(ctx context.Context, dagState *DAGExecutio
 	quest.FailureHistory = append(quest.FailureHistory, record)
 	quest.Status = domain.QuestPendingTriage
 
-	if emitErr := c.graph.EmitEntityUpdate(ctx, quest, domain.PredicateQuestPendingTriage); emitErr != nil {
+	if emitErr := semdragons.DisabledProjectionMutation(ctx, quest, domain.PredicateQuestPendingTriage); emitErr != nil {
 		c.logger.Error("routeNodeToTriage: failed to transition sub-quest to pending_triage",
 			"sub_quest_id", subQuestID, "error", emitErr)
 		c.errorsCount.Add(1)
@@ -1830,7 +1831,8 @@ func anyToStringSlice(v any) []string {
 // are attempted before giving up with an error.
 //
 // This is the inverse of dagStateFromQuest: the full round-trip is:
-//   graph write (questbridge) → KV watch → dagStateFromTriples → in-memory mutate → persistDAGState → graph write
+//
+//	graph write (questbridge) → KV watch → dagStateFromTriples → in-memory mutate → persistDAGState → graph write
 func (c *Component) persistDAGState(ctx context.Context, state *DAGExecutionState) error {
 	const maxRetries = 3
 	for attempt := range maxRetries {
@@ -1852,7 +1854,7 @@ func (c *Component) persistDAGState(ctx context.Context, state *DAGExecutionStat
 		quest.DAGNodeRetries = state.NodeRetries
 
 		// 3. CAS write — returns ErrKVRevisionMismatch if questboard wrote concurrently.
-		if err := c.graph.EmitEntityCAS(ctx, quest, "quest.dag.state_updated", revision); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.dag.state_updated", revision); err != nil {
 			if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
 				c.logger.Debug("CAS conflict on parent quest, retrying",
 					"execution_id", state.ExecutionID, "attempt", attempt+1)
@@ -1927,4 +1929,3 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "..."
 }
-

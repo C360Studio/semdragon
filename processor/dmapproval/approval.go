@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go"
 )
+
+var errApprovalProjectionRequired = fmt.Errorf("approval persistence: projection contract required")
 
 // =============================================================================
 // NATS APPROVAL ROUTER - Human-in-the-loop approval via NATS
@@ -195,185 +196,60 @@ func (r *NATSApprovalRouter) WatchApprovals(ctx context.Context, filter domain.A
 
 // GetPendingApprovals returns all pending approval requests for a session.
 func (r *NATSApprovalRouter) GetPendingApprovals(ctx context.Context, sessionID string) ([]domain.ApprovalRequest, error) {
-	sessionInstance := domain.ExtractInstance(sessionID)
-	prefix := fmt.Sprintf("approval.pending.%s.", sessionInstance)
-
-	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
-	if err != nil {
-		return nil, fmt.Errorf("get KV bucket: %w", err)
-	}
-
-	keys, err := bucket.Keys(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list keys: %w", err)
-	}
-
-	var pending []domain.ApprovalRequest
-	for _, key := range keys {
-		if !strings.HasPrefix(key, prefix) {
-			continue
-		}
-		entry, err := bucket.Get(ctx, key)
-		if err != nil {
-			continue
-		}
-
-		var req domain.ApprovalRequest
-		if err := json.Unmarshal(entry.Value(), &req); err != nil {
-			continue
-		}
-		pending = append(pending, req)
-	}
-
-	return pending, nil
+	_ = ctx
+	_ = sessionID
+	return nil, errApprovalProjectionRequired
 }
 
 // --- Response Handling ---
 
 // RespondToApproval allows external systems to respond to pending approvals.
 func (r *NATSApprovalRouter) RespondToApproval(ctx context.Context, sessionID, approvalID string, resp domain.ApprovalResponse) error {
-	sessionInstance := domain.ExtractInstance(sessionID)
-	pendingKey := r.approvalPendingKey(sessionInstance, approvalID)
-
-	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
-	if err != nil {
-		return fmt.Errorf("get KV bucket: %w", err)
-	}
-
-	if err := bucket.Delete(ctx, pendingKey); err != nil {
-		return fmt.Errorf("approval not found or already responded: %s", approvalID)
-	}
-
-	resp.RequestID = approvalID
-	resp.SessionID = sessionID
-	if resp.RespondedAt.IsZero() {
-		resp.RespondedAt = time.Now()
-	}
-
-	if err := r.storeResolvedApproval(ctx, sessionInstance, approvalID, &resp); err != nil {
-		r.logger.Warn("failed to store resolved approval", "approval_id", approvalID, "error", err)
-	}
-
-	subject := r.approvalResponseSubject(sessionInstance, approvalID)
-	respData, err := json.Marshal(resp)
-	if err != nil {
-		return fmt.Errorf("marshal response: %w", err)
-	}
-
-	if err := r.client.Publish(ctx, subject, respData); err != nil {
-		return fmt.Errorf("publish response: %w", err)
-	}
-
-	return nil
+	_ = ctx
+	_ = sessionID
+	_ = approvalID
+	_ = resp
+	return errApprovalProjectionRequired
 }
 
 // --- Storage Helpers ---
 
 func (r *NATSApprovalRouter) storePendingApproval(ctx context.Context, sessionInstance string, req *domain.ApprovalRequest) error {
-	key := r.approvalPendingKey(sessionInstance, req.ID)
-	data, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
-	if err != nil {
-		return err
-	}
-	_, err = bucket.Put(ctx, key, data)
-	return err
+	_ = ctx
+	_ = sessionInstance
+	_ = req
+	return errApprovalProjectionRequired
 }
 
 func (r *NATSApprovalRouter) resolveApproval(ctx context.Context, sessionInstance, approvalID string, resp *domain.ApprovalResponse) {
-	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
-	if err != nil {
-		r.logger.Warn("failed to get KV bucket for approval resolution", "error", err)
-		return
-	}
-
-	pendingKey := r.approvalPendingKey(sessionInstance, approvalID)
-	if err := bucket.Delete(ctx, pendingKey); err != nil {
-		r.logger.Warn("failed to delete pending approval key", "key", pendingKey, "error", err)
-	}
-
-	if err := r.storeResolvedApproval(ctx, sessionInstance, approvalID, resp); err != nil {
-		r.logger.Warn("failed to store resolved approval", "approval_id", approvalID, "error", err)
-	}
+	_ = ctx
+	_ = sessionInstance
+	_ = resp
+	r.logger.Warn("approval resolution disabled until an owner-safe projection exists",
+		"approval_id", approvalID, "error", errApprovalProjectionRequired)
 }
 
 func (r *NATSApprovalRouter) storeResolvedApproval(ctx context.Context, sessionInstance, approvalID string, resp *domain.ApprovalResponse) error {
-	resolvedKey := r.approvalResolvedKey(sessionInstance, approvalID)
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return fmt.Errorf("marshal resolved approval: %w", err)
-	}
-	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
-	if err != nil {
-		return fmt.Errorf("get KV bucket: %w", err)
-	}
-	if _, err := bucket.Put(ctx, resolvedKey, data); err != nil {
-		return fmt.Errorf("put resolved approval: %w", err)
-	}
-	return nil
+	_ = ctx
+	_ = sessionInstance
+	_ = approvalID
+	_ = resp
+	return errApprovalProjectionRequired
 }
 
 // --- Utility Methods ---
 
 // WaitForPendingApprovals waits until all pending approvals are resolved.
 func (r *NATSApprovalRouter) WaitForPendingApprovals(ctx context.Context, sessionID string) error {
-	sessionInstance := domain.ExtractInstance(sessionID)
-	prefix := fmt.Sprintf("approval.pending.%s.", sessionInstance)
-
-	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
-	if err != nil {
-		return fmt.Errorf("get KV bucket: %w", err)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		keys, err := bucket.Keys(ctx)
-		if err != nil {
-			return err
-		}
-
-		count := 0
-		for _, key := range keys {
-			if strings.HasPrefix(key, prefix) {
-				count++
-			}
-		}
-
-		if count == 0 {
-			return nil
-		}
-
-		time.Sleep(100 * time.Millisecond)
-	}
+	_ = ctx
+	_ = sessionID
+	return errApprovalProjectionRequired
 }
 
 // GetResolvedApproval retrieves a resolved approval by ID.
 func (r *NATSApprovalRouter) GetResolvedApproval(ctx context.Context, sessionID, approvalID string) (*domain.ApprovalResponse, error) {
-	sessionInstance := domain.ExtractInstance(sessionID)
-	key := r.approvalResolvedKey(sessionInstance, approvalID)
-
-	bucket, err := r.client.GetKeyValueBucket(ctx, r.config.BucketName())
-	if err != nil {
-		return nil, fmt.Errorf("get KV bucket: %w", err)
-	}
-
-	entry, err := bucket.Get(ctx, key)
-	if err != nil {
-		return nil, fmt.Errorf("approval not found: %s", approvalID)
-	}
-
-	var resp domain.ApprovalResponse
-	if err := json.Unmarshal(entry.Value(), &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal response: %w", err)
-	}
-
-	return &resp, nil
+	_ = ctx
+	_ = sessionID
+	_ = approvalID
+	return nil, errApprovalProjectionRequired
 }

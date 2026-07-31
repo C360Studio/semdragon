@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	lifecyclegateway "github.com/c360studio/semstreams/gateway/lifecycle-gateway"
+	"github.com/c360studio/semstreams/pkg/lifecycle"
 	"github.com/c360studio/semstreams/types"
 
 	"github.com/c360studio/semdragons/questlifecycle"
@@ -16,12 +17,9 @@ import (
 func TestProductionLifecycleWorkflowAllowlistIsQuestOnly(t *testing.T) {
 	t.Parallel()
 
-	manager, err := createLifecycleManager(
-		nil,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	)
-	if err != nil {
-		t.Fatalf("create production lifecycle manager: %v", err)
+	manager := lifecycle.NewManager(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := registerQuestLifecycle(manager); err != nil {
+		t.Fatalf("register production lifecycle workflow: %v", err)
 	}
 	workflows := manager.ListWorkflows()
 	if len(workflows) != 1 || workflows[0].Workflow != questlifecycle.WorkflowName {

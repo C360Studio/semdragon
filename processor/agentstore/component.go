@@ -309,7 +309,7 @@ func (c *Component) Stop(timeout time.Duration) error {
 func (c *Component) seedCatalogToKV(ctx context.Context) {
 	c.catalog.Range(func(_, value any) bool {
 		item := value.(*StoreItem)
-		if err := c.graph.EmitEntityUpdate(ctx, item, "store.item.listed"); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, item, "store.item.listed"); err != nil {
 			c.logger.Warn("failed to seed store item to KV",
 				"item_id", item.ID,
 				"error", err)

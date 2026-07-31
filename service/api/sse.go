@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/c360studio/semstreams/graph"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -41,7 +42,7 @@ type kvWatchEvent struct {
 // GET /game/events
 func (s *Service) handleEvents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	bucketName := s.boardConfig.BucketName()
+	bucketName := graph.BucketEntityStates
 
 	// SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -53,19 +54,12 @@ func (s *Service) handleEvents(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	// Get KV bucket
-	kv, err := s.nats.GetKeyValueBucket(ctx, bucketName)
-	if err != nil {
-		s.sendSSEError(w, "Failed to access KV bucket", err)
-		return
-	}
-
 	// Create watcher with an independent context so we control the lifecycle
 	// exclusively via Stop(). Using the request context causes NATS to tear
 	// down the subscription on disconnect, making Stop() return "invalid
 	// subscription" — a benign but noisy race.
 	watchCtx, watchCancel := context.WithCancel(context.Background())
-	watcher, err := kv.WatchAll(watchCtx)
+	watcher, err := s.graph.WatchBoard(watchCtx)
 	if err != nil {
 		watchCancel()
 		s.sendSSEError(w, "Failed to create watcher", err)

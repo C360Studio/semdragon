@@ -39,8 +39,8 @@ var errStoreUnavailable = errors.New("store component unavailable")
 // kept as a variable so tests can substitute a nil-returning stub if needed.
 var questbridgeGlobalGraphSources = questbridge.GlobalGraphSources
 
-// isBucketNotFound returns true if the error indicates the KV bucket doesn't exist yet.
-// This is normal before components have started and created the entity states bucket.
+// isBucketNotFound returns true if the framework catalog is not available yet.
+// graph-ingest is the sole creator and writer; API readers never create it.
 // Uses errors.Is first for proper sentinel matching, with string fallback for wrapped errors.
 func isBucketNotFound(err error) bool {
 	if err == nil {
@@ -222,14 +222,14 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 	questID := s.graph.Config().QuestEntityID(instance)
 
 	quest := &domain.Quest{
-		ID:          domain.QuestID(questID),
-		Name:        truncateName(req.Objective, 25),
-		Title:       req.Objective,
-		Description: req.Objective,
-		Goal:        req.Objective,
-		Status:      domain.QuestPosted,
-		Difficulty:  domain.DifficultyModerate,
-		BaseXP:      100,
+		ID:                   domain.QuestID(questID),
+		Name:                 truncateName(req.Objective, 25),
+		Title:                req.Objective,
+		Description:          req.Objective,
+		Goal:                 req.Objective,
+		Status:               domain.QuestPosted,
+		Difficulty:           domain.DifficultyModerate,
+		BaseXP:               100,
 		MaxAttempts:          3,
 		DecomposabilityClass: domain.DecomposableTrivial,
 		Constraints: domain.QuestConstraints{
@@ -276,7 +276,7 @@ func (s *Service) handleCreateQuest(w http.ResponseWriter, r *http.Request) {
 
 	s.upgradeToPartyIfNeeded(r.Context(), quest)
 
-	if err := s.graph.EmitEntity(r.Context(), quest, "quest.posted"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(r.Context(), quest, "quest.posted"); err != nil {
 		s.writeError(w, "failed to create quest", http.StatusInternalServerError)
 		s.logger.Error("Failed to create quest", "error", err)
 		return
@@ -396,7 +396,7 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 
 		s.upgradeToPartyIfNeeded(ctx, &quest)
 
-		if err := s.graph.EmitEntity(ctx, &quest, "quest.posted"); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, &quest, "quest.posted"); err != nil {
 			s.writeError(w, "failed to create quest", http.StatusInternalServerError)
 			s.logger.Error("Failed to create chain quest", "title", entry.Title, "error", err)
 			return
@@ -417,7 +417,7 @@ func (s *Service) handlePostQuestChain(w http.ResponseWriter, r *http.Request) {
 		}
 		posted[i].DependsOn = deps
 
-		if err := s.graph.EmitEntityUpdate(ctx, &posted[i], "quest.dependencies.set"); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, &posted[i], "quest.dependencies.set"); err != nil {
 			s.writeError(w, "failed to set quest dependencies", http.StatusInternalServerError)
 			s.logger.Error("Failed to set chain dependencies", "quest_id", posted[i].ID, "error", err)
 			return
@@ -585,7 +585,7 @@ func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
 	quest.ClaimedBy = &agentID
 	quest.ClaimedAt = &now
 
-	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.claimed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.claimed"); err != nil {
 		s.writeError(w, "failed to claim quest", http.StatusInternalServerError)
 		s.logger.Error("Failed to claim quest", "error", err)
 		return
@@ -597,7 +597,7 @@ func (s *Service) handleClaimQuest(w http.ResponseWriter, r *http.Request) {
 	agent.CurrentQuest = &questID
 	agent.UpdatedAt = now
 
-	if err := s.graph.EmitEntityUpdate(ctx, agent, "agent.quest_claimed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.quest_claimed"); err != nil {
 		s.logger.Error("Failed to update agent status after claim", "error", err)
 	}
 
@@ -636,7 +636,7 @@ func (s *Service) handleStartQuest(w http.ResponseWriter, r *http.Request) {
 	quest.Status = domain.QuestInProgress
 	quest.StartedAt = &now
 
-	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.started"); err != nil {
 		s.writeError(w, "failed to start quest", http.StatusInternalServerError)
 		s.logger.Error("Failed to start quest", "error", err)
 		return
@@ -692,7 +692,7 @@ func (s *Service) handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 		quest.CompletedAt = &now
 	}
 
-	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.submitted"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.submitted"); err != nil {
 		s.writeError(w, "failed to submit quest result", http.StatusInternalServerError)
 		s.logger.Error("Failed to submit quest result", "error", err)
 		return
@@ -738,7 +738,7 @@ func (s *Service) handleCompleteQuest(w http.ResponseWriter, r *http.Request) {
 	quest.Status = domain.QuestCompleted
 	quest.CompletedAt = &now
 
-	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.completed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.completed"); err != nil {
 		s.writeError(w, "failed to complete quest", http.StatusInternalServerError)
 		s.logger.Error("Failed to complete quest", "error", err)
 		return
@@ -811,7 +811,7 @@ func (s *Service) handleFailQuest(w http.ResponseWriter, r *http.Request) {
 		eventType = "quest.reposted"
 	}
 
-	if err := s.graph.EmitEntityUpdate(ctx, quest, eventType); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, eventType); err != nil {
 		s.writeError(w, "failed to fail quest", http.StatusInternalServerError)
 		s.logger.Error("Failed to fail quest", "error", err)
 		return
@@ -867,7 +867,7 @@ func (s *Service) handleAbandonQuest(w http.ResponseWriter, r *http.Request) {
 	quest.StartedAt = nil
 	quest.Output = nil
 
-	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.abandoned"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.abandoned"); err != nil {
 		s.writeError(w, "failed to abandon quest", http.StatusInternalServerError)
 		s.logger.Error("Failed to abandon quest", "error", err)
 		return
@@ -930,7 +930,7 @@ func (s *Service) handleCancelQuest(w http.ResponseWriter, r *http.Request) {
 	quest.Status = domain.QuestFailed
 	quest.FailureReason = req.Reason
 
-	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.cancelled"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.cancelled"); err != nil {
 		s.writeError(w, "failed to cancel quest", http.StatusInternalServerError)
 		s.logger.Error("Failed to cancel quest", "error", err)
 		return
@@ -1047,7 +1047,7 @@ func (s *Service) releaseAgent(ctx context.Context, agentID domain.AgentID) {
 	agent.CurrentQuest = nil
 	agent.UpdatedAt = time.Now()
 
-	if err := s.graph.EmitEntityUpdate(ctx, agent, "agent.released"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.released"); err != nil {
 		s.logger.Error("Failed to release agent", "agent_id", agentID, "error", err)
 	}
 }
@@ -1161,7 +1161,7 @@ func (s *Service) handleRecruitAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := s.graph.EmitEntity(r.Context(), agent, "agent.recruited"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(r.Context(), agent, "agent.recruited"); err != nil {
 		s.writeError(w, "failed to recruit agent", http.StatusInternalServerError)
 		s.logger.Error("Failed to recruit agent", "error", err)
 		return
@@ -1198,7 +1198,7 @@ func (s *Service) handleRetireAgent(w http.ResponseWriter, r *http.Request) {
 
 	agent.Status = domain.AgentRetired
 
-	if err := s.graph.EmitEntityUpdate(r.Context(), agent, "agent.retired"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(r.Context(), agent, "agent.retired"); err != nil {
 		s.writeError(w, "failed to retire agent", http.StatusInternalServerError)
 		s.logger.Error("Failed to retire agent", "error", err)
 		return
@@ -1589,11 +1589,11 @@ func (s *Service) handleDMChat(w http.ResponseWriter, r *http.Request) {
 			}
 
 			agenticReq := agentic.AgentRequest{
-				RequestID: fmt.Sprintf("dm-%s-%d", sessionID, iteration),
-				Role:      agentic.RoleGeneral,
-				Model:     endpoint.Model,
-				Messages:  agenticMessages,
-				Tools:     toolDefs,
+				RequestID:  fmt.Sprintf("dm-%s-%d", sessionID, iteration),
+				Role:       agentic.RoleGeneral,
+				Model:      endpoint.Model,
+				Messages:   agenticMessages,
+				Tools:      toolDefs,
 				ToolChoice: &agentic.ToolChoice{Mode: "auto"},
 			}
 
@@ -1950,7 +1950,7 @@ func (s *Service) handleDMIntervene(w http.ResponseWriter, r *http.Request) {
 	// Do NOT increment Attempts — clarification is not a retry.
 	// Do NOT clear ClaimedBy/ClaimedAt/StartedAt — agent stays assigned.
 
-	if err := s.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.started"); err != nil {
 		s.writeError(w, "failed to resume quest", http.StatusInternalServerError)
 		s.logger.Error("Failed to resume quest after DM intervention", "error", err)
 		return
@@ -2042,10 +2042,10 @@ func (s *Service) handleDMTriage(w http.ResponseWriter, r *http.Request) {
 
 	case domain.RecoveryTerminal:
 		quest.Status = domain.QuestFailed
-		predicate = "quest.failed"
+		predicate = domain.PredicateQuestFailed
 	}
 
-	if err := s.graph.EmitEntityUpdate(ctx, quest, predicate); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, predicate); err != nil {
 		s.writeError(w, "failed to apply triage", http.StatusInternalServerError)
 		s.logger.Error("Failed to apply DM triage", "error", err, "quest_id", questID, "path", path)
 		return
@@ -2415,7 +2415,7 @@ func (s *Service) handleCreateReview(w http.ResponseWriter, r *http.Request) {
 		review.PartyID = &pid
 	}
 
-	if err := s.graph.EmitEntity(ctx, review, "review.lifecycle.pending"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, review, "review.lifecycle.pending"); err != nil {
 		s.writeError(w, "failed to create review", http.StatusInternalServerError)
 		s.logger.Error("Failed to create peer review", "error", err)
 		return
@@ -2551,7 +2551,7 @@ func (s *Service) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 		review.Status = domain.PeerReviewPartial
 	}
 
-	if err := s.graph.EmitEntityUpdate(ctx, review, eventType); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, review, eventType); err != nil {
 		s.writeError(w, "failed to submit review", http.StatusInternalServerError)
 		s.logger.Error("Failed to submit peer review", "id", id, "error", err)
 		return
@@ -2881,11 +2881,11 @@ type GraphSummaryResponse struct {
 // We re-declare it here so the API package has no compile-time dependency on
 // questbridge's internal domain structs beyond the exported method call.
 type graphSummarySource struct {
-	Name          string              `json:"name"`
-	Type          string              `json:"type"`
-	Ready         bool                `json:"ready"`
-	EntityPrefix  string              `json:"entity_prefix,omitempty"`
-	TotalEntities int                 `json:"total_entities"`
+	Name          string               `json:"name"`
+	Type          string               `json:"type"`
+	Ready         bool                 `json:"ready"`
+	EntityPrefix  string               `json:"entity_prefix,omitempty"`
+	TotalEntities int                  `json:"total_entities"`
 	Domains       []graphSummaryDomain `json:"domains"`
 }
 

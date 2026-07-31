@@ -13,19 +13,52 @@ package questlifecycle
 // =============================================================================
 
 import (
+	"context"
 	"log/slog"
 	"testing"
 
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/lifecycle"
+	"github.com/c360studio/semstreams/pkg/ownership"
+	"github.com/c360studio/semstreams/vocabulary"
+
+	"github.com/c360studio/semdragons/domain"
 )
 
 func TestWorkflow_Registers(t *testing.T) {
 	tc := natsclient.NewTestClient(t, natsclient.WithKV())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	mgr := lifecycle.NewManager(tc.Client, slog.Default())
+	t.Cleanup(func() {
+		cancel()
+		mgr.WaitOwnership()
+	})
+	ownerRegistry, err := ownership.EnsureBuckets(
+		ctx,
+		tc.Client,
+		slog.Default(),
+		vocabulary.InverseResolver,
+	)
+	if err != nil {
+		t.Fatalf("ensure beta.159 ownership buckets: %v", err)
+	}
+	mgr.AttachOwnership(ctx, ownerRegistry)
+	domain.RegisterVocabulary()
 	if err := mgr.Register(WorkflowDeclaration()); err != nil {
 		t.Fatalf("Register(quest workflow) = %v, want nil", err)
+	}
+
+	owner, ok, err := ownerRegistry.OwnerOf(
+		ctx,
+		"local.test.game.board1.quest.registration",
+		PhasePredicate,
+	)
+	if err != nil {
+		t.Fatalf("resolve lifecycle phase owner: %v", err)
+	}
+	if !ok || owner != WorkflowName {
+		t.Fatalf("phase owner = %q, known=%v; want %q", owner, ok, WorkflowName)
 	}
 
 	// A second registration of the same Name must be rejected (guards against

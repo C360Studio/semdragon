@@ -275,7 +275,7 @@ func (c *Component) AddItem(ctx context.Context, item StoreItem) error {
 	now := time.Now()
 
 	// Write item to KV as a storeitem entity
-	if err := c.graph.EmitEntityUpdate(ctx, &item, "store.item.listed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, &item, "store.item.listed"); err != nil {
 		c.logger.Warn("failed to write store item to KV", "item_id", item.ID, "error", err)
 	}
 
@@ -350,9 +350,10 @@ func (c *Component) SetStock(itemID string, inStock bool) error {
 // PURCHASE HANDLERS
 // =============================================================================
 
-// Purchase buys an item for an agent. Reads agent entity from KV, mutates
-// inventory + XP, and writes back via EmitEntityUpdate. If the agent is in any
-// guild and the item has a GuildDiscount > 0, the effective cost is reduced.
+// Purchase computes an inventory and XP update for an agent. The product
+// projection adapter is disabled during the framework-only cutover, so the
+// authoritative mutation fails closed. If the agent is in any guild and the
+// item has a GuildDiscount > 0, the effective cost is reduced.
 func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID string, currentXP int64, _ int, agentGuild domain.GuildID) (*OwnedItem, error) {
 	if !c.running.Load() {
 		return nil, errors.New("component not running")
@@ -409,7 +410,8 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 	inv.TotalSpent += effectiveCost
 	inv.mu.Unlock()
 
-	// Read-modify-write agent entity to KV (source of truth)
+	// Build the desired agent mutation from the authoritative read. Submission
+	// remains fail-closed until the agentstore projection owner is bound.
 	agentEntity, agentErr := c.graph.GetAgent(ctx, agentID)
 	if agentErr == nil && agentEntity != nil {
 		agent := agentprogression.AgentFromEntityState(agentEntity)
@@ -444,7 +446,7 @@ func (c *Component) Purchase(ctx context.Context, agentID domain.AgentID, itemID
 			agent.Stats.TotalXPSpent += effectiveCost
 			agent.UpdatedAt = now
 
-			if writeErr := c.graph.EmitEntityUpdate(ctx, agent, "agent.inventory.purchased"); writeErr != nil {
+			if writeErr := semdragons.DisabledProjectionMutation(ctx, agent, "agent.inventory.purchased"); writeErr != nil {
 				c.errorsCount.Add(1)
 				c.logger.Error("failed to write agent entity after purchase", "error", writeErr)
 			}
@@ -578,7 +580,7 @@ func (c *Component) UseConsumable(ctx context.Context, agentID domain.AgentID, c
 			if item.Effect.Type == ConsumableCooldownSkip && agent.Status == domain.AgentIdle {
 				eventType = "agent.status.idle"
 			}
-			if writeErr := c.graph.EmitEntityUpdate(ctx, agent, eventType); writeErr != nil {
+			if writeErr := semdragons.DisabledProjectionMutation(ctx, agent, eventType); writeErr != nil {
 				c.errorsCount.Add(1)
 				c.logger.Error("failed to write agent entity after consumable use", "error", writeErr)
 			}

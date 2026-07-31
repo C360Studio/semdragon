@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semstreams/graph"
 )
@@ -285,7 +286,7 @@ func (c *Component) onReviewCompleted(ctx context.Context, evt dagEvent) {
 	case "accept":
 		quest.Status = domain.QuestCompleted
 		quest.CompletedAt = timePtr(time.Now())
-		if emitErr := c.graph.EmitEntityUpdate(ctx, quest, "quest.dag.node_accepted"); emitErr != nil {
+		if emitErr := semdragons.DisabledProjectionMutation(ctx, quest, "quest.dag.node_accepted"); emitErr != nil {
 			c.logger.Error("failed to complete sub-quest after review accept",
 				"sub_quest_id", verdict.SubQuestID, "error", emitErr)
 			c.errorsCount.Add(1)
@@ -303,7 +304,7 @@ func (c *Component) onReviewCompleted(ctx context.Context, evt dagEvent) {
 		} else {
 			quest.FailureReason = "Rejected by party lead during review"
 		}
-		if emitErr := c.graph.EmitEntityUpdate(ctx, quest, "quest.dag.node_rejected"); emitErr != nil {
+		if emitErr := semdragons.DisabledProjectionMutation(ctx, quest, "quest.dag.node_rejected"); emitErr != nil {
 			c.logger.Error("failed to fail sub-quest after review reject",
 				"sub_quest_id", verdict.SubQuestID, "error", emitErr)
 			c.errorsCount.Add(1)

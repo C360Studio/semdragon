@@ -7,7 +7,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	semrule "github.com/c360studio/semstreams/processor/rule"
 )
+
+const questRuleEntityPattern = "*.*.game.*.quest.*"
 
 var shippedRuntimeProfiles = []string{
 	"config/semdragons.json",
@@ -20,6 +24,64 @@ var completeQuestRulePack = []string{
 	"config/rules/quest/02-submit.json",
 	"config/rules/quest/03-fail.json",
 	"config/rules/quest/04-mechanics-stub.json",
+}
+
+func TestQuestRuleDefinitionsDeclareBeta159EntityPattern(t *testing.T) {
+	var definitions []semrule.Definition
+	for _, path := range completeQuestRulePack {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		var fileDefinitions []semrule.Definition
+		if err := json.Unmarshal(data, &fileDefinitions); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		definitions = append(definitions, fileDefinitions...)
+	}
+	if len(definitions) != 7 {
+		t.Fatalf("quest rule definition count = %d, want 7", len(definitions))
+	}
+	for _, violation := range questRulePatternViolations(definitions) {
+		t.Error(violation)
+	}
+}
+
+func TestQuestRulePatternGuardRejectsDisabledMissingAndDivergentRules(t *testing.T) {
+	for name, definition := range map[string]semrule.Definition{
+		"disabled": {
+			ID: "synthetic-disabled", Enabled: false,
+			Entity: semrule.EntityConfig{Pattern: questRuleEntityPattern},
+		},
+		"missing pattern": {
+			ID: "synthetic-missing", Enabled: true,
+			Entity: semrule.EntityConfig{Pattern: ""},
+		},
+		"divergent pattern": {
+			ID: "synthetic-divergent", Enabled: true,
+			Entity: semrule.EntityConfig{Pattern: "*.*.game.*.battle.*"},
+		},
+	} {
+		definitions := []semrule.Definition{definition}
+		if violations := questRulePatternViolations(definitions); len(violations) == 0 {
+			t.Errorf("guard accepted synthetic %s rule", name)
+		}
+	}
+}
+
+func questRulePatternViolations(definitions []semrule.Definition) []string {
+	var violations []string
+	for _, definition := range definitions {
+		if !definition.Enabled {
+			violations = append(violations, "rule "+definition.ID+" enabled = false, want true")
+		}
+		if definition.Entity.Pattern != questRuleEntityPattern {
+			violations = append(violations,
+				"rule "+definition.ID+" entity.pattern = "+definition.Entity.Pattern+
+					", want "+questRuleEntityPattern)
+		}
+	}
+	return violations
 }
 
 type runtimeProfileContract struct {
@@ -231,7 +293,7 @@ func runtimeProfileViolations(profile runtimeProfileContract) []string {
 	if !rules.Config.EnableGraphIntegration {
 		violations = append(violations, "enable_graph_integration = false, want true")
 	}
-	if !slices.Equal(rules.Config.EntityWatchBuckets["ENTITY_STATES"], []string{"*.*.game.*.quest.*"}) {
+	if !slices.Equal(rules.Config.EntityWatchBuckets["ENTITY_STATES"], []string{questRuleEntityPattern}) {
 		violations = append(violations, "entity_watch_buckets.ENTITY_STATES does not equal the quest entity pattern")
 	}
 	if len(rules.Config.EntityWatchBuckets) != 1 {
@@ -315,8 +377,6 @@ func TestPhase1RawBattleSurfaceRemovedWhileAuthoritativeModelRemainsDormant(t *t
 	assertFileExcludes(t, "processor/bossbattle/handler_test.go", "BattleRetreatPayload")
 	assertFileExcludes(t, "semsource/graphmanifest_test.go", `"battle.review.verdict"`)
 	assertFileContains(t, "semsource/graphmanifest_test.go", `"battle.status.state"`)
-	assertFileExcludes(t, "processor/dmworldstate/component_test.go", `"battle.review.started"`)
-	assertFileContains(t, "processor/dmworldstate/component_test.go", `"battle.started"`)
 	assertFileExcludes(t, "cmd/openapi-gen/enums.go", `"retreat"`)
 }
 

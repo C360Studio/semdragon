@@ -316,9 +316,6 @@ func (c *Component) Start(ctx context.Context) error {
 
 	// Create graph client (synchronous, no I/O).
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
-	if err := c.graph.EnsureBucket(ctx); err != nil {
-		return fmt.Errorf("ensure board bucket: %w", err)
-	}
 
 	// Open QUEST_LOOPS bucket for writing review/clarify loop mappings.
 	// Retry once after a short sleep to handle startup ordering — questdagexec

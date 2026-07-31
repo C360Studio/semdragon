@@ -3997,6 +3997,8 @@ export interface paths {
                     pattern?: string;
                     /** @description Maximum number of entries to return (default: 100, max: 1000) */
                     limit?: number;
+                    /** @description Opt-in filter: keep only records whose top-level JSON 'status' equals this (e.g. 'failed' over EMBEDDING_INDEX for per-entity failure forensics). Empty (default) returns all records. */
+                    status?: string;
                 };
                 header?: never;
                 path: {

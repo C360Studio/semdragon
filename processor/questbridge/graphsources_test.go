@@ -98,6 +98,7 @@ func TestGraphSourceRoutingPreservesUnreadyOwnership(t *testing.T) {
 }
 
 func TestGraphSourceRegistryRejectsMalformedConfiguredPrefix(t *testing.T) {
+	// entity-id-audit:classify intentional-malformed "local..broken" line=104 column=53 surface=go-field:.EntityPrefix entity_id_prefix_invalid:empty_segment configured-prefix rejection fixture
 	_, err := NewGraphSourceRegistry([]GraphSource{
 		{Name: "local", Type: "local", AlwaysQuery: true},
 		{Name: "broken", Type: "semsource", EntityPrefix: "local..broken"},

@@ -5,6 +5,7 @@
     "name": "Quest submit (review required)",
     "description": "in_progress + command=submit + quest.review.needs-review=true -> in_review. The caller (questbridge, on loop completion) writes the work product to quest.data.output before stamping the command. Mutually exclusive with quest_submit_no_review via the needs_review value.",
     "enabled": true,
+    "entity": { "pattern": "*.*.game.*.quest.*" },
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [
@@ -28,6 +29,7 @@
     "name": "Quest submit (no review)",
     "description": "in_progress + command=submit + quest.review.needs-review=false -> completed. Mutually exclusive with quest_submit_needs_review.",
     "enabled": true,
+    "entity": { "pattern": "*.*.game.*.quest.*" },
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [

@@ -1,11 +1,34 @@
-# SemStreams beta.158 writer-owner matrix
+# SemStreams beta.159 writer-owner matrix
 
-Status: architect-reviewed target for semdragon issue #3.
+Status: architect-reviewed release contract for Semdragon issue #59.
 
-## Raw mutation inventory
+## Beta.159 acceptance disposition
 
-GraphClient centralizes two product statements that mutate `ENTITY_STATES`
-directly:
+SemStreams owns `ENTITY_STATES`. Graph-ingest alone creates or reconciles the
+catalog bucket. Production Semdragon code may read it only through
+`graph.OpenCatalogBucket`; it may not expose a raw KV handle.
+
+The beta.159 cutover deletes `GraphClient.EnsureBucket`, `EmitEntity`,
+`EmitEntityUpdate`, `EmitEntityCAS`, and `PutEntityState`. It also deletes the
+dmsession raw write described in the inventory below. These entries are retained
+only to make the migration scope auditable; none is an accepted final writer.
+
+No product entity birth, owned current-state replacement, or occurrence-evidence
+writer is active in the shipped profiles. Unbound mutation paths return typed
+`MutationUnavailable` without I/O. A later reactivation packet must bind a
+complete named contract once and use
+`projection.MutationClient.CreateWithTriples`, `ReplaceOwned`, or
+`AppendEvidence`; quest and review phase CAS must use `lifecycle.Manager`.
+Every graph-ingest profile enforces owner leases.
+
+Unless a row is explicitly labeled as active framework behavior, every owner
+claim below is a future reactivation contract. Retained product code and wire
+types do not imply that a shipped product writer is active.
+
+## Raw mutation inventory to delete
+
+GraphClient previously centralized two product statements that mutate
+`ENTITY_STATES` directly:
 
 - `graphclient.go:123`: `KVStore.Put`, reached through `EmitEntity`,
   `EmitEntityUpdate`, and `PutEntityState`. This is last-writer-wins
@@ -14,7 +37,7 @@ directly:
   This is CAS full-object replacement; CAS prevents a stale revision but not
   cross-owner predicate loss.
 
-A third direct statement bypasses GraphClient:
+A third prohibited statement bypasses GraphClient:
 
 - `processor/dmsession/session.go:183`: `KVStore.Put` serializes
   `domain.Session` and writes it under `session.<instance>` in
@@ -23,19 +46,38 @@ A third direct statement bypasses GraphClient:
   `graph.EntityState`, and the key is not the canonical six-part session entity
   ID.
 
-Non-test GraphClient callers are grouped below. Raw KV writes in boardcontrol,
+Non-test GraphClient callers are grouped below for migration. Raw KV writes in boardcontrol,
 dmapproval, tokenbudget, and API DM sessions target their separately classified
 named buckets. That is a bucket-specific classification, not a package
 exemption. Dmsession is explicitly excluded from that statement.
 
-Framework mutation paths are:
+The active framework mutation paths are lifecycle Manager and rule-engine
+mutation under framework ownership. The future product reactivation paths are:
 
 - lifecycle Manager create/transition/operator update;
-- graph-ingest triple mutation used by lifecycle command stamps;
-- graph-ingest atomic create-with-triples used by questdag seeding;
-- graph-ingest classified replace-by-predicate mutation used by the private
-  questdag completion seam; and
-- gated-DAG claim mutation.
+- projection `CreateWithTriples` for product birth;
+- projection `ReplaceOwned` for exclusive product current state;
+- projection `AppendEvidence` for occurrence evidence; and
+- gated-DAG framework mutation after the product DAG surface is reactivated.
+
+The current framework-only composition has no static projection owner. It
+uses SemStreams' public `graph.AssertOwnedBucketsClean`,
+`ownership.EnsureBuckets`, lifecycle `AttachOwnership`, shared
+`ownership.Heartbeater`/`service.OwnershipService`, and
+`service.BindRulePackContracts` sequence. It does not call
+`service.WireOwnership` with an empty contract list because beta.159 treats
+that as an attempted built-in projection binding and fails boot. SemStreams
+[#812] tracks the missing convenience primitive for this downstream shape; the
+direct public composition is temporary and owns no replacement framework code.
+
+There is no legacy waiver, raw request/reply substitute, or mixed ownership
+mode. Every shipped profile disables the game service and
+`agent_progression`, `agent_store`, `boidengine`, `questboard`,
+`guildformation`, `questbridge`, `partycoord`, `questdagexec`, `autonomy`, and
+`redteam`. Product seed modes default false. Bossbattle and dmsession are not
+shipped as enabled components, and their retained mutation paths fail closed.
+
+[#812]: https://github.com/C360Studio/semstreams/issues/812
 
 ## Owner-claim notation
 
@@ -44,8 +86,8 @@ Framework mutation paths are:
 - Predicates are exact strings. No predicate prefix or wildcard is an owner
   claim.
 - Tokens use SemStreams wire form `<owner>#<incarnation>`.
-- Issue #3 defines registrations while pinned to beta.135. Issue #4 wires the
-  beta.158 registry and stamps the tokens.
+- Issue #3 defines prospective product registrations. Issue #59 wires beta.159
+  lifecycle and rule ownership; it does not bind product projection owners.
 - `strict` foreign edges require the independently produced target to exist
   before the edge is written.
 - Create-only predicates are birth facts, not `OwnerClaim.Predicates`.
@@ -171,12 +213,12 @@ entity pattern but not on predicates.
 
 - Owner: gated-DAG framework; framework-minted token.
 - Mode: `replace-owned`.
-- Producer: beta.158 `processor/gated-dag`.
+- Producer: beta.159 `processor/gated-dag`.
 - Exact predicate: `gateddag.unit.claim`.
 
 The framework owns only the claim marker.
 
-### Questdag seeder
+### Future questdag seeder
 
 - Owner: `questdag`; token `questdag#<incarnation>`.
 - Mode: create only; no replace-owned registration after birth.
@@ -201,13 +243,14 @@ provenance, every declared dependency, and the activation-latch dependency.
 Every referenced target already exists, so the corpus contains no
 `graph.StubMessageType` unit and no dependency-update phase.
 
-Before release, the seeder authoritatively reconciles the complete manifest.
+Before a future reactivation, the seeder must authoritatively reconcile the
+complete manifest.
 Matching stable entities are accepted on replay; a mismatched immutable fact or
 digest fails as a collision. If the latch is already complete, a missing or
 mismatched unit is graph corruption and is not repaired. The seeder does not
 own any terminal or framework claim marker.
 
-### Private completion seam
+### Future private completion seam
 
 - Owner: `questdag-completion`; token
   `questdag-completion#<incarnation>`.
@@ -217,13 +260,12 @@ own any terminal or framework claim marker.
 - Exact predicate:
   `gateddag.unit.completed`.
 
-This is the exclusive product writer for the completion predicate. It uses the
+This is the required exclusive product writer for the completion predicate. It
+must use the
 classified update-with-triples lane to atomically remove and replace the
 single-valued marker with its owner token; production append-style
-`triple.add` is prohibited. While issue #3 remains on beta.135, which lacks the
-beta.158 decoded-entity validator, every mutation response is confirmed by
-authoritative entity read-back. Issue #4 may trust a non-degraded echo only
-after beta.158 validation. A degraded or lost reply also requires read-back;
+`triple.add` is prohibited. Beta.159 validates decoded mutation responses. A
+degraded or lost reply still requires authoritative read-back;
 marker presence converges to success, while marker absence preserves the
 classified transient failure.
 
@@ -256,9 +298,9 @@ deleted. The Agent/reconstruction and XP policy implementation remain dormant.
 Issue #30 does not rename retained predicates, bind this future claim, change a
 watcher, or modify agentstore or the SemStreams dependency.
 
-The declaration below is the future beta.158 target. Reactivation remains
-blocked on beta.158 adoption and the public owner-token mutation path in
-[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313).
+The declaration below is the beta.159 owner boundary. The public mutation path
+is now available through `projection.MutationClient`; reactivation remains
+blocked until the complete boundary is implemented and verified.
 
 - Owner: `agentprogression`; token `agentprogression#<incarnation>`.
 - Pattern: `*.*.game.*.agent.*`.
@@ -331,7 +373,7 @@ by that payload, no foreign edges, and no indexing profile. Issue #4 uses
 `projection.BindAndHeartbeat` with one process-lifetime static heartbeater,
 bound once at the composition root after ownership initialization and before
 the autonomy component starts. Although append evidence is overlap-exempt, it
-is represented by an `OwnerClaim`; beta.158 liveness compaction exempts only
+is represented by an `OwnerClaim`; beta.159 liveness compaction exempts only
 foreign-edge-only registrations.
 
 If issue #4 does not add the real `BaseMessage`, payload-registry, and
@@ -348,7 +390,7 @@ publisher-only raw event families, seven event vocabulary entries, and false
 output are deleted. EntityState KV message categories are a separate retained
 surface.
 
-The declaration below is the future beta.158 target. Issue #32 binds no owner,
+The declaration below is the beta.159 target. Issue #32 binds no owner,
 changes no retained predicate, and leaves the retained store.go 14/18 corpus
 for the later canonical migration.
 
@@ -359,8 +401,8 @@ views rather than treating process-local state as authoritative.
 
 Purchasing never gives agentstore authority over progression or lifecycle
 state. Agentstore sends an idempotent, durable XP-debit command/request to the
-agentprogression owner after SemStreams #313 supplies the owner-safe mutation
-path. Agentprogression performs and confirms the debit; agentstore neither
+agentprogression owner after that owner binds its beta.159 projection contract.
+Agentprogression performs and confirms the debit; agentstore neither
 directly changes XP nor replaces the full Agent entity. Agent status,
 cooldown, death, readiness, and every other lifecycle predicate remain outside
 the agentstore claim and cross their existing progression/lifecycle owner
@@ -400,19 +442,19 @@ such as `quality_shield` remain scalar until converted by
 
 ### Guild target claims
 
-The claims below are the approved target, not implemented ownership. Current
-production has three full-object writers:
+The claims below are the approved future target, not implemented ownership.
+Before this cutover, production had three full-object writers:
 
-- guildformation calls `GraphClient.EmitEntity` for guild creation,
+- guildformation called `GraphClient.EmitEntity` for guild creation,
   membership, promotion, application review, activation, disband, and
   dissolution;
-- agentprogression reconstructs and replaces the Guild for performance
+- agentprogression reconstructed and replaced the Guild for performance
   statistics and member contribution; and
-- redteam reconstructs and replaces the Guild when appending lessons.
+- redteam reconstructed and replaced the Guild when appending lessons.
 
-Guildformation also writes the Agent's embedded Guild field through
-`EmitEntityUpdate`. None of these paths binds an owner claim, and any stale
-snapshot can erase another writer's predicates.
+Guildformation also wrote the Agent's embedded Guild field through
+`EmitEntityUpdate`. Those APIs are now deleted, all three processors are
+disabled, and their retained mutation paths fail closed.
 
 Guild phase uses the SemStreams lifecycle substrate:
 
@@ -422,7 +464,7 @@ Guild phase uses the SemStreams lifecycle substrate:
 - Producer: guildformation and rules request lifecycle transitions.
 - Exact predicate: `guild.status.state`.
 
-The remaining current Guild state uses the following approved target claim:
+Future Guild state uses the following approved target claim:
 
 - Owner: `guildformation`; token `guildformation#<incarnation>`.
 - Pattern: `*.*.game.*.guild.*`.
@@ -460,10 +502,9 @@ lifecycle, rules, and first-class children already cover this migration; issue
 
 ### Party
 
-This is a future beta.158 target, not a current owner binding. Issue #28
-retains the legacy Party KV writer without an owner token. Issue #4 may
-activate this target only after beta.158 adoption and the public SemStreams
-#313 owner-classified create/replace path are available.
+This is a beta.159 target, not a current owner binding. The legacy Party KV
+writer is not releasable. Issue #59 must migrate it to the public classified
+create/replace path or disable it fail closed.
 
 - Prospective owner: the composition-owned Party lifecycle integration.
 - Pattern: `*.*.game.*.party.*`.
@@ -526,9 +567,8 @@ the exact authoritative boundary:
 
 No bossbattle path may replace a Quest, Agent, PeerReview, or other
 cross-owner full object. Reactivation is blocked until these handoffs, the
-fresh-state projection tests, the owner bind/heartbeat, and the
-[SemStreams #313](https://github.com/C360Studio/semstreams/issues/313)
-mutation helper are complete.
+fresh-state projection tests, and the owner bind/heartbeat are complete using
+the beta.159 mutation client.
 
 ## Peer-review ownership
 
@@ -662,8 +702,8 @@ This resolves the previously ambiguous executor/semsource ownership: the
 executor web-fetch producer owns this exact source-document pattern and set.
 The pattern is disjoint from Semsource-owned document patterns even where
 predicate names overlap. A later web-document packet binds the replace-owned
-contract with `projection.BindAndHeartbeat` and moves `GraphClient.EmitEntity`
-to the supported owner-classified mutation lane.
+contract once and replaces `GraphClient.EmitEntity` with the supported
+owner-classified mutation lane.
 
 `source.doc.fetched-by` and `source.doc.quest-id` are typed same-subject
 relationships and require no `ForeignEdgeClaim`. SemStreams supplies
@@ -732,9 +772,10 @@ projection contracts, ownership services, heartbeats, or lifecycle timers.
   issue #4 and binds no owner. Dormant bossbattle binds no owner; Phase 2 must
   use the same classified lanes. Former cross-owner projections are removed,
   not silently exempted.
-- Guildformation's five raw event DTOs remain active wire contracts, but their
-  latent Graphables are deleted in issue #22. Guild events are not append
-  evidence, and no event projection owner is registered.
+- Guildformation's five raw event DTOs are retained contracts, but the shipped
+  component is disabled and their latent Graphables are deleted in issue #22.
+  Guild events are not append evidence, and no event projection owner is
+  registered.
 - Executor execution observations use append evidence. The entire unactivated
   and unconsumed seeding processor is deleted in issue #24; its statistics are
   not append evidence, and no raw DTO or graph contract remains. The
@@ -759,11 +800,11 @@ representations merely because both are graph-bound.
 ### Startup/E2E Agent birth
 
 The retained `cmd/semdragons/seed_e2e.go` path is not the deleted seeding
-processor. It runs only for `SEED_AGENTS`, `SEED_E2E`, or `SEED_PROS` and
-currently calls `GraphClient.EmitEntity` with a complete
-`agentprogression.Agent` snapshot.
+processor. It is selected only by `SEED_AGENTS`, `SEED_E2E`, or `SEED_PROS`.
+All three flags default false, and the retained birth call now fails closed with
+typed `MutationUnavailable`; it does not call GraphClient or perform I/O.
 
-- Current scope: create only against an empty fresh corpus.
+- Future scope: create only against an empty fresh corpus.
 - Create-only facts:
   Agent identity, archetype, NPC flag, and creation time remain outside
   `OwnerClaim.Predicates`.
@@ -846,7 +887,7 @@ Each inventory row must resolve to exactly one of:
    actual destination field.
 
 Zero matches and multiple matches both fail. The same test registers all
-owner and foreign-edge claims against the beta.158 registry contract and fails
+owner and foreign-edge claims against the beta.159 registry contract and fails
 on pattern/predicate overlap, invalid six-position patterns, wildcard
 predicates, unregistrable modes, or an owner token outside
 `<owner>#<incarnation>`. It also asserts that the DAG seed,
@@ -861,13 +902,14 @@ contract tests must all pass before any writer starts.
 The deterministic activation latch is a narrow issue #3 product bridge, not a
 local gated-DAG framework. It is retired when
 [SemStreams #670](https://github.com/C360Studio/semstreams/issues/670) supplies
-framework-owned staged fan-out admission and the beta.158 adoption slice
+framework-owned staged fan-out admission and the beta.159 adoption slice
 consumes that primitive.
 
 ## Upstream framework boundaries
 
-- [SemStreams #313](https://github.com/C360Studio/semstreams/issues/313) is the
-  existing public ask for a reusable owned-write helper. The
+- [SemStreams #313](https://github.com/C360Studio/semstreams/issues/313) records
+  the public owned-write helper now supplied by beta.159
+  `projection.MutationClient`. The
   [Semdragon evidence comment](https://github.com/C360Studio/semstreams/issues/313#issuecomment-5078996034)
   records this repository's store, inventory, effect, guild, party, and DAG
   mutation needs. It does not block the completed questdag core wave because
@@ -881,8 +923,9 @@ consumes that primitive.
   wave; the broader zero-findings predicate-audit gate remains open.
 - [SemStreams #670](https://github.com/C360Studio/semstreams/issues/670) owns
   generic staged fan-out admission and retires the activation latch.
-- [semdragon #4](https://github.com/C360Studio/semdragon/issues/4) owns
-  beta.158 adoption, decoded-entity validation, and registry wiring.
+- [semdragon #59](https://github.com/C360Studio/semdragon/issues/59) owns
+  beta.159 adoption, decoded-entity validation, registry wiring, and deletion
+  of direct `ENTITY_STATES` ownership.
 
 ## Approved questdag core-wave evidence
 
@@ -900,4 +943,4 @@ The 2026-07-25 live verification closes only OpenSpec tasks 2.7, 2.8, and 3.7:
 
 This evidence does not close the processor/service predicate corpus,
 repository-wide entity-ID and relationship gates, fresh-volume runbook, or
-beta.158 adoption.
+beta.159 adoption.

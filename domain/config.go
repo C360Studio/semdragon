@@ -164,14 +164,6 @@ func (c *BoardConfig) DagUnitEntityID(instance string) string {
 	return c.EntityID(EntityTypeDagUnit, instance)
 }
 
-// BucketName returns the KV bucket name for entity state.
-// Uses the standard ENTITY_STATES bucket shared with the semstreams graph pipeline
-// (graph-ingest, graph-index, graph-query, graph-gateway). Six-part entity IDs
-// prevent collisions across orgs/platforms/boards within the same bucket.
-func (c *BoardConfig) BucketName() string {
-	return "ENTITY_STATES"
-}
-
 // --- Entity ID Parsing ---
 
 // ParsedEntityID holds the parsed components of a 6-part entity ID.

@@ -115,7 +115,7 @@ func TestExecutorProjectionInventoryRetainsOnlyLiveRawLifecycleSurface(t *testin
 			}
 		}
 	}
-	if executorReferenceCount != 3 {
-		t.Errorf("processor/executor @id relationship declarations = %d, want exactly 3", executorReferenceCount)
+	if executorReferenceCount != 1 {
+		t.Errorf("processor/executor @id relationship declarations = %d, want exactly 1", executorReferenceCount)
 	}
 }

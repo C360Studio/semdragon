@@ -57,11 +57,8 @@ const (
 	executionStartedMethod = "processor/executor/payloads.go|ExecutionStartedPayload|Triples"
 	executionDoneMethod    = "processor/executor/payloads.go|ExecutionCompletedPayload|Triples"
 	executionFailedMethod  = "processor/executor/payloads.go|ExecutionFailedPayload|Triples"
-	webContentMethod       = "processor/executor/tools.go|webContentEntity|Triples"
-
-	webContentBuilderSite = "processor/executor/tools.go|buildWebContentEntity"
-	baseUnitTriplesSite   = "questdag/unit.go|baseUnitTriples"
-	referenceTripleSite   = "questdag/unit.go|referenceTriple"
+	baseUnitTriplesSite    = "questdag/unit.go|baseUnitTriples"
+	referenceTripleSite    = "questdag/unit.go|referenceTriple"
 )
 
 var expectedTriplesMethods = map[string]string{
@@ -84,7 +81,6 @@ var expectedTriplesMethods = map[string]string{
 	executionStartedMethod: relationshipMethod,
 	executionDoneMethod:    noEdgeMethod,
 	executionFailedMethod:  noEdgeMethod,
-	webContentMethod:       relationshipMethod,
 }
 
 var expectedReferenceSites = map[string]int{
@@ -98,7 +94,6 @@ var expectedReferenceSites = map[string]int{
 	guildIntentMethod:      1,
 	useIntentMethod:        1,
 	executionStartedMethod: 1,
-	webContentBuilderSite:  2,
 	baseUnitTriplesSite:    2,
 	referenceTripleSite:    1,
 }
@@ -143,8 +138,6 @@ var expectedRelationshipShapes = map[string]relationshipShapeSpec{
 	"agent.autonomy.guild-join":  {producer: guildIntentMethod},
 	"agent.autonomy.use-quest":   {producer: useIntentMethod},
 	"execution.agent.id":         {producer: executionStartedMethod},
-	"source.doc.fetched-by":      {producer: webContentBuilderSite},
-	"source.doc.quest-id":        {producer: webContentBuilderSite},
 	"questdag.unit.parent-quest": {producer: baseUnitTriplesSite},
 	"questdag.unit.sub-quest":    {producer: baseUnitTriplesSite},
 	"gateddag.unit.depends-on":   {producer: referenceTripleSite},
@@ -179,13 +172,13 @@ func TestRepositoryRelationshipContract(t *testing.T) {
 			classCounts[class]++
 		}
 		wantClassCounts := map[string]int{
-			relationshipMethod: 11,
+			relationshipMethod: 10,
 			noEdgeMethod:       8,
 			externalMethod:     1,
 		}
 		assertExactCounts(t, "Triples classification", classCounts, wantClassCounts)
-		if len(expectedRelationshipShapes) != 36 {
-			t.Fatalf("relationship shape inventory = %d, want exactly 36", len(expectedRelationshipShapes))
+		if len(expectedRelationshipShapes) != 34 {
+			t.Fatalf("relationship shape inventory = %d, want exactly 34", len(expectedRelationshipShapes))
 		}
 		shapeCounts := map[string]int{}
 		for _, spec := range expectedRelationshipShapes {
@@ -202,7 +195,6 @@ func TestRepositoryRelationshipContract(t *testing.T) {
 			guildIntentMethod:      1,
 			useIntentMethod:        1,
 			executionStartedMethod: 1,
-			webContentBuilderSite:  2,
 			baseUnitTriplesSite:    2,
 			referenceTripleSite:    1,
 		}
@@ -236,8 +228,7 @@ func TestRepositoryRelationshipContract(t *testing.T) {
 			}
 		}
 		for shape, spec := range expectedRelationshipShapes {
-			if spec.producer == webContentBuilderSite ||
-				spec.producer == baseUnitTriplesSite ||
+			if spec.producer == baseUnitTriplesSite ||
 				spec.producer == referenceTripleSite {
 				continue // Covered in package-local focused tests.
 			}
@@ -246,7 +237,7 @@ func TestRepositoryRelationshipContract(t *testing.T) {
 			}
 		}
 		if len(declared) != 31 {
-			t.Errorf("root behavioral shapes = %d, want 31 (plus web 2 and questdag 3)", len(declared))
+			t.Errorf("root behavioral shapes = %d, want 31 (plus questdag 3)", len(declared))
 		}
 	})
 

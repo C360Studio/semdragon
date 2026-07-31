@@ -5,6 +5,7 @@
     "name": "Quest review stub (mechanics disabled)",
     "description": "While game mechanics are disabled (this change), a quest that enters in_review auto-advances to completed with a review-skipped verdict, emitting no XP or battle entities (spec: 'Mechanics side effects are stubbed in this change'). Purely phase-triggered — on_enter fires once on entering in_review and the transition to terminal completed prevents re-entry, so no command to clear. Phase 2 re-enables real review by replacing this one rule. Tracked as task 4.2.",
     "enabled": true,
+    "entity": { "pattern": "*.*.game.*.quest.*" },
     "logic": "and",
     "rerun_on_recovery": true,
     "conditions": [

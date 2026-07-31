@@ -75,23 +75,15 @@ func (c *Component) loadInitialState(ctx context.Context) error {
 
 // startKVWatchers sets up watchers for agent and quest state changes.
 func (c *Component) startKVWatchers(ctx context.Context) error {
-	kv, err := c.graph.KVBucket(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Watch agent state changes using entity ID prefix pattern
-	// Keys in ENTITY_STATES follow: org.platform.game.board.type.instance
-	agentPrefix := c.graph.Config().TypePrefix("agent") + ".>"
-	agentWatcher, err := kv.Watch(ctx, agentPrefix)
+	// Watch agent state changes through the catalog-backed graph reader.
+	agentWatcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeAgent)
 	if err != nil {
 		return err
 	}
 	c.agentWatch = agentWatcher
 
 	// Watch quest state changes using entity ID prefix pattern
-	questPrefix := c.graph.Config().TypePrefix("quest") + ".>"
-	questWatcher, err := kv.Watch(ctx, questPrefix)
+	questWatcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeQuest)
 	if err != nil {
 		c.agentWatch.Stop()
 		return err
@@ -99,8 +91,7 @@ func (c *Component) startKVWatchers(ctx context.Context) error {
 	c.questWatch = questWatcher
 
 	// Watch guild state changes for rank/reputation updates
-	guildPrefix := c.graph.Config().TypePrefix("guild") + ".>"
-	guildWatcher, err := kv.Watch(ctx, guildPrefix)
+	guildWatcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeGuild)
 	if err != nil {
 		c.logger.Warn("failed to start guild KV watcher (affinity scoring degraded)", "error", err)
 		// Non-fatal: guild context from initial load still available

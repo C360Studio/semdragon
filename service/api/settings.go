@@ -21,14 +21,14 @@ import (
 
 // SettingsResponse is the response body for GET /settings.
 type SettingsResponse struct {
-	Platform       PlatformInfo         `json:"platform"`
-	NATS           NATSInfo             `json:"nats"`
-	Models         ModelRegistryView    `json:"models"`
-	Components     []ComponentInfoView  `json:"components"`
-	Workspace      SandboxInfoView    `json:"workspace"`
-	TokenBudget    *TokenBudgetView     `json:"token_budget,omitempty"`
-	WebsocketInput WebsocketInputView   `json:"websocket_input"`
-	SearchConfig   SearchConfigView     `json:"search_config"`
+	Platform       PlatformInfo        `json:"platform"`
+	NATS           NATSInfo            `json:"nats"`
+	Models         ModelRegistryView   `json:"models"`
+	Components     []ComponentInfoView `json:"components"`
+	Workspace      SandboxInfoView     `json:"workspace"`
+	TokenBudget    *TokenBudgetView    `json:"token_budget,omitempty"`
+	WebsocketInput WebsocketInputView  `json:"websocket_input"`
+	SearchConfig   SearchConfigView    `json:"search_config"`
 }
 
 // PlatformInfo describes the deployment identity.
@@ -47,9 +47,9 @@ type NATSInfo struct {
 
 // ModelRegistryView exposes the model registry without API key values.
 type ModelRegistryView struct {
-	Endpoints    []ModelEndpointView          `json:"endpoints" description:"Configured LLM endpoints"`
-	Capabilities map[string]CapabilityView    `json:"capabilities" description:"Capability routing"`
-	Defaults     ModelDefaultsView            `json:"defaults" description:"Default model settings"`
+	Endpoints    []ModelEndpointView       `json:"endpoints" description:"Configured LLM endpoints"`
+	Capabilities map[string]CapabilityView `json:"capabilities" description:"Capability routing"`
+	Defaults     ModelDefaultsView         `json:"defaults" description:"Default model settings"`
 }
 
 // ModelEndpointView describes a single endpoint. API key values are never exposed.
@@ -85,15 +85,15 @@ type ModelDefaultsView struct {
 
 // ComponentInfoView describes a registered component's status.
 type ComponentInfoView struct {
-	Name         string `json:"name" description:"Component instance name"`
-	Type         string `json:"type" description:"Component type (processor, input, output, storage)"`
-	Enabled      bool   `json:"enabled" description:"Whether the component is in the config"`
-	Running      bool   `json:"running" description:"Whether the component is instantiated"`
-	Healthy      bool   `json:"healthy" description:"Whether the component reports healthy"`
-	Status       string `json:"status,omitempty" description:"Health status string"`
-	UptimeSecs   int64  `json:"uptime_seconds,omitempty" description:"Seconds since component started"`
-	ErrorCount   int    `json:"error_count,omitempty" description:"Total error count"`
-	LastError    string `json:"last_error,omitempty" description:"Most recent error message"`
+	Name       string `json:"name" description:"Component instance name"`
+	Type       string `json:"type" description:"Component type (processor, input, output, storage)"`
+	Enabled    bool   `json:"enabled" description:"Whether the component is in the config"`
+	Running    bool   `json:"running" description:"Whether the component is instantiated"`
+	Healthy    bool   `json:"healthy" description:"Whether the component reports healthy"`
+	Status     string `json:"status,omitempty" description:"Health status string"`
+	UptimeSecs int64  `json:"uptime_seconds,omitempty" description:"Seconds since component started"`
+	ErrorCount int    `json:"error_count,omitempty" description:"Total error count"`
+	LastError  string `json:"last_error,omitempty" description:"Most recent error message"`
 }
 
 // SandboxInfoView describes sandbox availability.
@@ -174,9 +174,9 @@ type SearchConfigUpdate struct {
 
 // ModelRegistryUpdate describes mutations to the model registry.
 type ModelRegistryUpdate struct {
-	Endpoints    map[string]*EndpointUpdate    `json:"endpoints,omitempty" description:"Endpoint add/update/remove"`
-	Capabilities map[string]*CapabilityUpdate  `json:"capabilities,omitempty" description:"Capability add/update/remove"`
-	Defaults     *ModelDefaultsView            `json:"defaults,omitempty" description:"Default model changes"`
+	Endpoints    map[string]*EndpointUpdate   `json:"endpoints,omitempty" description:"Endpoint add/update/remove"`
+	Capabilities map[string]*CapabilityUpdate `json:"capabilities,omitempty" description:"Capability add/update/remove"`
+	Defaults     *ModelDefaultsView           `json:"defaults,omitempty" description:"Default model changes"`
 }
 
 // EndpointUpdate describes a single endpoint mutation.
@@ -286,12 +286,11 @@ func (s *Service) handleSettingsHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Entity state bucket
-	bucketName := s.boardConfig.BucketName()
 	bucketCtx, bucketCancel := context.WithTimeout(ctx, 3*time.Second)
-	_, bucketErr := s.nats.GetKeyValueBucket(bucketCtx, bucketName)
+	bucketErr := s.graph.Ready(bucketCtx)
 	bucketCancel()
 	if bucketErr != nil {
-		checks = append(checks, HealthCheck{Name: "bucket:entity_state", Status: "error", Message: fmt.Sprintf("Bucket %s not found", bucketName)})
+		checks = append(checks, HealthCheck{Name: "bucket:entity_state", Status: "error", Message: "SemStreams entity-state catalog is not ready"})
 		hasError = true
 	} else {
 		checks = append(checks, HealthCheck{Name: "bucket:entity_state", Status: "ok", Message: "Bucket exists"})

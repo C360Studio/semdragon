@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 )
 
@@ -122,20 +123,19 @@ func (c *Component) appendGuildLessons(ctx context.Context, guildID domain.Guild
 		guild.Lessons = guild.Lessons[len(guild.Lessons)-100:]
 	}
 
-	if err := c.graph.EmitEntityUpdate(ctx, guild, domain.PredicateGuildLessonAdded); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, domain.PredicateGuildLessonAdded); err != nil {
 		c.logger.Error("failed to persist guild lessons", "guild", guildID, "error", err)
 	}
 }
 
-
 // finding is a parsed entry from red-team output.
 type finding struct {
-	Skill    domain.SkillTag        `json:"skill"`
-	Category domain.LessonCategory  `json:"category"`
-	Summary  string                 `json:"summary"`
-	Detail   string                 `json:"detail"`
-	Severity domain.LessonSeverity  `json:"severity"`
-	Positive bool                   `json:"positive"`
+	Skill    domain.SkillTag       `json:"skill"`
+	Category domain.LessonCategory `json:"category"`
+	Summary  string                `json:"summary"`
+	Detail   string                `json:"detail"`
+	Severity domain.LessonSeverity `json:"severity"`
+	Positive bool                  `json:"positive"`
 }
 
 // parseFindings attempts to extract structured findings from red-team output.
@@ -262,4 +262,3 @@ func normalizeFindings(findings []finding) []finding {
 	}
 	return findings
 }
-

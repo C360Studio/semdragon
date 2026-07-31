@@ -147,13 +147,13 @@ func (c *Component) handleNormalQuestInReview(quest *domain.Quest) {
 	// party quests get party red-team reviews (with scenario-driven decomposition)
 	// and solo quests get solo red-team reviews.
 	rtQuest := domain.Quest{
-		QuestType:     domain.QuestTypeRedTeam,
-		RedTeamTarget: &quest.ID,
-		Title:         fmt.Sprintf("Red-Team Review: %s", quest.Title),
-		Description:   fmt.Sprintf("Review and red-team the output of quest %q. Find strengths, risks, and improvement suggestions.", quest.Title),
-		Difficulty:    quest.Difficulty,
+		QuestType:      domain.QuestTypeRedTeam,
+		RedTeamTarget:  &quest.ID,
+		Title:          fmt.Sprintf("Red-Team Review: %s", quest.Title),
+		Description:    fmt.Sprintf("Review and red-team the output of quest %q. Find strengths, risks, and improvement suggestions.", quest.Title),
+		Difficulty:     quest.Difficulty,
 		RequiredSkills: quest.RequiredSkills,
-		GuildPriority: guildPriority,
+		GuildPriority:  guildPriority,
 		// Mirror structural fields so party leads decompose the review
 		// into per-scenario review sub-quests.
 		Goal:                 quest.Goal,
@@ -203,7 +203,7 @@ func (c *Component) handleNormalQuestInReview(quest *domain.Quest) {
 		origQuest := domain.QuestFromEntityState(originalEntity)
 		if origQuest != nil {
 			origQuest.RedTeamQuestID = &posted.ID
-			if err := c.graph.EmitEntityUpdate(writeCtx, origQuest, domain.PredicateRedTeamPosted); err != nil {
+			if err := semdragons.DisabledProjectionMutation(writeCtx, origQuest, domain.PredicateRedTeamPosted); err != nil {
 				c.logger.Warn("failed to write red-team quest ID on original", "error", err)
 			}
 		}
@@ -338,7 +338,7 @@ func (c *Component) attachFindings(targetQuestID domain.QuestID, rtQuest *domain
 		}
 
 		quest.RedTeamStatus = "completed"
-		if err := c.graph.EmitEntityCAS(ctx, quest, domain.PredicateRedTeamCompleted, revision); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, quest, domain.PredicateRedTeamCompleted, revision); err != nil {
 			if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
 				c.logger.Debug("CAS conflict attaching red-team findings, retrying",
 					"quest", targetQuestID, "attempt", attempt+1)
@@ -375,7 +375,7 @@ func (c *Component) emitSkipped(questID domain.QuestID, reason string) {
 		}
 
 		quest.RedTeamStatus = "skipped"
-		if err := c.graph.EmitEntityCAS(ctx, quest, domain.PredicateRedTeamSkipped, revision); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, quest, domain.PredicateRedTeamSkipped, revision); err != nil {
 			if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
 				c.logger.Debug("CAS conflict emitting red-team skip, retrying",
 					"quest", questID, "attempt", attempt+1)

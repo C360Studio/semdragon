@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semstreams/pkg/lifecycle"
 
 	"github.com/c360studio/semdragons/domain"
@@ -192,9 +193,7 @@ func (c *Component) executeClaimQuestWithLifecycle(ctx context.Context, agent *a
 		// phase write (quest-lifecycle spec). TransitionWith is CAS-guarded, so
 		// if another agent won the claim first the current phase is no longer
 		// posted and the transition returns ErrInvalidTransition — we skip to the
-		// next suggestion, exactly as the old EmitEntityCAS conflict path did.
-		// This replaces the direct full-object status Put (which would clobber the
-		// Manager's audit/command triples on the shared ENTITY_STATES entity).
+		// next suggestion. This preserves the Manager's audit and command state.
 		agentID := domain.AgentID(agent.ID)
 		claimErr := mgr.TransitionWith(ctx, questlifecycle.WorkflowName, string(quest.ID), questlifecycle.PhaseClaimed,
 			lifecycle.TransitionSourceComponent, "autonomous claim",
@@ -218,13 +217,6 @@ func (c *Component) executeClaimQuestWithLifecycle(ctx context.Context, agent *a
 			continue
 		}
 
-		// Preserve claimed_at for UI stability — it is not a lifecycle projection
-		// field, so stamp it as an additive delta (never a full-object Put).
-		if err := questlifecycle.StampTriple(ctx, c.deps.NATSClient, string(quest.ID),
-			"quest.lifecycle.claimed_at", time.Now().Format(time.RFC3339)); err != nil {
-			c.logger.Warn("failed to stamp claimed_at", "quest_id", suggestion.QuestID, "error", err)
-		}
-
 		// We own this quest — start it: claimed → in_progress. questbridge
 		// dispatches the agentic loop on the in_progress phase.
 		if err := mgr.Transition(ctx, questlifecycle.WorkflowName, string(quest.ID), questlifecycle.PhaseInProgress,
@@ -237,9 +229,6 @@ func (c *Component) executeClaimQuestWithLifecycle(ctx context.Context, agent *a
 			// successful autonomous action or bind the agent to work that was never
 			// started; an operator/manager can recover the claimed quest.
 			return fmt.Errorf("start autonomously claimed quest %s: %w", suggestion.QuestID, err)
-		} else if err := questlifecycle.StampTriple(ctx, c.deps.NATSClient, string(quest.ID),
-			"quest.lifecycle.started_at", time.Now().Format(time.RFC3339)); err != nil {
-			c.logger.Warn("failed to stamp started_at", "quest_id", suggestion.QuestID, "error", err)
 		}
 
 		// Write agent state: on_quest (no CAS needed — only this agent's heartbeat writes its state)
@@ -249,7 +238,7 @@ func (c *Component) executeClaimQuestWithLifecycle(ctx context.Context, agent *a
 		agent.CurrentQuest = &questIDRef
 		agent.UpdatedAt = now2
 
-		if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.on_quest"); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.status.on_quest"); err != nil {
 			c.errorsCount.Add(1)
 			c.logger.Error("failed to update agent status on claim",
 				"agent_id", agent.ID,

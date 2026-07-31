@@ -223,7 +223,7 @@ func (c *Component) startBattleForQuest(quest *domain.Quest, reviewLevel domain.
 			if agent != nil {
 				agent.Status = domain.AgentInBattle
 				agent.UpdatedAt = time.Now()
-				if writeErr := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.in_battle"); writeErr != nil {
+				if writeErr := semdragons.DisabledProjectionMutation(ctx, agent, "agent.status.in_battle"); writeErr != nil {
 					c.errorsCount.Add(1)
 					c.logger.Error("failed to set agent in_battle", "error", writeErr)
 				}
@@ -346,8 +346,9 @@ func (c *Component) StartBattle(ctx context.Context, quest *domain.Quest, output
 	// Build battle from quest review level
 	battle := c.buildBattle(battleID, quest)
 
-	// Store battle using graph client (EmitEntity for initial creation)
-	if err := c.graph.EmitEntity(ctx, battle, "battle.started"); err != nil {
+	// Battle birth remains fail-closed until the bossbattle projection owner is
+	// bound; this disabled product component has no raw graph fallback.
+	if err := semdragons.DisabledProjectionMutation(ctx, battle, "battle.started"); err != nil {
 		return nil, errs.Wrap(err, "BossBattle", "StartBattle", "emit battle entity")
 	}
 
@@ -589,7 +590,7 @@ func (c *Component) autoPassQuest(ctx context.Context, quest *domain.Quest) {
 		Feedback:     "Auto-passed: quest difficulty below review threshold",
 	}
 
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.completed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.completed"); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to auto-pass quest", "quest_id", quest.ID, "error", err)
 		return
@@ -654,7 +655,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 		} else if ab.battle.Status == domain.BattleDefeat {
 			eventType = "battle.defeat"
 		}
-		if err := c.graph.EmitEntityUpdate(persistCtx, ab.battle, eventType); err != nil {
+		if err := semdragons.DisabledProjectionMutation(persistCtx, ab.battle, eventType); err != nil {
 			c.errorsCount.Add(1)
 			c.logger.Error("failed to persist battle result",
 				"battle", ab.battle.ID,
@@ -718,7 +719,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 							agent.Status = domain.AgentIdle
 							agent.CurrentQuest = nil
 							agent.UpdatedAt = time.Now()
-							if writeErr := c.graph.EmitEntityUpdate(persistCtx, agent, "agent.status.idle"); writeErr != nil {
+							if writeErr := semdragons.DisabledProjectionMutation(persistCtx, agent, "agent.status.idle"); writeErr != nil {
 								c.logger.Error("failed to release agent on retry repost", "error", writeErr)
 							}
 						}
@@ -755,7 +756,7 @@ func (c *Component) runEvaluation(ctx context.Context, ab *activeBattle) {
 				ab.quest.FailureReason = ab.battle.Verdict.Feedback
 				ab.quest.FailureType = domain.FailureQuality
 			}
-			if questErr := c.graph.EmitEntityUpdate(persistCtx, ab.quest, "quest."+string(ab.quest.Status)); questErr != nil {
+			if questErr := semdragons.DisabledProjectionMutation(persistCtx, ab.quest, "quest."+string(ab.quest.Status)); questErr != nil {
 				c.errorsCount.Add(1)
 				c.logger.Error("failed to transition quest after battle verdict",
 					"quest", ab.quest.ID,
@@ -849,11 +850,11 @@ func (c *Component) emitDMPeerReview(ctx context.Context, quest *domain.Quest, r
 	reviewID := domain.PeerReviewID(c.boardConfig.PeerReviewEntityID(c.generateID()))
 
 	review := &domain.PeerReview{
-		ID:       reviewID,
-		Status:   domain.PeerReviewCompleted,
-		QuestID:  quest.ID,
-		LeaderID: domain.AgentID("dm"),
-		MemberID: *quest.ClaimedBy,
+		ID:         reviewID,
+		Status:     domain.PeerReviewCompleted,
+		QuestID:    quest.ID,
+		LeaderID:   domain.AgentID("dm"),
+		MemberID:   *quest.ClaimedBy,
 		IsSoloTask: quest.PartyID == nil,
 		LeaderReview: &domain.ReviewSubmission{
 			ReviewerID:  domain.AgentID("dm"),
@@ -868,7 +869,7 @@ func (c *Component) emitDMPeerReview(ctx context.Context, quest *domain.Quest, r
 		CompletedAt:     &now,
 	}
 
-	if err := c.graph.EmitEntity(ctx, review, domain.PredicateReviewCompleted); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, review, domain.PredicateReviewCompleted); err != nil {
 		c.logger.Error("failed to emit DM peer review",
 			"quest", quest.ID,
 			"agent", *quest.ClaimedBy,
@@ -991,7 +992,7 @@ func (c *Component) setIndexed(ctx context.Context, questID domain.QuestID, prod
 		}
 		current.ArtifactsIndexed = true
 
-		if err := c.graph.EmitEntityCAS(ctx, current, domain.PredicateQuestArtifactsIndexed, revision); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, current, domain.PredicateQuestArtifactsIndexed, revision); err != nil {
 			c.logger.Warn("indexing: CAS conflict on indexed write — retrying",
 				"quest", questID, "attempt", attempt+1, "error", err)
 			continue
@@ -1076,7 +1077,7 @@ func (c *Component) failPartySubQuests(ctx context.Context, quest *domain.Quest,
 		subQuest.Status = domain.QuestFailed
 		subQuest.FailureReason = reason
 		subQuest.FailureType = domain.FailureBossDefeat
-		if emitErr := c.graph.EmitEntityUpdate(ctx, subQuest, "quest.failed"); emitErr != nil {
+		if emitErr := semdragons.DisabledProjectionMutation(ctx, subQuest, "quest.failed"); emitErr != nil {
 			c.logger.Warn("failPartySubQuests: failed to fail sub-quest",
 				"sub_quest_id", subQuestID, "node_id", nodeID, "error", emitErr)
 			continue

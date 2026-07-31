@@ -251,9 +251,6 @@ func (c *Component) Start(ctx context.Context) error {
 	}
 
 	c.graph = semdragons.NewGraphClient(c.deps.NATSClient, c.boardConfig)
-	if err := c.graph.EnsureBucket(ctx); err != nil {
-		return fmt.Errorf("questdag: ensure board bucket: %w", err)
-	}
 
 	// Own the gated-DAG executor over the shared dagunit prefix, markers-only
 	// (no FanOutInstanceID): per-DAG isolation comes from the DAG-local edge set.

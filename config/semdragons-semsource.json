@@ -54,7 +54,7 @@
       }
     },
     "game": {
-      "enabled": true,
+      "enabled": false,
       "config": {
         "board": "board1",
         "max_entities": 10000,
@@ -178,6 +178,8 @@
         "graph.export.>"
       ],
       "max_age": "24h",
+      "max_bytes": 268435456,
+      "discard": "old",
       "storage": "file",
       "replicas": 1
     },
@@ -195,6 +197,8 @@
         "tool.result.>"
       ],
       "max_age": "72h",
+      "max_bytes": 268435456,
+      "discard": "old",
       "storage": "file",
       "replicas": 1
     }
@@ -254,7 +258,8 @@
             }
           ]
         },
-        "enable_hierarchy": true
+        "enable_hierarchy": true,
+        "enforce_owner_lease": true
       }
     },
     "graph-index": {
@@ -329,18 +334,10 @@
               "subject": "ENTITY_STATES",
               "type": "kv-watch"
             }
-          ],
-          "outputs": [
-            {
-              "name": "embeddings",
-              "subject": "EMBEDDINGS_CACHE",
-              "type": "kv"
-            }
           ]
         },
         "embedder_type": "http",
         "batch_size": 50,
-        "cache_ttl": "1h",
         "text_suffixes": [
           ".comment", ".path", ".package",
           ".content", ".summary", ".description",
@@ -409,6 +406,8 @@
         },
         "graphql_path": "/graphql",
         "mcp_path": "/mcp",
+        "readiness_keys": ["graph-ingest", "graph-index", "rule"],
+        "readiness_path": "/readiness",
         "bind_address": ":8082",
         "enable_playground": true
       }
@@ -416,7 +415,7 @@
     "questboard": {
       "type": "processor",
       "name": "questboard",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",
@@ -464,7 +463,7 @@
     "guildformation": {
       "type": "processor",
       "name": "guildformation",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",
@@ -546,7 +545,7 @@
     "questbridge": {
       "type": "processor",
       "name": "questbridge",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",
@@ -589,7 +588,7 @@
     "partycoord": {
       "type": "processor",
       "name": "partycoord",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",
@@ -601,7 +600,7 @@
     "questdagexec": {
       "type": "processor",
       "name": "questdagexec",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",
@@ -612,7 +611,7 @@
     "autonomy": {
       "type": "processor",
       "name": "autonomy",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "org": "local",
         "platform": "dev",

@@ -211,7 +211,7 @@ func (c *Component) handleQuestCompletedFromKV(entityState *semgraph.EntityState
 	fullAgent.UpdatedAt = time.Now()
 
 	// Write full agent entity (preserves name, skills, guilds, etc.)
-	if err := c.graph.EmitEntityUpdate(ctx, fullAgent, "agent.progression.xp"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, fullAgent, "agent.progression.xp"); err != nil {
 		c.logger.Error("failed to emit agent XP update", "error", err)
 		c.errorsCount.Add(1)
 	}
@@ -345,7 +345,7 @@ func (c *Component) handleQuestFailedFromKV(entityState *semgraph.EntityState) {
 	fullAgent.UpdatedAt = time.Now()
 
 	// Write full agent entity (preserves name, skills, guilds, etc.)
-	if err := c.graph.EmitEntityUpdate(ctx, fullAgent, "agent.progression.xp"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, fullAgent, "agent.progression.xp"); err != nil {
 		c.logger.Error("failed to emit agent XP penalty", "error", err)
 		c.errorsCount.Add(1)
 	}
@@ -400,7 +400,7 @@ func (c *Component) releaseOrphanedAgents(ctx context.Context, questID domain.Qu
 		agent.CurrentQuest = nil
 		agent.UpdatedAt = time.Now()
 
-		if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.idle"); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.status.idle"); err != nil {
 			c.logger.Error("failed to release orphaned agent",
 				"agent", agent.ID,
 				"quest", questID,
@@ -627,7 +627,7 @@ func (c *Component) handlePeerReviewStateChange(entry jetstream.KeyValueEntry) {
 	agent.Stats.PeerReviewCount = newCount
 	agent.UpdatedAt = time.Now()
 
-	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.progression.xp"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.progression.xp"); err != nil {
 		c.logger.Error("failed to emit agent peer review stat update",
 			"agent_id", review.MemberID,
 			"error", err)
@@ -692,7 +692,7 @@ func (c *Component) updateGuildStatsOnCompletion(ctx context.Context, guild *dom
 	}
 
 	// Persist updated guild to KV
-	if err := c.graph.EmitEntity(ctx, guild, "guild.stats.updated"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, "guild.stats.updated"); err != nil {
 		c.logger.Error("failed to persist guild stats update",
 			"guild_id", guild.ID,
 			"error", err)
@@ -713,7 +713,7 @@ func (c *Component) updateGuildStatsOnFailure(ctx context.Context, guild *domain
 	guild.Reputation = guild.Reputation*0.9 + guild.SuccessRate*0.1
 
 	// Persist updated guild to KV
-	if err := c.graph.EmitEntity(ctx, guild, "guild.stats.updated"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, guild, "guild.stats.updated"); err != nil {
 		c.logger.Error("failed to persist guild stats update on failure",
 			"guild_id", guild.ID,
 			"error", err)

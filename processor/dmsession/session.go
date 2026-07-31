@@ -2,7 +2,6 @@ package dmsession
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -171,35 +170,11 @@ func (sm *SessionManager) ListActiveSessions() []*domain.Session {
 // =============================================================================
 
 func (sm *SessionManager) putSession(ctx context.Context, instance string, session *domain.Session) error {
-	key := sm.SessionKey(instance)
-	data, err := json.Marshal(session)
-	if err != nil {
-		return fmt.Errorf("marshal session: %w", err)
-	}
-	bucket, err := sm.client.GetKeyValueBucket(ctx, sm.boardConfig.BucketName())
-	if err != nil {
-		return fmt.Errorf("get bucket: %w", err)
-	}
-	_, err = bucket.Put(ctx, key, data)
-	return err
+	return semdragons.DisabledProjectionMutation(ctx, session, "dm.session.persist:"+instance)
 }
 
 func (sm *SessionManager) getSession(ctx context.Context, instance string) (*domain.Session, error) {
-	key := sm.SessionKey(instance)
-	bucket, err := sm.client.GetKeyValueBucket(ctx, sm.boardConfig.BucketName())
-	if err != nil {
-		return nil, fmt.Errorf("get bucket: %w", err)
-	}
-	entry, err := bucket.Get(ctx, key)
-	if err != nil {
-		return nil, fmt.Errorf("get session: %w", err)
-	}
-
-	var session domain.Session
-	if err := json.Unmarshal(entry.Value(), &session); err != nil {
-		return nil, fmt.Errorf("unmarshal session: %w", err)
-	}
-	return &session, nil
+	return nil, semdragons.DisabledProjectionMutation(ctx, nil, "dm.session.read:"+instance)
 }
 
 // =============================================================================

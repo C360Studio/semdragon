@@ -83,7 +83,7 @@ func (c *Component) PostQuest(ctx context.Context, quest domain.Quest) (*domain.
 	}
 
 	// Emit quest to graph system (KV write is the event — watchers are notified)
-	if err := c.graph.EmitEntity(ctx, &quest, "quest.posted"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, &quest, "quest.posted"); err != nil {
 		c.errorsCount.Add(1)
 		return nil, errs.Wrap(err, "QuestBoard", "PostQuest", "emit quest")
 	}
@@ -151,7 +151,7 @@ func (c *Component) PostSubQuests(ctx context.Context, parentID domain.QuestID, 
 	// Update parent with sub-quest IDs
 	parent.SubQuests = subQuestIDs
 	parent.DecomposedBy = &decomposer
-	if err := c.graph.EmitEntityUpdate(ctx, parent, "quest.decomposed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, parent, "quest.decomposed"); err != nil {
 		c.errorsCount.Add(1)
 		return nil, errs.Wrap(err, "QuestBoard", "PostSubQuests", "update parent")
 	}
@@ -242,7 +242,7 @@ func (c *Component) PostQuestChain(ctx context.Context, chain domain.QuestChainB
 		}
 		posted[i].DependsOn = deps
 
-		if err := c.graph.EmitEntityUpdate(ctx, &posted[i], "quest.dependencies.set"); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, &posted[i], "quest.dependencies.set"); err != nil {
 			c.errorsCount.Add(1)
 			return nil, errs.Wrap(err, "QuestBoard", "PostQuestChain", "set dependencies")
 		}
@@ -453,7 +453,7 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 	quest.ClaimedAt = &now
 	quest.Attempts++
 
-	if err := c.graph.EmitEntityCAS(ctx, quest, "quest.claimed", revision); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.claimed", revision); err != nil {
 		if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
 			return fmt.Errorf("quest already claimed by another agent: %w", err)
 		}
@@ -467,7 +467,7 @@ func (c *Component) ClaimQuest(ctx context.Context, questID domain.QuestID, agen
 	agent.Status = domain.AgentOnQuest
 	agent.CurrentQuest = &questIDRef
 	agent.UpdatedAt = now2
-	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.status.on_quest"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.status.on_quest"); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to update agent status on claim", "error", err)
 	}
@@ -496,9 +496,9 @@ func (c *Component) checkDependenciesMet(ctx context.Context, quest *domain.Ques
 	return nil
 }
 
-// notifyDependents finds posted quests that depend on the completed quest and
-// touches them via EmitEntityUpdate to trigger KV watch events. This unblocks
-// the boid engine and autonomy so they re-evaluate the now-claimable quests.
+// notifyDependents finds posted quests that depend on the completed quest. Its
+// notification mutation remains fail-closed until questboard has a bound
+// projection owner.
 //
 // Best-effort: errors are logged as warnings and never propagated. A failed
 // notification means the dependent quest will be picked up on the next manual
@@ -554,8 +554,8 @@ func (c *Component) notifyDependents(ctx context.Context, completedQuestID domai
 			continue
 		}
 
-		// Touch the quest entity to trigger KV watch events.
-		if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.dependencies.ready"); err != nil {
+		// Submit the notification through the fail-closed mutation boundary.
+		if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.dependencies.ready"); err != nil {
 			c.logger.Warn("notifyDependents: failed to touch dependent quest",
 				"quest_id", quest.ID, "error", err)
 			continue
@@ -625,7 +625,7 @@ func (c *Component) ClaimQuestForParty(ctx context.Context, questID domain.Quest
 	quest.Attempts++
 
 	// Emit updated quest to graph (KV write is the event — watchers are notified)
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.claimed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.claimed"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "ClaimQuestForParty", "emit update")
 	}
@@ -697,7 +697,7 @@ func (c *Component) ClaimAndStartForParty(ctx context.Context, questID domain.Qu
 	quest.Attempts++
 
 	// Emit updated quest to graph (KV write is the event — questbridge watches for in_progress)
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.started"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "ClaimAndStartForParty", "emit update")
 	}
@@ -737,7 +737,7 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 			abandonAgent.Status = domain.AgentIdle
 			abandonAgent.CurrentQuest = nil
 			abandonAgent.UpdatedAt = time.Now()
-			if writeErr := c.graph.EmitEntityUpdate(ctx, abandonAgent, "agent.status.idle"); writeErr != nil {
+			if writeErr := semdragons.DisabledProjectionMutation(ctx, abandonAgent, "agent.status.idle"); writeErr != nil {
 				c.errorsCount.Add(1)
 				c.logger.Error("failed to reset agent status on abandon", "error", writeErr)
 			}
@@ -754,7 +754,7 @@ func (c *Component) AbandonQuest(ctx context.Context, questID domain.QuestID, re
 	quest.FailureReason = ""
 
 	// Emit updated quest to graph (KV write is the event — watchers are notified)
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.abandoned"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.abandoned"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "AbandonQuest", "emit update")
 	}
@@ -789,7 +789,7 @@ func (c *Component) RepostForRetry(ctx context.Context, questID domain.QuestID) 
 			retryAgent.Status = domain.AgentIdle
 			retryAgent.CurrentQuest = nil
 			retryAgent.UpdatedAt = time.Now()
-			if writeErr := c.graph.EmitEntityUpdate(ctx, retryAgent, "agent.status.idle"); writeErr != nil {
+			if writeErr := semdragons.DisabledProjectionMutation(ctx, retryAgent, "agent.status.idle"); writeErr != nil {
 				c.logger.Error("failed to reset agent on repost", "error", writeErr)
 			}
 		}
@@ -802,7 +802,7 @@ func (c *Component) RepostForRetry(ctx context.Context, questID domain.QuestID) 
 	quest.StartedAt = nil
 	quest.FailureReason = ""
 
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.reposted_for_retry"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.reposted_for_retry"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "RepostForRetry", "emit update")
 	}
@@ -835,7 +835,7 @@ func (c *Component) StartQuest(ctx context.Context, questID domain.QuestID) erro
 	quest.StartedAt = &now
 
 	// Emit updated quest to graph (KV write is the event — watchers are notified)
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.started"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.started"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "StartQuest", "emit update")
 	}
@@ -879,7 +879,7 @@ func (c *Component) SubmitResult(ctx context.Context, questID domain.QuestID, re
 	}
 
 	// Persist the authoritative state; the lifecycle mechanics-stub rule observes in_review.
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.submitted"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.submitted"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "SubmitResult", "emit update")
 	}
@@ -921,7 +921,7 @@ func (c *Component) CompleteQuest(ctx context.Context, questID domain.QuestID, v
 	}
 
 	// Emit updated quest to graph (KV write is the event — agent_progression watches for completed)
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.completed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.completed"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "CompleteQuest", "emit update")
 	}
@@ -967,7 +967,7 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 			repostAgent.Status = domain.AgentIdle
 			repostAgent.CurrentQuest = nil
 			repostAgent.UpdatedAt = time.Now()
-			if writeErr := c.graph.EmitEntityUpdate(ctx, repostAgent, "agent.status.idle"); writeErr != nil {
+			if writeErr := semdragons.DisabledProjectionMutation(ctx, repostAgent, "agent.status.idle"); writeErr != nil {
 				c.errorsCount.Add(1)
 				c.logger.Error("failed to reset agent status on fail", "error", writeErr)
 			}
@@ -980,7 +980,7 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 	// party association and becomes an orphaned solo quest on the board.
 	isPartySubQuest := quest.PartyID != nil
 	reposted := quest.Attempts < quest.MaxAttempts && !isPartySubQuest
-	predicate := "quest.failed"
+	predicate := domain.PredicateQuestFailed
 
 	switch {
 	case reposted:
@@ -1020,7 +1020,7 @@ func (c *Component) FailQuest(ctx context.Context, questID domain.QuestID, reaso
 		quest.Status = domain.QuestFailed
 	}
 
-	if err := c.graph.EmitEntityUpdate(ctx, quest, predicate); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, predicate); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "FailQuest", "emit update")
 	}
@@ -1090,13 +1090,13 @@ func (c *Component) TriageQuest(ctx context.Context, questID domain.QuestID, dec
 
 	case domain.RecoveryTerminal:
 		quest.Status = domain.QuestFailed
-		predicate = "quest.failed"
+		predicate = domain.PredicateQuestFailed
 
 	default:
 		return fmt.Errorf("unknown recovery path: %s", decision.Path)
 	}
 
-	if err := c.graph.EmitEntityUpdate(ctx, quest, predicate); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, predicate); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "TriageQuest", "emit update")
 	}
@@ -1139,7 +1139,7 @@ func (c *Component) EscalateQuest(ctx context.Context, questID domain.QuestID, r
 	quest.Escalated = true
 
 	// Emit updated quest to graph (KV write is the event — watchers are notified)
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.escalated"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.escalated"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "QuestBoard", "EscalateQuest", "emit update")
 	}

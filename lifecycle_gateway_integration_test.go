@@ -16,50 +16,59 @@ import (
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/gateway"
 	lifecyclegateway "github.com/c360studio/semstreams/gateway/lifecycle-gateway"
-	"github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semstreams/graph/readiness"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/pkg/lifecycle"
+	"github.com/c360studio/semstreams/pkg/ownership"
 	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 	rule "github.com/c360studio/semstreams/processor/rule"
 	"github.com/c360studio/semstreams/types"
-	"github.com/nats-io/nats.go/jetstream"
+	"github.com/c360studio/semstreams/vocabulary"
 
 	"github.com/c360studio/semdragons/componentregistry"
+	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/httpauth"
 	"github.com/c360studio/semdragons/questlifecycle"
 )
 
 func TestLifecycleGatewayUsesSharedQuestManager(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	t.Cleanup(cancel)
 
 	testClient := natsclient.NewTestClient(t,
 		natsclient.WithKV(),
 		natsclient.WithStreams(natsclient.TestStreamConfig{Name: "ENTITY", Subjects: []string{"entity.>"}}),
 	)
-	// Production establishes History:10 through ensureBoardBucket before
-	// graph-ingest starts. This fixture recreates that prerequisite with extra
-	// test headroom. SemStreams #681 tracks making graph-ingest validate or
-	// establish enough retention for lifecycle.Manager.History on its own.
-	if _, err := testClient.Client.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
-		Bucket:  graph.BucketEntityStates,
-		History: 64,
-	}); err != nil {
-		t.Fatalf("create lifecycle history-capable entity bucket: %v", err)
-	}
 	manager := lifecycle.NewManager(testClient.Client, slog.Default())
+	ownerRegistry, err := ownership.EnsureBuckets(
+		ctx,
+		testClient.Client,
+		slog.Default(),
+		vocabulary.InverseResolver,
+	)
+	if err != nil {
+		t.Fatalf("ensure beta.159 ownership buckets: %v", err)
+	}
+	manager.AttachOwnership(ctx, ownerRegistry)
+	t.Cleanup(func() {
+		cancel()
+		manager.WaitOwnership()
+	})
+	domain.RegisterVocabulary()
 	if err := manager.Register(questlifecycle.WorkflowDeclaration()); err != nil {
 		t.Fatalf("register quest workflow: %v", err)
 	}
 
+	ingestConfig := graphingest.DefaultConfig()
+	ingestConfig.EnforceOwnerLease = true
 	startPhase1Component(
 		t,
 		ctx,
-		mustPhase1JSON(t, graphingest.DefaultConfig()),
+		mustPhase1JSON(t, ingestConfig),
 		func(raw json.RawMessage) (component.Discoverable, error) {
 			return graphingest.CreateGraphIngest(raw, component.Dependencies{NATSClient: testClient.Client})
 		},
 	)
+	waitForGraphClientProducer(t, ctx, testClient.Client, readiness.KeyGraphIngest)
 	startPhase1Component(
 		t,
 		ctx,
@@ -71,6 +80,7 @@ func TestLifecycleGatewayUsesSharedQuestManager(t *testing.T) {
 			})
 		},
 	)
+	waitForGraphClientProducer(t, ctx, testClient.Client, readiness.KeyRule)
 
 	const questID = "local.integration.game.board1.quest.gateway-contract"
 	if err := manager.Create(ctx, &questlifecycle.QuestState{
@@ -320,17 +330,15 @@ func TestLifecycleGatewayUsesSharedQuestManager(t *testing.T) {
 	if err := json.Unmarshal(body, &history); err != nil {
 		t.Fatalf("decode history: %v", err)
 	}
-	if len(history) < 3 {
-		t.Fatalf("history = %#v, want create + operator + rule transitions", history)
+	// beta.159's framework-owned ENTITY_STATES catalog intentionally retains
+	// one KV revision. SemStreams #681 tracks a framework history policy that
+	// can support multi-transition reconstruction. The gateway remains truthful
+	// today by returning the latest retained transition only; Semdragon must not
+	// precreate the framework bucket with a divergent history value to expand it.
+	if len(history) != 1 {
+		t.Fatalf("history = %#v, want exactly the latest catalog-retained transition", history)
 	}
-	operatorEvent := history[len(history)-2]
-	if operatorEvent.From != questlifecycle.PhaseInProgress ||
-		operatorEvent.To != questlifecycle.PhaseInReview ||
-		operatorEvent.Triggered != lifecycle.TransitionSourceOperator ||
-		operatorEvent.Note != "operator requested review" {
-		t.Errorf("operator history event = %#v", operatorEvent)
-	}
-	ruleEvent := history[len(history)-1]
+	ruleEvent := history[0]
 	if ruleEvent.From != questlifecycle.PhaseInReview ||
 		ruleEvent.To != questlifecycle.PhaseCompleted ||
 		ruleEvent.Triggered != lifecycle.TransitionSourceRule ||

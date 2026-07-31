@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/processor/agentprogression"
 )
@@ -176,7 +177,7 @@ func (c *Component) checkCooldownExpiry(ctx context.Context, agent *agentprogres
 	agent.UpdatedAt = time.Now()
 
 	// Write back to KV; the KV watch will trigger heartbeat reset to idle cadence
-	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.autonomy.cooldown_expired"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.autonomy.cooldown_expired"); err != nil {
 		c.errorsCount.Add(1)
 		c.logger.Error("failed to transition agent from cooldown to idle",
 			"agent_id", agent.ID,

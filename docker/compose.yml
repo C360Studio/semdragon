@@ -125,7 +125,7 @@ services:
       SEMDRAGONS_MODELS: "${SEMDRAGONS_MODELS:-}"
       SEMDRAGONS_LOG_LEVEL: "${SEMDRAGONS_LOG_LEVEL:-info}"
       SEED_E2E: "${SEED_E2E:-false}"
-      SEED_AGENTS: "${SEED_AGENTS:-true}"
+      SEED_AGENTS: "${SEED_AGENTS:-false}"
       SEED_PROS: "${SEED_PROS:-false}"
       SEMDRAGONS_API_KEY: "${SEMDRAGONS_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"

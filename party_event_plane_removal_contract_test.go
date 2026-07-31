@@ -111,10 +111,6 @@ func TestPartyEventPlaneAndShadowStateAreFullyRemoved(t *testing.T) {
 		`Name:        "party-events"`,
 	)
 	assertPartyFileExcludes(t, "processor/partycoord/handler_test.go", removedPartyEventDTOs...)
-	assertPartyFileExcludes(t, "processor/partycoord/component_test.go",
-		"DecomposeQuest(", "SubmitResult(", "StartRollup(", "CompleteRollup(",
-		"SharedContext", "SubResults", "RollupResult", ".Strategy",
-	)
 	assertPartyFileExcludes(t, "graph_relationship_contract_test.go", removedPartyEventDTOs...)
 	assertPartyFileExcludes(t, "processor/dmsession/session_test.go",
 		"EventPartyFormed", "EventPartyDisbanded",
@@ -140,9 +136,9 @@ func TestPartyEventPlaneAndShadowStateAreFullyRemoved(t *testing.T) {
 		"func (c *Component) GetParty(",
 		"func (c *Component) ListActiveParties(",
 		"func (c *Component) AssignTask(",
-		`c.graph.EmitEntity(ctx, party, "party.formed")`,
-		`c.graph.EmitEntity(ctx, party, "party.joined")`,
-		`c.graph.EmitEntity(ctx, party, "party.disbanded")`,
+		`semdragons.DisabledProjectionMutation(ctx, party, "party.formed")`,
+		`semdragons.DisabledProjectionMutation(ctx, party, "party.joined")`,
+		`semdragons.DisabledProjectionMutation(ctx, party, "party.disbanded")`,
 	)
 	assertPartyFileContains(t, "processor/partycoord/component.go",
 		`Name:        "party-state"`,

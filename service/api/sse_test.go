@@ -21,9 +21,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/c360studio/semdragons/domain"
+	semgraph "github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
+
+	semdragons "github.com/c360studio/semdragons"
+	"github.com/c360studio/semdragons/domain"
 )
 
 func newSSETestService(t *testing.T) (*Service, *natsclient.Client) {
@@ -40,15 +43,14 @@ func newSSETestService(t *testing.T) (*Service, *natsclient.Client) {
 
 	// Ensure the board bucket exists
 	ctx := context.Background()
-	_, err := client.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
-		Bucket: boardConfig.BucketName(),
-	})
+	_, err := semgraph.EnsureCatalogBucket(ctx, client, semgraph.BucketEntityStates)
 	if err != nil {
 		t.Fatalf("create bucket: %v", err)
 	}
 
 	svc := &Service{
 		nats:        client,
+		graph:       semdragons.NewGraphClient(client, boardConfig),
 		boardConfig: boardConfig,
 		config:      Config{Board: "board1", MaxEntities: 100},
 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -153,7 +155,7 @@ func TestHandleEvents_ConnectedEvent(t *testing.T) {
 
 func TestHandleEvents_KVChange(t *testing.T) {
 	svc, client := newSSETestService(t)
-	bucketName := svc.boardConfig.BucketName()
+	bucketName := semgraph.BucketEntityStates
 
 	server := httptest.NewServer(http.HandlerFunc(svc.handleEvents))
 	defer server.Close()
@@ -245,7 +247,7 @@ func TestHandleEvents_InitialSyncComplete(t *testing.T) {
 
 func TestHandleEvents_DeleteOperation(t *testing.T) {
 	svc, client := newSSETestService(t)
-	bucketName := svc.boardConfig.BucketName()
+	bucketName := semgraph.BucketEntityStates
 
 	// Pre-populate a key so we can delete it
 	ctx := context.Background()
@@ -301,7 +303,7 @@ func TestHandleEvents_DeleteOperation(t *testing.T) {
 
 func TestHandleEvents_UpdateOperation(t *testing.T) {
 	svc, client := newSSETestService(t)
-	bucketName := svc.boardConfig.BucketName()
+	bucketName := semgraph.BucketEntityStates
 
 	// Pre-populate a key
 	ctx := context.Background()
@@ -360,10 +362,10 @@ func TestHandleEvents_UpdateOperation(t *testing.T) {
 
 func TestDetectOperation(t *testing.T) {
 	tests := []struct {
-		name      string
-		op        jetstream.KeyValueOp
-		revision  uint64
-		wantOp    string
+		name     string
+		op       jetstream.KeyValueOp
+		revision uint64
+		wantOp   string
 	}{
 		{"create", jetstream.KeyValuePut, 1, "create"},
 		{"update", jetstream.KeyValuePut, 5, "update"},
@@ -387,10 +389,10 @@ type mockKVEntry struct {
 	revision uint64
 }
 
-func (m *mockKVEntry) Bucket() string                       { return "" }
-func (m *mockKVEntry) Key() string                          { return "" }
-func (m *mockKVEntry) Value() []byte                        { return nil }
-func (m *mockKVEntry) Revision() uint64                     { return m.revision }
-func (m *mockKVEntry) Created() time.Time                   { return time.Time{} }
-func (m *mockKVEntry) Delta() uint64                        { return 0 }
-func (m *mockKVEntry) Operation() jetstream.KeyValueOp      { return m.op }
+func (m *mockKVEntry) Bucket() string                  { return "" }
+func (m *mockKVEntry) Key() string                     { return "" }
+func (m *mockKVEntry) Value() []byte                   { return nil }
+func (m *mockKVEntry) Revision() uint64                { return m.revision }
+func (m *mockKVEntry) Created() time.Time              { return time.Time{} }
+func (m *mockKVEntry) Delta() uint64                   { return 0 }
+func (m *mockKVEntry) Operation() jetstream.KeyValueOp { return m.op }

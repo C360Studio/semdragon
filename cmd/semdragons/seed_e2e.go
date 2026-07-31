@@ -18,16 +18,13 @@ import (
 	"github.com/c360studio/semdragons/processor/agentstore"
 )
 
-// maybeSeedE2E checks the startup seed switches to determine which
-// authoritative Agent births to write into the ENTITY_STATES KV bucket.
+// maybeSeedE2E recognizes the retired startup seed switches. Product projection
+// writers remain disabled during the framework-only cutover, so requesting any
+// seed mode fails closed at the first mutation boundary without storage I/O.
 //
 //   - SEED_PROS=true → Pre-leveled Expert+ roster for lab use
 //   - SEED_E2E=true → Full E2E agent dataset (guilds form organically)
 //   - SEED_AGENTS=true → Agents only (no quests or store) — good for first-time use
-//
-// Each birth is synchronously persisted as the authoritative
-// agentprogression.Agent Graphable before the UI connects. Startup seeding
-// intentionally emits no parallel lifecycle or entity-created event stream.
 func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclient.Client) error {
 	mode := startupSeedMode(os.Getenv)
 	if mode == "" {
@@ -40,12 +37,11 @@ func maybeSeedE2E(ctx context.Context, cfg *config.Config, natsClient *natsclien
 		return fmt.Errorf("seed: resolve board config: %w", err)
 	}
 
-	slog.Info("Seeding into board",
+	slog.Info("Startup seed requested",
 		"mode", mode,
 		"org", boardCfg.Org,
 		"platform", boardCfg.Platform,
-		"board", boardCfg.Board,
-		"bucket", boardCfg.BucketName())
+		"board", boardCfg.Board)
 
 	graph := semdragons.NewGraphClient(natsClient, boardCfg)
 
@@ -280,10 +276,11 @@ func resolveAgentName(pattern string, n int) string {
 	return pattern
 }
 
-// seedOneAgent writes a single agent entity to the KV bucket.
+// seedOneAgent assembles one legacy seed candidate and submits it to the
+// fail-closed mutation boundary. It does not write the framework catalog.
 func seedOneAgent(
 	ctx context.Context,
-	graph *semdragons.GraphClient,
+	_ *semdragons.GraphClient,
 	boardCfg *domain.BoardConfig,
 	name string,
 	spec agentSpec,
@@ -340,7 +337,7 @@ func seedOneAgent(
 		UpdatedAt: now,
 	}
 
-	if err := graph.EmitEntity(ctx, agent, "agent.seeded"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.seeded"); err != nil {
 		return err
 	}
 
@@ -369,14 +366,13 @@ func xpForLevel(level int) int64 {
 	return int64(100 * math.Pow(1.5, float64(level-1)))
 }
 
-// seedStore writes the default store catalog to KV for UI visibility.
-// The agentstore component also loads DefaultCatalog() into its in-memory sync.Map,
-// but writing to KV lets the world state API and dashboard display store items.
-func seedStore(ctx context.Context, graph *semdragons.GraphClient) error {
+// seedStore assembles the legacy store catalog behind the same fail-closed
+// mutation boundary. It does not write the framework catalog.
+func seedStore(ctx context.Context, _ *semdragons.GraphClient) error {
 	catalog := agentstore.DefaultCatalog()
 
 	for _, item := range catalog {
-		if err := graph.PutEntityState(ctx, &item, "store.item.seeded"); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, &item, "store.item.seeded"); err != nil {
 			return fmt.Errorf("seed store item %q: %w", item.Name, err)
 		}
 

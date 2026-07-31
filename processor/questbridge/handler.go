@@ -16,7 +16,6 @@ import (
 	"github.com/c360studio/semdragons/processor/executor"
 	"github.com/c360studio/semdragons/processor/promptmanager"
 	"github.com/c360studio/semdragons/processor/questdagexec"
-	"github.com/c360studio/semdragons/questlifecycle"
 	"github.com/c360studio/semstreams/agentic"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/message"
@@ -346,7 +345,7 @@ func (c *Component) handleQuestStarted(ctx context.Context, entityState *graph.E
 	quest.ContextTokenCount = tokenCount
 	quest.ContextSources = assembled.FragmentsUsed
 	quest.ContextEntities = contextEntities
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.context.assembled"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.context.assembled"); err != nil {
 		c.logger.Warn("failed to emit context metadata", "quest_id", questID, "error", err)
 	}
 
@@ -739,7 +738,7 @@ func (c *Component) storeLoopIDOnQuest(ctx context.Context, questID domain.Quest
 		return
 	}
 	quest.LoopID = loopID
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.loop.assigned"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.loop.assigned"); err != nil {
 		c.logger.Warn("failed to store loop ID on quest", "quest_id", questID, "error", err)
 	}
 }
@@ -759,33 +758,14 @@ type loopMetrics struct {
 	TokensOut int
 }
 
-// stampExecutionMetrics persists agentic-loop execution metrics (loop id, turn
-// count, token usage, duration) as additive graph-ingest deltas on a
-// lifecycle-managed quest. It must NOT use GraphClient.EmitEntityUpdate: that
-// does a full-object Put which would clobber the lifecycle Manager's phase,
-// audit, and command triples on the shared ENTITY_STATES entity. Metrics are
-// observability, not part of the UI-stability contract, so a stamp failure is
-// logged and does not block the submit/fail command that follows.
+// stampExecutionMetrics remains fail closed until questbridge receives its
+// beta.159 replace-owned adapter.
 func (c *Component) stampExecutionMetrics(ctx context.Context, questID, loopID string, metrics loopMetrics, dur time.Duration) {
-	stamp := func(pred string, obj any) {
-		if err := questlifecycle.StampTriple(ctx, c.deps.NATSClient, questID, pred, obj); err != nil {
-			c.logger.Warn("failed to stamp quest metric", "quest_id", questID, "predicate", pred, "error", err)
-		}
-	}
-	if loopID != "" {
-		stamp("quest.execution.loop_id", loopID)
-	}
-	if dur > 0 {
-		stamp("quest.duration", dur.String())
-	}
-	if metrics.TurnsUsed > 0 {
-		stamp(domain.PredicateQuestMetricsTurns, metrics.TurnsUsed)
-	}
-	if metrics.TokensIn > 0 {
-		stamp(domain.PredicateQuestMetricsTokensIn, metrics.TokensIn)
-	}
-	if metrics.TokensOut > 0 {
-		stamp(domain.PredicateQuestMetricsTokensOut, metrics.TokensOut)
+	_ = loopID
+	_ = metrics
+	_ = dur
+	if err := semdragons.DisabledProjectionMutation(ctx, nil, "questbridge.execution-metrics:"+questID); err != nil {
+		c.logger.Warn("quest metrics projection disabled", "quest_id", questID, "error", err)
 	}
 }
 
@@ -830,7 +810,7 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 				quest.Status = domain.QuestFailed
 				quest.LoopID = mapping.LoopID
 				quest.FailureReason = fmt.Sprintf("DAG decomposition failed: %s", err)
-				if emitErr := c.graph.EmitEntityUpdate(ctx, quest, "quest.failed"); emitErr != nil {
+				if emitErr := semdragons.DisabledProjectionMutation(ctx, quest, "quest.failed"); emitErr != nil {
 					c.logger.Error("failed to emit quest failure after DAG error",
 						"quest_id", questID, "error", emitErr)
 				}
@@ -910,7 +890,7 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 			quest.FailureType = ""
 			// Preserve DMClarifications so the next agent has the Q&A context.
 
-			if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.reposted"); err != nil {
+			if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.reposted"); err != nil {
 				c.logger.Error("failed to repost quest after max clarifications",
 					"quest_id", questID, "error", err)
 				c.errorsCount.Add(1)
@@ -929,7 +909,7 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 			// clarification task to the lead via the AGENT stream.
 			// Note: the parent quest (lead's own quest) has PartyID but no
 			// ParentQuest — it falls through to the DM clarification path.
-			if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.dag.clarification_requested"); err != nil {
+			if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.dag.clarification_requested"); err != nil {
 				c.logger.Error("failed to emit party clarification request",
 					"quest_id", questID, "error", err)
 				c.errorsCount.Add(1)
@@ -941,7 +921,7 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		}
 
 		// Non-party quest: escalate to DM for human clarification.
-		if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.escalated"); err != nil {
+		if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.escalated"); err != nil {
 			c.logger.Error("failed to emit quest escalation for clarification",
 				"quest_id", questID, "error", err)
 			c.errorsCount.Add(1)
@@ -952,18 +932,12 @@ func (c *Component) completeQuest(ctx context.Context, questID domain.QuestID, m
 		return
 	}
 
-	// Submit the work product through the lifecycle command seam. questbridge no
-	// longer decides review-vs-complete here (design D2): it stamps the work
-	// product and a submit command as additive graph-ingest deltas, and the quest
-	// rules route on quest.review.needs_review (written at post time) — review
-	// required -> in_review (then the mechanics-stub rule auto-completes while
-	// mechanics are disabled), otherwise -> completed directly. Deltas (not a
-	// full-object EmitEntityUpdate) preserve the lifecycle Manager's phase, audit,
-	// and command triples on the shared ENTITY_STATES entity.
+	// Submit remains fail-closed until questbridge receives a bound lifecycle
+	// command adapter. The rule-owned routing policy is preserved, but this
+	// disabled product component must not publish raw graph mutations.
 	c.stampExecutionMetrics(ctx, string(questID), mapping.LoopID, metrics, quest.Duration)
 
-	if err := questlifecycle.StampCommand(ctx, c.deps.NATSClient, string(questID), questlifecycle.CommandSubmit,
-		map[string]string{questlifecycle.PredDataOutput: output}); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "questbridge.submit-command"); err != nil {
 		c.logger.Error("failed to stamp submit command",
 			"quest_id", questID, "error", err)
 		c.errorsCount.Add(1)
@@ -1136,7 +1110,7 @@ func (c *Component) handleDAGDecomposition(ctx context.Context, quest *domain.Qu
 			posted[i].DependsOn = deps
 		}
 
-		if emitErr := c.graph.EmitEntityUpdate(ctx, &posted[i], "quest.dag.sub_quest_initialized"); emitErr != nil {
+		if emitErr := semdragons.DisabledProjectionMutation(ctx, &posted[i], "quest.dag.sub_quest_initialized"); emitErr != nil {
 			c.logger.Warn("failed to set DAG fields on sub-quest",
 				"sub_quest_id", posted[i].ID, "node_id", node.ID, "error", emitErr)
 		}
@@ -1161,7 +1135,7 @@ func (c *Component) handleDAGDecomposition(ctx context.Context, quest *domain.Qu
 		"parent_quest_id", quest.ID,
 		"node_count", len(dag.Nodes))
 
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.dag.decomposed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.dag.decomposed"); err != nil {
 		return fmt.Errorf("write DAG predicates on parent quest: %w", err)
 	}
 	c.logger.Info("DAG decomposition stored on parent quest entity",
@@ -1288,23 +1262,10 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 		return
 	}
 
-	// Fail the quest through the lifecycle command seam. questbridge no longer
-	// delegates to questboard.FailQuest or does a direct terminal Put: it stamps
-	// execution metrics, the failure reason, and a fail command as additive
-	// graph-ingest deltas, and the quest rules route on quest.attempts.current —
-	// retries remaining (< max) -> posted (freeing claimed_by), otherwise ->
-	// pending_triage for DM triage. Deltas (not a full-object EmitEntityUpdate)
-	// preserve the lifecycle Manager's phase, audit, and command triples on the
-	// shared ENTITY_STATES entity. failed stays terminal per the lifecycle spec;
-	// the fail command routes to posted/pending_triage, never through failed.
+	// Failure submission remains fail-closed until questbridge receives a bound
+	// lifecycle command adapter. The rule-owned retry/triage policy is preserved,
+	// but this disabled product component must not publish raw graph mutations.
 	c.stampExecutionMetrics(ctx, string(questID), mapping.LoopID, metrics, time.Since(mapping.StartedAt))
-
-	if reason != "" {
-		if err := questlifecycle.StampTriple(ctx, c.deps.NATSClient, string(questID),
-			"quest.failure.reason", reason); err != nil {
-			c.logger.Warn("failed to stamp failure reason", "quest_id", questID, "error", err)
-		}
-	}
 
 	phaseWatcher, err := c.graph.WatchEntity(ctx, string(questID))
 	if err != nil {
@@ -1314,7 +1275,7 @@ func (c *Component) failQuest(ctx context.Context, questID domain.QuestID, mappi
 	}
 	defer phaseWatcher.Stop()
 
-	if err := questlifecycle.StampCommand(ctx, c.deps.NATSClient, string(questID), questlifecycle.CommandFail, nil); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "questbridge.fail-command:"+reason); err != nil {
 		c.logger.Error("failed to stamp fail command", "quest_id", questID, "error", err)
 		c.errorsCount.Add(1)
 		return
@@ -1375,7 +1336,7 @@ func (c *Component) releaseAgent(ctx context.Context, agentID domain.AgentID) {
 	agent.CurrentQuest = nil
 	agent.UpdatedAt = time.Now()
 
-	if err := c.graph.EmitEntityUpdate(ctx, agent, "agent.released"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, agent, "agent.released"); err != nil {
 		c.logger.Error("failed to release agent", "agent_id", agentID, "error", err)
 	}
 }
@@ -1457,7 +1418,7 @@ func (c *Component) handleStaleEscalation(ctx context.Context, entityKey string)
 	quest.FailureType = ""
 	// Do not increment Attempts — a clarification is not a failed work attempt.
 
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.reposted"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.reposted"); err != nil {
 		c.logger.Error("failed to repost quest after escalation timeout",
 			"quest_id", quest.ID, "error", err)
 		c.errorsCount.Add(1)
@@ -1584,7 +1545,7 @@ func (c *Component) autoAnswerClarification(ctx context.Context, entityKey strin
 	quest.FailureReason = ""
 	quest.FailureType = ""
 
-	if err := c.graph.EmitEntityUpdate(ctx, quest, "quest.dm.clarification_answered"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, quest, "quest.dm.clarification_answered"); err != nil {
 		c.logger.Error("auto-DM: failed to resume quest after clarification",
 			"quest_id", quest.ID, "error", err)
 		c.errorsCount.Add(1)

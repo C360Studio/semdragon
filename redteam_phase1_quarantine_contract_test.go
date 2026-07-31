@@ -149,7 +149,7 @@ func TestPhase1RedTeamProductPolicyRemainsDormant(t *testing.T) {
 	)
 	assertFileContains(t, "processor/redteam/handler.go",
 		"func (c *Component) handleNormalQuestInReview(",
-		"QuestType:     domain.QuestTypeRedTeam",
+		"domain.QuestTypeRedTeam",
 		"func (c *Component) handleRedTeamQuestFinished(",
 	)
 	assertFileContains(t, "processor/redteam/lessons.go",

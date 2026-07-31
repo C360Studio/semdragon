@@ -42,7 +42,7 @@ func (c *Component) FormParty(ctx context.Context, questID domain.QuestID, leadI
 	}
 
 	// Emit to graph
-	if err := c.graph.EmitEntity(ctx, party, "party.formed"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, party, "party.formed"); err != nil {
 		c.errorsCount.Add(1)
 		return nil, errs.Wrap(err, "PartyCoord", "FormParty", "emit party entity")
 	}
@@ -83,7 +83,7 @@ func (c *Component) JoinParty(ctx context.Context, partyID domain.PartyID, agent
 	party.Members = append(party.Members, member)
 
 	// Emit updated party state
-	if err := c.graph.EmitEntity(ctx, party, "party.joined"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, party, "party.joined"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "PartyCoord", "JoinParty", "emit party entity")
 	}
@@ -116,7 +116,7 @@ func (c *Component) DisbandParty(ctx context.Context, partyID domain.PartyID, re
 	party.DisbandedAt = &now
 
 	// Emit final state
-	if err := c.graph.EmitEntity(ctx, party, "party.disbanded"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, party, "party.disbanded"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "PartyCoord", "DisbandParty", "emit party entity")
 	}
@@ -178,7 +178,7 @@ func (c *Component) AssignTask(ctx context.Context, partyID domain.PartyID, subQ
 
 	// Persist the authoritative Party entity. Assignment remains transitional
 	// state until questdag owns this relationship directly.
-	if err := c.graph.EmitEntity(ctx, party, "party.task-assigned"); err != nil {
+	if err := semdragons.DisabledProjectionMutation(ctx, party, "party.task-assigned"); err != nil {
 		c.errorsCount.Add(1)
 		return errs.Wrap(err, "PartyCoord", "AssignTask", "emit party entity")
 	}
@@ -237,14 +237,7 @@ func (c *Component) loadInitialQuestState(ctx context.Context) error {
 // startQuestWatcher sets up a KV watch on quest entities and starts the
 // background goroutine that processes updates.
 func (c *Component) startQuestWatcher(ctx context.Context) error {
-	kv, err := c.graph.KVBucket(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Watch all quests on this board: org.platform.game.board.quest.>
-	questPrefix := c.graph.Config().TypePrefix("quest") + ".>"
-	watcher, err := kv.Watch(ctx, questPrefix)
+	watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeQuest)
 	if err != nil {
 		return err
 	}
@@ -267,13 +260,7 @@ func (c *Component) stopQuestWatcher() {
 // When an agent transitions to idle, partycoord re-evaluates posted party quests
 // that previously failed formation due to "no eligible lead/member".
 func (c *Component) startAgentWatcher(ctx context.Context) error {
-	kv, err := c.graph.KVBucket(ctx)
-	if err != nil {
-		return err
-	}
-
-	agentPrefix := c.graph.Config().TypePrefix("agent") + ".>"
-	watcher, err := kv.Watch(ctx, agentPrefix)
+	watcher, err := c.graph.WatchEntityType(ctx, domain.EntityTypeAgent)
 	if err != nil {
 		return err
 	}

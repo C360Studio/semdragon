@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semstreams/component"
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/model"
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -286,7 +287,7 @@ func (c *Component) Start(ctx context.Context) error {
 		"org", c.config.Org,
 		"platform", c.config.Platform,
 		"board", c.config.Board,
-		"bucket", c.boardConfig.BucketName(),
+		"bucket", graph.BucketEntityStates,
 		"triage_enabled", c.config.Triage.Enabled)
 
 	return nil

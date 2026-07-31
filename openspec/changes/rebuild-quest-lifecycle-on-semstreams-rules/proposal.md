@@ -14,7 +14,7 @@ against the mock LLM (zero paid tokens).
 ## What Changes
 
 - Upgrade `github.com/c360studio/semstreams` from `v1.0.0-beta.21` through the
-  latest approved target, currently `v1.0.0-beta.158`. The beta.158 adoption is
+  latest approved target, currently `v1.0.0-beta.159`. The beta.159 adoption is
   blocked on `adopt-semstreams-prev1-contract`, which canonicalizes predicates,
   entity IDs/references, and writer ownership before the dependency cutover.
 - **BREAKING (internal)**: replace `processor/questboard`'s hand-rolled quest
@@ -32,7 +32,7 @@ against the mock LLM (zero paid tokens).
   form/join/disband/read behavior, and the temporary `AssignTask` advisory;
   delete its eight no-consumer raw event families and test-only
   decomposition/result/rollup shadow. Canonical Party ownership remains in
-  the beta.158 adoption, not this lifecycle packet.
+  the beta.159 adoption, not this lifecycle packet.
 - Adapt `questbridge`/`questtools` to the beta.132 agentic-loop contracts;
   evaluate (in design) whether dispatch-on-`in_progress` moves to a rule-engine
   `publish_agent` action or stays in `questbridge`.
@@ -115,7 +115,7 @@ against the mock LLM (zero paid tokens).
   retaining its dormant category/vocabulary and product contracts. Its
   watcher/cache, writers, and timeout redesign remain deferred.
 - **Dependencies**: the beta.21 → beta.135 foundation is implemented on this
-  branch. The beta.158 pre-v1 clean break is a separate prerequisite change:
+  branch. The beta.159 pre-v1 clean break is a separate successor change:
   `adopt-semstreams-prev1-contract`. No dependency-only bump is permitted.
 - **Upstream lifecycle gaps**: SemStreams
   [#677](https://github.com/C360Studio/semstreams/issues/677) tracks atomic

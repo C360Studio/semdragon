@@ -698,7 +698,7 @@
   **SUCCESS** in 2 minutes 4 seconds, and `build-and-push` **SKIPPED** in zero
   seconds. No image or package publication occurred.
 - [x] 3.5 Complete issue #55 by writing and reviewing
-  `docs/migrations/semstreams-beta158/fresh-volume-replay-runbook.md` and a
+  `docs/migrations/semstreams-beta159/fresh-volume-replay-runbook.md` and a
   narrow stale-checked runbook contract. The runbook records the exact commit,
   beta.135 pin, rendered shipped configuration, explicit development/test NATS
   target and context, stopped-writer proof, configuration-derived candidate

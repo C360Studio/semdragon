@@ -34,9 +34,6 @@ type Config struct {
 	// HTTPTextMaxChars limits characters returned after HTML-to-text conversion.
 	// 0 means use the package default (20000).
 	HTTPTextMaxChars int `json:"http_text_max_chars,omitempty"`
-	// HTTPPersistToGraph enables persisting fetched HTML pages to the knowledge graph.
-	// Requires a valid NATS connection. Defaults to true.
-	HTTPPersistToGraph bool `json:"http_persist_to_graph"`
 	// ExploreMaxIterations limits how many tool calls the explore sub-agent can make.
 	// Default: 8.
 	ExploreMaxIterations int `json:"explore_max_iterations,omitempty"`
@@ -59,7 +56,6 @@ func DefaultConfig() Config {
 		Timeout:              "60s",
 		EnableBuiltins:       true,
 		HTTPTextMaxChars:     20000,
-		HTTPPersistToGraph:   true,
 		ExploreMaxIterations: 8,
 		ExploreTimeout:       "120s",
 		ExploreCapability:    "explore",

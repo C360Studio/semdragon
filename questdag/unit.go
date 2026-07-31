@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/c360studio/semstreams/graph"
@@ -16,8 +15,8 @@ import (
 	"github.com/c360studio/semstreams/pkg/errs"
 	"github.com/c360studio/semstreams/pkg/ownership"
 	gateddagexec "github.com/c360studio/semstreams/processor/gated-dag"
-	graphingest "github.com/c360studio/semstreams/processor/graph-ingest"
 
+	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/domain"
 )
 
@@ -51,7 +50,6 @@ const (
 )
 
 const (
-	seedTimeout         = 5 * time.Second
 	activationNodeID    = "activation"
 	unitCompletionOwner = "questdag-completion"
 	unitIDHexBytes      = 16
@@ -139,27 +137,11 @@ func SeedUnits(
 	board *domain.BoardConfig,
 	in SeedInput,
 ) (*SeedResult, error) {
-	if client == nil {
-		return nil, fmt.Errorf("questdag: SeedUnits client is required")
-	}
-	if completion == nil {
-		return nil, fmt.Errorf("questdag: SeedUnits completion writer is required")
-	}
-	return seedUnitsWithSeams(
-		ctx,
-		board,
-		in,
-		func(ctx context.Context, id string, triples []message.Triple) error {
-			return createUnitEntity(ctx, client, id, triples)
-		},
-		func(ctx context.Context, id string) (*graph.EntityState, error) {
-			return readUnitEntity(ctx, client, id)
-		},
-		func(ctx context.Context, executionID string) ([]graph.EntityState, error) {
-			return listUnitsForExecution(ctx, client, board, executionID)
-		},
-		completion,
-	)
+	_ = client
+	_ = completion
+	_ = board
+	_ = in
+	return nil, semdragons.DisabledProjectionMutation(ctx, nil, "questdag.seed-units")
 }
 
 func seedUnitsWithSeams(
@@ -657,85 +639,9 @@ func hasErrorCode(err error, code string) bool {
 // classified by graph-ingest and reconciled through authoritative read-back by
 // createOrVerifyUnit.
 func createUnitEntity(ctx context.Context, client *natsclient.Client, id string, triples []message.Triple) error {
-	body, err := json.Marshal(graph.CreateEntityWithTriplesRequest{
-		Entity: &graph.EntityState{
-			ID: id, Version: 1, MessageType: unitMessageType, Triples: triples,
-		},
-		Triples: triples,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal create request: %w", err)
-	}
-	if _, err := client.RequestWithRetryClassified(
-		ctx,
-		graphingest.SubjectEntityCreateWithTriples,
-		body,
-		seedTimeout,
-		natsclient.DefaultRetryConfig(),
-	); err != nil {
-		return fmt.Errorf("create %s: %w", id, err)
-	}
-	return nil
-}
-
-func readUnitEntity(ctx context.Context, client *natsclient.Client, id string) (*graph.EntityState, error) {
-	body, err := json.Marshal(struct {
-		ID string `json:"id"`
-	}{ID: id})
-	if err != nil {
-		return nil, fmt.Errorf("marshal entity read: %w", err)
-	}
-	data, err := client.RequestClassified(ctx, "graph.ingest.query.entity", body, seedTimeout)
-	if err != nil {
-		return nil, err
-	}
-	var entity graph.EntityState
-	if err := json.Unmarshal(data, &entity); err != nil {
-		return nil, fmt.Errorf("unmarshal entity %s: %w", id, err)
-	}
-	return &entity, nil
-}
-
-func listUnitsForExecution(
-	ctx context.Context,
-	client *natsclient.Client,
-	board *domain.BoardConfig,
-	executionID string,
-) ([]graph.EntityState, error) {
-	var (
-		cursor   string
-		entities []graph.EntityState
-	)
-	for {
-		body, err := json.Marshal(graph.PrefixQueryRequest{
-			Prefix: UnitPrefix(board),
-			Limit:  graph.MaxPrefixQueryLimit,
-			Cursor: cursor,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("marshal unit prefix query: %w", err)
-		}
-		data, err := client.RequestClassified(ctx, "graph.ingest.query.prefix", body, seedTimeout)
-		if err != nil {
-			return nil, err
-		}
-		var response graph.PrefixQueryResponse
-		if err := json.Unmarshal(data, &response); err != nil {
-			return nil, fmt.Errorf("unmarshal unit prefix response: %w", err)
-		}
-		for i := range response.Entities {
-			if entityHasExecution(&response.Entities[i], executionID) {
-				entities = append(entities, response.Entities[i])
-			}
-		}
-		if response.NextCursor == "" {
-			return entities, nil
-		}
-		if response.NextCursor == cursor {
-			return nil, fmt.Errorf("questdag: unit prefix query returned a repeated cursor")
-		}
-		cursor = response.NextCursor
-	}
+	_ = client
+	_ = triples
+	return semdragons.DisabledProjectionMutation(ctx, nil, "questdag.create-unit:"+id)
 }
 
 type natsUnitCompletionWriter struct {
@@ -748,30 +654,9 @@ func newNATSUnitCompletionWriter(
 	client *natsclient.Client,
 	ownerToken ownership.OwnerToken,
 ) (unitCompletionWriter, error) {
-	if client == nil {
-		return nil, fmt.Errorf("questdag: completion writer client is required")
-	}
-	if ownerToken.IsZero() {
-		return nil, fmt.Errorf("questdag: %s owner token is required", unitCompletionOwner)
-	}
-	owner, _, ok := strings.Cut(ownerToken.Wire(), "#")
-	if !ok || owner != unitCompletionOwner {
-		return nil, fmt.Errorf("questdag: completion owner token must belong to %s", unitCompletionOwner)
-	}
-	return &natsUnitCompletionWriter{
-		ownerToken: ownerToken,
-		read: func(ctx context.Context, id string) (*graph.EntityState, error) {
-			return readUnitEntity(ctx, client, id)
-		},
-		update: func(
-			ctx context.Context,
-			id string,
-			marker message.Triple,
-			token ownership.OwnerToken,
-		) error {
-			return updateUnitCompletion(ctx, client, id, marker, token)
-		},
-	}, nil
+	_ = client
+	_ = ownerToken
+	return nil, semdragons.DisabledProjectionMutation(context.Background(), nil, "questdag.completion-writer")
 }
 
 func (w *natsUnitCompletionWriter) Complete(ctx context.Context, unitID string) error {
@@ -837,21 +722,8 @@ func updateUnitCompletion(
 	marker message.Triple,
 	ownerToken ownership.OwnerToken,
 ) error {
-	body, err := json.Marshal(graph.UpdateEntityWithTriplesRequest{
-		Entity:        &graph.EntityState{ID: unitID},
-		RemoveTriples: []string{frameworkGatedDAGDefaults().CompletedPredicate},
-		AddTriples:    []message.Triple{marker},
-		OwnerToken:    ownerToken.Wire(),
-	})
-	if err != nil {
-		return fmt.Errorf("marshal activation completion: %w", err)
-	}
-	_, err = client.RequestWithRetryClassified(
-		ctx,
-		graphingest.SubjectEntityUpdateWithTriples,
-		body,
-		seedTimeout,
-		natsclient.DefaultRetryConfig(),
-	)
-	return err
+	_ = client
+	_ = marker
+	_ = ownerToken
+	return semdragons.DisabledProjectionMutation(ctx, nil, "questdag.complete-unit:"+unitID)
 }

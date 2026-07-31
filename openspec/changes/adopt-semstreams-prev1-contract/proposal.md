@@ -2,8 +2,9 @@
 
 ## Why
 
-Semdragons currently pins SemStreams `v1.0.0-beta.135`, while the latest
-released tag is `v1.0.0-beta.158`. The newer release enforces the pre-v1 graph
+Semdragons began this prerequisite while pinned to SemStreams
+`v1.0.0-beta.135`; the active successor targets `v1.0.0-beta.159`. The newer
+release enforces the pre-v1 graph
 contract: canonical three-part predicates, bounded six-part entity IDs, typed
 entity references, explicit rule-pack identity, and ownership-safe graph
 mutation. A dependency-only bump would reject current producers and could
@@ -25,7 +26,7 @@ after the lifecycle/gated-DAG foundation in draft PR
   literal segments for query prefixes.
 - Mark every entity relationship object with the SemStreams `@id` datatype.
 - Record every graph writer, its predicate group, write mode, and framework or
-  product owner before beta.158 is adopted.
+  product owner before beta.159 is adopted.
 - Update Go, rule JSON, TypeScript projections, generated artifacts, fixtures,
   queries, and documentation atomically.
 - Resolve issue #28 by deleting partycoord's eight unconsumed raw event
@@ -73,12 +74,13 @@ after the lifecycle/gated-DAG foundation in draft PR
 - **Code and configuration**: all graph producers/consumers, lifecycle rules,
   DAG units, source prefixes, and relationship reconstruction.
 - **Related changes**: `rebuild-quest-lifecycle-on-semstreams-rules` is blocked
-  on this contract. The beta.158 adoption itself is owned by the follow-up
-  tracked in [semdragon#4](https://github.com/C360Studio/semdragon/issues/4).
+  on this contract. The beta.159 adoption itself is owned by issue
+  [#59](https://github.com/C360Studio/semdragon/issues/59) under
+  [semdragon#4](https://github.com/C360Studio/semdragon/issues/4).
 - **UI and generated artifacts**: predicate projections, entity schemas,
   OpenAPI, and TypeScript types must change in the same gate.
 - **Party coordination**: issue #28 narrows partycoord before the canonical
-  beta.158 owner migration; it does not bind an owner or activate questdag.
+  beta.159 owner migration; it does not bind an owner or activate questdag.
 - **Agent progression**: issue #30 removes runtime activation and a dead
   projection facade while preserving the dormant product implementation.
   Canonical predicates, ownership, lifecycle, and watchers remain deferred.
@@ -126,6 +128,6 @@ after the lifecycle/gated-DAG foundation in draft PR
   framework-owned revision retention needed by lifecycle history, while
   [#682](https://github.com/C360Studio/semstreams/issues/682) tracks the
   lifecycle gateway's oversized-body status mismatch. Semdragon does not own
-  downstream substitutes for those framework primitives; #681 must be resolved
-  before retiring the legacy bucket bootstrap that currently preserves
-  history.
+  downstream substitutes for those framework primitives. The beta.159 cutover
+  deletes the legacy bucket bootstrap unconditionally; #681 cannot authorize
+  Semdragon to create or reconcile framework-owned `ENTITY_STATES`.

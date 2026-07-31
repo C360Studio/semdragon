@@ -21,15 +21,17 @@ import (
 
 	"github.com/c360studio/semstreams/component"
 	"github.com/c360studio/semstreams/config"
+	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/metric"
 	"github.com/c360studio/semstreams/natsclient"
 	"github.com/c360studio/semstreams/payloadbuiltins"
 	"github.com/c360studio/semstreams/payloadregistry"
 	"github.com/c360studio/semstreams/pkg/lifecycle"
+	"github.com/c360studio/semstreams/pkg/ownership"
 	"github.com/c360studio/semstreams/service"
 	"github.com/c360studio/semstreams/types"
+	"github.com/c360studio/semstreams/vocabulary"
 
-	semdragons "github.com/c360studio/semdragons"
 	"github.com/c360studio/semdragons/componentregistry"
 	"github.com/c360studio/semdragons/domain"
 	"github.com/c360studio/semdragons/internal/httpauth"
@@ -123,11 +125,6 @@ func run() error {
 		return err
 	}
 
-	// 5a. Ensure board KV bucket exists (writer creates bucket)
-	if err := ensureBoardBucket(ctx, cfg, natsClient); err != nil {
-		return err
-	}
-
 	// 6. Create logger
 	logger := setupLogger(cliCfg.LogLevel, cliCfg.LogFormat)
 	slog.SetDefault(logger)
@@ -170,19 +167,34 @@ func run() error {
 	svcDeps := createServiceDependencies(natsClient, metricsRegistry, logger, platform, configManager, componentRegistry)
 	svcDeps.PayloadRegistry = payloadReg
 
-	// 9a. Wire the shared lifecycle harness Manager and register the quest
-	// workflow (Stage B1). Components receive the same Manager instance via
-	// deps.LifecycleManager — the rule engine's lifecycle_* actions and the
-	// lifecycle-gateway both resolve "quest" transitions through it.
-	lifecycleManager, err := createLifecycleManager(natsClient, logger)
+	// 9a. Establish the SemStreams ownership substrate before registering any
+	// workflow or binding any rule pack. Strict graph-ingest lease enforcement
+	// means lifecycle and rule writes must never start without framework-minted
+	// owner tokens.
+	lifecycleManager := lifecycle.NewManager(natsClient, logger)
+	hbCtx, ownershipShutdown := service.WireOwnershipShutdown(ctx, lifecycleManager)
+	defer ownershipShutdown()
+	ownerRegistry, staticOwnerHeartbeat, err := wireProductionOwnership(
+		hbCtx, natsClient, lifecycleManager, logger,
+	)
 	if err != nil {
+		return fmt.Errorf("wire ownership: %w", err)
+	}
+	if err := registerQuestLifecycle(lifecycleManager); err != nil {
 		return err
 	}
 	svcDeps.LifecycleManager = lifecycleManager
+	manager.RegisterInstance(
+		"ownership",
+		service.NewOwnershipService(ownerRegistry, staticOwnerHeartbeat, metricsRegistry, logger),
+	)
 
 	// 10. Configure and create services
 	if err := configureAndCreateServices(cfg, manager, svcDeps); err != nil {
 		return err
+	}
+	if err := service.BindRulePackContracts(hbCtx, manager, ownerRegistry, staticOwnerHeartbeat, logger); err != nil {
+		return fmt.Errorf("validate rule-pack composition: %w", err)
 	}
 
 	// 10a. Seed E2E test data when SEED_E2E=true
@@ -194,20 +206,42 @@ func run() error {
 	return runWithSignalHandling(ctx, manager, cliCfg.ShutdownTimeout)
 }
 
-// createLifecycleManager owns the production workflow allowlist. Any workflow
-// registered here becomes discoverable and mutable through lifecycle-gateway.
-func createLifecycleManager(
+// wireProductionOwnership composes the public SemStreams ownership substrate
+// for a downstream application that has no built-in static projection owner.
+// Product rule-pack contracts bind separately after components are constructed.
+func wireProductionOwnership(
+	ctx context.Context,
 	natsClient *natsclient.Client,
+	lifecycleManager *lifecycle.Manager,
 	logger *slog.Logger,
-) (*lifecycle.Manager, error) {
+) (*ownership.Registry, *ownership.Heartbeater, error) {
+	if err := graph.AssertOwnedBucketsClean(ctx, natsClient, logger); err != nil {
+		return nil, nil, fmt.Errorf("assert framework-owned graph buckets retention-clean: %w", err)
+	}
+	ownerRegistry, err := ownership.EnsureBuckets(
+		ctx, natsClient, logger, vocabulary.InverseResolver,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("bootstrap ownership buckets: %w", err)
+	}
+	if lifecycleManager == nil {
+		return nil, nil, fmt.Errorf("attach ownership: lifecycle manager is required")
+	}
+	lifecycleManager.AttachOwnership(ctx, ownerRegistry)
+	return ownerRegistry, ownerRegistry.NewHeartbeater(ownership.HeartbeatInterval), nil
+}
+
+// registerQuestLifecycle owns the production workflow allowlist. The caller
+// must attach SemStreams ownership before invoking it because every registered
+// workflow becomes discoverable and mutable through lifecycle-gateway.
+func registerQuestLifecycle(manager *lifecycle.Manager) error {
 	// SemStreams validates lifecycle predicates at workflow registration time.
 	// Register the product vocabulary before handing the declaration to it.
 	domain.RegisterVocabulary()
-	manager := lifecycle.NewManager(natsClient, logger)
 	if err := manager.Register(questlifecycle.WorkflowDeclaration()); err != nil {
-		return nil, fmt.Errorf("register quest lifecycle workflow: %w", err)
+		return fmt.Errorf("register quest lifecycle workflow: %w", err)
 	}
-	return manager, nil
+	return nil
 }
 
 // parseCLI parses and validates CLI flags.
@@ -270,27 +304,6 @@ func ensureStreams(ctx context.Context, cfg *config.Config, natsClient *natsclie
 	}
 
 	fmt.Println("OK")
-	return nil
-}
-
-// ensureBoardBucket creates the board-specific KV bucket for entity states.
-// Uses the same get-or-create pattern as graph-ingest for ENTITY_STATES.
-func ensureBoardBucket(ctx context.Context, cfg *config.Config, natsClient *natsclient.Client) error {
-	fmt.Print("Ensuring board KV bucket... ")
-
-	boardCfg, err := extractBoardConfig(cfg)
-	if err != nil {
-		fmt.Println("FAILED")
-		return fmt.Errorf("resolve board config: %w", err)
-	}
-
-	graph := semdragons.NewGraphClient(natsClient, boardCfg)
-	if err := graph.EnsureBucket(ctx); err != nil {
-		fmt.Println("FAILED")
-		return fmt.Errorf("ensure board bucket: %w", err)
-	}
-
-	fmt.Printf("OK (%s)\n", boardCfg.BucketName())
 	return nil
 }
 

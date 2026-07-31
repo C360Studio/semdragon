@@ -593,7 +593,7 @@ func assertRetainedStartupSeedingAnchors(t *testing.T, files map[string][]byte) 
 			`getenv("SEED_E2E")`,
 			`getenv("SEED_AGENTS")`,
 			"func seedOneAgent(",
-			"graph.EmitEntity(ctx, agent,",
+			"semdragons.DisabledProjectionMutation(ctx, agent,",
 		},
 		"cmd/semdragons/main.go": {
 			"maybeSeedE2E(ctx, cfg, natsClient)",

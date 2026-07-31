@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  SEMSTREAMS_CONTRACT_VERSION: v1.0.0-beta.158
+  SEMSTREAMS_CONTRACT_VERSION: v1.0.0-beta.159
 
 tasks:
   default:
@@ -15,7 +15,7 @@ tasks:
         exit "$status"
 
   predicates:
-    desc: Audit all bounded graph-contract root groups with SemStreams beta.158
+    desc: Audit all bounded graph-contract root groups with SemStreams beta.159
     cmds:
       - |
         status=0
@@ -26,7 +26,7 @@ tasks:
         exit "$status"
 
   predicates-core:
-    desc: Audit core graph-contract roots with SemStreams beta.158
+    desc: Audit core graph-contract roots with SemStreams beta.159
     cmds:
       # Keep these roots bounded until SemStreams #667 removes the scanner
       # token limit that prevents a safe repository-wide predicate audit.
@@ -36,7 +36,7 @@ tasks:
         ./domain ./questdag ./questlifecycle ./config
 
   predicates-processor:
-    desc: Audit processor graph-contract roots with SemStreams beta.158
+    desc: Audit processor graph-contract roots with SemStreams beta.159
     cmds:
       - >-
         go run
@@ -44,7 +44,7 @@ tasks:
         ./processor
 
   predicates-service:
-    desc: Audit service graph-contract roots with SemStreams beta.158
+    desc: Audit service graph-contract roots with SemStreams beta.159
     cmds:
       - >-
         go run
@@ -52,7 +52,7 @@ tasks:
         ./service
 
   predicates-ui:
-    desc: Audit UI graph-contract consumers with SemStreams beta.158
+    desc: Audit UI graph-contract consumers with SemStreams beta.159
     cmds:
       - >-
         go run
@@ -60,7 +60,7 @@ tasks:
         ./ui/src
 
   entity-ids:
-    desc: Audit entity IDs and query prefixes with SemStreams beta.158
+    desc: Audit entity IDs and query prefixes with SemStreams beta.159
     cmds:
       - >-
         go run

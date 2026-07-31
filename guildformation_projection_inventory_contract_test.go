@@ -53,7 +53,6 @@ func TestGuildFormationRawDTOsHaveNoGraphProjectionSurface(t *testing.T) {
 		"processor/guildformation/payloads.go",
 		"processor/guildformation/handler.go",
 		"processor/guildformation/handler_test.go",
-		"processor/guildformation/component_test.go",
 		"cmd/semdragons/main.go",
 		"componentregistry/register.go",
 		relationshipFixture,
@@ -62,7 +61,7 @@ func TestGuildFormationRawDTOsHaveNoGraphProjectionSurface(t *testing.T) {
 			t.Errorf("guildformation inventory is missing required anchor %q", anchor)
 		}
 	}
-	assertGuildFormationEnabledInShippedConfigs(t, files)
+	assertGuildFormationDisabledInShippedConfigs(t, files)
 	for _, violation := range guildFormationRegistrationViolations(files["componentregistry/register.go"]) {
 		t.Errorf("componentregistry/register.go contains guildformation activation violation: %s", violation)
 	}
@@ -285,7 +284,7 @@ func syntheticGuildFormationRegistrations(registerAll, registerProcessors bool) 
 		"func RegisterProcessors() {" + registerProcessorsBody + "}\n"
 }
 
-func assertGuildFormationEnabledInShippedConfigs(t *testing.T, files map[string][]byte) {
+func assertGuildFormationDisabledInShippedConfigs(t *testing.T, files map[string][]byte) {
 	t.Helper()
 	type componentConfig struct {
 		Type    string `json:"type"`
@@ -316,8 +315,8 @@ func assertGuildFormationEnabledInShippedConfigs(t *testing.T, files map[string]
 			if component.Name != "guildformation" {
 				t.Errorf("%s guildformation name = %q, want guildformation", path, component.Name)
 			}
-			if !component.Enabled {
-				t.Errorf("%s guildformation component is disabled", path)
+			if component.Enabled {
+				t.Errorf("%s guildformation component must fail closed until its owner-safe projection is migrated", path)
 			}
 		})
 	}

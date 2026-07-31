@@ -7,9 +7,10 @@ import (
 	"github.com/c360studio/semdragons/processor/agentstore"
 	"github.com/c360studio/semstreams/graph"
 	"github.com/c360studio/semstreams/model"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
-// GraphQuerier abstracts GraphClient read/write operations used by handlers.
+// GraphQuerier abstracts the read-only GraphClient operations used by handlers.
 // Extracting this interface enables handlers to be tested without a live NATS connection.
 type GraphQuerier interface {
 	Config() *domain.BoardConfig
@@ -23,8 +24,8 @@ type GraphQuerier interface {
 	ListAgentsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
 	ListPeerReviewsByPrefix(ctx context.Context, limit int) ([]graph.EntityState, error)
 	ListEntitiesByType(ctx context.Context, entityType string, limit int) ([]graph.EntityState, error)
-	EmitEntity(ctx context.Context, entity graph.Graphable, eventType string) error
-	EmitEntityUpdate(ctx context.Context, entity graph.Graphable, eventType string) error
+	Ready(ctx context.Context) error
+	WatchBoard(ctx context.Context) (jetstream.KeyWatcher, error)
 }
 
 // WorldStateProvider abstracts WorldStateAggregator for testing.
