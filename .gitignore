@@ -35,8 +35,17 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Claude Code
-.claude/
+# Claude Code (ignore local state; track ateam hook & skill mirrors)
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/design/
+!.claude/skills/handoff/
+!.claude/skills/pickup/
+!.claude/skills/ponytail/
+!.claude/skills/preflight/
+!.claude/skills/review-pr/
 
 # Playwright MCP artifacts
 .playwright-mcp/
@@ -49,3 +58,7 @@ test-results/
 
 # E2E test repos (seeded by task e2e:seed:repos)
 docker/repos/
+.ateam/
+.worktrees/
+.enjoy-logs/
+benchmarks/runs/

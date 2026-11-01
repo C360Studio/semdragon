@@ -2,6 +2,9 @@ version: "3"
 
 dotenv: [".env"]
 
+vars:
+  SPEC_BASE: '{{.SPEC_BASE | default "origin/codex/semstreams-v1-rule-cutover"}}'
+
 includes:
   build:
     taskfile: ./taskfiles/build.yml
@@ -32,11 +35,43 @@ tasks:
     cmds:
       - task: build:default
 
+  doctor:
+    desc: Verify ateam multi-agent parity, MCP budget, and hook latency
+    cmds:
+      - ateam doctor --check
+
+  spec:check:
+    desc: Validate OpenSpec changes and check for stray Hold markers
+    cmds:
+      - ateam state spec-check
+
+  spec:queue:
+    desc: Show in-flight OpenSpec changes with active holds and caveats
+    cmds:
+      - ateam state spec-queue
+
+  test:spec:
+    desc: Check Go and Vitest test-to-spec citations changed since SPEC_BASE
+    cmds:
+      - ateam test-spec --base {{.SPEC_BASE}}
+
+  verify:
+    desc: Fast local gate — ateam parity, OpenSpec check, test-spec, lint, schemas, unit tests
+    cmds:
+      - task: doctor
+      - task: spec:check
+      - task: test:spec
+      - task: lint:default
+      - task: schema:check
+      - go test -race ./...
+
   check:
-    desc: Full check — fmt, tidy, lint, schemas, test
+    desc: Full check — fmt, tidy, lint, schemas, test (unit + integration)
     cmds:
       - task: lint:fmt
       - task: lint:tidy
+      - task: doctor
+      - task: spec:check
       - task: lint:default
       - task: schema:check
       - task: test:all

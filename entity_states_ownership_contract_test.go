@@ -12,6 +12,8 @@ import (
 // TestEntityStatesIsFrameworkOwned is the hard repository boundary for the
 // SemStreams catalog. Product code may read ENTITY_STATES only through
 // graph.OpenCatalogBucket; graph-ingest is its sole creator and writer.
+//
+// spec: openspec/changes/cut-over-semstreams-beta159-rule-contracts/specs/semstreams-rule-cutover/spec.md#Requirement: Graph-ingest exclusively owns ENTITY_STATES
 func TestEntityStatesIsFrameworkOwned(t *testing.T) {
 	root := repositoryRoot(t)
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -19,8 +21,11 @@ func TestEntityStatesIsFrameworkOwned(t *testing.T) {
 			return walkErr
 		}
 		if entry.IsDir() {
+			if path == root {
+				return nil
+			}
 			base := entry.Name()
-			if base == ".git" || base == "node_modules" || base == "vendor" {
+			if strings.HasPrefix(base, ".") || base == "node_modules" || base == "vendor" {
 				return filepath.SkipDir
 			}
 			return nil

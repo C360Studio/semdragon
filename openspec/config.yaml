@@ -6,39 +6,49 @@ context: |
   # Semdragons Project Context
 
   ## Purpose
-  Semdragons is an agentic workflow coordination product modeled as a tabletop
-  RPG, built on the SemStreams framework. Work items are quests, agents are
-  adventurers who earn XP, quality reviews are boss battles, and trust tiers are
-  derived from demonstrated competence. Initial domain focus is software
-  development.
+  Semdragons is an event-driven multi-agent workflow coordination and competitive
+  scenario engine modeled as a tabletop RPG. Work items are quests, agents/teams
+  earn XP and trust through demonstrated competence, adversarial critiques are
+  cross-guild red-team reviews, and quality gates are boss battles. Domain packs
+  span software engineering, research, D&D, and anticipatory scenario analysis
+  (Threatcasting / Science Fiction Prototyping).
 
   Core design commitment (2026-07 revival): the two-loop principle. Soft signals
-  (LLM judgment, peer review) may steer routing and prompts only. Hard signals
-  (executed verification in hermetic environments, outcome-lagged results) are
-  the only inputs allowed to move trust tiers or gate capabilities.
+  (LLM judgment, peer review, red-team critique) may steer routing, rankings, and
+  prompts only. Hard signals (executed verification in hermetic environments,
+  deterministic structural/grounding checks, and outcome-lagged standing signpost
+  tripwires in the knowledge graph) are the only inputs allowed to move trust
+  tiers or gate capabilities.
 
   ## Product Boundary
-  - Semdragons owns game mechanics: quest semantics, trust tiers and progression,
-    boss battles (verification policy), parties/guilds/boids, the DM layer, and
-    the dashboard.
-  - The dev substrate owns (extraction in progress; see docs/adr/ and the
-    dev-substrate audit): the sandbox service (worktrees, merge gate, exec),
-    environment manifests / battlefield prep, and hermetic verification plumbing.
-    Semdragons consumes it; it must not re-grow a product-private sandbox.
-  - SemStreams owns the governed substrate: lifecycle workflows (pkg/lifecycle),
-    the rule engine, gated-DAG dispatch, agentic-loop/model, graph state
-    (ENTITY_STATES), and observability. Semdragons must not re-implement state
-    machines the framework provides.
-  - SemSource owns source indexing and the fusion query surface (code_context /
-    code_impact / code_search). Agent-facing graph tools must use the fusion
-    surface, never entity-ID GraphQL.
+  - Semdragons owns game and tournament mechanics: quest semantics, domain packs
+    (`domains/`), trust tiers and progression, boss battles and cross-guild
+    red-team review, multi-cell comparison arenas, parties/guilds/boids, the DM
+    layer, and the dashboard.
+  - Because `semengine` will ship no agentic primitives, Semdragons (or an
+    extracted thin helper module) also owns the single-agent turn loop,
+    model-endpoint client, prompt assembly (`promptmanager`), and tier-gated tool
+    execution (`questbridge`, `questtools`, `executor`). Do not design changes
+    that push agentic or tool primitives into the substrate.
+  - SemEngine (target successor to SemStreams; repository currently pinned at
+    `semstreams v1.0.0-beta.159` pending `semengine` cutover) owns the governed
+    graph and reactive substrate: `ENTITY_STATES` with strict owner leases,
+    lifecycle workflows (`pkg/lifecycle`), the rule engine (`processor/rule`),
+    gated-DAG dispatch (`processor/gated-dag`), graph indexing/querying, and
+    observability. Semdragons must not re-implement state machines or raw KV
+    mutations the substrate provides.
+  - The dev substrate owns the optional sandbox service (worktrees, merge gate,
+    exec) and hermetic code verification plumbing. Non-code domains run with no
+    sandbox configured.
+  - SemSource owns external source/feed indexing and the fusion query surface.
 
   ## OpenSpec Conventions
   - specs/<capability>/spec.md is current truth per capability. Created lazily:
-    seed a spec when a change first touches that area. Candidates: quest-lifecycle,
-    trust-progression, verification, sandbox-contract.
+    seed a spec when a change first touches that area.
   - changes/<change-id>/ holds proposal, design, tasks, and spec deltas for every
-    non-trivial change. Archive on completion (openspec archive).
+    non-trivial change. Track blockers explicitly on task lines using `Hold:`
+    markers (`HALT`, `RED`, `BLOCKED`, `WONTDO`, `OPEN-Q`) consumed by
+    `ateam state holds` and `ateam state spec-queue`. Archive on completion.
   - docs/adr/ is decision records only: irreversible choices and cross-repo
     contracts. An ADR is never current-truth reference; when its content becomes
     standing behavior it belongs in a spec.
@@ -47,21 +57,17 @@ context: |
 
   ## Graph-Primary Convention (family-wide)
   Across the sem* family the graph is the primary source of truth; OpenSpec files
-  are hydrated artifacts — projections renderable from graph state (see semspec's
-  render_openspec) and ingestible back on brownfield repos. Author openspec/
-  content as plain files today, but write it knowing it will be graph-ingested:
-  stable change-ids and capability names, requirements as discrete statements
-  with scenarios, no load-bearing prose that only makes sense as a whole file.
+  are hydrated artifacts — projections renderable from graph state and ingestible
+  back on brownfield repos. Author openspec/ content with stable change-ids and
+  capability names, discrete requirements with scenarios, and no load-bearing
+  prose that only makes sense as a whole file.
 
   ## Development Notes
-  - Module github.com/c360studio/semdragons, on semstreams v1.0.0-beta.135
-    (the beta.21 -> current migration is the rebuild-quest-lifecycle change).
-  - Task runner: task --list. Unit tests `task test`; integration
-    `task test:integration` (Docker); e2e via mock LLM `task e2e`.
-  - Real-LLM runs cost money — the active-monitoring protocol in CLAUDE.md is
+  - Module github.com/c360studio/semdragons, currently on semstreams
+    v1.0.0-beta.159 (awaiting port to semengine once tagged).
+  - Harness: `ateam` (`AGENTS.md`, `ateam doctor --check`, `ateam state pickup`,
+    `ateam state handoff`, `ateam state spec-check`, `ateam test-spec`).
+  - Task runner: `task --list`. Fast local gate: `task verify` (no Docker).
+    Integration: `task test:integration` (Docker); mock-LLM E2E: `task e2e`.
+  - Real-LLM runs cost money — the active-monitoring protocol in `AGENTS.md` is
     mandatory.
-
-# Per-artifact rules (optional). Add custom rules for specific artifacts, e.g.:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
