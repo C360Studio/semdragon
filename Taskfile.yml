@@ -3,7 +3,7 @@ version: "3"
 dotenv: [".env"]
 
 vars:
-  SPEC_BASE: '{{.SPEC_BASE | default "origin/codex/semstreams-v1-rule-cutover"}}'
+  SPEC_BASE: '{{.SPEC_BASE | default "origin/main"}}'
 
 includes:
   build:
